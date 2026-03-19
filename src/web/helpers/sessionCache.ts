@@ -11,8 +11,12 @@ export interface CachedToolCall {
   id: string;
   name: string;
   arguments?: Record<string, unknown>;
-  result?: { success: boolean; output?: string; error?: string };
+  result?: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> };
 }
+
+export type CachedContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; toolCallId: string };
 
 export interface CachedMessage {
   id: string;
@@ -21,6 +25,7 @@ export interface CachedMessage {
   timestamp: number;
   toolCalls?: CachedToolCall[];
   thinking?: string;
+  contentParts?: CachedContentPart[];
 }
 
 export interface InMemorySession {

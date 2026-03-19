@@ -357,6 +357,16 @@ export class DatabaseService {
       }
     }
 
+    // Messages 表: 添加 content_parts 列（text/tool_call 交错顺序）
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN content_parts TEXT`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
     // Experiments 表: 添加 git_commit 列
     try {
       this.db.exec("ALTER TABLE experiments ADD COLUMN git_commit TEXT");

@@ -12,6 +12,19 @@ import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('VideoGenerate');
 
+/**
+ * 获取智谱官方 API Key（图像/视频生成专用）
+ * 优先 ZHIPU_OFFICIAL_API_KEY，回退 ZHIPU_API_KEY（仅非 0ki key）
+ */
+function getZhipuOfficialApiKey(): string | undefined {
+  const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
+  if (officialKey) return officialKey;
+  const configService = getConfigService();
+  const zhipuKey = configService.getApiKey('zhipu');
+  if (zhipuKey && !zhipuKey.startsWith('oki-')) return zhipuKey;
+  return undefined;
+}
+
 // 超时配置
 const TIMEOUT_MS = {
   SUBMIT: 30000,      // 提交任务 30 秒
@@ -44,8 +57,8 @@ async function fetchWithTimeout(
 // 智谱视频生成模型
 // 参考文档: https://bigmodel.cn/dev/api/videomodel/cogvideox
 const ZHIPU_VIDEO_MODELS = {
-  standard: 'cogvideox-flash',    // CogVideoX Flash（免费，默认）
-  premium: 'cogvideox-2',         // CogVideoX 2.0 标准版（付费）
+  standard: 'cogvideox-2',        // CogVideoX 2.0（默认，质量最佳）
+  legacy: 'cogvideox-flash',      // Flash 免费版（质量差，仅降级用）
 } as const;
 
 // 支持的尺寸（官方支持：720x480, 1024x1024, 1280x960, 960x1280, 1920x1080, 1080x1920, 2048x1080, 3840x2160）
@@ -442,13 +455,12 @@ export const videoGenerateTool: Tool = {
     const startTime = Date.now();
 
     try {
-      const configService = getConfigService();
-      const zhipuApiKey = configService.getApiKey('zhipu');
+      const zhipuApiKey = getZhipuOfficialApiKey();
 
       if (!zhipuApiKey) {
         return {
           success: false,
-          error: '视频生成需要配置智谱 API Key。请在设置中添加智谱 API Key。',
+          error: '视频生成需要配置智谱官方 API Key (ZHIPU_OFFICIAL_API_KEY)。0ki 代理不支持视频生成。',
         };
       }
 

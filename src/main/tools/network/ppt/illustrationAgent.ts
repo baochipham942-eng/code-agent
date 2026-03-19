@@ -168,8 +168,8 @@ function buildIllustrationPrompt(slide: StructuredSlide, themeName: string): str
 
   const concept = [title, ...contentParts].filter(Boolean).join('，');
 
-  // Build prompt: concept + style + quality
-  const prompt = `${concept}，${themeStyle}，高质量插图，16:9 横版构图，适合演示文稿配图，无文字`;
+  // Build prompt: concept + style + quality + 强制禁止文字
+  const prompt = `${concept}，${themeStyle}，高质量插图，16:9 横版构图，适合演示文稿背景配图，纯抽象视觉画面，绝对不要出现任何文字、字母、数字、标题或标签`;
 
   return prompt;
 }

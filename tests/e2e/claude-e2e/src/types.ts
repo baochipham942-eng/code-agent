@@ -146,6 +146,7 @@ export interface TestCase {
   // Claude CLI 配置
   cliOptions?: {
     model?: string;
+    provider?: string;
     allowedTools?: string[];
     timeout?: number;
     /** 启用规划模式（复杂任务自动分解） */

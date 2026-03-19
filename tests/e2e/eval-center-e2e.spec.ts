@@ -1,22 +1,18 @@
 // ============================================================================
-// Eval Center E2E Test — Playwright + Electron
+// Eval Center E2E Test — Playwright + Web/Tauri-compatible runtime
 // Tests all Sprint 1-4 pages: ScoringConfig, TestResults, FailureAnalysis, CrossExperiment
 // ============================================================================
 
-import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ChildProcess, spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SCREENSHOT_DIR = path.join(__dirname, 'screenshots');
-const APP_ROOT = path.resolve(__dirname, '../..');
 
-let electronApp: ElectronApplication;
 let page: Page;
-let viteProcess: ChildProcess;
 
 async function takeScreenshot(filename: string) {
   try {
@@ -29,6 +25,21 @@ async function takeScreenshot(filename: string) {
   } catch (err) {
     console.log(`  Screenshot failed (${filename}): ${(err as Error).message?.slice(0, 100)}`);
   }
+}
+
+async function dismissApiKeyDialog() {
+  const skipButton = page.getByText('稍后配置');
+  if (await skipButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await skipButton.click();
+    await page.waitForTimeout(500);
+  }
+}
+
+async function loadApp() {
+  await page.goto('/');
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForTimeout(3000);
+  await dismissApiKeyDialog();
 }
 
 // Recover from error boundary — refresh page and re-open eval center
@@ -46,12 +57,7 @@ async function recoverFromError(): Promise<boolean> {
       await page.waitForTimeout(3000);
     }
 
-    // Dismiss API Key dialog if it reappears
-    const skipButton = page.getByText('稍后配置');
-    if (await skipButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await skipButton.click();
-      await page.waitForTimeout(500);
-    }
+    await dismissApiKeyDialog();
 
     // Re-open eval center
     await openEvalCenter();
@@ -73,77 +79,18 @@ async function openEvalCenter() {
   }
 }
 
-// Start Vite dev server
-async function startVite(): Promise<ChildProcess> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('npx', ['vite', '--port', '3000'], {
-      cwd: APP_ROOT,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
-    });
-
-    const timeout = setTimeout(() => {
-      reject(new Error('Vite failed to start within 30s'));
-    }, 30000);
-
-    proc.stdout?.on('data', (data: Buffer) => {
-      const output = data.toString();
-      if (output.includes('Local:') || output.includes('localhost:3000') || output.includes('ready in')) {
-        clearTimeout(timeout);
-        resolve(proc);
-      }
-    });
-
-    proc.stderr?.on('data', () => {});
-    proc.on('error', (err) => { clearTimeout(timeout); reject(err); });
-    proc.on('exit', (code) => {
-      if (code !== 0 && code !== null) { clearTimeout(timeout); reject(new Error(`Vite exited with code ${code}`)); }
-    });
-  });
-}
-
 test.describe.serial('Eval Center E2E', () => {
   test.setTimeout(120000);
 
-  test.beforeAll(async () => {
-    console.log('Starting Vite dev server...');
-    viteProcess = await startVite();
-    console.log('Vite dev server is ready on port 3000');
-    await new Promise(r => setTimeout(r, 2000));
-
-    console.log('Launching Electron app...');
-    electronApp = await electron.launch({
-      args: [APP_ROOT],
-      cwd: APP_ROOT,
-      timeout: 5000,
-      env: { ...process.env, NODE_ENV: 'development' },
-    });
-
-    page = await electronApp.firstWindow();
-    console.log('Got first window');
-
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(5000);
-
-    // Dismiss API Key setup dialog
-    try {
-      const skipButton = page.getByText('稍后配置');
-      if (await skipButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await skipButton.click();
-        await page.waitForTimeout(500);
-        console.log('Dismissed API key dialog');
-      }
-    } catch {
-      console.log('No API key dialog found');
-    }
+  test.beforeAll(async ({ browser }: { browser: Browser }) => {
+    page = await browser.newPage();
+    console.log('Opening web-mode app...');
+    await loadApp();
   });
 
   test.afterAll(async () => {
-    if (electronApp) await electronApp.close().catch(() => {});
-    if (viteProcess) {
-      viteProcess.kill('SIGTERM');
-      await new Promise(r => setTimeout(r, 500));
-      if (!viteProcess.killed) viteProcess.kill('SIGKILL');
+    if (page) {
+      await page.close().catch(() => {});
     }
   });
 

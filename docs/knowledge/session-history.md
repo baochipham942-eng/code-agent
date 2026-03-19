@@ -1,5 +1,19 @@
 # 会话历史记录
 
+## 2026-03-19 (session 19): SpreadsheetBlock 交互式电子表格
+
+- 新增 SpreadsheetBlock 组件 — Excel 数据在对话中可交互渲染
+- **列选中交互**: 点击列头选中（Cmd+点击多选），选中列高亮 + 数值列统计（合计/均值/范围）
+- **操作栏**: 可视化、透视表、筛选分析、排序 — 点击后通过 iact:send 把选区数据发给 Agent
+- **Agent 闭环**: Agent 收到选区数据 → 生成 chart/generative_ui/spreadsheet 块 → 内联渲染
+- **Excel 上传增强**: 新增 `extract-excel-json` IPC（SheetJS → JSON），上传 Excel 自动渲染 SpreadsheetBlock（替代纯文本标签）
+- **双通道数据**: CSV 文本（给 Agent 理解）+ JSON（给 SpreadsheetBlock 渲染），sheetsJson 存入 MessageAttachment
+- **Agent prompt**: generativeUI.ts 扩展教模型输出 ```spreadsheet 代码块
+- **全链路**: IPC handler + Web route + httpTransport + ipcService + AttachmentPreview + MessageContent 路由
+- 新增 1 文件 + 修改 10 文件, typecheck 零错误
+- 关键新文件: SpreadsheetBlock.tsx
+- 关键修改: settings.ipc.ts, extract.ts, api.ts, ipcService.ts, httpTransport.ts, message.ts, useFileUpload.ts, AttachmentPreview.tsx, MessageContent.tsx, generativeUI.ts
+
 ## 2026-03-19 (session 18): 富文档结构化编辑 — Excel/PPT/Word 原子操作 + 统一 DocEdit
 
 - 对标阿里悟空 RealDoc 设计理念，从"全量生成"升级为"原子级 patch"

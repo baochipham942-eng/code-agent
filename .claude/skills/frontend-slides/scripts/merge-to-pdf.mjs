@@ -61,15 +61,66 @@ function findSlideImages(dir) {
   return slides;
 }
 
+function detectImageFormat(buffer) {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'png';
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'jpeg';
+  }
+
+  return null;
+}
+
+function getTextPreview(buffer) {
+  return buffer
+    .toString('utf8', 0, Math.min(buffer.length, 32))
+    .replace(/[^\x20-\x7e]+/g, ' ')
+    .trim();
+}
+
+function loadValidatedSlideImage(slide) {
+  const imageData = readFileSync(slide.path);
+  const format = detectImageFormat(imageData);
+
+  if (!format) {
+    const preview = getTextPreview(imageData);
+    throw new Error(
+      `Invalid slide image: ${slide.filename} is not a PNG/JPEG file.` +
+      (preview ? ` First bytes: "${preview}"` : '')
+    );
+  }
+
+  const expectedFormat = slide.filename.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+  if (expectedFormat !== format) {
+    // CogView 等 API 可能返回 JPEG 但扩展名为 .png，自动修正而非报错
+    console.warn(
+      `Warning: ${slide.filename} extension does not match actual format ${format}. Using detected format.`
+    );
+  }
+
+  return { imageData, format };
+}
+
 async function createPdf(slides, outputPath) {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setAuthor('frontend-slides');
   pdfDoc.setSubject('Generated Slide Deck');
 
   for (const slide of slides) {
-    const imageData = readFileSync(slide.path);
-    const ext = slide.filename.toLowerCase();
-    const image = ext.endsWith('.png')
+    const { imageData, format } = loadValidatedSlideImage(slide);
+    const image = format === 'png'
       ? await pdfDoc.embedPng(imageData)
       : await pdfDoc.embedJpg(imageData);
 

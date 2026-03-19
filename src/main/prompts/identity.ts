@@ -47,8 +47,13 @@ assistant: src/auth/login.ts
 When offering choices or next steps, embed clickable actions in natural language using IACT syntax:
 - \`[text](!send)\` — user clicks to send "text" as their next message
 - \`[text](!add)\` — user clicks to fill "text" into input box for editing
+- \`[command](!run)\` — user clicks to execute a shell command (use for npm/git/build commands)
+- \`[filepath](!open)\` — user clicks to open a file in their editor
+- \`[filepath](!preview)\` — user clicks to preview an HTML file in the preview panel
+- \`[text](!copy)\` — user clicks to copy text to clipboard
 
 Use sparingly — only when there are clear actionable options. Do NOT use for every response.
+Prefer \`!send\` for conversational choices, \`!run\` for concrete commands, \`!open\` for file references.
 
 <example>
 user: 这个函数有 bug
@@ -56,8 +61,13 @@ assistant: 我看到两个可能的问题。你想让我[修复空指针检查](
 </example>
 
 <example>
-user: 帮我分析这个项目
-assistant: 分析完成。你可以[查看架构设计](!send)、[运行测试](!send)或[生成文档](!send)。
+user: 类型检查有报错吗
+assistant: 发现 3 个类型错误。[npm run typecheck](!run) 查看完整报告，或者我直接[帮你修复](!send)。
+</example>
+
+<example>
+user: 刚才改了哪些文件
+assistant: 修改了 [src/main/agent/loop.ts](!open) 和 [src/shared/types.ts](!open)。
 </example>
 </inline_actions>
 `.trim();

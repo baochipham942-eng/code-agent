@@ -19,7 +19,7 @@ allowed-tools:
 user-invocable: true
 ---
 
-你是 `frontend-slides` skill。目标不是调用旧的 `ppt_generate`，而是走图片化 slide deck 流程，产出更稳定的高质量演示文稿。
+你是 `frontend-slides` skill。使用**混合方案**：AI 生成纯视觉背景图 + pptxgenjs 渲染真实中文文字，解决 AI 图片中文乱码问题。
 
 ## 硬规则
 
@@ -28,11 +28,13 @@ user-invocable: true
 3. 默认产物：
    - `source-<topic-slug>.md`
    - `outline.md`
+   - `slides.json`（结构化文字数据，混合合成用）
    - `prompts/*.md`
-   - `NN-slide-*.png`
-   - `<topic-slug>.pptx`
+   - `NN-slide-*.png`（纯视觉背景，不含文字）
+   - `<topic-slug>.pptx`（混合合成：AI 背景 + 真实文字）
    - `<topic-slug>.pdf`
 4. 素材不足时，最多只做 **1 轮澄清**；如果用户目标已经足够明确，就直接继续，不要反复确认。
+5. **图片 prompt 绝对不要包含任何文字内容**。AI 生成的图片只作为视觉背景/装饰。所有标题、要点等文字由 pptxgenjs 在合成阶段叠加。
 
 ## 参数理解
 
@@ -77,44 +79,73 @@ user-invocable: true
 
 标题要写成结论句，不要只写“市场分析”“方案介绍”这种栏目名。
 
-### 3. 生成逐页 prompt
+### 3. 生成 slides.json + 逐页 prompt
 
-在 `prompts/` 下按顺序写入 `NN-slide-<slug>.md`。
+**先生成 `slides.json`**（混合合成脚本需要它来叠加真实文字）：
 
-每个 prompt 必须明确：
-- 16:9 presentation slide
-- 页面标题和副标题
-- 信息层级
-- 视觉布局
-- 色彩/字体气质
-- 图表或插画要求
-- 禁止水印、禁止多余边框、禁止无关装饰
+```json
+[
+  {
+    "index": 1,
+    "layout": "cover",
+    "title": "AI Agent 三代演进",
+    "subtitle": "从 ReAct 到 Multi-Agent 协作",
+    "bullets": [],
+    "footnote": ""
+  },
+  {
+    "index": 2,
+    "layout": "content",
+    "title": "ReAct 循环：思考-行动-观察",
+    "subtitle": "",
+    "bullets": ["LLM 作为推理引擎", "工具调用作为行动", "观察结果反馈循环"],
+    "footnote": "Source: Yao et al. 2022"
+  }
+]
+```
 
-prompt 要强调：
-- **readable presentation slide**
-- **sharp typography**
-- **clean grid layout**
-- **all important text fully visible**
+**然后在 `prompts/` 下写逐页图片 prompt**。
+
+⚠️ **关键区别**：图片 prompt 只描述**纯视觉背景/装饰**，不包含任何文字内容：
+- ✅ "深色科技风格背景，抽象的神经网络连接线条，蓝紫色光效，16:9 横版"
+- ✅ "深色蓝图风格，齿轮和流程管道的抽象图案，霓虹蓝色线条"
+- ❌ ~~"标题：AI Agent 三代演进，要点：1. ReAct..."~~（文字由合成脚本渲染）
+
+prompt 要求：
+- 16:9 aspect ratio background image
+- **NO text, NO typography, NO labels, NO titles** in the image
+- Abstract visual patterns, gradients, shapes, or themed illustrations only
+- 与 deck 整体风格一致的配色和视觉语言
+- 禁止水印、禁止多余边框
 
 ### 4. 生成图片
 
-逐页调用 `image_generate` 生成 slide 图片，顺序执行，不要并发轰炸。
+逐页调用 `image_generate` 生成背景图片，顺序执行，不要并发轰炸。
 
 要求：
+- `aspect_ratio` 固定为 `"16:9"`
+- `expand_prompt` 设为 `true`（让 LLM 扩充视觉细节）
 - 输出文件名与 prompt 文件名对应
 - 失败时先自动重试一次
 - 已有同名图片时，先备份成 `*-backup-YYYYMMDD-HHMMSS.png`
+- 每次生成后都要检查产物是否是**真实 PNG/JPG**
+- 如果生成结果无效，先自动重试一次；仍无效就停止流程
 
 ### 5. 合成 PPTX / PDF
 
-使用以下脚本合成：
+**默认使用混合合成脚本**（AI 背景图 + 真实中文文字叠加）：
 
 ```bash
-node .claude/skills/frontend-slides/scripts/merge-to-pptx.mjs <slide-deck-dir>
+# 混合合成（推荐）：背景图 + slides.json 文字叠加
+node .claude/skills/frontend-slides/scripts/merge-to-pptx-hybrid.mjs <slide-deck-dir>
+
+# 纯图片 PDF（快速预览用）
 node .claude/skills/frontend-slides/scripts/merge-to-pdf.mjs <slide-deck-dir>
 ```
 
-如果 `node` 或运行依赖不可用，明确告诉用户缺少运行依赖，并保留已生成的 `outline.md`、`prompts/` 和图片，不要丢工作成果。
+混合脚本需要 `slides.json` 存在于 slide-deck 目录中。如果没有 slides.json 则自动降级为纯图片模式。
+
+如果 `node` 或运行依赖不可用，明确告诉用户缺少运行依赖，并保留已生成的 `outline.md`、`slides.json`、`prompts/` 和图片，不要丢工作成果。
 
 ### 6. 交付
 

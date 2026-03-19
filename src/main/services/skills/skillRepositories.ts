@@ -61,18 +61,13 @@ export const AUTO_DOWNLOAD_REPOS: string[] = ['anthropic-skills', 'superpowers']
  */
 export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
   'anthropic-skills': [
-    'pptx', // PPT 生成
     'xlsx', // Excel 表格
     'docx', // Word 文档
     'pdf', // PDF 处理
-    'frontend-design', // 前端设计
     'mcp-builder', // MCP 服务器构建
   ],
   superpowers: [
-    'systematic-debugging', // 系统化调试
-    'test-driven-development', // TDD
-    'verification-before-completion', // 完成前验证
-    'brainstorming', // 头脑风暴
+    // superpowers skill 名称与实际仓库不一致，暂不自动挂载
   ],
   builtin: [
     'data-cleaning', // 数据清洗与分析
@@ -92,14 +87,11 @@ export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
  * 用于根据用户输入推荐相关 skills
  */
 export const SKILL_KEYWORDS: Record<string, string[]> = {
-  pptx: ['ppt', 'powerpoint', '演示', '幻灯片', 'slides', 'presentation'],
+  'frontend-slides': ['ppt', 'powerpoint', '演示', '幻灯片', 'slides', 'presentation'],
   xlsx: ['excel', '表格', '数据', 'spreadsheet', 'csv'],
   docx: ['word', '文档', 'document', '报告'],
   pdf: ['pdf', '阅读', '提取'],
-  'frontend-design': ['前端', 'ui', '界面', '设计', 'frontend', 'react', 'css'],
-  'systematic-debugging': ['调试', 'debug', 'bug', '错误', '问题'],
-  'test-driven-development': ['测试', 'test', 'tdd', '单元测试'],
-  brainstorming: ['创意', '头脑风暴', '想法', 'idea', 'brainstorm'],
+  design: ['前端', 'ui', '界面', '设计', 'frontend', 'react', 'css'],
   'data-cleaning': ['清洗', '数据清洗', 'clean', 'cleaning', '去重', '缺失值', '异常值'],
 };
 

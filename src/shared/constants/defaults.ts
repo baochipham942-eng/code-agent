@@ -37,6 +37,7 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'deepseek-reasoner': 16384,
   // 智谱 GLM — 按用途分层
   'glm-5': 8192,
+  'glm-5-turbo': 8192,
   'glm-4.7': 8192,
   'glm-4.7-flash': 4096,    // 免费快速模型，短任务
   'glm-4v-plus': 2048,      // 视觉

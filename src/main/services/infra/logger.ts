@@ -150,8 +150,15 @@ class Logger {
 
   constructor(context?: string) {
     this.context = context;
-    this.level =
-      process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
+    // CLI 模式下默认只输出 ERROR，避免日志噪音污染交互界面
+    // --debug 时恢复 DEBUG 级别
+    if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+      const isDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+      this.level = isDebug ? LogLevel.DEBUG : LogLevel.ERROR;
+    } else {
+      this.level =
+        process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
+    }
   }
 
   setLevel(level: LogLevel): void {

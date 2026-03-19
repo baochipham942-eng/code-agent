@@ -2,16 +2,23 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager, syncCLIWorkingDirectory } from './bootstrap';
+import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
-import type { Message, AgentEvent, PRLink } from '../shared/types';
+import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/types';
+import { getModelMaxOutputTokens } from '../shared/constants';
 import { createLogger } from '../main/services/infra/logger';
 import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
 import { MetricsCollector } from '../main/agent/metricsCollector';
+import { retryEvents } from '../main/model/providers/retryStrategy';
 
 const logger = createLogger('CLI-Adapter');
+
+// Subscribe to retry events for CLI visibility
+retryEvents.on('retry', (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => {
+  terminalOutput.retrying(info.provider, info.attempt, info.maxRetries, info.delay);
+});
 
 /**
  * CLI Agent 运行器
@@ -37,6 +44,11 @@ export class CLIAgent {
   private turnStartTime: number = 0;
   /** Per-run metrics collector (active when --metrics is set) */
   private metricsCollector: MetricsCollector | null = null;
+  /** Current AgentLoop instance (for cancel/interrupt) */
+  private currentAgentLoop: { cancel(): void; interrupt(msg: string): void } | null = null;
+  /** Real token usage from stream_usage events */
+  private realInputTokens: number = 0;
+  private realOutputTokens: number = 0;
 
   private systemPrompt: string | undefined;
 
@@ -69,6 +81,30 @@ export class CLIAgent {
    */
   getConfig(): CLIConfig {
     return this.config;
+  }
+
+  /**
+   * 切换模型（下次 run 生效）
+   * 自动从 env 获取对应 provider 的 API Key
+   */
+  setModel(provider: string, model: string, apiKey?: string): void {
+    // Auto-resolve API key for the new provider
+    let resolvedKey = apiKey;
+    if (!resolvedKey) {
+      try {
+        resolvedKey = getConfigService().getApiKey(provider);
+      } catch {
+        // Config service not ready, keep existing key
+      }
+    }
+
+    this.config.modelConfig = {
+      ...this.config.modelConfig,
+      provider: provider as ModelConfig['provider'],
+      model,
+      maxTokens: getModelMaxOutputTokens(model),
+      ...(resolvedKey ? { apiKey: resolvedKey } : {}),
+    };
   }
 
   /**
@@ -137,6 +173,10 @@ export class CLIAgent {
       this.metricsCollector = null;
     }
 
+    // Reset real token counters
+    this.realInputTokens = 0;
+    this.realOutputTokens = 0;
+
     // 创建 AgentLoop（传入真实 sessionId + optional MetricsCollector）
     const agentLoop = createAgentLoop(
       this.config,
@@ -145,6 +185,7 @@ export class CLIAgent {
       this.sessionId || undefined,
       this.metricsCollector || undefined
     );
+    this.currentAgentLoop = agentLoop;
 
     return new Promise<CLIRunResult>((resolve) => {
       this.resolveRun = resolve;
@@ -249,6 +290,18 @@ export class CLIAgent {
       this.lastContent += event.data.content;
     }
 
+    // 累计真实 token 用量
+    if (event.type === 'stream_usage') {
+      const usage = event.data as { inputTokens?: number; outputTokens?: number };
+      if (usage.inputTokens) this.realInputTokens += usage.inputTokens;
+      if (usage.outputTokens) this.realOutputTokens += usage.outputTokens;
+    }
+    if (event.type === 'model_response') {
+      const resp = event.data as { inputTokens?: number; outputTokens?: number };
+      if (resp.inputTokens) this.realInputTokens += resp.inputTokens;
+      if (resp.outputTokens) this.realOutputTokens += resp.outputTokens;
+    }
+
     if (event.type === 'message' && event.data?.role === 'assistant') {
       // 注意：不再手动 push 到 this.messages，因为 agentLoop.addAndPersistMessage()
       // 已经往共享的 messages 数组 push 了。重复 push 会导致结构化 tool_calls 协议错误
@@ -292,6 +345,7 @@ export class CLIAgent {
   private finishRun(result: CLIRunResult): void {
     this.isRunning = false;
     this.currentResult = result;
+    this.currentAgentLoop = null;
 
     // Write metrics JSON if collector is active
     if (this.metricsCollector && this.config.metricsPath) {
@@ -357,6 +411,22 @@ export class CLIAgent {
    */
   getIsRunning(): boolean {
     return this.isRunning;
+  }
+
+  /**
+   * 取消当前运行（ESC 中断）
+   */
+  cancel(): void {
+    if (this.isRunning && this.currentAgentLoop) {
+      this.currentAgentLoop.cancel();
+    }
+  }
+
+  /**
+   * 获取真实 token 用量
+   */
+  getTokenUsage(): { inputTokens: number; outputTokens: number } {
+    return { inputTokens: this.realInputTokens, outputTokens: this.realOutputTokens };
   }
 
   /**

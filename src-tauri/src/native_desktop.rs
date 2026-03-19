@@ -161,6 +161,7 @@ pub struct CollectorStartRequest {
     retention_days: Option<u64>,
     dedupe_window_secs: Option<u64>,
     max_recent_events: Option<usize>,
+    max_screenshot_disk_mb: Option<u64>,
 }
 
 impl Default for CollectorStartRequest {
@@ -172,6 +173,7 @@ impl Default for CollectorStartRequest {
             retention_days: Some(7),
             dedupe_window_secs: Some(60),
             max_recent_events: Some(20),
+            max_screenshot_disk_mb: Some(5120),
         }
     }
 }
@@ -368,6 +370,72 @@ fn collector_screenshot_path(screenshot_dir: &PathBuf) -> Result<PathBuf, String
     let daily_dir = screenshot_dir.join(current_date_string());
     fs::create_dir_all(&daily_dir).map_err(|error| format!("Failed to create screenshot directory: {error}"))?;
     Ok(daily_dir.join(format!("collector_{}.jpg", now_ms())))
+}
+
+/// Enforce disk quota on the screenshot directory.
+/// When total size exceeds `max_mb`, delete oldest files until under limit.
+fn enforce_screenshot_disk_quota(screenshot_dir: &PathBuf, max_mb: u64) {
+    let max_bytes = max_mb * 1024 * 1024;
+
+    // Collect all files with metadata
+    let mut files: Vec<(PathBuf, u64, SystemTime)> = Vec::new();
+    let mut total_bytes: u64 = 0;
+
+    if let Ok(entries) = fs::read_dir(screenshot_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Recurse into daily subdirectories
+                if let Ok(sub_entries) = fs::read_dir(&path) {
+                    for sub_entry in sub_entries.flatten() {
+                        let sub_path = sub_entry.path();
+                        if sub_path.is_file() {
+                            if let Ok(meta) = sub_path.metadata() {
+                                let size = meta.len();
+                                let modified = meta.modified().unwrap_or(UNIX_EPOCH);
+                                total_bytes += size;
+                                files.push((sub_path, size, modified));
+                            }
+                        }
+                    }
+                }
+            } else if path.is_file() {
+                if let Ok(meta) = path.metadata() {
+                    let size = meta.len();
+                    let modified = meta.modified().unwrap_or(UNIX_EPOCH);
+                    total_bytes += size;
+                    files.push((path, size, modified));
+                }
+            }
+        }
+    }
+
+    if total_bytes <= max_bytes {
+        return;
+    }
+
+    // Sort by modification time ascending (oldest first)
+    files.sort_by_key(|(_path, _size, modified)| *modified);
+
+    for (path, size, _modified) in &files {
+        if total_bytes <= max_bytes {
+            break;
+        }
+        if fs::remove_file(path).is_ok() {
+            total_bytes = total_bytes.saturating_sub(*size);
+        }
+    }
+
+    // Clean up empty daily directories
+    if let Ok(entries) = fs::read_dir(screenshot_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // remove_dir only succeeds if directory is empty
+                let _ = fs::remove_dir(&path);
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1110,6 +1178,10 @@ fn run_sqlite(sqlite_path: &PathBuf, sql: &str) -> Result<(), String> {
 }
 
 fn ensure_sqlite_schema(sqlite_path: &PathBuf) -> Result<(), String> {
+    // Enable WAL mode and set busy timeout for concurrent access stability
+    let pragma_sql = "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;";
+    let _ = run_sqlite(sqlite_path, pragma_sql);
+
     let sql = r#"
 CREATE TABLE IF NOT EXISTS desktop_activity_events (
   id TEXT PRIMARY KEY,
@@ -1180,6 +1252,7 @@ fn normalize_collector_request(request: CollectorStartRequest) -> CollectorStart
         retention_days: Some(request.retention_days.unwrap_or(7).clamp(1, 90)),
         dedupe_window_secs: Some(request.dedupe_window_secs.unwrap_or(60).clamp(5, 3600)),
         max_recent_events: Some(request.max_recent_events.unwrap_or(20).clamp(5, 100)),
+        max_screenshot_disk_mb: Some(request.max_screenshot_disk_mb.unwrap_or(5120).clamp(100, 51200)),
     }
 }
 
@@ -1363,6 +1436,7 @@ pub fn desktop_start_collector(
     let retention_days = request.retention_days.unwrap_or(7);
     let dedupe_window_secs = request.dedupe_window_secs.unwrap_or(60);
     let max_recent_events = request.max_recent_events.unwrap_or(20);
+    let max_screenshot_disk_mb = request.max_screenshot_disk_mb.unwrap_or(5120);
     let event_dir = native_events_dir(&app)?;
     let screenshot_dir = native_screenshot_dir(&app)?;
     let native_root = native_desktop_root(&app)?;
@@ -1410,6 +1484,10 @@ pub fn desktop_start_collector(
                 let _ = persist_collector_status(&native_root_for_thread, &shared.status);
             }
         }
+
+        // P0-3: screencapture exponential backoff state
+        let mut screenshot_consecutive_failures: u32 = 0;
+        let mut screenshot_paused_until_ms: u128 = 0;
 
         while !stop_flag_for_thread.load(Ordering::SeqCst) {
             let should_cleanup = {
@@ -1480,15 +1558,55 @@ pub fn desktop_start_collector(
             };
 
             if should_persist {
-                let screenshot_path = if capture_screenshots && !is_sensitive {
+                // P0-3: Check if screenshots are paused due to repeated failures
+                if screenshot_paused_until_ms > 0 && now_ms() >= screenshot_paused_until_ms {
+                    // Pause period expired, reset and retry
+                    screenshot_consecutive_failures = 0;
+                    screenshot_paused_until_ms = 0;
+                }
+                let screenshot_currently_paused = screenshot_paused_until_ms > 0;
+
+                let should_capture = capture_screenshots && !is_sensitive && !screenshot_currently_paused;
+
+                let screenshot_path = if should_capture {
+                    // P0-1: Enforce disk quota before capturing
+                    enforce_screenshot_disk_quota(&screenshot_dir_for_thread, max_screenshot_disk_mb);
+
                     match collector_screenshot_path(&screenshot_dir_for_thread)
                         .and_then(|path| capture_screenshot_to_path(&path, true))
                     {
-                        Ok(result) => Some(result.path),
+                        Ok(result) => {
+                            // Reset failure counter on success
+                            screenshot_consecutive_failures = 0;
+                            Some(result.path)
+                        }
                         Err(error) => {
-                            if let Ok(mut shared) = shared.lock() {
-                                shared.status.last_error = Some(error);
-                                let _ = persist_collector_status(&native_root_for_thread, &shared.status);
+                            screenshot_consecutive_failures += 1;
+
+                            if screenshot_consecutive_failures >= 5 {
+                                // Pause screenshots for 1 hour, then reset
+                                screenshot_paused_until_ms = now_ms() + 3_600_000;
+                                let pause_msg = format!(
+                                    "screencapture failed {} consecutive times, pausing screenshots for 1 hour. Last error: {}",
+                                    screenshot_consecutive_failures, error
+                                );
+                                if let Ok(mut shared) = shared.lock() {
+                                    shared.status.last_error = Some(pause_msg);
+                                    let _ = persist_collector_status(&native_root_for_thread, &shared.status);
+                                }
+                                screenshot_consecutive_failures = 0;
+                            } else {
+                                // Exponential backoff: 10s * 2^(failures-1) => 10, 20, 40, 80
+                                let backoff_secs = 10u64 * (1u64 << (screenshot_consecutive_failures - 1));
+                                let backoff_msg = format!(
+                                    "screencapture failed ({}/5), backing off {}s. Error: {}",
+                                    screenshot_consecutive_failures, backoff_secs, error
+                                );
+                                if let Ok(mut shared) = shared.lock() {
+                                    shared.status.last_error = Some(backoff_msg);
+                                    let _ = persist_collector_status(&native_root_for_thread, &shared.status);
+                                }
+                                sleep_with_stop(&stop_flag_for_thread, backoff_secs);
                             }
                             None
                         }

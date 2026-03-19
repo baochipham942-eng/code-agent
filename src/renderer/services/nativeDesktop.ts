@@ -160,6 +160,17 @@ export async function updateNativeDesktopAnalyzeText(eventId: string, analyzeTex
   });
 }
 
+export interface AudioCaptureStatus {
+  capturing: boolean;
+  vadReady: boolean;
+  soxAvailable: boolean;
+  asrEngine: string;
+  powerMode: string;
+  totalSegments: number;
+  audioDir: string;
+  queueLength: number;
+}
+
 export interface AudioSegment {
   id: string;
   start_at_ms: number;
@@ -184,6 +195,33 @@ export async function listAudioSegments(from: number, to: number): Promise<Audio
   } catch {
     return [];
   }
+}
+
+async function postDesktopAction<T>(action: string, payload?: Record<string, unknown>): Promise<T | null> {
+  try {
+    const resp = await fetch('/api/domain/desktop/' + action, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, payload }),
+    });
+    if (!resp.ok) return null;
+    const result = await resp.json();
+    return result?.success ? (result.data || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function startAudioCapture(): Promise<AudioCaptureStatus | null> {
+  return postDesktopAction<AudioCaptureStatus>('startAudioCapture');
+}
+
+export async function stopAudioCapture(): Promise<AudioCaptureStatus | null> {
+  return postDesktopAction<AudioCaptureStatus>('stopAudioCapture');
+}
+
+export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null> {
+  return postDesktopAction<AudioCaptureStatus>('getAudioCaptureStatus');
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {

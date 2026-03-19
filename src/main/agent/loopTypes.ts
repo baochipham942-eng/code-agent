@@ -97,6 +97,8 @@ export interface ModelResponse {
   thinking?: string;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number };
+  // 内容块顺序（text 和 tool_call 的交错顺序）
+  contentParts?: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
 }
 
 /**

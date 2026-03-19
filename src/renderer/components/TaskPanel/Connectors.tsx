@@ -53,7 +53,8 @@ export const Connectors: React.FC = () => {
           // 判断是否是 MCP 工具（以 mcp__ 开头或包含服务器名称）
           const isMcp = name.startsWith('mcp__') || name.startsWith('mcp_');
           // 判断是否是 Skill
-          const isSkill = name === 'skill' || name.startsWith('skill_');
+          const nameLower = name.toLowerCase();
+          const isSkill = nameLower === 'skill' || nameLower.startsWith('skill_');
           // 提取 MCP 服务器名称（如 mcp__github__xxx -> github）
           let serverName: string | undefined;
           if (name.startsWith('mcp__')) {

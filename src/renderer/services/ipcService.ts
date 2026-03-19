@@ -33,6 +33,14 @@ export function extractExcelText(filePath: string): Promise<{ text: string; shee
   return window.electronAPI?.extractExcelText(filePath);
 }
 
+export function extractExcelJson(filePath: string) {
+  return window.electronAPI?.extractExcelJson(filePath);
+}
+
+export function extractDocxHtml(filePath: string) {
+  return window.electronAPI?.extractDocxHtml(filePath);
+}
+
 export function transcribeSpeech(audioData: string, mimeType: string): Promise<{
   success: boolean;
   text?: string;
@@ -66,6 +74,8 @@ export const ipcService = {
   getPathForFile,
   extractPdfText,
   extractExcelText,
+  extractExcelJson,
+  extractDocxHtml,
   transcribeSpeech,
   isAvailable,
 };

@@ -145,29 +145,60 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         </div>
       )}
 
-      {/* Text content */}
-      {message.content && (
-        <div className="text-zinc-200 leading-relaxed select-text">
-          <MessageContent content={message.content} isUser={false} />
-        </div>
-      )}
-
-      {/* Tool calls - terminal style, no spacing between items */}
-      {message.toolCalls && message.toolCalls.length > 0 && (
-        <div className="mt-2 space-y-0">
-          {message.toolCalls.length >= UI.TOOL_GROUP_THRESHOLD ? (
-            <ToolCallGroup toolCalls={message.toolCalls} startIndex={0} />
-          ) : (
-            message.toolCalls.map((toolCall, index) => (
-              <ToolCallDisplay
-                key={toolCall.id}
-                toolCall={toolCall}
-                index={index}
-                total={message.toolCalls!.length}
-              />
-            ))
+      {/* 有 contentParts 时按交错顺序渲染，否则 fallback 到旧逻辑 */}
+      {message.contentParts && message.contentParts.length > 0 ? (
+        <>
+          {message.contentParts.map((part, i) => {
+            if (part.type === 'text' && part.text) {
+              return (
+                <div key={`text-${i}`} className="text-zinc-200 leading-relaxed select-text">
+                  <MessageContent content={part.text} isUser={false} />
+                </div>
+              );
+            }
+            if (part.type === 'tool_call') {
+              const tc = message.toolCalls?.find(t => t.id === part.toolCallId);
+              if (tc) {
+                return (
+                  <ToolCallDisplay
+                    key={tc.id}
+                    toolCall={tc}
+                    index={message.toolCalls!.indexOf(tc)}
+                    total={message.toolCalls!.length}
+                  />
+                );
+              }
+            }
+            return null;
+          })}
+        </>
+      ) : (
+        <>
+          {/* Text content */}
+          {message.content && (
+            <div className="text-zinc-200 leading-relaxed select-text">
+              <MessageContent content={message.content} isUser={false} />
+            </div>
           )}
-        </div>
+
+          {/* Tool calls - terminal style, no spacing between items */}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="mt-2 space-y-0">
+              {message.toolCalls.length >= UI.TOOL_GROUP_THRESHOLD ? (
+                <ToolCallGroup toolCalls={message.toolCalls} startIndex={0} />
+              ) : (
+                message.toolCalls.map((toolCall, index) => (
+                  <ToolCallDisplay
+                    key={toolCall.id}
+                    toolCall={toolCall}
+                    index={index}
+                    total={message.toolCalls!.length}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

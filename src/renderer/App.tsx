@@ -36,7 +36,10 @@ import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
+import { Activity, Cloud, Zap, Sparkles, GitBranch, FolderOpen } from 'lucide-react';
+import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
+import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
+import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
@@ -60,6 +63,8 @@ export const App: React.FC = () => {
     setShowTaskPanel,
     showSkillsPanel,
     showCronCenter,
+    showFileExplorer,
+    setShowFileExplorer,
     setShowSkillsPanel,
     showLab,
     showEvalCenter,
@@ -405,6 +410,26 @@ export const App: React.FC = () => {
     );
   };
 
+  // File Explorer toggle button
+  const FileExplorerToggle: React.FC = () => {
+    if (!isStandard) return null;
+
+    return (
+      <button
+        onClick={() => setShowFileExplorer(!showFileExplorer)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showFileExplorer
+            ? 'bg-amber-500/20 text-amber-300'
+            : 'text-zinc-500 hover:bg-zinc-700'
+        }`}
+        title="文件浏览器"
+      >
+        <FolderOpen className="w-3.5 h-3.5" />
+        <span>文件</span>
+      </button>
+    );
+  };
+
   return (
     <ErrorBoundary>
       <MemoryLearningProvider>
@@ -429,20 +454,34 @@ export const App: React.FC = () => {
               {showEvalCenter ? (
                 <EvalCenterPanel />
               ) : (
-                <>
-                  {/* Chat Area - flexible width, lighter background */}
-                  <div className="flex-1 flex flex-col min-w-0 bg-zinc-900">
-                    <ChatView />
-                  </div>
-
-                  {/* Task Panel - 320px fixed width, right side */}
-                  {showTaskPanel && <TaskPanel />}
-
-                  {/* Skills Panel - 右侧面板，显示当前会话的 Skills */}
-                  {showSkillsPanel && (
-                    <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+                <PanelGroup orientation="horizontal" className="flex-1" id="main-layout">
+                  {showFileExplorer && (
+                    <Panel defaultSize="20" minSize="15" maxSize="35" id="file-explorer">
+                      <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
+                    </Panel>
                   )}
-                </>
+                  {showFileExplorer && (
+                    <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
+                  )}
+
+                  <Panel minSize="30" id="chat">
+                    <div className="flex flex-col h-full min-w-0 bg-zinc-900">
+                      <ChatView />
+                    </div>
+                  </Panel>
+
+                  {(showTaskPanel || showSkillsPanel) && (
+                    <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
+                  )}
+                  {(showTaskPanel || showSkillsPanel) && (
+                    <Panel defaultSize="25" minSize="15" maxSize="45" id="right-panel">
+                      {showTaskPanel && <TaskPanel />}
+                      {showSkillsPanel && (
+                        <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+                      )}
+                    </Panel>
+                  )}
+                </PanelGroup>
               )}
             </div>
           </div>
@@ -521,6 +560,9 @@ export const App: React.FC = () => {
           onClose={() => setConfirmActionRequest(null)}
         />
       )}
+
+      {/* Memo Floater - Tauri 全局热键浮窗 */}
+      <MemoFloater />
 
       {/* Background Task Panel - 后台任务浮动面板 */}
       <BackgroundTaskPanel />

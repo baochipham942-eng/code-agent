@@ -12,6 +12,7 @@ import { RECOMMENDED_REPOSITORIES } from '../services/skills/skillRepositories';
 import type { SkillRepository } from '../../shared/types/skillRepository';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
+import { getComboRecorder } from '../services/skills/comboRecorder';
 
 const logger = createLogger('SkillIPC');
 
@@ -497,6 +498,82 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       }
     }
   );
+
+  // ------------------------------------------------------------------------
+  // Combo Skills Recording
+  // ------------------------------------------------------------------------
+
+  ipcMain.handle(SKILL_CHANNELS.COMBO_START, (_, sessionId: string) => {
+    try {
+      const recorder = getComboRecorder();
+      recorder.startRecording(sessionId);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to start combo recording', { sessionId, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.COMBO_STOP, (_, sessionId: string) => {
+    try {
+      const recorder = getComboRecorder();
+      recorder.stopRecording(sessionId);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to stop combo recording', { sessionId, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.COMBO_MARK_TURN, (_, sessionId: string, userMessage: string) => {
+    try {
+      const recorder = getComboRecorder();
+      recorder.markTurn(sessionId, userMessage);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to mark combo turn', { sessionId, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.COMBO_CHECK_SUGGESTION, (_, sessionId: string) => {
+    try {
+      const recorder = getComboRecorder();
+      return recorder.checkSuggestion(sessionId);
+    } catch (error) {
+      logger.error('Failed to check combo suggestion', { sessionId, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(
+    SKILL_CHANNELS.COMBO_SAVE,
+    async (_, sessionId: string, name: string, description: string, workingDirectory?: string) => {
+      try {
+        const recorder = getComboRecorder();
+        return await recorder.saveAsSkill(sessionId, name, description, workingDirectory);
+      } catch (error) {
+        logger.error('Failed to save combo skill', { sessionId, name, error });
+        throw error;
+      }
+    }
+  );
+
+  ipcMain.handle(SKILL_CHANNELS.COMBO_GET_RECORDING, (_, sessionId: string) => {
+    try {
+      const recorder = getComboRecorder();
+      const recording = recorder.getRecording(sessionId);
+      if (!recording) return null;
+      // Serialize Set for IPC
+      return {
+        ...recording,
+        toolNames: Array.from(recording.toolNames),
+      };
+    } catch (error) {
+      logger.error('Failed to get combo recording', { sessionId, error });
+      throw error;
+    }
+  });
 
   logger.info('Skill handlers registered', {
     channels: Object.values(SKILL_CHANNELS),

@@ -6,7 +6,7 @@ import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import type { ModelConfig, ToolDefinition } from '../../../shared/types';
-import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
+import type { ModelMessage, ModelResponse, StreamCallback, ResponseContentPart } from '../types';
 import {
   electronFetch,
   logger,
@@ -48,6 +48,10 @@ function claudeSSEStream(options: {
     let charCount = 0;
     let lastEstimateTime = 0;
     let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    // 追踪 content block 顺序（text vs tool_use 的交错）
+    const contentParts: ResponseContentPart[] = [];
+    let currentBlockType: 'text' | 'tool_use' | 'thinking' | null = null;
+    let currentTextBuffer = '';
 
     const reqOptions: https.RequestOptions = {
       hostname: url.hostname,
@@ -122,6 +126,8 @@ function claudeSSEStream(options: {
 
               case 'content_block_start': {
                 const block = parsed.content_block;
+                currentBlockType = block?.type || null;
+                currentTextBuffer = '';
                 if (block?.type === 'tool_use') {
                   toolCalls.set(blockIndex, {
                     id: block.id || `call_${blockIndex}`,
@@ -146,6 +152,7 @@ function claudeSSEStream(options: {
                 const delta = parsed.delta;
                 if (delta?.type === 'text_delta' && delta.text) {
                   content += delta.text;
+                  currentTextBuffer += delta.text;
                   charCount += delta.text.length;
                   if (onStream) {
                     onStream({ type: 'text', content: delta.text });
@@ -183,6 +190,17 @@ function claudeSSEStream(options: {
               }
 
               case 'content_block_stop': {
+                // 记录当前 block 到 contentParts（保留交错顺序）
+                if (currentBlockType === 'text' && currentTextBuffer) {
+                  contentParts.push({ type: 'text', text: currentTextBuffer });
+                } else if (currentBlockType === 'tool_use') {
+                  const tc = toolCalls.get(blockIndex);
+                  if (tc) {
+                    contentParts.push({ type: 'tool_call', toolCallId: tc.id });
+                  }
+                }
+                currentBlockType = null;
+                currentTextBuffer = '';
                 blockIndex++;
                 break;
               }
@@ -217,6 +235,10 @@ function claudeSSEStream(options: {
                     name: tc.name,
                     arguments: safeJsonParse(tc.arguments),
                   }));
+                }
+                // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
+                if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
+                  result.contentParts = contentParts;
                 }
 
                 logger.info('[Claude] stream complete:', {
@@ -271,6 +293,9 @@ function claudeSSEStream(options: {
               name: tc.name,
               arguments: safeJsonParse(tc.arguments),
             }));
+          }
+          if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
+            result.contentParts = contentParts;
           }
           resolve(result);
         } else {

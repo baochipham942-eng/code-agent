@@ -51,6 +51,11 @@ export interface ModelMessage {
 // Response Types
 // ----------------------------------------------------------------------------
 
+// 内容块顺序（保留 text 和 tool_call 的交错信息）
+export type ResponseContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; toolCallId: string };
+
 export interface ModelResponse {
   type: 'text' | 'tool_use' | 'thinking';
   content?: string;
@@ -61,6 +66,8 @@ export interface ModelResponse {
   thinking?: string;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number };
+  // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
+  contentParts?: ResponseContentPart[];
 }
 
 // ----------------------------------------------------------------------------

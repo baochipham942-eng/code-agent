@@ -369,6 +369,83 @@ export function registerSettingsHandlers(
     }
   });
 
+  // Excel → JSON (for SpreadsheetBlock interactive rendering)
+  ipcMain.handle('extract-excel-json', async (_, filePath: string): Promise<{
+    sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
+    sheetCount: number;
+  }> => {
+    try {
+      const fs = await import('fs');
+      const XLSX = await import('xlsx');
+
+      const buffer = fs.readFileSync(filePath);
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+      const sheets = workbook.SheetNames.map((sheetName: string) => {
+        const sheet = workbook.Sheets[sheetName];
+        const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        const headers = (json[0] || []) as string[];
+        const rows = json.slice(1, 501); // Cap at 500 rows for UI performance
+        return { name: sheetName, headers, rows, rowCount: json.length - 1 };
+      });
+
+      return { sheets, sheetCount: workbook.SheetNames.length };
+    } catch (error) {
+      return { sheets: [], sheetCount: 0 };
+    }
+  });
+
+  // Word (.docx) → structured HTML + paragraphs (for DocumentBlock interactive rendering)
+  ipcMain.handle('extract-docx-html', async (_, filePath: string): Promise<{
+    html: string;
+    paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+    text: string;
+    wordCount: number;
+  }> => {
+    try {
+      const fs = await import('fs');
+      const mammoth = await import('mammoth');
+
+      const buffer = fs.readFileSync(filePath);
+      const result = await mammoth.convertToHtml({ buffer });
+      const html = result.value;
+
+      // Extract paragraph structure from raw text
+      const textResult = await mammoth.extractRawText({ buffer });
+      const rawText = textResult.value;
+
+      // Parse HTML to extract paragraph structure
+      const paragraphs: Array<{ index: number; type: string; text: string; level?: number }> = [];
+      // Simple HTML parsing for paragraphs and headings
+      const tagRegex = /<(h[1-6]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi;
+      let match;
+      let idx = 0;
+      while ((match = tagRegex.exec(html)) !== null) {
+        const tag = match[1].toLowerCase();
+        // Strip HTML tags from content for plain text
+        const text = match[2].replace(/<[^>]+>/g, '').trim();
+        if (!text) continue;
+
+        let type = 'paragraph';
+        let level: number | undefined;
+        if (tag.startsWith('h')) {
+          type = 'heading';
+          level = parseInt(tag[1], 10);
+        } else if (tag === 'li') {
+          type = 'list-item';
+        }
+
+        paragraphs.push({ index: idx++, type, text, level });
+      }
+
+      const wordCount = rawText.split(/\s+/).filter(Boolean).length;
+
+      return { html, paragraphs, text: rawText, wordCount };
+    } catch (error) {
+      return { html: '', paragraphs: [], text: '', wordCount: 0 };
+    }
+  });
+
   // Tool create response handler removed (evolution module deleted)
 
   // Permission mode handlers

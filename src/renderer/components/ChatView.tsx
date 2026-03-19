@@ -17,6 +17,9 @@ import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
+import { ChatSearchBar } from './features/chat/ChatSearchBar';
+import type { SearchMatch } from './features/chat/ChatSearchBar';
+import { ContextIndicator } from './features/chat/ContextIndicator';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { isWebMode } from '../utils/platform';
 
@@ -35,6 +38,7 @@ import {
   Image,
   Sparkles,
   Terminal,
+  Keyboard,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
@@ -50,10 +54,34 @@ export const ChatView: React.FC = () => {
   const [showRewindPanel, setShowRewindPanel] = useState(false);
   const lastEscRef = useRef<number>(0);
 
-  // Esc+Esc 检测
+  // Search 状态
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+
+  const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
+    setSearchMatches(matches);
+    setActiveMatchIndex(activeIdx);
+  }, []);
+
+  const handleActiveMatchChange = useCallback((activeIdx: number) => {
+    setActiveMatchIndex(activeIdx);
+  }, []);
+
+  // Esc+Esc 检测 + Cmd+F 搜索
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl+F: 打开搜索
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+        return;
+      }
       if (e.key === 'Escape') {
+        if (showSearch) {
+          setShowSearch(false);
+          return;
+        }
         const now = Date.now();
         if (now - lastEscRef.current < 500) {
           setShowRewindPanel(true);
@@ -65,7 +93,7 @@ export const ChatView: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [showSearch]);
 
   // 获取 Plan 数据
   useEffect(() => {
@@ -293,6 +321,15 @@ export const ChatView: React.FC = () => {
 
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 
+        {/* In-session search bar (Cmd+F) */}
+        <ChatSearchBar
+          visible={showSearch}
+          projection={projection}
+          onClose={() => setShowSearch(false)}
+          onMatchesChange={handleSearchMatchesChange}
+          onActiveMatchChange={handleActiveMatchChange}
+        />
+
         {/* Messages - Turn-based trace view */}
         <div className="flex-1 overflow-hidden">
           {projection.turns.length === 0 ? (
@@ -304,6 +341,8 @@ export const ChatView: React.FC = () => {
               isLoadingOlder={isLoadingOlder}
               onLoadOlder={loadOlderMessages}
               plan={plan}
+              searchMatches={searchMatches}
+              activeMatchIndex={activeMatchIndex}
             />
           )}
         </div>
@@ -347,6 +386,9 @@ export const ChatView: React.FC = () => {
         />
 
         {/* Permission Card moved inline into TurnBasedTraceView */}
+
+        {/* Context usage indicator - shows when > 50% */}
+        <ContextIndicator />
 
         {/* Input */}
         <ChatInput
@@ -419,6 +461,13 @@ const defaultSuggestions: SuggestionItem[] = [
   },
 ];
 
+// Keyboard shortcuts for empty state
+const shortcuts = [
+  { keys: ['⌘', 'F'], label: '搜索消息' },
+  { keys: ['⌘', '⇧', 'P'], label: '命令面板' },
+  { keys: ['Esc', 'Esc'], label: '回溯' },
+];
+
 // Empty state component with enhanced design
 const EmptyState: React.FC<{
   onSend: (message: string) => void;
@@ -453,13 +502,13 @@ const EmptyState: React.FC<{
       </h1>
 
       {/* Subtitle */}
-      <p className="text-zinc-400 max-w-md mb-10 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
+      <p className="text-zinc-400 max-w-md mb-8 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
         你的 AI 编程助手。我可以帮你编写、调试、解释和测试代码。
         从下方建议开始，或输入你自己的问题。
       </p>
 
       {/* Suggestion Cards */}
-      <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
+      <div className="grid grid-cols-2 gap-3 max-w-lg w-full mb-10">
         {suggestions.map((suggestion, index) => (
           <SuggestionCard
             key={suggestion.text}
@@ -470,7 +519,25 @@ const EmptyState: React.FC<{
         ))}
       </div>
 
-      {/* Footer hint - slash command not yet implemented, hidden */}
+      {/* Keyboard Shortcuts */}
+      <div className="flex items-center gap-6 animate-fade-in" style={{ animationDelay: '600ms' }}>
+        <Keyboard className="w-4 h-4 text-zinc-600" />
+        {shortcuts.map((s) => (
+          <div key={s.label} className="flex items-center gap-1.5">
+            <div className="flex items-center gap-0.5">
+              {s.keys.map((k) => (
+                <kbd
+                  key={k}
+                  className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-zinc-800 border border-zinc-700 text-zinc-400"
+                >
+                  {k}
+                </kbd>
+              ))}
+            </div>
+            <span className="text-xs text-zinc-600">{s.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

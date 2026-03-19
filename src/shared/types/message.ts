@@ -38,6 +38,10 @@ export interface MessageAttachment {
   // Excel 特有：sheet 数和行数
   sheetCount?: number;
   rowCount?: number;
+  // Excel 特有：JSON 格式数据（供 SpreadsheetBlock 交互式渲染）
+  sheetsJson?: string;
+  // Word 特有：JSON 格式数据（供 DocumentBlock 交互式渲染）
+  docxJson?: string;
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计
@@ -70,6 +74,11 @@ export interface Artifact {
   parentId?: string;    // 如果是更新，指向原始 artifact
 }
 
+// 内容块（保留 text 和 tool_call 的交错顺序）
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; toolCallId: string };
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -77,6 +86,8 @@ export interface Message {
   timestamp: number;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  // 保留 text 和 tool_call 的原始交错顺序（向后兼容：缺失时 fallback 到 content + toolCalls）
+  contentParts?: ContentPart[];
   // 多模态支持
   attachments?: MessageAttachment[];
   // Skill 系统支持 (Agent Skills 标准)

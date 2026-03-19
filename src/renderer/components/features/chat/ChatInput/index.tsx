@@ -15,9 +15,11 @@ import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CommandPalette } from '../../../CommandPalette';
+import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { ComboSkillCard } from './ComboSkillCard';
 import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
@@ -61,8 +63,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [slashFilter, setSlashFilter] = useState('');
+  const [showSlashPopover, setShowSlashPopover] = useState(false);
+  const [comboSuggestion, setComboSuggestion] = useState<{
+    sessionId: string;
+    suggestedName: string;
+    suggestedDescription: string;
+    turnCount: number;
+    stepCount: number;
+    toolNames: string[];
+  } | null>(null);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
 
@@ -80,6 +93,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
       if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
         setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
+      }
+      // Combo Skill suggestion from backend
+      if (event.type === 'combo_skill_suggestion' && event.data) {
+        setComboSuggestion(event.data as typeof comboSuggestion);
       }
     });
     return () => { unsubscribe?.(); };
@@ -100,11 +117,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         inputAreaRef.current?.focus();
       }
     };
+    const handleRun = (e: Event) => {
+      const cmd = (e as CustomEvent<string>).detail;
+      if (cmd?.trim()) {
+        onSend(`Execute this shell command and show the output: \`${cmd.trim()}\``);
+      }
+    };
     window.addEventListener('iact:send', handleSend);
     window.addEventListener('iact:add', handleAdd);
+    window.addEventListener('iact:run', handleRun);
     return () => {
       window.removeEventListener('iact:send', handleSend);
       window.removeEventListener('iact:add', handleAdd);
+      window.removeEventListener('iact:run', handleRun);
     };
   }, [onSend]);
 
@@ -127,11 +152,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
-    // Detect / prefix to open command palette
-    if (newValue === '/') {
-      setShowCommandPalette(true);
-      setValue('');
+    // Detect / prefix to show inline slash command popover
+    if (newValue.startsWith('/')) {
+      setShowSlashPopover(true);
+      setSlashFilter(newValue.slice(1));
       return;
+    } else {
+      setShowSlashPopover(false);
     }
     // Check for @ pattern at cursor position (approximate: end of string)
     searchFiles(newValue, newValue.length);
@@ -161,7 +188,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     e?.preventDefault();
     const trimmedValue = value.trim();
     // 允许在 isProcessing 时提交以触发中断功能
-    const canSubmit = (trimmedValue || attachments.length > 0) && (!disabled || isProcessing);
+    const canSubmit = (trimmedValue || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       // 添加到输入历史
       if (trimmedValue) {
@@ -187,21 +214,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // 处理文件选择
   const handleFileSelect = async (files: FileList) => {
-    const newAttachments: MessageAttachment[] = [];
-    for (const file of Array.from(files)) {
-      const attachment = await processFile(file);
-      if (attachment) newAttachments.push(attachment);
-    }
-    if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
+    setIsUploading(true);
+    try {
+      const newAttachments: MessageAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const attachment = await processFile(file);
+        if (attachment) newAttachments.push(attachment);
+      }
+      if (newAttachments.length > 0) {
+        setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
+      }
+    } finally {
+      setIsUploading(false);
     }
   };
 
   // 处理图片粘贴（如微信截图）
   const handleImagePaste = useCallback(async (file: File) => {
-    const attachment = await processFile(file);
-    if (attachment) {
-      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
+    setIsUploading(true);
+    try {
+      const attachment = await processFile(file);
+      if (attachment) {
+        setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
+      }
+    } finally {
+      setIsUploading(false);
     }
   }, [processFile]);
 
@@ -222,41 +259,46 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    setIsUploading(true);
 
-    const items = e.dataTransfer.items;
-    const newAttachments: MessageAttachment[] = [];
+    try {
+      const items = e.dataTransfer.items;
+      const newAttachments: MessageAttachment[] = [];
 
-    if (items) {
-      const entries: FileSystemEntry[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const entry = items[i].webkitGetAsEntry?.();
-        if (entry) entries.push(entry);
-      }
+      if (items) {
+        const entries: FileSystemEntry[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry?.();
+          if (entry) entries.push(entry);
+        }
 
-      for (const entry of entries) {
-        if (entry.isFile) {
-          const fileEntry = entry as FileSystemFileEntry;
-          const file = await new Promise<File>((resolve, reject) => {
-            fileEntry.file(resolve, reject);
-          });
+        for (const entry of entries) {
+          if (entry.isFile) {
+            const fileEntry = entry as FileSystemFileEntry;
+            const file = await new Promise<File>((resolve, reject) => {
+              fileEntry.file(resolve, reject);
+            });
+            const attachment = await processFile(file);
+            if (attachment) newAttachments.push(attachment);
+          } else if (entry.isDirectory) {
+            const dirEntry = entry as FileSystemDirectoryEntry;
+            const folderAttachment = await processFolderEntry(dirEntry, entry.name);
+            if (folderAttachment) newAttachments.push(folderAttachment);
+          }
+        }
+      } else {
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
           const attachment = await processFile(file);
           if (attachment) newAttachments.push(attachment);
-        } else if (entry.isDirectory) {
-          const dirEntry = entry as FileSystemDirectoryEntry;
-          const folderAttachment = await processFolderEntry(dirEntry, entry.name);
-          if (folderAttachment) newAttachments.push(folderAttachment);
         }
       }
-    } else {
-      const files = Array.from(e.dataTransfer.files);
-      for (const file of files) {
-        const attachment = await processFile(file);
-        if (attachment) newAttachments.push(attachment);
-      }
-    }
 
-    if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      if (newAttachments.length > 0) {
+        setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      }
+    } finally {
+      setIsUploading(false);
     }
   }, [processFile, processFolderEntry]);
 
@@ -298,6 +340,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </button>
         )}
 
+        {/* 文件处理中提示 */}
+        {isUploading && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+            <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-amber-400">文件处理中...</span>
+          </div>
+        )}
+
         {/* 附件预览区 */}
         {attachments.length > 0 && (
           <div className="mb-2">
@@ -315,6 +365,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
+        {/* Combo Skill suggestion card */}
+        {comboSuggestion && (
+          <ComboSkillCard
+            suggestion={comboSuggestion}
+            onDismiss={() => setComboSuggestion(null)}
+            onSaved={() => setComboSuggestion(null)}
+          />
+        )}
+
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
@@ -322,6 +381,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         {/* 输入区域 - 玻璃质感样式 */}
         <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">
+          {/* Slash command inline popover */}
+          <SlashCommandPopover
+            isOpen={showSlashPopover}
+            filter={slashFilter}
+            onClose={() => { setShowSlashPopover(false); setValue(''); }}
+            onSelect={(cmd) => {
+              setShowSlashPopover(false);
+              setValue('');
+              cmd.action();
+            }}
+          />
           {/* @ File autocomplete dropdown */}
           {isAutocompleteOpen && fileMatches.length > 0 && (
             <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">

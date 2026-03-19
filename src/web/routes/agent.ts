@@ -101,23 +101,34 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       // ── 构建消息历史（多轮上下文）──
-      const userContent: unknown[] = [{ type: 'text', text: prompt }];
+      // 将附件文本数据拼接到 prompt 中，使 Agent 能看到附件内容
+      let enrichedPrompt = prompt;
+      const userContent: unknown[] = [];
       if (req.body.attachments?.length) {
+        const textParts: string[] = [];
         for (const att of req.body.attachments) {
           if (att.category === 'image' && att.data) {
             userContent.push({
               type: 'image',
               source: { type: 'base64', media_type: att.mimeType || 'image/png', data: att.data },
             });
+          } else if (att.data && typeof att.data === 'string') {
+            // 非图片附件：将文本数据注入到 prompt 中
+            const label = att.name || att.category || 'attachment';
+            textParts.push(`\n\n<attachment name="${label}" category="${att.category || 'file'}">\n${att.data}\n</attachment>`);
           }
         }
+        if (textParts.length > 0) {
+          enrichedPrompt = prompt + textParts.join('');
+        }
       }
+      userContent.unshift({ type: 'text', text: enrichedPrompt });
 
       const msgId = `msg-${Date.now()}`;
       const userMsg: CachedMessage = {
         id: msgId,
         role: 'user' as const,
-        content: prompt,
+        content: enrichedPrompt,
         timestamp: Date.now(),
       };
 
@@ -195,6 +206,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       let consecutiveToolFailures = 0;
       const assistantToolCalls: CachedToolCall[] = [];
       const toolResultMessages: CachedMessage[] = [];
+      // 追踪 text 和 tool_call 的交错顺序
+      const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }> = [];
+      let lastPartType: 'text' | 'tool_call' | null = null;
 
       const agentLoop = createAgentLoop(config, (event) => {
         // 附带 sessionId 确保前端会话隔离。
@@ -207,6 +221,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
         // 收集 stream_chunk 中的文本
         if (event.type === 'stream_chunk' && event.data?.content) {
+          if (lastPartType !== 'text') {
+            contentParts.push({ type: 'text', text: '' });
+            lastPartType = 'text';
+          }
+          const lastPart = contentParts[contentParts.length - 1];
+          if (lastPart?.type === 'text') lastPart.text += event.data.content;
           assistantText += event.data.content;
         }
         // 收集 reasoning/thinking
@@ -215,10 +235,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
         // 收集工具调用开始
         if (event.type === 'tool_call_start' && event.data) {
+          const toolCallId = event.data.id || `tool-${assistantToolCalls.length}`;
           assistantToolCalls.push({
-            id: event.data.id || `tool-${assistantToolCalls.length}`,
+            id: toolCallId,
             name: event.data.name || 'unknown',
           });
+          contentParts.push({ type: 'tool_call', toolCallId });
+          lastPartType = 'tool_call';
         }
         // 收集工具调用结果 + 连续失败检测
         if (event.type === 'tool_call_end' && event.data) {
@@ -240,6 +263,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 success: !!event.data.success,
                 output: event.data.success ? String(event.data.output || '').substring(0, 200) : undefined,
                 error: event.data.success ? undefined : String(event.data.error || 'unknown'),
+                metadata: event.data.metadata as Record<string, unknown> | undefined,
               };
             }
           }
@@ -275,6 +299,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const assistantMsgId = `msg-${Date.now()}-a`;
       const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
       if (assistantText || assistantToolCalls.length > 0) {
+        // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
+        const hasInterleaving = contentParts.length > 1 || (contentParts.length === 1 && assistantToolCalls.length > 0 && assistantText);
         cached.push({
           id: assistantMsgId,
           role: 'assistant',
@@ -282,6 +308,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           timestamp: Date.now(),
           toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
           thinking: assistantThinking || undefined,
+          contentParts: hasInterleaving ? contentParts : undefined,
         });
         // 注意：toolResultMessages 不存入 sessionMessages，避免 role:'tool' 消息
         // 被传入 createAgentLoop 导致类型不匹配。工具结果只存到 DB/Supabase。

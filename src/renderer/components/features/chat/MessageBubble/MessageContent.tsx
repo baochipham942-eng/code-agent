@@ -10,7 +10,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine, Terminal, Eye, ClipboardCopy } from 'lucide-react';
 import mermaid from 'mermaid';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
@@ -22,6 +22,8 @@ import { wrapFilePathsInBackticks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 import { ChartBlock } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
+import { SpreadsheetBlock } from './SpreadsheetBlock';
+import { DocumentBlock } from './DocumentBlock';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -71,6 +73,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   gql: { color: 'text-pink-400', name: 'GraphQL' },
   mermaid: { color: 'text-pink-300', name: 'Mermaid' },
   chart: { color: 'text-emerald-400', name: 'Chart' },
+  spreadsheet: { color: 'text-emerald-400', name: 'Spreadsheet' },
+  document: { color: 'text-blue-400', name: 'Document' },
   generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
 };
 
@@ -202,6 +206,9 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) 
   );
 });
 
+// Threshold for collapsible code blocks
+const CODE_COLLAPSE_LINES = 25;
+
 // Code block with copy button and syntax highlighting
 const CodeBlock = memo(function CodeBlock({
   language,
@@ -211,6 +218,18 @@ const CodeBlock = memo(function CodeBlock({
   code: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [wrapLines, setWrapLines] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
+  const lines = code.split('\n');
+  const showLineNumbers = lines.length > 3;
+  const isLong = lines.length > CODE_COLLAPSE_LINES;
+
+  // Auto-collapse long blocks on mount
+  useEffect(() => {
+    if (isLong) setCollapsed(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(code);
@@ -218,9 +237,7 @@ const CodeBlock = memo(function CodeBlock({
     setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
   }, [code]);
 
-  const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
-  const lines = code.split('\n');
-  const showLineNumbers = lines.length > 3;
+  const displayCode = collapsed ? lines.slice(0, CODE_COLLAPSE_LINES).join('\n') : code;
 
   return (
     <div className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg">
@@ -235,22 +252,37 @@ const CodeBlock = memo(function CodeBlock({
             {lines.length} line{lines.length > 1 ? 's' : ''}
           </span>
         </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5 text-green-400" />
-              <span className="text-green-400">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              <span>Copy</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Wrap toggle */}
+          <button
+            onClick={() => setWrapLines(!wrapLines)}
+            className={`px-1.5 py-1 rounded-lg text-xs transition-all ${
+              wrapLines
+                ? 'bg-zinc-700 text-zinc-200'
+                : 'hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300'
+            }`}
+            title={wrapLines ? '取消换行' : '自动换行'}
+          >
+            Wrap
+          </button>
+          {/* Copy */}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-green-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       {/* Code with syntax highlighting */}
       <div className="relative">
@@ -271,11 +303,20 @@ const CodeBlock = memo(function CodeBlock({
             color: 'rgb(113 113 122)',
             userSelect: 'none',
           }}
-          wrapLongLines={false}
+          wrapLongLines={wrapLines}
         >
-          {code}
+          {displayCode}
         </SyntaxHighlighter>
       </div>
+      {/* Expand/collapse for long blocks */}
+      {isLong && (
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-full py-1.5 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 border-t border-zinc-700 transition-colors"
+        >
+          {collapsed ? `展开全部 (${lines.length} 行)` : '收起'}
+        </button>
+      )}
     </div>
   );
 });
@@ -286,6 +327,8 @@ const OPENABLE_FILE_EXTENSIONS = [
   '.json', '.xml', '.csv',
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
   '.mp3', '.mp4', '.wav', '.webm',
+  // Office documents
+  '.pptx', '.ppt', '.xlsx', '.xls', '.docx', '.doc',
   // Source code files
   '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go',
   '.java', '.rb', '.vue', '.css', '.scss',
@@ -315,6 +358,12 @@ const isFilePath = (text: string): boolean => {
   // Must have at least 2 path segments (one /) and an extension
   const segments = pathWithoutLine.split('/');
   if (segments.length >= 2 && segments.every(s => s.length > 0)) {
+    return true;
+  }
+
+  // Single filename with known extension (e.g., 01-slide-cover.png, report.pdf)
+  // Must look like a filename: no spaces, has a dot+ext
+  if (segments.length === 1 && /^[\w][\w.\-]*\.\w+$/.test(pathWithoutLine)) {
     return true;
   }
 
@@ -407,6 +456,9 @@ const SYSTEM_TAG_PATTERNS = [
   /<think>[\s\S]*?<\/think>/g,
   /<\/think>/g,
   /<think>/g,
+  // 过滤 skill 加载状态标签（应由 SkillStatusMessage 组件渲染，此处作为兜底）
+  /<command-message>[\s\S]*?<\/command-message>/g,
+  /<command-name>[\s\S]*?<\/command-name>/g,
 ];
 
 /**
@@ -421,6 +473,29 @@ function filterSystemTags(text: string): string {
   filtered = filtered.replace(/\n{3,}/g, '\n\n');
   return filtered.trim();
 }
+
+// IACT Copy button with copied state feedback
+const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [copied, setCopied] = useState(false);
+  const text = typeof children === 'string' ? children
+    : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+    : String(children ?? '');
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20 hover:text-zinc-300 border border-zinc-500/20 hover:border-zinc-500/40 transition-all cursor-pointer text-sm font-medium"
+      title="复制到剪贴板"
+    >
+      {children}
+      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
+    </button>
+  );
+};
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser }) {
@@ -488,6 +563,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           }
           if (language === 'generative_ui') {
             return <GenerativeUIBlock code={codeContent} />;
+          }
+          if (language === 'spreadsheet') {
+            return <SpreadsheetBlock spec={codeContent} />;
+          }
+          if (language === 'document') {
+            return <DocumentBlock spec={codeContent} />;
           }
           return <CodeBlock language={language} code={codeContent} />;
         }
@@ -638,6 +719,73 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               {children}
               <PenLine className="w-3 h-3 opacity-60" />
             </button>
+          );
+        }
+
+        // IACT: [command](!run) — click to execute shell command
+        if (href === '!run') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-sm font-medium font-mono"
+              title="点击执行命令"
+            >
+              <Terminal className="w-3 h-3 opacity-60" />
+              {children}
+            </button>
+          );
+        }
+
+        // IACT: [filepath](!open) — click to open file in editor/Finder
+        if (href === '!open') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                window.domainAPI?.invoke('workspace', 'openPath', { filePath: text });
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 transition-all cursor-pointer text-sm font-medium"
+              title="打开文件"
+            >
+              <ExternalLink className="w-3 h-3 opacity-60" />
+              {children}
+            </button>
+          );
+        }
+
+        // IACT: [filepath](!preview) — click to preview in PreviewPanel
+        if (href === '!preview') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                useAppStore.getState().openPreview(text);
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 hover:text-violet-300 border border-violet-500/20 hover:border-violet-500/40 transition-all cursor-pointer text-sm font-medium"
+              title="预览文件"
+            >
+              <Eye className="w-3 h-3 opacity-60" />
+              {children}
+            </button>
+          );
+        }
+
+        // IACT: [text](!copy) — click to copy text to clipboard
+        if (href === '!copy') {
+          return (
+            <IACTCopyButton>{children}</IACTCopyButton>
           );
         }
 

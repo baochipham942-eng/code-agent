@@ -176,15 +176,19 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
   const fileName = filePath.split('/').pop() || filePath;
   const isHtml = filePath.toLowerCase().endsWith('.html') || filePath.toLowerCase().endsWith('.htm');
   const openPreview = useAppStore((state) => state.openPreview);
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
+
+  // Resolve relative paths against workingDirectory
+  const resolvedPath = filePath.startsWith('/') ? filePath : (workingDirectory ? `${workingDirectory}/${filePath}` : filePath);
 
   const handleOpenFile = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isWebMode()) {
-      await copyPathToClipboard(filePath);
+      await copyPathToClipboard(resolvedPath);
       return;
     }
     try {
-      await window.domainAPI?.invoke('workspace', 'openPath', { filePath });
+      await window.domainAPI?.invoke('workspace', 'openPath', { filePath: resolvedPath });
     } catch (error) {
       console.error('Failed to open file:', error);
     }
@@ -193,11 +197,11 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
   const handleShowInFolder = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isWebMode()) {
-      await copyPathToClipboard(filePath);
+      await copyPathToClipboard(resolvedPath);
       return;
     }
     try {
-      await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath });
+      await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath: resolvedPath });
     } catch (error) {
       console.error('Failed to show in folder:', error);
     }
@@ -205,7 +209,7 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
 
   const handlePreview = (e: React.MouseEvent) => {
     e.stopPropagation();
-    openPreview(filePath);
+    openPreview(resolvedPath);
   };
 
   return (

@@ -91,6 +91,7 @@ export function useTurnProjection(
             type: 'user',
             content: msg.content,
             timestamp: msg.timestamp,
+            attachments: msg.attachments,
           });
         }
         continue;

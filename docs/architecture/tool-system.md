@@ -1,6 +1,6 @@
 # 工具系统架构
 
-> ToolRegistry + ToolExecutor + 8 代工具演进
+> ToolRegistry + ToolExecutor + Core/Deferred 双层 + 统一工具合并
 
 ## 工具定义格式
 
@@ -10,8 +10,9 @@
 interface Tool {
   name: string;
   description: string;
+  dynamicDescription?: () => string;  // 运行时生成描述（如 Skill 聚合可用 skills）
   inputSchema: JSONSchema;
-  generations: string[];        // 支持的代际
+  isCore?: boolean;                   // 强制标记为核心工具
   requiresPermission: boolean;
   permissionLevel: 'read' | 'write' | 'execute' | 'network';
   execute: (params, context) => Promise<ToolExecutionResult>;
@@ -22,21 +23,26 @@ interface Tool {
 
 ```
 输入: toolCalls = [
-  { id: "call_abc123", name: "edit_file", arguments: {...} },
-  { id: "call_def456", name: "bash", arguments: {...} }
+  { id: "call_abc123", name: "Edit", arguments: {...} },
+  { id: "call_def456", name: "Bash", arguments: {...} }
 ]
 
 FOR EACH toolCall:
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│  1️⃣ 发送开始事件                                                           │
+│  1. 发送开始事件                                                           │
 │     onEvent({ type: 'tool_call_start', data: toolCall })                    │
-│     → UI: MessageBubble 显示 "Running edit_file..."                         │
+│     → UI: MessageBubble 显示 "Running Edit..."                              │
 │                                                                             │
-│  2️⃣ 执行工具                                                               │
+│  2. 执行工具                                                               │
 │     ToolExecutor.execute(name, arguments, context)                          │
 │     │                                                                       │
-│     ├─ 查找工具: ToolRegistry.get('edit_file')                             │
+│     ├─ 查找工具: ToolRegistry.get('Edit')                                  │
+│     │  └─ 支持别名: edit_file → Edit, read_pdf → ReadDocument              │
+│     │                                                                       │
+│     ├─ 别名参数注入:                                                       │
+│     │  └─ ALIAS_DEFAULT_PARAMS 自动注入 action 字段                        │
+│     │     如 read_pdf → { action: 'read', format: 'pdf' }                  │
 │     │                                                                       │
 │     ├─ 权限检查 (如需要):                                                  │
 │     │  ├─ autoApprove 设置? → 自动批准                                     │
@@ -47,15 +53,15 @@ FOR EACH toolCall:
 │        tool.execute(arguments, context)                                     │
 │        → ToolExecutionResult { success, output?, error? }                  │
 │                                                                             │
-│  3️⃣ 构建结果                                                               │
+│  3. 构建结果                                                               │
 │     ToolResult {                                                            │
-│       toolCallId: "call_abc123",  // 必须与 toolCall.id 一致               │
+│       toolCallId: "call_abc123",                                           │
 │       success: true,                                                        │
 │       output: "Edited file: ...",                                          │
 │       duration: 45                                                          │
 │     }                                                                       │
 │                                                                             │
-│  4️⃣ 发送结束事件                                                           │
+│  4. 发送结束事件                                                           │
 │     onEvent({ type: 'tool_call_end', data: toolResult })                    │
 │     → UI: MessageBubble 通过 toolCallId 匹配并显示结果                      │
 │                                                                             │
@@ -64,140 +70,304 @@ FOR EACH toolCall:
 
 ---
 
-## 8 代工具演进
+## Core / Deferred 双层架构
 
-| 代际 | 核心能力 | 新增工具 |
-|------|----------|----------|
-| **Gen1** | 基础文件操作 | bash, read_file, write_file, edit_file |
-| **Gen2** | 代码搜索 | glob, grep, list_directory, mcp |
-| **Gen3** | 任务规划 | task, todo_write, ask_user_question, plan_mode |
-| **Gen4** | 网络能力 | skill, web_fetch, web_search, read_pdf, hooks |
-| **Gen5** | 记忆系统 | memory_store, memory_search, code_index |
-| **Gen6** | 视觉交互 | screenshot, computer_use, browser_action |
-| **Gen7** | 多代理 | spawn_agent, agent_message, workflow_orchestrate |
-| **Gen8** | 自我进化 | strategy_optimize, tool_create, self_evaluate |
+工具分为 **核心工具**（始终发送给模型）和 **延迟工具**（按需通过 ToolSearch 发现加载）。
+
+**位置**: `src/main/tools/search/deferredTools.ts`
+
+### 核心工具（CORE_TOOLS）
+
+始终包含在每次模型请求中，共 15 个：
+
+| 工具 | 功能 |
+|------|------|
+| `Bash` | 执行 shell 命令 |
+| `Read` | 读取文件内容 |
+| `Write` | 创建/覆盖文件 |
+| `Edit` | 精确编辑文件（old_string/new_string） |
+| `Glob` | 文件模式匹配 |
+| `Grep` | 内容搜索 |
+| `ListDirectory` | 列出目录 |
+| `TaskManager` | 任务管理 CRUD |
+| `AskUserQuestion` | 用户交互 |
+| `WebSearch` | 网络搜索 |
+| `MemoryWrite` | 写入长期记忆 |
+| `MemoryRead` | 读取长期记忆 |
+| `ToolSearch` | 搜索和加载延迟工具 |
+| `Skill` | 技能元工具（动态描述聚合可用 skills） |
+
+### 延迟工具（DEFERRED_TOOLS_META）
+
+不随每次请求发送，模型需要时通过 `ToolSearch` 按名称/关键词/别名搜索加载。每个延迟工具注册了 `name`、`shortDescription`、`tags`、`aliases` 用于搜索匹配。
 
 ---
 
-## Gen1 工具集
+## 8 代工具演进
 
-| 工具 | 功能 | 权限 |
-|------|------|------|
-| `bash` | 执行 shell 命令 | execute |
-| `read_file` | 读取文件内容 | read |
-| `write_file` | 创建/覆盖文件 | write |
-| `edit_file` | 精确编辑文件 | write |
+| 代际 | 核心能力 | 代表工具 |
+|------|----------|----------|
+| **Gen1** | 基础文件操作 | Bash, Read, Write, Edit |
+| **Gen2** | 代码搜索 | Glob, Grep, ListDirectory |
+| **Gen3** | 任务规划 | TaskManager, Plan, PlanMode, AskUserQuestion |
+| **Gen4** | 网络能力 | Skill, WebFetch, WebSearch, ReadDocument |
+| **Gen5** | 文档/媒体生成 + 记忆 | DocEdit, ExcelAutomate, ppt_edit, MemoryWrite/Read |
+| **Gen6** | 视觉交互 | Computer, Browser |
+| **Gen7** | 多代理 | AgentSpawn, AgentMessage, WorkflowOrchestrate |
+| **Gen8** | 自我进化 | strategy_optimize, tool_create, code_execute |
 
-## Gen2 工具集
+---
 
-| 工具 | 功能 | 权限 |
-|------|------|------|
-| `glob` | 文件模式匹配 | read |
-| `grep` | 内容搜索 | read |
-| `list_directory` | 列出目录 | read |
-| `mcp` | MCP 协议扩展 | varies |
+## Deferred Tools Consolidation（Phase 2）
 
-## Gen3 工具集
+### 设计动机
 
-| 工具 | 功能 | 权限 |
-|------|------|------|
-| `task` | 子任务委托 | - |
-| `todo_write` | 任务清单管理 | - |
-| `ask_user_question` | 用户交互 | - |
-| `plan_mode` | 进入规划模式 | - |
+31 个独立延迟工具合并为 9 个统一工具，通过 `action` 参数分发。减少模型需要记忆的工具名数量，同时保持向后兼容。
 
-## Gen4 工具集
+### 9 个统一工具
 
-| 工具 | 功能 | 权限 |
-|------|------|------|
-| `skill` | 技能调用 | varies |
-| `web_fetch` | 网页抓取 | network |
-| `web_search` | 网络搜索（Brave Search API） | network |
-| `read_pdf` | 智能 PDF 处理 | read |
-| `hooks` | 生命周期钩子 | - |
+| 统一工具 | 合并来源 | action 参数 |
+|----------|----------|-------------|
+| `Process` | process_list/poll/log/write/submit/kill, kill_shell, task_output | list, poll, log, write, submit, kill |
+| `MCPUnified` | mcp_list_tools/list_resources/read_resource/get_status/add_server | list_tools, list_resources, read_resource, get_status, add_server |
+| `TaskManager` | task_create/get/list/update | create, get, list, update |
+| `Plan` | plan_read, plan_update, plan_recover_recent_work | read, update, recover_recent_work |
+| `PlanMode` | enter_plan_mode, exit_plan_mode | enter, exit |
+| `WebFetch` | web_fetch, http_request | fetch, http |
+| `ReadDocument` | read_pdf, read_docx, read_xlsx | read (+ format 参数) |
+| `Browser` | browser_navigate, browser_action | navigate, action |
+| `Computer` | screenshot, computer_use | screenshot, use |
 
-### read_pdf 详解（v0.6.5）
+### 别名兼容机制
 
-**功能**: 智能 PDF 读取，自动选择最佳处理方式
+旧工具名通过 `TOOL_ALIASES` 映射到新统一工具，`ALIAS_DEFAULT_PARAMS` 自动注入对应的 `action` 参数：
 
-**处理策略**:
-1. **文本提取优先**: 使用 pdfjs-dist 提取文本（快速、免费）
-2. **视觉模型回退**: 当文本提取量低于阈值（扫描版 PDF），自动调用 OpenRouter Gemini 2.0
-
-**输入参数**:
 ```typescript
-{
-  file_path: string;     // PDF 文件绝对路径（必需）
-  prompt?: string;       // 视觉模型处理时的提示词
-  force_vision?: boolean; // 强制使用视觉模型
-}
+// 别名映射
+TOOL_ALIASES: { read_pdf: 'ReadDocument', browser_navigate: 'Browser', ... }
+
+// 自动注入 action
+ALIAS_DEFAULT_PARAMS: { read_pdf: { action: 'read', format: 'pdf' }, ... }
 ```
 
-**配置**: 处理扫描版 PDF 需要配置 OpenRouter API Key
+位置: `src/main/tools/toolRegistry.ts`
 
-### web_search 详解（v0.6.1）
+---
 
-**功能**: 使用 Brave Search API 搜索网络信息
+## DocEdit 统一文档编辑
 
-**输入参数**:
-```typescript
-{
-  query: string;     // 搜索查询（必需）
-  count?: number;    // 结果数量（默认 5，最大 20）
-}
+**位置**: `src/main/tools/document/docEditTool.ts`
+
+DocEdit 是 Excel/PPT/Word 三种格式的统一入口，根据文件扩展名自动路由到对应的编辑器。所有编辑均为原子操作（替代全文件重写），Token 节省约 80%。
+
+### 路由逻辑
+
+```
+DocEdit({ file_path, operations })
+  │
+  ├─ .xlsx/.xls → executeExcelEdit()    ← 14 种原子操作
+  ├─ .docx      → executeDocxEdit()     ← 7 种原子操作
+  └─ .pptx      → ppt_edit (via registry) ← 8 种操作
 ```
 
-**输出格式**:
+### Excel 原子编辑（14 种操作）
+
+**位置**: `src/main/tools/excel/excelEdit.ts`
+
+| 操作 | 说明 |
+|------|------|
+| `set_cell` | 设置单元格值和格式 |
+| `set_range` | 批量设置区域值 |
+| `set_formula` | 设置公式 |
+| `insert_rows` | 插入行 |
+| `delete_rows` | 删除行 |
+| `insert_columns` | 插入列 |
+| `delete_columns` | 删除列 |
+| `set_style` | 设置样式（字体/填充/对齐/边框） |
+| `rename_sheet` | 重命名工作表 |
+| `add_sheet` | 新增工作表 |
+| `delete_sheet` | 删除工作表 |
+| `set_column_width` | 设置列宽 |
+| `merge_cells` | 合并单元格 |
+| `auto_filter` | 设置自动筛选 |
+
+依赖: ExcelJS 库。支持 `dry_run` 模式预览变更。
+
+### Word 原子编辑（7 种操作）
+
+**位置**: `src/main/tools/document/docxEdit.ts`
+
+| 操作 | 说明 |
+|------|------|
+| `replace_text` | 全局/首次替换文本 |
+| `replace_paragraph` | 按索引替换段落 |
+| `insert_paragraph` | 在指定位置插入段落 |
+| `delete_paragraph` | 删除段落 |
+| `replace_heading` | 替换标题文本（保留样式） |
+| `append_paragraph` | 追加段落到文档末尾 |
+| `set_text_style` | 设置文本样式（加粗/斜体/颜色） |
+
+实现方式: JSZip 直接操作 `word/document.xml`，不依赖 Office 运行时。
+
+### PPT 编辑（8 种操作）
+
+**位置**: `src/main/tools/network/ppt/editTool.ts`
+
+| 操作 | 说明 |
+|------|------|
+| `replace_title` | 替换指定页标题 |
+| `replace_content` | 替换指定页正文 |
+| `replace_slide` | 用新内容替换整张幻灯片 |
+| `delete_slide` | 删除指定页 |
+| `insert_slide` | 插入新页（建议用 /ppt 重新生成） |
+| `extract_style` | 提取 PPTX 主题样式 |
+| `reorder_slides` | 调整幻灯片顺序 |
+| `update_notes` | 更新演讲者备注 |
+
+实现方式: JSZip 操作 PPTX 内部 XML。
+
+---
+
+## SnapshotManager 文档快照层
+
+**位置**: `src/main/tools/document/snapshotManager.ts`
+
+二进制文档（xlsx/pptx/docx）无法通过 git diff 追踪变更，SnapshotManager 提供编辑前自动备份和失败自动回滚能力。
+
+### 核心特性
+
+- **自动快照**: 每次 DocEdit/ExcelEdit/DocxEdit/PPT Edit 执行前自动调用 `createSnapshot()`
+- **失败回滚**: catch 块中调用 `restoreLatest()` 自动恢复到编辑前状态
+- **容量控制**: 每个文件最多保留 20 个快照（`MAX_SNAPSHOTS_PER_FILE`），超出自动清理最旧的
+- **存储位置**: 文件所在目录下的 `.doc-snapshots/` 子目录
+
+### API
+
+| 方法 | 说明 |
+|------|------|
+| `createSnapshot(filePath, description)` | 创建快照，返回 Snapshot 对象 |
+| `restoreSnapshot(snapshotId, filePath)` | 恢复到指定快照 |
+| `restoreLatest(filePath)` | 恢复到最近一次快照 |
+| `listSnapshots(filePath)` | 列出所有快照 |
+| `cleanup(filePath, maxSnapshots?)` | 清理旧快照 |
+| `clearSnapshots(filePath)` | 删除所有快照 |
+
+### 快照元数据
+
+每个文件对应一个 `.meta.json`，记录快照列表（id、路径、时间戳、描述、大小）。
+
+---
+
+## ExcelAutomate 统一 Excel 工具
+
+**位置**: `src/main/tools/excel/`
+
+将 Excel 生成、原子编辑、xlwings 实时操作整合为单一入口：
+
+| action | 来源 | 说明 |
+|--------|------|------|
+| `generate` | excel_generate | 生成新 Excel 文件 |
+| `edit` | excel_edit (excelEdit.ts) | 14 种原子编辑操作 |
+| `automate` | xlwings_execute | 通过 xlwings 实时操作打开的 Excel |
+| `read` | read_xlsx | 读取 Excel 内容 |
+| `list_sheets` | - | 列出工作表 |
+| `read_range` | - | 读取指定区域 |
+
+---
+
+## Skill 系统
+
+### Skill 元工具（skillMetaTool）
+
+**位置**: `src/main/tools/skill/skillMetaTool.ts`
+
+Skill 是核心工具（始终可见），采用 `dynamicDescription` 在运行时聚合所有可用 skills 的名称和描述到工具描述中，对标 Anthropic 的 `<available_skills>` 机制。
+
+**执行模式**:
+
+| 模式 | 说明 |
+|------|------|
+| `inline` | 通过消息注入（newMessages + contextModifier）执行，支持 allowed-tools 预授权 |
+| `fork` | 通过 SubagentExecutor 在隔离环境中执行 |
+
+### Skill 发现服务（SkillDiscoveryService）
+
+**位置**: `src/main/services/skills/skillDiscoveryService.ts`
+
+多来源发现，优先级从低到高：
+
 ```
-Search results for: "query"
-
-1. Title (age)
-   URL
-   Description
-
-2. Title (age)
-   ...
+内置 Skills (builtinSkills.ts + 云端配置)
+  → 用户级 (~/.claude/skills/ → ~/.code-agent/skills/)
+    → 远程库 (~/.code-agent/skills/ 下的 .meta.json 库)
+      → 项目级 (.claude/skills/ → .code-agent/skills/)
 ```
 
-**配置**: 需要设置 `BRAVE_API_KEY` 环境变量
+发现完成后自动注册到 ToolSearchService，使模型可通过 `ToolSearch` 工具发现可用 skills。
 
-## Gen5 工具集 - 记忆系统
+### Combo Skills（录制和复用）
 
-| 工具 | 功能 | 权限 |
+**位置**: `src/main/services/skills/comboRecorder.ts`
+
+从对话中自动录制工具调用序列，固化为可复用的 SKILL.md：
+
+1. **录制**: 监听 EventBus 的 `agent:tool_call_end` 事件，逐步记录工具名、参数、结果
+2. **建议**: 当录制达到阈值（>=2 轮对话、>=3 步工具调用）时，自动建议保存为 Combo Skill
+3. **保存**: 生成 SKILL.md 文件，包含 frontmatter（name/description/allowed-tools/metadata）和工作流步骤
+4. **复用**: 保存后的 Skill 通过 SkillDiscoveryService 自动发现，可通过 Skill 元工具调用
+
+---
+
+## Gen3 规划工具集
+
+| 工具 | 功能 | 说明 |
 |------|------|------|
-| `memory_store` | 存储知识到向量数据库 | - |
-| `memory_search` | 搜索相关记忆 | - |
-| `code_index` | 索引代码库 | read |
-| `auto_learn` | 自动学习模式 | - |
+| `TaskManager` | 任务 CRUD | 统一工具，action: create/get/list/update |
+| `Plan` | 计划读写 | 统一工具，action: read/update/recover_recent_work |
+| `PlanMode` | 规划模式切换 | 统一工具，action: enter/exit |
+| `AskUserQuestion` | 用户交互 | 核心工具 |
+| `Task` | 子代理委托 | 延迟工具，启动子代理执行复杂任务 |
+| `confirm_action` | 确认操作 | 延迟工具 |
+| `findings_write` | 记录发现 | 延迟工具 |
 
-**记忆系统架构**:
-- 向量数据库：pgvector（Supabase）
-- 嵌入模型：OpenAI text-embedding-ada-002
-- 存储类型：代码片段、对话历史、项目知识
+## Gen4 网络工具集
 
-## Gen6 工具集 - 视觉交互
-
-| 工具 | 功能 | 权限 |
+| 工具 | 功能 | 说明 |
 |------|------|------|
-| `screenshot` | 屏幕截图 | execute |
-| `computer_use` | 电脑控制（鼠标、键盘）| execute |
-| `browser_navigate` | 浏览器导航 | network |
-| `browser_action` | 浏览器操作（点击、输入）| network |
+| `WebSearch` | 网络搜索（Brave Search API） | 核心工具 |
+| `WebFetch` | 网页抓取/HTTP 请求 | 统一工具 |
+| `ReadDocument` | 文档读取（PDF/Word/Excel） | 统一工具 |
+| `Skill` | 技能元工具 | 核心工具，动态描述 |
+| `lsp` | LSP 语言服务 | 延迟工具 |
 
-**依赖**: Playwright（用于浏览器自动化）
+## Gen5 文档/媒体生成 + 记忆
 
-## Gen7 工具集 - 多代理
+| 工具 | 功能 |
+|------|------|
+| `DocEdit` | 统一文档编辑（Excel/PPT/Word 原子操作） |
+| `ExcelAutomate` | Excel 自动化（生成/编辑/xlwings/读取） |
+| `ppt_edit` | PPT 编辑（8 种操作） |
+| `image_generate` | AI 生图 |
+| `video_generate` | AI 生视频 |
+| `chart_generate` | 图表生成 |
+| `MemoryWrite` / `MemoryRead` | Light Memory（File-as-Memory） |
 
-| 工具 | 功能 | 权限 |
+## Gen6 视觉交互
+
+| 工具 | 功能 | 说明 |
 |------|------|------|
-| `spawn_agent` | 创建子代理 | - |
-| `agent_message` | 代理间通信 | - |
-| `workflow_orchestrate` | 工作流编排 | - |
+| `Computer` | 截图/鼠标/键盘 | 统一工具，action: screenshot/use |
+| `Browser` | 浏览器自动化 | 统一工具，action: navigate/action |
+| `gui_agent` | GUI 自动化代理 | UI-TARS 视觉模型驱动 |
 
-**多代理模式**:
-- 主代理（Orchestrator）协调子代理
-- 子代理专注特定任务（代码审查、测试、文档）
-- 异步通信，支持并行执行
+## Gen7 多代理
+
+| 工具 | 功能 |
+|------|------|
+| `AgentSpawn` | 生成子代理 |
+| `AgentMessage` | 代理间通信 |
+| `WorkflowOrchestrate` | 工作流编排 |
+| `SdkTask` | SDK 兼容任务执行 |
 
 ### DAG 任务调度系统 (v0.16+)
 
@@ -209,7 +379,7 @@ Search results for: "query"
 
 | 组件 | 文件 | 功能 |
 |------|------|------|
-| DAGScheduler | `DAGScheduler.ts` | DAG 调度器核心，管理任务执行 |
+| DAGScheduler | `DAGScheduler.ts` | DAG 调度器核心 |
 | TaskStateManager | `TaskStateManager.ts` | 任务状态机管理 |
 | DependencyResolver | `DependencyResolver.ts` | 依赖解析和拓扑排序 |
 | ResourceLimiter | `ResourceLimiter.ts` | 并发资源限制 |
@@ -223,44 +393,7 @@ pending → ready → running → completed
                        ↘ skipped
 ```
 
-**任务类型**:
-
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| `agent` | 代理任务 | 代码审查、文档生成 |
-| `shell` | Shell 命令 | npm install, git commit |
-| `workflow` | 子工作流 | 嵌套 DAG |
-| `checkpoint` | 检查点 | 用户确认、状态保存 |
-| `conditional` | 条件分支 | 根据结果决定路径 |
-
-**失败策略**:
-
-| 策略 | 行为 |
-|------|------|
-| `fail-fast` | 任一任务失败立即停止整个 DAG |
-| `continue` | 失败后继续执行无依赖的任务 |
-| `retry-then-continue` | 重试 N 次后继续 |
-
-**使用示例**:
-
-```typescript
-const dag: DAGDefinition = {
-  tasks: [
-    { id: 'analyze', type: 'agent', config: { role: 'architect', task: '分析代码结构' } },
-    { id: 'test', type: 'shell', config: { command: 'npm test' }, dependsOn: ['analyze'] },
-    { id: 'review', type: 'agent', config: { role: 'reviewer', task: '代码审查' }, dependsOn: ['analyze'] },
-    { id: 'report', type: 'agent', config: { role: 'documenter', task: '生成报告' }, dependsOn: ['test', 'review'] }
-  ],
-  options: { maxConcurrency: 3, failureStrategy: 'continue' }
-};
-
-const scheduler = new DAGScheduler(dag);
-await scheduler.execute();
-```
-
-**可视化**:
-
-DAG 执行状态可通过 React Flow 组件实时展示，位于 `src/renderer/components/features/workflow/`。
+**失败策略**: `fail-fast`（立即停止）| `continue`（继续无依赖任务）| `retry-then-continue`
 
 ### 内置 Agent 角色 (v0.16+)
 
@@ -268,14 +401,14 @@ DAG 执行状态可通过 React Flow 组件实时展示，位于 `src/renderer/c
 
 | 角色 | 描述 | 可用工具 |
 |------|------|----------|
-| `coder` | 编写代码 | bash, read_file, write_file, edit_file, glob, grep |
-| `reviewer` | 代码审查 | read_file, glob, grep |
-| `tester` | 编写测试 | bash, read_file, write_file, edit_file, glob |
-| `architect` | 架构设计 | read_file, glob, grep, write_file |
-| `debugger` | 调试问题 | bash, read_file, edit_file, glob, grep |
-| `documenter` | 编写文档 | read_file, write_file, edit_file, glob |
+| `coder` | 编写代码 | Bash, Read, Write, Edit, Glob, Grep |
+| `reviewer` | 代码审查 | Read, Glob, Grep |
+| `tester` | 编写测试 | Bash, Read, Write, Edit, Glob |
+| `architect` | 架构设计 | Read, Glob, Grep, Write |
+| `debugger` | 调试问题 | Bash, Read, Edit, Glob, Grep |
+| `documenter` | 编写文档 | Read, Write, Edit, Glob |
 
-## Gen8 工具集 - 自我进化
+## Gen8 自我进化
 
 | 工具 | 功能 | 权限 |
 |------|------|------|
@@ -283,6 +416,7 @@ DAG 执行状态可通过 React Flow 组件实时展示，位于 `src/renderer/c
 | `tool_create` | 动态创建工具 | execute |
 | `self_evaluate` | 自我评估 | - |
 | `learn_pattern` | 学习模式 | - |
+| `code_execute` | 沙箱执行 JS（循环/条件调用工具） | execute |
 
 **Feature Flag 控制**: Gen8 工具默认禁用，需要通过 `enableGen8` Feature Flag 启用。
 
@@ -292,34 +426,79 @@ DAG 执行状态可通过 React Flow 组件实时展示，位于 `src/renderer/c
 
 ```
 src/main/tools/
-├── toolRegistry.ts    # 工具注册表
-├── toolExecutor.ts    # 工具执行器
-├── index.ts           # 统一导出
-├── file/              # 文件操作工具
+├── toolRegistry.ts       # 工具注册表 + TOOL_ALIASES + ALIAS_DEFAULT_PARAMS
+├── types.ts              # Tool/ToolContext/ToolExecutionResult 类型
+├── search/               # ToolSearch 延迟加载系统
+│   ├── deferredTools.ts  #   CORE_TOOLS + DEFERRED_TOOLS_META
+│   └── toolSearchService.ts
+├── file/                 # 文件操作工具
 │   ├── readFile.ts
 │   ├── writeFile.ts
 │   ├── editFile.ts
 │   ├── glob.ts
-│   └── listDirectory.ts
-├── shell/             # Shell 工具
+│   ├── listDirectory.ts
+│   ├── readClipboard.ts
+│   └── notebookEdit.ts
+├── shell/                # Shell 工具
 │   ├── bash.ts
-│   └── grep.ts
-├── planning/          # 规划工具
-│   ├── task.ts
-│   ├── todoWrite.ts
+│   ├── grep.ts
+│   └── ProcessTool.ts    #   统一进程管理
+├── planning/             # 规划工具
 │   ├── askUserQuestion.ts
-│   ├── planMode.ts
-│   └── findings.ts
-├── network/           # 网络工具
-│   ├── skill.ts
-│   ├── webFetch.ts
+│   ├── confirmAction.ts
+│   ├── findingsWrite.ts
+│   ├── TaskManagerTool.ts #  统一任务 CRUD
+│   ├── PlanTool.ts        #  统一计划读写
+│   └── PlanModeTool.ts    #  统一规划模式
+├── network/              # 网络工具
+│   ├── WebFetchUnifiedTool.ts # 统一网页获取
+│   ├── ReadDocumentTool.ts    # 统一文档读取
 │   ├── webSearch.ts
-│   └── readPdf.ts
-├── mcp/               # MCP 协议工具
-├── memory/            # 记忆系统工具
-├── vision/            # 视觉交互工具
-├── multiagent/        # 多代理工具
-└── evolution/         # 自我进化工具
+│   └── ppt/
+│       └── editTool.ts        # PPT 编辑（8 种操作）
+├── document/             # 文档编辑
+│   ├── docEditTool.ts         # DocEdit 统一入口
+│   ├── docxEdit.ts            # Word 原子编辑（7 种操作）
+│   └── snapshotManager.ts     # 文档快照管理
+├── excel/                # Excel 工具
+│   ├── excelEdit.ts           # Excel 原子编辑（14 种操作）
+│   └── index.ts               # ExcelAutomate 统一入口
+├── mcp/                  # MCP 协议工具
+│   └── MCPUnifiedTool.ts      # 统一 MCP 操作
+├── connectors/           # macOS 原生连接器
+│   ├── calendar*.ts
+│   ├── mail*.ts
+│   └── reminders*.ts
+├── memory/               # 记忆系统工具
+├── vision/               # 视觉交互工具
+│   ├── BrowserTool.ts         # 统一浏览器
+│   └── ComputerTool.ts        # 统一计算机控制
+├── skill/                # Skill 元工具
+│   └── skillMetaTool.ts
+├── multiagent/           # 多代理工具
+├── lsp/                  # LSP 语言服务
+├── decorators/           # 工具装饰器
+├── middleware/            # 工具中间件
+└── utils/                # 工具辅助函数
+```
+
+## Skill 系统文件结构
+
+```
+src/main/services/skills/
+├── index.ts                   # 统一导出
+├── skillDiscoveryService.ts   # 多来源发现（内置→用户→库→项目）
+├── skillParser.ts             # SKILL.md 解析器
+├── skillLoader.ts             # 懒加载 + 依赖检查
+├── skillRenderer.ts           # 内容渲染（!cmd / $ARGUMENTS）
+├── builtinSkills.ts           # 内置 Skills
+├── skillBridge.ts             # 云端 Skill 桥接
+├── skillRepositories.ts       # 推荐仓库 + 关键词映射
+├── skillRepositoryService.ts  # 远程仓库管理（下载/更新/删除）
+├── sessionSkillService.ts     # 会话级 Skill 状态
+├── skillWatcher.ts            # 文件变更监听 + 自动热重载
+├── comboRecorder.ts           # Combo Skills 录制器
+└── gitDownloader.ts           # GitHub 仓库下载
 ```
 
 ## 权限级别

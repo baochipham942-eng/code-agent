@@ -256,6 +256,52 @@ export function convertToolsToClaude(tools: ToolDefinition[]): ClaudeToolDefinit
   }));
 }
 
+function createToolCallIdNormalizer(messages: ModelMessage[]): (id: string) => string {
+  const idMap = new Map<string, string>();
+  const usedIds = new Set<string>();
+
+  const remember = (original: string, normalized: string): string => {
+    idMap.set(original, normalized);
+    usedIds.add(normalized);
+    return normalized;
+  };
+
+  for (const message of messages) {
+    if (message.toolCalls?.length) {
+      for (const toolCall of message.toolCalls) {
+        if (toolCall.id && !idMap.has(toolCall.id)) {
+          const candidate = /^[a-zA-Z0-9_-]+$/.test(toolCall.id)
+            ? toolCall.id
+            : toolCall.id.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'tool_call';
+          let normalized = candidate;
+          let suffix = 1;
+          while (usedIds.has(normalized)) {
+            suffix += 1;
+            normalized = `${candidate}_${suffix}`;
+          }
+          remember(toolCall.id, normalized);
+        }
+      }
+    }
+  }
+
+  return (id: string): string => {
+    const existing = idMap.get(id);
+    if (existing) {
+      return existing;
+    }
+
+    const candidate = id.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'tool_call';
+    let normalized = candidate;
+    let suffix = 1;
+    while (usedIds.has(normalized)) {
+      suffix += 1;
+      normalized = `${candidate}_${suffix}`;
+    }
+    return remember(id, normalized);
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Message Conversion
 // ----------------------------------------------------------------------------
@@ -265,6 +311,7 @@ export function convertToolsToClaude(tools: ToolDefinition[]): ClaudeToolDefinit
  * 包含 sanitizeToolCallOrder 后处理，确保 assistant+tool_calls 后紧跟 tool 响应
  */
 export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage[] {
+  const normalizeToolCallId = createToolCallIdNormalizer(messages);
   const raw = messages.map((m) => {
     // 结构化工具调用（assistant + toolCalls）
     if (m.role === 'assistant' && m.toolCalls?.length) {
@@ -272,7 +319,7 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage
         role: 'assistant',
         content: m.content || null,
         tool_calls: m.toolCalls.map(tc => ({
-          id: tc.id,
+          id: normalizeToolCallId(tc.id),
           type: 'function',
           function: { name: tc.name, arguments: tc.arguments },
         })),
@@ -287,7 +334,7 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage
     if (m.role === 'tool' && m.toolCallId) {
       return {
         role: 'tool' as const,
-        tool_call_id: m.toolCallId,
+        tool_call_id: normalizeToolCallId(m.toolCallId),
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
       };
     }
@@ -426,6 +473,7 @@ function sanitizeToolCallOrder(messages: OpenAIMessage[]): OpenAIMessage[] {
  * Convert messages to Claude format (supports structured tool_use / tool_result)
  */
 export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage[] {
+  const normalizeToolCallId = createToolCallIdNormalizer(messages);
   const result: ClaudeMessage[] = [];
 
   for (const m of messages) {
@@ -438,7 +486,7 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
       for (const tc of m.toolCalls) {
         let input: Record<string, unknown>;
         try { input = JSON.parse(tc.arguments); } catch { input = {}; }
-        blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
+        blocks.push({ type: 'tool_use', id: normalizeToolCallId(tc.id), name: tc.name, input });
       }
       result.push({ role: 'assistant', content: blocks });
       continue;
@@ -449,7 +497,7 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
       const lastMsg = result[result.length - 1];
       const toolResultBlock: ClaudeToolResultBlock = {
         type: 'tool_result',
-        tool_use_id: m.toolCallId,
+        tool_use_id: normalizeToolCallId(m.toolCallId),
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
         ...(m.toolError ? { is_error: true } : {}),
       };

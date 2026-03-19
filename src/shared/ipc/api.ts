@@ -38,6 +38,20 @@ export interface ElectronAPI {
   // Excel 文本提取（使用 xlsx 库）
   extractExcelText: (filePath: string) => Promise<{ text: string; sheetCount: number; rowCount: number }>;
 
+  // Excel JSON 提取（供 SpreadsheetBlock 交互式渲染）
+  extractExcelJson: (filePath: string) => Promise<{
+    sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
+    sheetCount: number;
+  } | null>;
+
+  // Word (.docx) HTML + 段落提取（供 DocumentBlock 交互式渲染）
+  extractDocxHtml: (filePath: string) => Promise<{
+    html: string;
+    paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+    text: string;
+    wordCount: number;
+  } | null>;
+
   // 语音转写（使用 Groq Whisper API）
   transcribeSpeech: (audioData: string, mimeType: string) => Promise<{
     success: boolean;

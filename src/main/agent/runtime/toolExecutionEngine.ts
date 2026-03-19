@@ -675,18 +675,6 @@ export class ToolExecutionEngine {
         getGitStatusService().onPostToolUse(toolCall.name, this.ctx.workingDirectory);
       } catch { /* ignore in non-Electron environments */ }
 
-      // Skill system support
-      if (
-        toolCall.name === 'skill' &&
-        normalizedResult.success &&
-        normalizedResult.metadata?.isSkillActivation &&
-        normalizedResult.metadata?.skillResult
-      ) {
-        this.runFinalizer.processSkillActivation(
-          normalizedResult.metadata.skillResult as import('../../../shared/types/agentSkill').SkillToolResult
-        );
-      }
-
       // Plan Mode context restoration on exit
       if (
         (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&

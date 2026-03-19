@@ -199,9 +199,20 @@ export const dialog = {
 // ── shell ────────────────────────────────────────────────────────────
 
 export const shell = {
-  openExternal: async (..._args: any[]) => {},
-  openPath: async (..._args: any[]) => '',
-  showItemInFolder: (..._args: any[]) => {},
+  openExternal: async (url: string) => {
+    const { exec } = await import('child_process');
+    exec(`open "${url}"`);
+  },
+  openPath: async (path: string) => {
+    const { exec } = await import('child_process');
+    exec(`open "${path}"`);
+    return '';
+  },
+  showItemInFolder: (path: string) => {
+    import('child_process').then(({ exec }) => {
+      exec(`open -R "${path}"`);
+    });
+  },
   beep: () => {},
   moveItemToTrash: (..._args: any[]) => false,
   readShortcutLink: (..._args: any[]) => ({}),

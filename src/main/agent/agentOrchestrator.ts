@@ -150,6 +150,18 @@ export class AgentOrchestrator {
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
 
+    // Combo recording: start recording + mark this turn
+    try {
+      const { getComboRecorder } = require('../services/skills/comboRecorder');
+      const recorder = getComboRecorder();
+      if (sessionId) {
+        recorder.startRecording(sessionId);
+        recorder.markTurn(sessionId, content);
+      }
+    } catch {
+      // Non-blocking
+    }
+
     try {
       if (sessionId) {
         await sessionManager.addMessageToSession(sessionId, userMessage);
@@ -656,6 +668,15 @@ export class AgentOrchestrator {
       workingDirectory: this.workingDirectory,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       telemetryAdapter,
+      onToolExecutionLog: (log) => {
+        try {
+          const { getComboRecorder } = require('../services/skills/comboRecorder');
+          const recorder = getComboRecorder();
+          recorder.enrichLastStep(log.sessionId, log.toolCallId, log.toolName, log.args);
+        } catch {
+          // Non-blocking
+        }
+      },
     });
 
     const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
@@ -672,6 +693,20 @@ export class AgentOrchestrator {
       logger.info('========== Starting agent loop ==========');
       await this.agentLoop.run(content);
       logger.info('========== Agent loop completed normally ==========');
+
+      // Check for combo skill suggestion after loop completes
+      if (sessionId) {
+        try {
+          const { getComboRecorder } = require('../services/skills/comboRecorder');
+          const suggestion = getComboRecorder().checkSuggestion(sessionId);
+          if (suggestion) {
+            const { getEventBus } = require('../../events/eventBus');
+            getEventBus().publish('agent', 'combo_skill_suggestion', suggestion, { sessionId, bridgeToRenderer: true });
+          }
+        } catch {
+          // Non-blocking
+        }
+      }
     } finally {
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;

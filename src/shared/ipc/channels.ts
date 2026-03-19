@@ -59,6 +59,23 @@ export const SKILL_CHANNELS = {
 
   /** 搜索 SkillsMP 社区 Skills */
   SKILLSMP_SEARCH: 'skill:skillsmp:search',
+
+  // ------------------------------------------------------------------------
+  // Combo Skills 录制
+  // ------------------------------------------------------------------------
+
+  /** 开始录制 */
+  COMBO_START: 'skill:combo:start',
+  /** 停止录制 */
+  COMBO_STOP: 'skill:combo:stop',
+  /** 标记新一轮（用户消息） */
+  COMBO_MARK_TURN: 'skill:combo:mark-turn',
+  /** 检查是否有建议 */
+  COMBO_CHECK_SUGGESTION: 'skill:combo:check-suggestion',
+  /** 保存为 Skill */
+  COMBO_SAVE: 'skill:combo:save',
+  /** 获取录制数据 */
+  COMBO_GET_RECORDING: 'skill:combo:get-recording',
 } as const;
 
 /**

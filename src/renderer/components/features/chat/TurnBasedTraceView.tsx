@@ -6,6 +6,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { TraceProjection } from '@shared/types/trace';
 import type { TaskPlan } from '@shared/types';
+import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
 import { InlinePlanCard } from './InlinePlanCard';
@@ -16,6 +17,8 @@ interface TurnBasedTraceViewProps {
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
   plan?: TaskPlan | null;
+  searchMatches?: SearchMatch[];
+  activeMatchIndex?: number;
 }
 
 export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
@@ -24,6 +27,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   isLoadingOlder,
   onLoadOlder,
   plan,
+  searchMatches = [],
+  activeMatchIndex = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -68,12 +73,19 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         // Latest turn defaults to expanded, others collapsed
         const isLast = index === projection.turns.length - 1;
         const isStreaming = index === projection.activeTurnIndex;
+        // Auto-expand turns with search matches
+        const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
+        // Active match in this turn?
+        const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
+        const isActiveMatchTurn = activeMatch?.turnIndex === index;
 
         return (
           <TurnCard
             key={turn.turnId}
             turn={turn}
             defaultExpanded={isLast || isStreaming}
+            forceExpanded={hasSearchMatch}
+            highlightActive={isActiveMatchTurn}
           />
         );
       })}

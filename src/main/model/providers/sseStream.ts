@@ -6,7 +6,7 @@
 import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
-import { type ModelResponse, type StreamCallback, ContextLengthExceededError } from '../types';
+import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
 import { logger, httpsAgent, safeJsonParse, parseContextLengthError } from './shared';
 import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 
@@ -90,6 +90,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     let charCount = 0;
     let lastEstimateTime = 0;
     let usageData: { inputTokens: number; outputTokens: number } | undefined;
+    // 追踪 content 和 tool_call 的交错顺序
+    const contentParts: ResponseContentPart[] = [];
+    let lastPartType: 'text' | 'tool_call' | null = null;
 
     // Stream snapshot state
     let lastSnapshotTime = 0;
@@ -227,6 +230,10 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                 arguments: safeJsonParse(tc.arguments),
               }));
             }
+            // 只在有交错时才附带 contentParts
+            if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
+              result.contentParts = contentParts;
+            }
 
             logger.info(`[${providerName}] stream complete:`, {
               contentLength: content.length,
@@ -298,6 +305,16 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
               // 文本内容
               const textContent = delta.content;
               if (textContent) {
+                // 追踪交错：从 tool_call 切回 text 时，开始新 text 部分
+                if (lastPartType !== 'text') {
+                  contentParts.push({ type: 'text', text: '' });
+                  lastPartType = 'text';
+                }
+                // 累积到当前 text part
+                const lastPart = contentParts[contentParts.length - 1];
+                if (lastPart?.type === 'text') {
+                  lastPart.text += textContent;
+                }
                 content += textContent;
                 charCount += textContent.length;
                 if (onStream) {
@@ -321,17 +338,21 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                   const index = tc.index ?? 0;
 
                   if (!toolCalls.has(index)) {
+                    const toolCallId = tc.id || `call_${index}`;
                     toolCalls.set(index, {
-                      id: tc.id || `call_${index}`,
+                      id: toolCallId,
                       name: tc.function?.name || '',
                       arguments: '',
                     });
+                    // 追踪交错：记录 tool_call 出现位置
+                    contentParts.push({ type: 'tool_call', toolCallId });
+                    lastPartType = 'tool_call';
                     if (onStream) {
                       onStream({
                         type: 'tool_call_start',
                         toolCall: {
                           index,
-                          id: tc.id || `call_${index}`,
+                          id: toolCallId,
                           name: tc.function?.name || '',
                         },
                       });

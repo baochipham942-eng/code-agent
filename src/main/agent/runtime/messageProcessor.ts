@@ -241,6 +241,9 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      contentParts: response.contentParts?.map(p =>
+        p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
+      ),
     };
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
@@ -398,6 +401,9 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      contentParts: response.contentParts?.map(p =>
+        p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
+      ),
     };
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
@@ -423,6 +429,7 @@ export class MessageProcessor {
           toolResults: partialResults,
         };
         await this.contextAssembly.addAndPersistMessage(partialToolMessage);
+        this.applyDeferredSkillActivations(toolResults);
       }
       this.ctx.onEvent({
         type: 'interrupt_acknowledged',
@@ -469,6 +476,7 @@ export class MessageProcessor {
       toolResults: compressedResults,
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
+    this.applyDeferredSkillActivations(toolResults);
 
     // === 先解析模型输出的任务列表（模型显式标记优先） ===
     this.runFinalizer.tryParseTodosFromResponse(response);
@@ -629,5 +637,16 @@ export class MessageProcessor {
       `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
       `</auto-continuation-required>`
     );
+  }
+
+  private applyDeferredSkillActivations(toolResults: ToolResult[]): void {
+    for (const result of toolResults) {
+      if (!result.success || !result.metadata?.isSkillActivation || !result.metadata?.skillResult) {
+        continue;
+      }
+      this.runFinalizer.processSkillActivation(
+        result.metadata.skillResult as import('../../../shared/types/agentSkill').SkillToolResult
+      );
+    }
   }
 }

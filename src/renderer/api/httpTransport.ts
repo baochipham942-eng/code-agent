@@ -441,6 +441,30 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       return { text: '', sheetCount: 0, rowCount: 0 };
     },
 
+    extractExcelJson: async (_filePath: string) => {
+      try {
+        const res = await fetch(`${baseUrl}/api/extract/excel-json`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ filePath: _filePath }),
+        });
+        if (res.ok) return await res.json();
+      } catch { /* fallthrough */ }
+      return null;
+    },
+
+    extractDocxHtml: async (_filePath: string) => {
+      try {
+        const res = await fetch(`${baseUrl}/api/extract/docx-html`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ filePath: _filePath }),
+        });
+        if (res.ok) return await res.json();
+      } catch { /* fallthrough */ }
+      return null;
+    },
+
     transcribeSpeech: async (_audioData: string, _mimeType: string) => {
       try {
         const res = await fetch(`${baseUrl}/api/speech/transcribe`, {

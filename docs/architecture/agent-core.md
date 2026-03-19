@@ -87,7 +87,10 @@ import type { IpcMain } from '../platform';
 - 处理代际切换
 - **Combo 录制**: 每次 `sendMessage` 自动录制工具调用序列
 - **实时转向**: `steer()` 支持运行中重定向
-- **路由决策**: 意图分类 → Deep Research / Semantic Research / Auto Agent / 普通 Loop
+- **路由决策**: 两层意图分类 → Deep Research / Semantic Research / Auto Agent / 普通 Loop
+  - **L1 正则快速路径**: taskRouter `analyzeTask()` 关键词匹配（深入研究/deep research/实现/重构等）
+  - **L2 LLM 分类 fallback**: taskType 为 `'unknown'`（未被正则捕获）时调用 `classifyIntent()` (GLM-4-Flash, 3s 超时)
+  - 正则确定性高但覆盖有限，LLM 分类处理模糊表达（"帮我看看这个行业"等）
 
 **关键方法**:
 ```typescript
@@ -95,7 +98,7 @@ sendMessage(content: string, attachments?, options?): Promise<void>
   ├─ 创建 user message（支持 MessageAttachment）
   ├─ Combo recording: startRecording + markTurn
   ├─ 获取 ModelConfig（含 session override）
-  ├─ 意图分类 → 路由决策
+  ├─ 两层意图分类 → 路由决策（L1 正则 → L2 LLM fallback）
   └─ 创建 AgentLoop → run()
 
 steer(newMessage: string): void
@@ -145,7 +148,7 @@ requestPermission(request): Promise<boolean>
 |------|------|------|------|
 | **ConversationRuntime** | `runtime/conversationRuntime.ts` | ~824 | 主循环、迭代控制、Plan Mode、cancel/interrupt/steer |
 | **ToolExecutionEngine** | `runtime/toolExecutionEngine.ts` | ~873 | 工具执行（含并行）、权限检查、Circuit Breaker、Hook 集成 |
-| **ContextAssembly** | `runtime/contextAssembly.ts` | ~1379 | 系统提示构建、消息组装、推理调用、上下文压缩、Thinking 模式 |
+| **ContextAssembly** | `runtime/contextAssembly.ts` | ~1379 | 系统提示构建、消息组装、推理调用、上下文压缩、Thinking 模式、子代理上下文注入 |
 | **StreamHandler** | `runtime/streamHandler.ts` | ~159 | 模型响应处理、Token 累加、事件发射 |
 | **RunFinalizer** | `runtime/runFinalizer.ts` | ~480 | 会话结束处理、Trace 持久化、遥测、预算检查、TODO 解析 |
 | **LearningPipeline** | `runtime/learningPipeline.ts` | ~337 | 持续学习、经验积累 |
@@ -173,6 +176,21 @@ class AgentLoop {
   setStructuredOutput(config): void                 // → ConversationRuntime
 }
 ```
+
+---
+
+## 子代理上下文注入（v0.16.55+）
+
+**位置**: `src/main/agent/activeAgentContext.ts`
+
+ContextAssembly 每轮推理前注入两类子代理信息：
+
+1. **活跃子代理上下文** (`buildActiveAgentContext()`)：当有运行中子代理时，注入 `<active_subagents>` XML 块，包含每个 agent 的 id、role、status、task、已运行时长
+2. **异步完成通知** (`drainCompletionNotifications()`)：子代理完成后，SpawnGuard 自动排队通知，contextAssembly 消费并注入 `<subagent_notification>` XML（含 output 摘要、工具调用数、迭代数、成本、耗时）
+
+**SubagentExecutor 消息队列**：
+- `send_input` 工具将消息推入子代理的 `messageQueue`
+- SubagentExecutor 每轮迭代开始时 `drainMessages()`，将父 agent 消息注入为 `[Parent agent message]: ...`
 
 ---
 

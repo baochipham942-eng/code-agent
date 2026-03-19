@@ -2,6 +2,35 @@
 
 > 从 CLAUDE.md 提取的常见问题和解决方案
 
+## Deep Research 相关
+
+### Deep Research 模式没有被触发
+
+**症状**: 用户输入"请深入研究…"但走了普通 Agent Loop，没有进入 DR 引擎
+
+**排查步骤**:
+1. 检查日志是否有 `Auto-detected research task` 字样
+2. 检查 `taskRouter.analyzeTask()` 返回的 `taskType` 是否为 `'research'`
+3. 如果 `taskType` 为 `'unknown'`，检查 `classifyIntent()` LLM 分类是否正常（GLM-4-Flash, 3s 超时）
+
+**常见原因**:
+- 正则缺少新表达方式 → 在 `taskRouter.ts` L252 的正则中补充
+- LLM 分类被跳过 → 检查 `agentOrchestrator.ts` 排除列表是否包含了当前 taskType
+
+**架构说明**: 意图分类分两层 — L1 正则快速路径（taskRouter），L2 LLM fallback（classifyIntent）。taskType 默认值为 `'unknown'`（不是 `'code'`），确保未匹配的 prompt 能走到 L2。
+
+### 搜索效率低 / 重复查询多
+
+**症状**: DR 报告搜索次数过多（>15 次），内容重复
+
+**排查**: 检查日志中是否有 `Query dedup: skipping` 字样，如果没有说明去重未生效
+
+**关键配置** (`adaptiveConfig.ts`):
+- standard: coverageThreshold=0.60, maxSearchCalls=12
+- deep: coverageThreshold=0.70, maxSearchCalls=20
+
+---
+
 ## Vercel 部署问题
 
 ### 部署目录混淆

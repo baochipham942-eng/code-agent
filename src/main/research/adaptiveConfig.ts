@@ -63,22 +63,22 @@ const DEPTH_PRESETS: Record<ResearchDepth, DepthPreset> = {
     resultsPerSearch: 8,
     maxFetchesPerSearch: 3,
     maxIterations: 2,
-    coverageThreshold: 0.75,
+    coverageThreshold: 0.60,
     noveltyThreshold: 0.15,
     maxDurationMs: 2 * 60 * 1000, // 2 分钟
-    maxSearchCalls: 15,
-    maxPageFetches: 30,
+    maxSearchCalls: 12,
+    maxPageFetches: 25,
   },
   deep: {
     parallelSearches: 6,
     resultsPerSearch: 10,
     maxFetchesPerSearch: 4,
-    maxIterations: 4,
-    coverageThreshold: 0.85,
+    maxIterations: 3,
+    coverageThreshold: 0.70,
     noveltyThreshold: 0.2,
     maxDurationMs: 5 * 60 * 1000, // 5 分钟
-    maxSearchCalls: 30,
-    maxPageFetches: 50,
+    maxSearchCalls: 20,
+    maxPageFetches: 40,
   },
 };
 

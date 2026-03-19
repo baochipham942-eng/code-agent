@@ -75,6 +75,8 @@ export class ProgressiveResearchLoop {
   private modelRouter: ModelRouter;
   private config: ProgressiveLoopConfig;
   private onProgress?: ProgressCallback;
+  /** Track executed queries to prevent cross-iteration duplication */
+  private executedQueries = new Set<string>();
 
   constructor(
     toolExecutor: ToolExecutor,
@@ -211,8 +213,6 @@ export class ProgressiveResearchLoop {
    * 生成迭代计划
    */
   private async planIteration(state: ProgressiveResearchState): Promise<IterationPlan> {
-    const { researchConfig } = this.config;
-
     // 第一次迭代：基于主题生成初始查询
     if (state.iteration === 1) {
       return this.generateInitialPlan(state);
@@ -229,15 +229,18 @@ export class ProgressiveResearchLoop {
     const { researchConfig } = this.config;
 
     // 使用 LLM 生成初始搜索查询
+    const executedList = this.executedQueries.size > 0
+      ? `\n\n已执行过的查询（不要重复）:\n${[...this.executedQueries].map(q => `- ${q}`).join('\n')}`
+      : '';
     const prompt = `为以下研究主题生成 ${researchConfig.parallelSearches} 个搜索查询：
 
 主题: ${state.topic}
 
 研究目标:
-${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')}
+${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')}${executedList}
 
 要求:
-1. 每个查询覆盖不同角度
+1. 每个查询覆盖不同角度，禁止仅改换措辞重复搜索
 2. 使用精确、具体的关键词
 3. 包含中文和英文查询（如果适用）
 4. 优先覆盖高优先级目标
@@ -331,6 +334,23 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
   }
 
   /**
+   * Deduplicate queries against already-executed ones.
+   */
+  private deduplicateQueries(queries: string[]): string[] {
+    const unique: string[] = [];
+    for (const q of queries) {
+      const normalized = q.toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 80);
+      if (!this.executedQueries.has(normalized)) {
+        this.executedQueries.add(normalized);
+        unique.push(q);
+      } else {
+        logger.info(`Query dedup: skipping "${q.substring(0, 50)}"`);
+      }
+    }
+    return unique;
+  }
+
+  /**
    * 执行搜索
    */
   private async executeSearches(
@@ -340,8 +360,15 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
     const { researchConfig } = this.config;
     const results: SourceResult[] = [];
 
+    // Deduplicate queries before execution
+    const dedupedQueries = this.deduplicateQueries(plan.queries);
+    if (dedupedQueries.length === 0) {
+      logger.info('All queries already executed, skipping search');
+      return results;
+    }
+
     // 并行执行搜索
-    const searchPromises = plan.queries.map(async (query) => {
+    const searchPromises = dedupedQueries.map(async (query) => {
       // 检查搜索预算
       if (state.searchCallsUsed >= researchConfig.maxSearchCalls) {
         return [];
@@ -535,7 +562,6 @@ ${sourceSummaries}
     }
 
     // 计算新颖度（新事实占比）
-    const previousFactCount = state.facts.length;
     state.facts.push(...analysis.newFacts);
     state.lastIterationNovelty = analysis.newFacts.length > 0
       ? analysis.newFacts.length / Math.max(1, sources.length)

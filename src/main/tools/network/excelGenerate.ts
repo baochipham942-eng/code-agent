@@ -437,6 +437,7 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
 📦 文件大小: ${formatFileSize(stats.size)}
 
 点击上方文件路径可直接打开。`,
+        outputPath: finalPath,
         metadata: {
           filePath: finalPath,
           fileName: path.basename(finalPath),

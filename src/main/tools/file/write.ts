@@ -245,6 +245,7 @@ export const writeFileTool: Tool = {
           return {
             success: true,
             output: `${action} file: ${filePath} (${content.length} bytes)\n\n⚠️ **代码完整性警告**: 检测到文件可能不完整！\n问题:\n${completenessCheck.issues.map(i => `- ${i}`).join('\n')}\n\n**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
+            outputPath: filePath,
           };
         }
       }
@@ -264,6 +265,7 @@ export const writeFileTool: Tool = {
       return {
         success: true,
         output,
+        outputPath: filePath,
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

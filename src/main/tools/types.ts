@@ -87,6 +87,7 @@ export interface ToolExecutionResult {
   success: boolean;
   output?: string;
   error?: string;
+  outputPath?: string; // Explicit path for file-producing tools (consumed by frontend artifact detection)
   result?: unknown; // For caching purposes
   fromCache?: boolean; // Indicates if result was from cache
   metadata?: Record<string, unknown>; // Additional metadata for UI/workflow

@@ -276,6 +276,7 @@ export const pptGenerateTool: Tool = {
 大小: ${formatFileSize(stats.size)}
 
 点击文件路径可直接打开。`,
+          outputPath: finalPath,
           metadata: {
             filePath: finalPath,
             fileName: path.basename(finalPath),
@@ -406,6 +407,7 @@ export const pptGenerateTool: Tool = {
           return {
             success: true,
             output: `PPT 已生成（Design Mode，${designResult.iterations} 轮迭代${researchInfo}）\n\n文件: ${finalPath}\n主题: ${themeConfig.name} (${theme})\n幻灯片: ${designResult.slidesCount || slides_count} 页\n大小: ${formatFileSize(stats.size)}\n\n点击文件路径可直接打开。`,
+            outputPath: finalPath,
             metadata: {
               filePath: finalPath,
               fileName: path.basename(finalPath),
@@ -632,6 +634,7 @@ export const pptGenerateTool: Tool = {
 大小: ${formatFileSize(stats.size)}${reviewSummary}
 
 点击文件路径可直接打开。`,
+        outputPath: finalPath,
         metadata: {
           filePath: finalPath,
           fileName: path.basename(finalPath),

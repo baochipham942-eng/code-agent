@@ -68,22 +68,54 @@ code-agent/
 │
 ├── src/
 │   ├── main/                    # 后端主进程 (Node.js, Tauri sidecar)
+│   │   │
+│   │   │── ── 工程层 core ─────────────────────────
+│   │   ├── app/                # 应用启动引导（bootstrap、窗口管理、生命周期）
 │   │   ├── agent/              # AgentOrchestrator, AgentLoop, 多 Agent 协作
-│   │   ├── platform/           # 平台抽象层（替代 Electron 直接导入）
-│   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory）
-│   │   ├── prompts/            # Prompt system (identity, generativeUI)
+│   │   ├── context/            # 上下文压缩（L1 Masking → L2 Truncate → L3 AI Summary）
+│   │   ├── errors/             # 统一错误处理（分类、恢复引擎、自动学习）
+│   │   ├── events/             # 事件总线（EventBus + EventBridge 跨模块通信）
+│   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook）
+│   │   ├── ipc/                # IPC handler 层（前后端通信桥梁）
 │   │   ├── model/              # ModelRouter, Provider, 自适应路由
+│   │   ├── permissions/        # 权限模式管理（PolicyEngine 策略引擎）
+│   │   ├── platform/           # 平台抽象层（Tauri/Electron/Web 差异封装）
+│   │   ├── prompts/            # Prompt 系统（identity, generativeUI）
+│   │   ├── routing/            # Agent 路由系统（意图分类 + 路由决策）
+│   │   ├── security/           # 运行时安全（命令监控、敏感信息检测、审计日志）
+│   │   ├── services/           # 核心服务（Auth, Sync, Database, SecureStorage, 引用溯源）
+│   │   ├── session/            # 会话管理（后台任务、模型热切换、导出、分叉、恢复）
 │   │   ├── tools/              # gen1-gen8 工具实现 + DocEdit
-│   │   ├── context/            # 上下文压缩（3 层递进）
-│   │   ├── services/           # Auth, Sync, Database, SecureStorage
-│   │   ├── memory/             # 向量存储（旧系统，逐步由 lightMemory 替代）
+│   │   │
+│   │   │── ── 智能层 ──────────────────────────────
+│   │   ├── cloud/              # 云端任务服务（任务路由、混合调度、加密同步）
+│   │   ├── cowork/             # 多 Agent 协作框架（Contract 协议 + Orchestrator 编排）
 │   │   ├── evaluation/         # 评测双管道 + Session Replay
-│   │   ├── skills/             # 用户可定义技能
+│   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory, ~700 行替代旧 13K+）
+│   │   ├── memory/             # 向量存储（旧系统，逐步由 lightMemory 替代）
+│   │   ├── orchestrator/       # 云端任务执行编排器（Orchestrator 配置与调度）
 │   │   ├── planning/           # 规划系统
+│   │   ├── research/           # 深度研究模式（多源路由、自适应搜索、报告生成）
 │   │   ├── scheduler/          # DAG 并行任务调度
-│   │   ├── channels/           # 飞书 Webhook 等渠道
+│   │   ├── task/               # 多任务并行管理（TaskManager + Semaphore 信号量）
+│   │   ├── telemetry/          # 遥测采集（意图分类统计、Prompt 缓存、存储）
+│   │   ├── testing/            # Agent 自动测试框架（YAML 用例 + 断言引擎 + CI）
+│   │   │
+│   │   │── ── 技能层 ──────────────────────────────
+│   │   ├── channels/           # 多渠道接入（飞书 Webhook 等）
+│   │   ├── connectors/         # Office 连接器（日历、邮件、提醒事项，macOS 原生）
 │   │   ├── mcp/                # MCP 服务端/客户端
-│   │   └── ipc/                # IPC handler 层
+│   │   ├── plugins/            # 插件系统（加载、注册、存储、生命周期）
+│   │   ├── skills/             # 用户可定义技能 + 数据清洗 Skill
+│   │   │
+│   │   │── ── 基础设施 ────────────────────────────
+│   │   ├── config/             # 统一配置（路径管理、规则加载）
+│   │   ├── cron/               # 定时任务与心跳监控（CronService + Heartbeat）
+│   │   ├── ide/                # IDE 桥接接口（未来 IDE 集成预留）
+│   │   ├── lsp/                # LSP 语言服务器协议（多语言 Server 管理）
+│   │   ├── sandbox/            # 进程沙箱隔离（macOS Seatbelt + Linux Bubblewrap）
+│   │   ├── types/              # 主进程内部类型定义
+│   │   └── utils/              # 工具函数（加密、图片处理、日志脱敏、性能计量）
 │   │
 │   ├── renderer/               # React 前端
 │   │   ├── components/         # UI 组件（Chat, Explorer, AgentTeam, Settings...）

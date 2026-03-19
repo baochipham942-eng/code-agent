@@ -209,6 +209,11 @@ export const TaskMonitor: React.FC = () => {
       if (!message.toolCalls) continue;
       for (const toolCall of message.toolCalls) {
         const args = toolCall.arguments as Record<string, unknown>;
+        // 0. Prefer explicit outputPath from tool result (structured, no regex needed)
+        const explicitOutputPath = toolCall.result?.outputPath;
+        if (explicitOutputPath) {
+          addPath(explicitOutputPath);
+        }
         // 1. 从 arguments 提取（实时消息）
         if (['Write', 'Edit'].includes(toolCall.name)) {
           const filePath = (args?.path || args?.file_path) as string | undefined;

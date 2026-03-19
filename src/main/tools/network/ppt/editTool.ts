@@ -283,6 +283,7 @@ export const pptEditTool: Tool = {
       return {
         success: true,
         output: `${resultMessage}\nSnapshot: ${snapshot.id}`,
+        outputPath: file_path,
         metadata: { snapshotId: snapshot.id, action, slideIndex: slide_index },
       };
     } catch (error: unknown) {

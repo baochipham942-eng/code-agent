@@ -259,6 +259,7 @@ export async function executeDocxEdit(
     return {
       success: true,
       output: `DOCX edited successfully (${operations.length} operations):\n${results.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}\n\nFile: ${file_path} (${(stats.size / 1024).toFixed(1)} KB)\nSnapshot: ${snapshot.id}`,
+      outputPath: file_path,
       metadata: {
         filePath: file_path,
         snapshotId: snapshot.id,

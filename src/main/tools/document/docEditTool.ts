@@ -137,6 +137,7 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
             return {
               success: true,
               output: `PPT edited (${operations.length} operations):\n${results.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`,
+              outputPath: filePath,
               metadata: { operationCount: operations.length },
             };
           }

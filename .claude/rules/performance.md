@@ -15,7 +15,7 @@ globs: "src/**/*.ts,package.json,vite.config.*,esbuild.*"
 ## 上下文管理
 
 - maxTokens 按模型查表（MODEL_MAX_OUTPUT_TOKENS），DEFAULT=16384, EXTENDED=32768
-- 上下文压缩三层递进：L1 Observation Masking (≥60%) → L2 Truncate (≥85%) → L3 AI Summary (≥90%)
+- 上下文压缩三层递进：L1 Observation Masking (≥60%) → L2 Truncate (≥85%) → L3 AI Summary (≥80%)
 - 意图分类超时 3s（从 8s 优化）减少首轮延迟
 - Embedding 缓存 10 分钟 TTL 避免重复 API 调用
 

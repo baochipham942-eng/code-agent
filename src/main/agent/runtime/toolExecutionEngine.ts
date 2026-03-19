@@ -459,6 +459,7 @@ export class ToolExecutionEngine {
         success: normalizedResult.success,
         output: normalizedResult.output,
         error: normalizedResult.error,
+        outputPath: normalizedResult.outputPath,
         duration: Date.now() - startTime,
         metadata: normalizedResult.metadata,
       };

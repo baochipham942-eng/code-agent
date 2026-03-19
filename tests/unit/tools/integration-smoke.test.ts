@@ -14,7 +14,7 @@ const ctx = { workingDirectory: cwd } as any;
 describe('Grep Tool — execFile + pagination', () => {
   it('should find matches using execFile (no shell)', async () => {
     const result = await grepTool.execute(
-      { pattern: 'export const GREP', path: 'src/shared/constants.ts' },
+      { pattern: 'export const GREP', path: 'src/shared/constants/tools.ts' },
       ctx
     );
     expect(result.success).toBe(true);
@@ -23,7 +23,7 @@ describe('Grep Tool — execFile + pagination', () => {
 
   it('should apply head_limit pagination', async () => {
     const result = await grepTool.execute(
-      { pattern: 'export', path: 'src/shared/constants.ts', head_limit: 3 },
+      { pattern: 'export', path: 'src/shared/constants/tools.ts', head_limit: 3 },
       ctx
     );
     expect(result.success).toBe(true);
@@ -32,7 +32,7 @@ describe('Grep Tool — execFile + pagination', () => {
 
   it('should apply offset + head_limit', async () => {
     const result = await grepTool.execute(
-      { pattern: 'export', path: 'src/shared/constants.ts', head_limit: 2, offset: 2 },
+      { pattern: 'export', path: 'src/shared/constants/tools.ts', head_limit: 2, offset: 2 },
       ctx
     );
     expect(result.success).toBe(true);
@@ -41,7 +41,7 @@ describe('Grep Tool — execFile + pagination', () => {
 
   it('should handle no matches gracefully', async () => {
     const result = await grepTool.execute(
-      { pattern: 'ZZZZZ_NONEXISTENT_12345', path: 'src/shared/constants.ts' },
+      { pattern: 'ZZZZZ_NONEXISTENT_12345', path: 'src/shared/constants/tools.ts' },
       ctx
     );
     expect(result.success).toBe(true);
@@ -60,7 +60,7 @@ describe('Grep Tool — execFile + pagination', () => {
   it('should handle special regex chars via execFile safely', async () => {
     // This pattern contains shell-dangerous chars — execFile should handle it safely
     const result = await grepTool.execute(
-      { pattern: 'export const \\w+', path: 'src/shared/constants.ts' },
+      { pattern: 'export const \\w+', path: 'src/shared/constants/tools.ts' },
       ctx
     );
     expect(result.success).toBe(true);

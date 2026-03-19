@@ -10,6 +10,23 @@ import { type ModelResponse, type StreamCallback, type ResponseContentPart, Cont
 import { logger, httpsAgent, safeJsonParse, parseContextLengthError } from './shared';
 import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 
+/**
+ * 规范化工具名称
+ * 部分 OpenAI 兼容代理会在工具名前加 `functions_` 前缀，末尾加 `_N` 数字后缀
+ * 例: `functions_AgentSpawn_1` → `AgentSpawn`
+ */
+function normalizeToolName(name: string): string {
+  if (!name) return name;
+  let normalized = name;
+  // 去掉 functions_ 前缀
+  if (normalized.startsWith('functions_')) {
+    normalized = normalized.slice('functions_'.length);
+  }
+  // 去掉末尾 _数字 后缀（仅当前面还有内容时）
+  normalized = normalized.replace(/_\d+$/, '');
+  return normalized || name; // 防止空串
+}
+
 export interface StreamSnapshot {
   /** Accumulated text content so far */
   content: string;
@@ -339,9 +356,10 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
                   if (!toolCalls.has(index)) {
                     const toolCallId = tc.id || `call_${index}`;
+                    const toolName = normalizeToolName(tc.function?.name || '');
                     toolCalls.set(index, {
                       id: toolCallId,
-                      name: tc.function?.name || '',
+                      name: toolName,
                       arguments: '',
                     });
                     // 追踪交错：记录 tool_call 出现位置
@@ -353,7 +371,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                         toolCall: {
                           index,
                           id: toolCallId,
-                          name: tc.function?.name || '',
+                          name: toolName,
                         },
                       });
                     }
@@ -365,7 +383,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                     existing.id = tc.id;
                   }
                   if (tc.function?.name && !existing.name) {
-                    existing.name = tc.function.name;
+                    existing.name = normalizeToolName(tc.function.name);
                   }
                   if (tc.function?.arguments) {
                     existing.arguments += tc.function.arguments;

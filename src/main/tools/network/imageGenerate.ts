@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { getAuthService } from '../../services/auth/authService';
@@ -619,13 +620,19 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    const {
+    let {
       prompt,
       expand_prompt = false,
       aspect_ratio = '1:1',
       output_path,
       style,
     } = params as unknown as ImageGenerateParams;
+
+    // CLI 模式下自动生成保存路径（终端无法渲染 base64 图片）
+    if (!output_path && process.env.CODE_AGENT_CLI_MODE === 'true') {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      output_path = path.join(context.workingDirectory, `generated-${timestamp}.png`);
+    }
 
     const startTime = Date.now();
 
@@ -704,6 +711,14 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
         fs.writeFileSync(resolvedPath, Buffer.from(base64Data, 'base64'));
         imagePath = resolvedPath;
         logger.info('Image saved', { path: imagePath });
+
+        // CLI 模式下自动打开图片（macOS: open, Linux: xdg-open）
+        if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+          const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
+          exec(`${openCmd} "${resolvedPath}"`, (err) => {
+            if (err) logger.warn('Failed to open image', { error: err.message });
+          });
+        }
       }
 
       const generationTime = Date.now() - startTime;

@@ -60,35 +60,35 @@ export interface SubagentConfig {
 // ============================================================================
 
 const DEFAULT_EXECUTION_TIMEOUT: Record<string, number> = {
-  // 探索类（快速返回）
-  'Code Explore Agent': 30_000,       // 30 秒
-  'Web Search Agent': 30_000,
-  'Document Reader Agent': 30_000,
+  // 探索类（需要读文件+搜索，API 降级时需要更多时间）
+  'Code Explore Agent': 60_000,       // 60 秒（原 30s，API 不稳定时太短）
+  'Web Search Agent': 60_000,
+  'Document Reader Agent': 45_000,
 
-  // 审查类（适中）
-  'Code Reviewer': 60_000,            // 60 秒
-  '视觉理解 Agent': 45_000,
+  // 审查类（需要多轮分析）
+  'Code Reviewer': 90_000,            // 90 秒（原 60s）
+  '视觉理解 Agent': 60_000,
 
   // 执行类（可能需要更多时间）
-  'Coder': 90_000,                    // 90 秒
-  'Debugger': 90_000,
-  'Test Engineer': 90_000,
-  'Code Refactorer': 60_000,
-  'DevOps Engineer': 60_000,
-  'Technical Writer': 45_000,
+  'Coder': 120_000,                   // 120 秒（原 90s）
+  'Debugger': 120_000,
+  'Test Engineer': 120_000,
+  'Code Refactorer': 90_000,
+  'DevOps Engineer': 90_000,
+  'Technical Writer': 60_000,
 
   // 规划类
-  'Plan Agent': 60_000,
-  'Software Architect': 60_000,
+  'Plan Agent': 90_000,
+  'Software Architect': 90_000,
 
   // 其他
-  'General Purpose Agent': 90_000,
-  'Bash Executor Agent': 45_000,
-  'MCP Connector Agent': 60_000,
-  '视觉处理 Agent': 60_000,
+  'General Purpose Agent': 120_000,
+  'Bash Executor Agent': 60_000,
+  'MCP Connector Agent': 90_000,
+  '视觉处理 Agent': 90_000,
 
   // 默认值
-  'default': 60_000,                  // 60 秒
+  'default': 90_000,                  // 90 秒（原 60s）
 };
 
 export interface SubagentResult {

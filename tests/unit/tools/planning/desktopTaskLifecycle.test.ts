@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({
+  safeStorage: { isEncryptionAvailable: () => false, encryptString: (s: string) => Buffer.from(s) },
+  app: { getAppPath: () => '', getPath: () => '' },
+}));
+
 import type { ToolContext } from '../../../../src/main/tools/types';
 import { createTask, clearTasks } from '../../../../src/main/tools/planning/taskStore';
 

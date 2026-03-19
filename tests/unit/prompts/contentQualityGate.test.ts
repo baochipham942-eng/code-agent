@@ -169,6 +169,10 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
         isDataTask: false,
         isDocumentTask: false,
         isImageTask: false,
+        isExcelTask: false,
+        isVideoTask: false,
+        isFuzzyCodeReview: false,
+        isFuzzyTroubleshooting: false,
         dimensions: [],
       },
       toolsUsedInTurn: [],
@@ -210,8 +214,8 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
     const taskTypeReminders = REMINDER_DEFINITIONS.filter(
       (r) => r.exclusiveGroup === 'task-type-selection'
     );
-    // PPT + DATA + DOCUMENT + IMAGE + VIDEO = 5
-    expect(taskTypeReminders.length).toBe(5);
+    // PPT + DATA + DOCUMENT + IMAGE + VIDEO + EXCEL = 6
+    expect(taskTypeReminders.length).toBe(6);
     expect(taskTypeReminders.every((r) => r.priority === 1)).toBe(true);
   });
 });

@@ -372,6 +372,8 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '安全', '性能', '质量', '审计', '分析',
     '认证', '授权', '输入验证', '数据安全', '依赖',
     '前端', '后端', '数据库', 'api', '配置',
+    'security', 'performance', 'quality', 'auth',
+    'frontend', 'backend', 'database',
   ];
 
   // 检测匹配的维度
@@ -383,16 +385,18 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
   const complexKeywords = [
     '全面', '完整', '整个项目', '所有', '彻底',
     '详细分析', '深入', '系统性',
+    'comprehensive', 'thorough', 'entire project', 'entire codebase',
+    'full audit', 'in-depth', 'systematic', 'end-to-end',
   ];
 
   // 审计任务关键词
-  const auditKeywords = ['审计', '安全检查', '漏洞扫描', '安全分析'];
+  const auditKeywords = ['审计', '安全检查', '漏洞扫描', '安全分析', 'security audit', 'vulnerability scan'];
 
   // 审查任务关键词
   const reviewKeywords = ['审查', 'review', '代码检查', 'code review'];
 
   // 规划任务关键词
-  const planningKeywords = ['设计', '实现', '规划', '方案', '架构'];
+  const planningKeywords = ['设计', '实现', '规划', '方案', '架构', 'design', 'implement', 'architect', 'roadmap'];
 
   // PPT 任务关键词
   const pptKeywords = [

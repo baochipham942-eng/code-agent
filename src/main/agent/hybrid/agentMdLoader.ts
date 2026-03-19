@@ -15,6 +15,11 @@ interface AgentMdFrontmatter {
   model?: ModelTier;
   tools?: string[];
   'max-iterations'?: number;
+  // Phase 3 extensions
+  readonly?: boolean;
+  'context-level'?: string;
+  timeout?: number;
+  'max-budget'?: number;
 }
 
 /**
@@ -38,7 +43,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     tools: frontmatter.tools || ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
     model: (frontmatter.model as ModelTier) || 'balanced',
     maxIterations: frontmatter['max-iterations'] || 30,
-    readonly: false,
+    readonly: frontmatter.readonly ?? false,
   };
 }
 

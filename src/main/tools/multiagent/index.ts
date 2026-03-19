@@ -11,6 +11,12 @@ export { AgentMessageTool } from './agentMessage';
 export { WorkflowOrchestrateTool } from './workflowOrchestrate';
 export { TeammateTool } from './teammate';
 
+// Phase 2: Agent lifecycle tools
+export { WaitAgentTool, waitAgentTool } from './waitAgent';
+export { CloseAgentTool, closeAgentTool } from './closeAgent';
+// Phase 3: Agent communication
+export { SendInputTool, sendInputTool } from './sendInput';
+
 // Legacy snake_case exports (backward compatibility)
 export { spawnAgentTool } from './spawnAgent';
 export { agentMessageTool } from './agentMessage';

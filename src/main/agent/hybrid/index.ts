@@ -21,6 +21,7 @@ export {
   type ModelTier,
   CORE_AGENTS,
   CORE_AGENT_IDS,
+  SUBAGENT_SUFFIXES,
   MODEL_CONFIG,
   getCoreAgent,
   getAgent,

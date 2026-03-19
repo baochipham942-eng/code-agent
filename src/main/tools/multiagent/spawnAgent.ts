@@ -22,27 +22,65 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from '../../agent/agentDefinition';
+import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../../agent/hybrid/coreAgents';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
 } from '../../agent/subagentContextBuilder';
 import { getSwarmEventEmitter } from '../../ipc/swarm.ipc';
-
-interface SpawnedAgent {
-  id: string;
-  role: string;
-  status: 'idle' | 'running' | 'completed' | 'failed';
-  task?: string;
-  result?: string;
-  error?: string;
-}
-
-// Global registry of spawned agents
-const spawnedAgents: Map<string, SpawnedAgent> = new Map();
+import { getSpawnGuard } from '../../agent/spawnGuard';
+import { createAgentWorktree, cleanupAgentWorktree } from '../../agent/agentWorktree';
+import { aggregateTeamResults } from '../../agent/resultAggregator';
 
 export const spawnAgentTool: Tool = {
   name: 'spawn_agent',
-  description: `Spawns a sub-agent to handle complex, multi-step tasks autonomously. Use for parallelizing independent work, deep research, or tasks that benefit from isolated context. Each agent runs independently and returns results when complete.`,
+  description: `Launch a sub-agent for a focused task. Sub-agents run in isolated sessions with their own context window and return only their final result to you.
+
+## When to spawn (autonomous judgment)
+Consider spawning sub-agents when:
+- Task involves 3+ unrelated files/modules (parallel exploration)
+- Need simultaneous coding and testing/review
+- Need codebase research before modification (explorer → coder pipeline)
+- Refactoring with multiple independent change points
+- Broad exploration that would consume your context window
+
+When NOT to spawn:
+- Simple single-file reads — use read_file directly
+- Searching for a specific definition — use glob/grep directly
+- Quick config changes or information queries
+- Urgent blocking work where you need the result immediately
+
+## Delegation strategy
+1. Plan first: analyze the task, identify critical path vs side-quests
+2. Keep blocking work local — only delegate non-blocking parallel tasks
+3. Subtasks must be concrete, self-contained, and non-overlapping
+4. For code edits, assign disjoint file ownership per agent
+5. Tell workers they are not alone — don't revert others' changes
+
+## After delegation
+- Minimize waiting — do meaningful non-overlapping work while agents run
+- Don't redo what a sub-agent already did
+- Review returned changes, then integrate or refine
+
+## Parallel patterns
+- Spawn multiple explorers in parallel for independent codebase questions
+- Split implementation into disjoint file scopes for parallel workers
+- Run reviewer in parallel with ongoing implementation
+
+## Available roles
+- explorer: Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.
+- coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.
+- reviewer: Code review and quality checks. Read-only.
+- planner: Architecture design and task decomposition. Full context.
+- awaiter: Long-running command monitor (tests, builds, deploys). Uses fast model, high iteration limit. Spawn in background and continue other work.
+
+## Parameters
+- role: Agent role (explorer/coder/reviewer/planner or custom name)
+- task: Concrete task description (be specific and self-contained)
+- parallel: Set true + agents array for multiple agents with dependencies
+- waitForCompletion: false to run in background (default true)
+- forkContext: true to inherit parent conversation history
+- isolation: "worktree" to give coder agent an isolated git branch (auto-cleanup if no changes)`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {
@@ -76,6 +114,15 @@ export const spawnAgentTool: Tool = {
       maxIterations: {
         type: 'number',
         description: 'Maximum iterations for the agent (default: 20)',
+      },
+      forkContext: {
+        type: 'boolean',
+        description: 'When true, fork parent conversation history to the sub-agent. Use when the sub-agent needs full prior context (e.g. coder tasks that depend on earlier discussion).',
+      },
+      isolation: {
+        type: 'string',
+        enum: ['worktree'],
+        description: 'Isolation mode. "worktree" creates a git worktree so the agent works on an isolated branch. Best for coder agents doing file edits in parallel. Auto-cleanup if no changes.',
       },
       parallel: {
         type: 'boolean',
@@ -175,6 +222,16 @@ export const spawnAgentTool: Tool = {
       tools = customTools || getAgentTools(agentConfig);
     }
 
+    // ========================================================================
+    // Phase 1: Subagent suffix 注入（借鉴 Cline + Codex 行为规范）
+    // ========================================================================
+    if (role && isCoreAgent(role) && !customPrompt) {
+      const suffix = SUBAGENT_SUFFIXES[role as CoreAgentId];
+      if (suffix) {
+        systemPrompt += suffix;
+      }
+    }
+
     // 根据 task 内容过滤文档工具 — 代码任务不需要 read_pdf/read_docx/read_xlsx
     {
       const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx'];
@@ -191,9 +248,12 @@ export const spawnAgentTool: Tool = {
     // ========================================================================
     // 借鉴 Claude Code: "Agents with access to current context can see the
     // full conversation history before the tool call"
+    const forkContext = params.forkContext as boolean | undefined;
     try {
-      // 确定上下文级别
-      const contextLevel = context.contextLevel || (role ? getAgentContextLevel(role) : 'relevant');
+      // forkContext=true 时强制使用 full 上下文级别
+      const contextLevel = forkContext
+        ? 'full' as const
+        : (context.contextLevel || (role ? getAgentContextLevel(role) : 'relevant'));
 
       // 只有在有足够上下文信息时才注入
       if (context.messages && context.messages.length > 0) {
@@ -211,6 +271,11 @@ export const spawnAgentTool: Tool = {
         if (contextPrompt) {
           systemPrompt = systemPrompt + contextPrompt;
         }
+
+        // forkContext=true 时追加 fork 前缀提示（借鉴 Codex CLI）
+        if (forkContext) {
+          systemPrompt += `\n\n---\n# Fork Context\nYou are a newly spawned agent. The prior conversation history was forked from your parent agent. Treat the next user message as your new task, and use the forked history only as background context.`;
+        }
       }
     } catch (err) {
       // 上下文注入失败不应阻止任务执行
@@ -225,18 +290,29 @@ export const spawnAgentTool: Tool = {
       console.warn('[SpawnAgent] No sessionId in context — subagent task tools will use isolated session');
     }
 
-    // Create agent record
-    const agent: SpawnedAgent = {
-      id: agentId,
-      role: role || 'dynamic',
-      status: 'running',
-      task,
-    };
-    spawnedAgents.set(agentId, agent);
+    // ========================================================================
+    // SpawnGuard: 并发检查 + 工具过滤
+    // ========================================================================
+    const guard = getSpawnGuard();
+
+    if (!guard.canSpawn()) {
+      return {
+        success: false,
+        error: `Cannot spawn agent: at capacity (${guard.getRunningCount()} running). Wait for existing agents to complete or use close_agent to free slots.`,
+      };
+    }
+
+    // 过滤子代理禁用工具（子不启子、不问用户等）
+    // P3: explorer/reviewer 额外禁用写工具（工具层面强制 readonly）
+    const READONLY_ROLES = ['explorer', 'explore', 'reviewer'];
+    const isReadonlyRole = role && READONLY_ROLES.includes(role.toLowerCase());
+    const disabledTools = isReadonlyRole
+      ? guard.getReadonlyDisabledTools()
+      : guard.getDisabledTools();
+    tools = tools.filter(t => !disabledTools.includes(t));
 
     try {
       const executor = getSubagentExecutor();
-      // Pipeline is integrated in executor, we just use it for configuration
 
       // Determine permission preset based on agent config
       const permissionPreset = agentConfig
@@ -247,35 +323,70 @@ export const spawnAgentTool: Tool = {
       const effectiveMaxBudget = maxBudget || (agentConfig ? getAgentMaxBudget(agentConfig) : undefined);
 
       // 注入工作目录到 task，避免子 Agent 使用相对路径
-    const cwd = context.workingDirectory || process.cwd();
-    const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
+      let cwd = context.workingDirectory || process.cwd();
 
-    if (waitForCompletion) {
+      // Worktree isolation: create isolated git worktree for this agent
+      const isolation = params.isolation as string | undefined;
+      let worktreeInfo: { worktreePath: string; branchName: string } | undefined;
+      if (isolation === 'worktree') {
+        try {
+          worktreeInfo = await createAgentWorktree(agentId, cwd);
+          cwd = worktreeInfo.worktreePath;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : 'Unknown error';
+          return {
+            success: false,
+            error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
+          };
+        }
+      }
+
+      const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
+
+      // Create AbortController for this agent
+      const abortController = new AbortController();
+
+      // Build executor context
+      const executorContext = {
+        modelConfig: context.modelConfig as ModelConfig,
+        toolRegistry: new Map(
+          context.toolRegistry.getAllTools().map((t) => [t.name, t])
+        ),
+        toolContext: context,
+        parentToolUseId: context.currentToolCallId,
+        abortSignal: abortController.signal,
+        spawnGuardId: agentId,
+      };
+
+      const executorConfig = {
+        name: agentName,
+        systemPrompt,
+        availableTools: tools,
+        maxIterations,
+        permissionPreset,
+        maxBudget: effectiveMaxBudget,
+      };
+
+      if (waitForCompletion) {
         // Execute and wait for result
-        const result = await executor.execute(
-          enrichedTask,
-          {
-            name: agentName,
-            systemPrompt,
-            availableTools: tools,
-            maxIterations,
-            permissionPreset,
-            maxBudget: effectiveMaxBudget,
-          },
-          {
-            modelConfig: context.modelConfig as ModelConfig,
-            toolRegistry: new Map(
-              context.toolRegistry.getAllTools().map((t) => [t.name, t])
-            ),
-            toolContext: context,
-            // 传递父工具调用 ID，用于 subagent 消息追踪
-            parentToolUseId: context.currentToolCallId,
-          }
-        );
+        const promise = executor.execute(enrichedTask, executorConfig, executorContext);
 
-        agent.status = result.success ? 'completed' : 'failed';
-        agent.result = result.output;
-        agent.error = result.error;
+        // Register with SpawnGuard
+        guard.register(agentId, role || 'dynamic', task, promise, abortController);
+
+        const result = await promise;
+
+        // Worktree cleanup: check for changes and cleanup or preserve
+        let worktreeNote = '';
+        if (worktreeInfo) {
+          const repoPath = context.workingDirectory || process.cwd();
+          const cleanup = await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
+          if (cleanup.hasChanges) {
+            worktreeNote = `\n- Worktree: preserved at ${cleanup.worktreePath} (branch: ${cleanup.branchName}) — review and merge changes`;
+          } else {
+            worktreeNote = '\n- Worktree: auto-cleaned (no changes)';
+          }
+        }
 
         if (result.success) {
           return {
@@ -291,44 +402,36 @@ Stats:
 - Iterations: ${result.iterations}
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}
 - Agent ID: ${agentId}
-- Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}`,
+- Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}${worktreeNote}`,
           };
         } else {
           return {
             success: false,
-            error: `Agent [${agentName}] failed: ${result.error}`,
+            error: `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
             output: result.output,
           };
         }
       } else {
-        // Start agent in background (fire and forget)
-        executor.execute(
-          enrichedTask,
-          {
-            name: agentName,
-            systemPrompt,
-            availableTools: tools,
-            maxIterations,
-            permissionPreset,
-            maxBudget: effectiveMaxBudget,
-          },
-          {
-            modelConfig: context.modelConfig as ModelConfig,
-            toolRegistry: new Map(
-              context.toolRegistry.getAllTools().map((t) => [t.name, t])
-            ),
-            toolContext: context,
-            // 传递父工具调用 ID，用于 subagent 消息追踪
-            parentToolUseId: context.currentToolCallId,
-          }
-        ).then((result) => {
-          agent.status = result.success ? 'completed' : 'failed';
-          agent.result = result.output;
-          agent.error = result.error;
-        }).catch((error) => {
-          agent.status = 'failed';
-          agent.error = error instanceof Error ? error.message : 'Unknown error';
-        });
+        // Start agent in background
+        const promise = executor.execute(enrichedTask, executorConfig, executorContext);
+
+        // Register with SpawnGuard (auto-tracks completion)
+        guard.register(agentId, role || 'dynamic', task, promise, abortController);
+
+        // Background worktree cleanup: register onComplete callback
+        if (worktreeInfo) {
+          const repoPath = context.workingDirectory || process.cwd();
+          const wt = worktreeInfo;
+          guard.onComplete(async (completedAgent) => {
+            if (completedAgent.id === agentId) {
+              await cleanupAgentWorktree(agentId, wt.worktreePath, repoPath);
+            }
+          });
+        }
+
+        const isolationNote = worktreeInfo
+          ? `\n- Isolation: worktree (branch: ${worktreeInfo.branchName}, path: ${worktreeInfo.worktreePath})`
+          : '';
 
         return {
           success: true,
@@ -337,30 +440,59 @@ Stats:
 - Task: ${task}
 - Status: running
 - Mode: ${isDynamicMode ? 'dynamic' : 'declarative'}
+- Running agents: ${guard.getRunningCount()}${isolationNote}
 
-Use agent_message tool with agentId to check status or get results.`,
+Use wait_agent to block until done, or close_agent to cancel.`,
         };
       }
     } catch (error) {
-      agent.status = 'failed';
-      agent.error = error instanceof Error ? error.message : 'Unknown error';
-
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
-        error: `Failed to spawn agent: ${agent.error}`,
+        error: `Failed to spawn agent: ${errorMsg}`,
       };
     }
   },
 };
 
+/**
+ * Backward-compatible type for spawned agent status.
+ */
+export interface SpawnedAgent {
+  id: string;
+  role: string;
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  task?: string;
+  result?: string;
+  error?: string;
+}
+
 // Export function to get agent status (used by agent_message tool)
 export function getSpawnedAgent(agentId: string): SpawnedAgent | undefined {
-  return spawnedAgents.get(agentId);
+  const guard = getSpawnGuard();
+  const managed = guard.get(agentId);
+  if (!managed) return undefined;
+  return {
+    id: managed.id,
+    role: managed.role,
+    status: managed.status === 'cancelled' ? 'failed' : managed.status,
+    task: managed.task,
+    result: managed.result?.output,
+    error: managed.error,
+  };
 }
 
 // Export function to list all agents
 export function listSpawnedAgents(): SpawnedAgent[] {
-  return Array.from(spawnedAgents.values());
+  const guard = getSpawnGuard();
+  return guard.list().map(managed => ({
+    id: managed.id,
+    role: managed.role,
+    status: managed.status === 'cancelled' ? 'failed' as const : managed.status,
+    task: managed.task,
+    result: managed.result?.output,
+    error: managed.error,
+  }));
 }
 
 // Export available agents
@@ -392,6 +524,18 @@ async function executeParallelAgents(
 ): Promise<ToolExecutionResult> {
   const coordinator = getParallelAgentCoordinator();
   const emitter = getSwarmEventEmitter();
+  const guard = getSpawnGuard();
+
+  // SpawnGuard: check capacity for all requested agents
+  const runningCount = guard.getRunningCount();
+  const maxAgents = guard.getMaxAgents();
+  const requestedCount = agents.length;
+  if (runningCount + requestedCount > maxAgents) {
+    return {
+      success: false,
+      error: `Cannot spawn ${requestedCount} agents: capacity exceeded (${runningCount} running, max ${maxAgents}). Use close_agent to free slots.`,
+    };
+  }
 
   // Initialize coordinator with context
   coordinator.initialize({
@@ -406,6 +550,11 @@ async function executeParallelAgents(
   // Phase 1: 生成稳定的 ID 并建立 role→id 映射（用于解析 dependsOn）
   const roleToId = new Map<string, string>();
   const cwd = context.workingDirectory || process.cwd();
+
+  // Disabled tools lists
+  const disabledTools = guard.getDisabledTools();
+  const readonlyDisabledTools = guard.getReadonlyDisabledTools();
+  const READONLY_ROLES = ['explorer', 'explore', 'reviewer'];
 
   const tasks: AgentTask[] = agents.map((agent, index) => {
     const agentConfig = getPredefinedAgent(agent.role);
@@ -432,11 +581,26 @@ async function executeParallelAgents(
       tools = tools.filter(t => !DOCUMENT_TOOLS.includes(t));
     }
 
+    // SpawnGuard: filter disabled tools (P2 + P3 readonly enforcement)
+    const roleLower = agent.role.toLowerCase();
+    const isReadonly = READONLY_ROLES.includes(roleLower);
+    const toolsToDisable = isReadonly ? readonlyDisabledTools : disabledTools;
+    tools = tools.filter(t => !toolsToDisable.includes(t));
+
+    // 注入 subagent suffix
+    let systemPrompt = getAgentPrompt(agentConfig);
+    if (isCoreAgent(agent.role)) {
+      const suffix = SUBAGENT_SUFFIXES[agent.role as CoreAgentId];
+      if (suffix) {
+        systemPrompt += suffix;
+      }
+    }
+
     return {
       id: taskId,
       role: agent.role,
       task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
-      systemPrompt: getAgentPrompt(agentConfig),
+      systemPrompt,
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
       dependsOn: agent.dependsOn,
@@ -483,36 +647,69 @@ async function executeParallelAgents(
   try {
     const result = await coordinator.executeParallel(tasks);
 
-    // Emit swarm:completed
-    emitter.completed({
+    // Aggregate results
+    const aggregation = aggregateTeamResults(result.results, result.totalDuration);
+
+    // Emit per-agent completion with aggregation data (cost, files, preview)
+    for (const entry of aggregation.agentResults) {
+      emitter.agentUpdated(entry.agentId, {
+        status: entry.status === 'completed' ? 'completed' : 'failed',
+      });
+    }
+
+    // Emit swarm:completed with aggregation
+    emitter.completedWithAggregation({
       total: tasks.length,
       completed: result.results.filter(r => r.success).length,
       failed: result.errors.length,
       parallelPeak: result.parallelism,
       totalTime: result.totalDuration,
+    }, {
+      summary: aggregation.summary,
+      filesChanged: aggregation.filesChanged,
+      totalCost: aggregation.totalCost,
+      totalDuration: aggregation.totalDuration,
+      speedup: aggregation.speedup,
+      successRate: aggregation.successRate,
+      totalIterations: aggregation.totalIterations,
     });
 
-    if (result.success) {
-      const summaries = result.results.map((r) =>
-        `[${r.role}] ${r.success ? 'Completed' : 'Failed'} in ${r.duration}ms\n${r.output || r.error || ''}`
-      ).join('\n\n---\n\n');
+    // Format output for main agent (richer than before)
+    const agentSummaries = aggregation.agentResults.map((entry) => {
+      const filesNote = entry.filesChanged.length > 0
+        ? `\nFiles: ${entry.filesChanged.join(', ')}`
+        : '';
+      const costNote = entry.stats.cost !== undefined
+        ? ` · $${entry.stats.cost.toFixed(4)}`
+        : '';
+      return `[${entry.role}] ${entry.status} in ${entry.stats.durationMs}ms · ${entry.stats.iterations} iter · ${entry.stats.toolCalls} tools${costNote}\n${entry.resultPreview}${filesNote}`;
+    }).join('\n\n---\n\n');
 
+    const filesNote = aggregation.filesChanged.length > 0
+      ? `\nFiles changed (${aggregation.filesChanged.length}):\n${aggregation.filesChanged.map(f => `  ${f}`).join('\n')}`
+      : '';
+
+    if (result.success) {
       return {
         success: true,
-        output: `Parallel execution completed:
-- Total duration: ${result.totalDuration}ms
-- Max parallelism: ${result.parallelism}
-- Tasks completed: ${result.results.length}
-- Errors: ${result.errors.length}
+        output: `${aggregation.summary}
 
-Results:
-${summaries}`,
+Stats:
+- Total duration: ${result.totalDuration}ms (${aggregation.speedup.toFixed(1)}x parallel speedup)
+- Max parallelism: ${result.parallelism}
+- Success rate: ${(aggregation.successRate * 100).toFixed(0)}% (${result.results.filter(r => r.success).length}/${result.results.length})
+- Total cost: $${aggregation.totalCost.toFixed(4)}
+- Total iterations: ${aggregation.totalIterations} · Total tool calls: ${aggregation.totalToolCalls}
+${filesNote}
+
+Agent Results:
+${agentSummaries}`,
       };
     } else {
       return {
         success: false,
-        error: `Parallel execution failed with ${result.errors.length} errors: ${result.errors.map(e => e.error).join(', ')}`,
-        output: result.results.map(r => r.output).join('\n\n'),
+        error: `Parallel execution failed: ${result.errors.length} errors. ${aggregation.summary}`,
+        output: agentSummaries,
       };
     }
   } catch (error) {

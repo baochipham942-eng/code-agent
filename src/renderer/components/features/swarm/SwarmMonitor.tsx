@@ -18,6 +18,9 @@ import {
   Hash,
   ChevronRight,
   X,
+  DollarSign,
+  FileText,
+  TrendingUp,
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swarm';
@@ -113,6 +116,13 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
             🔧 {agent.toolCalls}
           </span>
         )}
+
+        {/* Cost */}
+        {agent.cost !== undefined && agent.cost > 0 && (
+          <span className="flex items-center gap-1">
+            💰 ${agent.cost.toFixed(4)}
+          </span>
+        )}
       </div>
 
       {/* Error Message */}
@@ -122,10 +132,33 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
         </div>
       )}
 
-      {/* Last Report */}
+      {/* Last Report (running) */}
       {agent.lastReport && agent.status === 'running' && (
         <div className="mt-1.5 text-xs text-zinc-500 truncate">
           {agent.lastReport}
+        </div>
+      )}
+
+      {/* Result preview (completed) */}
+      {agent.resultPreview && agent.status === 'completed' && (
+        <div className="mt-1.5 text-xs text-zinc-500 line-clamp-2">
+          {agent.resultPreview}
+        </div>
+      )}
+
+      {/* Files changed */}
+      {agent.filesChanged && agent.filesChanged.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {agent.filesChanged.slice(0, 4).map((f) => (
+            <span key={f} className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400 font-mono">
+              {f.split('/').pop()}
+            </span>
+          ))}
+          {agent.filesChanged.length > 4 && (
+            <span className="text-[10px] px-1.5 py-0.5 text-zinc-600">
+              +{agent.filesChanged.length - 4}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -201,7 +234,7 @@ interface SwarmMonitorProps {
 }
 
 export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
-  const { isRunning, startTime, agents, statistics, verification } = useSwarmStore();
+  const { isRunning, startTime, agents, statistics, verification, aggregation } = useSwarmStore();
 
   // 按状态分组 agents
   const groupedAgents = useMemo(() => {
@@ -288,7 +321,18 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             icon={<Activity className="w-4 h-4" />}
             label="并行峰值"
             value={statistics.parallelPeak}
+            subValue={aggregation ? `${aggregation.speedup.toFixed(1)}x` : undefined}
             color="text-amber-400"
+          />
+          <StatCard
+            icon={<CheckCircle className="w-4 h-4" />}
+            label="成功率"
+            value={aggregation
+              ? `${(aggregation.successRate * 100).toFixed(0)}%`
+              : statistics.completed
+            }
+            subValue={`${statistics.completed}/${statistics.total}`}
+            color="text-emerald-400"
           />
           <StatCard
             icon={<Zap className="w-4 h-4" />}
@@ -297,20 +341,60 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             color="text-cyan-400"
           />
           <StatCard
-            icon={<CheckCircle className="w-4 h-4" />}
-            label="已完成"
-            value={statistics.completed}
-            subValue={`${Math.round((statistics.completed / statistics.total) * 100)}%`}
-            color="text-emerald-400"
-          />
-          <StatCard
-            icon={<Hash className="w-4 h-4" />}
-            label="工具调用"
-            value={statistics.totalToolCalls}
-            color="text-blue-400"
+            icon={<DollarSign className="w-4 h-4" />}
+            label="总费用"
+            value={aggregation ? `$${aggregation.totalCost.toFixed(4)}` : '-'}
+            color="text-violet-400"
           />
         </div>
       </div>
+
+      {/* Aggregation: Summary + Files */}
+      {aggregation && (
+        <>
+          {/* Summary */}
+          <div className="px-3 py-2 border-b border-zinc-700">
+            <div className="flex items-center gap-2 mb-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-violet-400" />
+              <span className="text-xs text-zinc-500 uppercase tracking-wider">聚合摘要</span>
+            </div>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">总耗时</span>
+                <span className="text-amber-400 font-medium">{(aggregation.totalDuration / 1000).toFixed(1)}s</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">并行加速比</span>
+                <span className="text-cyan-400 font-medium">{aggregation.speedup.toFixed(1)}x</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">总迭代</span>
+                <span className="text-zinc-300">{aggregation.totalIterations}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Files Changed */}
+          {aggregation.filesChanged.length > 0 && (
+            <div className="px-3 py-2 border-b border-zinc-700">
+              <div className="flex items-center gap-2 mb-1.5">
+                <FileText className="w-3.5 h-3.5 text-violet-400" />
+                <span className="text-xs text-zinc-500 uppercase tracking-wider">
+                  变更文件 ({aggregation.filesChanged.length})
+                </span>
+              </div>
+              <div className="space-y-0.5 max-h-24 overflow-y-auto">
+                {aggregation.filesChanged.map((f) => (
+                  <div key={f} className="flex items-center gap-1.5 text-[11px]">
+                    <span className="text-[9px] px-1 py-0.5 rounded font-semibold bg-amber-500/10 text-amber-400">M</span>
+                    <span className="text-zinc-400 font-mono truncate">{f}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Verification Result */}
       <VerificationBadge verification={verification} />

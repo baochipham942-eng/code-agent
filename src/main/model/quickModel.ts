@@ -112,7 +112,7 @@ function initializeQuickModel(): ModelConfig | null {
  * @param prompt - The task prompt
  * @returns The result
  */
-export async function quickTask(prompt: string): Promise<QuickModelResult> {
+export async function quickTask(prompt: string, maxTokens?: number): Promise<QuickModelResult> {
   const config = initializeQuickModel();
   if (!config) {
     return { success: false, error: 'Quick model not configured' };
@@ -122,18 +122,21 @@ export async function quickTask(prompt: string): Promise<QuickModelResult> {
     modelRouter = new ModelRouter();
   }
 
+  const effectiveMaxTokens = maxTokens ?? config.maxTokens ?? 512;
+
   try {
     logger.debug('Executing quick task', {
       provider: config.provider,
       model: config.model,
       promptLength: prompt.length,
+      maxTokens: effectiveMaxTokens,
     });
 
     const response = await modelRouter.chat({
       provider: config.provider,
       model: config.model,
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: config.maxTokens || 512,
+      maxTokens: effectiveMaxTokens,
     });
 
     if (response.content) {

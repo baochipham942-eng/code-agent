@@ -29,7 +29,7 @@ async function lightExtract(
   try {
     const { quickTask, isQuickModelAvailable } = await import('../../../model/quickModel');
     if (isQuickModelAvailable()) {
-      const result = await quickTask(prompt);
+      const result = await quickTask(prompt, 2048);
       if (result.success && result.content) return result.content;
     }
   } catch { /* quickModel not available, fall through */ }

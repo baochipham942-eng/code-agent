@@ -1,9 +1,10 @@
 // ============================================================================
 // TurnBasedTraceView - Main container for turn-based trace display
-// Replaces Virtuoso flat message list with grouped turn cards
+// Uses react-virtuoso for virtual scrolling to handle 100+ turn sessions
 // ============================================================================
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection } from '@shared/types/trace';
 import type { TaskPlan } from '@shared/types';
 import type { SearchMatch } from './ChatSearchBar';
@@ -30,77 +31,103 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   searchMatches = [],
   activeMatchIndex = 0,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const prevTurnCountRef = useRef(0);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const prevActiveMatchRef = useRef(-1);
 
-  // Auto-scroll to bottom when new turns arrive or streaming
+  // Scroll to active search match when it changes
   useEffect(() => {
-    const turnCount = projection.turns.length;
-    const isStreaming = projection.activeTurnIndex >= 0;
+    if (searchMatches.length === 0) return;
+    const activeMatch = searchMatches[activeMatchIndex];
+    if (!activeMatch) return;
+    if (activeMatchIndex === prevActiveMatchRef.current) return;
+    prevActiveMatchRef.current = activeMatchIndex;
 
-    // Scroll on new turn or during streaming
-    if (turnCount > prevTurnCountRef.current || isStreaming) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-    prevTurnCountRef.current = turnCount;
-  }, [projection.turns.length, projection.activeTurnIndex]);
+    virtuosoRef.current?.scrollToIndex({
+      index: activeMatch.turnIndex,
+      align: 'center',
+      behavior: 'smooth',
+    });
+  }, [activeMatchIndex, searchMatches]);
 
-  // Scroll-to-top detection for loading older messages
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  // Load older messages when scrolling to top
+  const handleStartReached = useCallback(() => {
     if (!hasOlderMessages || isLoadingOlder || !onLoadOlder) return;
-    const { scrollTop } = e.currentTarget;
-    if (scrollTop < 50) {
-      onLoadOlder();
-    }
-  };
+    onLoadOlder();
+  }, [hasOlderMessages, isLoadingOlder, onLoadOlder]);
+
+  // Auto-follow output: keep scrolled to bottom during streaming
+  const followOutput = useCallback(
+    (isAtBottom: boolean) => {
+      const isStreaming = projection.activeTurnIndex >= 0;
+      // Follow if streaming or if already at bottom
+      if (isStreaming) return 'smooth';
+      if (isAtBottom) return 'smooth';
+      return false;
+    },
+    [projection.activeTurnIndex],
+  );
+
+  // Render individual turn card
+  const itemContent = useCallback(
+    (index: number) => {
+      const turn = projection.turns[index];
+      if (!turn) return null;
+
+      const isLast = index === projection.turns.length - 1;
+      const isStreaming = index === projection.activeTurnIndex;
+      const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
+      const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
+      const isActiveMatchTurn = activeMatch?.turnIndex === index;
+
+      return (
+        <TurnCard
+          key={turn.turnId}
+          turn={turn}
+          defaultExpanded={isLast || isStreaming}
+          forceExpanded={hasSearchMatch}
+          highlightActive={isActiveMatchTurn}
+        />
+      );
+    },
+    [projection.turns, projection.activeTurnIndex, searchMatches, activeMatchIndex],
+  );
+
+  // Header: load-older indicator
+  const Header = useCallback(() => {
+    if (!hasOlderMessages) return null;
+    return (
+      <div className="flex justify-center py-3 text-zinc-500 text-sm">
+        {isLoadingOlder ? '加载更早的消息...' : '↑ 滚动加载更多'}
+      </div>
+    );
+  }, [hasOlderMessages, isLoadingOlder]);
+
+  // Footer: plan card + permission card
+  const Footer = useCallback(() => (
+    <>
+      {plan && <InlinePlanCard plan={plan} />}
+      <PermissionCard />
+    </>
+  ), [plan]);
 
   return (
-    <div
-      ref={containerRef}
+    <Virtuoso
+      ref={virtuosoRef}
       role="log"
       aria-live="polite"
       aria-label="对话消息"
-      className="h-full overflow-y-auto px-4 py-3"
-      onScroll={handleScroll}
-    >
-      {/* Load older indicator */}
-      {hasOlderMessages && (
-        <div className="flex justify-center py-3 text-zinc-500 text-sm">
-          {isLoadingOlder ? '加载更早的消息...' : '↑ 滚动加载更多'}
-        </div>
-      )}
-
-      {/* Turn cards */}
-      {projection.turns.map((turn, index) => {
-        // Latest turn defaults to expanded, others collapsed
-        const isLast = index === projection.turns.length - 1;
-        const isStreaming = index === projection.activeTurnIndex;
-        // Auto-expand turns with search matches
-        const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
-        // Active match in this turn?
-        const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
-        const isActiveMatchTurn = activeMatch?.turnIndex === index;
-
-        return (
-          <TurnCard
-            key={turn.turnId}
-            turn={turn}
-            defaultExpanded={isLast || isStreaming}
-            forceExpanded={hasSearchMatch}
-            highlightActive={isActiveMatchTurn}
-          />
-        );
-      })}
-
-      {/* Inline Plan Card - shows plan progress in message flow */}
-      {plan && <InlinePlanCard plan={plan} />}
-
-      {/* Inline Permission Card - appears in message flow instead of floating */}
-      <PermissionCard />
-
-      {/* Scroll anchor */}
-      <div ref={bottomRef} />
-    </div>
+      className="h-full px-4 py-3"
+      totalCount={projection.turns.length}
+      itemContent={itemContent}
+      followOutput={followOutput}
+      startReached={handleStartReached}
+      overscan={300}
+      increaseViewportBy={{ top: 200, bottom: 200 }}
+      defaultItemHeight={80}
+      components={{
+        Header,
+        Footer,
+      }}
+    />
   );
 };

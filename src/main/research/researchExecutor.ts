@@ -71,6 +71,8 @@ export class ResearchExecutor {
   private _urlCompressor: UrlCompressor;
   private _lastReflection: ReflectionResult | null = null;
   private _researchConfig: DeepResearchConfig = {};
+  /** Track executed queries to prevent cross-round duplication */
+  private _executedQueries = new Set<string>();
 
   constructor(
     toolExecutor: ToolExecutor,
@@ -143,6 +145,32 @@ export class ResearchExecutor {
       default:
         return cfg.model || DEFAULT_MODEL;
     }
+  }
+
+  /**
+   * Normalize query for dedup comparison.
+   * Lowercase, collapse whitespace, remove common stop words.
+   */
+  private normalizeQuery(query: string): string {
+    return query.toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 80);
+  }
+
+  /**
+   * Deduplicate queries against already-executed ones.
+   * Returns only genuinely new queries.
+   */
+  private deduplicateQueries(queries: string[]): string[] {
+    const unique: string[] = [];
+    for (const q of queries) {
+      const normalized = this.normalizeQuery(q);
+      if (!this._executedQueries.has(normalized)) {
+        this._executedQueries.add(normalized);
+        unique.push(q);
+      } else {
+        logger.info(`Query dedup: skipping "${q.substring(0, 50)}"`);
+      }
+    }
+    return unique;
   }
 
   /**
@@ -231,10 +259,17 @@ export class ResearchExecutor {
 
       // Cap follow-up queries per round (DeerFlow's truncation pattern)
       const maxFollowUps = 5;
-      const queries = reflection.followUpQueries.slice(0, maxFollowUps);
+      const dedupedQueries = this.deduplicateQueries(
+        reflection.followUpQueries.slice(0, maxFollowUps)
+      );
+
+      if (dedupedQueries.length === 0) {
+        logger.info('All follow-up queries already executed, stopping reflection');
+        break;
+      }
 
       // Create new steps from follow-up queries
-      const followUpSteps: ResearchStep[] = queries.map((q, i) => ({
+      const followUpSteps: ResearchStep[] = dedupedQueries.map((q, i) => ({
         id: `followup_r${loopCount}_${i + 1}`,
         title: `补充搜索: ${q.substring(0, 40)}`,
         description: `Reflection 发现的知识空白补充搜索`,
@@ -244,17 +279,18 @@ export class ResearchExecutor {
         status: 'pending' as const,
       }));
 
-      // Add to plan and execute only the new steps
+      // Add to plan and execute follow-up steps IN PARALLEL (not serial)
       updatedPlan.steps.push(...followUpSteps);
 
-      for (const step of followUpSteps) {
-        await this.executeSingleStep(
+      const followUpPromises = followUpSteps.map((step) =>
+        this.executeSingleStep(
           step,
           updatedPlan,
           updatedPlan.steps.indexOf(step),
           updatedPlan.steps.length
-        );
-      }
+        )
+      );
+      await Promise.all(followUpPromises);
     }
 
     return updatedPlan;
@@ -398,7 +434,11 @@ export class ResearchExecutor {
    * - 每个搜索结果的 URL 并行抓取
    */
   private async executeResearchStep(step: ResearchStep): Promise<string> {
-    const queries = (step.searchQueries ?? []).slice(0, this.config.maxSearchPerStep);
+    const rawQueries = (step.searchQueries ?? []).slice(0, this.config.maxSearchPerStep);
+    const queries = this.deduplicateQueries(rawQueries);
+    if (queries.length === 0) {
+      return `所有查询已在前序步骤执行过，跳过重复搜索。`;
+    }
 
     logger.info('Executing research step with queries (parallel):', {
       queries,
@@ -586,10 +626,14 @@ ${previousResults}
       .map(s => s.result!)
       .join('\n\n');
 
+    const executedList = [...this._executedQueries].slice(0, 20).join('\n- ');
     const reflectionPrompt = `You are a research quality evaluator. Analyze the following research results and provide a structured reflection.
 
 Research Topic: ${plan.topic}
 Research Objectives: ${plan.objectives.join(', ')}
+
+Already Executed Queries (DO NOT suggest these again):
+- ${executedList}
 
 Collected Information:
 ${allContent.substring(0, 8000)}

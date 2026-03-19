@@ -26,6 +26,62 @@ export const SEARCH_ENGINE_DOMAINS = [
   'baidu.com', 'yandex.com', 'brave.com',
 ];
 
+// Domains that consistently block automated extraction (403/paywall)
+export const AUTO_EXTRACT_BLOCKED_DOMAINS = [
+  'medium.com',
+  'bloomberg.com',
+  'wsj.com',
+  'nytimes.com',
+  'ft.com',
+  'linkedin.com',
+];
+
+// Runtime domain failure tracker — domains that fail during this session
+const domainFailureCount: Record<string, number> = {};
+const DOMAIN_FAILURE_THRESHOLD = 2;
+
+/**
+ * Record a domain extraction failure. After DOMAIN_FAILURE_THRESHOLD failures,
+ * the domain is considered blocked for the rest of this session.
+ */
+export function recordDomainFailure(url: string): void {
+  try {
+    const hostname = new URL(url).hostname;
+    domainFailureCount[hostname] = (domainFailureCount[hostname] || 0) + 1;
+    if (domainFailureCount[hostname] === DOMAIN_FAILURE_THRESHOLD) {
+      logger.info(`Domain auto-blocked after ${DOMAIN_FAILURE_THRESHOLD} failures: ${hostname}`);
+    }
+  } catch { /* ignore */ }
+}
+
+/**
+ * Check if a domain should be skipped for auto-extraction.
+ * Combines static blocklist + runtime failure tracking.
+ */
+export function isDomainBlocked(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    if (AUTO_EXTRACT_BLOCKED_DOMAINS.some(d => hostname.endsWith(d))) return true;
+    if ((domainFailureCount[hostname] || 0) >= DOMAIN_FAILURE_THRESHOLD) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+// Preferred domains for auto-extraction (official/authoritative sources)
+export const PREFERRED_EXTRACT_DOMAINS = [
+  'github.com',
+  'docs.anthropic.com',
+  'modelcontextprotocol.io',
+  'spec.modelcontextprotocol.io',
+  'openai.com',
+  'arxiv.org',
+  'wikipedia.org',
+  'developer.mozilla.org',
+  'docs.python.org',
+  'docs.microsoft.com',
+  'cloud.google.com',
+];
+
 // ============================================================================
 // Circuit Breaker for Rate-Limited Sources
 // ============================================================================

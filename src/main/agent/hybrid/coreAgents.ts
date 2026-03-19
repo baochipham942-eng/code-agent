@@ -110,6 +110,11 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Run verification after modifications (bash: npm run typecheck)
 - Follow project conventions and patterns
 
+## Tool Selection
+- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`bash\` for running commands (typecheck, tests, build)
+- NEVER use read_pdf/read_docx for source code files
+
 ## Anti-patterns to Avoid
 - Don't edit without reading first
 - Don't add unnecessary abstractions
@@ -165,6 +170,11 @@ When testing:
 
 Be constructive and specific. Focus on actionable feedback.
 
+## Tool Selection
+- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`glob\`/\`grep\` for searching files and patterns
+- NEVER use read_pdf/read_docx for source code files
+
 ## Task Management
 - Use task_list to check available tasks before starting work
 - Use task_update to claim tasks (set owner to your name) and mark completed
@@ -199,6 +209,14 @@ Be constructive and specific. Focus on actionable feedback.
 1. **Parallel Searches**: Issue multiple search requests simultaneously
 2. **Structured Output**: Report findings in clear format
 3. **Source Attribution**: Always cite where information came from
+
+## Tool Selection
+- Use \`read_file\` for source code and text files (.ts, .js, .py, .md, .json, .yaml, .txt, etc.)
+- Use \`read_pdf\` ONLY for .pdf files
+- Use \`read_docx\` ONLY for .docx files
+- Use \`read_xlsx\` ONLY for .xlsx files
+- Use \`glob\`/\`grep\` for searching files and patterns
+- NEVER use read_pdf/read_docx/read_xlsx on source code files
 
 ## Rules
 - READ-ONLY: You search and read, NEVER modify files
@@ -283,6 +301,11 @@ Suggested actions:
 - Prefer simplicity over complexity
 - Consider team capabilities and existing patterns
 - Plan for evolution and change
+
+## Tool Selection
+- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`glob\`/\`grep\` for searching files and patterns
+- NEVER use read_pdf/read_docx for source code files
 
 ## Task Management
 - Use task_list to check available tasks before starting work

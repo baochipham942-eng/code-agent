@@ -841,20 +841,26 @@ export function parseOpenAIResponse(data: any): ModelResponse {
     const toolCalls: ToolCall[] = [];
 
     for (const tc of message.tool_calls) {
+      // 规范化工具名：去掉代理层添加的 functions_ 前缀和 _N 数字后缀
+      const rawName = tc.function.name;
+      const normalizedName = rawName.startsWith('functions_')
+        ? rawName.slice('functions_'.length).replace(/_\d+$/, '') || rawName
+        : rawName;
+
       try {
         const args = safeJsonParse(tc.function.arguments || '{}');
         toolCalls.push({
           id: tc.id,
-          name: tc.function.name,
+          name: normalizedName,
           arguments: args,
         });
       } catch (parseError: unknown) {
-        logger.error(`Failed to parse tool call arguments for ${tc.function.name}:`, parseError);
+        logger.error(`Failed to parse tool call arguments for ${normalizedName}:`, parseError);
         const repairedArgs = repairJson(tc.function.arguments || '{}');
         if (repairedArgs) {
           toolCalls.push({
             id: tc.id,
-            name: tc.function.name,
+            name: normalizedName,
             arguments: repairedArgs,
           });
         } else {

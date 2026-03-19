@@ -175,6 +175,17 @@ export const spawnAgentTool: Tool = {
       tools = customTools || getAgentTools(agentConfig);
     }
 
+    // 根据 task 内容过滤文档工具 — 代码任务不需要 read_pdf/read_docx/read_xlsx
+    {
+      const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx'];
+      const taskLower = task.toLowerCase();
+      const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t))
+        || /\.(pdf|docx|xlsx|doc|xls)\b/.test(taskLower);
+      if (!needsDocTools) {
+        tools = tools.filter(t => !DOCUMENT_TOOLS.includes(t));
+      }
+    }
+
     // ========================================================================
     // Phase 0: Subagent 上下文注入
     // ========================================================================
@@ -235,10 +246,14 @@ export const spawnAgentTool: Tool = {
       // Determine max budget (use agent-specific or inherited)
       const effectiveMaxBudget = maxBudget || (agentConfig ? getAgentMaxBudget(agentConfig) : undefined);
 
-      if (waitForCompletion) {
+      // 注入工作目录到 task，避免子 Agent 使用相对路径
+    const cwd = context.workingDirectory || process.cwd();
+    const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
+
+    if (waitForCompletion) {
         // Execute and wait for result
         const result = await executor.execute(
-          task,
+          enrichedTask,
           {
             name: agentName,
             systemPrompt,
@@ -288,7 +303,7 @@ Stats:
       } else {
         // Start agent in background (fire and forget)
         executor.execute(
-          task,
+          enrichedTask,
           {
             name: agentName,
             systemPrompt,
@@ -388,6 +403,10 @@ async function executeParallelAgents(
   });
 
   // Convert to AgentTask format
+  // Phase 1: 生成稳定的 ID 并建立 role→id 映射（用于解析 dependsOn）
+  const roleToId = new Map<string, string>();
+  const cwd = context.workingDirectory || process.cwd();
+
   const tasks: AgentTask[] = agents.map((agent, index) => {
     const agentConfig = getPredefinedAgent(agent.role);
     if (!agentConfig) {
@@ -397,16 +416,44 @@ async function executeParallelAgents(
       );
     }
 
+    // 使用 role_index 作为稳定 ID，避免 Date.now() 导致 dependsOn 无法匹配
+    const taskId = `agent_${agent.role}_${index}`;
+    roleToId.set(agent.role, taskId);
+    // 也支持 "role-index" 格式引用
+    roleToId.set(`${agent.role}-${index}`, taskId);
+
+    // 根据 task 内容过滤文档工具 — 代码任务不需要 read_pdf/read_docx/read_xlsx
+    const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx'];
+    const taskLower = agent.task.toLowerCase();
+    const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t))
+      || /\.(pdf|docx|xlsx|doc|xls)\b/.test(taskLower);
+    let tools = getAgentTools(agentConfig);
+    if (!needsDocTools) {
+      tools = tools.filter(t => !DOCUMENT_TOOLS.includes(t));
+    }
+
     return {
-      id: `agent_${agent.role}_${index}_${Date.now()}`,
+      id: taskId,
       role: agent.role,
-      task: agent.task,
+      task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
       systemPrompt: getAgentPrompt(agentConfig),
-      tools: getAgentTools(agentConfig),
+      tools,
       maxIterations: getAgentMaxIterations(agentConfig),
       dependsOn: agent.dependsOn,
     };
   });
+
+  // Phase 2: 解析 dependsOn — 将 role 名称映射到实际 task ID
+  for (const task of tasks) {
+    if (task.dependsOn) {
+      task.dependsOn = task.dependsOn.map(dep => {
+        // 优先精确匹配 task ID
+        if (tasks.some(t => t.id === dep)) return dep;
+        // 再尝试 role→id 映射
+        return roleToId.get(dep) || dep;
+      });
+    }
+  }
 
   // Emit swarm:started
   emitter.started(tasks.length);

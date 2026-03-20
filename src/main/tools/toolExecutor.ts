@@ -157,18 +157,6 @@ export class ToolExecutor {
       };
     }
 
-    // Inject default params for legacy aliases (e.g. plan_read → Plan + action:'read')
-    const aliasDefaults = this.toolRegistry.getDefaultParamsForAlias(toolName);
-    if (aliasDefaults) {
-      // Only inject defaults for keys not already provided by the caller
-      for (const [key, value] of Object.entries(aliasDefaults)) {
-        if (!(key in params)) {
-          params[key] = value;
-        }
-      }
-      logger.debug('Injected alias default params', { toolName, aliasDefaults });
-    }
-
     logger.debug('Tool found', { toolName });
 
 

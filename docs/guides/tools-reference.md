@@ -508,6 +508,36 @@ spawn_agent {
 }
 ```
 
+### wait_agent - 等待子代理完成（v0.16.55+）
+
+等待一个或多个子代理完成，支持超时设置。
+
+```bash
+# 等待单个 agent
+wait_agent { "agent_ids": ["agent_coder_abc123"] }
+
+# 等待多个 agent，设置超时
+wait_agent { "agent_ids": ["agent_coder_abc", "agent_reviewer_def"], "timeout_ms": 60000 }
+```
+
+返回每个 agent 的最终状态（completed/failed/cancelled/running）和结果摘要。
+
+### close_agent - 取消子代理（v0.16.55+）
+
+通过 AbortController 取消运行中的子代理。
+
+```bash
+close_agent { "agent_id": "agent_coder_abc123" }
+```
+
+### send_input - 向子代理发消息（v0.16.55+）
+
+向运行中的子代理消息队列推送消息，executor 在每轮迭代开始时消费。
+
+```bash
+send_input { "agent_id": "agent_coder_abc123", "message": "请也检查 auth 模块" }
+```
+
 ### agent_message - 代理通信
 
 ```bash

@@ -112,11 +112,12 @@ npm run typecheck && npm version patch --no-git-tag-version
 git add package.json package-lock.json src-tauri/tauri.conf.json
 git commit -m "chore: bump version to x.x.x" && git push
 npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri build
-# 产物: src-tauri/target/release/bundle/dmg/Code Agent_*.dmg (~33MB)
+bash scripts/tauri-install.sh   # 安装到 /Applications（必须用脚本，禁止手动 cp）
 ```
 
 **前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）。
-`.env` 通过 tauri.conf.json resources 自动打包，无需手动拷贝。
+**安装**: 必须用 `scripts/tauri-install.sh`，它会 rm→cp→清理 DMG 残留卷。手动 `cp -r` 会导致旧文件残留 + Finder 反复弹出 DMG。
+**API Key**: 打包后靠应用内设置管理（SecureStorage），不依赖 `.env`。`.env` 仅开发模式用。
 **Auto-update**: 首次发布前需 `tauri signer generate` 并将 pubkey 写入 tauri.conf.json。
 
 ### 本地数据库

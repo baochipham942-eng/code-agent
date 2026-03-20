@@ -210,11 +210,29 @@ async function postDesktopAction<T>(action: string, payload?: Record<string, unk
 }
 
 export async function startAudioCapture(): Promise<AudioCaptureStatus> {
+  // 直接让 Node.js 启动 ffmpeg（AVFoundation）进行音频采集
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture');
 }
 
+/** 后台请求麦克风权限（不阻塞 UI，app 启动时调用一次） */
+export async function requestMicrophonePermission(): Promise<string> {
+  if (!isNativeDesktopAvailable()) return 'unsupported';
+  try {
+    return await invoke<string>('desktop_request_microphone_permission');
+  } catch {
+    return 'error';
+  }
+}
+
 export async function stopAudioCapture(): Promise<AudioCaptureStatus> {
-  return postDesktopAction<AudioCaptureStatus>('stopAudioCapture');
+  const status = await postDesktopAction<AudioCaptureStatus>('stopAudioCapture');
+  // 停止 Tauri 端的 rec 进程
+  if (isNativeDesktopAvailable()) {
+    try {
+      await invoke<boolean>('desktop_stop_audio_rec');
+    } catch { /* best effort */ }
+  }
+  return status;
 }
 
 export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null> {

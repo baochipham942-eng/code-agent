@@ -809,3 +809,97 @@ if (e.key === 'Enter' && !e.shiftKey
 **通用规则**: Web 应用处理 Enter 提交时，必须同时检查 `isComposing` + `compositionRef`（延迟重置）+ `keyCode !== 229`，三重防御才能兼容所有 IME
 
 **相关代码**: `src/renderer/components/features/chat/ChatInput/InputArea.tsx`
+
+---
+
+## Native Desktop 音频采集管线 (2026-03-20)
+
+### macOS Hardened Runtime 导致麦克风静音
+
+**症状**: ffmpeg 录音文件大小为 0 或全静音，VAD 概率始终为 0
+
+**根因链**:
+1. Tauri build 默认启用 Hardened Runtime (`flags=0x10000(runtime)`)
+2. 未配置 `com.apple.security.device.audio-input` entitlement
+3. 子进程 (ffmpeg) 继承父进程的 Hardened Runtime 限制
+4. macOS TCC 框架拒绝音频访问，ffmpeg 收到静音数据
+
+**修复**:
+1. 创建 `src-tauri/Entitlements.plist`，包含 `com.apple.security.device.audio-input` 和 `com.apple.security.cs.allow-unsigned-executable-memory`
+2. `tauri.conf.json` 的 `bundle.macOS.entitlements` 指向该 plist
+
+**验证**: `codesign -d --entitlements - "/Applications/Code Agent.app"` 应显示 audio-input 权限
+
+**通用规则**: Tauri/Electron 桌面应用需要子进程访问硬件（麦克风/摄像头/屏幕录制）时，必须在 Hardened Runtime entitlements 中声明对应权限。权限不足时子进程不会报错，只会收到空数据。
+
+### AVFoundation 音频设备 `:0` 不一定是内建麦克风
+
+**症状**: 硬编码 `-i :0` 录音，某些机器正常，某些机器静音
+
+**根因**: macOS 的 AVFoundation 设备索引不固定。`:0` 可能是已断开的蓝牙耳机、虚拟设备（BlackHole/LarkAudioDevice）或其他非期望设备
+
+**修复**: 运行时 `ffmpeg -f avfoundation -list_devices true -i ""` 枚举设备，优先选择 MacBook Pro Microphone，跳过已知虚拟设备
+
+**通用规则**: 任何音频/视频设备索引都不能硬编码。必须运行时枚举 → 按优先级选择 → fallback 到默认值
+
+### Swift 子进程编译耗时 15+ 秒
+
+**症状**: 首次请求麦克风权限时 UI 卡住 15 秒以上
+
+**根因**: `/usr/bin/swift -e "..."` 每次调用都要编译 Swift 代码，冷启动约 15 秒
+
+**修复路径（渐进式）**:
+1. ~~运行时 `swift -e`~~ → 预编译 `swiftc -O mic-helper.swift -o mic-helper`（1.5s）
+2. ~~预编译 Swift 二进制~~ → 直接查询 TCC 数据库（sqlite3 查 `kTCCServiceMicrophone`，0.1s）
+3. 最优: Rust FFI 直接调用 `CGPreflightScreenCaptureAccess` 等系统 API（0ms）
+
+**通用规则**: 避免运行时编译脚本语言作为权限检查手段。优先级：Rust FFI > 预编译二进制 > 数据库查询 > 运行时编译
+
+### ASR 模型返回值不是字符串
+
+**症状**: `json.dumps({"text": result})` 报 `TypeError: Object of type ASRTranscription is not JSON serializable`
+
+**根因**: Qwen3-ASR 的 `model.transcribe()` 返回 `ASRTranscription` 对象列表（含 `.text`、`.language`、`.time_stamps` 属性），不是 `str`
+
+**修复**: `result[0].text` 提取文本
+
+**通用规则**: 调用 Python ML 模型时，永远先 `print(type(result))` 检查返回类型。多数模型返回自定义对象而非原始类型
+
+### React useEffect 静态依赖导致实时数据不刷新
+
+**症状**: 录音过程中新产生的 audio segments 不显示，切换到其他小时再切回来才能看到
+
+**根因**: `useEffect` 依赖 `[block.hour, date]`，同一小时内不会重新执行。音频采集持续产生新 segment，但 UI 无感知
+
+**修复**: 在 useEffect 中添加 `setInterval` 轮询（5 秒），cleanup 时清除
+
+```typescript
+useEffect(() => {
+  const load = () => { /* fetch segments */ };
+  load();
+  const timer = window.setInterval(load, 5000);
+  return () => window.clearInterval(timer);
+}, [block.hour, date]);
+```
+
+**通用规则**: 展示实时数据的 React 组件，useEffect 必须包含定时刷新机制。仅靠状态变化驱动无法感知外部数据更新（数据库/API 新增记录）
+
+### `cp -Rf` 无法完全替换 macOS .app
+
+**症状**: 重新构建后 `cp -Rf` 到 `/Applications/`，但运行的仍是旧版本
+
+**根因**: `cp -Rf` 在目标 `.app` 已存在时是合并而非替换，旧的二进制文件可能保留
+
+**修复**: 先 `rm -rf "/Applications/Code Agent.app"`，再 `cp -Rf`
+
+**通用规则**: macOS `.app` bundle 更新必须先删后拷，不能用 `-Rf` 覆盖。或使用 `rsync --delete`
+
+### 功能仅在特定应用分组下展示
+
+**症状**: 音频 segments 只在会议应用（Zoom/飞书/Teams）的卡片中展示，Terminal/Code Agent 等普通应用无音频显示
+
+**根因**: 代码中 `const clusterAudioSegs = isMeeting ? audioSegs : []` 过滤了非会议应用
+
+**修复**: 在所有应用分组之上添加独立的「录音记录」卡片，不依赖应用分类
+
+**通用规则**: 新功能的 UI 展示路径不应仅嵌套在已有分类逻辑中。需要独立的展示入口，确保所有场景可见

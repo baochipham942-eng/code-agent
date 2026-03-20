@@ -72,7 +72,8 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
           }
           manualAudioActive = true;
-          await startDesktopAudioCapture();
+          const fifoPath = (request.payload as { fifoPath?: string } | undefined)?.fifoPath;
+          await startDesktopAudioCapture(fifoPath);
           const audioSt = getAudioCaptureStatus();
           if (!audioSt.capturing) {
             // 启动失败 — 回退标志位，返回错误原因

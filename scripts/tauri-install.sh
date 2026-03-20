@@ -28,7 +28,13 @@ rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app"
 rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app.tar.gz"
 rm -rf "$PROJECT_ROOT/release/"*"/$APP_NAME.app"
 
-# 弹出所有挂载的 DMG 卷
-hdiutil detach "/Volumes/$APP_NAME" 2>/dev/null || true
+# 弹出所有挂载的 DMG 卷（包括重复构建产生的 "Code Agent 1", "Code Agent 2" 等）
+for vol in /Volumes/"$APP_NAME"*; do
+  [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
+done
+# 清理 bundle_dmg.sh 残留的临时卷
+for vol in /Volumes/dmg.*; do
+  [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
+done
 
 echo "Done. Launch from Spotlight or: open '/Applications/$APP_NAME.app'"

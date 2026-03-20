@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Mic,
   MicOff,
+  Eye,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -698,13 +699,18 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const appGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Load audio segments for this hour
+  // Load audio segments for this hour (with periodic refresh)
   useEffect(() => {
-    const dayStart = new Date(date);
-    dayStart.setHours(block.hour, 0, 0, 0);
-    const dayEnd = new Date(date);
-    dayEnd.setHours(block.hour, 59, 59, 999);
-    listAudioSegments(dayStart.getTime(), dayEnd.getTime()).then(setAudioSegs);
+    const load = () => {
+      const dayStart = new Date(date);
+      dayStart.setHours(block.hour, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(block.hour, 59, 59, 999);
+      listAudioSegments(dayStart.getTime(), dayEnd.getTime()).then(setAudioSegs);
+    };
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
   }, [block.hour, date]);
 
   // Reset state when hour changes
@@ -775,6 +781,75 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
           ))}
         </div>
       </div>
+
+      {/* Audio segments (standalone — always show if present) */}
+      {audioSegs.length > 0 && (
+        <div className="px-5 pt-4 pb-2">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-amber-500/10">
+              <Mic className="w-4 h-4 text-amber-400" />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-zinc-200">录音记录</div>
+                <div className="text-[11px] text-zinc-500">
+                  {audioSegs.length} 段发言 · {audioSegs.length >= 2
+                    ? formatDurationShort(audioSegs[audioSegs.length - 1].end_at_ms - audioSegs[0].start_at_ms)
+                    : formatDurationShort(audioSegs[0].duration_ms)}
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 space-y-1.5 max-h-[300px] overflow-y-auto">
+              {audioSegs.map((seg) => (
+                <div key={seg.id} className="flex gap-2.5 text-[12px]">
+                  <span className="text-zinc-600 font-mono shrink-0 w-11 text-right pt-px">
+                    {formatTime(seg.start_at_ms)}
+                  </span>
+                  <span className="text-zinc-300 leading-relaxed">
+                    {seg.transcript || <span className="text-zinc-600 italic">转录中...</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Visual analysis summary (standalone — always show if present) */}
+      {(() => {
+        const allAnalyses = block.segments
+          .flatMap((s) => s.events)
+          .filter((e) => e.analyzeText)
+          .sort((a, b) => b.capturedAtMs - a.capturedAtMs);
+        if (allAnalyses.length === 0) return null;
+        return (
+          <div className="px-5 pt-4 pb-2">
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 overflow-hidden">
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-cyan-500/10">
+                <Eye className="w-4 h-4 text-cyan-400" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-zinc-200">视觉分析</div>
+                  <div className="text-[11px] text-zinc-500">
+                    {allAnalyses.length} 条分析 · {new Set(allAnalyses.map(e => e.appName)).size} 个应用
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 py-3 space-y-3 max-h-[400px] overflow-y-auto">
+                {allAnalyses.map((ev, idx) => (
+                  <div key={ev.id || idx} className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="text-zinc-600 font-mono">{formatTime(ev.capturedAtMs)}</span>
+                      <span className="text-zinc-500">{ev.appName}</span>
+                      {ev.windowTitle && <span className="text-zinc-600 truncate max-w-[200px]">{ev.windowTitle}</span>}
+                    </div>
+                    <div className="text-[12px] text-zinc-400 leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-0.5 prose-li:my-0 prose-strong:text-zinc-300">
+                      <ReactMarkdown>{formatAnalysisText(ev.analyzeText!)}</ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* App groups */}
       <div className="px-5 py-4 space-y-3">

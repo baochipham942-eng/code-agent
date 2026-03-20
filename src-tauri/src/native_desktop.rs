@@ -3,9 +3,9 @@ use std::{
     collections::VecDeque,
     env,
     fs,
-    io::Write,
-    path::PathBuf,
-    process::Command,
+    io::{Read as StdRead, Write},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -466,6 +466,38 @@ extern "C" {
 /// Track whether we've already requested screen capture permission this session.
 #[cfg(target_os = "macos")]
 static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Check microphone permission status (non-blocking, no Swift compilation)
+#[tauri::command]
+pub fn desktop_request_microphone_permission() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Check TCC database directly — no blocking Swift subprocess
+        let output = Command::new("sqlite3")
+            .args([
+                "/Users/linchen/Library/Application Support/com.apple.TCC/TCC.db",
+                "SELECT auth_value FROM access WHERE service='kTCCServiceMicrophone' AND client='com.linchen.code-agent' LIMIT 1;",
+            ])
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() => {
+                let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                match val.as_str() {
+                    "2" => Ok("granted".to_string()),
+                    "0" => Ok("denied".to_string()),
+                    _ => Ok("unknown".to_string()),
+                }
+            }
+            _ => Ok("unknown".to_string()),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("unsupported".to_string())
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn probe_accessibility_permission() -> NativePermissionStatus {
@@ -1767,4 +1799,194 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
         let _ = request;
         Err("System settings deep links are only implemented on macOS.".to_string())
     }
+}
+
+// ============================================================================
+// Audio Recording — spawn rec from Tauri (Rust) to inherit TCC mic permission
+// ============================================================================
+
+static AUDIO_REC_PID: Mutex<Option<u32>> = Mutex::new(None);
+static AUDIO_FIFO_PATH: Mutex<Option<String>> = Mutex::new(None);
+
+fn find_ffmpeg_binary() -> Option<String> {
+    let candidates = [
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ];
+    for c in &candidates {
+        if Path::new(c).exists() {
+            return Some(c.to_string());
+        }
+    }
+    None
+}
+
+/// Auto-detect the best AVFoundation audio input device index.
+/// Skips virtual devices (BlackHole, LarkAudioDevice, etc.) and prefers built-in mic.
+fn detect_audio_device_index(ffmpeg_bin: &str) -> String {
+    let output = Command::new(ffmpeg_bin)
+        .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    let stderr = match output {
+        Ok(o) => String::from_utf8_lossy(&o.stderr).to_string(),
+        Err(_) => return ":0".to_string(),
+    };
+
+    let virtual_names = ["BlackHole", "LarkAudioDevice", "Microsoft Teams Audio", "Soundflower"];
+    let mut in_audio = false;
+    let mut devices: Vec<(u32, String)> = Vec::new();
+
+    for line in stderr.lines() {
+        if line.contains("AVFoundation audio devices:") {
+            in_audio = true;
+            continue;
+        }
+        if in_audio {
+            // Match pattern: [0] Device Name
+            if let Some(caps) = line.find('[').and_then(|start| {
+                let rest = &line[start + 1..];
+                rest.find(']').map(|end| {
+                    let idx_str = &rest[..end];
+                    let name = rest[end + 1..].trim().to_string();
+                    (idx_str.parse::<u32>().ok(), name)
+                })
+            }) {
+                if let (Some(idx), name) = caps {
+                    devices.push((idx, name));
+                }
+            }
+        }
+    }
+
+    if devices.is_empty() {
+        return ":0".to_string();
+    }
+
+    // Prefer built-in MacBook microphone
+    if let Some((idx, _)) = devices.iter().find(|(_, name)| {
+        name.contains("MacBook") && name.contains("Microphone")
+    }) {
+        return format!(":{idx}");
+    }
+
+    // Next: first non-virtual device
+    if let Some((idx, _)) = devices.iter().find(|(_, name)| {
+        !virtual_names.iter().any(|v| name.contains(v))
+    }) {
+        return format!(":{idx}");
+    }
+
+    format!(":{}", devices[0].0)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioRecStartResult {
+    fifo_path: String,
+    pid: u32,
+}
+
+#[tauri::command]
+pub fn desktop_start_audio_rec() -> Result<AudioRecStartResult, String> {
+    // Check if already running
+    {
+        let guard = AUDIO_REC_PID.lock().unwrap();
+        if guard.is_some() {
+            let fifo = AUDIO_FIFO_PATH.lock().unwrap();
+            return Ok(AudioRecStartResult {
+                fifo_path: fifo.clone().unwrap_or_default(),
+                pid: guard.unwrap(),
+            });
+        }
+    }
+
+    let ffmpeg_bin = find_ffmpeg_binary()
+        .ok_or_else(|| "ffmpeg not found. Install: brew install ffmpeg".to_string())?;
+
+    let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let fifo_path = format!("{home}/.code-agent/audio-capture.fifo");
+
+    // Remove stale FIFO
+    let _ = std::fs::remove_file(&fifo_path);
+
+    // Create FIFO
+    let mkfifo_out = Command::new("mkfifo")
+        .arg(&fifo_path)
+        .output()
+        .map_err(|e| format!("mkfifo failed: {e}"))?;
+    if !mkfifo_out.status.success() {
+        return Err(format!(
+            "mkfifo failed: {}",
+            String::from_utf8_lossy(&mkfifo_out.stderr)
+        ));
+    }
+
+    // Auto-detect best audio input device
+    let audio_device = detect_audio_device_index(&ffmpeg_bin);
+    eprintln!("[AudioRec] Using audio device: {audio_device}");
+
+    // Spawn ffmpeg with AVFoundation input, writing raw PCM to FIFO
+    let child = Command::new(&ffmpeg_bin)
+        .args([
+            "-f", "avfoundation", "-i", &audio_device,
+            "-ar", "16000", "-ac", "1", "-f", "s16le", "-y", &fifo_path,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {e}"))?;
+
+    let pid = child.id();
+
+    // Store state
+    {
+        let mut guard = AUDIO_REC_PID.lock().unwrap();
+        *guard = Some(pid);
+    }
+    {
+        let mut guard = AUDIO_FIFO_PATH.lock().unwrap();
+        *guard = Some(fifo_path.clone());
+    }
+
+    // Log stderr in background
+    thread::spawn(move || {
+        let mut child = child;
+        let status = child.wait();
+        eprintln!("[AudioRec] ffmpeg process exited: {:?}", status);
+        let mut guard = AUDIO_REC_PID.lock().unwrap();
+        *guard = None;
+    });
+
+    Ok(AudioRecStartResult { fifo_path, pid })
+}
+
+#[tauri::command]
+pub fn desktop_stop_audio_rec() -> Result<bool, String> {
+    let pid = {
+        let mut guard = AUDIO_REC_PID.lock().unwrap();
+        guard.take()
+    };
+
+    if let Some(pid) = pid {
+        // Kill the rec process
+        let _ = Command::new("kill")
+            .arg(pid.to_string())
+            .output();
+    }
+
+    // Clean up FIFO
+    let fifo = {
+        let mut guard = AUDIO_FIFO_PATH.lock().unwrap();
+        guard.take()
+    };
+    if let Some(path) = fifo {
+        let _ = std::fs::remove_file(&path);
+    }
+
+    Ok(true)
 }

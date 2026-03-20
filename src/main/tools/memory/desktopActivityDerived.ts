@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getDesktopActivityUnderstandingService } from '../../memory/desktopActivityUnderstandingService';
+import { getDesktopActivityUnderstandingService } from '../../desktop/desktopActivityUnderstandingService';
 import type {
   DesktopActivitySemanticMatch,
   DesktopActivitySliceSummary,

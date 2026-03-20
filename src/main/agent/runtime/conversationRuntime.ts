@@ -24,9 +24,9 @@ import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter
 import type { PlanningService } from '../../planning';
 import { publishPlanningStateToRenderer } from '../../planning';
 import { buildRecoveredWorkOrchestrationHint, isContinuationLikeRequest, recoverRecentWorkIntoPlanning } from '../../planning/recoveredWorkOrchestrator';
-import { syncDesktopTasksToPlanningService } from '../../memory/desktopActivityPlanningBridge';
-import { getDesktopActivityUnderstandingService } from '../../memory/desktopActivityUnderstandingService';
-import { buildWorkspaceActivityContextBlock } from '../../memory/workspaceActivitySearchService';
+import { syncDesktopTasksToPlanningService } from '../../desktop/desktopActivityPlanningBridge';
+import { getDesktopActivityUnderstandingService } from '../../desktop/desktopActivityUnderstandingService';
+import { buildWorkspaceActivityContextBlock } from '../../desktop/workspaceActivitySearchService';
 import { buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';

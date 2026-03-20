@@ -91,10 +91,10 @@ code-agent/
 │   │   │
 │   │   │── ── 智能层 ──────────────────────────────
 │   │   ├── cloud/              # 云端任务服务（任务路由、混合调度、加密同步）
-│   │   ├── cowork/             # 多 Agent 协作框架（Contract 协议 + Orchestrator 编排）
+│   │   ├── cron/               # 定时任务与心跳监控
 │   │   ├── evaluation/         # 评测双管道 + Session Replay
-│   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory, ~700 行替代旧 13K+）
-│   │   ├── memory/             # 向量存储（旧系统，逐步由 lightMemory 替代）
+│   │   ├── desktop/            # 桌面活动服务（从旧 memory/ 搬迁）
+│   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory, ~700 行，唯一记忆系统）
 │   │   ├── orchestrator/       # 云端任务执行编排器（Orchestrator 配置与调度）
 │   │   ├── planning/           # 规划系统
 │   │   ├── research/           # 深度研究模式（多源路由、自适应搜索、报告生成）
@@ -115,7 +115,7 @@ code-agent/
 │   │   ├── cron/               # 定时任务与心跳监控（CronService + Heartbeat）
 │   │   ├── ide/                # IDE 桥接接口（未来 IDE 集成预留）
 │   │   ├── lsp/                # LSP 语言服务器协议（多语言 Server 管理）
-│   │   ├── sandbox/            # 进程沙箱隔离（macOS Seatbelt + Linux Bubblewrap）
+│   │   ├── scheduler/          # DAG 并行任务调度
 │   │   ├── types/              # 主进程内部类型定义
 │   │   └── utils/              # 工具函数（加密、图片处理、日志脱敏、性能计量）
 │   │
@@ -149,7 +149,7 @@ code-agent/
 | Gen7 | 多代理 | + spawn_agent, agent_message, wait_agent, close_agent, send_input |
 | Gen8 | 自我进化 | + strategy_optimize, tool_create |
 
-> **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。旧名通过 TOOL_ALIASES 保持兼容。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
+> **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。TOOL_ALIASES 兼容层已删除（v0.16.56），所有代码统一使用 PascalCase。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **Phase 3 文档编辑统一**: DocEdit 统一入口 + ExcelAutomate(edit) + ppt_edit 加固。富文档从全量生成升级为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
 
@@ -306,7 +306,7 @@ Parent Agent
 [1] Session Metadata       — 使用频率/活跃天数/模型分布
 [2] Memory Index           — INDEX.md 常驻注入（File-as-Memory 核心）
 [3] Recent Conversations   — ~15 条近期对话摘要（只摘用户意图）
-[4] RAG Context            — buildEnhancedSystemPrompt（旧系统，待废弃）
+[4] (removed)              — 旧 RAG Context 已删除（v0.16.56）
 [5] Current Session        — 滑动窗口
 ```
 
@@ -370,7 +370,7 @@ Parent Agent
 
 | 模块 | 位置 | 描述 |
 |------|------|------|
-| **分层压缩** | `src/main/context/autoCompressor.ts` | L1 Observation Masking → L2 Truncate → L3 AI Summary |
+| **分层压缩** | `src/main/context/autoCompressor.ts` | L1 Observation Masking (75%) → L2 Truncate (85%) → L3 AI Summary (90%)，智能 Masking 保护活跃文件 |
 | **文档上下文** | `src/main/context/documentContext/` | 统一文档理解层，5 种解析器 |
 | **DataFingerprint** | `src/main/tools/dataFingerprint.ts` | 源数据锚定（xlsx schema + CSV/JSON schema） |
 | **FileReadTracker** | `src/main/tools/fileReadTracker.ts` | 文件读取记录，支持编辑验证和恢复上下文 |

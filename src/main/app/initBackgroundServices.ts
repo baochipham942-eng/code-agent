@@ -18,7 +18,8 @@ import { initPromptService, getPromptsInfo } from '../services/cloud/promptServi
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
 import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
-import { initDesktopActivityUnderstandingService, initWorkspaceArtifactIndexService } from '../memory';
+import { initDesktopActivityUnderstandingService } from '../desktop/desktopActivityUnderstandingService';
+import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';

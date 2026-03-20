@@ -63,6 +63,7 @@ df.to_excel('output.xlsx', index=False)
 2. 检查 sheet 结构是否正确
 3. 检查行数是否符合预期
 4. 检查关键数据是否完整
+5. 含公式时必须执行 `ExcelAutomate { action: 'validate_formulas', file_path: '...' }`
 
 ## 规则
 

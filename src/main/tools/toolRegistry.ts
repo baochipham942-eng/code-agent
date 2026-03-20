@@ -147,6 +147,7 @@ import { BrowserTool } from './vision/BrowserTool';
 import { ComputerTool } from './vision/ComputerTool';
 import { ExcelAutomateTool } from './excel';
 import { DocEditTool } from './document/docEditTool';
+import { PdfAutomateTool } from './network';
 
 // ----------------------------------------------------------------------------
 // Tool Interface (re-exported from ./types to avoid circular deps)
@@ -319,6 +320,7 @@ export class ToolRegistry {
     this.register(ComputerTool);
     this.register(ExcelAutomateTool);
     this.register(DocEditTool);
+    this.register(PdfAutomateTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);

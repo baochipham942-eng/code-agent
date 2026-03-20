@@ -6,12 +6,14 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import * as path from 'path';
 import { excelGenerateTool } from '../network/excelGenerate';
 import { readXlsxTool } from '../network/readXlsx';
 import { xlwingsExecuteTool } from '../network/xlwingsExecute';
 import { executeExcelEdit } from './excelEdit';
+import { executePythonScript } from '../utils/pythonBridge';
 
-type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range';
+type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range' | 'validate_formulas';
 
 export const ExcelAutomateTool: Tool = {
   name: 'ExcelAutomate',
@@ -94,7 +96,15 @@ Shortcut for reading a specific range from an open workbook via xlwings.
 Parameters:
 - file_path: Excel file path (optional, defaults to active workbook)
 - sheet: Sheet name
-- range (required): Cell range (e.g. "A1:D10")`,
+- range (required): Cell range (e.g. "A1:D10")
+
+### validate_formulas — Validate formulas in an Excel file
+Scans for formula errors (#REF!, #DIV/0!, #VALUE!, #N/A, #NAME?, #NULL!, #NUM!).
+Optionally recalculates with LibreOffice first.
+
+Parameters:
+- file_path (required): Excel file path
+- recalc: Recalculate with LibreOffice before scanning (default: false)`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -102,7 +112,7 @@ Parameters:
     properties: {
       action: {
         type: 'string',
-        enum: ['read', 'generate', 'edit', 'automate', 'list_sheets', 'get_range'],
+        enum: ['read', 'generate', 'edit', 'automate', 'list_sheets', 'get_range', 'validate_formulas'],
         description: 'The Excel action to perform',
       },
       // --- edit params ---
@@ -143,7 +153,7 @@ Parameters:
       },
       theme: {
         type: 'string',
-        enum: ['professional', 'colorful', 'minimal', 'dark'],
+        enum: ['professional', 'colorful', 'minimal', 'dark', 'financial'],
         description: '[generate] Theme style (default: professional)',
       },
       output_path: {
@@ -303,10 +313,46 @@ Parameters:
         );
       }
 
+      case 'validate_formulas': {
+        if (!params.file_path) {
+          return { success: false, error: 'action "validate_formulas" requires file_path parameter' };
+        }
+        const filePath = path.isAbsolute(params.file_path as string)
+          ? params.file_path as string
+          : path.join(context.workingDirectory, params.file_path as string);
+
+        const args = ['--file', filePath];
+        if (params.recalc) args.push('--recalc');
+
+        const result = await executePythonScript('excel_recalc.py', args);
+        if (!result.success) {
+          return { success: false, error: result.error || '公式验证失败' };
+        }
+
+        const errors = result.error_summary as Array<{ cell: string; sheet: string; error_type: string; formula: string }> || [];
+        let output = `📊 公式验证完成\n\n`;
+        output += `公式总数: ${result.total_formulas}\n`;
+        output += `错误数量: ${result.total_errors}\n`;
+        output += `状态: ${result.status === 'clean' ? '✅ 无错误' : '⚠️ 发现错误'}\n`;
+
+        if (errors.length > 0) {
+          output += `\n错误详情:\n`;
+          for (const err of errors) {
+            output += `  - ${err.sheet}!${err.cell}: ${err.error_type} (${err.formula})\n`;
+          }
+        }
+
+        return {
+          success: true,
+          output,
+          metadata: result,
+        };
+      }
+
       default:
         return {
           success: false,
-          error: `Unknown action: "${action}". Valid actions: read, generate, automate, list_sheets, get_range`,
+          error: `Unknown action: "${action}". Valid actions: read, generate, edit, automate, list_sheets, get_range, validate_formulas`,
         };
     }
   },

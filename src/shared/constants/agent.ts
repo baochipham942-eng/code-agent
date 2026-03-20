@@ -74,11 +74,11 @@ export const AGENT_TIMEOUTS = {
 
 /** Observation Masking 常量 */
 export const OBSERVATION_MASKING = {
-  PRESERVE_RECENT_COUNT: 6,
+  PRESERVE_RECENT_COUNT: 10,
   MIN_TOKEN_THRESHOLD: 100,
   PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
   PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
-  PLACEHOLDER_FILE_READ: '[File content cleared - use Read tool to re-read this file before editing it]',
+  PLACEHOLDER_FILE_READ: '[File content was read previously and cleared to save context. Proceed with your task based on what you already know. If you need specific content, ask the user.]',
 } as const;
 
 /** 子 Agent 上下文压缩配置 */

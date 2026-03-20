@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { getErrorLearningService } from '../memory/errorLearning';
+import { getErrorLearningService } from '../services/errorLearning';
 import { discoverCodexSessions, parseCodexSession } from './codexSessionParser';
 import { CODEX_SESSION } from '../../shared/constants';
 

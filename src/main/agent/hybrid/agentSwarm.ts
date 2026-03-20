@@ -319,7 +319,7 @@ export class AgentSwarm {
           task: runtime.agent.prompt || 'Execute task',
           allowedTools: runtime.agent.tools?.length ? runtime.agent.tools : (() => {
             logger.warn(`[AgentSwarm] Agent "${runtime.agent.name}" has no tools defined, falling back to basic tools`);
-            return ['read_file', 'glob', 'grep', 'list_directory'];
+            return ['Read', 'Glob', 'Grep', 'ListDirectory'];
           })(),
           workingDirectory: process.cwd(),
           timeout: (this.config as ExtendedSwarmConfig)?.workerTimeout ?? 300000,

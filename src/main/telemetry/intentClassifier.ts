@@ -24,13 +24,13 @@ const INTENT_RULES: IntentRule[] = [
   {
     intent: 'code_generation',
     keywords: ['写', '创建', '实现', '生成', '新建', 'implement', 'create', 'write', 'generate', 'add'],
-    toolHeuristics: ['write_file'],
+    toolHeuristics: ['Write'],
     weight: 1.0,
   },
   {
     intent: 'bug_fix',
     keywords: ['修复', 'bug', '错误', '报错', 'fix', 'error', 'broken', 'issue', '问题', '崩溃'],
-    toolHeuristics: ['edit_file'],
+    toolHeuristics: ['Edit'],
     weight: 1.0,
   },
   {
@@ -46,25 +46,25 @@ const INTENT_RULES: IntentRule[] = [
   {
     intent: 'refactoring',
     keywords: ['重构', '优化', '简化', '整理', 'refactor', 'optimize', 'simplify', 'clean'],
-    toolHeuristics: ['edit_file', 'read_file'],
+    toolHeuristics: ['Edit', 'Read'],
     weight: 0.9,
   },
   {
     intent: 'search',
     keywords: ['查找', '搜索', '在哪', '哪里', 'find', 'search', 'where', 'locate', '定位'],
-    toolHeuristics: ['grep', 'glob'],
+    toolHeuristics: ['Grep', 'Glob'],
     weight: 0.8,
   },
   {
     intent: 'file_operation',
     keywords: ['移动', '重命名', '删除', '复制', 'move', 'rename', 'delete', 'copy'],
-    toolHeuristics: ['bash'],
+    toolHeuristics: ['Bash'],
     weight: 0.7,
   },
   {
     intent: 'testing',
     keywords: ['测试', '单元测试', '运行测试', 'test', 'spec', 'jest', 'vitest'],
-    toolHeuristics: ['bash'],
+    toolHeuristics: ['Bash'],
     weight: 0.8,
   },
   {
@@ -80,7 +80,7 @@ const INTENT_RULES: IntentRule[] = [
   {
     intent: 'research',
     keywords: ['调研', '研究', '对比', '方案', 'research', 'investigate', 'compare'],
-    toolHeuristics: ['web_search', 'web_fetch'],
+    toolHeuristics: ['WebSearch', 'WebFetch'],
     weight: 0.8,
   },
   {

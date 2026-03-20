@@ -12,10 +12,9 @@ const logger = createLogger('GitStatusService');
 
 // 需要触发 git 状态刷新的工具（修改文件的工具）
 const FILE_MODIFYING_TOOLS = new Set([
-  'Bash', 'bash',
-  'Write', 'write_file',
-  'Edit', 'edit_file',
-  'git_commit', 'git_worktree',
+  'Bash',
+  'Write',
+  'Edit',
 ]);
 
 interface GitStatus {

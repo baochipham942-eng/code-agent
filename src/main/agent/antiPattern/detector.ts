@@ -81,6 +81,7 @@ export const DEFAULT_ANTI_PATTERN_CONFIG: AntiPatternConfig = {
 export class AntiPatternDetector {
   private state: AntiPatternState;
   private config: AntiPatternConfig;
+  private rereadCounter: Map<string, number> = new Map();
 
   constructor(config: Partial<AntiPatternConfig> = {}) {
     this.config = { ...DEFAULT_ANTI_PATTERN_CONFIG, ...config };
@@ -90,6 +91,35 @@ export class AntiPatternDetector {
       toolFailureTracker: new Map(),
       duplicateCallTracker: new Map(),
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // Re-read Loop Detection (P0 fix for observation masking death loop)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Track file reads and detect re-read loops caused by observation masking.
+   * When the same file is read 3+ times in a session, it means masking cleared
+   * a previous result and the model is stuck re-reading.
+   *
+   * @returns Warning message to inject if loop detected, null otherwise
+   */
+  trackFileReread(filePath: string): string | null {
+    const count = (this.rereadCounter.get(filePath) || 0) + 1;
+    this.rereadCounter.set(filePath, count);
+
+    if (count >= 3) {
+      logger.warn(`[RereadLoop] File "${filePath}" read ${count} times — injecting loop breaker`);
+      logCollector.agent('WARN', `Re-read loop detected: ${filePath} read ${count} times`);
+      return (
+        `<reread-loop-detected>\n` +
+        `You are re-reading "${filePath}" repeatedly (${count} times). This means observation masking cleared the previous result.\n` +
+        `STOP re-reading. Proceed based on what you remember, or ask the user for guidance.\n` +
+        `</reread-loop-detected>`
+      );
+    }
+
+    return null;
   }
 
   // --------------------------------------------------------------------------
@@ -757,6 +787,7 @@ export class AntiPatternDetector {
       toolFailureTracker: new Map(),
       duplicateCallTracker: new Map(),
     };
+    this.rereadCounter.clear();
   }
 
   /**

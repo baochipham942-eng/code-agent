@@ -56,10 +56,10 @@ export interface AutoCompressionConfig {
 
 const DEFAULT_CONFIG: AutoCompressionConfig = {
   enabled: true,
-  warningThreshold: 0.6,
+  warningThreshold: 0.75,
   criticalThreshold: 0.85,
   targetUsage: 0.5,
-  preserveRecentCount: 6,
+  preserveRecentCount: 10,
   useAISummary: true,
   aiSummaryThreshold: 0.8,
   triggerTokens: 100000,
@@ -136,9 +136,51 @@ export class AutoContextCompressor {
     logger.info(`[AutoCompressor] Usage at ${(usageRatio * 100).toFixed(1)}%, checking compression...`);
 
     // L1: Observation Masking — 先清除旧 tool output，保留 tool call 骨架
+    // P0 fix: 保护活跃文件的最后一次 Read 结果，防止 re-read 死循环
+    const { fileReadTracker } = await import('../tools/fileReadTracker');
+    const recentFiles = fileReadTracker.getRecentFiles(20);
+    const activeFilePaths = new Set(recentFiles.map(f => f.path));
+
+    // 逆序扫描，找到每个活跃文件的最后一次 Read 结果，保护其不被 mask
+    const protectedIndices = new Set<number>();
+    const foundFiles = new Set<string>();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== 'tool' || !msg.content) continue;
+      // 检测文件读取结果（行号格式 "N→"）
+      try {
+        const parsed = JSON.parse(msg.content) as Array<{ output?: string }>;
+        if (Array.isArray(parsed) && parsed.some(r => r.output && /^\s*\d+→/.test(r.output))) {
+          // 尝试从 tool_call_id 关联的 assistant 消息中提取文件路径
+          // 简化方案：保护所有活跃文件格式的 tool result 的最后一次出现
+          for (const filePath of activeFilePaths) {
+            if (!foundFiles.has(filePath) && msg.content.includes(filePath)) {
+              protectedIndices.add(i);
+              foundFiles.add(filePath);
+              break;
+            }
+          }
+          // 如果未匹配到具体文件路径，仍保护最近的文件读取结果
+          if (!foundFiles.has('__generic__') && protectedIndices.size < activeFilePaths.size) {
+            // 对于未能通过路径匹配的 Read 结果，检查是否在保护范围内
+            if (!protectedIndices.has(i) && foundFiles.size < activeFilePaths.size) {
+              protectedIndices.add(i);
+            }
+          }
+        }
+      } catch {
+        // 非 JSON 格式，跳过
+      }
+    }
+
+    if (protectedIndices.size > 0) {
+      logger.info(`[AutoCompressor] Protecting ${protectedIndices.size} active file Read results from masking`);
+    }
+
     const { observationMask } = await import('./tokenOptimizer');
     const maskResult = observationMask(messages, {
       preserveRecentCount: this.config.preserveRecentCount,
+      protectedIndices,
     });
 
     if (maskResult.maskedCount > 0) {

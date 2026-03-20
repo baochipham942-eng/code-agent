@@ -637,6 +637,17 @@ export class ToolExecutionEngine {
         }
       }
 
+      // Re-read loop detection (P0: observation masking death loop)
+      if ((toolCall.name === 'read_file' || toolCall.name === 'Read') && normalizedResult.success) {
+        const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path) as string;
+        if (filePath) {
+          const rereadWarning = this.ctx.antiPatternDetector.trackFileReread(filePath);
+          if (rereadWarning) {
+            this.contextAssembly.injectSystemMessage(rereadWarning);
+          }
+        }
+      }
+
       // Track read vs write operations
       const readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
       if (readWriteWarning === 'HARD_LIMIT') {

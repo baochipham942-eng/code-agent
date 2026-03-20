@@ -788,6 +788,8 @@ export { ContextCompressor } from './compressor';
 export interface ObservationMaskConfig {
   preserveRecentCount: number;
   minTokenThreshold: number;
+  /** Message indices to protect from masking (e.g., last Read result per active file) */
+  protectedIndices?: Set<number>;
 }
 
 export interface ObservationMaskResult {
@@ -806,6 +808,7 @@ export function observationMask(
 ): ObservationMaskResult {
   const preserveRecent = config?.preserveRecentCount ?? OBSERVATION_MASKING.PRESERVE_RECENT_COUNT;
   const minThreshold = config?.minTokenThreshold ?? OBSERVATION_MASKING.MIN_TOKEN_THRESHOLD;
+  const protectedIndices = config?.protectedIndices;
 
   const recentBoundary = messages.length - preserveRecent;
   let maskedCount = 0;
@@ -814,6 +817,9 @@ export function observationMask(
   const result = messages.map((msg, index) => {
     // 跳过最近的消息
     if (index >= recentBoundary) return msg;
+
+    // 跳过受保护的消息（活跃文件的最后一次 Read 结果）
+    if (protectedIndices?.has(index)) return msg;
 
     // 只处理 tool role 的消息
     if (msg.role !== 'tool') return msg;

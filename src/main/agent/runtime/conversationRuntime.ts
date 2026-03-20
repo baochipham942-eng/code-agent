@@ -27,8 +27,7 @@ import { buildRecoveredWorkOrchestrationHint, isContinuationLikeRequest, recover
 import { syncDesktopTasksToPlanningService } from '../../memory/desktopActivityPlanningBridge';
 import { getDesktopActivityUnderstandingService } from '../../memory/desktopActivityUnderstandingService';
 import { buildWorkspaceActivityContextBlock } from '../../memory/workspaceActivitySearchService';
-import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
-import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
+import { buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';

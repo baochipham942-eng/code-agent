@@ -3,8 +3,8 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../memory/desktopActivityUnderstandingService';
-import { recordWorkspaceActivityFeedback, clearWorkspaceActivityFeedback } from '../../memory/workspaceActivitySearchService';
+import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../desktop/desktopActivityUnderstandingService';
+import { recordWorkspaceActivityFeedback, clearWorkspaceActivityFeedback } from '../../desktop/workspaceActivitySearchService';
 import type { PlanningService, TaskStep, TaskStepStatus, TaskPhaseStatus } from '../../planning';
 import { WORKSPACE_RECOVERY_PHASE_TITLE } from '../../planning/recoveredWorkOrchestrator';
 import { listTasks } from './taskStore';

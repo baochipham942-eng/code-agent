@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../memory/desktopActivityUnderstandingService';
+import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../desktop/desktopActivityUnderstandingService';
 import { updateTask, getTask, listTasks } from './taskStore';
 
 export const taskUpdateTool: Tool = {

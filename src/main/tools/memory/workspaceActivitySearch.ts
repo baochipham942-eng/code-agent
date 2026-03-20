@@ -7,7 +7,7 @@ import {
   searchWorkspaceActivity,
   formatWorkspaceActivitySearchItem,
   type WorkspaceActivitySource,
-} from '../../memory/workspaceActivitySearchService';
+} from '../../desktop/workspaceActivitySearchService';
 
 const ALL_SOURCES: WorkspaceActivitySource[] = ['desktop', 'mail', 'calendar', 'reminders'];
 

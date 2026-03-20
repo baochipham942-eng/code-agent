@@ -4,17 +4,17 @@ import type { PromptSuggestion } from '../services/promptSuggestions';
 import {
   getDesktopActivityUnderstandingService,
   type DesktopTaskSyncResult,
-} from '../memory/desktopActivityUnderstandingService';
+} from '../desktop/desktopActivityUnderstandingService';
 import {
   searchWorkspaceActivity,
   type WorkspaceActivitySearchItem,
   type WorkspaceActivitySearchResult,
-} from '../memory/workspaceActivitySearchService';
+} from '../desktop/workspaceActivitySearchService';
 import {
   DESKTOP_RECOVERY_PLAN_TITLE,
   syncDesktopTasksToPlanningService,
   type DesktopPlanningSyncResult,
-} from '../memory/desktopActivityPlanningBridge';
+} from '../desktop/desktopActivityPlanningBridge';
 import type { PlanningService } from './planningService';
 import type { TaskPhase, TaskPhaseStatus, TaskPlan, TaskStep } from './types';
 

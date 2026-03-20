@@ -13,7 +13,7 @@ import {
 } from '../../context/tokenOptimizer';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getLangfuseService } from '../../services';
-import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
+import { sanitizeMemoryContent } from '../../utils/sanitizeMemoryContent';
 import { getMemoryService } from '../../memory/memoryService';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';

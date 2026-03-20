@@ -21,8 +21,6 @@ import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
-import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
-import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary } from '../../lightMemory/recentConversations';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';

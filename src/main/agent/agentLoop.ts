@@ -20,8 +20,6 @@ import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
 import { getContinuousLearningService } from '../memory/continuousLearningService';
-import { sanitizeMemoryContent } from '../memory/sanitizeMemoryContent';
-import { buildSeedMemoryBlock } from '../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';

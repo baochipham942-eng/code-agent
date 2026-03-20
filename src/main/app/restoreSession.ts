@@ -7,7 +7,6 @@
 import { app } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
-import { getMemoryService } from '../memory/memoryService';
 import { getTaskManager } from '../task';
 import {
   createPlanningService,
@@ -29,7 +28,6 @@ export async function initializeSession(
   settings: any,
 ): Promise<string> {
   const sessionManager = getSessionManager();
-  const memoryService = getMemoryService();
   const taskManager = getTaskManager();
 
   const recentSession = await sessionManager.getMostRecentSession();
@@ -75,15 +73,6 @@ export async function initializeSession(
 
     logger.info('Created new session', { sessionId });
   }
-
-  // Set memory service context
-  const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId);
-  const workingDirectory = orchestrator?.getWorkingDirectory();
-
-  memoryService.setContext(
-    sessionId,
-    workingDirectory || undefined
-  );
 
   return sessionId;
 }

@@ -5,8 +5,6 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
-import { getMemoryService } from '../memory/memoryService';
-import { getVectorStore } from '../memory/vectorStore';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
 import { listMemoryFiles, readMemoryFile, deleteMemoryFile, getLightMemoryStats } from '../lightMemory/lightMemoryIpc';
@@ -110,7 +108,6 @@ function shouldHidePreference(key: string): boolean {
  */
 async function handleListMemories(payload: { category?: MemoryCategory }): Promise<MemoryItem[]> {
   const db = getDatabase();
-  const vectorStore = getVectorStore();
 
   const memories: MemoryItem[] = [];
 
@@ -150,14 +147,6 @@ async function handleListMemories(payload: { category?: MemoryCategory }): Promi
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-  }
-
-  // 从向量存储获取知识条目
-  const stats = vectorStore.getStats();
-  if (stats.bySource['knowledge']) {
-    // VectorStore 的知识条目需要单独处理
-    // 目前 VectorStore 没有直接列出所有文档的方法
-    // 这里只返回已有的 projectKnowledge 数据
   }
 
   // 按更新时间排序
@@ -357,29 +346,24 @@ function mapFromNewCategory(category: MemoryCategory): string {
 // Original Handlers
 // ----------------------------------------------------------------------------
 
-async function handleGetContext(payload: { query: string }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  const ragContext = memoryService.getRAGContext(payload.query);
-  const projectKnowledge = memoryService.getProjectKnowledge();
-  const relevantCode = memoryService.searchRelevantCode(payload.query);
-  const relevantConversations = memoryService.searchRelevantConversations(payload.query);
-
+async function handleGetContext(_payload: { query: string }): Promise<unknown> {
+  // Memory service removed — return empty results
   return {
-    ragContext,
-    projectKnowledge: projectKnowledge.map((k) => ({ key: k.key, value: k.value })),
-    relevantCode,
-    relevantConversations,
+    ragContext: '',
+    projectKnowledge: [],
+    relevantCode: [],
+    relevantConversations: [],
   };
 }
 
-async function handleSearchCode(payload: { query: string; topK?: number }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  return memoryService.searchRelevantCode(payload.query, payload.topK);
+async function handleSearchCode(_payload: { query: string; topK?: number }): Promise<unknown> {
+  // Memory service removed — return empty results
+  return [];
 }
 
-async function handleSearchConversations(payload: { query: string; topK?: number }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  return memoryService.searchRelevantConversations(payload.query, payload.topK);
+async function handleSearchConversations(_payload: { query: string; topK?: number }): Promise<unknown> {
+  // Memory service removed — return empty results
+  return [];
 }
 
 async function handleGetStats(): Promise<unknown> {

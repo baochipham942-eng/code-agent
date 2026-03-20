@@ -16,7 +16,6 @@ import type { PermissionResponse, Session, Message, ModelProvider } from '../../
 import type { TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
-import { getMemoryService } from '../memory/memoryService';
 import { getModelSessionState } from '../session/modelSessionState';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 
@@ -86,7 +85,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!configService) throw new Error('Services not initialized');
 
     const sessionManager = getSessionManager();
-    const memoryService = getMemoryService();
     const settings = configService.getSettings();
     const workingDirectory = this.getWorkingDirectory();
 
@@ -109,20 +107,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     taskManager.cleanup(session.id);
     taskManager.setCurrentSessionId(session.id);
 
-    memoryService.setContext(session.id, workingDirectory || undefined);
-
     return session;
   }
 
   async loadSession(sessionId: string): Promise<Session> {
     const sessionManager = getSessionManager();
-    const memoryService = getMemoryService();
 
     const session = await sessionManager.restoreSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
     this._setCurrentSessionId(sessionId);
-    memoryService.setContext(sessionId, session.workingDirectory || undefined);
 
     const taskManager = this.getTaskManager();
     taskManager.setCurrentSessionId(sessionId);
@@ -163,9 +157,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
       sessionManager.setCurrentSession(newSession.id);
       this._setCurrentSessionId(newSession.id);
-
-      const memoryService = getMemoryService();
-      memoryService.setContext(newSession.id);
     }
   }
 

@@ -345,35 +345,7 @@ export class BuiltinHookExecutor {
    * 获取 Memory 服务适配器
    */
   private async getMemoryServiceAdapter(): Promise<MemoryServiceInterface | null> {
-    try {
-      // 尝试动态导入 memory 服务
-      const memoryModule = await import('../memory/memoryService');
-      if (memoryModule.getMemoryService) {
-        const service = memoryModule.getMemoryService();
-        if (service) {
-          return {
-            add: async (memory) => {
-              // 使用 addKnowledge 方法
-              await service.addKnowledge(memory.content, memory.type);
-            },
-            search: async (query, options) => {
-              // 使用 searchKnowledgeAsync 方法
-              const results = await service.searchKnowledgeAsync(query, {
-                topK: options?.limit || 5,
-              });
-              // EnhancedSearchResult extends SearchResult which has document.content
-              return results.map((r) => ({
-                content: r.document?.content || '',
-                type: String(r.document?.metadata?.type || 'knowledge'),
-                confidence: r.score || 0.5,
-              }));
-            },
-          };
-        }
-      }
-    } catch (e) {
-      logger.debug('Memory service not available');
-    }
+    // Memory service removed — return null (no-op adapter)
     return null;
   }
 

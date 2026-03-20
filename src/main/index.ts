@@ -216,15 +216,6 @@ app.on('before-quit', async () => {
   }
 
   try {
-    const { getMemoryService } = await import('./memory/memoryService');
-    const memoryService = getMemoryService();
-    await memoryService.cleanup();
-    logger.info('Memory service cleaned up');
-  } catch (error) {
-    logger.error('Error cleaning up memory service', error);
-  }
-
-  try {
     const { getMCPClient } = await import('./mcp/mcpClient');
     const mcpClient = getMCPClient();
     await mcpClient.disconnectAll();

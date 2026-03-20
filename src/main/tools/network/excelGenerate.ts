@@ -9,7 +9,7 @@ import ExcelJS from 'exceljs';
 import { formatFileSize } from './utils';
 
 // Excel 样式主题
-type ExcelTheme = 'professional' | 'colorful' | 'minimal' | 'dark';
+type ExcelTheme = 'professional' | 'colorful' | 'minimal' | 'dark' | 'financial';
 
 interface ExcelGenerateParams {
   title: string;
@@ -59,6 +59,14 @@ const themeConfigs: Record<ExcelTheme, {
     oddRowBgColor: '4b5563',
     borderColor: '6b7280',
     fontName: 'Consolas',
+  },
+  financial: {
+    headerBgColor: '003366',
+    headerFontColor: 'ffffff',
+    evenRowBgColor: 'f7f9fc',
+    oddRowBgColor: 'ffffff',
+    borderColor: 'b0c4de',
+    fontName: 'Arial',
   },
 };
 
@@ -266,7 +274,7 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
       },
       theme: {
         type: 'string',
-        enum: ['professional', 'colorful', 'minimal', 'dark'],
+        enum: ['professional', 'colorful', 'minimal', 'dark', 'financial'],
         description: '主题风格（默认: professional）',
         default: 'professional',
       },
@@ -393,6 +401,27 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
           },
         };
         excelRow.font = { name: themeConfig.fontName };
+
+        // Financial theme: color-code by cell type
+        if (theme === 'financial') {
+          values.forEach((val, colIdx) => {
+            const cell = excelRow.getCell(colIdx + 1);
+            if (typeof val === 'number') {
+              // Percentages
+              if (headers[colIdx]?.includes('%') || headers[colIdx]?.includes('率')) {
+                cell.numFmt = '0.0%';
+              } else {
+                // Numbers with commas, negatives in parentheses
+                cell.numFmt = '#,##0;(#,##0)';
+              }
+              // Black font = calculated/formula cells
+              cell.font = { name: 'Arial', color: { argb: '000000' } };
+            } else if (typeof val === 'string' && val) {
+              // Blue font = user input cells
+              cell.font = { name: 'Arial', color: { argb: '0000FF' } };
+            }
+          });
+        }
       });
 
       // 添加边框

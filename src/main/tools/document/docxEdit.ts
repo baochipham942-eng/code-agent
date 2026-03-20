@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import type { ToolExecutionResult } from '../types';
 import { createSnapshot, restoreLatest } from './snapshotManager';
+import { enableTrackChanges, ensurePeopleXml, wrapInsertion, wrapDeletion } from './docxTrackChanges';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +21,10 @@ type DocxEditOperation =
   | { action: 'delete_paragraph'; index: number; count?: number }
   | { action: 'replace_heading'; index: number; text: string }
   | { action: 'append_paragraph'; text: string; style?: 'normal' | 'heading1' | 'heading2' | 'heading3' }
-  | { action: 'set_text_style'; search: string; bold?: boolean; italic?: boolean; color?: string };
+  | { action: 'set_text_style'; search: string; bold?: boolean; italic?: boolean; color?: string }
+  | { action: 'track_insert'; after: number; text: string; author?: string; date?: string }
+  | { action: 'track_delete'; search: string; author?: string; date?: string }
+  | { action: 'suggest_replace'; search: string; replace: string; author?: string; date?: string };
 
 export interface DocxEditParams {
   file_path: string;
@@ -177,6 +181,79 @@ function execSetTextStyle(xml: string, op: Extract<DocxEditOperation, { action: 
 }
 
 // ---------------------------------------------------------------------------
+// Track Changes executors
+// ---------------------------------------------------------------------------
+
+function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: 'track_insert' }>, zip: any): { xml: string; desc: string } {
+  const author = op.author || 'Code Agent';
+  const insertion = wrapInsertion(op.text, author, op.date);
+
+  const paragraphs = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) || [];
+  if (op.after < -1 || op.after >= paragraphs.length) {
+    throw new Error(`Paragraph index ${op.after} out of range (-1 to ${paragraphs.length - 1})`);
+  }
+
+  // Wrap insertion in a paragraph
+  const insertionP = `<w:p>${insertion}</w:p>`;
+
+  let result: string;
+  if (op.after === -1) {
+    const first = paragraphs[0]!;
+    result = xml.replace(first, insertionP + first);
+  } else {
+    const target = paragraphs[op.after]!;
+    result = xml.replace(target, target + insertionP);
+  }
+
+  // Enable track changes in settings
+  void enableTrackChanges(zip);
+  void ensurePeopleXml(zip, author);
+
+  return { xml: result, desc: `Track insert after paragraph ${op.after}: "${op.text.substring(0, 40)}..."` };
+}
+
+function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: 'track_delete' }>, zip: any): { xml: string; desc: string } {
+  const author = op.author || 'Code Agent';
+  const searchEscaped = escapeXml(op.search);
+  let count = 0;
+
+  // Find <w:r> elements containing the search text and wrap with <w:del>
+  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match, content) => {
+    if (!content.includes(searchEscaped)) return match;
+    count++;
+
+    const deletion = wrapDeletion(op.search, author, op.date);
+    return deletion;
+  });
+
+  void enableTrackChanges(zip);
+  void ensurePeopleXml(zip, author);
+
+  return { xml: result, desc: `Track delete "${op.search}" (${count} occurrence${count !== 1 ? 's' : ''})` };
+}
+
+function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action: 'suggest_replace' }>, zip: any): { xml: string; desc: string } {
+  const author = op.author || 'Code Agent';
+  const searchEscaped = escapeXml(op.search);
+  let count = 0;
+
+  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match, content) => {
+    if (!content.includes(searchEscaped)) return match;
+    count++;
+
+    // Generate deletion + insertion pair
+    const deletion = wrapDeletion(op.search, author, op.date);
+    const insertion = wrapInsertion(op.replace, author, op.date);
+    return deletion + insertion;
+  });
+
+  void enableTrackChanges(zip);
+  void ensurePeopleXml(zip, author);
+
+  return { xml: result, desc: `Suggest replace "${op.search}" → "${op.replace}" (${count} occurrence${count !== 1 ? 's' : ''})` };
+}
+
+// ---------------------------------------------------------------------------
 // Main executor
 // ---------------------------------------------------------------------------
 
@@ -240,6 +317,15 @@ export async function executeDocxEdit(
           break;
         case 'set_text_style':
           result = execSetTextStyle(xml, op);
+          break;
+        case 'track_insert':
+          result = execTrackInsert(xml, op, zip);
+          break;
+        case 'track_delete':
+          result = execTrackDelete(xml, op, zip);
+          break;
+        case 'suggest_replace':
+          result = execSuggestReplace(xml, op, zip);
           break;
         default:
           throw new Error(`Unknown action: ${(op as DocxEditOperation).action}`);

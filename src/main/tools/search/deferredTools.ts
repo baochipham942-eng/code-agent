@@ -430,6 +430,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'PdfAutomate',
+    shortDescription: 'PDF 自动化（生成/压缩/读取/合并/拆分/表格提取/转 DOCX）',
+    tags: ['document'] as ToolTag[],
+    aliases: ['pdf', 'pdf_merge', 'pdf_split', 'pdf_tables', 'pdf_convert', 'pdf_automate', 'pdf_generate', 'pdf_compress', 'read_pdf'],
+    source: 'builtin',
+  },
+  {
     name: 'image_process',
     shortDescription: '图片处理和编辑',
     tags: ['media'],

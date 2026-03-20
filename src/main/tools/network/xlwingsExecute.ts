@@ -3,11 +3,9 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { spawn } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
 import { createLogger } from '../../services/infra/logger';
-import { app } from '../../platform';
+import { executePythonScript } from '../utils/pythonBridge';
 
 const logger = createLogger('XlwingsExecute');
 
@@ -39,76 +37,10 @@ interface XlwingsResult {
 }
 
 /**
- * 获取 Python 脚本路径
- */
-function getPythonScriptPath(): string {
-  // 开发环境
-  const devPath = path.join(__dirname, '../../../../scripts/xlwings_bridge.py');
-  if (fs.existsSync(devPath)) {
-    return devPath;
-  }
-
-  // 打包环境
-  const prodPath = path.join(app.getAppPath(), 'scripts/xlwings_bridge.py');
-  if (fs.existsSync(prodPath)) {
-    return prodPath;
-  }
-
-  // 资源目录
-  const resourcePath = path.join((process as any).resourcesPath || '', 'scripts/xlwings_bridge.py');
-  if (fs.existsSync(resourcePath)) {
-    return resourcePath;
-  }
-
-  throw new Error('找不到 xlwings_bridge.py 脚本');
-}
-
-/**
- * 执行 Python 脚本
+ * 执行 xlwings Python 脚本（委派给 pythonBridge）
  */
 async function executePython(args: string[]): Promise<XlwingsResult> {
-  return new Promise((resolve) => {
-    const scriptPath = getPythonScriptPath();
-    const python = spawn('python3', [scriptPath, ...args]);
-
-    let stdout = '';
-    let stderr = '';
-
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    python.on('close', (code) => {
-      if (code !== 0) {
-        resolve({
-          success: false,
-          error: stderr || `Python 进程退出码: ${code}`
-        });
-        return;
-      }
-
-      try {
-        const result = JSON.parse(stdout.trim());
-        resolve(result);
-      } catch {
-        resolve({
-          success: false,
-          error: `JSON 解析失败: ${stdout}`
-        });
-      }
-    });
-
-    python.on('error', (err) => {
-      resolve({
-        success: false,
-        error: `Python 执行失败: ${err.message}`
-      });
-    });
-  });
+  return executePythonScript('xlwings_bridge.py', args) as Promise<XlwingsResult>;
 }
 
 /**

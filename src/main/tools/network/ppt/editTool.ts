@@ -6,7 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../../types';
 import * as fs from 'fs';
 import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
 
-type EditAction = 'replace_title' | 'replace_content' | 'replace_slide' | 'delete_slide' | 'insert_slide' | 'extract_style' | 'reorder_slides' | 'update_notes';
+type EditAction = 'replace_title' | 'replace_content' | 'replace_slide' | 'delete_slide' | 'insert_slide' | 'extract_style' | 'reorder_slides' | 'update_notes' | 'analyze';
 
 interface PPTEditParams {
   file_path: string;
@@ -32,6 +32,7 @@ export const pptEditTool: Tool = {
 - extract_style: 提取 PPTX 的主题样式
 - reorder_slides: 调整幻灯片顺序（order: [2,0,1,3]）
 - update_notes: 更新指定页的演讲者备注
+- analyze: 分析 PPTX 结构（slide 数量/布局/主题色/字体/内容摘要）
 
 每次编辑前自动创建快照（可回滚）。`,
   requiresPermission: true,
@@ -45,7 +46,7 @@ export const pptEditTool: Tool = {
       },
       action: {
         type: 'string',
-        enum: ['replace_title', 'replace_content', 'replace_slide', 'delete_slide', 'insert_slide', 'extract_style', 'reorder_slides', 'update_notes'],
+        enum: ['replace_title', 'replace_content', 'replace_slide', 'delete_slide', 'insert_slide', 'extract_style', 'reorder_slides', 'update_notes', 'analyze'],
         description: '编辑操作类型',
       },
       slide_index: {
@@ -246,6 +247,74 @@ export const pptEditTool: Tool = {
           break;
         }
 
+        case 'analyze': {
+          const slideFiles = Object.keys(zip.files).filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f)).sort();
+          const slideCount = slideFiles.length;
+          const slides: Array<{ index: number; title: string; textRuns: number; imageCount: number; tableCount: number }> = [];
+
+          for (let i = 0; i < slideCount; i++) {
+            const slideFile = `ppt/slides/slide${i + 1}.xml`;
+            if (!zip.files[slideFile]) continue;
+            const slideXml: string = await zip.files[slideFile].async('string');
+
+            // Extract title (first <a:t>)
+            const titleMatch = slideXml.match(/<a:t>([^<]*)<\/a:t>/);
+            const slideTitle = titleMatch ? titleMatch[1] : '(无标题)';
+
+            // Count text runs, images, tables
+            const textRuns = (slideXml.match(/<a:t>/g) || []).length;
+            const imageCount = (slideXml.match(/<a:blip/g) || []).length;
+            const tableCount = (slideXml.match(/<a:tbl>/g) || []).length;
+
+            slides.push({ index: i, title: slideTitle, textRuns, imageCount, tableCount });
+          }
+
+          // Extract theme colors
+          let themeColors = '';
+          const themeFile = Object.keys(zip.files).find(f => /^ppt\/theme\/theme\d+\.xml$/.test(f));
+          if (themeFile && zip.files[themeFile]) {
+            const themeXml: string = await zip.files[themeFile].async('string');
+            const colorMatches = themeXml.match(/<a:srgbClr val="([0-9A-Fa-f]{6})"/g) || [];
+            const colors = colorMatches.slice(0, 8).map(m => '#' + m.match(/val="([^"]+)"/)?.[1]);
+            themeColors = colors.join(', ');
+          }
+
+          // Extract fonts
+          const fonts = new Set<string>();
+          for (const sf of slideFiles) {
+            const sXml: string = await zip.files[sf].async('string');
+            const fontMatches = sXml.match(/typeface="([^"]+)"/g) || [];
+            fontMatches.forEach(m => {
+              const f = m.match(/typeface="([^"]+)"/)?.[1];
+              if (f && !f.startsWith('+')) fonts.add(f);
+            });
+          }
+
+          // Count masters
+          const masterFiles = Object.keys(zip.files).filter(f => /^ppt\/slideMasters\//.test(f) && f.endsWith('.xml'));
+          const layoutFiles = Object.keys(zip.files).filter(f => /^ppt\/slideLayouts\//.test(f) && f.endsWith('.xml'));
+
+          let output = `📊 PPTX 分析结果\n\n`;
+          output += `📄 幻灯片: ${slideCount} 页\n`;
+          output += `🎨 母版: ${masterFiles.length} 个\n`;
+          output += `📐 布局: ${layoutFiles.length} 个\n`;
+          if (themeColors) output += `🎨 主题色: ${themeColors}\n`;
+          output += `🔤 字体: ${[...fonts].join(', ') || '(无自定义字体)'}\n\n`;
+          output += `📑 内容概要:\n`;
+          for (const s of slides) {
+            output += `  ${s.index + 1}. "${s.title}" — ${s.textRuns} 文本`;
+            if (s.imageCount) output += `, ${s.imageCount} 图片`;
+            if (s.tableCount) output += `, ${s.tableCount} 表格`;
+            output += '\n';
+          }
+
+          return {
+            success: true,
+            output,
+            metadata: { slideCount, slides, fonts: [...fonts], themeColors, masterCount: masterFiles.length, layoutCount: layoutFiles.length },
+          };
+        }
+
         case 'update_notes': {
           if (slide_index === undefined) {
             return { success: false, error: 'update_notes 需要 slide_index 参数' };
@@ -274,7 +343,7 @@ export const pptEditTool: Tool = {
       }
 
       // Write modified file
-      const noWriteActions = new Set(['extract_style']);
+      const noWriteActions = new Set(['extract_style', 'analyze']);
       if (!noWriteActions.has(action)) {
         const outputBuffer = await zip.generateAsync({ type: 'nodebuffer' });
         fs.writeFileSync(file_path, outputBuffer);

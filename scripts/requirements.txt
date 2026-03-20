@@ -1,0 +1,11 @@
+# Python dependencies for Code Agent scripts
+# Install: pip install -r scripts/requirements.txt
+
+# Excel
+openpyxl>=3.1.0
+xlwings>=0.30.0
+
+# PDF
+pypdf>=4.0.0
+pdfplumber>=0.10.0
+pdf2docx>=0.5.8

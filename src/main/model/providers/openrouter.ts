@@ -41,7 +41,7 @@ export async function callOpenRouter(
   }));
 
   // 获取模型信息
-  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-4o');
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-5.4');
 
   // 启用流式输出
   const useStream = !!onStream;
@@ -53,7 +53,7 @@ export async function callOpenRouter(
     : convertToTextOnlyMessages(messages);
 
   const requestBody: Record<string, unknown> = {
-    model: config.model || 'google/gemini-2.0-flash-001',
+    model: config.model || 'google/gemini-3-flash-preview',
     messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? recommendedMaxTokens,

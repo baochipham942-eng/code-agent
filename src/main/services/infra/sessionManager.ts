@@ -16,8 +16,6 @@ import type {
   TodoItem,
 } from '../../../shared/types';
 import { createLogger } from './logger';
-import { getSessionSummarizer } from '../../memory/sessionSummarizer';
-import { getCoreMemoryService } from '../../memory/coreMemory';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -620,61 +618,7 @@ export class SessionManager implements Disposable {
 
     logger.info('Ending session, generating summary', { sessionId: targetSessionId });
 
-    try {
-      const session = await this.getSession(targetSessionId);
-      if (!session || session.messages.length < 4) {
-        logger.debug('Session too short for summary', {
-          sessionId: targetSessionId,
-          messageCount: session?.messages.length || 0,
-        });
-        return;
-      }
-
-      // 生成会话摘要
-      const summarizer = getSessionSummarizer();
-      const summary = await summarizer.generateSummary(
-        targetSessionId,
-        session.messages,
-        session.workingDirectory
-      );
-
-      if (summary) {
-        // 保存摘要到向量库（用于后续 Fork 检索）
-        await summarizer.saveSummary(summary);
-
-        logger.info('Session summary saved', {
-          sessionId: targetSessionId,
-          title: summary.title,
-          topics: summary.topics.length,
-          decisions: summary.keyDecisions.length,
-        });
-
-        // 记录审计日志
-        const db = getDatabase();
-        db.logAuditEvent('session_summary_generated', {
-          sessionId: targetSessionId,
-          title: summary.title,
-          generatedBy: summary.generatedBy,
-        }, targetSessionId);
-      }
-
-      // 从会话中学习用户偏好
-      try {
-        const coreMemory = getCoreMemoryService();
-        const learned = coreMemory.learnFromSession(session.messages);
-        if (Object.keys(learned).length > 0) {
-          logger.info('Learned user preferences from session', {
-            sessionId: targetSessionId,
-            learned: Object.keys(learned),
-          });
-        }
-      } catch (learnError) {
-        logger.warn('Failed to learn preferences from session', { error: learnError });
-      }
-    } catch (error) {
-      // 摘要生成失败不应该阻止会话结束
-      logger.error('Failed to generate session summary', { error, sessionId: targetSessionId });
-    }
+    // Legacy summary generation and preference learning removed (memory module deleted)
 
     // 仅当调用方未指定 sessionId（即"结束当前会话"语义）时才清除 currentSessionId
     // 当从 setCurrentSession 传入明确 sessionId 时，调用方已设置了新的 currentSessionId，

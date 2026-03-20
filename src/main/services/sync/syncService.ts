@@ -10,12 +10,10 @@ import {
   type SessionRow,
   type MessageRow,
   type UserPreferenceRow,
-  type VectorDocumentRow,
 } from '../infra';
 import { getDatabase } from '../core';
 import { getAuthService } from '../auth';
 import { getSecureStorage } from '../core';
-import { getVectorStore, type VectorDocument } from '../../memory/vectorStore';
 import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } from '../../../shared/types';
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
@@ -451,10 +449,6 @@ class SyncService implements Disposable {
       }
     }
 
-    // Pull vector documents
-    const vectorCount = await this.pullVectorDocuments(userId);
-    count += vectorCount;
-
     return { count, conflicts };
   }
 
@@ -531,139 +525,7 @@ class SyncService implements Disposable {
       }
     }
 
-    // Push vector documents
-    const vectorCount = await this.pushVectorDocuments(userId);
-    count += vectorCount;
-
     return { count, success: !sessionPushFailed };
-  }
-
-  // --------------------------------------------------------------------------
-  // Vector Document Sync
-  // --------------------------------------------------------------------------
-
-  private async pullVectorDocuments(userId: string): Promise<number> {
-    const supabase = getSupabase();
-    const vectorStore = getVectorStore();
-    let count = 0;
-
-    try {
-      const { data: remoteDocsRaw, error } = await supabase
-        .from('vector_documents')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('is_deleted', false)
-        .gt('updated_at', this.syncCursor)
-        .order('updated_at', { ascending: true })
-        .limit(500);
-
-      if (error) {
-        logger.error('Error pulling vector documents', { error });
-        return 0;
-      }
-
-      const remoteDocs = (remoteDocsRaw || []) as VectorDocumentRow[];
-
-      for (const remote of remoteDocs) {
-        try {
-          // Check if document already exists locally
-          const local = vectorStore.get(remote.id);
-
-          if (!local && remote.embedding) {
-            // New document from cloud - add directly with existing embedding
-            // Note: We store embedding as number[] in JS, pgvector handles conversion
-            const doc: VectorDocument = {
-              id: remote.id,
-              content: remote.content,
-              embedding: remote.embedding,
-              metadata: {
-                source: remote.source as 'file' | 'conversation' | 'knowledge',
-                projectPath: remote.project_path || undefined,
-                filePath: remote.file_path || undefined,
-                sessionId: remote.session_id || undefined,
-                createdAt: remote.created_at,
-              },
-            };
-
-            // Add to local store (bypass normal add which would regenerate embedding)
-            // TODO: VectorStore 内部属性访问需要 as any，考虑添加公开方法
-            (vectorStore as any).documents.set(remote.id, doc);
-            (vectorStore as any).dirty = true;
-            count++;
-          }
-        } catch (err) {
-          logger.error('Error pulling vector document', { documentId: remote.id, error: err });
-        }
-      }
-
-      // Save if we added any documents
-      if (count > 0) {
-        await vectorStore.save();
-      }
-    } catch (err) {
-      logger.error('Error in pullVectorDocuments', err as Error);
-    }
-
-    return count;
-  }
-
-  private async pushVectorDocuments(userId: string): Promise<number> {
-    const supabase = getSupabase();
-    const vectorStore = getVectorStore();
-    let count = 0;
-
-    try {
-      // Get all documents and filter by createdAt > syncCursor
-      const stats = vectorStore.getStats();
-      if (stats.documentCount === 0) return 0;
-
-      // Access internal documents map
-      // TODO: VectorStore 内部属性访问需要 as any，考虑添加公开方法
-      const documents = (vectorStore as any).documents as Map<string, VectorDocument>;
-      const pendingDocs: VectorDocument[] = [];
-
-      for (const doc of documents.values()) {
-        if (doc.metadata.createdAt > this.syncCursor) {
-          pendingDocs.push(doc);
-        }
-      }
-
-      if (pendingDocs.length === 0) return 0;
-
-      // Batch upsert in chunks of 100
-      const batchSize = 100;
-      for (let i = 0; i < pendingDocs.length; i += batchSize) {
-        const batch = pendingDocs.slice(i, i + batchSize);
-
-        const { error } = await supabase.from('vector_documents').upsert(
-          batch.map((doc) => ({
-            id: doc.id,
-            user_id: userId,
-            content: doc.content,
-            embedding: doc.embedding,
-            source: doc.metadata.source,
-            project_path: doc.metadata.projectPath || null,
-            file_path: doc.metadata.filePath || null,
-            session_id: doc.metadata.sessionId || null,
-            created_at: doc.metadata.createdAt,
-            updated_at: doc.metadata.createdAt,
-            source_device_id: this.deviceId,
-            // TODO: Supabase upsert 类型限制
-          })) as any,
-          { onConflict: 'id' }
-        );
-
-        if (!error) {
-          count += batch.length;
-        } else {
-          logger.error('Error pushing vector documents', { error });
-        }
-      }
-    } catch (err) {
-      logger.error('Error in pushVectorDocuments', err as Error);
-    }
-
-    return count;
   }
 
   private async updateSyncCursor(userId: string): Promise<void> {

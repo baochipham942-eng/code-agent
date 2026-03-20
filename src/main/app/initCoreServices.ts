@@ -7,9 +7,7 @@ import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadShellEnvironment } from '../services/infra/shellEnvironment';
 import { ConfigService, initDatabase } from '../services';
-import { initMemoryService } from '../memory/memoryService';
 import { initFileCheckpointService } from '../services/checkpoint';
-import { TOOL_CACHE } from '../../shared/constants';
 
 const logger = createLogger('Bootstrap:Core');
 
@@ -50,16 +48,6 @@ export async function initializeCoreServices(): Promise<ConfigService> {
       elapsed: Date.now() - startTime,
     });
   }
-
-  // Initialize memory service (depends on database)
-  initMemoryService({
-    maxRecentMessages: 10,
-    toolCacheTTL: TOOL_CACHE.DEFAULT_TTL,
-    maxSessionMessages: 100,
-    maxRAGResults: 5,
-    ragTokenLimit: 2000,
-  });
-  logger.info('Memory service initialized');
 
   // 初始化文件检查点服务
   initFileCheckpointService();

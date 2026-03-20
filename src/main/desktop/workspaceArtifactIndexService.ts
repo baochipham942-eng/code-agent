@@ -7,7 +7,6 @@ import { getServiceRegistry } from '../services/serviceRegistry';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services';
 import { getConnectorRegistry } from '../connectors';
-import { getVectorStore } from '../memory/vectorStore';
 import type { MemoryRecord } from '../services/core/repositories';
 
 const logger = createLogger('WorkspaceArtifactIndexService');
@@ -669,7 +668,6 @@ export class WorkspaceArtifactIndexService implements Disposable {
 
     const artifacts = [...mailBatch.artifacts, ...calendarBatch.artifacts, ...reminderBatch.artifacts];
     const db = getDatabase();
-    const vectorStore = getVectorStore();
     const existingMemories = db.listMemories({
       type: 'workspace_activity',
       limit: 5000,
@@ -689,15 +687,12 @@ export class WorkspaceArtifactIndexService implements Disposable {
     let updatedArtifacts = 0;
     let unchangedArtifacts = 0;
     let indexedArtifacts = 0;
-    let vectorStoreChanged = false;
 
     for (const artifact of artifacts) {
       const existing = existingByKey.get(artifact.artifactKey);
-      let memoryId: string;
-      let changed = false;
 
       if (!existing) {
-        const created = db.createMemory({
+        db.createMemory({
           type: 'workspace_activity',
           category: artifact.category,
           content: artifact.content,
@@ -706,11 +701,8 @@ export class WorkspaceArtifactIndexService implements Disposable {
           confidence: artifact.confidence,
           metadata: artifact.metadata,
         });
-        memoryId = created.id;
         createdArtifacts += 1;
-        changed = true;
       } else {
-        memoryId = existing.id;
         const metadataChanged = JSON.stringify(existing.metadata) !== JSON.stringify(artifact.metadata);
         if (
           existing.content !== artifact.content
@@ -726,41 +718,14 @@ export class WorkspaceArtifactIndexService implements Disposable {
             metadata: artifact.metadata,
           });
           updatedArtifacts += 1;
-          changed = true;
         } else {
           unchangedArtifacts += 1;
         }
       }
 
-      if (changed) {
-        try {
-          vectorStore.deleteByMetadata({
-            source: 'knowledge',
-            category: 'workspace_artifact',
-            artifactKey: artifact.artifactKey,
-          });
-          await vectorStore.add(buildVectorText(artifact), {
-            source: 'knowledge',
-            category: 'workspace_artifact',
-            sourceKind: artifact.sourceKind,
-            artifactKey: artifact.artifactKey,
-            memoryId,
-            timestampMs: artifact.timestampMs,
-            createdAt: artifact.timestampMs || now,
-          });
-          vectorStoreChanged = true;
-        } catch (error) {
-          warnings.push(`vector:${artifact.artifactKey}:${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
+      // Vector store indexing removed (memory module deleted)
 
       indexedArtifacts += 1;
-    }
-
-    if (vectorStoreChanged) {
-      await vectorStore.save().catch((error) => {
-        warnings.push(`vector-save:${error instanceof Error ? error.message : String(error)}`);
-      });
     }
 
     this.lastRefreshAtMs = now;
@@ -798,55 +763,25 @@ export class WorkspaceArtifactIndexService implements Disposable {
       ? Date.now() - (options.sinceHours * 60 * 60 * 1000)
       : null;
     const db = getDatabase();
-    const vectorStore = getVectorStore();
+    // Vector store removed — lexical search only
     const seen = new Set<string>();
     const matches: IndexedWorkspaceArtifact[] = [];
 
-    const semanticResults = vectorStore.search(normalized, {
-      topK: Math.max(limit * 6, 20),
-      filter: {
-        source: 'knowledge',
-        category: 'workspace_artifact',
-      },
+    const lexicalMatches = db.searchMemories(normalized, {
+      type: 'workspace_activity',
+      limit: Math.max(limit * 4, 20),
     });
 
-    for (const result of semanticResults) {
-      const memoryId = typeof result.document.metadata.memoryId === 'string'
-        ? result.document.metadata.memoryId
-        : null;
-      if (!memoryId || seen.has(memoryId)) continue;
-
-      const memory = db.getMemory(memoryId);
-      if (!memory) continue;
-
-      const artifact = toIndexedArtifact(memory, result.score);
+    for (const memory of lexicalMatches) {
+      if (seen.has(memory.id)) continue;
+      const artifact = toIndexedArtifact(memory, 0.35);
       if (!artifact) continue;
       if (!matchesArtifactFilters(artifact, options, cutoff)) continue;
 
-      seen.add(memoryId);
+      seen.add(memory.id);
       matches.push(artifact);
       if (matches.length >= limit) {
         break;
-      }
-    }
-
-    if (matches.length < limit) {
-      const lexicalMatches = db.searchMemories(normalized, {
-        type: 'workspace_activity',
-        limit: Math.max(limit * 4, 20),
-      });
-
-      for (const memory of lexicalMatches) {
-        if (seen.has(memory.id)) continue;
-        const artifact = toIndexedArtifact(memory, 0.35);
-        if (!artifact) continue;
-        if (!matchesArtifactFilters(artifact, options, cutoff)) continue;
-
-        seen.add(memory.id);
-        matches.push(artifact);
-        if (matches.length >= limit) {
-          break;
-        }
       }
     }
 

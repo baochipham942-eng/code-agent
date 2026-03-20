@@ -21,7 +21,6 @@ import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import type { MemoryRecord } from '../services/core/repositories';
-import { getVectorStore } from '../memory/vectorStore';
 import { getEventBus } from '../events/eventBus';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
@@ -860,7 +859,6 @@ export class DesktopActivityUnderstandingService implements Disposable {
       .filter((slice) => slice.events.length >= this.config.minEventsPerSlice);
 
     const db = getDatabase();
-    const vectorStore = getVectorStore();
     const existingSummaries = db.listMemories({
       type: 'desktop_activity',
       category: 'activity_summary',
@@ -898,7 +896,6 @@ export class DesktopActivityUnderstandingService implements Disposable {
     let summariesUpdated = 0;
     let summariesUnchanged = 0;
     let todoCandidatesCreated = 0;
-    let vectorStoreChanged = false;
 
     for (const slice of slices) {
       const summary = summarizeDesktopActivitySlice(slice, this.config.maxSubjectsPerSlice);
@@ -954,28 +951,7 @@ export class DesktopActivityUnderstandingService implements Disposable {
       }
 
       if (summaryChanged) {
-        try {
-          vectorStore.deleteByMetadata({
-            source: 'knowledge',
-            category: 'activity_summary',
-            sliceKey: summary.sliceKey,
-          });
-          await vectorStore.add(buildVectorText(summary), {
-            source: 'knowledge',
-            category: 'activity_summary',
-            sliceKey: summary.sliceKey,
-            memoryId: summaryMemoryId,
-            fromMs: summary.fromMs,
-            toMs: summary.toMs,
-            createdAt: summary.lastCapturedAtMs,
-          });
-          vectorStoreChanged = true;
-        } catch (error) {
-          logger.warn('Failed to index desktop activity summary into vector store', {
-            sliceKey: summary.sliceKey,
-            error: String(error),
-          });
-        }
+        // Vector store indexing removed (memory module deleted)
 
         getEventBus().publish('memory', 'desktop_activity_summary_generated', {
           sliceKey: summary.sliceKey,
@@ -1027,14 +1003,6 @@ export class DesktopActivityUnderstandingService implements Disposable {
           }, { bridgeToRenderer: false });
         }
       }
-    }
-
-    if (vectorStoreChanged) {
-      await vectorStore.save().catch((error) => {
-        logger.warn('Failed to persist vector store after desktop activity refresh', {
-          error: String(error),
-        });
-      });
     }
 
     const result: DesktopActivityDerivationRun = {
@@ -1327,68 +1295,32 @@ export class DesktopActivityUnderstandingService implements Disposable {
       : null;
 
     const db = getDatabase();
-    const vectorStore = getVectorStore();
-    const semanticResults = vectorStore.search(normalized, {
-      topK: Math.max(limit * 4, 10),
-      filter: {
-        source: 'knowledge',
-        category: 'activity_summary',
-      },
-    });
-
+    // Vector store removed — fall back to lexical search only
     const matches: DesktopActivitySemanticMatch[] = [];
     const seen = new Set<string>();
 
-    for (const result of semanticResults) {
-      const memoryId = typeof result.document.metadata.memoryId === 'string'
-        ? result.document.metadata.memoryId
-        : null;
+    const lexicalMatches = db.searchMemories(normalized, {
+      type: 'desktop_activity',
+      category: 'activity_summary',
+      limit: Math.max(limit * 2, 10),
+    });
 
-      if (!memoryId || seen.has(memoryId)) continue;
-
-      const memory = db.getMemory(memoryId);
-      if (!memory) continue;
+    for (const memory of lexicalMatches) {
+      if (seen.has(memory.id)) continue;
 
       const summary = summaryFromMemory(memory);
       if (!summary) continue;
       if (cutoff && summary.toMs < cutoff) continue;
 
-      seen.add(memoryId);
+      seen.add(memory.id);
       matches.push({
         summary,
-        score: result.score,
+        score: 0.35,
         snippet: buildSearchSnippet(summary, normalized),
       });
 
       if (matches.length >= limit) {
         break;
-      }
-    }
-
-    if (matches.length < limit) {
-      const lexicalMatches = db.searchMemories(normalized, {
-        type: 'desktop_activity',
-        category: 'activity_summary',
-        limit: Math.max(limit * 2, 10),
-      });
-
-      for (const memory of lexicalMatches) {
-        if (seen.has(memory.id)) continue;
-
-        const summary = summaryFromMemory(memory);
-        if (!summary) continue;
-        if (cutoff && summary.toMs < cutoff) continue;
-
-        seen.add(memory.id);
-        matches.push({
-          summary,
-          score: 0.35,
-          snippet: buildSearchSnippet(summary, normalized),
-        });
-
-        if (matches.length >= limit) {
-          break;
-        }
       }
     }
 

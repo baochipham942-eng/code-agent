@@ -6,11 +6,6 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import {
-  getContextInjector,
-  type InjectedContext,
-} from '../../memory/contextInjector';
-import { getSessionSummarizer } from '../../memory/sessionSummarizer';
 import { getDatabase } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 
@@ -133,37 +128,30 @@ export const forkSessionTool: Tool = {
 
 /**
  * Fork 指定会话
+ * Legacy context injector removed — returns session metadata only
  */
 async function forkSpecificSession(
   sessionId: string
 ): Promise<ToolExecutionResult> {
   logger.info('Forking specific session', { sessionId });
 
-  const injector = getContextInjector();
-  const context = await injector.buildInjectedContext(sessionId);
+  const db = getDatabase();
+  const session = db.getSession(sessionId);
 
-  if (!context) {
+  if (!session) {
     return {
       success: false,
-      error: `找不到会话 ${sessionId} 或会话没有消息`,
+      error: `找不到会话 ${sessionId}`,
     };
   }
 
-  // 格式化输出
-  const systemPromptFragment = injector.formatForSystemPrompt(context);
-  const userMessage = injector.formatForUserMessage(context);
-
   return {
     success: true,
-    output: formatForkResult(context, systemPromptFragment, userMessage),
+    output: `会话 "${session.title}" (${sessionId}) 已找到，但上下文注入模块已移除。请手动查看历史消息。`,
     metadata: {
       action: 'forked',
-      sessionId: context.fromSession.id,
-      title: context.fromSession.title,
-      keyMessagesCount: context.keyMessages.length,
-      warningsCount: context.warnings.length,
-      // 将 system prompt 片段作为元数据传递，供 Agent 使用
-      systemPromptFragment,
+      sessionId: session.id,
+      title: session.title,
     },
   };
 }
@@ -207,47 +195,7 @@ async function searchAndSuggestSessions(
 // Formatting Functions
 // ----------------------------------------------------------------------------
 
-/**
- * 格式化 Fork 结果
- */
-function formatForkResult(
-  context: InjectedContext,
-  systemPromptFragment: string,
-  userMessage: string
-): string {
-  const lines: string[] = [];
-
-  lines.push('# 会话已 Fork');
-  lines.push('');
-  lines.push(`来源: **${context.fromSession.title}**`);
-  lines.push(`时间: ${new Date(context.fromSession.createdAt).toLocaleDateString('zh-CN')}`);
-  lines.push('');
-
-  if (context.warnings.length > 0) {
-    lines.push('## 注意事项');
-    context.warnings.forEach((w) => lines.push(`- ${w}`));
-    lines.push('');
-  }
-
-  lines.push('## 继承的上下文');
-  lines.push('');
-  lines.push(`- 关键消息: ${context.keyMessages.length} 条`);
-  lines.push(`- 代码片段: ${context.codeContext.length} 个`);
-  lines.push(`- 已做决策: ${context.decisions.length} 项`);
-  lines.push('');
-
-  if (context.decisions.length > 0) {
-    lines.push('### 之前的决策');
-    context.decisions.slice(0, 3).forEach((d) => lines.push(`- ${d}`));
-    lines.push('');
-  }
-
-  lines.push('---');
-  lines.push('');
-  lines.push('历史上下文已加载。你可以直接继续之前的工作，无需重复解释背景。');
-
-  return lines.join('\n');
-}
+// formatForkResult removed — InjectedContext type no longer available
 
 /**
  * 格式化会话列表

@@ -4,19 +4,9 @@
 
 import * as os from 'os';
 import { execSync } from 'child_process';
-import { getCoreMemoryService } from '../../memory/coreMemory';
-import { getProactiveContextService } from '../../memory/proactiveContext';
-import { getDatabase } from '../../services/core/databaseService';
-import { getHybridSearchService } from '../../memory/hybridSearch';
-import { getLocalVectorStore } from '../../memory/localVectorStore';
 import { createLogger } from '../../services/infra/logger';
-import { MEMORY } from '../../../shared/constants';
-import { RAGContextCache } from '../../context/tokenOptimizer';
 
 const logger = createLogger('ContextBuilder');
-
-// Session-level RAG cache to avoid redundant queries
-const ragCache = new RAGContextCache({ ttl: 5 * 60 * 1000, maxEntries: 10 });
 
 
 // ----------------------------------------------------------------------------
@@ -150,118 +140,16 @@ export interface RAGContextOptions {
 }
 
 /**
- * Build enhanced system prompt with RAG context (sync version)
+ * Build enhanced system prompt with RAG context
  *
- * Gen3-4: Lightweight RAG (project knowledge and user preferences only)
- * Gen5+: Full RAG (code, knowledge base, supports cloud search + proactive context)
+ * Legacy RAG / hybrid search / proactive context / core memory modules removed.
+ * Returns basePrompt unchanged — Light Memory handles context injection separately.
  */
 export async function buildEnhancedSystemPrompt(
   basePrompt: string,
-  userQuery: string,
-  isSimpleTaskMode: boolean
+  _userQuery: string,
+  _isSimpleTaskMode: boolean
 ): Promise<string> {
-  // Skip RAG for simple tasks
-  if (isSimpleTaskMode) {
-    logger.debug('Skipping RAG for simple task (fast path)');
-    return basePrompt;
-  }
-
-  if (!userQuery) {
-    return basePrompt;
-  }
-
-  try {
-    let enhancedPrompt = basePrompt;
-
-    // Full RAG: code, knowledge, and cloud search
-    {
-      // Check cache first to avoid redundant queries
-      let ragContext: string | undefined;
-      const cached = ragCache.get(userQuery);
-
-      if (cached) {
-        ragContext = cached.context;
-        logger.debug(`RAG cache hit: ${cached.tokens} tokens saved`);
-      } else {
-        // Try hybrid search
-        try {
-          const vectorStore = getLocalVectorStore();
-          const hybridSearch = getHybridSearchService(vectorStore);
-          const { results } = await hybridSearch.search(userQuery, {
-            topK: 10,
-            threshold: 0.3,
-          });
-
-          if (results.length > 0) {
-            ragContext = results
-              .map(r => `[${r.metadata?.type || 'unknown'}] ${r.content}`)
-              .join('\n\n');
-            logger.debug(`Hybrid search returned ${results.length} results`);
-          }
-        } catch (hybridError) {
-          logger.warn('Hybrid search failed:', hybridError);
-        }
-
-        // Cache the result for future queries
-        if (ragContext && ragContext.trim().length > 0) {
-          ragCache.set(userQuery, ragContext);
-        }
-      }
-
-      if (ragContext && ragContext.trim().length > 0) {
-        enhancedPrompt += `\n\n## Relevant Context from Memory\n\nThe following context was retrieved from your knowledge base and may be helpful:\n\n${ragContext}`;
-      }
-    }
-
-    // Entity relationship context
-    {
-      try {
-        const proactive = getProactiveContextService();
-        const entities = proactive.detectEntities(userQuery);
-
-        if (entities.length > 0) {
-          const db = getDatabase();
-          const relationLines: string[] = [];
-
-          for (const entity of entities.slice(0, 5)) {
-            const relations = db.getRelationsFor(entity.value, 'both', {
-              decayDays: MEMORY.RELATION_DECAY_DAYS,
-              minConfidence: MEMORY.RELATION_CONTEXT_MIN_CONFIDENCE,
-            });
-            if (relations.length > 0) {
-              const relStr = relations
-                .slice(0, 3)
-                .map(r => `  ${r.sourceId} --[${r.relationType}]--> ${r.targetId}`)
-                .join('\n');
-              relationLines.push(`**${entity.type}:${entity.value}**:\n${relStr}`);
-            }
-          }
-
-          if (relationLines.length > 0) {
-            enhancedPrompt += `\n\n## Entity Relationships\n\n${relationLines.join('\n\n')}`;
-          }
-        }
-      } catch {
-        // Entity relationship context is optional, never block prompt assembly
-      }
-    }
-
-    // Add user preferences from Core Memory (all Gen3+)
-    try {
-      const coreMemory = getCoreMemoryService();
-      const preferencesPrompt = coreMemory.formatForSystemPrompt();
-      if (preferencesPrompt) {
-        enhancedPrompt += `\n\n${preferencesPrompt}`;
-      }
-    } catch {
-      // CoreMemory not available — skip preferences
-    }
-
-    logger.debug('Enhanced system prompt with full RAG');
-    return enhancedPrompt;
-  } catch (error) {
-    logger.error('Failed to build enhanced system prompt:', error);
-    return basePrompt;
-  }
+  return basePrompt;
 }
 

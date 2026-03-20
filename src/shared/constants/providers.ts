@@ -70,14 +70,14 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   },
   openai: {
     aliases: ['openai'],
-    defaultModel: 'gpt-4o',
+    defaultModel: 'gpt-5.4',
     endpoint: MODEL_API_ENDPOINTS.openai,
     cloudProxySupported: true,
     displayName: 'OpenAI',
   },
   gemini: {
     aliases: ['gemini'],
-    defaultModel: 'gemini-2.5-pro',
+    defaultModel: 'gemini-3.1-pro-preview',
     endpoint: MODEL_API_ENDPOINTS.gemini,
     cloudProxySupported: false,
     displayName: 'Google Gemini',
@@ -119,7 +119,7 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   },
   minimax: {
     aliases: ['minimax'],
-    defaultModel: 'MiniMax-M2',
+    defaultModel: 'MiniMax-M2.7',
     endpoint: MODEL_API_ENDPOINTS.minimax,
     cloudProxySupported: false,
     displayName: 'MiniMax',
@@ -133,7 +133,7 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   },
   openrouter: {
     aliases: ['openrouter'],
-    defaultModel: 'google/gemini-2.5-flash',
+    defaultModel: 'google/gemini-3-flash-preview',
     endpoint: MODEL_API_ENDPOINTS.openrouter,
     cloudProxySupported: true,
     displayName: 'OpenRouter',

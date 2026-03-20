@@ -26,7 +26,7 @@ export async function callGemini(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.gemini;
-  const model = config.model || 'gemini-2.5-flash';
+  const model = config.model || 'gemini-3-flash-preview';
 
   // 转换消息为 Gemini 格式
   const geminiContents = convertToGeminiMessages(messages);

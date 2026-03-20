@@ -158,20 +158,7 @@ async function initializeServices(): Promise<void> {
     }
   }
 
-  // 5. 初始化 MemoryService（session handler 的 handleCreate 会调用 getMemoryService）
-  try {
-    const { initMemoryService } = await import('../main/memory/memoryService');
-    initMemoryService({
-      maxRecentMessages: 10,
-      toolCacheTTL: 5 * 60 * 1000,
-      maxSessionMessages: 100,
-      maxRAGResults: 5,
-      ragTokenLimit: 2000,
-    });
-    logger.info('MemoryService initialized');
-  } catch (error) {
-    logger.warn('MemoryService not available:', (error as Error).message);
-  }
+  // Memory service removed — Light Memory (file-based) is used instead
 
   logger.info('Backend services initialized');
 }

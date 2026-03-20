@@ -4,7 +4,6 @@
 
 import * as os from 'os';
 import { execSync } from 'child_process';
-import { getMemoryService } from '../../memory/memoryService';
 import { getCoreMemoryService } from '../../memory/coreMemory';
 import { getProactiveContextService } from '../../memory/proactiveContext';
 import { getDatabase } from '../../services/core/databaseService';
@@ -12,7 +11,6 @@ import { getHybridSearchService } from '../../memory/hybridSearch';
 import { getLocalVectorStore } from '../../memory/localVectorStore';
 import { createLogger } from '../../services/infra/logger';
 import { MEMORY } from '../../../shared/constants';
-import { logCollector } from '../../mcp/logCollector';
 import { RAGContextCache } from '../../context/tokenOptimizer';
 
 const logger = createLogger('ContextBuilder');
@@ -173,12 +171,10 @@ export async function buildEnhancedSystemPrompt(
   }
 
   try {
-    const memoryService = getMemoryService();
     let enhancedPrompt = basePrompt;
 
     // Full RAG: code, knowledge, and cloud search
     {
-      // Gen5+: Full RAG with code, knowledge, and cloud search
       // Check cache first to avoid redundant queries
       let ragContext: string | undefined;
       const cached = ragCache.get(userQuery);
@@ -187,8 +183,7 @@ export async function buildEnhancedSystemPrompt(
         ragContext = cached.context;
         logger.debug(`RAG cache hit: ${cached.tokens} tokens saved`);
       } else {
-        // Try hybrid search first, fall back to legacy RAG
-        let hybridSearchFailed = false;
+        // Try hybrid search
         try {
           const vectorStore = getLocalVectorStore();
           const hybridSearch = getHybridSearchService(vectorStore);
@@ -202,23 +197,9 @@ export async function buildEnhancedSystemPrompt(
               .map(r => `[${r.metadata?.type || 'unknown'}] ${r.content}`)
               .join('\n\n');
             logger.debug(`Hybrid search returned ${results.length} results`);
-          } else {
-            hybridSearchFailed = true;
-            logger.debug('Hybrid search returned 0 results, falling back to legacy RAG');
           }
         } catch (hybridError) {
-          hybridSearchFailed = true;
-          logger.warn('Hybrid search failed, falling back to legacy RAG:', hybridError);
-        }
-
-        // Fallback to legacy RAG when hybrid search fails or returns empty
-        if (hybridSearchFailed) {
-          ragContext = memoryService.getRAGContext(userQuery, {
-            includeCode: true,
-            includeKnowledge: true,
-            includeConversations: false,
-            maxTokens: 1500,
-          });
+          logger.warn('Hybrid search failed:', hybridError);
         }
 
         // Cache the result for future queries
@@ -265,16 +246,6 @@ export async function buildEnhancedSystemPrompt(
       }
     }
 
-    // Add project knowledge (all Gen3+)
-    const projectKnowledge = memoryService.getProjectKnowledge();
-    if (projectKnowledge.length > 0) {
-      const knowledgeStr = projectKnowledge
-        .slice(0, 5)
-        .map((k) => `- **${k.key}**: ${typeof k.value === 'string' ? k.value : JSON.stringify(k.value)}`)
-        .join('\n');
-      enhancedPrompt += `\n\n## Project Knowledge\n\n${knowledgeStr}`;
-    }
-
     // Add user preferences from Core Memory (all Gen3+)
     try {
       const coreMemory = getCoreMemoryService();
@@ -283,14 +254,7 @@ export async function buildEnhancedSystemPrompt(
         enhancedPrompt += `\n\n${preferencesPrompt}`;
       }
     } catch {
-      // Fallback to legacy KV-based preferences if CoreMemory fails
-      const codingStyle = memoryService.getUserPreference<Record<string, unknown>>('coding_style');
-      if (codingStyle && Object.keys(codingStyle).length > 0) {
-        const styleStr = Object.entries(codingStyle)
-          .map(([key, value]) => `- ${key}: ${value}`)
-          .join('\n');
-        enhancedPrompt += `\n\n## User Coding Preferences\n\n${styleStr}`;
-      }
+      // CoreMemory not available — skip preferences
     }
 
     logger.debug('Enhanced system prompt with full RAG');

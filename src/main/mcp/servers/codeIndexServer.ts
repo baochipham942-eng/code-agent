@@ -8,7 +8,6 @@ import * as path from 'path';
 import { glob } from 'glob';
 import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
-import { getMemoryService } from '../../memory/memoryService';
 import type { ToolResult } from '../../../shared/types';
 
 const logger = createLogger('CodeIndexServer');
@@ -259,7 +258,6 @@ Parameters:
           this.stats.indexedFiles = 0;
           this.stats.indexedPatterns.push(pattern);
 
-          const memoryService = getMemoryService();
           const errors: string[] = [];
           const filesToIndex = files.slice(0, maxFiles);
 
@@ -269,8 +267,6 @@ Parameters:
               const content = await fs.promises.readFile(filePath, 'utf-8');
 
               if (content.length > 100000) continue;
-
-              await memoryService.indexCodeFile(filePath, content);
 
               const symbols = this.extractSymbols(content, filePath);
               for (const symbol of symbols) {
@@ -331,24 +327,8 @@ Parameters:
           return { toolCallId, success: false, error: 'Query is required' };
         }
 
-        try {
-          const memoryService = getMemoryService();
-          const results = memoryService.searchRelevantCode(query, limit);
-
-          if (results.length === 0) {
-            return { toolCallId, success: true, output: `No indexed code found matching: "${query}"\n\nTip: Run code_index first to index your codebase.` };
-          }
-
-          const formattedResults = results.map((r, i) => {
-            const filePath = (r.document.metadata as { filePath?: string })?.filePath || 'Unknown file';
-            const preview = r.document.content.length > 300 ? r.document.content.slice(0, 300) + '...' : r.document.content;
-            return `${i + 1}. ${filePath} (score: ${r.score.toFixed(2)})\n\`\`\`\n${preview}\n\`\`\``;
-          }).join('\n\n');
-
-          return { toolCallId, success: true, output: `Found ${results.length} code matches for "${query}":\n\n${formattedResults}` };
-        } catch (error) {
-          return { toolCallId, success: false, error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
-        }
+        // Memory service removed — code search unavailable
+        return { toolCallId, success: true, output: `No indexed code found matching: "${query}"\n\nTip: Code search via memory service has been removed.` };
       },
     });
 

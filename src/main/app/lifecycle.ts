@@ -4,7 +4,6 @@
 
 import { app, BrowserWindow } from '../platform';
 import { getDatabase, getLangfuseService } from '../services';
-import { getMemoryService } from '../memory/memoryService';
 import { getMCPClient } from '../mcp/mcpClient';
 import { cleanupSessionStateManager } from '../session/sessionStateManager';
 import { createLogger } from '../services/infra/logger';
@@ -16,15 +15,6 @@ const logger = createLogger('Lifecycle');
  */
 export async function cleanup(): Promise<void> {
   logger.info('Cleaning up before quit...');
-
-  // Cleanup memory service (saves vector store, clears caches)
-  try {
-    const memoryService = getMemoryService();
-    await memoryService.cleanup();
-    logger.info('Memory service cleaned up');
-  } catch (error) {
-    logger.error('Error cleaning up memory service', error);
-  }
 
   // Disconnect MCP clients
   try {

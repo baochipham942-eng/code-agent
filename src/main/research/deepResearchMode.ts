@@ -215,22 +215,6 @@ export class DeepResearchMode {
         };
       }
 
-      // Memory integration (opt-in)
-      if (config.enableMemory && config.sessionId) {
-        try {
-          const { getMemoryService } = await import('../memory/memoryService');
-          const memoryService = getMemoryService();
-          if (memoryService) {
-            await memoryService.addKnowledge(
-              `Research: ${topic}\n\nSummary: ${report.summary}\n\nSources: ${report.sources.map(s => s.url).join(', ')}`,
-              'research'
-            );
-          }
-        } catch (e) {
-          logger.warn('Failed to store research in memory:', e);
-        }
-      }
-
       // 4. Complete
       const duration = Date.now() - startTime;
 

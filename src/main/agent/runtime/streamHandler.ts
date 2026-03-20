@@ -13,8 +13,6 @@ import {
 } from '../../context/tokenOptimizer';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getLangfuseService } from '../../services';
-import { sanitizeMemoryContent } from '../../utils/sanitizeMemoryContent';
-import { getMemoryService } from '../../memory/memoryService';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import type { RuntimeContext } from './runtimeContext';
@@ -55,45 +53,9 @@ export class StreamHandler {
   /**
    * Inject contextual memory from memory service on the first iteration.
    */
-  async injectContextualMemory(userMessage: string): Promise<void> {
-    try {
-      const memoryService = getMemoryService();
-      const memoryResults: Array<{ source: string; content: string; score: number }> = [];
-
-      const knowledgeHits = memoryService.searchKnowledge(userMessage, undefined, 3);
-      for (const hit of knowledgeHits) {
-        memoryResults.push({
-          source: (hit.document.metadata?.category as string) || hit.document.metadata?.source || 'knowledge',
-          content: hit.document.content,
-          score: hit.score,
-        });
-      }
-
-      const convHits = memoryService.searchRelevantConversations(userMessage, 3);
-      for (const hit of convHits) {
-        memoryResults.push({
-          source: 'conversation',
-          content: hit.document.content,
-          score: hit.score,
-        });
-      }
-
-      memoryResults.sort((a, b) => b.score - a.score);
-      const top3 = memoryResults.slice(0, 3).filter(r => r.score > 0.3);
-
-      if (top3.length > 0) {
-        const lines = top3.map(r => {
-          const preview = sanitizeMemoryContent(r.content);
-          return `- [${r.source}]: ${preview} (relevance: ${Math.round(r.score * 100)}%)`;
-        });
-        this.contextAssembly.injectSystemMessage(
-          `<contextual-memory>\n## Related Memories\n${lines.join('\n')}\n</contextual-memory>`
-        );
-        logger.debug(`[AgentLoop] Contextual memory: injected ${top3.length} relevant memories`);
-      }
-    } catch (memoryError) {
-      logger.debug(`[AgentLoop] Contextual memory retrieval skipped: ${memoryError instanceof Error ? memoryError.message : 'unknown error'}`);
-    }
+  async injectContextualMemory(_userMessage: string): Promise<void> {
+    // Memory service removed — no-op
+    return;
   }
 
   /**

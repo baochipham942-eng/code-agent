@@ -101,23 +101,7 @@ import {
 // Light Memory tools (File-as-Memory)
 import { memoryWriteTool, memoryReadTool } from '../lightMemory';
 
-// Memory tools (legacy)
-import {
-  memoryTool,
-  codeIndexTool,
-  autoLearnTool,
-  forkSessionTool,
-  desktopContextNowTool,
-  desktopActivityRecentTool,
-  desktopActivityStatsTool,
-  desktopActivityByAppTool,
-  desktopActivityTimelineTool,
-  desktopActivitySearchTool,
-  desktopActivitySummaryTool,
-  desktopActivityTodoCandidatesTool,
-  desktopActivitySemanticSearchTool,
-  workspaceActivitySearchTool,
-} from './memory';
+// Legacy memory tools removed (src/main/tools/memory/ deleted)
 
 // Vision tools
 import {
@@ -297,21 +281,7 @@ export class ToolRegistry {
     this.register(memoryWriteTool);
     this.register(memoryReadTool);
 
-    // Gen 5 tools (legacy memory — will be deprecated)
-    this.register(memoryTool); // unified store + search (replaces memory_store & memory_search)
-    this.register(codeIndexTool);
-    this.register(autoLearnTool);
-    this.register(forkSessionTool);
-    this.register(desktopContextNowTool);
-    this.register(desktopActivityRecentTool);
-    this.register(desktopActivityStatsTool);
-    this.register(desktopActivityByAppTool);
-    this.register(desktopActivityTimelineTool);
-    this.register(desktopActivitySearchTool);
-    this.register(desktopActivitySummaryTool);
-    this.register(desktopActivityTodoCandidatesTool);
-    this.register(desktopActivitySemanticSearchTool);
-    this.register(workspaceActivitySearchTool);
+    // Gen 5 legacy memory tools removed (src/main/tools/memory/ deleted)
 
     // Gen 6 tools - Computer Use
     this.register(screenshotTool);

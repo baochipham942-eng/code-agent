@@ -23,7 +23,7 @@ ENTRY="scripts/_test-research-entry.ts"
 # NOTE: electron-store is intentionally NOT external (must be bundled to avoid ESM require issues)
 EXTERNALS=(
   electron better-sqlite3 keytar isolated-vm
-  tree-sitter tree-sitter-typescript playwright playwright-core
+  playwright playwright-core
   pptxgenjs mammoth exceljs qrcode pdfkit sharp docx node-pty @ui-tars/sdk
 )
 

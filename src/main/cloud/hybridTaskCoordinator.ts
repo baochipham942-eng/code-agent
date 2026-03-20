@@ -608,27 +608,27 @@ export class HybridTaskCoordinator extends EventEmitter {
       researcher: {
         name: 'Researcher',
         systemPrompt: 'You are a research specialist. Search, analyze, and summarize information effectively.',
-        tools: ['web_fetch', 'grep', 'glob'],
+        tools: ['WebFetch', 'Grep', 'Glob'],
       },
       analyzer: {
         name: 'Analyzer',
         systemPrompt: 'You are a code analyzer. Examine code structure, patterns, and potential issues.',
-        tools: ['read_file', 'grep', 'glob', 'list_directory'],
+        tools: ['Read', 'Grep', 'Glob', 'ListDirectory'],
       },
       writer: {
         name: 'Writer',
         systemPrompt: 'You are a technical writer. Create clear, well-structured documentation and content.',
-        tools: ['read_file', 'write_file'],
+        tools: ['Read', 'Write'],
       },
       reviewer: {
         name: 'Reviewer',
         systemPrompt: 'You are a code reviewer. Review code for bugs, security issues, and best practices.',
-        tools: ['read_file', 'grep', 'glob'],
+        tools: ['Read', 'Grep', 'Glob'],
       },
       planner: {
         name: 'Planner',
         systemPrompt: 'You are a task planner. Break down complex tasks and create structured execution plans.',
-        tools: ['read_file', 'glob'],
+        tools: ['Read', 'Glob'],
       },
     };
 

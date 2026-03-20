@@ -112,32 +112,28 @@ export interface GenerationResult {
  */
 const AVAILABLE_TOOLS: Record<string, { description: string; category: string }> = {
   // 文件操作
-  'read_file': { description: '读取文件内容', category: 'file' },
-  'write_file': { description: '创建/覆盖文件', category: 'file' },
-  'edit_file': { description: '编辑文件（替换）', category: 'file' },
-  'glob': { description: '按模式搜索文件', category: 'file' },
-  'grep': { description: '搜索文件内容', category: 'file' },
-  'list_directory': { description: '列出目录内容', category: 'file' },
+  'Read': { description: '读取文件内容', category: 'file' },
+  'Write': { description: '创建/覆盖文件', category: 'file' },
+  'Edit': { description: '编辑文件（替换）', category: 'file' },
+  'Glob': { description: '按模式搜索文件', category: 'file' },
+  'Grep': { description: '搜索文件内容', category: 'file' },
+  'ListDirectory': { description: '列出目录内容', category: 'file' },
 
   // 执行
-  'bash': { description: '执行 shell 命令', category: 'execution' },
+  'Bash': { description: '执行 shell 命令', category: 'execution' },
 
   // 网络
-  'web_search': { description: '搜索互联网', category: 'network' },
-  'web_fetch': { description: '获取网页内容', category: 'network' },
+  'WebSearch': { description: '搜索互联网', category: 'network' },
+  'WebFetch': { description: '获取网页内容', category: 'network' },
 
   // 文档
-  'read_pdf': { description: '读取 PDF 文件', category: 'document' },
-  'read_docx': { description: '读取 Word 文件', category: 'document' },
-  'read_xlsx': { description: '读取 Excel 文件', category: 'document' },
+  'ReadDocument': { description: '读取文档文件', category: 'document' },
 
   // 任务管理
-  // 'todo_write': { description: '写入任务列表', category: 'task' }, // 已移除
-  'ask_user_question': { description: '询问用户', category: 'task' },
+  'AskUserQuestion': { description: '询问用户', category: 'task' },
 
   // MCP
-  'mcp': { description: '调用 MCP 工具', category: 'mcp' },
-  'mcp_list_tools': { description: '列出 MCP 工具', category: 'mcp' },
+  'MCPUnified': { description: '调用 MCP 工具', category: 'mcp' },
 };
 
 /**
@@ -147,39 +143,38 @@ function recommendTools(responsibility: string, requestedTools?: string[]): stri
   const tools = new Set<string>();
 
   // 基础工具（所有 Agent 都有）
-  tools.add('read_file');
-  tools.add('glob');
+  tools.add('Read');
+  tools.add('Glob');
 
   // 根据职责关键词推荐
   const lower = responsibility.toLowerCase();
 
   if (lower.includes('write') || lower.includes('create') || lower.includes('implement')) {
-    tools.add('write_file');
-    tools.add('edit_file');
+    tools.add('Write');
+    tools.add('Edit');
   }
 
   if (lower.includes('search') || lower.includes('find') || lower.includes('explore')) {
-    tools.add('grep');
-    tools.add('list_directory');
+    tools.add('Grep');
+    tools.add('ListDirectory');
   }
 
   if (lower.includes('test') || lower.includes('run') || lower.includes('execute') || lower.includes('build')) {
-    tools.add('bash');
+    tools.add('Bash');
   }
 
   if (lower.includes('web') || lower.includes('internet') || lower.includes('documentation')) {
-    tools.add('web_search');
-    tools.add('web_fetch');
+    tools.add('WebSearch');
+    tools.add('WebFetch');
   }
 
   if (lower.includes('database') || lower.includes('sql') || lower.includes('schema')) {
-    tools.add('bash');
-    tools.add('edit_file');
+    tools.add('Bash');
+    tools.add('Edit');
   }
 
   if (lower.includes('pdf') || lower.includes('document')) {
-    tools.add('read_pdf');
-    tools.add('read_docx');
+    tools.add('ReadDocument');
   }
 
   // 添加请求的工具（如果有效）

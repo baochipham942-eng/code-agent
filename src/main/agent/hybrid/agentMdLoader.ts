@@ -40,7 +40,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     name: frontmatter.description || name,
     description: frontmatter.description || `Custom agent: ${name}`,
     prompt,
-    tools: frontmatter.tools || ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
+    tools: frontmatter.tools || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
     model: (frontmatter.model as ModelTier) || 'balanced',
     maxIterations: frontmatter['max-iterations'] || 30,
     readonly: frontmatter.readonly ?? false,

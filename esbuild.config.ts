@@ -23,8 +23,6 @@ import { mkdirSync } from 'fs';
 const NATIVE_EXTERNALS = [
   'better-sqlite3',
   'keytar',
-  'tree-sitter',
-  'tree-sitter-typescript',
   'playwright',
   'playwright-core',
   'chromium-bidi',

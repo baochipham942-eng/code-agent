@@ -47,8 +47,6 @@
       "../package.json",
       "../node_modules/better-sqlite3/**/*",
       "../node_modules/keytar/**/*",
-      "../node_modules/tree-sitter/**/*",
-      "../node_modules/tree-sitter-typescript/**/*",
       "../node_modules/node-pty/**/*",
       "../node_modules/onnxruntime-node/**/*",
       "../node_modules/avr-vad/dist/*.onnx"

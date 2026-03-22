@@ -36,6 +36,14 @@ export class TerminalOutput {
   private contextWindowSize: number = 0;
   private contextTokensUsed: number = 0;
 
+  /** TUI mode — when true, ora uses stdout (patched) and error() uses stdout */
+  private tuiMode: boolean = false;
+
+  /** Enable TUI mode — routes ora and error output through stdout */
+  setTUIMode(enabled: boolean): void {
+    this.tuiMode = enabled;
+  }
+
   // ========================================================================
   // 头部
   // ========================================================================
@@ -147,6 +155,8 @@ export class TerminalOutput {
         : style === 'tool' ? 'yellow'
         : style === 'compacting' ? 'white'
         : 'magenta',
+      // TUI mode: route through stdout (patched to scroll region) instead of stderr
+      ...(this.tuiMode ? { stream: process.stdout } : {}),
     }).start();
   }
 
@@ -446,7 +456,9 @@ export class TerminalOutput {
 
   error(message: string): void {
     this.stopThinking();
-    console.error(chalk.red(`\n  ✗ ${message}\n`));
+    // TUI mode: use stdout (routed to scroll region) instead of stderr
+    const logFn = this.tuiMode ? console.log : console.error;
+    logFn(chalk.red(`\n  ✗ ${message}\n`));
   }
 
   warn(message: string): void {
@@ -474,6 +486,12 @@ export class TerminalOutput {
    */
   taskComplete(duration: number, toolsUsed: string[]): void {
     this.stopThinking();
+
+    // TUI mode: status bar already shows this info, just print a subtle separator
+    if (this.tuiMode) {
+      console.log('');
+      return;
+    }
 
     const termWidth = process.stdout.columns || 80;
     const barWidth = Math.min(termWidth, 60);

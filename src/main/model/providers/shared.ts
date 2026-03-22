@@ -90,7 +90,7 @@ const PROXY_URL = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
 const USE_PROXY = !!PROXY_URL && process.env.NO_PROXY !== 'true' && process.env.DISABLE_PROXY !== 'true';
 export const httpsAgent = USE_PROXY ? new HttpsProxyAgent(PROXY_URL) : undefined;
 
-logger.info(' Proxy:', USE_PROXY ? PROXY_URL : 'disabled (no proxy env var set)');
+// Proxy status logged on first inference call, not at module init (CLI mode timing issue)
 
 // ----------------------------------------------------------------------------
 // HTTP Utilities
@@ -831,7 +831,7 @@ export function parseOpenAIResponse(data: any): ModelResponse {
   const choice = data.choices?.[0];
   if (!choice) {
     const dataPreview = JSON.stringify(data).substring(0, 200);
-    logger.error('[parseOpenAIResponse] No choices in response:', dataPreview);
+    logger.warn('[parseOpenAIResponse] No choices in response:', dataPreview);
     throw new Error(`No response from model. Response: ${dataPreview}`);
   }
 
@@ -855,7 +855,7 @@ export function parseOpenAIResponse(data: any): ModelResponse {
           arguments: args,
         });
       } catch (parseError: unknown) {
-        logger.error(`Failed to parse tool call arguments for ${normalizedName}:`, parseError);
+        logger.warn(`Failed to parse tool call arguments for ${normalizedName}:`, parseError);
         const repairedArgs = repairJson(tc.function.arguments || '{}');
         if (repairedArgs) {
           toolCalls.push({
@@ -864,7 +864,7 @@ export function parseOpenAIResponse(data: any): ModelResponse {
             arguments: repairedArgs,
           });
         } else {
-          logger.error(' Could not repair JSON, raw arguments:', tc.function.arguments?.substring(0, 500));
+          logger.warn(' Could not repair JSON, raw arguments:', tc.function.arguments?.substring(0, 500));
           const content = message.content || `Tool call failed: ${tc.function.name} - Invalid JSON arguments`;
           return { type: 'text', content };
         }
@@ -910,7 +910,7 @@ export function parseOpenAIResponse(data: any): ModelResponse {
         }],
       };
     } catch (e) {
-      logger.error(' Failed to parse text-based tool call args:', argsStr.substring(0, 100), e);
+      logger.warn(' Failed to parse text-based tool call args:', argsStr.substring(0, 100), e);
     }
   }
 

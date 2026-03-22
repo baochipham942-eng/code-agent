@@ -5,6 +5,7 @@
 // 🔴 必须在所有其他导入之前设置 CLI 模式标志
 // 这让 native 模块（keytar 等）可以跳过加载
 process.env.CODE_AGENT_CLI_MODE = 'true';
+process.env.DOTENV_CONFIG_QUIET = 'true';
 
 import { Command } from 'commander';
 import { chatCommand } from './commands/chat';

@@ -4,12 +4,13 @@
 
 import https from 'https';
 import http from 'http';
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
+import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('BaseOpenAIProvider');
@@ -43,6 +44,23 @@ export abstract class BaseOpenAIProvider implements Provider {
   /** 返回额外请求头（可选） */
   protected getExtraHeaders(): Record<string, string> | undefined {
     return undefined;
+  }
+
+  /** API 路径（可选 override），默认使用 openAISSEStream 的 /chat/completions */
+  protected getEndpoint(): string | undefined {
+    return undefined;
+  }
+
+  /** 是否要求 API key（Local/Ollama 不需要） */
+  protected requiresApiKey(): boolean {
+    return true;
+  }
+
+  /** 从 PROVIDER_REGISTRY 查找模型信息 */
+  protected getModelInfo(config: ModelConfig): ModelInfo | null {
+    const provider = PROVIDER_REGISTRY[config.provider];
+    if (!provider) return null;
+    return provider.models.find(m => m.id === config.model) || null;
   }
 
   /**
@@ -86,7 +104,7 @@ export abstract class BaseOpenAIProvider implements Provider {
     const baseUrl = this.getBaseUrl(config);
     const apiKey = this.getApiKey(config);
 
-    if (!apiKey) {
+    if (this.requiresApiKey() && !apiKey) {
       throw new Error(`${this.name} API key not configured`);
     }
 
@@ -104,6 +122,7 @@ export abstract class BaseOpenAIProvider implements Provider {
         signal,
         agent: this.getAgent(),
         extraHeaders: this.getExtraHeaders(),
+        endpoint: this.getEndpoint(),
       }),
       { providerName: this.name, signal }
     );

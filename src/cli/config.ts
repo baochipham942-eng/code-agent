@@ -18,7 +18,7 @@ function loadEnvFile(): void {
 
   for (const envPath of possiblePaths) {
     if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath });
+      dotenv.config({ path: envPath, quiet: true });
       break;
     }
   }

@@ -54,7 +54,7 @@ export class CLISessionManager {
       } catch {
         if (!this._dbChecked) {
           this._dbChecked = true;
-          console.warn('[SessionManager] Database not available, using memory mode');
+          // Silently fall back to memory mode — expected in CLI
         }
       }
     }

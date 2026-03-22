@@ -84,7 +84,7 @@ export async function initializeCLIServices(): Promise<void> {
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
     // 原生模块 ABI 不匹配时只打一行警告，不打完整堆栈
     const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
-    console.warn('Database not available (CLI mode):', msg);
+    cliLog('Database not available (CLI mode):', msg);
   }
 
   // 初始化会话管理器

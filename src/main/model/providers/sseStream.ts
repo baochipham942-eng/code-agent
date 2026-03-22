@@ -147,7 +147,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         let errorData = '';
         res.on('data', (chunk) => { errorData += chunk; });
         res.on('end', () => {
-          logger.error(`[${providerName}] API 错误: ${res.statusCode}`, errorData);
+          logger.warn(`[${providerName}] API 错误: ${res.statusCode}`, errorData);
           let errorMessage = `${providerName} API 错误 (${res.statusCode})`;
           try {
             const parsed = JSON.parse(errorData);
@@ -198,7 +198,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       // TCP 连接成功、HTTP 200 已返回，但服务端不发送任何 SSE 事件。
       const firstByteTimer = setTimeout(() => {
         if (!receivedFirstByte) {
-          logger.error(`[${providerName}] First-byte timeout: ${firstByteTimeout}ms 内未收到任何 SSE 数据`);
+          logger.warn(`[${providerName}] First-byte timeout: ${firstByteTimeout}ms 内未收到任何 SSE 数据`);
           req.destroy(new Error(`${providerName} API first-byte timeout (${firstByteTimeout}ms)`));
         }
       }, firstByteTimeout);
@@ -447,7 +447,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
       res.on('error', (err) => {
         clearTimeout(firstByteTimer);
-        logger.error(`[${providerName}] 响应错误:`, err);
+        logger.warn(`[${providerName}] 响应错误:`, err);
         if (onStream) {
           onStream({
             type: 'error',
@@ -460,7 +460,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
     req.on('error', (err) => {
       const errCode = (err as NodeJS.ErrnoException).code;
-      logger.error(`[${providerName}] 请求错误: ${err.message} (code=${errCode})`);
+      logger.warn(`[${providerName}] 请求错误: ${err.message} (code=${errCode})`);
       if (onStream) {
         onStream({
           type: 'error',
@@ -472,7 +472,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     });
 
     req.on('timeout', () => {
-      logger.error(`[${providerName}] 请求超时`);
+      logger.warn(`[${providerName}] 请求超时`);
       req.destroy(new Error(`${providerName} API 请求超时`));
     });
 

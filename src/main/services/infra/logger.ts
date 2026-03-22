@@ -195,6 +195,16 @@ class Logger {
   }
 
   private log(level: string, message: string, args: unknown[]): void {
+    // CLI 模式下只输出 ERROR（运行时检查，防止 ESM import hoisting 导致构造时 env 未设置）
+    if (process.env.CODE_AGENT_CLI_MODE === 'true' && level !== 'ERROR'
+        && process.env.DEBUG !== 'true' && !process.argv.includes('--debug')) {
+      // 仍然写文件，但不输出到 stderr
+      if (level !== 'DEBUG') {
+        writeToFile(level, this.context, message, args.length > 0 ? args : undefined);
+      }
+      return;
+    }
+
     const timestamp = new Date().toISOString();
     const ctx = this.context ? `[${this.context}]` : '';
 

@@ -72,7 +72,7 @@ function claudeSSEStream(options: {
         let errorData = '';
         res.on('data', (chunk) => { errorData += chunk; });
         res.on('end', () => {
-          logger.error('[Claude] API error:', res.statusCode, errorData);
+          logger.warn('[Claude] API error:', res.statusCode, errorData);
           let errorMessage = `Claude API error: ${res.statusCode}`;
           try {
             const parsed = JSON.parse(errorData);
@@ -256,7 +256,7 @@ function claudeSSEStream(options: {
 
               case 'error': {
                 const errorMsg = parsed.error?.message || JSON.stringify(parsed);
-                logger.error('[Claude] stream error event:', errorMsg);
+                logger.warn('[Claude] stream error event:', errorMsg);
                 if (onStream) {
                   onStream({ type: 'error', error: errorMsg });
                 }
@@ -296,7 +296,7 @@ function claudeSSEStream(options: {
       });
 
       res.on('error', (err) => {
-        logger.error('[Claude] Response error:', err);
+        logger.warn('[Claude] Response error:', err);
         if (onStream) {
           onStream({ type: 'error', error: err.message });
         }
@@ -306,7 +306,7 @@ function claudeSSEStream(options: {
 
     req.on('error', (err) => {
       const errCode = (err as NodeJS.ErrnoException).code;
-      logger.error(`[Claude] Request error: ${err.message} (code=${errCode})`);
+      logger.warn(`[Claude] Request error: ${err.message} (code=${errCode})`);
       if (onStream) {
         onStream({ type: 'error', error: err.message, errorCode: errCode });
       }
@@ -314,7 +314,7 @@ function claudeSSEStream(options: {
     });
 
     req.on('timeout', () => {
-      logger.error('[Claude] Request timeout');
+      logger.warn('[Claude] Request timeout');
       req.destroy(new Error('Claude API request timeout'));
     });
 

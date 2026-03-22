@@ -56,9 +56,12 @@ class LogCollector {
   private maxBackupFiles: number = 5;
   private currentFileSize: number = 0;
 
-  constructor(options?: LogCollectorOptions) {
-    console.error('[LogCollector] Initialized');
+  /** Runtime CLI mode check (env var set after module init) */
+  private get isCLI(): boolean {
+    return process.env.CODE_AGENT_CLI_MODE === 'true';
+  }
 
+  constructor(options?: LogCollectorOptions) {
     if (options?.enablePersistence) {
       this.enablePersistence(options);
     }
@@ -95,12 +98,12 @@ class LogCollector {
       this.writeStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
       this.persistenceEnabled = true;
 
-      console.error(`[LogCollector] Persistence enabled: ${this.logFilePath}`);
+      if (!this.isCLI) console.error(`[LogCollector] Persistence enabled: ${this.logFilePath}`);
 
       // 清理旧日志文件
       this.cleanupOldLogFiles();
     } catch (error) {
-      console.error('[LogCollector] Failed to enable persistence:', error);
+      if (!this.isCLI) console.error('[LogCollector] Failed to enable persistence:', error);
     }
   }
 
@@ -119,10 +122,10 @@ class LogCollector {
       for (const file of filesToDelete) {
         const filePath = path.join(this.logDir, file);
         fs.unlinkSync(filePath);
-        console.error(`[LogCollector] Deleted old log file: ${file}`);
+        if (!this.isCLI) console.error(`[LogCollector] Deleted old log file: ${file}`);
       }
     } catch (error) {
-      console.error('[LogCollector] Failed to cleanup old log files:', error);
+      if (!this.isCLI) console.error('[LogCollector] Failed to cleanup old log files:', error);
     }
   }
 
@@ -152,12 +155,12 @@ class LogCollector {
       this.writeStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
       this.currentFileSize = 0;
 
-      console.error(`[LogCollector] Log rotated: ${newPath}`);
+      if (!this.isCLI) console.error(`[LogCollector] Log rotated: ${newPath}`);
 
       // 清理旧文件
       this.cleanupOldLogFiles();
     } catch (error) {
-      console.error('[LogCollector] Failed to rotate log file:', error);
+      if (!this.isCLI) console.error('[LogCollector] Failed to rotate log file:', error);
     }
   }
 
@@ -181,7 +184,7 @@ class LogCollector {
 
       this.checkAndRotate();
     } catch (error) {
-      console.error('[LogCollector] Failed to write to log file:', error);
+      if (!this.isCLI) console.error('[LogCollector] Failed to write to log file:', error);
     }
   }
 
@@ -194,7 +197,7 @@ class LogCollector {
       this.writeStream = null;
     }
     this.persistenceEnabled = false;
-    console.error('[LogCollector] Closed');
+    if (!this.isCLI) console.error('[LogCollector] Closed');
   }
 
   // --------------------------------------------------------------------------
@@ -224,9 +227,11 @@ class LogCollector {
     // 写入文件（如果启用了持久化）
     this.writeToFile(entry);
 
-    // Also console log for debugging
-    const timeStr = entry.timestamp.toISOString().split('T')[1].split('.')[0];
-    console.error(`[LogCollector][${source}][${level}] ${timeStr} - ${message}`);
+    // Console output for debugging (skip in CLI mode to avoid polluting chat output)
+    if (!this.isCLI) {
+      const timeStr = entry.timestamp.toISOString().split('T')[1].split('.')[0];
+      console.error(`[LogCollector][${source}][${level}] ${timeStr} - ${message}`);
+    }
   }
 
   /**
@@ -332,7 +337,7 @@ class LogCollector {
         this.toolLogs = [];
         break;
     }
-    console.error(`[LogCollector] Cleared ${source} logs`);
+    if (!this.isCLI) console.error(`[LogCollector] Cleared ${source} logs`);
   }
 
   /**
@@ -342,7 +347,7 @@ class LogCollector {
     this.browserLogs = [];
     this.agentLogs = [];
     this.toolLogs = [];
-    console.error('[LogCollector] Cleared all logs');
+    if (!this.isCLI) console.error('[LogCollector] Cleared all logs');
   }
 
   // --------------------------------------------------------------------------

@@ -52,6 +52,9 @@ export class CLIAgent {
 
   private systemPrompt: string | undefined;
 
+  /** External event observer (TUI status bar updates) */
+  private eventObserver: ((event: AgentEvent) => void) | null = null;
+
   constructor(options: Partial<CLIGlobalOptions> = {}) {
     this.config = buildCLIConfig(options);
     this.systemPrompt = options.systemPrompt;
@@ -213,6 +216,8 @@ export class CLIAgent {
    * 处理 Agent 事件
    */
   private handleEvent(event: AgentEvent): void {
+    // Notify external observer (TUI status bar)
+    this.eventObserver?.(event);
     // stream-json: write JSONL lines for each event (JSONL protocol)
     if (this.config.outputFormat === 'stream-json') {
       if (event.type === 'stream_chunk' && event.data?.content) {
@@ -491,6 +496,13 @@ export class CLIAgent {
         logger.warn('Failed to get session manager for PR link update', { error });
       }
     }
+  }
+
+  /**
+   * Set an external event observer (for TUI status bar updates)
+   */
+  setEventObserver(observer: (event: AgentEvent) => void): void {
+    this.eventObserver = observer;
   }
 
   /**

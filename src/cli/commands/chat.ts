@@ -146,7 +146,8 @@ export const chatCommand = new Command('chat')
   .option('-s, --session <id>', '恢复指定会话')
   .option('-r, --resume', '恢复最近的会话')
   .option('--from-pr <pr>', '关联 GitHub PR (URL 或 #123)')
-  .action(async (options: { session?: string; resume?: boolean; fromPr?: string }, command: Command) => {
+  .option('--tui', '启用 TUI 模式（持久输入框 + 状态栏）')
+  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
@@ -212,6 +213,16 @@ export const chatCommand = new Command('chat')
             terminalOutput.warning('无法恢复最近会话');
           }
         }
+      }
+
+      // TUI mode: persistent input + status bar
+      if (options.tui && process.stdin.isTTY && !isJsonMode) {
+        const { runTUIChat } = await import('../tui/tuiChat');
+        const cmdHandler = async (input: string, a: typeof agent) => {
+          return handleCommand(input, a, null as unknown as readline.Interface);
+        };
+        await runTUIChat(agent, cmdHandler, cleanup, globalOpts);
+        process.exit(0);
       }
 
       // Vim mode state
@@ -343,7 +354,7 @@ export const chatCommand = new Command('chat')
 async function handleCommand(
   input: string,
   agent: CLIAgent,
-  rl: readline.Interface,
+  rl?: readline.Interface | null,
   getViMode?: () => boolean,
   setViMode?: (v: boolean) => void,
 ): Promise<boolean> {
@@ -748,7 +759,7 @@ async function handleCommand(
     case 'exit':
     case 'quit':
     case 'q':
-      rl.close();
+      rl?.close();
       return true;
 
     default:

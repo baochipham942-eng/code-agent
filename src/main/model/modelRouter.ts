@@ -23,23 +23,20 @@ import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from
 export { ContextLengthExceededError } from './types';
 
 // Import provider implementations
-import {
-  callDeepSeek,
-  callClaude,
-  callOpenAI,
-  callGroq,
-  callLocal,
-  callQwen,
-  callMoonshot,
-  callMinimax,
-  callPerplexity,
-  callGemini,
-  callZhipu,
-  callOpenRouter,
-  callViaCloudProxy,
-} from './providers';
+import { callViaCloudProxy } from './providers';
 import type { Provider } from './types';
 import { MoonshotProvider } from './providers/moonshotProvider';
+import { GroqProvider } from './providers/groqProvider';
+import { QwenProvider } from './providers/qwenProvider';
+import { MinimaxProvider } from './providers/minimaxProvider';
+import { PerplexityProvider } from './providers/perplexityProvider';
+import { LocalProvider } from './providers/localProvider';
+import { OpenAIProvider } from './providers/openaiProvider';
+import { DeepSeekProvider } from './providers/deepseekProvider';
+import { OpenRouterProvider } from './providers/openrouterProvider';
+import { ZhipuProvider } from './providers/zhipuProvider';
+import { ClaudeProvider } from './providers/claudeProvider';
+import { GeminiProvider } from './providers/geminiProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -53,8 +50,19 @@ export class ModelRouter {
   // Provider Registry (new Provider interface, incremental migration)
   // --------------------------------------------------------------------------
 
-  private providers: Map<string, Provider> = new Map([
+  private providers = new Map<string, Provider>([
     ['moonshot', new MoonshotProvider()],
+    ['groq', new GroqProvider()],
+    ['qwen', new QwenProvider()],
+    ['minimax', new MinimaxProvider()],
+    ['perplexity', new PerplexityProvider()],
+    ['local', new LocalProvider()],
+    ['openai', new OpenAIProvider()],
+    ['deepseek', new DeepSeekProvider()],
+    ['openrouter', new OpenRouterProvider()],
+    ['zhipu', new ZhipuProvider()],
+    ['claude', new ClaudeProvider()],
+    ['gemini', new GeminiProvider()],
   ]);
 
   // --------------------------------------------------------------------------
@@ -410,48 +418,11 @@ export class ModelRouter {
     onStream?: StreamCallback,
     signal?: AbortSignal
   ): Promise<ModelResponse> {
-    // 优先走 Provider 接口（已迁移的 provider）
     const provider = this.providers.get(config.provider);
-    if (provider) {
-      return provider.inference(messages, tools, config, onStream, signal);
+    if (!provider) {
+      throw new Error(`Unsupported provider: ${config.provider}`);
     }
-
-    // 未迁移的 provider 走 switch/case
-    const modelInfo = this.getModelInfo(config.provider, config.model);
-
-    switch (config.provider) {
-      case 'deepseek':
-        return callDeepSeek(messages, tools, config, modelInfo, onStream, signal);
-      case 'claude': {
-        // Auto-enable prompt caching for Anthropic if not explicitly configured
-        const claudeConfig = config.promptCaching
-          ? config
-          : { ...config, promptCaching: { enabled: true, cacheSystem: true } };
-        return callClaude(messages, tools, claudeConfig, onStream, signal);
-      }
-      case 'openai':
-        return callOpenAI(messages, tools, config, onStream, signal);
-      case 'gemini':
-        return callGemini(messages, tools, config, onStream, signal);
-      case 'groq':
-        return callGroq(messages, tools, config, modelInfo, onStream, signal);
-      case 'local':
-        return callLocal(messages, tools, config, onStream, signal);
-      case 'zhipu':
-        return callZhipu(messages, tools, config, modelInfo, PROVIDER_REGISTRY.zhipu, onStream, signal);
-      case 'qwen':
-        return callQwen(messages, tools, config, modelInfo, onStream, signal);
-      case 'moonshot':
-        return callMoonshot(messages, tools, config, onStream, signal);
-      case 'minimax':
-        return callMinimax(messages, tools, config, modelInfo, onStream, signal);
-      case 'perplexity':
-        return callPerplexity(messages, tools, config, onStream, signal);
-      case 'openrouter':
-        return callOpenRouter(messages, tools, config, modelInfo, onStream, signal);
-      default:
-        throw new Error(`Unsupported provider: ${config.provider}`);
-    }
+    return provider.inference(messages, tools, config, onStream, signal);
   }
 
   /**

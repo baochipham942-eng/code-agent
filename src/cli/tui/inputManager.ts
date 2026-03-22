@@ -80,6 +80,12 @@ export class InputManager {
       return;
     }
 
+    // Ctrl+D — exit (on empty line, like bash)
+    if (str === '\x04' && this.active && this.buffer.length === 0) {
+      this.onCancel?.();
+      return;
+    }
+
     if (!this.active) return;
 
     // Handle multi-byte sequences (paste, arrow keys, etc.)

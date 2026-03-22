@@ -33,6 +33,9 @@ export async function runTUIChat(
   // Register event observer for status bar updates
   agent.setEventObserver((event) => updateStatusFromEvent(screen, event));
 
+  // Enable TUI mode in terminal output (routes ora/error through stdout)
+  terminalOutput.setTUIMode(true);
+
   // Enter TUI mode
   screen.enter();
 
@@ -69,6 +72,7 @@ export async function runTUIChat(
       // Slash commands
       if (text.startsWith('/')) {
         if (text === '/exit' || text === '/quit' || text === '/q') {
+          terminalOutput.setTUIMode(false);
           screen.leave();
           unpatch();
           console.log('\n再见！\n');

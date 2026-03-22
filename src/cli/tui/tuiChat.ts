@@ -9,6 +9,7 @@ import type { TUIScreen } from './screen';
 import type { CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
 import type { AgentEvent } from '../../shared/types';
+import { MODEL_PRICING_PER_1M } from '../../shared/constants/pricing';
 
 /**
  * Run the TUI chat loop.
@@ -125,6 +126,18 @@ export async function runTUIChat(
   });
 }
 
+// Accumulative session stats for status bar
+let totalInputTokens = 0;
+let totalOutputTokens = 0;
+let totalCost = 0;
+let currentModel = '';
+
+/** Calculate cost for tokens based on model pricing */
+function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+  const pricing = MODEL_PRICING_PER_1M[model] || MODEL_PRICING_PER_1M['default'];
+  return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
+}
+
 /** Update status bar from agent events */
 function updateStatusFromEvent(screen: TUIScreen, event: AgentEvent): void {
   switch (event.type) {
@@ -138,19 +151,32 @@ function updateStatusFromEvent(screen: TUIScreen, event: AgentEvent): void {
 
     case 'model_response': {
       const d = event.data as { model?: string; provider?: string; inputTokens?: number; outputTokens?: number } | undefined;
-      const update: Record<string, unknown> = {};
-      if (d?.model) update.model = d.model;
-      if (d?.provider) update.provider = d.provider;
-      screen.updateStatus(update);
+      if (d?.model) currentModel = d.model;
+      if (d?.inputTokens || d?.outputTokens) {
+        totalInputTokens += d?.inputTokens || 0;
+        totalOutputTokens += d?.outputTokens || 0;
+        totalCost += estimateCost(currentModel, d?.inputTokens || 0, d?.outputTokens || 0);
+      }
+      screen.updateStatus({
+        ...(d?.model ? { model: d.model } : {}),
+        ...(d?.provider ? { provider: d.provider } : {}),
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        cost: totalCost,
+      });
       break;
     }
 
     case 'stream_usage': {
       const su = event.data as { inputTokens?: number; outputTokens?: number } | undefined;
       if (su) {
+        totalInputTokens = su.inputTokens || totalInputTokens;
+        totalOutputTokens = su.outputTokens || totalOutputTokens;
+        totalCost = estimateCost(currentModel, totalInputTokens, totalOutputTokens);
         screen.updateStatus({
-          inputTokens: su.inputTokens || 0,
-          outputTokens: su.outputTokens || 0,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cost: totalCost,
         });
       }
       break;

@@ -41,6 +41,7 @@ export interface StatusBarData {
   toolCount?: number;
   gitBranch?: string;
   phase?: string; // 'thinking' | 'running' | 'idle'
+  cost?: number; // estimated cost in USD
 }
 
 /**
@@ -179,6 +180,11 @@ export class TUIScreen {
       const bar = this.miniBar(d.contextPercent);
       const color = d.contextPercent > 80 ? chalk.red : d.contextPercent > 60 ? chalk.yellow : chalk.dim;
       segments.push(color(`ctx ${bar} ${d.contextPercent.toFixed(0)}%`));
+    }
+
+    // Cost
+    if (d.cost != null && d.cost > 0) {
+      segments.push(chalk.green(`$${d.cost < 0.01 ? d.cost.toFixed(4) : d.cost.toFixed(3)}`));
     }
 
     if (d.turns) segments.push(`${d.turns} turns`);

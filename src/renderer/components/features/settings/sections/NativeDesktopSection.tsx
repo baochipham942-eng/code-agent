@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Mic,
   MicOff,
+  Volume2,
   Eye,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -953,13 +954,15 @@ export const NativeDesktopSection: React.FC = () => {
     }
   };
 
+  const [audioCaptureMode, setAudioCaptureMode] = useState<'microphone' | 'system-audio'>('system-audio');
+
   const handleToggleAudio = async () => {
     setAudioBusy(true);
     setError(null);
     try {
       const result = audioStatus?.capturing
         ? await stopAudioCapture()
-        : await startAudioCapture();
+        : await startAudioCapture(audioCaptureMode);
       setAudioStatus(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1029,10 +1032,29 @@ export const NativeDesktopSection: React.FC = () => {
             </button>
           </div>
 
+          {/* 采集模式切换（非录音状态时可切换） */}
+          {!audioStatus?.capturing && (
+            <button
+              onClick={() => setAudioCaptureMode(m => m === 'microphone' ? 'system-audio' : 'microphone')}
+              title={audioCaptureMode === 'system-audio' ? '系统音频（戴耳机也能录）' : '麦克风'}
+              className="px-2 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 border border-zinc-700/50 transition-colors"
+            >
+              {audioCaptureMode === 'system-audio' ? (
+                <><Volume2 className="w-3 h-3" /> 系统音频</>
+              ) : (
+                <><Mic className="w-3 h-3" /> 麦克风</>
+              )}
+            </button>
+          )}
+
           <button
             onClick={handleToggleAudio}
             disabled={audioBusy}
-            title={audioStatus?.capturing ? '停止录音' : '开始录音（会议纪要）'}
+            title={audioStatus?.capturing
+              ? '停止录音'
+              : audioCaptureMode === 'system-audio'
+                ? '录制系统音频（戴耳机也能录会议）'
+                : '录制麦克风（环境音）'}
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
               audioStatus?.capturing
                 ? 'bg-rose-600/80 text-white hover:bg-rose-500 animate-pulse'
@@ -1080,6 +1102,7 @@ export const NativeDesktopSection: React.FC = () => {
           {audioStatus?.capturing && (
             <span className="text-rose-400">
               录音中 · {audioStatus.totalSegments} 段 · {audioStatus.asrEngine}
+              {audioStatus.captureMode === 'system-audio' ? ' · 系统音频' : ''}
             </span>
           )}
         </div>

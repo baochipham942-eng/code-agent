@@ -34,10 +34,15 @@ const ASR_TIMEOUT_MS = 120_000;
 // Power management check interval
 const POWER_CHECK_INTERVAL_MS = 60_000;
 
+// Capture mode: microphone (default) or system-audio (ScreenCaptureKit, captures headphone output)
+type CaptureMode = 'microphone' | 'system-audio';
+
 // ffmpeg paths — 使用 AVFoundation 采集（sox CoreAudio 在 Tauri 子进程中无法获取 TCC 权限）
 const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
 // sox/rec paths — 仅用于 soxAvailable 检测（实际采集改用 ffmpeg）
 const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
+// system-audio-capture Swift tool (ScreenCaptureKit)
+const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
 
 // Whisper-cpp paths
 const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
@@ -57,12 +62,14 @@ const QWEN_ASR_PATHS = [
 let recProcess: ChildProcess | null = null;
 let vadInstance: VadProcessor | null = null;
 let capturing = false;
+let captureMode: CaptureMode = 'microphone';
 let powerMode: 'full' | 'reduced' | 'paused' = 'full';
 let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
 let asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
 let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
 let ffmpegBinaryPath: string | null = null; // 缓存 ffmpeg 二进制路径
+let systemAudioBinaryPath: string | null = null; // 缓存 system-audio-capture 路径
 let asrProcessing = false;
 
 /** 查找 ffmpeg 二进制 */
@@ -77,6 +84,47 @@ function findFfmpegBinary(): string | null {
   } catch {
     return null;
   }
+}
+
+/** 查找或编译 system-audio-capture（ScreenCaptureKit 系统音频采集工具） */
+function findSystemAudioCaptureBinary(): string | null {
+  if (systemAudioBinaryPath) return systemAudioBinaryPath;
+
+  // 查找预编译二进制
+  const scriptDir = path.join(__dirname, '..', '..', '..', 'scripts');
+  const candidates = [
+    path.join(scriptDir, SYSTEM_AUDIO_CAPTURE_NAME),
+    path.join(os.homedir(), '.code-agent', 'bin', SYSTEM_AUDIO_CAPTURE_NAME),
+  ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      systemAudioBinaryPath = p;
+      return p;
+    }
+  }
+
+  // 尝试自动编译
+  const swiftSource = path.join(scriptDir, `${SYSTEM_AUDIO_CAPTURE_NAME}.swift`);
+  if (fs.existsSync(swiftSource)) {
+    const outputPath = path.join(scriptDir, SYSTEM_AUDIO_CAPTURE_NAME);
+    try {
+      logger.error('[音频采集] 编译 system-audio-capture...');
+      execFileSync('swiftc', [
+        '-O', '-framework', 'ScreenCaptureKit', '-framework', 'AVFoundation',
+        '-framework', 'CoreMedia', '-o', outputPath, swiftSource,
+      ], { encoding: 'utf-8', timeout: 120_000 });
+      systemAudioBinaryPath = outputPath;
+      logger.error('[音频采集] system-audio-capture 编译成功');
+      return outputPath;
+    } catch (error) {
+      logger.error('[音频采集] system-audio-capture 编译失败', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return null;
 }
 
 /** 查找 rec 二进制 — 仅用于兼容性检查 */
@@ -656,11 +704,24 @@ function parseAudioDevices(output: string): string {
   return `:${devices[0].index}`;
 }
 
-function startRecCapture(): boolean {
+function startRecCapture(mode: CaptureMode = 'microphone'): boolean {
   if (recProcess) return true;
 
   try {
-    // 优先使用 ffmpeg + AVFoundation（macOS TCC 兼容），fallback 到 sox rec
+    // 系统音频模式：使用 ScreenCaptureKit 采集（戴耳机也能录会议音频）
+    if (mode === 'system-audio') {
+      const sysAudioBin = findSystemAudioCaptureBinary();
+      if (sysAudioBin) {
+        logger.error('[音频采集] 使用 ScreenCaptureKit 系统音频模式');
+        recProcess = spawn(sysAudioBin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+      } else {
+        logger.error('[音频采集] system-audio-capture 不可用，回退到麦克风模式');
+        mode = 'microphone';
+      }
+    }
+
+    // 麦克风模式：优先使用 ffmpeg + AVFoundation（macOS TCC 兼容），fallback 到 sox rec
+    if (mode === 'microphone') {
     const ffmpegBin = findFfmpegBinary();
     if (ffmpegBin) {
       const audioDevice = detectAudioDeviceIndex();
@@ -676,6 +737,9 @@ function startRecCapture(): boolean {
         '-q', '-t', 'raw', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-e', 'signed-integer', '-',
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
     }
+    } // end if (mode === 'microphone')
+
+    if (!recProcess) return false;
 
     let accumBuffer = Buffer.alloc(0);
 
@@ -901,14 +965,24 @@ function startFifoCapture(fifoPath: string): boolean {
   }
 }
 
-export async function startDesktopAudioCapture(fifoPath?: string): Promise<void> {
+export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureMode = 'microphone'): Promise<void> {
   if (capturing) return;
 
+  // 系统音频模式不需要 ffmpeg/sox
+  if (mode === 'system-audio') {
+    if (!findSystemAudioCaptureBinary()) {
+      logger.error('[音频采集] system-audio-capture 不可用，回退到麦克风模式');
+      mode = 'microphone';
+    }
+  }
+
   // Check audio capture tool availability
-  if (!fifoPath && !findFfmpegBinary() && !findRecBinary()) {
+  if (mode === 'microphone' && !fifoPath && !findFfmpegBinary() && !findRecBinary()) {
     logger.error('[音频采集] ffmpeg/sox 均未安装，跳过音频采集。安装: brew install ffmpeg');
     return;
   }
+
+  captureMode = mode;
 
   // Initialize VAD
   vadInstance = new VadProcessor();
@@ -931,8 +1005,8 @@ export async function startDesktopAudioCapture(fifoPath?: string): Promise<void>
     started = startFifoCapture(fifoPath);
     logger.error('[音频采集] 使用 Tauri FIFO 模式', { fifoPath });
   } else {
-    started = startRecCapture();
-    logger.error('[音频采集] 使用直接 rec spawn 模式');
+    started = startRecCapture(mode);
+    logger.error('[音频采集] 使用直接 spawn 模式', { mode });
   }
 
   if (!started) {
@@ -954,6 +1028,7 @@ export async function startDesktopAudioCapture(fifoPath?: string): Promise<void>
 
 export function stopDesktopAudioCapture(): void {
   capturing = false;
+  captureMode = 'microphone';
   if (recProcess) {
     recProcess.kill();
     recProcess = null;
@@ -973,8 +1048,10 @@ export function stopDesktopAudioCapture(): void {
 export function getAudioCaptureStatus() {
   return {
     capturing,
+    captureMode,
     vadReady: vadInstance?.isSpeaking !== undefined,
     soxAvailable: !!findFfmpegBinary() || !!findRecBinary(),
+    systemAudioAvailable: !!findSystemAudioCaptureBinary(),
     asrEngine: findWhisperBinary() ? 'whisper-cpp' : findQwenAsrModel() ? 'qwen3-asr' : 'none',
     powerMode,
     totalSegments,

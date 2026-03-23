@@ -17,6 +17,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let targetSampleRate: Double = 16000
     private let targetChannels: UInt32 = 1
     private var started = false
+    private var diagLogged = false
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -91,7 +92,13 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         let buffer = audioBufferList.mBuffers
         guard let rawData = buffer.mData else { return }
 
-        let sourceSampleRate = asbd.mSampleRate  // 48000
+        // 首次输出格式诊断
+        if !diagLogged {
+            diagLogged = true
+            fputs("system-audio-capture: ASBD sampleRate=\(asbd.mSampleRate) channels=\(asbd.mChannelsPerFrame) bitsPerChannel=\(asbd.mBitsPerChannel) bytesPerFrame=\(asbd.mBytesPerFrame) formatFlags=\(asbd.mFormatFlags) numSamples=\(numSamples) buffers=\(audioBufferList.mNumberBuffers) bufDataSize=\(buffer.mDataByteSize)\n", stderr)
+        }
+
+        let sourceSampleRate = asbd.mSampleRate
         let float32Count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
         guard float32Count > 0 else { return }
 

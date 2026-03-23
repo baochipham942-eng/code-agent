@@ -79,7 +79,8 @@ let asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
 let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
 let ffmpegBinaryPath: string | null = null; // 缓存 ffmpeg 二进制路径
 let systemAudioBinaryPath: string | null = null; // 缓存 system-audio-capture 路径
-let asrProcessing = false;
+let asrProcessing = 0; // number of concurrent ASR workers
+const ASR_MAX_CONCURRENCY = 3; // run up to 3 ASR processes in parallel
 
 /** 查找 ffmpeg 二进制 */
 function findFfmpegBinary(): string | null {
@@ -661,43 +662,54 @@ function persistAudioSegment(
 // ASR Queue Processor
 // ============================================================================
 
-async function processAsrQueue(): Promise<void> {
-  if (asrProcessing || asrQueue.length === 0) return;
-  asrProcessing = true;
+async function processOneAsrItem(): Promise<void> {
+  const item = asrQueue.shift();
+  if (!item) return;
 
+  asrProcessing++;
   try {
-    while (asrQueue.length > 0) {
-      const item = asrQueue.shift()!;
-      const asrStart = Date.now();
-      const { text, engine } = await transcribeSegment(item.wavPath);
-      const asrDuration = Date.now() - asrStart;
+    const asrStart = Date.now();
+    const { text, engine } = await transcribeSegment(item.wavPath);
+    const asrDuration = Date.now() - asrStart;
 
-      const sqlitePath = getSqlitePath();
-      if (sqlitePath) {
-        persistAudioSegment(sqlitePath, {
-          id: `audio-${item.startMs}`,
-          startAtMs: item.startMs,
-          endAtMs: item.endMs,
-          durationMs: item.endMs - item.startMs,
-          wavPath: item.wavPath,
-          transcript: text,
-          asrEngine: engine,
-          asrDurationMs: asrDuration,
-        });
-      }
+    const sqlitePath = getSqlitePath();
+    if (sqlitePath) {
+      persistAudioSegment(sqlitePath, {
+        id: `audio-${item.startMs}`,
+        startAtMs: item.startMs,
+        endAtMs: item.endMs,
+        durationMs: item.endMs - item.startMs,
+        wavPath: item.wavPath,
+        transcript: text,
+        asrEngine: engine,
+        asrDurationMs: asrDuration,
+      });
+    }
 
-      if (text) {
-        totalSegments++;
-        logger.info('[音频ASR] 转录完成', {
-          engine,
-          duration: `${item.endMs - item.startMs}ms`,
-          textLength: text.length,
-          asrTime: `${asrDuration}ms`,
-        });
-      }
+    if (text) {
+      totalSegments++;
+      logger.info('[音频ASR] 转录完成', {
+        engine,
+        duration: `${item.endMs - item.startMs}ms`,
+        textLength: text.length,
+        asrTime: `${asrDuration}ms`,
+        queueRemaining: asrQueue.length,
+        workers: asrProcessing,
+      });
     }
   } finally {
-    asrProcessing = false;
+    asrProcessing--;
+    // Continue draining the queue
+    if (asrQueue.length > 0 && asrProcessing < ASR_MAX_CONCURRENCY) {
+      processAsrQueue().catch(() => {});
+    }
+  }
+}
+
+async function processAsrQueue(): Promise<void> {
+  // Launch workers up to concurrency limit
+  while (asrQueue.length > 0 && asrProcessing < ASR_MAX_CONCURRENCY) {
+    processOneAsrItem().catch(() => {});
   }
 }
 

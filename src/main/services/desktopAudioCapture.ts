@@ -54,6 +54,15 @@ const QWEN_ASR_PATHS = [
   path.join(os.homedir(), 'Library/Application Support/net.bytenote.asro/models/qwen3-asr-0.6b'),
   path.join(os.homedir(), '.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots'),
 ];
+// Python3 候选路径 — Tauri 子进程不继承 shell PATH，需要显式查找
+const PYTHON3_PATHS = [
+  '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3',
+  '/Library/Frameworks/Python.framework/Versions/3.13/bin/python3',
+  '/Library/Frameworks/Python.framework/Versions/3.12/bin/python3',
+  '/opt/homebrew/bin/python3',
+  '/usr/local/bin/python3',
+  '/usr/bin/python3',
+];
 
 // ============================================================================
 // State
@@ -472,9 +481,31 @@ async function transcribeWithWhisperCpp(wavPath: string): Promise<string | null>
   }
 }
 
+/** 查找安装了 qwen_asr 的 python3 路径（Tauri 子进程不继承 shell PATH） */
+let python3BinaryPath: string | null = null;
+function findPython3WithQwenAsr(): string | null {
+  if (python3BinaryPath) return python3BinaryPath;
+  for (const p of PYTHON3_PATHS) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      execFileSync(p, ['-c', 'import qwen_asr'], { encoding: 'utf-8', timeout: 10_000 });
+      python3BinaryPath = p;
+      logger.error('[音频ASR] 找到 python3', { path: p });
+      return p;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 async function transcribeWithQwenAsr(wavPath: string): Promise<string | null> {
   const modelPath = findQwenAsrModel();
   if (!modelPath) return null;
+
+  const python3 = findPython3WithQwenAsr();
+  if (!python3) {
+    logger.warn('[音频ASR] 未找到安装了 qwen_asr 的 python3');
+    return null;
+  }
 
   try {
     const script = `
@@ -486,7 +517,7 @@ result = model.transcribe("${wavPath.replace(/"/g, '\\"')}")
 text = result[0].text if isinstance(result, list) and len(result) > 0 else str(result)
 print(json.dumps({"text": text}))
 `;
-    const result = execFileSync('python3', ['-c', script], {
+    const result = execFileSync(python3, ['-c', script], {
       encoding: 'utf-8',
       timeout: ASR_TIMEOUT_MS,
     });

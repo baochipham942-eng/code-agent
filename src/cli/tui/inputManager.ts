@@ -90,26 +90,21 @@ export class InputManager {
 
     // Handle multi-byte sequences (paste, arrow keys, etc.)
     if (str.length > 1 && !str.startsWith('\x1b')) {
-      // Paste: insert all characters at cursor
-      this.insertText(str);
+      // Paste: split on newlines — each line becomes a submit
+      const parts = str.split(/\r?\n|\r/);
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i]) this.insertText(parts[i]);
+        if (i < parts.length - 1 && this.buffer.trim()) {
+          this.submitBuffer();
+        }
+      }
       return;
     }
 
     // Single character or escape sequence
     if (str === '\r' || str === '\n') {
       // Enter — submit
-      const text = this.buffer.trim();
-      if (text) {
-        this.history.push(text);
-        if (this.history.length > 100) this.history.shift();
-      }
-      this.historyIndex = -1;
-      this.buffer = '';
-      this.cursor = 0;
-      this.screen.clearInput();
-      if (text) {
-        this.onSubmit?.(text);
-      }
+      this.submitBuffer();
     } else if (str === '\x7f' || str === '\b') {
       // Backspace
       if (this.cursor > 0) {
@@ -167,6 +162,21 @@ export class InputManager {
       this.insertText(str);
     }
   };
+
+  private submitBuffer(): void {
+    const text = this.buffer.trim();
+    if (text) {
+      this.history.push(text);
+      if (this.history.length > 100) this.history.shift();
+    }
+    this.historyIndex = -1;
+    this.buffer = '';
+    this.cursor = 0;
+    this.screen.clearInput();
+    if (text) {
+      this.onSubmit?.(text);
+    }
+  }
 
   private insertText(text: string): void {
     // Filter out non-printable characters

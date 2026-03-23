@@ -162,8 +162,10 @@ export async function updateNativeDesktopAnalyzeText(eventId: string, analyzeTex
 
 export interface AudioCaptureStatus {
   capturing: boolean;
+  captureMode: 'microphone' | 'system-audio';
   vadReady: boolean;
   soxAvailable: boolean;
+  systemAudioAvailable: boolean;
   asrEngine: string;
   powerMode: string;
   totalSegments: number;
@@ -209,9 +211,8 @@ async function postDesktopAction<T>(action: string, payload?: Record<string, unk
   return result.data as T;
 }
 
-export async function startAudioCapture(): Promise<AudioCaptureStatus> {
-  // 直接让 Node.js 启动 ffmpeg（AVFoundation）进行音频采集
-  return postDesktopAction<AudioCaptureStatus>('startAudioCapture');
+export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {
+  return postDesktopAction<AudioCaptureStatus>('startAudioCapture', { mode });
 }
 
 /** 后台请求麦克风权限（不阻塞 UI，app 启动时调用一次） */

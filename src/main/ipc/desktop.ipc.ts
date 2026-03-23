@@ -72,8 +72,10 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
           }
           manualAudioActive = true;
-          const fifoPath = (request.payload as { fifoPath?: string } | undefined)?.fifoPath;
-          await startDesktopAudioCapture(fifoPath);
+          const payload = request.payload as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
+          const fifoPath = payload?.fifoPath;
+          const mode = payload?.mode || 'microphone';
+          await startDesktopAudioCapture(fifoPath, mode);
           const audioSt = getAudioCaptureStatus();
           if (!audioSt.capturing) {
             // 启动失败 — 回退标志位，返回错误原因
@@ -130,9 +132,9 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
       const isMeeting = MEETING_APPS.has(appName);
 
       if (isMeeting && !meetingAudioActive && !manualAudioActive) {
-        logger.info('[音频采集] 检测到会议应用，启动音频采集', { app: appName });
+        logger.info('[音频采集] 检测到会议应用，启动系统音频采集', { app: appName });
         meetingAudioActive = true;
-        startDesktopAudioCapture().catch((err) => {
+        startDesktopAudioCapture(undefined, 'system-audio').catch((err) => {
           logger.warn('[音频采集] 启动失败', { error: err instanceof Error ? err.message : String(err) });
           meetingAudioActive = false;
         });

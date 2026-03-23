@@ -298,13 +298,40 @@ class VadProcessor {
 
   async init(): Promise<boolean> {
     try {
-      this.ort = require('onnxruntime-node');
-      const modelPath = path.join(
-        path.dirname(require.resolve('avr-vad')),
-        'silero_vad_v5.onnx'
-      );
-      if (!fs.existsSync(modelPath)) {
-        logger.warn('[音频采集] Silero VAD v5 模型文件不存在', { modelPath });
+      // Tauri 打包后 node_modules 在 Resources/_up_/node_modules/
+      // require() 默认解析不到，需手动指定路径
+      const tauriNodeModules = path.join(__dirname, '..', '..', 'node_modules');
+      const cwdNodeModules = path.join(process.cwd(), 'node_modules');
+      try {
+        this.ort = require('onnxruntime-node');
+      } catch {
+        // 回退到 Tauri Resources 路径
+        for (const nm of [tauriNodeModules, cwdNodeModules]) {
+          const ortPath = path.join(nm, 'onnxruntime-node');
+          if (fs.existsSync(ortPath)) {
+            this.ort = require(ortPath);
+            break;
+          }
+        }
+        if (!this.ort) throw new Error('onnxruntime-node not found');
+      }
+
+      // 查找 silero_vad_v5.onnx 模型
+      let modelPath = '';
+      try {
+        modelPath = path.join(path.dirname(require.resolve('avr-vad')), 'silero_vad_v5.onnx');
+      } catch {
+        // require.resolve 失败，手动搜索
+        for (const nm of [tauriNodeModules, cwdNodeModules]) {
+          const candidate = path.join(nm, 'avr-vad', 'dist', 'silero_vad_v5.onnx');
+          if (fs.existsSync(candidate)) {
+            modelPath = candidate;
+            break;
+          }
+        }
+      }
+      if (!modelPath || !fs.existsSync(modelPath)) {
+        logger.warn('[音频采集] Silero VAD v5 模型文件不存在', { modelPath, tauriNodeModules });
         return false;
       }
       this.session = await this.ort.InferenceSession.create(modelPath);

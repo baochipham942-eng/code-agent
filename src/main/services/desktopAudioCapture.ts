@@ -90,10 +90,12 @@ function findFfmpegBinary(): string | null {
 function findSystemAudioCaptureBinary(): string | null {
   if (systemAudioBinaryPath) return systemAudioBinaryPath;
 
-  // 查找预编译二进制
+  // 查找预编译二进制（开发目录 → Tauri Resources → 用户 bin）
   const scriptDir = path.join(__dirname, '..', '..', '..', 'scripts');
   const candidates = [
     path.join(scriptDir, SYSTEM_AUDIO_CAPTURE_NAME),
+    // Tauri 打包后: __dirname = Resources/_up_/dist/web/, binary = Resources/_up_/scripts/
+    path.join(__dirname, '..', '..', 'scripts', SYSTEM_AUDIO_CAPTURE_NAME),
     path.join(os.homedir(), '.code-agent', 'bin', SYSTEM_AUDIO_CAPTURE_NAME),
   ];
 

@@ -49,7 +49,8 @@
       "../node_modules/keytar/**/*",
       "../node_modules/node-pty/**/*",
       "../node_modules/onnxruntime-node/**/*",
-      "../node_modules/avr-vad/dist/*.onnx"
+      "../node_modules/avr-vad/dist/*.onnx",
+      "../scripts/system-audio-capture"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

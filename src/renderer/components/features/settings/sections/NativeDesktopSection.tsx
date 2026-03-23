@@ -799,7 +799,7 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
               </div>
             </div>
             <div className="px-4 py-3 space-y-1.5 max-h-[300px] overflow-y-auto">
-              {audioSegs.map((seg) => (
+              {[...audioSegs].reverse().map((seg) => (
                 <div key={seg.id} className="flex gap-2.5 text-[12px]">
                   <span className="text-zinc-600 font-mono shrink-0 w-11 text-right pt-px">
                     {formatTime(seg.start_at_ms)}

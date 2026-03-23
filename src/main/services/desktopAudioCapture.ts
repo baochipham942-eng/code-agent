@@ -922,10 +922,16 @@ function startRecCapture(mode: CaptureMode = 'microphone'): boolean {
     });
 
     recProcess.on('exit', (code) => {
-      if (capturing) {
-        logger.error('[音频采集] rec 进程退出，将在下次检查时重启', { code });
-      }
       recProcess = null;
+      if (capturing) {
+        logger.error('[音频采集] rec 进程意外退出，3 秒后自动重启', { code, mode });
+        setTimeout(() => {
+          if (capturing && !recProcess) {
+            logger.error('[音频采集] 正在重启 rec 进程...');
+            startRecCapture(captureMode);
+          }
+        }, 3000);
+      }
     });
 
     logger.error('[音频采集] rec 进程已启动 (16kHz mono PCM)');

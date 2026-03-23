@@ -507,8 +507,7 @@ async function transcribeWithQwenAsr(wavPath: string): Promise<string | null> {
     return null;
   }
 
-  try {
-    const script = `
+  const script = `
 import sys, json
 from qwen_asr import Qwen3ASRModel
 import torch
@@ -517,18 +516,44 @@ result = model.transcribe("${wavPath.replace(/"/g, '\\"')}")
 text = result[0].text if isinstance(result, list) and len(result) > 0 else str(result)
 print(json.dumps({"text": text}))
 `;
-    const result = execFileSync(python3, ['-c', script], {
-      encoding: 'utf-8',
-      timeout: ASR_TIMEOUT_MS,
+
+  // 使用异步 spawn 避免阻塞事件循环（execFileSync 会阻塞 30-60s）
+  return new Promise<string | null>((resolve) => {
+    const proc = spawn(python3, ['-c', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout!.on('data', (data: Buffer) => { stdout += data.toString(); });
+    proc.stderr!.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+    const timer = setTimeout(() => {
+      proc.kill();
+      logger.warn('[音频ASR] Qwen3-ASR 超时');
+      resolve(null);
+    }, ASR_TIMEOUT_MS);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        logger.warn('[音频ASR] Qwen3-ASR 失败', { code, stderr: stderr.slice(0, 200) });
+        resolve(null);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        resolve(parsed.text || null);
+      } catch {
+        logger.warn('[音频ASR] Qwen3-ASR 输出解析失败', { stdout: stdout.slice(0, 200) });
+        resolve(null);
+      }
     });
-    const parsed = JSON.parse(result.trim());
-    return parsed.text || null;
-  } catch (error) {
-    logger.warn('[音频ASR] Qwen3-ASR 失败', {
-      error: error instanceof Error ? error.message : String(error),
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      logger.warn('[音频ASR] Qwen3-ASR 进程错误', { error: err.message });
+      resolve(null);
     });
-    return null;
-  }
+  });
 }
 
 async function transcribeSegment(wavPath: string): Promise<{ text: string | null; engine: string }> {

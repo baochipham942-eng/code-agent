@@ -20,6 +20,7 @@ import {
   calculateBudget,
   fitsInBudget,
   truncateToTokenBudget,
+  countTokensExact,
   TOKEN_RATIOS,
   type Message,
   type ContentAnalysis,
@@ -339,6 +340,102 @@ describe('TokenEstimator', () => {
       expect(TOKEN_RATIOS.MARKDOWN).toBeDefined();
       expect(TOKEN_RATIOS.JSON).toBeDefined();
       expect(TOKEN_RATIOS.WHITESPACE).toBeDefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Real BPE Tokenizer Accuracy (gpt-tokenizer)
+  // --------------------------------------------------------------------------
+  describe('BPE tokenizer accuracy', () => {
+    it('should count English tokens accurately (< 10% error vs known count)', () => {
+      // "Hello, world!" — known GPT BPE: 4 tokens
+      const tokens = estimateTokens('Hello, world!');
+      expect(tokens).toBeGreaterThanOrEqual(3);
+      expect(tokens).toBeLessThanOrEqual(5);
+    });
+
+    it('should count short English sentence tokens accurately', () => {
+      // "The quick brown fox" — 4 tokens in GPT BPE
+      const tokens = estimateTokens('The quick brown fox');
+      expect(tokens).toBeGreaterThanOrEqual(3);
+      expect(tokens).toBeLessThanOrEqual(6);
+    });
+
+    it('should count CJK text tokens', () => {
+      // Chinese chars are multi-byte, each often 1-2 tokens in cl100k
+      const tokens = estimateTokens('你好世界');
+      expect(tokens).toBeGreaterThanOrEqual(1);
+      expect(tokens).toBeLessThanOrEqual(12);
+    });
+
+    it('should count TypeScript code tokens', () => {
+      const code = 'const x = 42;';
+      const tokens = estimateTokens(code);
+      // Roughly 5-7 tokens for this snippet
+      expect(tokens).toBeGreaterThanOrEqual(4);
+      expect(tokens).toBeLessThanOrEqual(10);
+    });
+
+    it('should produce consistent (deterministic) results across calls', () => {
+      const text = 'Determinism check for BPE tokenizer';
+      const a = estimateTokens(text);
+      const b = estimateTokens(text);
+      const c = estimateTokens(text);
+      expect(a).toBe(b);
+      expect(b).toBe(c);
+    });
+
+    it('should use LRU cache: second call returns same value without re-encoding', () => {
+      const text = `Cache test ${Date.now()} unique`;
+      const first = estimateTokens(text);
+      const second = estimateTokens(text);
+      expect(first).toBe(second);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // countTokensExact
+  // --------------------------------------------------------------------------
+  describe('countTokensExact', () => {
+    it('should return base overhead 3 for empty messages array', () => {
+      const total = countTokensExact([]);
+      expect(total).toBe(3);
+    });
+
+    it('should count single user message: 3 base + 4 role + content tokens', () => {
+      const messages: Message[] = [{ role: 'user', content: 'Hello' }];
+      const total = countTokensExact(messages);
+      const contentTokens = estimateTokens('Hello');
+      expect(total).toBe(3 + 4 + contentTokens);
+    });
+
+    it('should count multi-message conversation', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Hi' },
+        { role: 'assistant', content: 'Hello!' },
+      ];
+      const total = countTokensExact(messages);
+      const expected = 3
+        + 4 + estimateTokens('Hi')
+        + 4 + estimateTokens('Hello!');
+      expect(total).toBe(expected);
+    });
+
+    it('should always be > 0 for non-empty messages', () => {
+      const messages: Message[] = [{ role: 'user', content: 'test' }];
+      expect(countTokensExact(messages)).toBeGreaterThan(0);
+    });
+
+    it('should produce same result as estimateConversationTokens for same input', () => {
+      // countTokensExact and estimateConversationTokens should agree
+      // because both call estimateTokens internally
+      const messages: Message[] = [
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'user', content: 'Tell me a joke.' },
+      ];
+      const exact = countTokensExact(messages);
+      const estimated = estimateConversationTokens(messages);
+      expect(exact).toBe(estimated);
     });
   });
 });

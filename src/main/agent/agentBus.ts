@@ -116,6 +116,23 @@ export interface RequestOptions {
 }
 
 /**
+ * Mailbox 消息类型
+ */
+export type MailboxMessageType = 'permission_request' | 'permission_response' | 'task_dispatch' | 'status_report';
+
+/**
+ * Mailbox 消息
+ */
+export interface MailboxMessage {
+  id: string;
+  type: MailboxMessageType;
+  from: string;
+  to: string;
+  payload: unknown;
+  timestamp: number;
+}
+
+/**
  * AgentBus 配置
  */
 export interface AgentBusConfig {
@@ -167,6 +184,7 @@ export class AgentBus extends EventEmitter {
   }> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   private messageIdCounter = 0;
+  private mailboxes: Map<string, MailboxMessage[]> = new Map();
 
   constructor(config: Partial<AgentBusConfig> = {}) {
     super();
@@ -670,6 +688,47 @@ export class AgentBus extends EventEmitter {
   }
 
   // ==========================================================================
+  // Mailbox Protocol
+  // ==========================================================================
+
+  /**
+   * 向目标 Agent 的邮箱发送消息
+   */
+  sendMailbox(targetAgentId: string, message: Omit<MailboxMessage, 'id' | 'timestamp'>): void {
+    const full: MailboxMessage = {
+      ...message,
+      id: `mb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: Date.now(),
+    };
+    const box = this.mailboxes.get(targetAgentId) || [];
+    box.push(full);
+    this.mailboxes.set(targetAgentId, box);
+  }
+
+  /**
+   * 取出并清空 Agent 的邮箱消息
+   */
+  pollMailbox(agentId: string): MailboxMessage[] {
+    const messages = this.mailboxes.get(agentId) || [];
+    this.mailboxes.set(agentId, []); // drain
+    return messages;
+  }
+
+  /**
+   * 获取 Agent 邮箱中待处理的消息数量
+   */
+  getMailboxSize(agentId: string): number {
+    return (this.mailboxes.get(agentId) || []).length;
+  }
+
+  /**
+   * 清除 Agent 邮箱中所有消息
+   */
+  clearMailbox(agentId: string): void {
+    this.mailboxes.delete(agentId);
+  }
+
+  // ==========================================================================
   // Lifecycle
   // ==========================================================================
 
@@ -692,6 +751,7 @@ export class AgentBus extends EventEmitter {
     this.subscribers.clear();
     this.sharedState.clear();
     this.messageHistory = [];
+    this.mailboxes.clear();
     this.removeAllListeners();
 
     logger.info('AgentBus disposed');
@@ -708,6 +768,7 @@ export class AgentBus extends EventEmitter {
       clearTimeout(pending.timeout);
     }
     this.pendingRequests.clear();
+    this.mailboxes.clear();
     logger.debug('AgentBus reset');
   }
 

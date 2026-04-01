@@ -3,6 +3,11 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+vi.mock('electron', () => ({
+  safeStorage: { isEncryptionAvailable: () => false, encryptString: (s: string) => Buffer.from(s) },
+  app: { getAppPath: () => '', getPath: () => '' },
+}));
+
 const desktopMocks = vi.hoisted(() => ({
   ensureFreshData: vi.fn(),
   refreshRecentActivity: vi.fn(),
@@ -18,7 +23,7 @@ const workspaceMocks = vi.hoisted(() => ({
   searchWorkspaceActivity: vi.fn(),
 }));
 
-vi.mock('../../../src/main/memory/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     ensureFreshData: desktopMocks.ensureFreshData,
     refreshRecentActivity: desktopMocks.refreshRecentActivity,
@@ -27,17 +32,17 @@ vi.mock('../../../src/main/memory/desktopActivityUnderstandingService', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/memory/desktopActivityPlanningBridge', async () => {
+vi.mock('../../../src/main/desktop/desktopActivityPlanningBridge', async () => {
   const actual = await vi.importActual<
-    typeof import('../../../src/main/memory/desktopActivityPlanningBridge')
-  >('../../../src/main/memory/desktopActivityPlanningBridge');
+    typeof import('../../../src/main/desktop/desktopActivityPlanningBridge')
+  >('../../../src/main/desktop/desktopActivityPlanningBridge');
   return {
     ...actual,
     syncDesktopTasksToPlanningService: planningBridgeMocks.syncDesktopTasksToPlanningService,
   };
 });
 
-vi.mock('../../../src/main/memory/workspaceActivitySearchService', () => ({
+vi.mock('../../../src/main/desktop/workspaceActivitySearchService', () => ({
   searchWorkspaceActivity: workspaceMocks.searchWorkspaceActivity,
 }));
 

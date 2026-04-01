@@ -15,7 +15,7 @@ const desktopActivityMocks = vi.hoisted(() => ({
   clearTodoFeedback: vi.fn(),
 }));
 
-vi.mock('../../../../src/main/memory/desktopActivityUnderstandingService', () => ({
+vi.mock('../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
     recordTodoFeedbackForTask: desktopActivityMocks.recordTodoFeedbackForTask,
     clearTodoFeedbackForTask: desktopActivityMocks.clearTodoFeedbackForTask,

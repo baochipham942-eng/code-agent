@@ -80,6 +80,8 @@ import {
   estimateTokens,
 } from '../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
+import { CompressionState } from '../context/compressionState';
+import { CompressionPipeline } from '../context/compressionPipeline';
 
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
@@ -159,6 +161,8 @@ export class AgentLoop {
         preserveUserMessages: true,
       }),
       autoCompressor: getAutoCompressor(),
+      compressionState: new CompressionState(),
+      compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: config.telemetryAdapter,
 
       // Mutable state

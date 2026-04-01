@@ -21,6 +21,8 @@ import type { HookManager } from '../../hooks/hookManager';
 import type { PlanningService } from '../../planning/planningService';
 import type { HookMessageBuffer, MessageHistoryCompressor } from '../../context/tokenOptimizer';
 import type { AutoContextCompressor } from '../../context/autoCompressor';
+import type { CompressionState } from '../../context/compressionState';
+import type { CompressionPipeline } from '../../context/compressionPipeline';
 import type { TelemetryAdapter } from '../../../shared/types/telemetry';
 
 /**
@@ -55,6 +57,8 @@ export interface RuntimeContext {
   hookMessageBuffer: HookMessageBuffer;
   messageHistoryCompressor: MessageHistoryCompressor;
   autoCompressor: AutoContextCompressor;
+  compressionState: CompressionState;
+  compressionPipeline: CompressionPipeline;
   telemetryAdapter?: TelemetryAdapter;
 
   // --- Mutable run state ---

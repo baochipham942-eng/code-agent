@@ -87,6 +87,7 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
+import { ProjectionEngine, type ProjectableMessage } from '../../context/projectionEngine';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
@@ -766,6 +767,27 @@ ${deferredToolsSummary}
         maxTokens: contextWindowSize,
         usagePercent: Math.round(currentTokens / contextWindowSize * 100),
       });
+    }
+
+    // Apply projection from CompressionState (M1 integration — augments existing behavior)
+    // Only project when there are active compressions to avoid unnecessary overhead
+    if (this.ctx.compressionState.getCommitLog().length > 0) {
+      const engine = new ProjectionEngine();
+      // Bridge ModelMessage[] → ProjectableMessage[] for projection
+      const projectable: ProjectableMessage[] = modelMessages.map((m, i) => ({
+        id: `msg-${i}`,
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      }));
+      const projected = engine.projectMessages(projectable, this.ctx.compressionState);
+      // Apply projected content back to modelMessages (only string content is modified)
+      for (let i = 0; i < modelMessages.length; i++) {
+        const proj = projected.find(p => p.id === `msg-${i}`);
+        if (proj && typeof modelMessages[i].content === 'string') {
+          modelMessages[i] = { ...modelMessages[i], content: proj.content };
+        }
+      }
+      logger.debug(`[ContextAssembly] Projection applied: ${projected.length}/${modelMessages.length} messages projected`);
     }
 
     return modelMessages;

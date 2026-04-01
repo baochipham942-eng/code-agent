@@ -32,6 +32,7 @@ import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, combineAbortSignals } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
+import { buildChildContext, type ParentContext } from './childContext';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -123,6 +124,8 @@ interface SubagentContext {
   abortSignal?: AbortSignal;
   /** SpawnGuard agent ID — used to drain message queue for send_input */
   spawnGuardId?: string;
+  /** Parent context for child context inheritance */
+  parentContext?: ParentContext;
 }
 
 // ----------------------------------------------------------------------------
@@ -185,7 +188,27 @@ export class SubagentExecutor {
     );
 
     // Filter tools to only those allowed for this subagent
-    const allowedTools = this.filterTools(config.availableTools, context.toolRegistry);
+    let effectiveToolNames = config.availableTools;
+
+    // Only use buildChildContext when we have parent context available
+    // This is additive — if no parent context, existing logic unchanged
+    if (context.parentContext) {
+      const childCtx = buildChildContext(
+        {
+          agentType: config.name,
+          allowedTools: config.availableTools,
+          readOnly: (config.permissionPreset as string) === 'review' || (config.permissionPreset as string) === 'audit',
+        },
+        context.parentContext,
+      );
+      // Use child context's tool pool (intersection with parent)
+      // Only override if childCtx provides a different (narrower) pool
+      if (childCtx.toolPool.length > 0) {
+        effectiveToolNames = childCtx.toolPool;
+      }
+    }
+
+    const allowedTools = this.filterTools(effectiveToolNames, context.toolRegistry);
 
     // Check if the model supports tool calls
     const providerConfig = PROVIDER_REGISTRY[context.modelConfig.provider];

@@ -5,7 +5,14 @@
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage } from './types';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS } from '../../shared/constants';
+import {
+  DEFAULT_MODELS,
+  MODEL_MAX_TOKENS,
+  CONTEXT_WINDOWS,
+  DEFAULT_CONTEXT_WINDOW,
+  PROVIDER_FALLBACK_CHAIN,
+  PROVIDER_REGISTRY,
+} from '../../shared/constants';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -13,6 +20,21 @@ export interface TaskComplexity {
   level: 'simple' | 'moderate' | 'complex';
   score: number;
   signals: string[];
+}
+
+export interface FallbackContext {
+  reason: 'context_overflow' | 'rate_limit' | 'unavailable' | 'auth' | 'network';
+  currentModel: string;
+  currentProvider: string;
+  taskCapabilities?: string[];
+  budgetRemaining?: number;
+}
+
+export interface FallbackResult {
+  provider: string;
+  model: string;
+  contextWindow: number;
+  reason: string;
 }
 
 export class AdaptiveRouter {
@@ -129,6 +151,71 @@ export class AdaptiveRouter {
       this.freeModelDisabled = true;
       logger.info(`[AdaptiveRouter] Free model disabled: ${reason}`);
     }
+  }
+
+  selectFallback(context: FallbackContext): FallbackResult | null {
+    switch (context.reason) {
+      case 'context_overflow':
+        return this.findLargerContextModel(context);
+      case 'rate_limit':
+        return this.findAlternateProvider(context);
+      case 'unavailable':
+      case 'network':
+        return this.walkFallbackChain(context);
+      case 'auth':
+        return null; // can't recover by switching
+    }
+  }
+
+  private findLargerContextModel(context: FallbackContext): FallbackResult | null {
+    const currentWindow = CONTEXT_WINDOWS[context.currentModel] || DEFAULT_CONTEXT_WINDOW;
+    const chain = PROVIDER_FALLBACK_CHAIN[context.currentProvider] || [];
+    for (const { provider, model } of chain) {
+      if (provider === context.currentProvider) continue;
+      const window = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+      if (window > currentWindow) {
+        return {
+          provider,
+          model,
+          contextWindow: window,
+          reason: `larger context: ${window} > ${currentWindow}`,
+        };
+      }
+    }
+    // Also check providers not in the current chain
+    for (const [provider, info] of Object.entries(PROVIDER_REGISTRY)) {
+      if (provider === context.currentProvider) continue;
+      if (chain.some(c => c.provider === provider)) continue;
+      const model = info.defaultModel;
+      const window = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+      if (window > currentWindow) {
+        return {
+          provider,
+          model,
+          contextWindow: window,
+          reason: `larger context: ${window} > ${currentWindow}`,
+        };
+      }
+    }
+    return null;
+  }
+
+  private findAlternateProvider(context: FallbackContext): FallbackResult | null {
+    const chain = PROVIDER_FALLBACK_CHAIN[context.currentProvider] || [];
+    for (const { provider, model } of chain) {
+      if (provider === context.currentProvider) continue;
+      return {
+        provider,
+        model,
+        contextWindow: CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW,
+        reason: `alternate provider for ${context.reason}`,
+      };
+    }
+    return null;
+  }
+
+  private walkFallbackChain(context: FallbackContext): FallbackResult | null {
+    return this.findAlternateProvider(context);
   }
 
   recordOutcome(complexity: TaskComplexity, provider: string, success: boolean, tokens: number): void {

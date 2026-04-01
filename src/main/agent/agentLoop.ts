@@ -54,6 +54,7 @@ import {
   buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../prompts/builder';
+import type { PromptProfile } from '../prompts/profiles';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
@@ -80,6 +81,8 @@ import {
   estimateTokens,
 } from '../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
+import { CompressionState } from '../context/compressionState';
+import { CompressionPipeline } from '../context/compressionPipeline';
 
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
@@ -123,6 +126,7 @@ export class AgentLoop {
   private contextAssembly: ContextAssembly;
   private runFinalizer: RunFinalizer;
   private learningPipeline: LearningPipeline;
+  private promptProfile: PromptProfile = 'interactive';
 
   constructor(config: AgentLoopConfig) {
     const contextWindow = CONTEXT_WINDOWS[config.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
@@ -159,6 +163,8 @@ export class AgentLoop {
         preserveUserMessages: true,
       }),
       autoCompressor: getAutoCompressor(),
+      compressionState: new CompressionState(),
+      compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: config.telemetryAdapter,
 
       // Mutable state
@@ -269,6 +275,10 @@ export class AgentLoop {
   }
 
   // ========== Public API — all delegated ==========
+
+  getPromptProfile(): PromptProfile {
+    return this.promptProfile;
+  }
 
   async run(userMessage: string): Promise<void> {
     return this.conversationRuntime.run(userMessage);

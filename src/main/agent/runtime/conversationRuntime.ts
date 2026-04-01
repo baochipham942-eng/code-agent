@@ -90,6 +90,7 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
+import { decideNextAction, type LoopState } from '../loopDecision';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
@@ -526,6 +527,43 @@ export class ConversationRuntime {
 
       // Telemetry: record model call
       this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
+
+      // M1: Loop decision engine — augments existing loop control (does NOT replace it)
+      {
+        const loopState: LoopState = {
+          stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
+          tokenUsage: {
+            input: this.ctx.totalInputTokens,
+            output: this.ctx.totalOutputTokens,
+          },
+          maxTokens: CONTEXT_WINDOWS[this.ctx.modelConfig.model] ?? DEFAULT_CONTEXT_WINDOW,
+          errorType: null,
+          consecutiveErrors: this.ctx.consecutiveErrors,
+          budgetRemaining: 1.0, // TODO: wire to budgetService
+          iterationCount: iterations,
+          maxIterations: this.ctx.maxIterations,
+        };
+
+        const decision = decideNextAction(loopState);
+        logger.debug(`[AgentLoop] Loop decision: ${decision.action} — ${decision.reason}`);
+
+        // Handle continuation (most impactful new behavior)
+        if (decision.action === 'continuation' && decision.params?.continuationPrompt) {
+          this.contextAssembly.injectSystemMessage(decision.params.continuationPrompt as string);
+          // Don't break — let existing loop continue to next iteration
+        }
+
+        // Log other decisions for now — full handling will be refined incrementally
+        if (decision.action === 'terminate') {
+          logger.info(`[AgentLoop] Loop decision: terminate — ${decision.reason}`);
+        }
+        if (decision.action === 'compact') {
+          logger.info(`[AgentLoop] Loop decision: compression needed — ${decision.reason}`);
+        }
+        if (decision.action === 'fallback') {
+          logger.info(`[AgentLoop] Loop decision: fallback suggested — ${decision.reason}`);
+        }
+      }
 
       // 2. Handle text response - check for text-described tool calls
       const forceExecResult = this.messageProcessor.detectAndForceExecuteTextToolCall(response);

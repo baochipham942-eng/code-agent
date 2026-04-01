@@ -18,6 +18,7 @@ import { SessionDuration } from './SessionDuration';
 import { NetworkStatus } from './NetworkStatus';
 import { GitInfo } from './GitInfo';
 import { SoulIndicator } from './SoulIndicator';
+import { TokenWarning } from '../TokenWarning';
 
 /**
  * 分隔符组件
@@ -71,6 +72,8 @@ export function StatusBar() {
         <CostDisplay cost={sessionCost} isStreaming={isStreaming} />
         <Separator />
         <ContextUsage percent={contextUsagePercent} />
+        <Separator />
+        <TokenWarning usagePercent={contextUsagePercent} />
       </div>
 
       {/* 右侧区域：时长、网络、Git */}

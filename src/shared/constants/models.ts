@@ -124,3 +124,31 @@ export const ZHIPU_VISION_MODEL = 'glm-4v-plus' as const;
 
 /** Mermaid 在线渲染 API */
 export const MERMAID_INK_API = 'https://mermaid.ink';
+
+/**
+ * Model ID → tokenizer family mapping.
+ * GPT-family models (OpenAI, Claude via cl100k approximation, etc.) all use
+ * the same BPE vocabulary in gpt-tokenizer.  Extend this map when new
+ * tokenizer families are added.
+ */
+export const TOKENIZER_MAP: Record<string, 'cl100k_base' | 'o200k_base'> = {
+  // OpenAI GPT-4 / GPT-3.5 family
+  'gpt-4': 'cl100k_base',
+  'gpt-4-turbo': 'cl100k_base',
+  'gpt-4o': 'o200k_base',
+  'gpt-3.5-turbo': 'cl100k_base',
+  // Claude — approximated with cl100k (closest public BPE)
+  'claude-3-5-sonnet-20241022': 'cl100k_base',
+  'claude-sonnet-4-6': 'cl100k_base',
+  // DeepSeek — cl100k approximation
+  'deepseek-chat': 'cl100k_base',
+  'deepseek-reasoner': 'cl100k_base',
+  // Kimi / Moonshot — cl100k approximation
+  'kimi-k2.5': 'cl100k_base',
+  'moonshot-v1-8k': 'cl100k_base',
+  'moonshot-v1-32k': 'cl100k_base',
+  'moonshot-v1-128k': 'cl100k_base',
+} as const;
+
+/** Default tokenizer used when model is not in TOKENIZER_MAP */
+export const DEFAULT_TOKENIZER = 'cl100k_base' as const;

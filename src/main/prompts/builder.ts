@@ -10,6 +10,8 @@ import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
 import { GENERATIVE_UI_PROMPT } from './generativeUI';
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
+import { applyOverlays, type OverlayConfig } from './overlayEngine';
+import { type PromptProfile, type PromptContext, getProfileOverlays } from './profiles';
 // 规则已内联到 identity.ts，无需静态导入
 // 动态提醒系统可按需加载特定规则
 import { getToolDescriptions } from './tools';
@@ -275,4 +277,69 @@ export function buildPromptWithRules(
 
   const rulesSection = `\n\n# Path-Specific Rules\n\n${[...matchedRules].join('\n\n')}`;
   return basePrompt + rulesSection;
+}
+
+// ----------------------------------------------------------------------------
+// Profile-based Prompt Building (M2)
+// ----------------------------------------------------------------------------
+
+export { type PromptProfile, type PromptContext };
+
+/**
+ * Builds a system prompt using the 5-layer overlay engine for the given profile.
+ *
+ * - fork:        returns parentPrompt directly (or substrate if no parentPrompt)
+ * - oneshot:     flattens all content into a single string (no dynamic boundary)
+ * - subagent:    substrate + mode + memory layers (no append/projection)
+ * - interactive: all 5 layers with DYNAMIC_BOUNDARY_MARKER separating stable/dynamic
+ */
+export function buildProfilePrompt(profile: PromptProfile, context: PromptContext = {}): string {
+  // Fork: inherit parent prompt directly
+  if (profile === 'fork' && context.parentPrompt) {
+    return context.parentPrompt;
+  }
+
+  const activeOverlays = getProfileOverlays(profile);
+
+  // L1: Base Substrate — identity + tools
+  const substrate = [getSoul(), TOOLS_PROMPT, ...getToolDescriptions()].join('\n\n');
+
+  // Build overlay configs for layers 2-5
+  const overlays: OverlayConfig[] = [
+    {
+      layer: 'mode',
+      content: context.mode ? getModeReminder(context.mode as AgentMode) : '',
+      enabled: activeOverlays.has('mode'),
+    },
+    {
+      layer: 'memory',
+      content: [...(context.rules || []), ...(context.memory || [])].join('\n\n'),
+      enabled: activeOverlays.has('memory'),
+    },
+    {
+      layer: 'append',
+      content: context.appendPrompt || '',
+      enabled: activeOverlays.has('append'),
+    },
+    {
+      layer: 'projection',
+      content: context.systemContext || '',
+      enabled: activeOverlays.has('projection'),
+    },
+  ];
+
+  // Oneshot: flatten all into single string (no dynamic boundary)
+  if (profile === 'oneshot') {
+    const allContent = overlays
+      .filter(o => o.enabled && o.content)
+      .map(o => o.content)
+      .join('\n\n');
+    return allContent ? `${substrate}\n\n${allContent}` : substrate;
+  }
+
+  // Other profiles (interactive, subagent, fork-without-parent):
+  // substrate + DYNAMIC_BOUNDARY_MARKER + dynamic section
+  const dynamicSection = applyOverlays('', overlays).trim();
+  if (!dynamicSection) return substrate;
+  return `${substrate}${DYNAMIC_BOUNDARY_MARKER}${dynamicSection}`;
 }

@@ -44,8 +44,9 @@ function assistantMsg(content: string): CompressedMessage {
 }
 
 // Helper: build a long tool output that exceeds the default threshold (100 tokens)
+// With BPE tokenization, we need ~8 repetitions to reliably exceed 100 tokens
 function longToolOutput(prefix: string = 'Result'): string {
-  return `${prefix}: ${'This is a substantial tool output that contains enough text to exceed the minimum token threshold. '.repeat(5)}`;
+  return `${prefix}: ${'This is a substantial tool output that contains enough text to exceed the minimum token threshold. '.repeat(8)}`;
 }
 
 describe('observationMask', () => {

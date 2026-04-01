@@ -33,6 +33,7 @@ import { createTimedAbortController, combineAbortSignals } from './shutdownProto
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, type ParentContext } from './childContext';
+import { AgentTask, type SidecarMetadata } from './agentTask';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -148,6 +149,19 @@ export class SubagentExecutor {
     config: SubagentConfig,
     context: SubagentContext
   ): Promise<SubagentResult> {
+    // Create AgentTask for lifecycle tracking
+    const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const taskMetadata: SidecarMetadata = {
+      agentType: config.name,
+      parentSessionId: context.toolContext.sessionId || 'unknown',
+      spawnTime: Date.now(),
+      model: context.modelConfig.model,
+      toolPool: config.availableTools,
+    };
+    const agentTask = new AgentTask(agentId, taskMetadata);
+    agentTask.register();
+    agentTask.start();
+
     const maxIterations = config.maxIterations || 10;
     const toolsUsed: string[] = [];
     let iterations = 0;
@@ -324,13 +338,14 @@ export class SubagentExecutor {
       const budgetCheck = pipeline.checkBudget(pipelineContext);
       if (!budgetCheck.allowed) {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
+        agentTask.fail(budgetCheck.reason || 'budget exceeded');
         return {
           success: false,
           output: '',
           error: budgetCheck.reason,
           toolsUsed: [],
           iterations: 0,
-          agentId: pipelineContext.agentId,
+          agentId: agentTask.id,
         };
       }
 
@@ -344,15 +359,17 @@ export class SubagentExecutor {
           logger.info(`[${config.name}] Execution ${reason} by AbortSignal after ${Date.now() - startTime}ms`);
           cleanupTimer();
           pipeline.completeContext(pipelineContext.agentId, false, reason);
+          const errorMsg = reason === 'timeout'
+            ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
+            : '任务已取消';
+          agentTask.fail(errorMsg);
           return {
             success: false,
             output: finalOutput || '',
-            error: reason === 'timeout'
-              ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
-              : '任务已取消',
+            error: errorMsg,
             toolsUsed: [...new Set(toolsUsed)],
             iterations,
-            agentId: pipelineContext.agentId,
+            agentId: agentTask.id,
           };
         }
 
@@ -528,13 +545,21 @@ export class SubagentExecutor {
       const budgetStatus = pipeline.getBudgetStatus(pipelineContext);
       pipeline.completeContext(pipelineContext.agentId, true);
 
+      // Record final output in transcript and close AgentTask lifecycle
+      agentTask.appendTranscript({
+        role: 'assistant',
+        content: finalOutput || 'Subagent completed without output',
+        timestamp: Date.now(),
+      });
+      agentTask.stop();
+
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
         toolsUsed: [...new Set(toolsUsed)],
         iterations,
         cost: budgetStatus.subagentCost,
-        agentId: pipelineContext.agentId,
+        agentId: agentTask.id,
       };
     } catch (error) {
       cleanupTimer();
@@ -544,14 +569,8 @@ export class SubagentExecutor {
         error instanceof Error ? error.message : 'Unknown error'
       );
 
-      return {
-        success: false,
-        output: '',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        toolsUsed: [...new Set(toolsUsed)],
-        iterations,
-        agentId: pipelineContext.agentId,
-      };
+      agentTask.fail(error instanceof Error ? error.message : String(error));
+      throw error; // re-throw to preserve existing error handling
     }
   }
 

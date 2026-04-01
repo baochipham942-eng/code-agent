@@ -54,6 +54,7 @@ import {
   buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../prompts/builder';
+import type { PromptProfile } from '../prompts/profiles';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
@@ -125,6 +126,7 @@ export class AgentLoop {
   private contextAssembly: ContextAssembly;
   private runFinalizer: RunFinalizer;
   private learningPipeline: LearningPipeline;
+  private promptProfile: PromptProfile = 'interactive';
 
   constructor(config: AgentLoopConfig) {
     const contextWindow = CONTEXT_WINDOWS[config.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
@@ -273,6 +275,10 @@ export class AgentLoop {
   }
 
   // ========== Public API — all delegated ==========
+
+  getPromptProfile(): PromptProfile {
+    return this.promptProfile;
+  }
 
   async run(userMessage: string): Promise<void> {
     return this.conversationRuntime.run(userMessage);

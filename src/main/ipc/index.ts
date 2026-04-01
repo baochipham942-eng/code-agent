@@ -47,6 +47,7 @@ import { registerDesktopHandlers } from './desktop.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
 import { registerVoicePasteHandlers } from './voicePaste.ipc';
+import { registerContextHandlers } from './context.ipc';
 
 export * from './types';
 
@@ -191,6 +192,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // VoicePaste handlers (全局语音粘贴 Cmd+`)
   registerVoicePasteHandlers(ipcMain);
+
+  // Context observability handlers (/context true-view)
+  registerContextHandlers();
 
   logger.info('All handlers registered');
 }

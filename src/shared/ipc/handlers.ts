@@ -456,6 +456,9 @@ export interface IpcInvokeHandlers {
   // Context compact (部分压缩)
   [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<{ success: boolean; compactedCount: number }>;
 
+  // Context observability (/context true-view after projection)
+  [IPC_CHANNELS.CONTEXT_GET_VIEW]: (request: { sessionId: string }) => Promise<unknown>;
+
   // Telemetry (遥测系统)
   [IPC_CHANNELS.TELEMETRY_GET_SESSION]: (sessionId: string) => Promise<TelemetrySession | null>;
   [IPC_CHANNELS.TELEMETRY_LIST_SESSIONS]: (options: { limit?: number; offset?: number }) => Promise<TelemetrySessionListItem[]>;

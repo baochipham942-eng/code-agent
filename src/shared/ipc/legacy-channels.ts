@@ -313,6 +313,9 @@ export const IPC_CHANNELS = {
   // Context compact channels (部分压缩)
   CONTEXT_COMPACT_FROM: 'context:compact-from',
 
+  // Context observability channels (API true-view + token distribution)
+  CONTEXT_GET_VIEW: 'context:getView',
+
   // Telemetry channels (遥测系统)
   TELEMETRY_GET_SESSION: TELEMETRY_CHANNELS.GET_SESSION,
   TELEMETRY_LIST_SESSIONS: TELEMETRY_CHANNELS.LIST_SESSIONS,

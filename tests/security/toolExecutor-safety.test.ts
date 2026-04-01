@@ -54,6 +54,22 @@ describe('ToolExecutor safety integration', () => {
     permissionRequested = false;
 
     const registry = new ToolRegistry();
+    // ToolRegistry constructor may fail to register tools in test environment
+    // due to transitive import failures. Ensure bash tool is registered.
+    if (!registry.get('bash')) {
+      registry.register({
+        name: 'bash',
+        description: 'Execute bash commands',
+        requiresPermission: true,
+        permissionLevel: 'write',
+        inputSchema: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+        execute: async () => ({ success: true, output: '' }),
+      });
+    }
     executor = new ToolExecutor({
       toolRegistry: registry,
       requestPermission: async () => {

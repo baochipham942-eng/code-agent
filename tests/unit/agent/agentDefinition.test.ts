@@ -21,19 +21,20 @@ describe('AgentDefinition - Hybrid Architecture', () => {
   // Core Agents Structure
   // --------------------------------------------------------------------------
   describe('PREDEFINED_AGENTS structure', () => {
-    it('should have exactly 4 core agents', () => {
-      expect(Object.keys(PREDEFINED_AGENTS)).toHaveLength(4);
+    it('should have exactly 5 core agents', () => {
+      expect(Object.keys(PREDEFINED_AGENTS)).toHaveLength(5);
     });
 
-    it('should have all 4 core agents defined', () => {
+    it('should have all 5 core agents defined', () => {
       expect(PREDEFINED_AGENTS['coder']).toBeDefined();
       expect(PREDEFINED_AGENTS['reviewer']).toBeDefined();
       expect(PREDEFINED_AGENTS['explore']).toBeDefined();
       expect(PREDEFINED_AGENTS['plan']).toBeDefined();
+      expect(PREDEFINED_AGENTS['awaiter']).toBeDefined();
     });
 
     it('CORE_AGENT_IDS should match PREDEFINED_AGENTS keys', () => {
-      expect(CORE_AGENT_IDS).toHaveLength(4);
+      expect(CORE_AGENT_IDS).toHaveLength(5);
       for (const id of CORE_AGENT_IDS) {
         expect(PREDEFINED_AGENTS[id]).toBeDefined();
       }
@@ -207,14 +208,15 @@ describe('AgentDefinition - Hybrid Architecture', () => {
     });
 
     describe('listPredefinedAgentIds', () => {
-      it('should return array of 4 core agent IDs', () => {
+      it('should return array of 5 core agent IDs', () => {
         const ids = listPredefinedAgentIds();
         expect(Array.isArray(ids)).toBe(true);
-        expect(ids).toHaveLength(4);
+        expect(ids).toHaveLength(5);
         expect(ids).toContain('coder');
         expect(ids).toContain('reviewer');
         expect(ids).toContain('explore');
         expect(ids).toContain('plan');
+        expect(ids).toContain('awaiter');
       });
     });
 
@@ -222,7 +224,7 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       it('should return array of agent summaries', () => {
         const agents = listPredefinedAgents();
         expect(Array.isArray(agents)).toBe(true);
-        expect(agents).toHaveLength(4);
+        expect(agents).toHaveLength(5);
 
         const coder = agents.find((a) => a.id === 'coder');
         expect(coder).toBeDefined();

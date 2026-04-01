@@ -8,6 +8,7 @@
 import { EventEmitter } from 'events';
 import type { EventDomain, BusEvent, EventHandler, EventPattern } from './types';
 import { createLogger } from '../services/infra/logger';
+import { getInternalEventStore } from './internalEventStore';
 
 const logger = createLogger('EventBus');
 
@@ -45,6 +46,20 @@ class EventBus {
     this.safeEmit(`${domain}:${type}`, event);
     this.safeEmit(domain, event);
     this.safeEmit('*', event);
+
+    // Route persistence-worthy events to InternalEventStore
+    const PERSISTENT_DOMAINS = ['tool', 'agent', 'session'];
+    if (PERSISTENT_DOMAINS.includes(domain)) {
+      try {
+        getInternalEventStore().writeEvent({
+          agentId: options?.sessionId || 'main',
+          domain,
+          type,
+          data,
+          timestamp: event.timestamp,
+        });
+      } catch { /* non-blocking */ }
+    }
   }
 
   /**

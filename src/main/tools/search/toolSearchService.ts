@@ -311,6 +311,9 @@ export class ToolSearchService {
     // 别名匹配
     if (meta.aliases.some(alias => alias.toLowerCase().includes(lowerKeyword))) return true;
 
+    // searchHint 匹配 (MCP 工具的语义搜索提示)
+    if (meta.searchHint?.some(hint => hint.toLowerCase().includes(lowerKeyword))) return true;
+
     // MCP 服务器名称匹配
     if (meta.mcpServer?.toLowerCase().includes(lowerKeyword)) return true;
 
@@ -341,6 +344,13 @@ export class ToolSearchService {
     // 标签匹配
     if (meta.tags.some(t => t.toLowerCase() === lowerKeyword)) {
       score += 0.5;
+    }
+
+    // searchHint 匹配 (语义搜索提示，权重高于描述)
+    if (meta.searchHint?.some(h => h.toLowerCase() === lowerKeyword)) {
+      score += 0.7;
+    } else if (meta.searchHint?.some(h => h.toLowerCase().includes(lowerKeyword))) {
+      score += 0.4;
     }
 
     // 描述匹配

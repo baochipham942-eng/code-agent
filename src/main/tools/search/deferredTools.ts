@@ -587,6 +587,48 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
 ];
 
+// ============================================================================
+// Tool Aliases — legacy/alternate names → canonical names
+// ============================================================================
+// Claude Code 使用 TOOL_ALIASES 将旧名称映射到新名称，确保向后兼容
+// 例如 model 生成 "read_file" 时自动映射到 "Read"
+
+export const TOOL_ALIASES: Record<string, string> = {
+  // snake_case → PascalCase (legacy compatibility)
+  read_file: 'Read',
+  write_file: 'Write',
+  edit_file: 'Edit',
+  list_directory: 'ListDirectory',
+  web_search: 'WebSearch',
+  web_fetch: 'WebFetch',
+  ask_user_question: 'AskUserQuestion',
+  tool_search: 'ToolSearch',
+  memory_write: 'MemoryWrite',
+  memory_read: 'MemoryRead',
+  // Common model hallucinations
+  search: 'WebSearch',
+  bash: 'Bash',
+  grep: 'Grep',
+  glob: 'Glob',
+  read: 'Read',
+  write: 'Write',
+  edit: 'Edit',
+  // Multi-agent aliases
+  spawn_agent: 'AgentSpawn',
+  agent_message: 'AgentMessage',
+  send_input: 'SendInput',
+  wait_agent: 'WaitAgent',
+  close_agent: 'CloseAgent',
+};
+
+/**
+ * Resolve a tool name through alias mapping.
+ * Returns the canonical name if aliased, or the original name.
+ */
+export function resolveToolAlias(name: string): string {
+  return TOOL_ALIASES[name] ?? TOOL_ALIASES[name.toLowerCase()] ?? name;
+}
+
 /**
  * 构建延迟工具索引（name → meta）
  */

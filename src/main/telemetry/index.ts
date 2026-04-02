@@ -5,3 +5,6 @@
 export { TelemetryCollector, getTelemetryCollector } from './telemetryCollector';
 export { TelemetryStorage, getTelemetryStorage } from './telemetryStorage';
 export { classifyIntent, evaluateOutcome } from './intentClassifier';
+export { TelemetryService, getTelemetryService } from './telemetryService';
+export type { TelemetrySpan, TelemetryMetrics, SpanKind, SpanStatus, SpanEvent } from './telemetryService';
+export { createTelemetryAdapter, recordHookSpan, recordMcpSpan } from './telemetryAdapter';

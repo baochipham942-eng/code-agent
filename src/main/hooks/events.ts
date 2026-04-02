@@ -23,7 +23,13 @@ export type HookEvent =
   | 'Setup'
   | 'SessionStart'
   | 'SessionEnd'
-  | 'Notification';
+  | 'Notification'
+  // Phase 3: 新增事件（对齐 Claude Code 27 事件集）
+  | 'FileChanged'        // 外部文件变更检测
+  | 'TaskCreated'        // Agent Task 创建
+  | 'TaskCompleted'      // Agent Task 完成
+  | 'ConfigChange'       // 配置文件变更
+  | 'CwdChanged';        // 工作目录切换
 
 /**
  * Event descriptions for documentation and UI
@@ -43,6 +49,11 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   SessionStart: 'Triggered when a new session begins.',
   SessionEnd: 'Triggered when a session ends.',
   Notification: 'Triggered when a notification needs to be sent.',
+  FileChanged: 'Triggered when files are modified externally.',
+  TaskCreated: 'Triggered when an agent task is created.',
+  TaskCompleted: 'Triggered when an agent task completes.',
+  ConfigChange: 'Triggered when configuration files change.',
+  CwdChanged: 'Triggered when the working directory changes.',
 };
 
 /**
@@ -177,6 +188,7 @@ export interface NotificationContext extends HookEventContext {
  * Union type of all hook contexts
  */
 export type AnyHookContext =
+  | HookEventContext
   | ToolHookContext
   | UserPromptContext
   | StopContext

@@ -5,6 +5,7 @@
 import type { Message } from '../../shared/types';
 import type {
   HookEvent,
+  HookEventContext,
   AnyHookContext,
   HookExecutionResult,
   ToolHookContext,
@@ -20,11 +21,12 @@ import type { HookDefinition, ParsedHookConfig } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
 
-import { loadAllHooksConfig } from './configParser';
+import { loadAllHooksConfig, matchesCondition } from './configParser';
 import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
 import { executeScript } from './scriptExecutor';
 import { executePromptHook } from './promptHook';
 import { executeAgentHook } from './agentHook';
+import { executeHttpHook } from './httpHookExecutor';
 import {
   getBuiltinHookExecutor,
   type BuiltinHookContext,
@@ -415,6 +417,100 @@ export class HookManager {
     return this.triggerEventHooks('PostExecution', context);
   }
 
+  // ==========================================================================
+  // Phase 3: Task lifecycle + environmental event hooks
+  // ==========================================================================
+
+  /**
+   * Trigger hooks when an agent task is created
+   */
+  async triggerTaskCreated(
+    taskId: string,
+    agentType: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: HookEventContext = {
+      event: 'TaskCreated',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('TaskCreated', context);
+  }
+
+  /**
+   * Trigger hooks when an agent task completes or fails
+   */
+  async triggerTaskCompleted(
+    taskId: string,
+    agentType: string,
+    success: boolean,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: HookEventContext = {
+      event: 'TaskCompleted',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('TaskCompleted', context);
+  }
+
+  /**
+   * Stub: Trigger hooks when files change externally.
+   * Actual file watchers will call this when implemented.
+   */
+  async triggerFileChanged(
+    filePaths: string[],
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: HookEventContext = {
+      event: 'FileChanged',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('FileChanged', context);
+  }
+
+  /**
+   * Stub: Trigger hooks when configuration changes.
+   * Actual config watchers will call this when implemented.
+   */
+  async triggerConfigChange(
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: HookEventContext = {
+      event: 'ConfigChange',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('ConfigChange', context);
+  }
+
+  /**
+   * Stub: Trigger hooks when working directory changes.
+   * Actual cwd tracking will call this when implemented.
+   */
+  async triggerCwdChanged(
+    newCwd: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: HookEventContext = {
+      event: 'CwdChanged',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: newCwd,
+    };
+
+    return this.triggerEventHooks('CwdChanged', context);
+  }
+
   // --------------------------------------------------------------------------
   // Internal Methods
   // --------------------------------------------------------------------------
@@ -605,6 +701,7 @@ export class HookManager {
     if (hook.type === 'command') return `command:${hook.command}`;
     if (hook.type === 'prompt') return `prompt:${hook.prompt}`;
     if (hook.type === 'agent') return `agent:${hook.agent}:${hook.agentPrompt || ''}`;
+    if (hook.type === 'http') return `http:${hook.url}`;
     return `unknown:${JSON.stringify(hook)}`;
   }
 
@@ -615,6 +712,14 @@ export class HookManager {
     hook: HookDefinition,
     context: AnyHookContext
   ): Promise<HookExecutionResult> {
+    // Conditional execution: check `if` pattern before running
+    if (hook.if && 'toolName' in context) {
+      const toolInput = 'toolInput' in context ? String(context.toolInput) : '';
+      if (!matchesCondition(hook.if, (context as ToolHookContext).toolName, toolInput)) {
+        return { action: 'allow', message: 'Condition not met, skipping', duration: 0 };
+      }
+    }
+
     // once check: skip if this hook has already been executed this session
     if (hook.once) {
       const hookId = this.getHookId(hook);
@@ -684,6 +789,17 @@ export class HookManager {
           message: result.output,
           duration: Date.now() - startTime,
         };
+      }
+
+      // HTTP hooks: POST context to remote URL
+      if (hook.type === 'http') {
+        if (!hook.url) {
+          return { action: 'error', error: 'HTTP hook missing url', duration: 0 };
+        }
+        return executeHttpHook(
+          { url: hook.url, headers: hook.headers, timeout: hook.timeout, allowedEnvVars: hook.allowedEnvVars },
+          context
+        );
       }
 
       return {

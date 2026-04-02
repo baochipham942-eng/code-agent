@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '../../../shared/types';
+import type { MCPToolAnnotations } from '../../mcp/types';
 import type { ToolClassification } from '../loopTypes';
 import { PARALLEL_SAFE_TOOLS, MAX_PARALLEL_TOOLS } from '../loopTypes';
 import { createLogger } from '../../services/infra/logger';
@@ -13,13 +14,18 @@ const logger = createLogger('ParallelStrategy');
  * Check if a tool is safe for parallel execution
  *
  * A tool is parallel-safe if:
- * 1. It's in the PARALLEL_SAFE_TOOLS set
- * 2. It's an MCP tool that doesn't write/create (read-only MCP operations)
+ * 1. It's in the PARALLEL_SAFE_TOOLS set (built-in tools)
+ * 2. It's an MCP tool classified via annotations (readOnlyHint=true, destructiveHint!=true)
+ * 3. Fallback: MCP tool name heuristic (no write/create in name)
  */
-export function isParallelSafeTool(toolName: string): boolean {
-  // MCP tools that are read-only
-  if (toolName.startsWith('mcp_') && !toolName.includes('write') && !toolName.includes('create')) {
-    return true;
+export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAnnotations): boolean {
+  // MCP tools: prefer annotation-based classification
+  if (toolName.startsWith('mcp_')) {
+    if (toolAnnotations) {
+      return toolAnnotations.readOnlyHint === true && toolAnnotations.destructiveHint !== true;
+    }
+    // Fallback to name-based heuristic if no annotations
+    return !toolName.includes('write') && !toolName.includes('create');
   }
   return PARALLEL_SAFE_TOOLS.has(toolName);
 }
@@ -28,15 +34,20 @@ export function isParallelSafeTool(toolName: string): boolean {
  * Classify tool calls into parallel-safe and sequential groups
  *
  * @param toolCalls - Array of tool calls to classify
+ * @param toolAnnotations - Optional MCP tool annotations map (key: full tool name)
  * @returns Classification result with parallel and sequential groups
  */
-export function classifyToolCalls(toolCalls: ToolCall[]): ToolClassification {
+export function classifyToolCalls(
+  toolCalls: ToolCall[],
+  toolAnnotations?: Map<string, MCPToolAnnotations>,
+): ToolClassification {
   const parallelGroup: Array<{ index: number; toolCall: ToolCall }> = [];
   const sequentialGroup: Array<{ index: number; toolCall: ToolCall }> = [];
 
   for (let i = 0; i < toolCalls.length; i++) {
     const toolCall = toolCalls[i];
-    if (isParallelSafeTool(toolCall.name)) {
+    const annotations = toolAnnotations?.get(toolCall.name);
+    if (isParallelSafeTool(toolCall.name, annotations)) {
       parallelGroup.push({ index: i, toolCall });
     } else {
       sequentialGroup.push({ index: i, toolCall });
@@ -121,8 +132,8 @@ export function createParallelStrategy(config: Partial<ParallelExecutionConfig> 
   const finalConfig = { ...DEFAULT_PARALLEL_CONFIG, ...config };
 
   return {
-    isParallelSafe: isParallelSafeTool,
-    classify: classifyToolCalls,
+    isParallelSafe: (name: string, annotations?: MCPToolAnnotations) => isParallelSafeTool(name, annotations),
+    classify: (calls: ToolCall[], annotations?: Map<string, MCPToolAnnotations>) => classifyToolCalls(calls, annotations),
     getBatches: <T>(items: T[]) => {
       const batches: T[][] = [];
       const batchSize = finalConfig.maxParallelTools;

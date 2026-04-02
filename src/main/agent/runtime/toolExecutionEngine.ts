@@ -181,7 +181,17 @@ export class ToolExecutionEngine {
       }
     } catch { /* ignore in non-Electron environments */ }
 
-    const { parallelGroup, sequentialGroup } = classifyToolCalls(toolCalls);
+    // Build MCP tool annotations map for annotation-based parallel classification
+    let mcpAnnotations: Map<string, import('../../mcp/types').MCPToolAnnotations> | undefined;
+    try {
+      const { getMCPClient } = await import('../../mcp/mcpClient');
+      const annotationsMap = getMCPClient().getToolAnnotationsMap();
+      if (annotationsMap.size > 0) {
+        mcpAnnotations = annotationsMap;
+      }
+    } catch { /* MCP client may not be initialized */ }
+
+    const { parallelGroup, sequentialGroup } = classifyToolCalls(toolCalls, mcpAnnotations);
     logger.debug(` Tool classification: ${parallelGroup.length} parallel-safe, ${sequentialGroup.length} sequential`);
 
     const results: ToolResult[] = new Array(toolCalls.length);
@@ -261,10 +271,12 @@ export class ToolExecutionEngine {
   }
 
   async executeSingleTool(
-    toolCall: ToolCall,
+    toolCall_: ToolCall,
     index: number,
     total: number
   ): Promise<ToolResult> {
+    // Mutable copy: hooks may replace arguments via updatedInput
+    let toolCall = toolCall_;
     logger.debug(` [${index + 1}/${total}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
 
     // User-configurable Pre-Tool Hook
@@ -301,6 +313,17 @@ export class ToolExecutionEngine {
           this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
           this.ctx.onEvent({ type: 'tool_call_end', data: blockedResult });
           return blockedResult;
+        }
+
+        // Hook can modify tool input (updatedInput)
+        if (userHookResult.modifiedInput) {
+          try {
+            const updatedArgs = JSON.parse(userHookResult.modifiedInput);
+            toolCall = { ...toolCall, arguments: updatedArgs };
+            logger.info(`[AgentLoop] Tool input modified by hook for ${toolCall.name}`);
+          } catch {
+            logger.warn('[AgentLoop] Hook returned invalid modifiedInput JSON, ignoring');
+          }
         }
 
         if (userHookResult.message) {

@@ -9,6 +9,7 @@ import { MCP_TIMEOUTS } from '../../shared/constants';
 import { getToolSearchService } from '../tools/search';
 import type {
   MCPTool,
+  MCPToolAnnotations,
   MCPResource,
   MCPPrompt,
   InProcessMCPServerInterface,
@@ -38,11 +39,14 @@ export class MCPToolRegistry {
       const toolsResult = await client.listTools();
       if (toolsResult.tools) {
         for (const tool of toolsResult.tools) {
+          // SDK 返回的 annotations 包含 readOnlyHint/destructiveHint/openWorldHint/idempotentHint
+          const annotations = (tool as { annotations?: MCPToolAnnotations }).annotations;
           this.tools.push({
             name: tool.name,
             description: tool.description || '',
             inputSchema: tool.inputSchema,
             serverName,
+            ...(annotations ? { annotations } : {}),
           });
         }
       }
@@ -180,13 +184,34 @@ export class MCPToolRegistry {
    * 命名格式：mcp__serverName__toolName（双下划线，与 Claude Code 一致）
    */
   getToolDefinitions(): ToolDefinition[] {
-    return this.tools.map((tool) => ({
-      name: `mcp__${tool.serverName}__${tool.name}`,
-      description: `[MCP:${tool.serverName}] ${tool.description}`,
-      inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
-      requiresPermission: true,
-      permissionLevel: 'network' as const,
-    }));
+    return this.tools.map((tool) => {
+      const def: ToolDefinition & { metadata?: { annotations?: MCPToolAnnotations } } = {
+        name: `mcp__${tool.serverName}__${tool.name}`,
+        description: `[MCP:${tool.serverName}] ${tool.description}`,
+        inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
+        requiresPermission: true,
+        permissionLevel: 'network' as const,
+      };
+      if (tool.annotations) {
+        def.metadata = { annotations: tool.annotations };
+      }
+      return def;
+    });
+  }
+
+  /**
+   * 构建 MCP 工具注解映射表
+   * key: 完整工具名 (mcp__serverName__toolName)
+   * value: 工具注解
+   */
+  getToolAnnotationsMap(): Map<string, MCPToolAnnotations> {
+    const map = new Map<string, MCPToolAnnotations>();
+    for (const tool of this.tools) {
+      if (tool.annotations) {
+        map.set(`mcp__${tool.serverName}__${tool.name}`, tool.annotations);
+      }
+    }
+    return map;
   }
 
   /**
@@ -264,10 +289,13 @@ export class MCPToolRegistry {
         }
       }
 
+      // Truncate oversized output to prevent context overflow
+      const truncatedOutput = truncateMcpOutput(output, serverName, toolName);
+
       return {
         toolCallId,
         success: !result.isError,
-        output,
+        output: truncatedOutput,
         duration: Date.now() - startTime,
       };
     } catch (error: unknown) {
@@ -418,4 +446,39 @@ export class MCPToolRegistry {
     return content;
   }
 
+}
+
+// ============================================================================
+// MCP 输出截断
+// ============================================================================
+
+/** Max output size in characters before truncation (~50K chars ≈ ~12K tokens) */
+const MCP_MAX_OUTPUT_CHARS = 50_000;
+/** Truncated output suffix */
+const TRUNCATION_NOTICE = '\n\n[Output truncated: exceeded size limit. Use more specific queries to reduce output.]';
+
+/**
+ * Truncate oversized MCP tool output to prevent context window overflow.
+ * Preserves the first and last portions for context continuity.
+ */
+function truncateMcpOutput(output: string, serverName: string, toolName: string): string {
+  if (output.length <= MCP_MAX_OUTPUT_CHARS) {
+    return output;
+  }
+
+  const keepStart = Math.floor(MCP_MAX_OUTPUT_CHARS * 0.7);
+  const keepEnd = Math.floor(MCP_MAX_OUTPUT_CHARS * 0.2);
+
+  const truncated =
+    output.slice(0, keepStart) +
+    `\n\n... [${output.length - keepStart - keepEnd} characters omitted] ...\n\n` +
+    output.slice(-keepEnd) +
+    TRUNCATION_NOTICE;
+
+  logger.warn(
+    `MCP output truncated: ${serverName}/${toolName} ` +
+    `(${output.length} → ${truncated.length} chars)`
+  );
+
+  return truncated;
 }

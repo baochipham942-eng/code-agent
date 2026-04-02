@@ -8,6 +8,9 @@
 // - RAII 风格 reserve/release
 // ============================================================================
 
+import { writeFile, readFile } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
 import type { SubagentResult } from './subagentExecutor';
 
@@ -16,6 +19,39 @@ const logger = createLogger('SpawnGuard');
 // ============================================================================
 // Types
 // ============================================================================
+
+// ============================================================================
+// 结构化 Agent 消息协议
+// ============================================================================
+
+export type AgentMessageType =
+  | 'text'                    // 普通文本（向后兼容）
+  | 'shutdown_request'        // 父请求子关闭
+  | 'shutdown_response'       // 子同意/拒绝关闭
+  | 'plan_approval_request'   // 子提交计划待审
+  | 'plan_approval_response'  // 父审批结果
+  | 'status_update';          // 进度汇报
+
+export interface AgentMessage {
+  type: AgentMessageType;
+  from: string;
+  payload: string;
+  timestamp: number;
+}
+
+/** Create a text message (backward compatible shorthand) */
+export function createTextMessage(from: string, text: string): AgentMessage {
+  return { type: 'text', from, payload: text, timestamp: Date.now() };
+}
+
+/** Create a structured message */
+export function createAgentMessage(
+  type: AgentMessageType,
+  from: string,
+  payload: Record<string, unknown>
+): AgentMessage {
+  return { type, from, payload: JSON.stringify(payload), timestamp: Date.now() };
+}
 
 export interface ManagedAgent {
   id: string;
@@ -30,8 +66,8 @@ export interface ManagedAgent {
   result?: SubagentResult;
   /** Error message if failed */
   error?: string;
-  /** Message queue for send_input (consumed by executor each iteration) */
-  messageQueue: string[];
+  /** Structured message queue (consumed by executor each iteration) */
+  messageQueue: AgentMessage[];
   createdAt: number;
   completedAt?: number;
 }
@@ -47,6 +83,23 @@ export interface SpawnGuardConfig {
   maxAgents?: number;
   /** Maximum nesting depth (default 1 — sub-agents cannot spawn sub-agents) */
   maxDepth?: number;
+}
+
+/** Serializable snapshot of SpawnGuard state for crash recovery */
+interface PersistedSpawnGuardState {
+  agents: Array<{
+    id: string;
+    role: string;
+    status: ManagedAgentStatus;
+    task: string;
+    messageQueue: AgentMessage[];
+    createdAt: number;
+    completedAt?: number;
+    result?: SubagentResult;
+    error?: string;
+  }>;
+  pendingNotifications: string[];
+  persistedAt: number;
 }
 
 // ============================================================================
@@ -252,26 +305,53 @@ class SpawnGuard {
   }
 
   /**
-   * Send a message to a running agent's queue.
-   * The executor drains this queue at the start of each iteration.
+   * Send a structured message to a running agent's queue.
+   * Supports both string (backward compat) and AgentMessage.
    */
-  sendMessage(id: string, message: string): boolean {
+  sendMessage(id: string, message: string | AgentMessage): boolean {
     const agent = this.agents.get(id);
     if (!agent || agent.status !== 'running') return false;
-    agent.messageQueue.push(message);
-    logger.info(`[${id}] Message queued (queue size: ${agent.messageQueue.length})`);
+
+    const structured: AgentMessage = typeof message === 'string'
+      ? createTextMessage('parent', message)
+      : message;
+    agent.messageQueue.push(structured);
+    logger.info(`[${id}] Message queued (type: ${structured.type}, queue size: ${agent.messageQueue.length})`);
     return true;
+  }
+
+  /**
+   * Send a structured message by type (convenience method).
+   */
+  sendStructuredMessage(
+    id: string,
+    type: AgentMessageType,
+    from: string,
+    payload: Record<string, unknown>
+  ): boolean {
+    return this.sendMessage(id, createAgentMessage(type, from, payload));
   }
 
   /**
    * Drain all pending messages for an agent (called by executor).
    */
-  drainMessages(id: string): string[] {
+  drainMessages(id: string): AgentMessage[] {
     const agent = this.agents.get(id);
     if (!agent || agent.messageQueue.length === 0) return [];
     const messages = [...agent.messageQueue];
     agent.messageQueue.length = 0;
     return messages;
+  }
+
+  /**
+   * Drain only messages of a specific type (e.g., shutdown_request).
+   */
+  drainMessagesByType(id: string, type: AgentMessageType): AgentMessage[] {
+    const agent = this.agents.get(id);
+    if (!agent) return [];
+    const matching = agent.messageQueue.filter(m => m.type === type);
+    agent.messageQueue = agent.messageQueue.filter(m => m.type !== type);
+    return matching;
   }
 
   /**
@@ -311,6 +391,17 @@ class SpawnGuard {
   }
 
   /**
+   * Check if all blockers for a given task are completed.
+   */
+  isTaskReady(taskId: string, blockedBy: Set<string>): boolean {
+    for (const blockerId of blockedBy) {
+      const blocker = this.agents.get(blockerId);
+      if (!blocker || blocker.status === 'running') return false;
+    }
+    return true;
+  }
+
+  /**
    * Cleanup completed/failed agents older than maxAge.
    */
   cleanup(maxAgeMs = 300_000): number {
@@ -341,6 +432,87 @@ class SpawnGuard {
    */
   getReadonlyDisabledTools(): string[] {
     return [...SUBAGENT_DISABLED_TOOLS, ...READONLY_DISABLED_TOOLS];
+  }
+
+  // ==========================================================================
+  // 状态持久化 + 恢复
+  // ==========================================================================
+
+  /**
+   * Persist SpawnGuard state to disk for crash recovery.
+   * Stores agent metadata, message queues, and pending notifications.
+   */
+  async persistState(sessionDir: string): Promise<void> {
+    const state: PersistedSpawnGuardState = {
+      agents: Array.from(this.agents.entries()).map(([id, agent]) => ({
+        id,
+        role: agent.role,
+        status: agent.status,
+        task: agent.task,
+        messageQueue: agent.messageQueue,
+        createdAt: agent.createdAt,
+        completedAt: agent.completedAt,
+        // Only persist results for completed agents (running agents can't be serialized)
+        result: agent.status !== 'running' ? agent.result : undefined,
+        error: agent.error,
+      })),
+      pendingNotifications: [...this.pendingNotifications],
+      persistedAt: Date.now(),
+    };
+
+    const filePath = join(sessionDir, 'spawn-guard-state.json');
+    await writeFile(filePath, JSON.stringify(state, null, 2));
+    logger.info(`State persisted to ${filePath} (${state.agents.length} agents)`);
+  }
+
+  /**
+   * Restore SpawnGuard state from disk.
+   * Running agents are marked as 'failed' (process restart = execution interrupted).
+   * Message queues and pending notifications are restored.
+   */
+  static async restoreState(sessionDir: string): Promise<SpawnGuard | null> {
+    const filePath = join(sessionDir, 'spawn-guard-state.json');
+    if (!existsSync(filePath)) {
+      return null;
+    }
+
+    try {
+      const raw = await readFile(filePath, 'utf-8');
+      const state = JSON.parse(raw) as PersistedSpawnGuardState;
+
+      const guard = new SpawnGuard();
+
+      for (const entry of state.agents) {
+        // Running agents can't be resumed — mark as failed
+        const status: ManagedAgentStatus = entry.status === 'running' ? 'failed' : entry.status;
+
+        const wasRunning = entry.status === 'running';
+        const agent: ManagedAgent = {
+          id: entry.id,
+          role: entry.role,
+          status,
+          task: entry.task,
+          promise: Promise.resolve(entry.result ?? { success: false, output: '', error: 'Interrupted by restart', iterations: 0, toolsUsed: [], cost: 0 }),
+          abortController: new AbortController(),
+          result: entry.result,
+          error: wasRunning ? 'Interrupted by process restart' : entry.error,
+          messageQueue: entry.messageQueue || [],
+          createdAt: entry.createdAt,
+          completedAt: entry.completedAt ?? Date.now(),
+        };
+
+        guard.agents.set(entry.id, agent);
+      }
+
+      // Restore pending notifications
+      guard.pendingNotifications = state.pendingNotifications || [];
+
+      logger.info(`State restored from ${filePath}: ${state.agents.length} agents, ${guard.pendingNotifications.length} pending notifications`);
+      return guard;
+    } catch (err) {
+      logger.warn('Failed to restore SpawnGuard state:', err);
+      return null;
+    }
   }
 }
 

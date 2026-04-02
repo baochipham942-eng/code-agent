@@ -158,6 +158,39 @@ export function combineAbortSignals(...signals: AbortSignal[]): AbortController 
 }
 
 // ============================================================================
+// AbortController 层级化
+// ============================================================================
+
+/**
+ * Create a child AbortController that propagates parent abort but NOT vice versa.
+ *
+ * - Parent abort → child aborted (with same reason)
+ * - Child abort → parent unaffected
+ * - Listener auto-cleanup on child abort (prevents memory leak)
+ *
+ * Inspired by Claude Code's hierarchical abort model.
+ */
+export function createChildAbortController(parent: AbortController): AbortController {
+  const child = new AbortController();
+
+  // Already aborted — propagate immediately
+  if (parent.signal.aborted) {
+    child.abort(parent.signal.reason);
+    return child;
+  }
+
+  const onParentAbort = () => child.abort(parent.signal.reason);
+  parent.signal.addEventListener('abort', onParentAbort, { once: true });
+
+  // Clean up parent listener when child aborts independently (prevents memory leak)
+  child.signal.addEventListener('abort', () => {
+    parent.signal.removeEventListener('abort', onParentAbort);
+  }, { once: true });
+
+  return child;
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 

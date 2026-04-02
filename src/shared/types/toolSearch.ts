@@ -83,6 +83,11 @@ export interface DeferredToolMeta {
   /** MCP 服务器名称 */
   mcpServer?: string;
 
+  /** 搜索提示关键词（MCP 工具可通过 _meta['anthropic/searchHint'] 提供） */
+  searchHint?: string[];
+
+  /** 是否始终加载（不延迟，直接进 system prompt） */
+  alwaysLoad?: boolean;
 }
 
 /**

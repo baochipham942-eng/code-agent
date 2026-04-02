@@ -14,7 +14,7 @@ import type { HookEvent } from './events';
 /**
  * Hook type: command (external script), prompt (AI evaluation), or agent (AI agent role)
  */
-export type HookType = 'command' | 'prompt' | 'agent';
+export type HookType = 'command' | 'prompt' | 'agent' | 'http';
 
 /**
  * Individual hook definition
@@ -36,6 +36,16 @@ export interface HookDefinition {
   agent?: string;
   /** For agent hooks: custom prompt for the agent */
   agentPrompt?: string;
+  /** For HTTP hooks: target URL to POST to */
+  url?: string;
+  /** For HTTP hooks: HTTP headers (supports $ENV_VAR interpolation) */
+  headers?: Record<string, string>;
+  /** For HTTP hooks: env vars allowed in header interpolation */
+  allowedEnvVars?: string[];
+  /** Conditional execution: only run if tool input matches this pattern.
+   *  Format: "ToolName(pattern)" e.g., "Bash(git *)", "Write(*.json)"
+   *  Pattern is matched against stringified tool arguments. */
+  if?: string;
 }
 
 /**
@@ -70,6 +80,12 @@ export interface HooksConfig {
   SessionStart?: HookMatcher[];
   SessionEnd?: HookMatcher[];
   Notification?: HookMatcher[];
+  // Phase 3: 新增事件
+  FileChanged?: HookMatcher[];
+  TaskCreated?: HookMatcher[];
+  TaskCompleted?: HookMatcher[];
+  ConfigChange?: HookMatcher[];
+  CwdChanged?: HookMatcher[];
 }
 
 /**
@@ -201,7 +217,7 @@ function validateHooks(hooks: unknown): HookDefinition[] {
     const h = hook as Record<string, unknown>;
 
     // Must have valid type
-    if (h.type !== 'command' && h.type !== 'prompt' && h.type !== 'agent') {
+    if (h.type !== 'command' && h.type !== 'prompt' && h.type !== 'agent' && h.type !== 'http') {
       return false;
     }
 
@@ -217,6 +233,11 @@ function validateHooks(hooks: unknown): HookDefinition[] {
 
     // Agent hooks must have agent role
     if (h.type === 'agent' && typeof h.agent !== 'string') {
+      return false;
+    }
+
+    // HTTP hooks must have url
+    if (h.type === 'http' && typeof h.url !== 'string') {
       return false;
     }
 
@@ -401,4 +422,77 @@ export async function loadAllHooksConfig(
 
   // Project hooks come after global (will be merged with priority)
   return [...globalResult.hooks, ...projectResult.hooks];
+}
+
+// ============================================================================
+// Hook 条件执行 (if 语法)
+// ============================================================================
+
+/**
+ * Check if a hook's `if` condition matches the current tool call.
+ * Format: "ToolName(pattern)" e.g., "Bash(git *)", "Write(*.json)"
+ *
+ * @param condition - The `if` field from HookDefinition
+ * @param toolName - Current tool being called
+ * @param toolInput - Stringified tool arguments
+ * @returns true if condition matches (or no condition set)
+ */
+export function matchesCondition(
+  condition: string | undefined,
+  toolName: string,
+  toolInput: string
+): boolean {
+  if (!condition) return true; // No condition = always match
+
+  // Parse "ToolName(pattern)" syntax
+  const match = condition.match(/^(\w+)\((.+)\)$/);
+  if (!match) {
+    // Simple tool name match (no pattern)
+    return toolName === condition;
+  }
+
+  const [, condToolName, pattern] = match;
+
+  // Tool name must match
+  if (condToolName !== toolName) return false;
+
+  // Convert glob-like pattern to regex: * → .*, ? → .
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex chars except * and ?
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+
+  try {
+    return new RegExp(`^${regexStr}$`).test(toolInput);
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
+// Hook 配置快照
+// ============================================================================
+
+let hooksConfigSnapshot: ParsedHookConfig[] | null = null;
+
+/**
+ * Capture hooks configuration at startup.
+ * Freezes the config so runtime changes don't affect hook execution.
+ */
+export async function captureHooksConfigSnapshot(workingDirectory: string): Promise<void> {
+  hooksConfigSnapshot = await loadAllHooksConfig(workingDirectory);
+}
+
+/**
+ * Get hooks config from snapshot (if captured) or load fresh.
+ */
+export function getHooksConfigFromSnapshot(): ParsedHookConfig[] | null {
+  return hooksConfigSnapshot;
+}
+
+/**
+ * Reset snapshot (for testing or config reload).
+ */
+export function resetHooksConfigSnapshot(): void {
+  hooksConfigSnapshot = null;
 }

@@ -27,6 +27,13 @@ export interface TranscriptEntry {
   toolCallId?: string;
 }
 
+/** Hook 回调类型：调用方可选注入，用于触发 TaskCreated/TaskCompleted 等事件 */
+export type TaskHookCallback = (event: 'TaskCreated' | 'TaskCompleted', payload: {
+  taskId: string;
+  agentType: string;
+  success?: boolean;
+}) => void;
+
 export class AgentTask {
   readonly id: string;
   private _status: AgentTaskStatus = 'pending';
@@ -36,6 +43,13 @@ export class AgentTask {
   private _transcript: TranscriptEntry[] = [];
   readonly sidecarMetadata: SidecarMetadata;
   private _error?: string;
+
+  // --- 任务依赖 ---
+  readonly blocks: Set<string> = new Set();
+  readonly blockedBy: Set<string> = new Set();
+
+  // --- Hook 回调（可选，由调用方注入） ---
+  onHook?: TaskHookCallback;
 
   get status(): AgentTaskStatus { return this._status; }
 
@@ -50,6 +64,8 @@ export class AgentTask {
   register(): void {
     this.assertTransition('registered', ['pending']);
     this._status = 'registered';
+    // 触发 TaskCreated hook
+    this.onHook?.('TaskCreated', { taskId: this.id, agentType: this.agentType });
   }
 
   start(): void {
@@ -62,6 +78,8 @@ export class AgentTask {
     this.assertTransition('stopped', ['running']);
     this._status = 'stopped';
     this.abortController = null;
+    // 触发 TaskCompleted hook（正常完成）
+    this.onHook?.('TaskCompleted', { taskId: this.id, agentType: this.agentType, success: true });
   }
 
   resume(): void {
@@ -74,6 +92,8 @@ export class AgentTask {
     this._status = 'failed';
     this._error = error;
     this.abortController = null;
+    // 触发 TaskCompleted hook（失败）
+    this.onHook?.('TaskCompleted', { taskId: this.id, agentType: this.agentType, success: false });
   }
 
   cancel(): void {
@@ -85,9 +105,25 @@ export class AgentTask {
       this.abortController.abort();
       this.abortController = null;
     }
+    // 触发 TaskCompleted hook（取消）
+    this.onHook?.('TaskCompleted', { taskId: this.id, agentType: this.agentType, success: false });
   }
 
   get error(): string | undefined { return this._error; }
+
+  // --- 依赖管理 ---
+
+  addDependency(blockerId: string): void {
+    this.blockedBy.add(blockerId);
+  }
+
+  removeDependency(blockerId: string): void {
+    this.blockedBy.delete(blockerId);
+  }
+
+  isReady(): boolean {
+    return this.blockedBy.size === 0;
+  }
 
   private assertTransition(target: AgentTaskStatus, validFrom: AgentTaskStatus[]): void {
     if (!validFrom.includes(this._status)) {
@@ -143,6 +179,8 @@ export class AgentTask {
       sidecarMetadata: this.sidecarMetadata,
       error: this._error,
       pendingMessages: this._pendingMessages,
+      blocks: Array.from(this.blocks),
+      blockedBy: Array.from(this.blockedBy),
     };
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
   }
@@ -162,6 +200,14 @@ export class AgentTask {
     (task as any)._status = meta.status;
     (task as any)._error = meta.error;
     (task as any)._pendingMessages = meta.pendingMessages || [];
+
+    // Restore dependency sets
+    if (Array.isArray(meta.blocks)) {
+      for (const id of meta.blocks) task.blocks.add(id);
+    }
+    if (Array.isArray(meta.blockedBy)) {
+      for (const id of meta.blockedBy) task.blockedBy.add(id);
+    }
 
     // Load transcript
     if (existsSync(transcriptPath)) {

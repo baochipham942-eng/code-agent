@@ -29,7 +29,7 @@ import {
 } from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
-import { createTimedAbortController, combineAbortSignals } from './shutdownProtocol';
+import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, type ParentContext } from './childContext';
@@ -127,6 +127,8 @@ interface SubagentContext {
   spawnGuardId?: string;
   /** Parent context for child context inheritance */
   parentContext?: ParentContext;
+  /** Worktree path if agent is running in an isolated git worktree */
+  worktreePath?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -153,6 +155,7 @@ export class SubagentExecutor {
     const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const taskMetadata: SidecarMetadata = {
       agentType: config.name,
+      worktreePath: context.worktreePath,
       parentSessionId: context.toolContext.sessionId || 'unknown',
       spawnTime: Date.now(),
       model: context.modelConfig.model,
@@ -178,13 +181,26 @@ export class SubagentExecutor {
       timeout,
       { label: config.name }
     );
-    // Combine with external abort signal if provided
+    // Create child controller: parent abort propagates down, child abort doesn't affect parent.
+    // This replaces combineAbortSignals which was bidirectional (child abort → parent affected).
     const effectiveController = context.abortSignal
-      ? combineAbortSignals(context.abortSignal, timeoutController.signal)
+      ? (() => {
+          // Parent = external signal's controller. Child = our timeout controller.
+          // We need a child that aborts on either parent OR timeout.
+          const parentController = new AbortController();
+          // Propagate external signal to our parent proxy
+          context.abortSignal.addEventListener('abort', () => {
+            parentController.abort(context.abortSignal!.reason);
+          }, { once: true });
+          // Propagate timeout to our parent proxy
+          timeoutController.signal.addEventListener('abort', () => {
+            parentController.abort(timeoutController.signal.reason);
+          }, { once: true });
+          // Create child that parent can abort, but child abort doesn't propagate up
+          return createChildAbortController(parentController);
+        })()
       : timeoutController;
-    const effectiveSignal = context.abortSignal
-      ? effectiveController.signal
-      : timeoutController.signal;
+    const effectiveSignal = effectiveController.signal;
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
@@ -373,14 +389,21 @@ export class SubagentExecutor {
           };
         }
 
-        // Drain send_input message queue (Phase 3: mid-loop injection)
+        // Drain structured message queue (mid-loop injection)
         if (context.spawnGuardId) {
           const pendingMessages = getSpawnGuard().drainMessages(context.spawnGuardId);
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
-              messages.push({ role: 'user', content: `[Parent agent message]: ${msg}` });
+              if (msg.type === 'shutdown_request') {
+                // Graceful shutdown: break after current iteration
+                logger.info(`[${config.name}] Received shutdown_request from ${msg.from}`);
+                break;
+              }
+              // Text and other message types: inject into conversation
+              const prefix = msg.type === 'text' ? 'Parent agent message' : `Agent message (${msg.type})`;
+              messages.push({ role: 'user', content: `[${prefix}]: ${msg.payload}` });
             }
-            logger.info(`[${config.name}] Injected ${pendingMessages.length} queued messages`);
+            logger.info(`[${config.name}] Processed ${pendingMessages.length} queued messages`);
           }
         }
 

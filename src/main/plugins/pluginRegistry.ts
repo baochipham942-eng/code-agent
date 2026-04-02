@@ -302,21 +302,51 @@ export class PluginRegistry {
   }
 
   /**
-   * Start watching for plugin changes
+   * Start watching for plugin changes (hot-reload)
+   *
+   * Handles three scenarios:
+   * 1. New plugin added → load + activate
+   * 2. Plugin removed → deactivate + unregister
+   * 3. Existing plugin modified → deactivate + reload + re-activate (hot-reload)
    */
   private startWatching(): void {
+    // Debounce map to prevent rapid-fire reloads
+    const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const DEBOUNCE_MS = 500;
+
     this.stopWatcher = watchPluginsDir(
       async (pluginDir) => {
+        // Check if this is an existing plugin being modified (hot-reload)
+        const existingPlugin = this.findPluginByPath(pluginDir);
+        if (existingPlugin) {
+          // Debounce: file systems fire multiple events for a single save
+          const existing = reloadTimers.get(existingPlugin.manifest.id);
+          if (existing) clearTimeout(existing);
+
+          reloadTimers.set(existingPlugin.manifest.id, setTimeout(async () => {
+            reloadTimers.delete(existingPlugin.manifest.id);
+            logger.info(`Hot-reloading plugin: ${existingPlugin.manifest.id}`);
+            const reloaded = await this.reloadPlugin(existingPlugin.manifest.id);
+            if (reloaded) {
+              logger.info(`Plugin hot-reloaded successfully: ${existingPlugin.manifest.id}`);
+            } else {
+              logger.warn(`Plugin hot-reload failed: ${existingPlugin.manifest.id}`);
+            }
+          }, DEBOUNCE_MS));
+          return;
+        }
+
+        // New plugin added
         logger.info(`New plugin detected: ${pluginDir}`);
         const result = await loadPlugin(pluginDir);
         if (result.success && result.plugin) {
           this.plugins.set(result.plugin.manifest.id, result.plugin);
           await this.activatePlugin(result.plugin.manifest.id);
+          logger.info(`New plugin activated: ${result.plugin.manifest.id}`);
         }
       },
       async (pluginName) => {
         logger.info(`Plugin removed: ${pluginName}`);
-        // Find and deactivate plugin
         for (const [id, plugin] of this.plugins) {
           if (plugin.rootPath.endsWith(pluginName)) {
             await this.deactivatePlugin(id);
@@ -326,6 +356,16 @@ export class PluginRegistry {
         }
       }
     );
+  }
+
+  /**
+   * Find a plugin by its root path.
+   */
+  private findPluginByPath(pluginDir: string): LoadedPlugin | undefined {
+    for (const plugin of this.plugins.values()) {
+      if (plugin.rootPath === pluginDir) return plugin;
+    }
+    return undefined;
   }
 
   // --------------------------------------------------------------------------

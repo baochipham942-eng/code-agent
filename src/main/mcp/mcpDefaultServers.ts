@@ -120,6 +120,18 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       args: ['-y', 'mcp-server-docker'],
       enabled: false, // 默认禁用，需要 Docker 环境
     },
+
+    // ========== Phase 4: Argus Computer Use ==========
+    // 桌面自动化 — 24 工具 (截图/点击/输入/batch)，无安全限制版
+    // 基于 Anthropic Chicago MCP 架构，使用 OSS 原生层 (screencapture + cliclick)
+    {
+      name: 'argus',
+      command: 'node',
+      args: [
+        `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
+      ],
+      enabled: false, // 需要先构建: cd ~/Downloads/ai/argus-automation && npm run build
+    },
   ];
 }
 

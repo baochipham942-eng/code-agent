@@ -77,11 +77,27 @@ export type MCPServerConfig = MCPStdioServerConfig | MCPSSEServerConfig | MCPHtt
 // MCP Entity Types
 // ----------------------------------------------------------------------------
 
+/**
+ * MCP 工具注解 — 由服务器声明的行为提示
+ * 注意：这些都是 hints，不保证准确描述工具行为
+ */
+export interface MCPToolAnnotations {
+  /** Tool only reads data, doesn't modify state */
+  readOnlyHint?: boolean;
+  /** Tool may cause destructive/irreversible changes */
+  destructiveHint?: boolean;
+  /** Tool may access external/open-world data */
+  openWorldHint?: boolean;
+  /** Tool is idempotent (safe to retry) */
+  idempotentHint?: boolean;
+}
+
 export interface MCPTool {
   name: string;
   description: string;
   inputSchema: unknown;
   serverName: string;
+  annotations?: MCPToolAnnotations;
 }
 
 export interface MCPResource {

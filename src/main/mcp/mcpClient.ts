@@ -24,6 +24,7 @@ import type {
   MCPHttpStreamableServerConfig,
   MCPInProcessServerConfig,
   MCPTool,
+  MCPToolAnnotations,
   MCPResource,
   MCPPrompt,
   MCPServerStatus,
@@ -50,6 +51,7 @@ export type {
   MCPHttpStreamableServerConfig,
   MCPInProcessServerConfig,
   MCPTool,
+  MCPToolAnnotations,
   MCPResource,
   MCPPrompt,
   MCPServerStatus,
@@ -72,6 +74,17 @@ export class MCPClient {
   private registry = new MCPToolRegistry();
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
+
+  // ========================================================================
+  // LRU 缓存 + 会话管理
+  // ========================================================================
+
+  /** Tool definition cache per server (invalidated on disconnect/session expiry) */
+  private toolDefinitionCache: Map<string, { tools: ToolDefinition[]; cachedAt: number }> = new Map();
+  /** Cache TTL: 5 minutes */
+  private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
+  /** Max cache entries */
+  private static readonly MAX_CACHE_SIZE = 20;
 
   constructor() {}
 
@@ -171,18 +184,27 @@ export class MCPClient {
   }
 
   /**
-   * 连接到所有启用的服务器
-   * 懒加载服务器（Stdio）跳过，等待首次调用时按需连接
+   * Batch connect to all enabled servers with concurrency control.
+   * Local servers (stdio/in-process): batch size = 3 (process spawning overhead)
+   * Remote servers (SSE/HTTP): batch size = 20 (network only)
+   * Lazy-load stdio servers are skipped (connect on first tool call).
    */
   async connectAll(): Promise<void> {
-    for (const config of this.serverConfigs.values()) {
-      if (!config.enabled) continue;
+    const enabled = Array.from(this.serverConfigs.values()).filter(c => c.enabled);
 
-      if (isStdioConfig(config) && config.lazyLoad !== false) {
-        logger.debug(`Skipping lazy-load server: ${config.name} (will connect on first use)`);
-        continue;
+    // Skip lazy-load stdio servers
+    const toConnect = enabled.filter(c => {
+      if (isStdioConfig(c) && c.lazyLoad !== false) {
+        logger.debug(`Skipping lazy-load server: ${c.name} (will connect on first use)`);
+        return false;
       }
+      return true;
+    });
 
+    const localServers = toConnect.filter(c => isStdioConfig(c) || isInProcessConfig(c));
+    const remoteServers = toConnect.filter(c => !isStdioConfig(c) && !isInProcessConfig(c));
+
+    const connectOne = async (config: MCPServerConfig) => {
       try {
         await this.connect(config);
       } catch (error) {
@@ -193,7 +215,11 @@ export class MCPClient {
           state.error = error instanceof Error ? error.message : 'Unknown error';
         }
       }
-    }
+    };
+
+    // Local: batch 3, Remote: batch 20
+    await processBatched(localServers, 3, connectOne);
+    await processBatched(remoteServers, 20, connectOne);
   }
 
   // --------------------------------------------------------------------------
@@ -338,6 +364,8 @@ export class MCPClient {
     }
 
     this.registry.removeServerCapabilities(serverName);
+    // Invalidate cached tool definitions on disconnect
+    this.toolDefinitionCache.delete(serverName);
 
     const state = this.serverStates.get(serverName);
     if (state) {
@@ -465,6 +493,10 @@ export class MCPClient {
     return this.registry.parseMCPToolName(fullName);
   }
 
+  getToolAnnotationsMap(): Map<string, MCPToolAnnotations> {
+    return this.registry.getToolAnnotationsMap();
+  }
+
   /**
    * 调用 MCP 工具
    */
@@ -515,12 +547,23 @@ export class MCPClient {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
 
+      // 会话过期检测 (JSON-RPC -32001 "Session not found")
+      const isSessionExpired = errorMessage.includes('-32001') ||
+        errorMessage.includes('Session not found') ||
+        errorMessage.includes('session expired');
+
       // 连接错误时尝试重连+重试
-      const isConnectionError = errorMessage.includes('timed out') ||
+      const isConnectionError = isSessionExpired ||
+        errorMessage.includes('timed out') ||
         errorMessage.includes('Connection closed') ||
         errorMessage.includes('not connected');
 
       if (isConnectionError) {
+        if (isSessionExpired) {
+          logger.warn(`MCP server ${serverName} session expired, clearing cache and reconnecting...`);
+          // 清除缓存的能力数据（session 过期意味着服务器重启了）
+          this.toolDefinitionCache.delete(serverName);
+        }
         logger.warn(`MCP server ${serverName} connection issue, attempting reconnect and retry...`);
 
         const reconnectResult = await this.reconnect(serverName);
@@ -658,6 +701,19 @@ export class MCPClient {
     }
 
     logger.info(`Registered in-process MCP server: ${server.name}`);
+  }
+
+}
+
+/** Process items in batches with concurrency control. */
+async function processBatched<T>(
+  items: T[],
+  batchSize: number,
+  processor: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.allSettled(batch.map(processor));
   }
 }
 

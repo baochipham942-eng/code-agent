@@ -21,6 +21,7 @@ import {
 } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import { classifyPermission } from './permissionClassifier';
 
 const logger = createLogger('ToolExecutor');
 
@@ -272,6 +273,37 @@ export class ToolExecutor {
     }
 
     if (tool.requiresPermission && !isPreApproved && !isSafeCommand) {
+      // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
+      let needsUserApproval = true;
+      try {
+        const classification = await classifyPermission(toolName, params, {
+          workingDirectory: this.workingDirectory,
+          permissionLevel: tool.permissionLevel,
+        });
+        if (classification.decision === 'approve') {
+          logger.info('Auto-approved by classifier', {
+            tool: toolName,
+            reason: classification.reason,
+            confidence: classification.confidence,
+            cached: classification.cached,
+          });
+          needsUserApproval = false;
+        } else if (classification.decision === 'deny') {
+          logger.warn('Denied by classifier', {
+            tool: toolName,
+            reason: classification.reason,
+          });
+          return {
+            success: false,
+            error: `Denied: ${classification.reason}`,
+          };
+        }
+        // 'ask' — needsUserApproval remains true
+      } catch (classifierError) {
+        logger.debug('Permission classifier error, falling back to user approval', classifierError);
+      }
+
+      if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
       permissionRequest.sessionId = options.sessionId;
 
@@ -334,6 +366,7 @@ export class ToolExecutor {
           error: 'Permission denied by user',
         };
       }
+      } // end needsUserApproval
     }
 
     // Get tool cache

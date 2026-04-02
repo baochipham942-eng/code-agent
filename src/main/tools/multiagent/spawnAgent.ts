@@ -29,8 +29,23 @@ import {
 } from '../../agent/subagentContextBuilder';
 import { getSwarmEventEmitter } from '../../ipc/swarm.ipc';
 import { getSpawnGuard } from '../../agent/spawnGuard';
-import { createAgentWorktree, cleanupAgentWorktree } from '../../agent/agentWorktree';
+import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../../agent/agentWorktree';
 import { aggregateTeamResults } from '../../agent/resultAggregator';
+import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../../agent/forkContext.js';
+import { validateNoCycles, detectCycles } from '../../agent/taskDag.js';
+import {
+  shouldActivateCoordinator,
+  createCoordinatorSession,
+} from '../../agent/coordinatorMode';
+
+// Role-based default isolation: coder agents get worktree isolation by default
+const DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
+  coder: 'worktree',
+  explorer: 'none',
+  reviewer: 'none',
+  planner: 'none',
+  awaiter: 'none',
+};
 
 export const spawnAgentTool: Tool = {
   name: 'spawn_agent',
@@ -325,10 +340,15 @@ When NOT to spawn:
       // 注入工作目录到 task，避免子 Agent 使用相对路径
       let cwd = context.workingDirectory || process.cwd();
 
-      // Worktree isolation: create isolated git worktree for this agent
-      const isolation = params.isolation as string | undefined;
+      // Best-effort orphan cleanup before creating new worktrees
+      cleanupOrphanedWorktrees(cwd).catch(() => {});
+
+      // Worktree isolation: explicit param > role-based default > none
+      const effectiveIsolation = (params.isolation as string | undefined)
+        ?? DEFAULT_ISOLATION[role || '']
+        ?? 'none';
       let worktreeInfo: { worktreePath: string; branchName: string } | undefined;
-      if (isolation === 'worktree') {
+      if (effectiveIsolation === 'worktree') {
         try {
           worktreeInfo = await createAgentWorktree(agentId, cwd);
           cwd = worktreeInfo.worktreePath;
@@ -356,6 +376,7 @@ When NOT to spawn:
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,
+        worktreePath: worktreeInfo?.worktreePath,
       };
 
       const executorConfig = {
@@ -537,6 +558,39 @@ async function executeParallelAgents(
     };
   }
 
+  // ========================================================================
+  // Task DAG: 依赖环检测（在 spawn 之前验证）
+  // ========================================================================
+  const hasDependencies = agents.some(a => a.dependsOn && a.dependsOn.length > 0);
+  if (hasDependencies) {
+    // 构建 dependencies map: taskId -> Set<blockerIds>
+    // 使用 role_index 作为 taskId（与下方 tasks 映射一致）
+    const depMap = new Map<string, Set<string>>();
+    for (let i = 0; i < agents.length; i++) {
+      const agent = agents[i];
+      const taskId = `agent_${agent.role}_${i}`;
+      const blockers = new Set<string>();
+      if (agent.dependsOn) {
+        for (const dep of agent.dependsOn) {
+          // 尝试将 role 名解析为 taskId（与下方 Phase 2 解析逻辑一致）
+          const resolvedIdx = agents.findIndex(a => a.role === dep);
+          const resolvedId = resolvedIdx >= 0 ? `agent_${dep}_${resolvedIdx}` : dep;
+          blockers.add(resolvedId);
+        }
+      }
+      depMap.set(taskId, blockers);
+    }
+
+    if (!validateNoCycles(depMap)) {
+      const cycles = detectCycles(depMap);
+      const cycleStr = cycles.map(c => c.join(' → ')).join('; ');
+      return {
+        success: false,
+        error: `Cannot spawn parallel agents: dependency cycle detected. Cycles: ${cycleStr}`,
+      };
+    }
+  }
+
   // Initialize coordinator with context
   coordinator.initialize({
     modelConfig: context.modelConfig as ModelConfig,
@@ -619,25 +673,82 @@ async function executeParallelAgents(
     }
   }
 
+  // ========================================================================
+  // Coordinator Mode: 3+ agent 时自动激活任务编排
+  // ========================================================================
+  let coordSession: ReturnType<typeof createCoordinatorSession> | undefined;
+  if (shouldActivateCoordinator(tasks.length)) {
+    coordSession = createCoordinatorSession();
+    try {
+      coordSession.decompose(
+        tasks.map(t => t.task).join('\n'),
+        tasks.map(t => ({
+          id: t.id,
+          description: t.task,
+          dependsOn: t.dependsOn,
+        }))
+      );
+    } catch {
+      // decompose 失败（如循环依赖）不阻塞执行，上面已有独立的环检测
+      coordSession = undefined;
+    }
+  }
+
+  // ========================================================================
+  // Fork Cache: 多 subagent 共享前缀，最大化 Prompt Cache 命中
+  // ========================================================================
+  if (shouldUseForkMode(tasks.length) && context.messages && context.messages.length > 0) {
+    try {
+      const childPrompts = tasks.map(t => t.task);
+      const forkContexts = buildForkContexts({
+        systemPrompt: tasks[0].systemPrompt || '',
+        tools: [], // 工具定义由 executor 注入，此处仅用于缓存前缀
+        messages: context.messages,
+        childPrompts,
+      });
+
+      // 将 fork 后的 childDirective 回写到各 task
+      for (let i = 0; i < tasks.length && i < forkContexts.length; i++) {
+        tasks[i].task = forkContexts[i].childDirective;
+      }
+
+      // 对共享消息应用 cache_control 标记
+      applyCacheControl(context.messages);
+    } catch (err) {
+      // Fork cache 失败不应阻止任务执行
+      console.warn('[SpawnAgent] Fork cache setup failed, continuing without cache optimization:', err);
+    }
+  }
+
   // Emit swarm:started
   emitter.started(tasks.length);
   for (const task of tasks) {
     emitter.agentAdded({ id: task.id, name: task.role, role: task.role });
   }
 
-  // Bridge coordinator events to swarm events
+  // Bridge coordinator events to swarm events + coordinator session tracking
   const onTaskStart = (evt: { taskId: string; role: string }) => {
     emitter.agentUpdated(evt.taskId, { status: 'running', startTime: Date.now() });
+    // Coordinator mode: 标记任务分配
+    if (coordSession) {
+      const coordTask = coordSession.getTask(evt.taskId);
+      if (coordTask && coordTask.status === 'pending') {
+        coordSession.assign(evt.taskId, evt.taskId);
+      }
+    }
   };
   const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
     if (evt.result.success) {
       emitter.agentCompleted(evt.taskId, evt.result.output);
+      coordSession?.complete(evt.taskId, evt.result.output ?? '');
     } else {
       emitter.agentFailed(evt.taskId, evt.result.error || 'Unknown error');
+      coordSession?.fail(evt.taskId, evt.result.error || 'Unknown error');
     }
   };
   const onTaskError = (evt: { taskId: string; error: string }) => {
     emitter.agentFailed(evt.taskId, evt.error);
+    coordSession?.fail(evt.taskId, evt.error);
   };
 
   coordinator.on('task:start', onTaskStart);
@@ -689,6 +800,10 @@ async function executeParallelAgents(
       ? `\nFiles changed (${aggregation.filesChanged.length}):\n${aggregation.filesChanged.map(f => `  ${f}`).join('\n')}`
       : '';
 
+    const coordNote = coordSession
+      ? `\n- Coordinator mode: active (${coordSession.getStats().completed}/${coordSession.getStats().total} tasks orchestrated)`
+      : '';
+
     if (result.success) {
       return {
         success: true,
@@ -699,17 +814,17 @@ Stats:
 - Max parallelism: ${result.parallelism}
 - Success rate: ${(aggregation.successRate * 100).toFixed(0)}% (${result.results.filter(r => r.success).length}/${result.results.length})
 - Total cost: $${aggregation.totalCost.toFixed(4)}
-- Total iterations: ${aggregation.totalIterations} · Total tool calls: ${aggregation.totalToolCalls}
+- Total iterations: ${aggregation.totalIterations} · Total tool calls: ${aggregation.totalToolCalls}${coordNote}
 ${filesNote}
 
 Agent Results:
-${agentSummaries}`,
+${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''}`,
       };
     } else {
       return {
         success: false,
         error: `Parallel execution failed: ${result.errors.length} errors. ${aggregation.summary}`,
-        output: agentSummaries,
+        output: agentSummaries + (coordSession ? '\n\n' + coordSession.synthesize() : ''),
       };
     }
   } catch (error) {

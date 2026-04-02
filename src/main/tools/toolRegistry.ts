@@ -538,6 +538,58 @@ export class ToolRegistry {
   }
 }
 
+// ============================================================================
+// Tool Deny Rules — 工具过滤
+// ============================================================================
+
+export interface DenyRule {
+  /** Tool name pattern (exact or prefix with *) */
+  pattern: string;
+  /** Reason for denial */
+  reason?: string;
+}
+
+/** Global deny rules (populated from config or policy) */
+const denyRules: DenyRule[] = [];
+
+/**
+ * Add a deny rule. Tools matching the pattern will be excluded.
+ * Pattern supports exact match or prefix glob: "mcp__slack__*"
+ */
+export function addDenyRule(rule: DenyRule): void {
+  denyRules.push(rule);
+}
+
+/**
+ * Clear all deny rules.
+ */
+export function clearDenyRules(): void {
+  denyRules.length = 0;
+}
+
+/**
+ * Check if a tool name is denied by any rule.
+ */
+export function isToolDenied(toolName: string): boolean {
+  return denyRules.some(rule => matchesDenyPattern(rule.pattern, toolName));
+}
+
+/**
+ * Filter tool definitions by deny rules.
+ * Removes tools matching any deny pattern before sending to the model.
+ */
+export function filterToolsByDenyRules(tools: ToolDefinition[]): ToolDefinition[] {
+  if (denyRules.length === 0) return tools;
+  return tools.filter(t => !isToolDenied(t.name));
+}
+
+function matchesDenyPattern(pattern: string, toolName: string): boolean {
+  if (pattern.endsWith('*')) {
+    return toolName.startsWith(pattern.slice(0, -1));
+  }
+  return pattern === toolName;
+}
+
 // ----------------------------------------------------------------------------
 // Global Singleton & Helper Functions
 // ----------------------------------------------------------------------------

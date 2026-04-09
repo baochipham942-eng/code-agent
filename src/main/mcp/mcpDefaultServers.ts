@@ -130,7 +130,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       args: [
         `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
       ],
-      enabled: false, // 需要先构建: cd ~/Downloads/ai/argus-automation && npm run build
+      enabled: true, // 桌面自动化 24 工具，已构建
     },
   ];
 }

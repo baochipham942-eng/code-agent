@@ -271,6 +271,31 @@ export interface EvaluationResult {
       successful: boolean;
     }>;
     outcome: 'success' | 'partial' | 'failure';
+    // v2.5 Phase 2: Failure attribution (镜像 FailureAttribution，见 src/main/testing/types.ts)
+    failureAttribution?: {
+      rootCause?: {
+        stepIndex: number;
+        category:
+          | 'tool_error'
+          | 'bad_decision'
+          | 'missing_context'
+          | 'loop'
+          | 'hallucination'
+          | 'env_failure'
+          | 'unknown';
+        summary: string;
+        evidence: number[];
+        confidence: number;
+      };
+      causalChain: Array<{
+        stepIndex: number;
+        role: 'root' | 'propagation' | 'terminal';
+        note: string;
+      }>;
+      relatedRegressionCases: string[];
+      llmUsed: boolean;
+      durationMs: number;
+    };
   };
 }
 

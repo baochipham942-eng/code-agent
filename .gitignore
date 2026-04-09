@@ -84,3 +84,6 @@ src-tauri/target/
 # LLM Wiki (Karpathy pattern)
 wiki/
 raw/
+
+# Swift build artifacts (run scripts/build-audio-capture.sh to regenerate)
+scripts/system-audio-capture

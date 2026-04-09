@@ -118,6 +118,7 @@ grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
 
 ### 打包发布
 ```bash
+bash scripts/build-audio-capture.sh   # 编译 Swift 音频采集工具（首次 clone 必跑）
 npm run typecheck && npm version patch --no-git-tag-version
 # 同步 src-tauri/tauri.conf.json 中的 version
 git add package.json package-lock.json src-tauri/tauri.conf.json
@@ -126,7 +127,8 @@ npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo ta
 bash scripts/tauri-install.sh   # 安装到 /Applications（必须用脚本，禁止手动 cp）
 ```
 
-**前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）。
+**前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）、Xcode Command Line Tools（swiftc）。
+**首次 clone**: 必须先跑 `bash scripts/build-audio-capture.sh` 生成 `scripts/system-audio-capture`，否则 `tauri.conf.json` 的 bundle resources 会找不到文件导致打包失败。
 **安装**: 必须用 `scripts/tauri-install.sh`，它会 rm→cp→清理 DMG 残留卷。手动 `cp -r` 会导致旧文件残留 + Finder 反复弹出 DMG。
 **API Key**: 打包后靠应用内设置管理（SecureStorage），不依赖 `.env`。`.env` 仅开发模式用。
 **Auto-update**: 首次发布前需 `tauri signer generate` 并将 pubkey 写入 tauri.conf.json。

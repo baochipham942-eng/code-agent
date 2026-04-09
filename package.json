@@ -48,6 +48,8 @@
     "regression:gate": "npx tsx scripts/regression-cli.ts gate",
     "regression:baseline": "npx tsx scripts/regression-cli.ts baseline",
     "proposal": "npx tsx scripts/proposal-cli.ts",
+    "attribution": "npx tsx scripts/attribution-cli.ts",
+    "proposal:generate": "npx tsx scripts/proposal-generate.ts",
     "eval:smoke": "npx tsx scripts/eval-ci.ts --scope smoke",
     "eval:full": "npx tsx scripts/eval-ci.ts --scope full",
     "eval:baseline": "npx tsx scripts/eval-ci.ts --baseline-info",

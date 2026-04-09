@@ -560,6 +560,41 @@ export interface TrajectoryDiff {
   efficiencyDelta: { steps: number; tokens: number; duration: number };
 }
 
+// === v2.5 Phase 2: Trajectory Failure Attribution ===
+
+export type FailureCategory =
+  | 'tool_error'
+  | 'bad_decision'
+  | 'missing_context'
+  | 'loop'
+  | 'hallucination'
+  | 'env_failure'
+  | 'unknown';
+
+export interface FailureRootCause {
+  stepIndex: number;
+  category: FailureCategory;
+  summary: string;
+  evidence: number[];     // related step indices
+  confidence: number;     // 0-1
+}
+
+export interface CausalChainNode {
+  stepIndex: number;
+  role: 'root' | 'propagation' | 'terminal';
+  note: string;
+}
+
+export interface FailureAttribution {
+  trajectoryId: string;
+  outcome: 'success' | 'partial' | 'failure';
+  rootCause?: FailureRootCause;
+  causalChain: CausalChainNode[];
+  relatedRegressionCases: string[];  // matched reg-* case ids
+  llmUsed: boolean;
+  durationMs: number;
+}
+
 // === P4: Eval Self-Evolution Types ===
 
 export interface AssertionQuality {

@@ -245,6 +245,25 @@ export class EvaluationService {
           outcome: trajectory.summary.outcome,
         };
 
+        // v2.5 Phase 2: rule-only failure attribution (no LLM in eval path)
+        try {
+          const { FailureAttributor } = await import('./trajectory/attribution');
+          const attribution = await new FailureAttributor().attribute(trajectory, {
+            enableLLM: false,
+          });
+          if (result.trajectoryAnalysis) {
+            result.trajectoryAnalysis.failureAttribution = {
+              rootCause: attribution.rootCause,
+              causalChain: attribution.causalChain,
+              relatedRegressionCases: attribution.relatedRegressionCases,
+              llmUsed: attribution.llmUsed,
+              durationMs: attribution.durationMs,
+            };
+          }
+        } catch (attrError) {
+          logger.debug('Failure attribution skipped', { error: attrError });
+        }
+
         logger.info('Trajectory analysis complete', {
           deviations: deviations.length,
           efficiency: trajectory.efficiency.efficiency,

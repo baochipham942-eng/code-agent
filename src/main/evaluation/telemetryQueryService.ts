@@ -468,6 +468,26 @@ class TelemetryQueryService {
           }>
         | undefined;
 
+      // v2.5 Phase 2: rule-only failure attribution. LLM fallback is wired
+      // through the FailureAttributor.attribute(..., { enableLLM, llmFn })
+      // option at the caller level (not exposed here to keep telemetry
+      // read-only and deterministic).
+      let failureAttribution:
+        | {
+            rootCause?: {
+              stepIndex: number;
+              category: string;
+              summary: string;
+              evidence: number[];
+              confidence: number;
+            };
+            causalChain: Array<{ stepIndex: number; role: string; note: string }>;
+            relatedRegressionCases: string[];
+            llmUsed: boolean;
+            durationMs: number;
+          }
+        | undefined;
+
       try {
         const { TrajectoryBuilder } = await import('./trajectory/trajectoryBuilder');
         const { DeviationDetector } = await import('./trajectory/deviationDetector');
@@ -511,7 +531,30 @@ class TelemetryQueryService {
           const builder = new TrajectoryBuilder();
           const trajectory = builder.buildFromEvents(events);
           const detector = new DeviationDetector();
-          deviations = detector.detectByRules(trajectory);
+          const detected = detector.detectByRules(trajectory);
+          trajectory.deviations = detected;
+          deviations = detected.map((d) => ({
+            stepIndex: d.stepIndex,
+            type: d.type,
+            description: d.description,
+            severity: d.severity,
+            suggestedFix: d.suggestedFix,
+          }));
+
+          // v2.5 Phase 2: attach rule-based failure attribution.
+          try {
+            const { FailureAttributor } = await import('./trajectory/attribution');
+            const attribution = await new FailureAttributor().attribute(trajectory, {
+              enableLLM: false,
+            });
+            failureAttribution = {
+              rootCause: attribution.rootCause,
+              causalChain: attribution.causalChain,
+              relatedRegressionCases: attribution.relatedRegressionCases,
+              llmUsed: attribution.llmUsed,
+              durationMs: attribution.durationMs,
+            };
+          } catch {}
         }
       } catch {}
 
@@ -527,6 +570,7 @@ class TelemetryQueryService {
           selfRepairChains: selfRepair.successes,
           totalDurationMs,
           deviations,
+          failureAttribution,
         },
       };
     } catch (error) {

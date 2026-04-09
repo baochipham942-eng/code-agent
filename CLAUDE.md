@@ -2,6 +2,17 @@
 
 AI 编程助手桌面应用，复刻 Claude Code 架构来研究 AI Agent 能力演进。
 
+## LLM Wiki
+
+项目知识库（Karpathy 模式）。操作规范见 `~/.claude/specs/wiki-schema.md`，使用 `/wiki` skill 操作。
+
+| 目录 | 用途 |
+|------|------|
+| `wiki/` | LLM 维护的编译知识（概念、实体、对比、摘要） |
+| `raw/` | 不可变源文档（文章、论文、竞品截图） |
+
+Wiki 不同于 `docs/`（人类项目文档）。两者可有内容重叠但职责分离。
+
 ## 项目上下文
 
 当我提到 'code agent'、'ai-code-agent' 或 'coda agent' 时，指的是本地项目（ai-code-agent）— 不是 Claude Code 或其他外部产品。

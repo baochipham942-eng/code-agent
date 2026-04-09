@@ -122,7 +122,10 @@ export class TrajectoryBuilder {
 
   private buildSteps(events: EventInput[]): TrajectoryStep[] {
     const steps: TrajectoryStep[] = [];
-    const pendingTools = new Map<string, { event: EventInput; stepIndex: number }>();
+    // Pending map by tool name (legacy `tool_start`/`tool_result` events).
+    const pendingByName = new Map<string, { event: EventInput; stepIndex: number }>();
+    // Pending map by tool call id (current `tool_call_start`/`tool_call_end` events).
+    const pendingById = new Map<string, { stepIndex: number }>();
     let stepIndex = 0;
 
     for (const event of events) {
@@ -130,9 +133,12 @@ export class TrajectoryBuilder {
       const ts = this.toTimestamp(event.timestamp);
 
       switch (event.event_type) {
-        case 'tool_start': {
+        // Legacy `tool_start` and current `tool_call_start` share a code path.
+        case 'tool_start':
+        case 'tool_call_start': {
           const toolName = String(data.tool ?? data.name ?? 'unknown');
-          const args = (data.args ?? {}) as Record<string, unknown>;
+          const args = (data.args ?? data.arguments ?? {}) as Record<string, unknown>;
+          const toolCallId = data.id != null ? String(data.id) : undefined;
 
           const step: TrajectoryStep = {
             index: stepIndex,
@@ -141,31 +147,50 @@ export class TrajectoryBuilder {
             toolCall: {
               name: toolName,
               args,
-              success: true, // default, updated on tool_result
+              success: true, // default, updated on end/result
               duration: 0,
             },
           };
 
-          pendingTools.set(toolName, { event, stepIndex });
+          if (toolCallId) {
+            pendingById.set(toolCallId, { stepIndex });
+          } else {
+            pendingByName.set(toolName, { event, stepIndex });
+          }
           steps.push(step);
           stepIndex++;
           break;
         }
 
-        case 'tool_result': {
+        // Legacy `tool_result` and current `tool_call_end` share a code path.
+        case 'tool_result':
+        case 'tool_call_end': {
+          const toolCallId = data.toolCallId != null ? String(data.toolCallId) : undefined;
           const toolName = String(data.tool ?? data.name ?? 'unknown');
-          const pending = pendingTools.get(toolName);
+          const resultPayload = data.result ?? data.output;
 
-          if (pending) {
-            const step = steps[pending.stepIndex];
+          // Prefer id-based pairing when available.
+          let pendingStepIndex: number | undefined;
+          if (toolCallId && pendingById.has(toolCallId)) {
+            pendingStepIndex = pendingById.get(toolCallId)!.stepIndex;
+            pendingById.delete(toolCallId);
+          } else if (pendingByName.has(toolName)) {
+            pendingStepIndex = pendingByName.get(toolName)!.stepIndex;
+            pendingByName.delete(toolName);
+          }
+
+          if (pendingStepIndex !== undefined) {
+            const step = steps[pendingStepIndex];
             if (step?.toolCall) {
               step.toolCall.success = data.success !== false && !data.error;
-              step.toolCall.duration = ts - step.timestamp;
-              if (data.result != null) step.toolCall.result = String(data.result).slice(0, 2000);
+              step.toolCall.duration =
+                typeof data.duration === 'number' ? data.duration : ts - step.timestamp;
+              if (resultPayload != null) {
+                step.toolCall.result = String(resultPayload).slice(0, 2000);
+              }
             }
-            pendingTools.delete(toolName);
           } else {
-            // Orphan tool_result – create a standalone step
+            // Orphan result – create a standalone step.
             const step: TrajectoryStep = {
               index: stepIndex,
               timestamp: ts,
@@ -174,8 +199,8 @@ export class TrajectoryBuilder {
                 name: toolName,
                 args: {},
                 success: data.success !== false && !data.error,
-                duration: 0,
-                result: data.result != null ? String(data.result).slice(0, 2000) : undefined,
+                duration: typeof data.duration === 'number' ? data.duration : 0,
+                result: resultPayload != null ? String(resultPayload).slice(0, 2000) : undefined,
               },
             };
             steps.push(step);

@@ -17,6 +17,9 @@ export {
   updateStatus,
   generateProposalId,
   defaultProposalsDir,
+  findSimilarProposal,
+  appendEvidenceToProposal,
+  type EvidenceItem,
 } from './proposalStore';
 
 export {
@@ -36,3 +39,12 @@ export {
 } from './proposalApplier';
 
 export { runRegressionGateViaCli } from './regressionGateAdapter';
+
+export {
+  polishRecipe,
+  buildPrompt as buildPolishPrompt,
+  type ChatFn as PolishChatFn,
+  type StaticRecipe,
+  type RecipePolishInput,
+  type PolishedRecipe,
+} from './recipePolisher';

@@ -47,6 +47,10 @@ export interface Proposal {
   tags: string[];
   sunset?: string;                   // YYYY-MM-DD
 
+  // Evidence keys for dedup / clustering (Phase 5): typically session IDs
+  // drawn from grader reports' failure_attribution records.
+  evidenceKeys?: string[];
+
   // Shadow eval result (filled after evaluate)
   shadowEval?: ShadowEvalResult;
 }

@@ -20,6 +20,7 @@ import * as os from 'node:os';
 import { TrajectoryBuilder } from '../src/main/evaluation/trajectory/trajectoryBuilder';
 import { DeviationDetector } from '../src/main/evaluation/trajectory/deviationDetector';
 import { FailureAttributor } from '../src/main/evaluation/trajectory/attribution';
+import { buildAttributionChatFnFromEnv } from '../src/main/evaluation/llmChatFactory';
 import type { FailureAttribution } from '../src/main/testing/types';
 
 interface EventRow {
@@ -84,8 +85,14 @@ async function buildAttribution(
   const detector = new DeviationDetector();
   trajectory.deviations = detector.detectByRules(trajectory);
 
+  // Phase 7 (A): honor CODE_AGENT_EVAL_LLM_ENABLED for LLM fallback.
+  // When the env flag is off (default), this stays rule-only.
+  const llmFn = await buildAttributionChatFnFromEnv();
   const attributor = new FailureAttributor();
-  return attributor.attribute(trajectory, { enableLLM: false });
+  return attributor.attribute(trajectory, {
+    enableLLM: llmFn !== null,
+    llmFn: llmFn ?? undefined,
+  });
 }
 
 function toGraderEmbed(attr: FailureAttribution): Record<string, unknown> {

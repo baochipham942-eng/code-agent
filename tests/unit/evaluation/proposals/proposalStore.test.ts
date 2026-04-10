@@ -12,6 +12,8 @@ import {
   writeProposal,
   updateStatus,
   generateProposalId,
+  findSimilarProposal,
+  appendEvidenceToProposal,
 } from '../../../../src/main/evaluation/proposals/proposalStore';
 import type { Proposal } from '../../../../src/main/evaluation/proposals/proposalTypes';
 
@@ -136,5 +138,170 @@ describe('proposalStore', () => {
     await writeRawProposal(tmpDir, `${id1}.md`, sampleProposalBody({ id: id1 }));
     const id2 = await generateProposalId(tmpDir, new Date('2026-04-09T12:00:00Z'));
     expect(id2).toBe('prop-20260409-002');
+  });
+
+  // ---- Phase 5: dedup / merge ----
+
+  it('round-trips evidence_keys in frontmatter', async () => {
+    const proposal: Proposal = {
+      id: 'prop-20260409-010',
+      filePath: '',
+      createdAt: '2026-04-09T11:00:00Z',
+      status: 'pending',
+      source: 'synthesize',
+      type: 'new_l3_experiment',
+      hypothesis: 'h',
+      targetMetric: 'm',
+      rollbackCondition: 'r',
+      tags: ['loop', 'auto-generated'],
+      evidenceKeys: ['sess-aaa', 'sess-bbb'],
+      ruleContent: 'body',
+    };
+    const written = await writeProposal(tmpDir, proposal);
+    const loaded = await loadProposal(written.filePath);
+    expect(loaded.evidenceKeys).toEqual(['sess-aaa', 'sess-bbb']);
+  });
+
+  it('findSimilarProposal returns most recent open proposal in the same category', async () => {
+    // Older shadow_passed in loop category
+    await writeRawProposal(
+      tmpDir,
+      'prop-old.md',
+      sampleProposalBody({
+        id: 'prop-20260405-001',
+        createdAt: '2026-04-05T10:00:00Z',
+        status: 'shadow_passed',
+        tags: '[loop, auto-generated]',
+      })
+    );
+    // Newer pending in loop category
+    await writeRawProposal(
+      tmpDir,
+      'prop-new.md',
+      sampleProposalBody({
+        id: 'prop-20260408-001',
+        createdAt: '2026-04-08T10:00:00Z',
+        status: 'pending',
+        tags: '[loop, auto-generated]',
+      })
+    );
+    // Unrelated category
+    await writeRawProposal(
+      tmpDir,
+      'prop-other.md',
+      sampleProposalBody({
+        id: 'prop-20260408-002',
+        createdAt: '2026-04-08T11:00:00Z',
+        status: 'pending',
+        tags: '[tool_error]',
+      })
+    );
+
+    const match = await findSimilarProposal(tmpDir, 'loop');
+    expect(match?.id).toBe('prop-20260408-001');
+  });
+
+  it('findSimilarProposal skips closed (applied / rejected) proposals', async () => {
+    await writeRawProposal(
+      tmpDir,
+      'prop-applied.md',
+      sampleProposalBody({
+        id: 'prop-20260408-003',
+        status: 'applied',
+        tags: '[loop]',
+      })
+    );
+    await writeRawProposal(
+      tmpDir,
+      'prop-rejected.md',
+      sampleProposalBody({
+        id: 'prop-20260408-004',
+        status: 'rejected',
+        tags: '[loop]',
+      })
+    );
+    const match = await findSimilarProposal(tmpDir, 'loop');
+    expect(match).toBeNull();
+  });
+
+  it('findSimilarProposal matches needs_human status as still open', async () => {
+    await writeRawProposal(
+      tmpDir,
+      'prop-nh.md',
+      sampleProposalBody({
+        id: 'prop-20260408-005',
+        status: 'needs_human',
+        tags: '[env_failure]',
+      })
+    );
+    const match = await findSimilarProposal(tmpDir, 'env_failure');
+    expect(match?.id).toBe('prop-20260408-005');
+  });
+
+  it('appendEvidenceToProposal adds only new keys and appends a dated section', async () => {
+    const proposal: Proposal = {
+      id: 'prop-20260409-020',
+      filePath: '',
+      createdAt: '2026-04-09T10:00:00Z',
+      status: 'pending',
+      source: 'synthesize',
+      type: 'new_l3_experiment',
+      hypothesis: 'h',
+      targetMetric: 'm',
+      rollbackCondition: 'r',
+      tags: ['loop'],
+      evidenceKeys: ['sess-a', 'sess-b'],
+      ruleContent: '## 防循环规则\n\n- 原有规则',
+    };
+    const written = await writeProposal(tmpDir, proposal);
+
+    const { addedKeys } = await appendEvidenceToProposal(
+      written.filePath,
+      [
+        { key: 'sess-b', summary: 'dup existing' },
+        { key: 'sess-c', summary: 'new summary one' },
+        { key: 'sess-d', summary: 'new summary two' },
+      ],
+      new Date('2026-04-10T00:00:00Z')
+    );
+    expect(addedKeys).toEqual(['sess-c', 'sess-d']);
+
+    const reloaded = await loadProposal(written.filePath);
+    expect(reloaded.evidenceKeys).toEqual(['sess-a', 'sess-b', 'sess-c', 'sess-d']);
+    expect(reloaded.ruleContent).toContain('原有规则');
+    expect(reloaded.ruleContent).toContain('## 追加证据 (2026-04-10)');
+    expect(reloaded.ruleContent).toContain('new summary one');
+    expect(reloaded.ruleContent).toContain('new summary two');
+    // The summary of the already-present sess-b must NOT appear in the new section.
+    expect(reloaded.ruleContent).not.toContain('dup existing');
+  });
+
+  it('appendEvidenceToProposal is a no-op when all keys already present', async () => {
+    const proposal: Proposal = {
+      id: 'prop-20260409-021',
+      filePath: '',
+      createdAt: '2026-04-09T10:00:00Z',
+      status: 'pending',
+      source: 'synthesize',
+      type: 'new_l3_experiment',
+      hypothesis: 'h',
+      targetMetric: 'm',
+      rollbackCondition: 'r',
+      tags: ['loop'],
+      evidenceKeys: ['sess-x', 'sess-y'],
+      ruleContent: '## 原有内容',
+    };
+    const written = await writeProposal(tmpDir, proposal);
+    const beforeRaw = await fs.readFile(written.filePath, 'utf8');
+
+    const { addedKeys } = await appendEvidenceToProposal(written.filePath, [
+      { key: 'sess-x', summary: 'dup' },
+      { key: 'sess-y', summary: 'dup' },
+    ]);
+    expect(addedKeys).toEqual([]);
+
+    // File must not have changed.
+    const afterRaw = await fs.readFile(written.filePath, 'utf8');
+    expect(afterRaw).toBe(beforeRaw);
   });
 });

@@ -79,6 +79,7 @@ export async function loadProposal(filePath: string): Promise<Proposal> {
     rollbackCondition: String(fm.rollback_condition),
     tags: toStringArray(fm.tags),
     sunset: fm.sunset ? String(fm.sunset) : undefined,
+    evidenceKeys: fm.evidence_keys ? toStringArray(fm.evidence_keys) : undefined,
     shadowEval: fm.shadow_eval ? parseShadowEval(String(fm.shadow_eval)) : undefined,
     ruleContent: extractRuleContent(body),
   };
@@ -131,6 +132,87 @@ export async function updateStatus(
 }
 
 /**
+ * Phase 5 — Find an "open" proposal (pending / shadow_passed) in the given
+ * category that represents the same cluster. Used by proposal-generate to
+ * dedup: instead of writing a new proposal every run, merge new evidence into
+ * an existing open one of the same category.
+ *
+ * Open = status in {'pending', 'shadow_passed'}. Applied / rejected / superseded
+ * proposals are considered closed and do not block new proposals in the same
+ * category (that category can legitimately resurface).
+ *
+ * Returns the most recent open proposal in the category, or null.
+ */
+const OPEN_STATUSES: ReadonlySet<ProposalStatus> = new Set([
+  'pending',
+  'shadow_passed',
+  'needs_human',
+]);
+
+export async function findSimilarProposal(
+  dir: string,
+  category: string
+): Promise<Proposal | null> {
+  const all = await loadAllProposals(dir);
+  for (const p of all) {
+    if (!OPEN_STATUSES.has(p.status)) continue;
+    if (p.tags.includes(category)) return p; // already sorted createdAt desc
+  }
+  return null;
+}
+
+/**
+ * Phase 5 — Merge new evidence into an existing proposal.
+ *
+ * Candidate evidence items are keyed by a stable id (typically sessionId).
+ * Items whose key is already present in the proposal's `evidence_keys` are
+ * dropped — only genuinely new items are written.
+ *
+ * - Adds new keys to frontmatter `evidence_keys` (dedup, preserving order)
+ * - Appends a new "## 追加证据 (YYYY-MM-DD)" section with only the new items'
+ *   summaries, leaving existing rule content untouched
+ *
+ * Returns the keys that were actually added.
+ */
+export interface EvidenceItem {
+  key: string;
+  summary: string;
+}
+
+export async function appendEvidenceToProposal(
+  filePath: string,
+  candidates: EvidenceItem[],
+  now: Date = new Date()
+): Promise<{ addedKeys: string[] }> {
+  const existing = await loadProposal(filePath);
+  const existingKeys = new Set(existing.evidenceKeys ?? []);
+  const newItems = candidates.filter((c) => !existingKeys.has(c.key));
+  if (newItems.length === 0) {
+    return { addedKeys: [] };
+  }
+
+  const addedKeys = newItems.map((i) => i.key);
+  const mergedKeys = [...(existing.evidenceKeys ?? []), ...addedKeys];
+
+  const stamp = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+    2,
+    '0'
+  )}-${String(now.getUTCDate()).padStart(2, '0')}`;
+  const sampleLines = newItems.map(
+    (item, i) => `${i + 1}. ${item.summary.trim().slice(0, 120)}`
+  );
+  const appendSection = ['', `## 追加证据 (${stamp})`, '', ...sampleLines, ''].join('\n');
+
+  const updated: Proposal = {
+    ...existing,
+    evidenceKeys: mergedKeys,
+    ruleContent: (existing.ruleContent ?? '') + appendSection,
+  };
+  await fs.writeFile(filePath, serializeProposal(updated), 'utf8');
+  return { addedKeys };
+}
+
+/**
  * Generate a monotonically increasing proposal id for the current day.
  * Scans the target dir for `prop-YYYYMMDD-NNN.md` and returns NNN+1.
  */
@@ -171,6 +253,9 @@ function serializeProposal(p: Proposal): string {
   lines.push(`rollback_condition: ${p.rollbackCondition}`);
   lines.push(`tags: [${p.tags.join(', ')}]`);
   if (p.sunset) lines.push(`sunset: ${p.sunset}`);
+  if (p.evidenceKeys && p.evidenceKeys.length > 0) {
+    lines.push(`evidence_keys: [${p.evidenceKeys.join(', ')}]`);
+  }
   if (p.shadowEval) {
     lines.push(`shadow_eval: ${JSON.stringify(p.shadowEval)}`);
   }
@@ -219,7 +304,11 @@ function parseShadowEval(raw: string): ShadowEvalResult | undefined {
 }
 
 function extractRuleContent(body: string): string | undefined {
-  const re = /##\s+Rule Content\s*\n([\s\S]*?)(?:\n##\s|$)/m;
+  // `## Rule Content` is the terminal section — everything after it (including
+  // any nested `## ...` subsections the generator writes) belongs to the rule
+  // body. Previously this was a non-greedy match that truncated at the first
+  // nested `## ...`, silently dropping the body.
+  const re = /##\s+Rule Content\s*\n([\s\S]*)$/m;
   const m = re.exec(body);
   return m ? m[1].trim() : undefined;
 }

@@ -245,11 +245,16 @@ export class EvaluationService {
           outcome: trajectory.summary.outcome,
         };
 
-        // v2.5 Phase 2: rule-only failure attribution (no LLM in eval path)
+        // v2.5 Phase 2: rule-based failure attribution.
+        // Phase 7 (A): opt-in LLM fallback when CODE_AGENT_EVAL_LLM_ENABLED=1.
+        // Silent fallback to rules-only if env flag is off or API key missing.
         try {
           const { FailureAttributor } = await import('./trajectory/attribution');
+          const { buildAttributionChatFnFromEnv } = await import('./llmChatFactory');
+          const llmFn = await buildAttributionChatFnFromEnv();
           const attribution = await new FailureAttributor().attribute(trajectory, {
-            enableLLM: false,
+            enableLLM: llmFn !== null,
+            llmFn: llmFn ?? undefined,
           });
           if (result.trajectoryAnalysis) {
             result.trajectoryAnalysis.failureAttribution = {

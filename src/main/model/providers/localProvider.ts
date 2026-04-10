@@ -5,13 +5,14 @@
 import type { ModelConfig, ToolDefinition } from '../../../shared/types';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
-import { convertToolsToOpenAI, convertToTextOnlyMessages } from './shared';
+import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
+import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 export class LocalProvider extends BaseOpenAIProvider {
   readonly name = 'Local';
 
   protected getBaseUrl(config: ModelConfig): string {
-    return config.baseUrl || 'http://localhost:11434/v1';
+    return config.baseUrl || MODEL_API_ENDPOINTS.ollama;
   }
 
   protected getApiKey(): string {
@@ -27,18 +28,22 @@ export class LocalProvider extends BaseOpenAIProvider {
     tools: ToolDefinition[],
     config: ModelConfig
   ): Record<string, unknown> {
+    const modelInfo = this.getModelInfo(config);
+    const useToolCalling = modelInfo?.supportsTool === true;
     const openaiTools = convertToolsToOpenAI(tools);
 
-    // 大多数本地模型 tool calling 支持不完整，用纯文本回退
     const body: Record<string, unknown> = {
       model: config.model || 'qwen2.5-coder:7b',
-      messages: convertToTextOnlyMessages(messages),
+      messages: useToolCalling
+        ? convertToOpenAIMessages(messages)
+        : convertToTextOnlyMessages(messages),
       temperature: config.temperature ?? 0.7,
       stream: true,
     };
 
-    if (openaiTools.length > 0) {
+    if (useToolCalling && openaiTools.length > 0) {
       body.tools = openaiTools;
+      body.tool_choice = 'auto';
     }
 
     return body;

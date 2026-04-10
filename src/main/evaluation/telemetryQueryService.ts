@@ -468,10 +468,9 @@ class TelemetryQueryService {
           }>
         | undefined;
 
-      // v2.5 Phase 2: rule-only failure attribution. LLM fallback is wired
-      // through the FailureAttributor.attribute(..., { enableLLM, llmFn })
-      // option at the caller level (not exposed here to keep telemetry
-      // read-only and deterministic).
+      // v2.5 Phase 2: rule-based failure attribution.
+      // Phase 7 (A): opt-in LLM fallback via CODE_AGENT_EVAL_LLM_ENABLED=1.
+      // When the env flag is off (default) this stays deterministic/rules-only.
       let failureAttribution:
         | {
             rootCause?: {
@@ -541,11 +540,14 @@ class TelemetryQueryService {
             suggestedFix: d.suggestedFix,
           }));
 
-          // v2.5 Phase 2: attach rule-based failure attribution.
+          // v2.5 Phase 2 + Phase 7: attach failure attribution (rules + opt-in LLM).
           try {
             const { FailureAttributor } = await import('./trajectory/attribution');
+            const { buildAttributionChatFnFromEnv } = await import('./llmChatFactory');
+            const llmFn = await buildAttributionChatFnFromEnv();
             const attribution = await new FailureAttributor().attribute(trajectory, {
-              enableLLM: false,
+              enableLLM: llmFn !== null,
+              llmFn: llmFn ?? undefined,
             });
             failureAttribution = {
               rootCause: attribution.rootCause,

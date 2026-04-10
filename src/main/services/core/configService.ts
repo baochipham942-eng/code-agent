@@ -128,6 +128,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       minimax: { enabled: false },
       perplexity: { enabled: false },
       openrouter: { enabled: false },
+      volcengine: { enabled: false },
     },
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
@@ -451,6 +452,7 @@ export class ConfigService {
       minimax: 'MINIMAX_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
       openrouter: 'OPENROUTER_API_KEY',
+      volcengine: 'VOLCENGINE_API_KEY',
     };
 
     const envKey = envKeyMap[provider];

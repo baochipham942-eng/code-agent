@@ -37,6 +37,7 @@ import { OpenRouterProvider } from './providers/openrouterProvider';
 import { ZhipuProvider } from './providers/zhipuProvider';
 import { ClaudeProvider } from './providers/claudeProvider';
 import { GeminiProvider } from './providers/geminiProvider';
+import { VolcengineProvider } from './providers/volcengineProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -63,6 +64,7 @@ export class ModelRouter {
     ['zhipu', new ZhipuProvider()],
     ['claude', new ClaudeProvider()],
     ['gemini', new GeminiProvider()],
+    ['volcengine', new VolcengineProvider()],
   ]);
 
   // --------------------------------------------------------------------------
@@ -394,6 +396,16 @@ export class ModelRouter {
             const cacheKey = cache.computeKey(messages, config);
             cache.set(cacheKey, result);
           }
+
+          // Notify renderer about the fallback switch
+          try {
+            const { broadcastToRenderer } = await import('../platform/windowBridge');
+            broadcastToRenderer?.('provider:fallback', {
+              from: { provider: config.provider, model: config.model },
+              to: { provider: fallback.provider, model: fallback.model },
+              reason: errMsg?.split('\n')[0] || 'unknown',
+            });
+          } catch { /* push failure must not affect main flow */ }
 
           return result;
         } catch (fallbackErr) {

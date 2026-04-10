@@ -25,8 +25,8 @@ if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
       try {
         Database = require(nativePath);
         logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
-      } catch {
-        // 继续尝试下一个路径
+      } catch (error) {
+        logger.warn(`[DatabaseService] Failed to load better-sqlite3 from ${nativePath}:`, error);
       }
     }
   }
@@ -116,7 +116,8 @@ export class DatabaseService {
       try {
         await this._initPromise;
         return this.db !== null;
-      } catch {
+      } catch (error) {
+        logger.warn('[DatabaseService] Failed to wait for init:', error);
         return false;
       }
     }
@@ -155,7 +156,8 @@ export class DatabaseService {
         await this.initialize();
         logger.info(`Database recovered after ${this._retryCount} retries`);
         this._retryCount = 0;
-      } catch {
+      } catch (error) {
+        logger.warn('[DatabaseService] Failed to retry initialization:', error);
         // _scheduleRetry will be called again by initialize().catch
       }
     }, delay);
@@ -195,7 +197,7 @@ export class DatabaseService {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
       if (this.db) {
-        try { this.db.close(); } catch { /* ignore close errors */ }
+        try { this.db.close(); } catch (closeErr) { logger.warn('[DatabaseService] Failed to close database during cleanup:', closeErr); }
       }
       this.db = null;
       throw err;

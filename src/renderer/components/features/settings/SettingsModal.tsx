@@ -3,7 +3,7 @@
 // Layout + Tab Switching
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Cpu, Palette, Info, Database, Download, Plug, Settings, Brain, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -13,6 +13,8 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../utils/logger';
 import { isElectronMode } from '../../../utils/platform';
+import { SettingsSearch } from './SettingsSearch';
+import type { SettingsTab as SearchSettingsTab } from '../../../utils/settingsIndex';
 
 const logger = createLogger('SettingsModal');
 
@@ -43,6 +45,10 @@ export const SettingsModal: React.FC = () => {
   const { setShowSettings, modelConfig, setModelConfig } = useAppStore();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+
+  const handleSearchNavigate = useCallback((tab: SearchSettingsTab) => {
+    setActiveTab(tab as SettingsTab);
+  }, []);
 
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -103,7 +109,8 @@ export const SettingsModal: React.FC = () => {
 
         <div className="flex h-[500px]">
           {/* Sidebar */}
-          <div className="w-48 border-r border-zinc-700 p-2">
+          <div className="w-48 border-r border-zinc-700 p-2 flex flex-col gap-2">
+            <SettingsSearch onNavigate={handleSearchNavigate} />
             {tabs.map((tab) => (
               <button
                 key={tab.id}

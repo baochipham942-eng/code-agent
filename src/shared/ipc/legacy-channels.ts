@@ -289,6 +289,13 @@ export const IPC_CHANNELS = {
   SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',
   SWARM_GET_AGENT_MESSAGES: 'swarm:get-agent-messages',
   SWARM_SET_DELEGATE_MODE: 'swarm:set-delegate-mode',
+  SWARM_GET_DELEGATE_MODE: 'swarm:get-delegate-mode',
+  SWARM_APPROVE_LAUNCH: 'swarm:approve-launch',
+  SWARM_REJECT_LAUNCH: 'swarm:reject-launch',
+  SWARM_CANCEL_AGENT: 'swarm:cancel-agent',
+  SWARM_RETRY_AGENT: 'swarm:retry-agent',
+  SWARM_APPROVE_PLAN: 'swarm:approve-plan',
+  SWARM_REJECT_PLAN: 'swarm:reject-plan',
 
   // TaskList channels (任务列表可视化)
   TASKLIST_EVENT: 'taskList:event',
@@ -312,6 +319,10 @@ export const IPC_CHANNELS = {
 
   // Context compact channels (部分压缩)
   CONTEXT_COMPACT_FROM: 'context:compact-from',
+
+  // Context intervention channels (pin/exclude/retain)
+  CONTEXT_INTERVENTION_GET: 'context:intervention:get',
+  CONTEXT_INTERVENTION_SET: 'context:intervention:set',
 
   // Context observability channels (API true-view + token distribution)
   CONTEXT_GET_VIEW: 'context:getView',

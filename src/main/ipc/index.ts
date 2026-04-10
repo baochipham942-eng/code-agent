@@ -194,7 +194,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerVoicePasteHandlers(ipcMain);
 
   // Context observability handlers (/context true-view)
-  registerContextHandlers();
+  registerContextHandlers({ getAppService });
 
   logger.info('All handlers registered');
 }

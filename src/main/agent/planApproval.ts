@@ -13,6 +13,7 @@
 import { createLogger } from '../services/infra/logger';
 import { isDangerousCommand } from '../services/core/permissionPresets';
 import { getTeammateService } from './teammate/teammateService';
+import { getSwarmEventEmitter } from '../ipc/swarm.ipc';
 import type { ToolExecutionRequest } from './subagentPipeline';
 
 const logger = createLogger('PlanApprovalGate');
@@ -204,11 +205,13 @@ export class PlanApprovalGate {
         // Notify coordinator via TeammateService
         try {
           const teammateService = getTeammateService();
+          const reviewContent = `Risk: ${params.risk.level} (${params.risk.reasons.join(', ')})\n\n${params.plan}`;
           teammateService.sendPlanReview(
             params.agentId,
             params.coordinatorId,
-            `[Plan ID: ${planId}]\nRisk: ${params.risk.level} (${params.risk.reasons.join(', ')})\n\n${params.plan}`,
+            `[Plan ID: ${planId}]\n${reviewContent}`,
           );
+          getSwarmEventEmitter().planReview(params.agentId, planId, reviewContent);
         } catch (err) {
           logger.warn('Failed to send plan review via TeammateService', err);
         }

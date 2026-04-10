@@ -29,6 +29,7 @@ import {
 } from '../../agent/subagentContextBuilder';
 import { getSwarmEventEmitter } from '../../ipc/swarm.ipc';
 import { getSpawnGuard } from '../../agent/spawnGuard';
+import { getSwarmLaunchApprovalGate } from '../../agent/swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../../agent/agentWorktree';
 import { aggregateTeamResults } from '../../agent/resultAggregator';
 import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../../agent/forkContext.js';
@@ -376,6 +377,7 @@ When NOT to spawn:
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,
+        executionAgentId: agentId,
         worktreePath: worktreeInfo?.worktreePath,
       };
 
@@ -543,6 +545,12 @@ async function executeParallelAgents(
   agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,
   context: ToolContext
 ): Promise<ToolExecutionResult> {
+  const isCancelledTaskError = (errorMessage?: string): boolean => {
+    if (!errorMessage) return false;
+    const normalized = errorMessage.toLowerCase();
+    return normalized.includes('cancel') || normalized.includes('abort');
+  };
+
   const coordinator = getParallelAgentCoordinator();
   const emitter = getSwarmEventEmitter();
   const guard = getSpawnGuard();
@@ -694,6 +702,27 @@ async function executeParallelAgents(
     }
   }
 
+  const launchGate = getSwarmLaunchApprovalGate();
+  const launchApproval = await launchGate.requestApproval({
+    summary: `准备并行启动 ${tasks.length} 个 agent`,
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      role: task.role,
+      task: task.task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, ''),
+      dependsOn: task.dependsOn,
+      tools: [...task.tools],
+      writeAccess: !READONLY_ROLES.includes(task.role.toLowerCase()),
+    })),
+  });
+
+  if (!launchApproval.approved) {
+    const reason = launchApproval.feedback?.trim();
+    return {
+      success: false,
+      error: reason ? `Parallel launch rejected: ${reason}` : 'Parallel launch rejected by user',
+    };
+  }
+
   // ========================================================================
   // Fork Cache: 多 subagent 共享前缀，最大化 Prompt Cache 命中
   // ========================================================================
@@ -732,26 +761,55 @@ async function executeParallelAgents(
     // Coordinator mode: 标记任务分配
     if (coordSession) {
       const coordTask = coordSession.getTask(evt.taskId);
-      if (coordTask && coordTask.status === 'pending') {
+      if (coordTask?.status === 'pending') {
         coordSession.assign(evt.taskId, evt.taskId);
       }
     }
+  };
+  const onTaskProgress = (evt: {
+    taskId: string;
+    role: string;
+    snapshot: import('../../../shared/types/swarm').SwarmAgentContextSnapshot;
+  }) => {
+    emitter.agentUpdated(evt.taskId, {
+      status: 'running',
+      contextSnapshot: evt.snapshot,
+      toolCalls: evt.snapshot.tools.length,
+    });
   };
   const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
     if (evt.result.success) {
       emitter.agentCompleted(evt.taskId, evt.result.output);
       coordSession?.complete(evt.taskId, evt.result.output ?? '');
     } else {
-      emitter.agentFailed(evt.taskId, evt.result.error || 'Unknown error');
-      coordSession?.fail(evt.taskId, evt.result.error || 'Unknown error');
+      const errorMessage = evt.result.error || 'Unknown error';
+      if (isCancelledTaskError(errorMessage)) {
+        emitter.agentUpdated(evt.taskId, {
+          status: 'cancelled',
+          endTime: Date.now(),
+          error: 'Cancelled',
+        });
+      } else {
+        emitter.agentFailed(evt.taskId, errorMessage);
+      }
+      coordSession?.fail(evt.taskId, errorMessage);
     }
   };
   const onTaskError = (evt: { taskId: string; error: string }) => {
-    emitter.agentFailed(evt.taskId, evt.error);
+    if (isCancelledTaskError(evt.error)) {
+      emitter.agentUpdated(evt.taskId, {
+        status: 'cancelled',
+        endTime: Date.now(),
+        error: 'Cancelled',
+      });
+    } else {
+      emitter.agentFailed(evt.taskId, evt.error);
+    }
     coordSession?.fail(evt.taskId, evt.error);
   };
 
   coordinator.on('task:start', onTaskStart);
+  coordinator.on('task:progress', onTaskProgress);
   coordinator.on('task:complete', onTaskComplete);
   coordinator.on('task:error', onTaskError);
 
@@ -836,6 +894,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
   } finally {
     // Cleanup event listeners
     coordinator.off('task:start', onTaskStart);
+    coordinator.off('task:progress', onTaskProgress);
     coordinator.off('task:complete', onTaskComplete);
     coordinator.off('task:error', onTaskError);
   }

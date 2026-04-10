@@ -74,6 +74,7 @@ export interface AgentApplicationService {
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
+  getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   exportSession(sessionId: string): Promise<unknown>;
   importSession(data: unknown): Promise<string>;
@@ -92,4 +93,5 @@ export interface AgentApplicationService {
 
   // === Delegate Mode ===
   setDelegateMode(enabled: boolean): void;
+  isDelegateMode(): boolean;
 }

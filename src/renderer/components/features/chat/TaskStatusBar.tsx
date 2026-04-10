@@ -4,9 +4,11 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Activity, Clock, Loader2, ChevronRight, Layers } from 'lucide-react';
+import { Activity, Clock, Loader2, ChevronRight, Layers, GitBranch } from 'lucide-react';
 import { useTaskStore, type SessionState } from '../../../stores/taskStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useAppStore } from '../../../stores/appStore';
+import { useSwarmStore } from '../../../stores/swarmStore';
 
 // ============================================================================
 // Types
@@ -57,6 +59,24 @@ function truncateTitle(title: string, maxLength: number = 20): string {
 export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) => {
   const { sessionStates, stats, refreshStates, refreshStats, initialized } = useTaskStore();
   const { sessions, currentSessionId, switchSession } = useSessionStore();
+  const {
+    setShowTaskPanel,
+    setTaskPanelTab,
+    setShowAgentTeamPanel,
+    selectedSwarmAgentId,
+  } = useAppStore();
+  const {
+    executionPhase,
+    statistics: swarmStats,
+    isRunning,
+    launchRequests,
+    planReviews,
+    agents,
+  } = useSwarmStore();
+  const selectedSwarmAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedSwarmAgentId) ?? null,
+    [agents, selectedSwarmAgentId],
+  );
 
   // 用于更新运行时间的定时器
   const [, setTick] = useState(0);
@@ -101,9 +121,13 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
   const runningCount = stats.running;
   const queuedCount = stats.queued;
+  const pendingSwarmLaunches = launchRequests.filter((request) => request.status === 'pending').length;
+  const pendingSwarmReviews = planReviews.filter((review) => review.status === 'pending').length;
+  const hasSwarmActivity =
+    isRunning || swarmStats.total > 0 || pendingSwarmLaunches > 0 || pendingSwarmReviews > 0;
 
   // 没有活跃任务时隐藏组件
-  if (runningCount === 0 && queuedCount === 0) {
+  if (runningCount === 0 && queuedCount === 0 && !hasSwarmActivity) {
     return null;
   }
 
@@ -112,6 +136,29 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
       switchSession(sessionId);
     }
   };
+
+  const openOrchestrationPanel = () => {
+    setShowTaskPanel(true);
+    setTaskPanelTab('orchestration');
+  };
+
+  const openSelectedSwarmAgent = () => {
+    if (selectedSwarmAgent) {
+      setShowAgentTeamPanel(true);
+      return;
+    }
+    openOrchestrationPanel();
+  };
+
+  const swarmLabel = (() => {
+    if (selectedSwarmAgent) return `选中 ${selectedSwarmAgent.name}`;
+    if (pendingSwarmLaunches > 0) return `待启动 ${pendingSwarmLaunches}`;
+    if (pendingSwarmReviews > 0) return `审批 ${pendingSwarmReviews}`;
+    if (executionPhase === 'executing') return `${swarmStats.running}/${swarmStats.total} 执行`;
+    if (executionPhase === 'completed') return `${swarmStats.completed}/${swarmStats.total} 完成`;
+    if (executionPhase === 'failed') return `${swarmStats.failed} 失败`;
+    return `${swarmStats.total} agents`;
+  })();
 
   return (
     <div
@@ -142,7 +189,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
       {/* 活跃任务列表 */}
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-hover scrollbar-track-transparent">
-        {activeTasks.map((task, index) => (
+        {activeTasks.map((task) => (
           <button
             key={task.sessionId}
             onClick={() => handleTaskClick(task.sessionId)}
@@ -184,6 +231,21 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
           </button>
         ))}
       </div>
+
+      {hasSwarmActivity && (
+        <>
+          <div className="w-px h-4 bg-zinc-700" />
+          <button
+            onClick={openSelectedSwarmAgent}
+            className="flex items-center gap-1.5 rounded-md border border-primary-500/20 bg-primary-500/10 px-2 py-1 text-xs text-primary-300 transition-colors hover:bg-primary-500/15"
+            title={selectedSwarmAgent ? `打开 ${selectedSwarmAgent.name}` : '打开多 Agent 编排视图'}
+          >
+            <GitBranch className="w-3 h-3" />
+            <span>Swarm</span>
+            <span className="text-primary-200/90">{swarmLabel}</span>
+          </button>
+        </>
+      )}
 
       {/* 进度条（可选：显示总体进度） */}
       {runningCount > 0 && (

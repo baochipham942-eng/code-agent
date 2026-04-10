@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'events';
 import type { ModelConfig } from '../../shared/types';
+import type { SwarmAgentContextSnapshot } from '../../shared/types/swarm';
 import type { Tool, ToolContext } from '../tools/types';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
@@ -57,6 +58,7 @@ export interface SharedContext {
 
 export type CoordinatorEventType =
   | 'task:start'
+  | 'task:progress'
   | 'task:complete'
   | 'task:error'
   | 'discovery'
@@ -66,6 +68,12 @@ export interface CoordinatorEvent {
   type: CoordinatorEventType;
   taskId?: string;
   data?: unknown;
+}
+
+interface TaskProgressEvent {
+  taskId: string;
+  role: string;
+  snapshot: SwarmAgentContextSnapshot;
 }
 
 export interface CoordinatorConfig {
@@ -93,6 +101,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private runningTasks: Map<string, Promise<AgentTaskResult>> = new Map();
   private completedTasks: Map<string, AgentTaskResult> = new Map();
   private abortControllers: Map<string, AbortController> = new Map();
+  private taskDefinitions: Map<string, AgentTask> = new Map();
   private sharedContext: SharedContext;
   private modelConfig?: ModelConfig;
   private toolRegistry?: Map<string, Tool>;
@@ -134,6 +143,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const results: AgentTaskResult[] = [];
     const errors: Array<{ taskId: string; error: string }> = [];
     let maxConcurrent = 0;
+
+    this.taskDefinitions.clear();
+    for (const task of tasks) {
+      this.taskDefinitions.set(task.id, { ...task });
+    }
 
     // Sort tasks by priority and dependencies
     const sortedTasks = this.sortTasksByDependencies(tasks);
@@ -232,6 +246,14 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Execute a single task with timeout
    */
   private async executeTask(task: AgentTask): Promise<AgentTaskResult> {
+    const modelConfig = this.modelConfig;
+    const toolRegistry = this.toolRegistry;
+    const toolContext = this.toolContext;
+
+    if (!modelConfig || !toolRegistry || !toolContext) {
+      throw new Error('Coordinator not initialized. Call initialize() first.');
+    }
+
     const startTime = Date.now();
 
     this.emit('task:start', { taskId: task.id, role: task.role });
@@ -259,15 +281,32 @@ export class ParallelAgentCoordinator extends EventEmitter {
           maxIterations: task.maxIterations || 20,
         },
         {
-          modelConfig: this.modelConfig!,
-          toolRegistry: this.toolRegistry!,
-          toolContext: this.toolContext!,
-          parentToolUseId: this.toolContext!.currentToolCallId,
+          modelConfig,
+          toolRegistry,
+          toolContext,
+          parentToolUseId: toolContext.currentToolCallId,
+          executionAgentId: task.id,
           abortSignal: taskAbortController.signal,
+          onContextSnapshot: (snapshot) => {
+            this.emit('task:progress', {
+              taskId: task.id,
+              role: task.role,
+              snapshot,
+            } satisfies TaskProgressEvent);
+          },
         }
       );
 
       // Execute with timeout (auto-cleanup of timer)
+      this.runningTasks.set(task.id, executionPromise.then((result) => ({
+        ...result,
+        taskId: task.id,
+        role: task.role,
+        startTime,
+        endTime: Date.now(),
+        duration: Date.now() - startTime,
+      })));
+
       const result = await withTimeout(
         executionPromise,
         this.config.taskTimeout,
@@ -286,7 +325,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
       };
 
       this.emit('task:complete', { taskId: task.id, result: taskResult });
+      this.completedTasks.set(task.id, taskResult);
       this.abortControllers.delete(task.id);
+      this.runningTasks.delete(task.id);
 
       return taskResult;
     } catch (error) {
@@ -295,8 +336,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
       this.emit('task:error', { taskId: task.id, error: errorMessage });
       this.abortControllers.delete(task.id);
+      this.runningTasks.delete(task.id);
 
-      return {
+      const failedResult: AgentTaskResult = {
         success: false,
         output: '',
         error: errorMessage,
@@ -308,6 +350,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
         endTime,
         duration: endTime - startTime,
       };
+      this.completedTasks.set(task.id, failedResult);
+
+      return failedResult;
     }
   }
 
@@ -481,6 +526,35 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return Array.from(this.completedTasks.values());
   }
 
+  getTaskDefinition(taskId: string): AgentTask | undefined {
+    const task = this.taskDefinitions.get(taskId);
+    return task ? { ...task } : undefined;
+  }
+
+  abortTask(taskId: string, reason = 'user_cancelled'): boolean {
+    const controller = this.abortControllers.get(taskId);
+    if (!controller || controller.signal.aborted) {
+      return false;
+    }
+
+    logger.info(`Aborting parallel task ${taskId}: ${reason}`);
+    controller.abort(reason);
+    return true;
+  }
+
+  async retryTask(taskId: string): Promise<AgentTaskResult> {
+    const task = this.taskDefinitions.get(taskId);
+    if (!task) {
+      throw new Error(`Task definition not found: ${taskId}`);
+    }
+
+    if (this.abortControllers.has(taskId)) {
+      throw new Error(`Task is still running: ${taskId}`);
+    }
+
+    return this.executeTask({ ...task });
+  }
+
   /**
    * Update configuration
    */
@@ -515,6 +589,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.runningTasks.clear();
     this.completedTasks.clear();
     this.abortControllers.clear();
+    this.taskDefinitions.clear();
     this.clearSharedContext();
     this.removeAllListeners();
   }

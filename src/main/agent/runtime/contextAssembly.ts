@@ -87,7 +87,12 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
-import { ProjectionEngine, type ProjectableMessage } from '../../context/projectionEngine';
+import { compactModelSummarize } from '../../context/compactModel';
+import { CompressionState } from '../../context/compressionState';
+import type { ProjectableMessage } from '../../context/projectionEngine';
+import { getContextInterventionState } from '../../context/contextInterventionState';
+import { applyInterventionsToMessages } from '../../context/contextInterventionHelpers';
+import { getContextEventLedger } from '../../context/contextEventLedger';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
@@ -96,6 +101,8 @@ import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunFinalizer } from './runFinalizer';
+import type { ContextInterventionSnapshot } from '../../../shared/types/contextView';
+import type { ContextEventRecord } from '../../context/contextEventLedger';
 
 // Process-level file read cache to avoid redundant readFileSync calls
 const fileCache = new Map<string, { content: string; mtime: number }>();
@@ -123,8 +130,26 @@ function cachedReaddirSync(dir: string): string[] {
   return files;
 }
 
+function normalizePersistentSystemContextKey(content: string): string {
+  return content.trim().replace(/\s+/g, ' ');
+}
 
 const logger = createLogger('AgentLoop');
+const MAX_SYSTEM_PROMPT_TOKENS = 4000;
+const MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS = 1200;
+const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS = 6;
+const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS = 260;
+
+interface ContextTranscriptEntry extends ProjectableMessage {
+  originMessageId: string;
+  timestamp: number;
+  turnIndex: number;
+  toolCallId?: string;
+  toolError?: boolean;
+  attachments?: Message['attachments'];
+  toolCalls?: Message['toolCalls'];
+  thinking?: string;
+}
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -569,7 +594,10 @@ export class ContextAssembly {
   // --------------------------------------------------------------------------
 
   async buildModelMessages(): Promise<ModelMessage[]> {
+    this.flushHookMessageBuffer();
+
     const modelMessages: ModelMessage[] = [];
+    const modelMessageSourceIds: string[] = [];
 
     // Use optimized prompt based on task complexity
     let systemPrompt = getPromptForTask();
@@ -633,13 +661,13 @@ ${deferredToolsSummary}
 
     // 拼接持久化系统上下文（任务指导、模式 reminder 等）
     // 这些信息每轮推理都需要可见，而非作为消息历史被淹没
-    if (this.ctx.persistentSystemContext.length > 0) {
-      systemPrompt += '\n\n' + this.ctx.persistentSystemContext.join('\n\n');
+    const persistentSystemContext = this.getBudgetedPersistentSystemContext();
+    if (persistentSystemContext.length > 0) {
+      systemPrompt += '\n\n' + persistentSystemContext.join('\n\n');
     }
 
     // Check system prompt length and warn if too long
     const systemPromptTokens = estimateTokens(systemPrompt);
-    const MAX_SYSTEM_PROMPT_TOKENS = 4000;
     if (systemPromptTokens > MAX_SYSTEM_PROMPT_TOKENS) {
       logger.warn(`[AgentLoop] System prompt too long: ${systemPromptTokens} tokens (limit: ${MAX_SYSTEM_PROMPT_TOKENS})`);
       logCollector.agent('WARN', 'System prompt exceeds recommended limit', {
@@ -661,76 +689,95 @@ ${deferredToolsSummary}
       role: 'system',
       content: systemPrompt,
     });
+    modelMessageSourceIds.push('__system_prompt__');
 
-    // Apply message history compression for long conversations
-    // Include message ID for index-safe mapping after compression
-    const messagesToProcess = this.ctx.messages.map((m: any) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      timestamp: m.timestamp,
-    }));
+    const interventionState = getContextInterventionState();
+    const effectiveInterventions = interventionState.getEffectiveSnapshot(this.ctx.sessionId, this.ctx.agentId);
+    const transcriptEntries = this.buildContextTranscriptEntries(this.ctx.messages);
+    const transcriptInterventions = this.mapInterventionsToTranscriptEntries(
+      effectiveInterventions,
+      transcriptEntries,
+    );
+    const excludedTranscriptIds = new Set(transcriptInterventions.excluded);
+    const interventionAdjustedEntries = applyInterventionsToMessages(
+      transcriptEntries.filter((entry) => !excludedTranscriptIds.has(entry.id)),
+      transcriptInterventions,
+      transcriptEntries,
+    );
 
-    const compressionResult = this.ctx.messageHistoryCompressor.compress(messagesToProcess);
-    let processedMessages: Message[];
+    let contextApiView = interventionAdjustedEntries;
+    const contextWindowSize = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || 64000;
+    try {
+      const nextCompressionState = new CompressionState();
+      const lastActivityAt = interventionAdjustedEntries.at(-1)?.timestamp ?? Date.now();
+      const idleMinutes = Math.max(0, (Date.now() - lastActivityAt) / 60_000);
+      const currentTurnIndex = interventionAdjustedEntries.reduce(
+        (maxTurnIndex, entry) => Math.max(maxTurnIndex, entry.turnIndex),
+        0,
+      );
 
-    if (compressionResult.wasCompressed) {
-      // Use ID-based mapping to avoid index mismatch after compression
-      const messageById = new Map(this.ctx.messages.map((m: any) => [m.id, m]));
-      processedMessages = compressionResult.messages.map((m: any) => {
-        const original = m.id ? messageById.get(m.id) : undefined;
-        return {
-          id: m.id || this.generateId(),
-          role: m.role as Message['role'],
-          content: m.content,
-          timestamp: original?.timestamp || m.timestamp || Date.now(),
-          attachments: original?.attachments,
-          toolCalls: original?.toolCalls,
-          toolResults: original?.toolResults,
-        };
-      });
-    } else {
-      processedMessages = this.ctx.messages;
+      const pipelineResult = await this.ctx.compressionPipeline.evaluate(
+        interventionAdjustedEntries.map((entry) => ({ ...entry })),
+        nextCompressionState,
+        {
+          maxTokens: contextWindowSize,
+          currentTurnIndex,
+          isMainThread: !this.ctx.agentId,
+          cacheHot: idleMinutes < 2,
+          idleMinutes,
+          summarize: (messages) => this.summarizeCollapsedContext(messages),
+          enableSnip: true,
+          enableMicrocompact: true,
+          enableContextCollapse: true,
+          toolResultBudget: 2000,
+          interventions: transcriptInterventions,
+        },
+      );
+
+      this.ctx.compressionState = nextCompressionState;
+      contextApiView = pipelineResult.apiView as ContextTranscriptEntry[];
+      const entryIdToOriginMessageId = new Map(
+        interventionAdjustedEntries.map((entry) => [entry.id, entry.originMessageId]),
+      );
+      getContextEventLedger().upsertCompressionEvents(
+        this.ctx.sessionId,
+        this.ctx.agentId,
+        nextCompressionState.getCommitLog(),
+        (messageId) => entryIdToOriginMessageId.get(messageId) ?? messageId,
+      );
+
+      if (nextCompressionState.getCommitLog().length > 0) {
+        logger.debug('[ContextAssembly] Compression pipeline applied', {
+          layersTriggered: pipelineResult.layersTriggered,
+          commitCount: nextCompressionState.getCommitLog().length,
+          apiViewMessages: pipelineResult.apiView.length,
+        });
+      }
+    } catch (error) {
+      logger.error('[ContextAssembly] Compression pipeline evaluation failed, falling back to uncompressed transcript:', error);
+      this.ctx.compressionState = new CompressionState();
     }
 
-    if (compressionResult.wasCompressed) {
-      logger.debug(`[AgentLoop] Message history compressed, saved ${compressionResult.stats.savedTokens} tokens`);
-      logCollector.agent('INFO', `Message history compressed`, {
-        savedTokens: compressionResult.stats.savedTokens,
-        totalSavedTokens: compressionResult.stats.totalSavedTokens,
-        compressionCount: compressionResult.stats.compressionCount,
-      });
-    }
+    logger.debug('[AgentLoop] Building model messages, total messages:', contextApiView.length);
+    for (const entry of contextApiView) {
+      logger.debug(` Message role=${entry.role}, hasAttachments=${!!entry.attachments?.length}, attachmentCount=${entry.attachments?.length || 0}`);
 
-    logger.debug('[AgentLoop] Building model messages, total messages:', processedMessages.length);
-    for (const message of processedMessages) {
-      logger.debug(` Message role=${message.role}, hasAttachments=${!!(message as Message).attachments?.length}, attachmentCount=${(message as Message).attachments?.length || 0}`);
-
-      if (message.role === 'tool' && (message as Message).toolResults?.length) {
-        // 结构化 tool results — 每个 result 独立一条消息（OpenAI 协议要求）
-        for (const result of (message as Message).toolResults!) {
-          modelMessages.push({
-            role: 'tool',
-            content: result.output || result.error || '',
-            toolCallId: result.toolCallId,
-            toolError: !result.success,
-          });
-        }
-      } else if (message.role === 'tool') {
-        // 兼容旧数据（无 toolResults 字段）
-        // 注意：不加 "Tool results:" 前缀，避免模型模仿该格式并输出为纯文本
+      if (entry.role === 'tool') {
         modelMessages.push({
           role: 'tool',
-          content: message.content,
+          content: entry.content,
+          ...(entry.toolCallId ? { toolCallId: entry.toolCallId } : {}),
+          ...(entry.toolError ? { toolError: true } : {}),
         });
-      } else if (message.role === 'assistant' && (message as Message).toolCalls?.length) {
+        modelMessageSourceIds.push(entry.originMessageId);
+      } else if (entry.role === 'assistant' && entry.toolCalls?.length) {
         // 过滤掉已废弃工具的历史调用，避免模型从上下文中误判这些工具仍可用
         const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
-        const tcs = (message as Message).toolCalls!.filter(tc => !REMOVED_TOOLS.has(tc.name));
-        if (tcs.length === 0 && !message.content) continue;
+        const tcs = entry.toolCalls.filter(tc => !REMOVED_TOOLS.has(tc.name));
+        if (tcs.length === 0 && !entry.content) continue;
         modelMessages.push({
           role: 'assistant',
-          content: message.content || '',
+          content: entry.content || '',
           ...(tcs.length > 0 && {
             toolCalls: tcs.map(tc => ({
               id: tc.id,
@@ -739,19 +786,22 @@ ${deferredToolsSummary}
             })),
             toolCallText: tcs.map(tc => formatToolCallForHistory(tc)).join('\n'),
           }),
-          thinking: (message as Message).thinking,
+          thinking: entry.thinking,
         });
-      } else if (message.role === 'user' && (message as Message).attachments?.length) {
-        const multimodalContent = buildMultimodalContent(message.content, (message as Message).attachments!);
+        modelMessageSourceIds.push(entry.originMessageId);
+      } else if (entry.role === 'user' && entry.attachments?.length) {
+        const multimodalContent = buildMultimodalContent(entry.content, entry.attachments);
         modelMessages.push({
           role: 'user',
           content: multimodalContent,
         });
+        modelMessageSourceIds.push(entry.originMessageId);
       } else {
         modelMessages.push({
-          role: message.role,
-          content: message.content,
+          role: entry.role,
+          content: entry.content,
         });
+        modelMessageSourceIds.push(entry.originMessageId);
       }
     }
 
@@ -759,7 +809,6 @@ ${deferredToolsSummary}
     // 注意：maxTokens 是模型的最大输出限制，不是上下文窗口大小
     // 上下文窗口大小应该更大（如 64K-128K），这里使用保守估计 64000
     const currentTokens = estimateModelMessageTokens(modelMessages);
-    const contextWindowSize = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || 64000;
     if (this.ctx.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, contextWindowSize)) {
       logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${contextWindowSize} tokens (${Math.round(currentTokens / contextWindowSize * 100)}%)`);
       logCollector.agent('INFO', 'Proactive compression triggered', {
@@ -769,28 +818,109 @@ ${deferredToolsSummary}
       });
     }
 
-    // Apply projection from CompressionState (M1 integration — augments existing behavior)
-    // Only project when there are active compressions to avoid unnecessary overhead
-    if (this.ctx.compressionState.getCommitLog().length > 0) {
-      const engine = new ProjectionEngine();
-      // Bridge ModelMessage[] → ProjectableMessage[] for projection
-      const projectable: ProjectableMessage[] = modelMessages.map((m, i) => ({
-        id: `msg-${i}`,
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-      }));
-      const projected = engine.projectMessages(projectable, this.ctx.compressionState);
-      // Apply projected content back to modelMessages (only string content is modified)
-      for (let i = 0; i < modelMessages.length; i++) {
-        const proj = projected.find(p => p.id === `msg-${i}`);
-        if (proj && typeof modelMessages[i].content === 'string') {
-          modelMessages[i] = { ...modelMessages[i], content: proj.content };
-        }
+    return modelMessages;
+  }
+
+  private buildContextTranscriptEntries(messages: Message[]): ContextTranscriptEntry[] {
+    let turnIndex = 0;
+    let hasSeenUserTurn = false;
+    const entries: ContextTranscriptEntry[] = [];
+
+    for (const message of messages) {
+      if (message.role === 'user' && hasSeenUserTurn) {
+        turnIndex += 1;
       }
-      logger.debug(`[ContextAssembly] Projection applied: ${projected.length}/${modelMessages.length} messages projected`);
+      if (message.role === 'user') {
+        hasSeenUserTurn = true;
+      }
+
+      const baseEntry = {
+        originMessageId: message.id,
+        timestamp: message.timestamp,
+        turnIndex,
+      };
+
+      if (message.role === 'tool' && message.toolResults?.length) {
+        entries.push(
+          ...message.toolResults.map((result, index) => ({
+            ...baseEntry,
+            id: `${message.id}::tool-result::${result.toolCallId || index}`,
+            role: 'tool',
+            content: result.output || result.error || '',
+            toolCallId: result.toolCallId,
+            toolError: !result.success,
+          })),
+        );
+        continue;
+      }
+
+      entries.push({
+        ...baseEntry,
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        ...(message.toolCalls?.length ? { toolCalls: message.toolCalls } : {}),
+        ...(message.thinking ? { thinking: message.thinking } : {}),
+      });
     }
 
-    return modelMessages;
+    return entries;
+  }
+
+  private mapInterventionsToTranscriptEntries(
+    interventions: ContextInterventionSnapshot,
+    entries: ContextTranscriptEntry[],
+  ): ContextInterventionSnapshot {
+    const entryIdsByOriginMessageId = new Map<string, string[]>();
+    for (const entry of entries) {
+      const entryIds = entryIdsByOriginMessageId.get(entry.originMessageId) || [];
+      entryIds.push(entry.id);
+      entryIdsByOriginMessageId.set(entry.originMessageId, entryIds);
+    }
+
+    const expandIds = (ids: string[]): string[] => {
+      const expanded = new Set<string>();
+      for (const id of ids) {
+        const mappedIds = entryIdsByOriginMessageId.get(id);
+        if (mappedIds && mappedIds.length > 0) {
+          for (const mappedId of mappedIds) {
+            expanded.add(mappedId);
+          }
+        } else {
+          expanded.add(id);
+        }
+      }
+      return Array.from(expanded);
+    };
+
+    return {
+      pinned: expandIds(interventions.pinned),
+      excluded: expandIds(interventions.excluded),
+      retained: expandIds(interventions.retained),
+    };
+  }
+
+  private async summarizeCollapsedContext(
+    messages: Array<{ role: string; content: string }>,
+  ): Promise<string> {
+    const prompt = [
+      '请将下面这段运行上下文压缩成一段简洁摘要。',
+      '要求：保留关键结论、文件路径、工具结果、失败原因和后续待办；不要编造；尽量控制在 200 tokens 内。',
+      '',
+      '上下文片段：',
+      ...messages.map((message) => `[${message.role}] ${message.content}`),
+    ].join('\n');
+
+    try {
+      return (await compactModelSummarize(prompt, 200)).trim();
+    } catch (error) {
+      logger.warn('[ContextAssembly] Context collapse summarization failed, using heuristic fallback', error);
+      return messages
+        .map((message) => `[${message.role}] ${message.content.replace(/\s+/g, ' ').trim()}`)
+        .join(' | ')
+        .slice(0, 1000);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -898,17 +1028,12 @@ ${deferredToolsSummary}
     return null;
   }
 
-  injectResearchModePrompt(_userMessage: string, persistentContext?: string[]): void {
+  injectResearchModePrompt(_userMessage: string): void {
     // Try loading from skill file
     const skillPrompt = this.loadResearchSkillPrompt();
     const prompt = skillPrompt || `## 研究模式已激活\n\n用户的请求需要深入调研。请制定研究计划，从多个角度搜索，使用 web_fetch 深入抓取关键结果，最终形成结构化报告。\n\n报告要求：数据标注来源编号 [S1][S2]...，区分实证数据与趋势推断，至少执行 4 次不同角度的搜索。`;
 
-    if (persistentContext) {
-      // 持久化到 system context，确保每轮推理都可见
-      persistentContext.push(prompt);
-    } else {
-      this.injectSystemMessage(prompt);
-    }
+    this.pushPersistentSystemContext(prompt);
 
     // Engineering logic
     this.ctx._researchModeActive = true;
@@ -968,9 +1093,10 @@ ${deferredToolsSummary}
   }
 
   injectSystemMessage(content: string, category?: string): void {
-    if (category) {
+    const inferredCategory = category || this.inferBufferedSystemMessageCategory(content);
+    if (inferredCategory) {
       // Buffer hook messages for later merging
-      this.ctx.hookMessageBuffer.add(content, category);
+      this.ctx.hookMessageBuffer.add(content, inferredCategory);
       return;
     }
 
@@ -982,6 +1108,7 @@ ${deferredToolsSummary}
       timestamp: Date.now(),
     };
     this.ctx.messages.push(systemMessage);
+    this.recordContextEventsForMessage(systemMessage);
   }
 
   /**
@@ -999,8 +1126,86 @@ ${deferredToolsSummary}
         timestamp: Date.now(),
       };
       this.ctx.messages.push(systemMessage);
+      this.recordContextEventsForMessage(systemMessage);
       logger.debug(`[AgentLoop] Flushed ${this.ctx.hookMessageBuffer.size} buffered hook messages`);
     }
+  }
+
+  pushPersistentSystemContext(content: string): void {
+    const normalized = normalizePersistentSystemContextKey(content);
+    if (!normalized) return;
+    const trimmed = content.trim();
+
+    const existingIndex = this.ctx.persistentSystemContext.findIndex(
+      (item) => normalizePersistentSystemContextKey(item) === normalized,
+    );
+    if (existingIndex >= 0) {
+      const [existing] = this.ctx.persistentSystemContext.splice(existingIndex, 1);
+      this.ctx.persistentSystemContext.push(existing);
+      return;
+    }
+
+    this.ctx.persistentSystemContext.push(trimmed);
+    this.trimPersistentSystemContext();
+  }
+
+  private getBudgetedPersistentSystemContext(): string[] {
+    const selected: string[] = [];
+    let usedTokens = 0;
+
+    for (let i = this.ctx.persistentSystemContext.length - 1; i >= 0; i--) {
+      const normalized = this.ctx.persistentSystemContext[i].trim();
+      if (!normalized) continue;
+
+      const trimmed = this.truncatePersistentSystemContext(normalized, MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS);
+      const itemTokens = estimateTokens(trimmed);
+      if (selected.length >= MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS) continue;
+      if (usedTokens + itemTokens > MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS) continue;
+
+      selected.unshift(trimmed);
+      usedTokens += itemTokens;
+    }
+
+    return selected;
+  }
+
+  private trimPersistentSystemContext(): void {
+    const selected = this.getBudgetedPersistentSystemContext();
+    this.ctx.persistentSystemContext.splice(0, this.ctx.persistentSystemContext.length, ...selected);
+  }
+
+  private truncatePersistentSystemContext(content: string, maxTokens: number): string {
+    const currentTokens = estimateTokens(content);
+    if (currentTokens <= maxTokens) return content;
+
+    const keepRatio = maxTokens / Math.max(currentTokens, 1);
+    const keepChars = Math.max(160, Math.floor(content.length * keepRatio));
+    return `${content.slice(0, keepChars).trimEnd()}\n...[truncated persistent context]...`;
+  }
+
+  private inferBufferedSystemMessageCategory(content: string): string | undefined {
+    const trimmed = content.trim();
+    const knownTags = [
+      'user-prompt-hook',
+      'session-start-hook',
+      'pre-tool-hook',
+      'post-tool-hook',
+      'post-tool-failure-hook',
+      'stop-hook',
+      'truncation-recovery',
+      'wrap-up',
+      'seed-memory',
+      'session-recovery',
+      'checkpoint-nudge',
+    ];
+
+    for (const tag of knownTags) {
+      if (trimmed.startsWith(`<${tag}`) && trimmed.endsWith(`</${tag}>`)) {
+        return tag;
+      }
+    }
+
+    return undefined;
   }
 
   generateId(): string {
@@ -1033,6 +1238,7 @@ ${deferredToolsSummary}
 
   async addAndPersistMessage(message: Message): Promise<void> {
     this.ctx.messages.push(message);
+    this.recordContextEventsForMessage(message);
 
     if (process.env.CODE_AGENT_CLI_MODE === 'true') {
       // CLI 模式：通过回调持久化（包含 tool_results）
@@ -1052,6 +1258,83 @@ ${deferredToolsSummary}
     } catch (error) {
       logger.error('Failed to persist message:', error);
     }
+  }
+
+  private recordContextEventsForMessage(message: Message): void {
+    const events = this.buildContextEventsForMessage(message);
+    if (events.length === 0) return;
+    getContextEventLedger().upsertEvents(events);
+  }
+
+  private buildContextEventsForMessage(message: Message): ContextEventRecord[] {
+    const baseEvent = {
+      id: '',
+      sessionId: this.ctx.sessionId,
+      agentId: this.ctx.agentId,
+      messageId: message.id,
+      timestamp: message.timestamp || Date.now(),
+    };
+    const events: ContextEventRecord[] = [];
+
+    if (message.role === 'system') {
+      events.push({
+        ...baseEvent,
+        category: message.compaction ? 'compression_survivor' : 'system_anchor',
+        action: message.compaction ? 'compressed' : 'added',
+        sourceKind: message.compaction ? 'compression_survivor' : 'system_anchor',
+        sourceDetail: message.compaction ? 'compaction_block' : 'system_message',
+        layer: message.compaction ? 'autocompact' : undefined,
+        reason: message.compaction
+          ? 'Compaction block retained in message history'
+          : 'System message injected into runtime context',
+      });
+    } else {
+      events.push({
+        ...baseEvent,
+        category: 'recent_turn',
+        action: 'added',
+        sourceKind: 'message',
+        sourceDetail: `${message.role}_message`,
+        reason: `${message.role} message added to session history`,
+      });
+    }
+
+    if ((message.attachments?.length ?? 0) > 0) {
+      events.push({
+        ...baseEvent,
+        category: 'attachment',
+        action: 'retrieved',
+        sourceKind: 'attachment',
+        sourceDetail: message.attachments?.map((attachment) => attachment.name).find(Boolean) || 'attachment',
+        reason: 'Message includes attachment content',
+      });
+    }
+
+    if ((message.toolCalls?.length ?? 0) > 0) {
+      events.push({
+        ...baseEvent,
+        category: 'tool_result',
+        action: 'retrieved',
+        sourceKind: 'tool_result',
+        sourceDetail: message.toolCalls?.map((toolCall) => toolCall.name).join(', ') || 'tool_call',
+        layer: 'assistant_tool_call',
+        reason: 'Assistant message contains tool calls',
+      });
+    }
+
+    if (message.role === 'tool' || (message.toolResults?.length ?? 0) > 0) {
+      events.push({
+        ...baseEvent,
+        category: 'tool_result',
+        action: 'retrieved',
+        sourceKind: 'tool_result',
+        sourceDetail: message.toolResults?.map((toolResult) => toolResult.toolCallId).filter(Boolean).join(', ') || 'tool_result',
+        layer: 'tool_execution',
+        reason: 'Tool results captured in runtime history',
+      });
+    }
+
+    return events;
   }
 
   updateContextHealth(): void {
@@ -1088,16 +1371,12 @@ ${deferredToolsSummary}
   }
 
   /**
-   * 检查并执行自动上下文压缩（增强版）
+   * 检查并执行自动上下文压缩。
    *
-   * 支持两种触发模式：
-   * 1. 绝对 token 阈值（triggerTokens）- Claude Code 风格
-   * 2. 百分比阈值（原有逻辑）- 回退方案
-   *
-   * 增强功能：
-   * - 生成 CompactionBlock 保留在消息历史中（可审计）
-   * - 支持 pauseAfterCompaction 模式
-   * - 支持 shouldWrapUp 总预算控制
+   * 常规压缩（tool-result-budget / snip / microcompact / collapse）
+   * 已经在 buildModelMessages() 中统一走 CompressionPipeline。
+   * 这里仅保留“超过硬阈值后生成 CompactionBlock 并替换旧历史”的重压缩出口，
+   * 避免再和旧的 checkAndCompress() 平行修改消息历史。
    */
 
   async checkAndAutoCompress(): Promise<void> {
@@ -1199,6 +1478,19 @@ ${deferredToolsSummary}
             timestamp: block.timestamp,
             compaction: block,
           };
+          getContextEventLedger().upsertEvents([{
+            id: '',
+            sessionId: this.ctx.sessionId,
+            agentId: this.ctx.agentId,
+            messageId: compactionMessage.id,
+            category: 'compression_survivor',
+            action: 'compressed',
+            sourceKind: 'compression_survivor',
+            sourceDetail: 'autocompact:compaction_block',
+            layer: 'autocompact',
+            reason: 'Compaction block inserted after hard threshold compaction',
+            timestamp: block.timestamp,
+          }]);
 
           // Layer 2: 全量替换 — 删除被压缩的旧消息，只保留 compaction + 最近 N 条
           const preserveCount = this.ctx.autoCompressor.getConfig().preserveRecentCount;
@@ -1211,6 +1503,25 @@ ${deferredToolsSummary}
             // 消息太少，仅追加
             this.ctx.messages.push(compactionMessage);
           }
+          this.recordContextEventsForMessage(compactionMessage);
+          const nextCompressionState = new CompressionState();
+          nextCompressionState.applyCommit({
+            layer: 'autocompact',
+            operation: 'compact',
+            targetMessageIds: [compactionMessage.id],
+            timestamp: block.timestamp,
+            metadata: {
+              compactedMessageCount: block.compactedMessageCount,
+              compactedTokenCount: block.compactedTokenCount,
+              kind: 'compaction_block',
+            },
+          });
+          this.ctx.compressionState = nextCompressionState;
+          getContextEventLedger().upsertCompressionEvents(
+            this.ctx.sessionId,
+            this.ctx.agentId,
+            nextCompressionState.getCommitLog(),
+          );
 
           // 发送压缩事件（包含 compaction block 信息）
           this.ctx.onEvent({
@@ -1263,8 +1574,8 @@ ${deferredToolsSummary}
         content: msg.content,
         id: msg.id,
         timestamp: msg.timestamp,
-        toolCallId: msg.toolResults?.[0]?.toolCallId,
-        toolCallIds: msg.toolCalls?.map(tc => tc.id),
+        toolCallId: msg.toolResults?.[0]?.toolCallId,      // 保留 tool↔assistant 配对
+        toolCallIds: msg.toolCalls?.map(tc => tc.id),       // 保留 assistant→tool 配对
       }));
 
       const result = await this.ctx.autoCompressor.checkAndCompress(

@@ -35,6 +35,7 @@ export interface AgentLoopConfig {
   enableHooks?: boolean;
   hookManager?: HookManager;
   sessionId?: string;
+  agentId?: string;
   userId?: string;
   workingDirectory: string;
   isDefaultWorkingDirectory?: boolean;

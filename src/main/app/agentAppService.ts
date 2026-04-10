@@ -180,6 +180,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return getSessionManager().getMessages(sessionId);
   }
 
+  getSerializedCompressionState(sessionId?: string): string | null {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) return null;
+
+    const orchestrator = this.getTaskManager().getOrchestrator(resolvedSessionId);
+    return orchestrator?.getSerializedCompressionState() ?? null;
+  }
+
   async loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }> {
     return getSessionManager().loadOlderMessages(sessionId, beforeTimestamp, limit);
   }
@@ -243,5 +251,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const tm = this.getTaskManager();
     const orchestrator = tm.getOrCreateCurrentOrchestrator();
     if (orchestrator) orchestrator.setDelegateMode(enabled);
+  }
+
+  isDelegateMode(): boolean {
+    const tm = this.getTaskManager();
+    const orchestrator = tm.getOrCreateCurrentOrchestrator();
+    return orchestrator?.isDelegateMode() ?? false;
   }
 }

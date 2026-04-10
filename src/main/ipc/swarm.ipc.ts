@@ -3,8 +3,17 @@
 // ============================================================================
 
 import { BrowserWindow, ipcMain } from '../platform';
-import type { SwarmEvent, AgentStatus, SwarmAggregation } from '../../shared/types/swarm';
+import type {
+  SwarmEvent,
+  SwarmAggregation,
+  SwarmLaunchRequest,
+  SwarmAgentContextSnapshot,
+} from '../../shared/types/swarm';
 import type { AgentApplicationService } from '../../shared/types/appService';
+import { getPlanApprovalGate } from '../agent/planApproval';
+import { getParallelAgentCoordinator } from '../agent/parallelAgentCoordinator';
+import { getSpawnGuard } from '../agent/spawnGuard';
+import { getSwarmLaunchApprovalGate } from '../agent/swarmLaunchApproval';
 
 // ============================================================================
 // Swarm 事件回调注册（CLI 模式使用）
@@ -48,6 +57,36 @@ export function emitSwarmEvent(event: SwarmEvent): void {
  * 封装事件推送逻辑，方便在 AgentSwarm 中使用
  */
 export class SwarmEventEmitter {
+  launchRequested(request: SwarmLaunchRequest): void {
+    emitSwarmEvent({
+      type: 'swarm:launch:requested',
+      timestamp: request.requestedAt,
+      data: {
+        launchRequest: request,
+      },
+    });
+  }
+
+  launchApproved(request: SwarmLaunchRequest): void {
+    emitSwarmEvent({
+      type: 'swarm:launch:approved',
+      timestamp: request.resolvedAt || Date.now(),
+      data: {
+        launchRequest: request,
+      },
+    });
+  }
+
+  launchRejected(request: SwarmLaunchRequest): void {
+    emitSwarmEvent({
+      type: 'swarm:launch:rejected',
+      timestamp: request.resolvedAt || Date.now(),
+      data: {
+        launchRequest: request,
+      },
+    });
+  }
+
   /**
    * Swarm 开始
    */
@@ -106,6 +145,7 @@ export class SwarmEventEmitter {
     toolCalls?: number;
     lastReport?: string;
     error?: string;
+    contextSnapshot?: SwarmAgentContextSnapshot;
   }): void {
     emitSwarmEvent({
       type: 'swarm:agent:updated',
@@ -124,6 +164,7 @@ export class SwarmEventEmitter {
           toolCalls: update.toolCalls,
           lastReport: update.lastReport,
           error: update.error,
+          contextSnapshot: update.contextSnapshot,
         },
       },
     });
@@ -263,13 +304,13 @@ export class SwarmEventEmitter {
   /**
    * Plan 审批请求
    */
-  planReview(agentId: string, planContent: string): void {
+  planReview(agentId: string, planId: string, planContent: string): void {
     emitSwarmEvent({
       type: 'swarm:agent:plan_review',
       timestamp: Date.now(),
       data: {
         agentId,
-        plan: { agentId, content: planContent, status: 'pending' },
+        plan: { id: planId, agentId, content: planContent, status: 'pending' },
       },
     });
   }
@@ -277,13 +318,13 @@ export class SwarmEventEmitter {
   /**
    * Plan 审批通过
    */
-  planApproved(agentId: string, feedback?: string): void {
+  planApproved(agentId: string, planId: string, feedback?: string): void {
     emitSwarmEvent({
       type: 'swarm:agent:plan_approved',
       timestamp: Date.now(),
       data: {
         agentId,
-        plan: { agentId, content: '', status: 'approved', feedback },
+        plan: { id: planId, agentId, content: '', status: 'approved', feedback },
       },
     });
   }
@@ -291,13 +332,13 @@ export class SwarmEventEmitter {
   /**
    * Plan 驳回
    */
-  planRejected(agentId: string, feedback: string): void {
+  planRejected(agentId: string, planId: string, feedback: string): void {
     emitSwarmEvent({
       type: 'swarm:agent:plan_rejected',
       timestamp: Date.now(),
       data: {
         agentId,
-        plan: { agentId, content: '', status: 'rejected', feedback },
+        plan: { id: planId, agentId, content: '', status: 'rejected', feedback },
       },
     });
   }
@@ -365,5 +406,104 @@ export function registerSwarmHandlers(
     if (appService) {
       appService.setDelegateMode(enabled);
     }
+  });
+
+  ipcMain.handle('swarm:get-delegate-mode', async () => {
+    const appService = getAppService();
+    return appService?.isDelegateMode() ?? false;
+  });
+
+  ipcMain.handle('swarm:approve-launch', async (_, payload: { requestId: string; feedback?: string }) => {
+    const gate = getSwarmLaunchApprovalGate();
+    return gate.approve(payload.requestId, payload.feedback);
+  });
+
+  ipcMain.handle('swarm:reject-launch', async (_, payload: { requestId: string; feedback: string }) => {
+    const gate = getSwarmLaunchApprovalGate();
+    return gate.reject(payload.requestId, payload.feedback);
+  });
+
+  ipcMain.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
+    const guard = getSpawnGuard();
+    const coordinator = getParallelAgentCoordinator();
+    const cancelled = guard.cancel(payload.agentId) || coordinator.abortTask(payload.agentId);
+
+    if (cancelled) {
+      getSwarmEventEmitter().agentUpdated(payload.agentId, {
+        status: 'cancelled',
+        endTime: Date.now(),
+        error: 'Cancelled by user',
+      });
+    }
+
+    return cancelled;
+  });
+
+  ipcMain.handle('swarm:retry-agent', async (_, payload: { agentId: string }) => {
+    const coordinator = getParallelAgentCoordinator();
+    const task = coordinator.getTaskDefinition(payload.agentId);
+    if (!task) return false;
+
+    getSwarmEventEmitter().agentUpdated(payload.agentId, {
+      status: 'running',
+      startTime: Date.now(),
+      endTime: undefined,
+      error: '',
+      lastReport: 'Retrying task',
+    });
+
+    void coordinator.retryTask(payload.agentId)
+      .then((result) => {
+        if (result.success) {
+          getSwarmEventEmitter().agentCompleted(payload.agentId, result.output);
+          return;
+        }
+
+        getSwarmEventEmitter().agentFailed(payload.agentId, result.error || 'Unknown error');
+      })
+      .catch((error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        getSwarmEventEmitter().agentFailed(payload.agentId, errorMessage);
+      });
+
+    return true;
+  });
+
+  ipcMain.handle('swarm:approve-plan', async (_, payload: { planId: string; feedback?: string }) => {
+    const gate = getPlanApprovalGate();
+    const plan = gate.getPlan(payload.planId);
+    if (!plan) return false;
+
+    const approved = gate.approve(payload.planId, payload.feedback);
+    if (!approved) return false;
+
+    try {
+      const service = getTeammateService();
+      service.approvePlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+    } catch {
+      // Ignore teammate sync failure; gate state is the source of truth.
+    }
+
+    getSwarmEventEmitter().planApproved(plan.agentId, payload.planId, payload.feedback);
+    return true;
+  });
+
+  ipcMain.handle('swarm:reject-plan', async (_, payload: { planId: string; feedback: string }) => {
+    const gate = getPlanApprovalGate();
+    const plan = gate.getPlan(payload.planId);
+    if (!plan) return false;
+
+    const rejected = gate.reject(payload.planId, payload.feedback);
+    if (!rejected) return false;
+
+    try {
+      const service = getTeammateService();
+      service.rejectPlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+    } catch {
+      // Ignore teammate sync failure; gate state is the source of truth.
+    }
+
+    getSwarmEventEmitter().planRejected(plan.agentId, payload.planId, payload.feedback);
+    return true;
   });
 }

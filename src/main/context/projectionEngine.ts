@@ -11,6 +11,7 @@ import { CompressionState, type CollapsedSpan } from './compressionState';
 
 export interface ProjectableMessage {
   id: string;
+  sourceMessageId?: string;
   role: string;
   content: string;
   [key: string]: unknown;
@@ -46,14 +47,16 @@ export class ProjectionEngine {
     const result: ProjectableMessage[] = [];
 
     for (const msg of transcript) {
+      const projectionId = msg.sourceMessageId ?? msg.id;
+
       // --- Apply collapses ---
-      if (collapsedOtherIds.has(msg.id)) {
+      if (collapsedOtherIds.has(projectionId)) {
         // Non-first messages of a span are removed
         continue;
       }
 
-      if (collapsedFirstIds.has(msg.id)) {
-        const span = collapsedFirstIds.get(msg.id)!;
+      if (collapsedFirstIds.has(projectionId)) {
+        const span = collapsedFirstIds.get(projectionId)!;
         const summaryMsg: ProjectableMessage = {
           ...msg,
           role: 'system',
@@ -64,7 +67,7 @@ export class ProjectionEngine {
       }
 
       // --- Apply snips ---
-      if (snapshot.snippedIds.has(msg.id)) {
+      if (snapshot.snippedIds.has(projectionId)) {
         result.push({
           ...msg,
           content: '[snipped: message compressed]',

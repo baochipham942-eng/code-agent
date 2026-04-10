@@ -16,6 +16,7 @@ export interface MicrocompactConfig {
   isMainThread: boolean;
   cacheHot: boolean;
   idleMinutes: number;
+  protectedMessageIds?: Set<string>;
 }
 
 const CACHED_TOKEN_THRESHOLD = 500;
@@ -80,6 +81,7 @@ export function applyMicrocompact(
       if (msg.role !== 'tool' && msg.role !== 'assistant') continue;
       if (alreadyCompacted.has(msg.id)) continue;
       if (alreadySnipped.has(msg.id)) continue;
+      if (config.protectedMessageIds?.has(msg.id)) continue;
       if (estimateTokens(msg.content) <= CACHED_TOKEN_THRESHOLD) continue;
 
       msg.content = compactText(msg.content);
@@ -94,6 +96,7 @@ export function applyMicrocompact(
       if (msg.role === 'system') continue;
       if (alreadyCompacted.has(msg.id)) continue;
       if (alreadySnipped.has(msg.id)) continue;
+      if (config.protectedMessageIds?.has(msg.id)) continue;
       if (estimateTokens(msg.content) <= IDLE_TOKEN_THRESHOLD) continue;
 
       msg.content = compactText(msg.content);

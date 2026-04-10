@@ -18,6 +18,8 @@ import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
 import { applyContextCollapse } from './layers/contextCollapse';
 import { applyOverflowRecovery } from './layers/overflowRecovery';
+import type { ContextInterventionSnapshot } from '../../shared/types/contextView';
+import { getProtectedMessageIds } from './contextInterventionHelpers';
 
 export interface PipelineConfig {
   maxTokens: number;
@@ -30,6 +32,7 @@ export interface PipelineConfig {
   enableMicrocompact: boolean;
   enableContextCollapse: boolean;
   toolResultBudget: number; // default: 2000
+  interventions?: ContextInterventionSnapshot;
 }
 
 export interface PipelineResult {
@@ -86,12 +89,16 @@ export class CompressionPipeline {
     config: PipelineConfig,
   ): Promise<PipelineResult> {
     const layersTriggered: string[] = [];
+    const protectedMessageIds = config.interventions
+      ? getProtectedMessageIds(config.interventions)
+      : new Set<string>();
 
     // -------------------------------------------------------------------------
     // L1: Tool result budget — always runs (mutates transcript messages)
     // -------------------------------------------------------------------------
     applyToolResultBudget(transcript, state, {
       maxTokensPerResult: config.toolResultBudget ?? 2000,
+      protectedMessageIds,
     });
     layersTriggered.push('tool-result-budget');
 
@@ -110,6 +117,7 @@ export class CompressionPipeline {
       applySnip(messagesWithTurnIndex, state, {
         currentTurnIndex: config.currentTurnIndex,
         preserveRecentTurns: 5,
+        protectedMessageIds,
       });
       layersTriggered.push('snip');
 
@@ -127,6 +135,7 @@ export class CompressionPipeline {
         isMainThread: config.isMainThread,
         cacheHot: config.cacheHot,
         idleMinutes: config.idleMinutes,
+        protectedMessageIds,
       });
       layersTriggered.push('microcompact');
 
@@ -148,6 +157,7 @@ export class CompressionPipeline {
         minSpanSize: 3,
         summarize: config.summarize,
         maxSummaryTokens: 200,
+        protectedMessageIds,
       });
       layersTriggered.push('contextCollapse');
 

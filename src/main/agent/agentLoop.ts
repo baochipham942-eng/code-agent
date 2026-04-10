@@ -144,6 +144,7 @@ export class AgentLoop {
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
       sessionId: config.sessionId || `session-${Date.now()}`,
+      agentId: config.agentId,
       userId: config.userId,
       persistMessage: config.persistMessage,
       onToolExecutionLog: config.onToolExecutionLog,
@@ -334,5 +335,9 @@ export class AgentLoop {
 
   getPlanningService(): PlanningService | undefined {
     return this.conversationRuntime.getPlanningService();
+  }
+
+  getSerializedCompressionState(): string {
+    return this.ctx.compressionState.serialize();
   }
 }

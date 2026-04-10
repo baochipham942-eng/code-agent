@@ -13,6 +13,7 @@ export interface ContextCollapseConfig {
   minSpanSize: number; // default: 3
   summarize: (messages: Array<{ role: string; content: string }>) => Promise<string>;
   maxSummaryTokens: number; // default: 200
+  protectedMessageIds?: Set<string>;
 }
 
 const DEFAULT_MIN_SPAN_SIZE = 3;
@@ -96,6 +97,9 @@ export async function applyContextCollapse(
     ...snapshot.snippedIds,
     ...snapshot.microcompactedIds,
   ]);
+  for (const id of config.protectedMessageIds ?? []) {
+    excludedIds.add(id);
+  }
   // Also exclude messages already in collapsed spans
   for (const span of snapshot.collapsedSpans) {
     for (const id of span.messageIds) {

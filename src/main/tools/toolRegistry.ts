@@ -113,7 +113,7 @@ import {
 } from './vision';
 
 // Skill tools
-import { skillMetaTool } from './skill';
+import { skillMetaTool, skillCreateTool } from './skill';
 
 // Multi-agent tools
 import {
@@ -233,6 +233,7 @@ export class ToolRegistry {
 
     // Gen 4 tools - Skill Meta Tool (Agent Skills Standard)
     this.register(skillMetaTool);
+    this.register(skillCreateTool);
     this.register(webFetchTool);
     this.register(webSearchTool);
     this.register(readPdfTool);

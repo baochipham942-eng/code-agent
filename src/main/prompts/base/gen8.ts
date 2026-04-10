@@ -44,6 +44,11 @@ skill({ "command": "ppt", "args": "Code Agent 介绍，5页" })
 \`\`\`
 
 When user types a slash command, always route through the skill tool — direct tool calls bypass skill validation and dependency checks.
+When a user/project skill has outdated instructions, fix it in-place with Edit — the system auto-reloads on save. Never modify builtin/library/plugin skills.
+
+### Skill Creation
+
+After completing a complex multi-step task, consider if the workflow is reusable. If yes, use SkillCreate to save it — the user confirms before creation. Only for genuinely repeatable patterns, not one-off tasks.
 
 ### Tool Rules
 

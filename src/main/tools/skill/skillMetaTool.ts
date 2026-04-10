@@ -76,6 +76,11 @@ function handleInlineExecution(skill: ParsedSkill, args?: string, workingDirecto
     promptContent += `\n\n---\nUser provided arguments: ${args}`;
   }
 
+  // 对 user/project skill 注入自修补引导
+  if (skill.source === 'user' || skill.source === 'project') {
+    promptContent += `\n\n---\n**自修补**: 如果发现本 skill 的指令过时或有错误（工具名变化、路径错误、逻辑缺陷），直接用 Edit 修改 \`${skill.basePath}/SKILL.md\` 的相应部分。修改后系统自动重载。`;
+  }
+
   // 构建注入消息
   const newMessages: SkillMessage[] = [
     {
@@ -252,6 +257,11 @@ export const skillMetaTool: Tool = {
       source: skill.source,
       executionContext: skill.executionContext,
     });
+
+    // 记录 skill 使用（异步，不阻塞执行）
+    import('../../services/skills/skillUsageTracker')
+      .then(({ recordSkillUsage }) => recordSkillUsage(skill.name, skill.source))
+      .catch(() => { /* 追踪失败不影响执行 */ });
 
     // 根据执行模式分发
     if (skill.executionContext === 'fork') {

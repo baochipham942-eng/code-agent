@@ -9,8 +9,10 @@ import type {
   RegressionReport,
 } from './regressionTypes';
 
-interface RunOptions {
+export interface RunOptions {
   timeoutMs?: number;
+  /** 只运行 categories 与此集合有交集的 case；为空则运行全部 */
+  filterCategories?: string[];
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -20,7 +22,8 @@ export async function runRegression(
   opts: RunOptions = {},
 ): Promise<RegressionReport> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const cases = await loadAllCases(casesDir);
+  const allCases = await loadAllCases(casesDir);
+  const cases = filterCasesByCategory(allCases, opts.filterCategories);
   const startedAt = Date.now();
 
   const results: CaseResult[] = [];
@@ -45,7 +48,20 @@ export async function runRegression(
   };
 }
 
-async function runOne(c: RegressionCase, timeoutMs: number): Promise<CaseResult> {
+/** 按 categories 过滤：case.categories 与 filter 有交集则保留；无 filter 保留全部 */
+export function filterCasesByCategory(
+  cases: RegressionCase[],
+  filterCategories?: string[],
+): RegressionCase[] {
+  if (!filterCategories || filterCategories.length === 0) return cases;
+  const filterSet = new Set(filterCategories.map((c) => c.toLowerCase()));
+  return cases.filter((c) => {
+    if (!c.categories || c.categories.length === 0) return false;
+    return c.categories.some((cat) => filterSet.has(cat.toLowerCase()));
+  });
+}
+
+export async function runOne(c: RegressionCase, timeoutMs: number): Promise<CaseResult> {
   const startedAt = Date.now();
   return new Promise<CaseResult>((resolve) => {
     const child = execFile(

@@ -89,6 +89,7 @@ export class AgentOrchestrator {
   // TaskList: 可视化任务管理
   private taskListManager: TaskListManager;
   private sessionId: string | null = null;
+  private lastSerializedCompressionState: string | null = null;
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
@@ -408,6 +409,14 @@ export class AgentOrchestrator {
     return [...this.messages];
   }
 
+  getSerializedCompressionState(): string | null {
+    const liveState = this.agentLoop?.getSerializedCompressionState() ?? null;
+    if (liveState) {
+      this.lastSerializedCompressionState = liveState;
+    }
+    return liveState ?? this.lastSerializedCompressionState;
+  }
+
   clearMessages(): void {
     this.messages = [];
     logger.debug('Messages cleared');
@@ -708,6 +717,8 @@ export class AgentOrchestrator {
         }
       }
     } finally {
+      this.lastSerializedCompressionState = this.agentLoop?.getSerializedCompressionState()
+        ?? this.lastSerializedCompressionState;
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
     }

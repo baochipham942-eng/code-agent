@@ -3,8 +3,10 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { ModelConfig } from '../../shared/types';
+import type { Message, MessageAttachment, ModelConfig, ToolCall } from '../../shared/types';
+import type { SwarmAgentContextSnapshot } from '../../shared/types/swarm';
 import type { Tool, ToolContext } from '../tools/types';
+import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import {
@@ -28,12 +30,19 @@ import {
   type NormalizedImageData,
 } from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
-import { SUBAGENT_COMPACTION } from '../../shared/constants';
+import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, type ParentContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
+import { estimateTokens } from '../context/tokenEstimator';
+import { getWarningLevel } from '../../shared/types/contextHealth';
+import { generateMessageId } from '../../shared/utils/id';
+import { getSubagentContextStore } from '../context/subagentContextStore';
+import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
+import { getContextInterventionState } from '../context/contextInterventionState';
+import type { ContextProvenanceCategory } from '../../shared/types/contextView';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -104,6 +113,8 @@ export interface SubagentResult {
   cost?: number;
   /** Agent ID from pipeline */
   agentId?: string;
+  /** Lightweight context snapshot for swarm UI */
+  contextSnapshot?: SwarmAgentContextSnapshot;
 }
 
 interface SubagentContext {
@@ -125,10 +136,188 @@ interface SubagentContext {
   abortSignal?: AbortSignal;
   /** SpawnGuard agent ID — used to drain message queue for send_input */
   spawnGuardId?: string;
+  /** External task agent ID (e.g. DAG task ID) for context observability */
+  executionAgentId?: string;
   /** Parent context for child context inheritance */
   parentContext?: ParentContext;
   /** Worktree path if agent is running in an isolated git worktree */
   worktreePath?: string;
+  /** Optional callback for lightweight context updates */
+  onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
+}
+
+type MessageContent = {
+  type: 'text' | 'image';
+  text?: string;
+  source?: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+};
+
+type RuntimeMessage = {
+  id: string;
+  role: Message['role'];
+  content: string | MessageContent[];
+  timestamp: number;
+  attachments?: MessageAttachment[];
+  toolCalls?: ToolCall[];
+  observation?: {
+    category?: ContextProvenanceCategory;
+    sourceDetail?: string;
+    sourceKind?: 'message' | 'tool_result' | 'dependency_carry_over' | 'attachment' | 'compression_survivor' | 'system_anchor';
+    layer?: string;
+    toolCallId?: string;
+  };
+};
+
+function flattenMessageContent(content: string | MessageContent[]): string {
+  if (typeof content === 'string') return content;
+  return content
+    .map((part) => {
+      if (part.type === 'text' && part.text) return part.text;
+      if (part.type === 'image') return '[image]';
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeAttachmentCategory(category?: string, type?: string): MessageAttachment['category'] {
+  if (!category) {
+    return type === 'image' ? 'image' : 'other';
+  }
+  const validCategories = new Set<MessageAttachment['category']>([
+    'image',
+    'pdf',
+    'excel',
+    'code',
+    'text',
+    'data',
+    'document',
+    'html',
+    'folder',
+    'other',
+  ]);
+  return validCategories.has(category as MessageAttachment['category'])
+    ? category as MessageAttachment['category']
+    : (type === 'image' ? 'image' : 'other');
+}
+
+function buildMessageAttachments(
+  attachments?: Array<{
+    type: string;
+    category?: string;
+    name?: string;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }>,
+): MessageAttachment[] | undefined {
+  if (!attachments || attachments.length === 0) return undefined;
+  return attachments.map((attachment, index) => ({
+    id: `${Date.now()}-${index}-${attachment.name ?? 'attachment'}`,
+    type: attachment.type === 'image' ? 'image' : 'file',
+    category: normalizeAttachmentCategory(attachment.category, attachment.type),
+    name: attachment.name || `attachment-${index + 1}`,
+    size: attachment.data?.length ?? 0,
+    mimeType: attachment.mimeType || 'application/octet-stream',
+    data: attachment.data,
+    path: attachment.path,
+  }));
+}
+
+function buildContextSnapshot(
+  messages: RuntimeMessage[],
+  model: string,
+  toolsUsed: string[],
+  attachments?: Array<{ name?: string }>,
+): SwarmAgentContextSnapshot {
+  const maxTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+  const normalizedMessages = messages.map((message) => ({
+    role: message.role,
+    content: flattenMessageContent(message.content),
+  }));
+  const currentTokens = normalizedMessages.reduce((sum, message) => (
+    sum + 4 + estimateTokens(message.content)
+  ), 3);
+  const usagePercent = maxTokens > 0 ? Math.round((currentTokens / maxTokens) * 1000) / 10 : 0;
+
+  return {
+    currentTokens,
+    maxTokens,
+    usagePercent,
+    messageCount: normalizedMessages.length,
+    warningLevel: getWarningLevel(usagePercent),
+    lastUpdated: Date.now(),
+    tools: [...new Set(toolsUsed)].slice(-6),
+    attachments: [...new Set((attachments || []).map((attachment) => attachment.name).filter(Boolean) as string[])].slice(0, 6),
+    previews: normalizedMessages.slice(-3).map((message) => ({
+      role: message.role,
+      contentPreview: message.content.length > 120
+        ? `${message.content.slice(0, 120)}...`
+        : message.content,
+      tokens: estimateTokens(message.content),
+    })),
+    truncatedMessages: normalizedMessages.filter((message) => message.content.includes('[truncated]')).length,
+  };
+}
+
+function createRuntimeMessage(
+  message: Omit<RuntimeMessage, 'id' | 'timestamp'> & Partial<Pick<RuntimeMessage, 'id' | 'timestamp'>>,
+): RuntimeMessage {
+  return {
+    id: message.id || generateMessageId(),
+    timestamp: message.timestamp || Date.now(),
+    role: message.role,
+    content: message.content,
+    attachments: message.attachments,
+    toolCalls: message.toolCalls,
+    observation: message.observation,
+  };
+}
+
+function materializeObservedMessages(messages: RuntimeMessage[]): Message[] {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: flattenMessageContent(message.content),
+    attachments: message.attachments,
+    toolCalls: message.toolCalls,
+    timestamp: message.timestamp,
+  }));
+}
+
+function buildObservation(
+  category: ContextProvenanceCategory,
+  sourceDetail?: string,
+  extras?: Partial<NonNullable<RuntimeMessage['observation']>>,
+): NonNullable<RuntimeMessage['observation']> {
+  return {
+    category,
+    sourceDetail,
+    ...extras,
+  };
+}
+
+function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    ...(message.toolCalls?.length
+      ? {
+          toolCalls: message.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments),
+          })),
+          toolCallText: message.toolCalls
+            .map((toolCall) => `Calling ${toolCall.name}(${JSON.stringify(toolCall.arguments)})`)
+            .join('\n'),
+        }
+      : {}),
+  }));
 }
 
 // ----------------------------------------------------------------------------
@@ -258,21 +447,67 @@ export class SubagentExecutor {
       logger.warn(`[${config.name}] Model ${context.modelConfig.model} does not support tool calls, tools will be ignored`);
     }
 
-    // MessageContent type matching modelRouter.ts
-    type MessageContent = {
-      type: 'text' | 'image';
-      text?: string;
-      source?: {
-        type: 'base64';
-        media_type: string;
-        data: string;
-      };
-    };
+    const subagentContextStore = getSubagentContextStore();
+    const sessionId = ((context.toolContext as ToolContext & { sessionId?: string }).sessionId || '').trim() || 'unknown';
+    const observabilityAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
 
     // Build messages with multimodal support for images
-    const messages: Array<{ role: string; content: string | MessageContent[] }> = [
-      { role: 'system', content: config.systemPrompt },
+    const messages: RuntimeMessage[] = [
+      createRuntimeMessage({
+        role: 'system',
+        content: config.systemPrompt,
+        observation: buildObservation(
+          /fork context|shared discoveries|shared context|dependency|carry-over/i.test(config.systemPrompt)
+            ? 'dependency_carry_over'
+            : 'system_anchor',
+          'system_prompt',
+          {
+            sourceKind: /fork context|shared discoveries|shared context|dependency|carry-over/i.test(config.systemPrompt)
+              ? 'dependency_carry_over'
+              : 'system_anchor',
+            layer: 'system_prompt',
+          },
+        ),
+      }),
     ];
+    let latestContextSnapshot = buildContextSnapshot(
+      messages,
+      context.modelConfig.model,
+      toolsUsed,
+      context.attachments,
+    );
+    const emitContextSnapshot = (messageOverride?: RuntimeMessage[]): void => {
+      const effectiveMessages = messageOverride || messages;
+      latestContextSnapshot = buildContextSnapshot(
+        effectiveMessages,
+        context.modelConfig.model,
+        toolsUsed,
+        context.attachments,
+      );
+      context.onContextSnapshot?.(latestContextSnapshot);
+      const annotations = Object.fromEntries(
+        effectiveMessages
+          .filter((message) => message.observation?.category || message.observation?.sourceDetail)
+          .map((message) => [message.id, {
+            category: message.observation?.category,
+            sourceDetail: message.observation?.sourceDetail,
+            agentId: observabilityAgentId,
+            sourceKind: message.observation?.sourceKind,
+            layer: message.observation?.layer,
+            toolCallId: message.observation?.toolCallId,
+          }]),
+      );
+      subagentContextStore.upsert({
+        sessionId,
+        agentId: observabilityAgentId,
+        messages: materializeObservedMessages(effectiveMessages),
+        snapshot: latestContextSnapshot,
+        annotations,
+        maxTokens: latestContextSnapshot.maxTokens,
+        updatedAt: Date.now(),
+      });
+    };
+    const pushObservabilityMessage = (_message: Message): void => {};
 
     // Build user message content (potentially multimodal)
     // 使用 normalizeImageData 统一处理图片数据格式
@@ -330,12 +565,51 @@ export class SubagentExecutor {
         }
       }
 
-      messages.push({ role: 'user', content: multimodalContent });
+      messages.push(createRuntimeMessage({
+        role: 'user',
+        content: multimodalContent,
+        attachments: buildMessageAttachments(context.attachments),
+        observation: buildObservation(
+          imageAttachments.length > 0 ? 'attachment' : 'recent_turn',
+          imageAttachments[0]?.name || 'user_prompt',
+          {
+            sourceKind: imageAttachments.length > 0 ? 'attachment' : 'message',
+            layer: imageAttachments.length > 0 ? 'attachment_input' : 'user_turn',
+          },
+        ),
+      }));
+      pushObservabilityMessage({
+        id: generateMessageId(),
+        role: 'user',
+        content: prompt,
+        attachments: buildMessageAttachments(context.attachments),
+        timestamp: Date.now(),
+      });
       logger.info(`[${config.name}] Built multimodal message with ${successCount}/${imageAttachments.length} images`);
     } else {
       // Text-only message
-      messages.push({ role: 'user', content: prompt });
+      messages.push(createRuntimeMessage({
+        role: 'user',
+        content: prompt,
+        attachments: buildMessageAttachments(context.attachments),
+        observation: buildObservation(
+          context.attachments?.length ? 'attachment' : 'recent_turn',
+          context.attachments?.[0]?.name || 'user_prompt',
+          {
+            sourceKind: context.attachments?.length ? 'attachment' : 'message',
+            layer: context.attachments?.length ? 'attachment_input' : 'user_turn',
+          },
+        ),
+      }));
+      pushObservabilityMessage({
+        id: generateMessageId(),
+        role: 'user',
+        content: prompt,
+        attachments: buildMessageAttachments(context.attachments),
+        timestamp: Date.now(),
+      });
     }
+    emitContextSnapshot();
 
     logger.info(`[${config.name}] Starting with ${toolDefinitions.length} tools (agentId: ${pipelineContext.agentId}, supportsTool: ${supportsTool})`);
 
@@ -362,6 +636,7 @@ export class SubagentExecutor {
           toolsUsed: [],
           iterations: 0,
           agentId: agentTask.id,
+          contextSnapshot: latestContextSnapshot,
         };
       }
 
@@ -386,6 +661,7 @@ export class SubagentExecutor {
             toolsUsed: [...new Set(toolsUsed)],
             iterations,
             agentId: agentTask.id,
+            contextSnapshot: latestContextSnapshot,
           };
         }
 
@@ -401,9 +677,23 @@ export class SubagentExecutor {
               }
               // Text and other message types: inject into conversation
               const prefix = msg.type === 'text' ? 'Parent agent message' : `Agent message (${msg.type})`;
-              messages.push({ role: 'user', content: `[${prefix}]: ${msg.payload}` });
+              messages.push(createRuntimeMessage({
+                role: 'user',
+                content: `[${prefix}]: ${msg.payload}`,
+                observation: buildObservation('dependency_carry_over', msg.from, {
+                  sourceKind: 'dependency_carry_over',
+                  layer: 'carry_over',
+                }),
+              }));
+              pushObservabilityMessage({
+                id: generateMessageId(),
+                role: 'user',
+                content: `[${prefix}]: ${msg.payload}`,
+                timestamp: Date.now(),
+              });
             }
             logger.info(`[${config.name}] Processed ${pendingMessages.length} queued messages`);
+            emitContextSnapshot();
           }
         }
 
@@ -416,12 +706,28 @@ export class SubagentExecutor {
 
         // Auto-compaction: truncate old messages if approaching context limit
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
-          compactSubagentMessages(messages, context.modelConfig.model);
+          if (compactSubagentMessages(messages, context.modelConfig.model)) {
+            for (const message of messages) {
+              if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
+                message.observation = buildObservation('compression_survivor', 'subagent_compaction', {
+                  sourceKind: 'compression_survivor',
+                  layer: 'subagent_compaction',
+                });
+              }
+            }
+            emitContextSnapshot();
+          }
         }
 
         // Call model
+        const effectiveInterventions = getContextInterventionState().getEffectiveSnapshot(
+          sessionId,
+          observabilityAgentId,
+        );
+        const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
+
         const response = await this.modelRouter.inference(
-          messages,
+          buildInferenceMessages(inferenceMessages),
           toolDefinitions,
           context.modelConfig,
           () => {} // No streaming for subagents
@@ -434,17 +740,57 @@ export class SubagentExecutor {
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
           finalOutput = response.content;
+          messages.push(createRuntimeMessage({
+            role: 'assistant',
+            content: response.content,
+            observation: buildObservation('recent_turn', 'assistant_response', {
+              sourceKind: 'message',
+              layer: 'assistant_turn',
+            }),
+          }));
+          pushObservabilityMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: response.content,
+            timestamp: Date.now(),
+          });
+          emitContextSnapshot();
           break;
         }
 
         // Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
           const toolResults: string[] = [];
+          const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          }));
+          pushObservabilityMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: response.toolCalls
+              .map((tc) => `Calling ${tc.name}(${JSON.stringify(tc.arguments)})`)
+              .join('\n'),
+            toolCalls: assistantToolCalls,
+            timestamp: Date.now(),
+          });
 
           for (const toolCall of response.toolCalls) {
             const tool = allowedTools.find((t) => t.name === toolCall.name);
             if (!tool) {
               toolResults.push(`Error: Tool ${toolCall.name} not available`);
+              pushObservabilityMessage({
+                id: generateMessageId(),
+                role: 'tool',
+                content: `Error: Tool ${toolCall.name} not available`,
+                toolResults: [{
+                  toolCallId: toolCall.id,
+                  success: false,
+                  error: `Tool ${toolCall.name} not available`,
+                }],
+                timestamp: Date.now(),
+              });
               continue;
             }
 
@@ -463,6 +809,17 @@ export class SubagentExecutor {
             if (!permCheck.allowed) {
               toolResults.push(`Error: Permission denied for ${toolCall.name}: ${permCheck.reason}`);
               logger.warn(`[${config.name}] Tool ${toolCall.name} denied: ${permCheck.reason}`);
+              pushObservabilityMessage({
+                id: generateMessageId(),
+                role: 'tool',
+                content: `Error: Permission denied for ${toolCall.name}: ${permCheck.reason}`,
+                toolResults: [{
+                  toolCallId: toolCall.id,
+                  success: false,
+                  error: `Permission denied for ${toolCall.name}: ${permCheck.reason}`,
+                }],
+                timestamp: Date.now(),
+              });
               continue;
             }
 
@@ -486,6 +843,17 @@ export class SubagentExecutor {
                 if (!approval.approved) {
                   toolResults.push(`Tool ${toolCall.name}: Blocked by plan approval — ${approval.feedback || 'rejected'}`);
                   logger.info(`[${config.name}] Tool ${toolCall.name} blocked by plan approval`);
+                  pushObservabilityMessage({
+                    id: generateMessageId(),
+                    role: 'tool',
+                    content: `Tool ${toolCall.name}: Blocked by plan approval — ${approval.feedback || 'rejected'}`,
+                    toolResults: [{
+                      toolCallId: toolCall.id,
+                      success: false,
+                      error: `Blocked by plan approval: ${approval.feedback || 'rejected'}`,
+                    }],
+                    timestamp: Date.now(),
+                  });
                   continue;
                 }
               }
@@ -512,6 +880,21 @@ export class SubagentExecutor {
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
               );
+              pushObservabilityMessage({
+                id: generateMessageId(),
+                role: 'tool',
+                content: result.output || result.error || '',
+                toolResults: [{
+                  toolCallId: toolCall.id,
+                  success: result.success,
+                  output: result.output,
+                  error: result.error,
+                  duration: toolDuration,
+                  outputPath: result.outputPath,
+                  metadata: result.metadata,
+                }],
+                timestamp: Date.now(),
+              });
 
               // 发射 subagent 工具调用结束事件
               if (parentToolUseId && context.toolContext.emit) {
@@ -530,6 +913,18 @@ export class SubagentExecutor {
               toolResults.push(
                 `Tool ${toolCall.name}: Error - ${errorMessage}`
               );
+              pushObservabilityMessage({
+                id: generateMessageId(),
+                role: 'tool',
+                content: errorMessage,
+                toolResults: [{
+                  toolCallId: toolCall.id,
+                  success: false,
+                  error: errorMessage,
+                  duration: toolDuration,
+                }],
+                timestamp: Date.now(),
+              });
 
               // 发射 subagent 工具调用错误事件
               if (parentToolUseId && context.toolContext.emit) {
@@ -545,16 +940,40 @@ export class SubagentExecutor {
           }
 
           // Add tool results to messages
-          messages.push({
+          messages.push(createRuntimeMessage({
             role: 'assistant',
             content: response.toolCalls
               .map((tc) => `Calling ${tc.name}(${JSON.stringify(tc.arguments)})`)
               .join('\n'),
-          });
-          messages.push({
+            toolCalls: assistantToolCalls,
+            observation: buildObservation(
+              'tool_result',
+              assistantToolCalls.map((toolCall) => toolCall.name).join(', '),
+              {
+                sourceKind: 'tool_result',
+                layer: 'assistant_tool_call',
+              },
+            ),
+          }));
+          messages.push(createRuntimeMessage({
             role: 'user',
             content: `Tool results:\n${toolResults.join('\n\n')}`,
+            observation: buildObservation(
+              'tool_result',
+              response.toolCalls.map((toolCall) => toolCall.name).join(', '),
+              {
+                sourceKind: 'tool_result',
+                layer: 'tool_result_summary',
+              },
+            ),
+          }));
+          pushObservabilityMessage({
+            id: generateMessageId(),
+            role: 'user',
+            content: `Tool results:\n${toolResults.join('\n\n')}`,
+            timestamp: Date.now(),
           });
+          emitContextSnapshot();
 
           continue;
         }
@@ -583,6 +1002,7 @@ export class SubagentExecutor {
         iterations,
         cost: budgetStatus.subagentCost,
         agentId: agentTask.id,
+        contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {
       cleanupTimer();

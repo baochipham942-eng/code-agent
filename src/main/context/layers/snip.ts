@@ -11,6 +11,7 @@ import { CompressionState } from '../compressionState';
 export interface SnipConfig {
   currentTurnIndex: number;
   preserveRecentTurns: number; // default: 5
+  protectedMessageIds?: Set<string>;
 }
 
 const DEFAULT_PRESERVE_RECENT_TURNS = 5;
@@ -55,6 +56,9 @@ export function applySnip(
 
     // Skip already-snipped messages
     if (alreadySnipped.has(msg.id)) continue;
+
+    // Skip manually protected messages
+    if (config.protectedMessageIds?.has(msg.id)) continue;
 
     toSnip.push(msg.id);
   }

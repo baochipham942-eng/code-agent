@@ -42,6 +42,7 @@ export interface RuntimeContext {
   workingDirectory: string;
   isDefaultWorkingDirectory: boolean;
   sessionId: string;
+  agentId?: string;
   userId?: string;
   persistMessage?: (message: Message) => Promise<void>;
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;

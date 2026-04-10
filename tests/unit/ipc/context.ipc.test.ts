@@ -4,10 +4,15 @@
 // (no mocks needed — all dependencies are pure functions).
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { getContextView } from '../../../src/main/ipc/context.ipc';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { buildContextViewFromSession, getContextView } from '../../../src/main/ipc/context.ipc';
 import { CompressionState } from '../../../src/main/context/compressionState';
 import type { ProjectableMessage } from '../../../src/main/context/projectionEngine';
+import { getSubagentContextStore } from '../../../src/main/context/subagentContextStore';
+import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
+import { getContextEventLedger } from '../../../src/main/context/contextEventLedger';
+import type { AgentApplicationService } from '../../../src/shared/types/appService';
+import type { Message, ToolResult } from '../../../src/shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -281,5 +286,304 @@ describe('getContextView()', () => {
 
       expect(result.apiViewPreview[0].contentPreview).toContain('[snipped');
     });
+  });
+});
+
+describe('buildContextViewFromSession()', () => {
+  const sessionId = `session-${Date.now()}`;
+  const agentId = 'agent-child-1';
+  const subagentStore = getSubagentContextStore();
+  const interventionState = getContextInterventionState();
+  const eventLedger = getContextEventLedger();
+
+  beforeEach(() => {
+    subagentStore.clearSession(sessionId);
+    eventLedger.clearSession(sessionId);
+  });
+
+  afterEach(() => {
+    subagentStore.clearSession(sessionId);
+    eventLedger.clearSession(sessionId);
+  });
+
+  it('returns agent-scoped subagent messages, provenance and intervention state', async () => {
+    const sessionMessages: Message[] = [
+      {
+        id: 'session-user',
+        role: 'user',
+        content: 'top level request',
+        timestamp: 1,
+      },
+    ];
+
+    const toolResults: ToolResult[] = [
+      {
+        toolCallId: 'call-search',
+        success: true,
+        output: 'search result payload',
+      },
+    ];
+
+    const agentMessages: Message[] = [
+      {
+        id: 'carry-over',
+        role: 'system',
+        content: '# 当前会话上下文\nparent summary',
+        timestamp: 10,
+      },
+      {
+        id: 'agent-tool',
+        role: 'tool',
+        content: JSON.stringify(toolResults),
+        toolResults,
+        timestamp: 20,
+      },
+    ];
+
+    const compressionState = new CompressionState();
+    compressionState.applyCommit({
+      layer: 'tool-result-budget',
+      operation: 'truncate',
+      targetMessageIds: ['agent-tool'],
+      timestamp: 21,
+      metadata: { originalTokens: 500, truncatedTokens: 100 },
+    });
+
+    subagentStore.upsert({
+      sessionId,
+      agentId,
+      messages: agentMessages,
+      annotations: {
+        'carry-over': {
+          category: 'dependency_carry_over',
+          sourceDetail: 'parent carry-over',
+          agentId,
+        },
+        'agent-tool': {
+          category: 'tool_result',
+          sourceDetail: 'search_web',
+          agentId,
+        },
+      },
+      compressionState,
+      maxTokens: 4096,
+      updatedAt: Date.now(),
+    });
+
+    interventionState.applyIntervention(sessionId, undefined, 'carry-over', 'exclude', true);
+    interventionState.applyIntervention(sessionId, agentId, 'agent-tool', 'pin', true);
+
+    const appService: AgentApplicationService = {
+      getMessages: async () => sessionMessages,
+      getSerializedCompressionState: () => null,
+      getCurrentSessionId: () => sessionId,
+      sendMessage: async () => {},
+      cancel: async () => {},
+      handlePermissionResponse: () => {},
+      interruptAndContinue: async () => {},
+      getWorkingDirectory: () => undefined,
+      setWorkingDirectory: () => {},
+      createSession: async () => { throw new Error('not implemented'); },
+      loadSession: async () => { throw new Error('not implemented'); },
+      deleteSession: async () => { throw new Error('not implemented'); },
+      listSessions: async () => [],
+      updateSession: async () => {},
+      archiveSession: async () => null,
+      unarchiveSession: async () => null,
+      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
+      exportSession: async () => null,
+      importSession: async () => sessionId,
+      setCurrentSessionId: () => {},
+      getMemoryContext: async () => null,
+      switchModel: () => {},
+      getModelOverride: () => undefined,
+      clearModelOverride: () => {},
+      setDelegateMode: () => {},
+      isDelegateMode: () => false,
+    };
+
+    const result = await buildContextViewFromSession(
+      { sessionId, agentId },
+      { getAppService: () => appService },
+    );
+
+    expect(result.sessionId).toBe(sessionId);
+    expect(result.agentId).toBe(agentId);
+    expect(result.maxTokens).toBe(4096);
+    expect(result.contextItems.map((item) => item.id)).toEqual(expect.arrayContaining(['carry-over', 'agent-tool']));
+    expect(result.contextItems.map((item) => item.id)).not.toContain('session-user');
+    expect(result.provenanceEntries?.every((entry) => entry.agentId === agentId)).toBe(true);
+    expect(result.provenanceEntries?.find((entry) => entry.id === 'agent-tool:pinned')?.category).toBe('tool_result');
+    expect(result.contextItems.find((item) => item.id === 'carry-over')?.selection).toBe('excluded');
+    expect(result.contextItems.find((item) => item.id === 'carry-over')?.provenance.categories).toContain('dependency_carry_over');
+    expect(result.contextItems.find((item) => item.id === 'agent-tool')?.provenance.sourceDetail).toBe('search_web');
+    expect(result.rawInterventions).toEqual({
+      pinned: ['agent-tool'],
+      excluded: [],
+      retained: [],
+    });
+    expect(result.effectiveInterventions).toEqual({
+      pinned: ['agent-tool'],
+      excluded: ['carry-over'],
+      retained: [],
+    });
+  });
+
+  it('falls back to session view when agentId is omitted', async () => {
+    const fallbackSessionId = `${sessionId}-fallback`;
+    const sessionMessages: Message[] = [
+      {
+        id: 'session-only',
+        role: 'user',
+        content: 'session scope only',
+        timestamp: 1,
+      },
+    ];
+
+    subagentStore.upsert({
+      sessionId: fallbackSessionId,
+      agentId,
+      messages: [
+        {
+          id: 'agent-only',
+          role: 'assistant',
+          content: 'agent scope only',
+          timestamp: 2,
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
+    const appService: AgentApplicationService = {
+      getMessages: async () => sessionMessages,
+      getSerializedCompressionState: () => null,
+      getCurrentSessionId: () => fallbackSessionId,
+      sendMessage: async () => {},
+      cancel: async () => {},
+      handlePermissionResponse: () => {},
+      interruptAndContinue: async () => {},
+      getWorkingDirectory: () => undefined,
+      setWorkingDirectory: () => {},
+      createSession: async () => { throw new Error('not implemented'); },
+      loadSession: async () => { throw new Error('not implemented'); },
+      deleteSession: async () => { throw new Error('not implemented'); },
+      listSessions: async () => [],
+      updateSession: async () => {},
+      archiveSession: async () => null,
+      unarchiveSession: async () => null,
+      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
+      exportSession: async () => null,
+      importSession: async () => fallbackSessionId,
+      setCurrentSessionId: () => {},
+      getMemoryContext: async () => null,
+      switchModel: () => {},
+      getModelOverride: () => undefined,
+      clearModelOverride: () => {},
+      setDelegateMode: () => {},
+      isDelegateMode: () => false,
+    };
+
+    const result = await buildContextViewFromSession(
+      { sessionId: fallbackSessionId },
+      { getAppService: () => appService },
+    );
+
+    expect(result.sessionId).toBe(fallbackSessionId);
+    expect(result.agentId).toBeUndefined();
+    expect(result.contextItems.map((item) => item.id)).toEqual(['session-only']);
+    expect(result.contextItems.map((item) => item.id)).not.toContain('agent-only');
+
+    subagentStore.clearSession(fallbackSessionId);
+    eventLedger.clearSession(fallbackSessionId);
+  });
+
+  it('preserves multiple runtime provenance categories for the same message', async () => {
+    const multiEventSessionId = `${sessionId}-multi-event`;
+    const now = Date.now();
+    const sessionMessages: Message[] = [
+      {
+        id: 'session-attachment',
+        role: 'user',
+        content: 'uploaded notes',
+        attachments: [
+          {
+            id: 'attachment-1',
+            type: 'file',
+            category: 'text',
+            name: 'notes.txt',
+            mimeType: 'text/plain',
+            size: 12,
+            path: '/tmp/notes.txt',
+          },
+        ],
+        timestamp: 1,
+      },
+    ];
+
+    eventLedger.upsertEvents([
+      {
+        id: '',
+        sessionId: multiEventSessionId,
+        messageId: 'session-attachment',
+        category: 'recent_turn',
+        action: 'added',
+        sourceKind: 'message',
+        sourceDetail: 'user_message',
+        reason: 'recent user turn',
+        timestamp: now,
+      },
+      {
+        id: '',
+        sessionId: multiEventSessionId,
+        messageId: 'session-attachment',
+        category: 'attachment',
+        action: 'retrieved',
+        sourceKind: 'attachment',
+        sourceDetail: 'notes.txt',
+        reason: 'contains attachment',
+        timestamp: now + 1,
+      },
+    ]);
+
+    const appService: AgentApplicationService = {
+      getMessages: async () => sessionMessages,
+      getSerializedCompressionState: () => null,
+      getCurrentSessionId: () => multiEventSessionId,
+      sendMessage: async () => {},
+      cancel: async () => {},
+      handlePermissionResponse: () => {},
+      interruptAndContinue: async () => {},
+      getWorkingDirectory: () => undefined,
+      setWorkingDirectory: () => {},
+      createSession: async () => { throw new Error('not implemented'); },
+      loadSession: async () => { throw new Error('not implemented'); },
+      deleteSession: async () => { throw new Error('not implemented'); },
+      listSessions: async () => [],
+      updateSession: async () => {},
+      archiveSession: async () => null,
+      unarchiveSession: async () => null,
+      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
+      exportSession: async () => null,
+      importSession: async () => multiEventSessionId,
+      setCurrentSessionId: () => {},
+      getMemoryContext: async () => null,
+      switchModel: () => {},
+      getModelOverride: () => undefined,
+      clearModelOverride: () => {},
+      setDelegateMode: () => {},
+      isDelegateMode: () => false,
+    };
+
+    const result = await buildContextViewFromSession(
+      { sessionId: multiEventSessionId },
+      { getAppService: () => appService },
+    );
+
+    const item = result.contextItems.find((entry) => entry.id === 'session-attachment');
+    expect(item?.provenance.categories).toEqual(expect.arrayContaining(['recent_turn', 'attachment']));
+    expect(item?.provenance.sourceDetail).toBe('notes.txt');
+    expect(result.provenance.find((entry) => entry.messageId === 'session-attachment')?.source).toBe('user');
+
+    eventLedger.clearSession(multiEventSessionId);
   });
 });

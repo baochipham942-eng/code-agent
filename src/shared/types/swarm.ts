@@ -2,6 +2,8 @@
 // Swarm Types - 共享类型定义
 // ============================================================================
 
+import type { ContextHealthWarningLevel } from './contextHealth';
+
 /**
  * Agent 执行状态（复制自 agentSwarm.ts 避免循环依赖）
  */
@@ -12,6 +14,25 @@ export type AgentStatus =
   | 'completed'   // 已完成
   | 'failed'      // 失败
   | 'cancelled';  // 已取消
+
+export interface SwarmAgentContextPreview {
+  role: string;
+  contentPreview: string;
+  tokens: number;
+}
+
+export interface SwarmAgentContextSnapshot {
+  currentTokens: number;
+  maxTokens: number;
+  usagePercent: number;
+  messageCount: number;
+  warningLevel: ContextHealthWarningLevel;
+  lastUpdated: number;
+  tools: string[];
+  attachments: string[];
+  previews: SwarmAgentContextPreview[];
+  truncatedMessages: number;
+}
 
 /**
  * Agent 实时状态（用于 UI 展示）
@@ -37,6 +58,8 @@ export interface SwarmAgentState {
   resultPreview?: string;
   /** Files this agent changed */
   filesChanged?: string[];
+  /** Lightweight per-agent context snapshot */
+  contextSnapshot?: SwarmAgentContextSnapshot;
 }
 
 /**
@@ -73,10 +96,35 @@ export interface SwarmAggregation {
   totalIterations: number;
 }
 
+export interface SwarmLaunchTaskPreview {
+  id: string;
+  role: string;
+  task: string;
+  dependsOn?: string[];
+  tools: string[];
+  writeAccess: boolean;
+}
+
+export interface SwarmLaunchRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: number;
+  resolvedAt?: number;
+  summary: string;
+  agentCount: number;
+  dependencyCount: number;
+  writeAgentCount: number;
+  feedback?: string;
+  tasks: SwarmLaunchTaskPreview[];
+}
+
 /**
  * Swarm 事件类型
  */
 export type SwarmEventType =
+  | 'swarm:launch:requested'
+  | 'swarm:launch:approved'
+  | 'swarm:launch:rejected'
   | 'swarm:started'
   | 'swarm:agent:added'
   | 'swarm:agent:updated'
@@ -137,7 +185,9 @@ export interface SwarmEvent {
       content: string;
       messageType?: string;
     };
+    launchRequest?: SwarmLaunchRequest;
     plan?: {
+      id?: string;
       agentId: string;
       content: string;
       status?: 'pending' | 'approved' | 'rejected';

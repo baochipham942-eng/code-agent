@@ -650,7 +650,7 @@ export class ConversationRuntime {
     if (!isSimpleTask) {
       const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
       // 持久化到 system context，确保每轮推理都可见（而非注入消息历史后被淹没）
-      this.ctx.persistentSystemContext.push(complexityHint);
+      this.contextAssembly.pushPersistentSystemContext(complexityHint);
 
       // Parallel Judgment via small model (Groq)
       try {
@@ -659,7 +659,7 @@ export class ConversationRuntime {
 
         if (judgment.shouldParallel && judgment.confidence >= 0.7) {
           const parallelHint = orchestrator.generateParallelHint(judgment);
-          this.ctx.persistentSystemContext.push(parallelHint);
+          this.contextAssembly.pushPersistentSystemContext(parallelHint);
 
           logger.info('[AgentLoop] Parallel execution suggested', {
             dimensions: judgment.parallelDimensions,
@@ -684,7 +684,7 @@ export class ConversationRuntime {
 
         if (intent === 'research') {
           // 研究模式 prompt 持久化到 system context
-          this.contextAssembly.injectResearchModePrompt(userMessage, this.ctx.persistentSystemContext);
+          this.contextAssembly.injectResearchModePrompt(userMessage);
         }
       } catch (error) {
         logger.warn('Intent classification failed, continuing with normal mode', { error: String(error) });
@@ -723,7 +723,7 @@ export class ConversationRuntime {
           if (reminder) {
             logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens) to persistent context`);
             // 任务模式 reminder（含 DATA_PROCESSING 等）持久化到 system context
-            this.ctx.persistentSystemContext.push(reminder);
+            this.contextAssembly.pushPersistentSystemContext(reminder);
           }
         }
       } catch (error) {
@@ -776,7 +776,7 @@ export class ConversationRuntime {
           this.ctx.workingDirectory
         );
         if (recovery) {
-          this.contextAssembly.injectSystemMessage(recovery);
+          this.contextAssembly.injectSystemMessage(`<session-recovery>\n${recovery}\n</session-recovery>`);
           logger.info('[AgentLoop] Session recovery summary injected');
         }
       } catch {

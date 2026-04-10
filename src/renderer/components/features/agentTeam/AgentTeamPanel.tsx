@@ -23,8 +23,10 @@ import {
   ListTodo,
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
+import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState } from '@shared/types/swarm';
 import ipcService from '../../../services/ipcService';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 // ============================================================================
 // Types
@@ -40,6 +42,7 @@ interface TeammateMessageDisplay {
 }
 
 interface AgentTeamPanelProps {
+  initialAgentId?: string;
   onClose?: () => void;
 }
 
@@ -195,9 +198,10 @@ const TaskAssignments: React.FC<{ agents: SwarmAgentState[] }> = ({ agents }) =>
 // Main Component
 // ============================================================================
 
-export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
+export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, onClose }) => {
   const { agents, isRunning } = useSwarmStore();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const selectedAgentId = useAppStore((state) => state.selectedSwarmAgentId);
+  const setSelectedAgentId = useAppStore((state) => state.setSelectedSwarmAgentId);
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<TeammateMessageDisplay[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -212,13 +216,55 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  useEffect(() => {
+    if (initialAgentId && initialAgentId !== selectedAgentId) {
+      setSelectedAgentId(initialAgentId);
+      return;
+    }
+
+    if (!selectedAgentId && agents.length > 0) {
+      setSelectedAgentId(agents[0].id);
+    }
+  }, [agents, initialAgentId, selectedAgentId, setSelectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    let cancelled = false;
+    ipcService
+      .invoke(IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES, selectedAgentId)
+      .then((history) => {
+        if (cancelled || !history) return;
+        setMessages((prev) => {
+          const dynamicMessages = prev.filter(
+            (msg) => msg.from !== selectedAgentId && msg.to !== selectedAgentId
+          );
+
+          const loaded = history.map((msg, index) => ({
+            id: `history_${selectedAgentId}_${msg.timestamp}_${index}`,
+            from: msg.from,
+            to: msg.to,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            type: 'coordination' as const,
+          }));
+
+          return [...dynamicMessages, ...loaded].sort((a, b) => a.timestamp - b.timestamp);
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to load agent messages:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAgentId]);
+
   // 监听 swarm 事件中的消息
   useEffect(() => {
     if (!ipcService.isAvailable()) return;
-    const unsubscribe = ipcService.on('swarm:event', (event) => {
-      // 转发到 swarmStore 处理基础状态
-      useSwarmStore.getState().handleEvent(event);
-
+    const unsubscribe = ipcService.on(IPC_CHANNELS.SWARM_EVENT, (event) => {
       // 处理 Agent Teams 消息事件
       if (event.type === 'swarm:agent:message' || event.type === 'swarm:user:message') {
         const msgData = event.data?.message;
@@ -255,7 +301,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
 
     // 通过 IPC 发送给主进程
     try {
-      await ipcService.invoke('swarm:send-user-message', {
+      await ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
         agentId: selectedAgentId,
         message: inputValue.trim(),
       });

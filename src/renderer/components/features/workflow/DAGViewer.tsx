@@ -89,6 +89,9 @@ interface DAGViewerProps {
   showBackground?: boolean;
   height?: string | number;
   onNodeClick?: (task: TaskNodeData) => void;
+  onNodeSelect?: (task: TaskNodeData | null) => void;
+  selectedTaskId?: string | null;
+  onSelectedTaskIdChange?: (taskId: string | null) => void;
   emptyMessage?: string;
 }
 
@@ -103,6 +106,9 @@ export const DAGViewer = memo(({
   showBackground = true,
   height = '100%',
   onNodeClick,
+  onNodeSelect,
+  selectedTaskId,
+  onSelectedTaskIdChange,
   emptyMessage = 'No workflow to display',
 }: DAGViewerProps) => {
   // 布局
@@ -112,8 +118,13 @@ export const DAGViewer = memo(({
   const [nodes, setNodes, onNodesChange] = useNodesState<TaskNodeFlowType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<DependencyEdgeFlowType>([]);
 
-  // 选中的任务
-  const [selectedTask, setSelectedTask] = useState<TaskNodeData | null>(null);
+  // 本地选中态仅用于未受控场景
+  const [internalSelectedTaskId, setInternalSelectedTaskId] = useState<string | null>(null);
+  const activeSelectedTaskId = selectedTaskId !== undefined ? selectedTaskId : internalSelectedTaskId;
+  const selectedTask = useMemo(() => {
+    if (!dagState || !activeSelectedTaskId) return null;
+    return dagState.nodes.find((node) => node.data.taskId === activeSelectedTaskId)?.data ?? null;
+  }, [dagState, activeSelectedTaskId]);
 
   // 当 DAG 状态变化时更新节点和边
   // 注意：setNodes 和 setEdges 是稳定的（来自 useNodesState/useEdgesState），
@@ -122,7 +133,7 @@ export const DAGViewer = memo(({
     if (!dagState) {
       setNodes([]);
       setEdges([]);
-      setSelectedTask(null);
+      setInternalSelectedTaskId(null);
       return;
     }
 
@@ -132,25 +143,44 @@ export const DAGViewer = memo(({
       dagState.edges as DependencyEdgeFlowType[]
     );
 
-    setNodes(layoutedNodes);
+    setNodes(layoutedNodes.map((node) => ({
+      ...node,
+      selected: node.data.taskId === activeSelectedTaskId,
+    })));
     setEdges(layoutedEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dagState, getLayoutedElements]);
+  }, [dagState, getLayoutedElements, activeSelectedTaskId]);
 
   // 处理节点选择
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       const taskNode = node as TaskNodeFlowType;
-      setSelectedTask(taskNode.data);
+      if (selectedTaskId === undefined) {
+        setInternalSelectedTaskId(taskNode.data.taskId);
+      }
+      onSelectedTaskIdChange?.(taskNode.data.taskId);
       onNodeClick?.(taskNode.data);
+      onNodeSelect?.(taskNode.data);
     },
-    [onNodeClick]
+    [onNodeClick, onNodeSelect, onSelectedTaskIdChange, selectedTaskId]
   );
 
   // 关闭详情面板
   const handleCloseDetail = useCallback(() => {
-    setSelectedTask(null);
-  }, []);
+    if (selectedTaskId === undefined) {
+      setInternalSelectedTaskId(null);
+    }
+    onSelectedTaskIdChange?.(null);
+    onNodeSelect?.(null);
+  }, [onNodeSelect, onSelectedTaskIdChange, selectedTaskId]);
+
+  const handlePaneClick = useCallback(() => {
+    if (selectedTaskId === undefined) {
+      setInternalSelectedTaskId(null);
+    }
+    onSelectedTaskIdChange?.(null);
+    onNodeSelect?.(null);
+  }, [onNodeSelect, onSelectedTaskIdChange, selectedTaskId]);
 
   // MiniMap 节点颜色
   const miniMapNodeColor = useCallback((node: Node) => {
@@ -195,6 +225,7 @@ export const DAGViewer = memo(({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultEdgeOptions={defaultEdgeOptions}

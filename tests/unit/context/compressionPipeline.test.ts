@@ -64,6 +64,26 @@ describe('CompressionPipeline', () => {
 
       expect(estimateTokens(transcript[1].content)).toBeLessThan(estimateTokens(bigContent));
     });
+
+    it('should not truncate protected tool result', async () => {
+      const bigContent = makeText(3000);
+      const transcript: ProjectableMessage[] = [
+        makeMsg('u1', 'user', 'Run tool'),
+        makeMsg('t1', 'tool', bigContent),
+      ];
+
+      const result = await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        interventions: {
+          pinned: ['t1'],
+          excluded: [],
+          retained: [],
+        },
+      });
+
+      expect(transcript[1].content).toBe(bigContent);
+      expect(result.compressionState.getSnapshot().budgetedResults.has('t1')).toBe(false);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -115,6 +135,31 @@ describe('CompressionPipeline', () => {
       });
 
       expect(result.layersTriggered).not.toContain('snip');
+    });
+
+    it('should preserve pinned old messages from snip while still snipping unprotected peers', async () => {
+      const transcript: ProjectableMessage[] = [
+        { ...makeMsg('a-protected', 'assistant', makeText(1200), 1), turnIndex: 1 },
+        { ...makeMsg('a-unprotected', 'assistant', makeText(1200), 2), turnIndex: 2 },
+        { ...makeMsg('u-recent', 'user', 'recent question', 19), turnIndex: 19 },
+      ];
+
+      const result = await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        maxTokens: 2000,
+        enableMicrocompact: false,
+        enableContextCollapse: false,
+        interventions: {
+          pinned: ['a-protected'],
+          excluded: [],
+          retained: [],
+        },
+      });
+
+      expect(result.layersTriggered).toContain('snip');
+      expect(result.compressionState.getSnapshot().snippedIds.has('a-protected')).toBe(false);
+      expect(result.compressionState.getSnapshot().snippedIds.has('a-unprotected')).toBe(true);
+      expect(result.apiView.some((message) => message.id === 'a-protected' && message.content.includes('[snipped'))).toBe(false);
     });
   });
 

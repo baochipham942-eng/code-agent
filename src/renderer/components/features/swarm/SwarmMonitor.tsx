@@ -4,7 +4,7 @@
 // 参考 claude-sneakpeek 的 openfactory-exec 进程树监控设计
 // ============================================================================
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { formatDuration } from '../../../../shared/utils/format';
 import {
   Users,
@@ -23,8 +23,8 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
+import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swarm';
-import ipcService from '../../../services/ipcService';
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -63,15 +63,25 @@ const formatTokens = (tokens: number): string => {
 };
 
 // Agent 卡片组件
-const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
+const AgentCard: React.FC<{
+  agent: SwarmAgentState;
+  selected: boolean;
+  onClick: () => void;
+}> = ({ agent, selected, onClick }) => {
   const colors = statusColors[agent.status] || statusColors.pending;
   const duration = agent.startTime
     ? (agent.endTime || Date.now()) - agent.startTime
     : 0;
 
   return (
-    <div
-      className={`px-3 py-2.5 rounded-lg border ${colors.border} ${colors.bg} transition-all`}
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+        selected
+          ? 'border-cyan-500/40 bg-cyan-500/10 ring-1 ring-cyan-500/20'
+          : `${colors.border} ${colors.bg} hover:border-zinc-500/50 hover:bg-zinc-800/60`
+      }`}
+      aria-pressed={selected}
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-1.5">
@@ -161,7 +171,7 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
           )}
         </div>
       )}
-    </div>
+    </button>
   );
 };
 
@@ -235,6 +245,12 @@ interface SwarmMonitorProps {
 
 export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
   const { isRunning, startTime, agents, statistics, verification, aggregation } = useSwarmStore();
+  const selectedSwarmAgentId = useAppStore((state) => state.selectedSwarmAgentId);
+  const setSelectedSwarmAgentId = useAppStore((state) => state.setSelectedSwarmAgentId);
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedSwarmAgentId) ?? null,
+    [agents, selectedSwarmAgentId],
+  );
 
   // 按状态分组 agents
   const groupedAgents = useMemo(() => {
@@ -244,15 +260,6 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
     const failed = agents.filter((a) => a.status === 'failed' || a.status === 'cancelled');
     return { running, pending, completed, failed };
   }, [agents]);
-
-  // 监听 IPC 事件
-  useEffect(() => {
-    if (!ipcService.isAvailable()) return;
-    const unsubscribe = ipcService.on('swarm:event', (event) => {
-      useSwarmStore.getState().handleEvent(event);
-    });
-    return () => unsubscribe?.();
-  }, []);
 
   // 计算运行时间
   const elapsedTime = startTime ? Date.now() - startTime : 0;
@@ -303,6 +310,12 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           <p className="text-xs text-zinc-500 mt-0.5">
             {statistics.total} 个 Agent · {formatDuration(elapsedTime)}
           </p>
+          {selectedAgent && (
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-300">
+              <span className="text-cyan-400">当前选中</span>
+              <span className="max-w-[120px] truncate">{selectedAgent.name}</span>
+            </div>
+          )}
         </div>
         {onClose && (
           <button
@@ -407,6 +420,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             title="运行中"
             icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />}
             agents={groupedAgents.running}
+            selectedAgentId={selectedSwarmAgentId}
+            onAgentSelect={setSelectedSwarmAgentId}
             defaultExpanded
           />
         )}
@@ -417,6 +432,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             title="等待中"
             icon={<Clock className="w-3.5 h-3.5 text-zinc-400" />}
             agents={groupedAgents.pending}
+            selectedAgentId={selectedSwarmAgentId}
+            onAgentSelect={setSelectedSwarmAgentId}
           />
         )}
 
@@ -426,6 +443,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             title="已完成"
             icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
             agents={groupedAgents.completed}
+            selectedAgentId={selectedSwarmAgentId}
+            onAgentSelect={setSelectedSwarmAgentId}
           />
         )}
 
@@ -435,6 +454,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             title="失败"
             icon={<XCircle className="w-3.5 h-3.5 text-red-400" />}
             agents={groupedAgents.failed}
+            selectedAgentId={selectedSwarmAgentId}
+            onAgentSelect={setSelectedSwarmAgentId}
             defaultExpanded
           />
         )}
@@ -448,8 +469,10 @@ const AgentSection: React.FC<{
   title: string;
   icon: React.ReactNode;
   agents: SwarmAgentState[];
+  selectedAgentId: string | null;
+  onAgentSelect: (agentId: string) => void;
   defaultExpanded?: boolean;
-}> = ({ title, icon, agents, defaultExpanded = false }) => {
+}> = ({ title, icon, agents, selectedAgentId, onAgentSelect, defaultExpanded = false }) => {
   const [expanded, setExpanded] = React.useState(defaultExpanded);
 
   return (
@@ -471,7 +494,12 @@ const AgentSection: React.FC<{
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           {agents.map((agent) => (
-            <AgentCard key={agent.id} agent={agent} />
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              selected={selectedAgentId === agent.id}
+              onClick={() => onAgentSelect(agent.id)}
+            />
           ))}
         </div>
       )}

@@ -12,9 +12,10 @@ import { estimateTokens } from '../tokenEstimator';
 
 export interface ToolResultBudgetConfig {
   maxTokensPerResult: number; // default: 2000
+  protectedMessageIds?: Set<string>;
 }
 
-const DEFAULT_CONFIG: Required<ToolResultBudgetConfig> = {
+const DEFAULT_CONFIG: Pick<ToolResultBudgetConfig, 'maxTokensPerResult'> = {
   maxTokensPerResult: 2000,
 };
 
@@ -132,10 +133,13 @@ export function applyToolResultBudget(
   config?: Partial<ToolResultBudgetConfig>,
 ): void {
   const cfg = { ...DEFAULT_CONFIG, ...config };
+  const alreadyBudgeted = state.getSnapshot().budgetedResults;
 
   for (const msg of messages) {
     const isToolResult = msg.role === 'tool' || msg.toolCallId !== undefined;
     if (!isToolResult) continue;
+    if (cfg.protectedMessageIds?.has(msg.id)) continue;
+    if (alreadyBudgeted.has(msg.id)) continue;
 
     const originalTokens = estimateTokens(msg.content);
     if (originalTokens <= cfg.maxTokensPerResult) continue;

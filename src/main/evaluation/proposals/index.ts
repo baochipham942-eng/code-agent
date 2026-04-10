@@ -54,3 +54,26 @@ export {
   type BatchEvalOptions,
   type BatchEvalResult,
 } from './batchShadowEvaluator';
+
+export {
+  evaluateAutoApply,
+  type AutoApplyThresholds,
+  type AutoApplyDecision,
+} from './autoApplyGate';
+
+export {
+  autoApply,
+  rollbackAutoApplied,
+  listAutoApplied,
+  type AutoApplyResult,
+  type RollbackResult,
+  type AutoAppliedRule,
+} from './autoApplyManager';
+
+export {
+  checkAutoAppliedHealth,
+  checkAllAutoAppliedHealth,
+  defaultGraderReportsDir as defaultReEvalGraderReportsDir,
+  type ReEvalConfig,
+  type ReEvalResult,
+} from './autoReEvaluator';

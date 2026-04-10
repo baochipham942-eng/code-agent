@@ -42,13 +42,15 @@ const HEIGHT_REPORTER_SCRIPT = `<script>
 </script>`;
 
 function buildSrcdoc(code: string): string {
+  const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:;">`;
+
   // If the code already has <html> or <head>, inject styles into head
   if (/<html/i.test(code)) {
-    const withStyles = code.replace(/<head([^>]*)>/i, `<head$1>${INJECTED_STYLES}`);
+    const withStyles = code.replace(/<head([^>]*)>/i, `<head$1>${CSP_META}${INJECTED_STYLES}`);
     return withStyles.replace(/<\/body>/i, `${HEIGHT_REPORTER_SCRIPT}</body>`);
   }
   // Otherwise wrap it
-  return `<!DOCTYPE html><html><head>${INJECTED_STYLES}</head><body>${code}${HEIGHT_REPORTER_SCRIPT}</body></html>`;
+  return `<!DOCTYPE html><html><head>${CSP_META}${INJECTED_STYLES}</head><body>${code}${HEIGHT_REPORTER_SCRIPT}</body></html>`;
 }
 
 // Simple source code viewer (avoids circular dependency with CodeBlock in MessageContent)
@@ -99,6 +101,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
     if (!iframe) return;
 
     function handleMessage(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return;
       if (event.data?.type === 'generative-ui-resize' && typeof event.data.height === 'number') {
         const h = Math.max(100, Math.min(600, event.data.height));
         setIframeHeight(h);

@@ -22,6 +22,7 @@ export async function loadCase(filePath: string): Promise<RegressionCase> {
     filePath,
     source: String(fm.source ?? ''),
     tags: toStringArray(fm.tags),
+    categories: fm.categories ? toStringArray(fm.categories) : undefined,
     relatedRules: toStringArray(fm.related_rules),
     evalCommand: String(fm.eval_command),
     scenario: extractSection(body, '场景'),

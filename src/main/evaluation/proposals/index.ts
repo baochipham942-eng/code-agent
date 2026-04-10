@@ -48,3 +48,9 @@ export {
   type RecipePolishInput,
   type PolishedRecipe,
 } from './recipePolisher';
+
+export {
+  evaluateBatch,
+  type BatchEvalOptions,
+  type BatchEvalResult,
+} from './batchShadowEvaluator';

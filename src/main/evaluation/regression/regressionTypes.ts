@@ -7,6 +7,8 @@ export interface RegressionCase {
   evalCommand: string
   scenario: string
   expectedBehavior: string
+  /** 用于分类过滤：只运行与 proposal 类别交集的 case */
+  categories?: string[]
 }
 
 export interface CaseResult {

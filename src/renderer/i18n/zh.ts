@@ -236,6 +236,18 @@ export const zh = {
     phaseSearch: '搜索信息',
     phaseMcp: '调用工具',
     phaseOps: '{count} 次操作',
+    // StatusRail
+    sectionContext: '上下文',
+    sectionOutputs: '产物',
+    sectionReferences: '引用',
+    contextEmpty: '暂无上下文',
+    bucketRules: 'Rules',
+    bucketFiles: 'Files',
+    bucketWeb: 'Web',
+    bucketOther: 'Other',
+    tabStatus: '状态',
+    tabOverview: '概览',
+    tabOrchestration: '编排',
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',

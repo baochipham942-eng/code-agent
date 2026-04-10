@@ -68,6 +68,36 @@ export interface ContextHealthState {
 }
 
 /**
+ * 手动 Compact 操作的结构化返回
+ */
+export interface CompactResult {
+  success: boolean;
+  /** 压缩前 token 数 */
+  beforeTokens: number;
+  /** 压缩后 token 数 */
+  afterTokens: number;
+  /** 本次释放的 token 数 */
+  savedTokens: number;
+  /** 压缩前使用率 */
+  beforePercent: number;
+  /** 压缩后使用率 */
+  afterPercent: number;
+  /** 使用的压缩层 */
+  layersUsed: string[];
+  /** 保留策略 */
+  retained: {
+    /** 保留的最近对话轮数 */
+    recentTurns: number;
+    /** 用户手动 pin 的项数 */
+    pinnedItems: number;
+  };
+  /** 本会话累计压缩次数 */
+  compressionCount: number;
+  /** 本会话累计释放 token 数 */
+  totalSavedTokens: number;
+}
+
+/**
  * 上下文健康更新事件
  */
 export interface ContextHealthUpdateEvent {

@@ -166,6 +166,25 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
     enabled: true,
   },
 
+  {
+    id: 'toggleStatusRail',
+    label: '切换状态栏',
+    keyMac: '⌘J',
+    keyWin: 'Ctrl+J',
+    description: '显示或隐藏右侧状态面板',
+    category: 'view',
+    enabled: true,
+  },
+  {
+    id: 'triggerCompact',
+    label: '压缩上下文',
+    keyMac: '⌘⇧C',
+    keyWin: 'Ctrl+Shift+C',
+    description: '主动压缩当前会话的上下文',
+    category: 'editing',
+    enabled: true,
+  },
+
   // Editing
   {
     id: 'cancel',
@@ -232,6 +251,8 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     showDAGPanel,
     setShowWorkspace,
     showWorkspace,
+    showTaskPanel,
+    setShowTaskPanel,
     pendingPermissionRequest,
     setPendingPermissionRequest,
     isProcessing,
@@ -290,6 +311,17 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
             logger.info('Shortcut: Command palette');
             if (customHandlers.commandPalette) {
               customHandlers.commandPalette();
+            }
+            return;
+
+          case 'c':
+            // Cmd/Ctrl+Shift+C: 触发 Compact
+            if (!isInputField) {
+              event.preventDefault();
+              logger.info('Shortcut: Trigger compact');
+              if (customHandlers.triggerCompact) {
+                customHandlers.triggerCompact();
+              }
             }
             return;
         }
@@ -373,6 +405,13 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           }
           break;
 
+        case 'j':
+          // Cmd/Ctrl+J: 切换 StatusRail（右侧状态面板）
+          event.preventDefault();
+          logger.info('Shortcut: Toggle StatusRail');
+          setShowTaskPanel(!showTaskPanel);
+          break;
+
         case '[':
           // Cmd/Ctrl+[: 上一个会话
           if (enableSwitchSession && sessions.length > 1) {
@@ -421,6 +460,8 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       showDAGPanel,
       setShowWorkspace,
       showWorkspace,
+      showTaskPanel,
+      setShowTaskPanel,
       pendingPermissionRequest,
       setPendingPermissionRequest,
       isProcessing,

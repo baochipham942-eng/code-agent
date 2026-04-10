@@ -19,7 +19,7 @@ import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
 import { ChatSearchBar } from './features/chat/ChatSearchBar';
 import type { SearchMatch } from './features/chat/ChatSearchBar';
-import { ContextIndicator } from './features/chat/ContextIndicator';
+import { InlineStrip } from './features/chat/InlineStrip';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { isWebMode } from '../utils/platform';
 
@@ -387,8 +387,8 @@ export const ChatView: React.FC = () => {
 
         {/* Permission Card moved inline into TurnBasedTraceView */}
 
-        {/* Context usage indicator - shows when > 50% */}
-        <ContextIndicator />
+        {/* Context inline strip - shows when > 50% */}
+        <InlineStrip />
 
         {/* Input */}
         <ChatInput

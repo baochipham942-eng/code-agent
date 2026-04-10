@@ -254,6 +254,18 @@ export const en: Translations = {
     phaseSearch: 'Searching',
     phaseMcp: 'Tool calls',
     phaseOps: '{count} ops',
+    // StatusRail
+    sectionContext: 'Context',
+    sectionOutputs: 'Outputs',
+    sectionReferences: 'References',
+    contextEmpty: 'No context yet',
+    bucketRules: 'Rules',
+    bucketFiles: 'Files',
+    bucketWeb: 'Web',
+    bucketOther: 'Other',
+    tabStatus: 'Status',
+    tabOverview: 'Overview',
+    tabOrchestration: 'Orchestration',
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',

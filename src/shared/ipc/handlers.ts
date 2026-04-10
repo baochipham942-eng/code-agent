@@ -46,6 +46,14 @@ import type {
   ContextHealthUpdateEvent,
 } from '../types/contextHealth';
 
+import type {
+  ContextInterventionRequest,
+  ContextInterventionSetRequest,
+  ContextInterventionSnapshot,
+  ContextViewRequest,
+  ContextViewResponse,
+} from '../types/contextView';
+
 import type { DAGVisualizationEvent } from '../types/dagVisualization';
 import { DAG_CHANNELS } from './channels';
 
@@ -416,6 +424,13 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string }) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
+  [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_APPROVE_PLAN]: (payload: { planId: string; feedback?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_REJECT_PLAN]: (payload: { planId: string; feedback: string }) => Promise<boolean>;
 
   // TaskList (任务列表可视化)
   [IPC_CHANNELS.TASKLIST_GET_STATE]: () => Promise<TaskListStateIpc>;
@@ -454,10 +469,14 @@ export interface IpcInvokeHandlers {
   }>>;
 
   // Context compact (部分压缩)
-  [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<{ success: boolean; compactedCount: number }>;
+  [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<import('../../shared/types/contextHealth').CompactResult>;
+
+  // Context intervention controls (pin/exclude/retain)
+  [IPC_CHANNELS.CONTEXT_INTERVENTION_GET]: (request: ContextInterventionRequest) => Promise<ContextInterventionSnapshot>;
+  [IPC_CHANNELS.CONTEXT_INTERVENTION_SET]: (request: ContextInterventionSetRequest) => Promise<ContextInterventionSnapshot>;
 
   // Context observability (/context true-view after projection)
-  [IPC_CHANNELS.CONTEXT_GET_VIEW]: (request: { sessionId: string }) => Promise<unknown>;
+  [IPC_CHANNELS.CONTEXT_GET_VIEW]: (request: ContextViewRequest) => Promise<ContextViewResponse>;
 
   // Telemetry (遥测系统)
   [IPC_CHANNELS.TELEMETRY_GET_SESSION]: (sessionId: string) => Promise<TelemetrySession | null>;

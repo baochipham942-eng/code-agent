@@ -26,6 +26,7 @@ import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
 import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
+import { AgentTeamPanel } from './components/features/agentTeam';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { isTauriMode } from './utils/platform';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
@@ -45,6 +46,7 @@ import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
+import { useSwarmStore } from './stores/swarmStore';
 
 const logger = createLogger('App');
 
@@ -56,21 +58,46 @@ async function invokeDomain<T>(domain: string, action: string, payload?: unknown
   return response.data as T;
 }
 
+// ── 响应式断点 hook ──
+function useWindowWidth(): number {
+  const [width, setWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    let raf: number;
+    const onResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setWidth(window.innerWidth));
+    };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); };
+  }, []);
+  return width;
+}
+
 export const App: React.FC = () => {
   const {
     showSettings,
     showTaskPanel,
     setShowTaskPanel,
+    setTaskPanelTab,
     showSkillsPanel,
     showCronCenter,
     showFileExplorer,
     setShowFileExplorer,
     setShowSkillsPanel,
+    showAgentTeamPanel,
+    setShowAgentTeamPanel,
+    selectedSwarmAgentId,
     showLab,
     showEvalCenter,
     setShowSettings,
     setLanguage,
   } = useAppStore();
+
+  // 响应式：窗口宽度 < 1180 时隐藏右侧面板
+  const windowWidth = useWindowWidth();
+  const isNarrowViewport = windowWidth < 1180;
+  const effectiveShowTaskPanel = showTaskPanel && !isNarrowViewport;
+  const effectiveShowSkillsPanel = showSkillsPanel && !isNarrowViewport;
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
 
@@ -108,8 +135,18 @@ export const App: React.FC = () => {
   // Theme Hook - 初始化主题系统
   useTheme();
 
-  // 全局快捷键
-  useKeyboardShortcuts();
+  // 全局快捷键（含 ⌘⇧C compact 触发）
+  useKeyboardShortcuts({
+    customHandlers: {
+      triggerCompact: async () => {
+        try {
+          const { IPC_CHANNELS } = await import('@shared/ipc');
+          const ipcService = (await import('./services/ipcService')).default;
+          await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '');
+        } catch { /* ignore */ }
+      },
+    },
+  });
 
   // Gen5+ Memory 事件监听
   useMemoryEvents({
@@ -309,6 +346,23 @@ export const App: React.FC = () => {
     };
   }, [setContextHealth]);
 
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.SWARM_EVENT,
+      (event) => {
+        if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
+          setShowTaskPanel(true);
+          setTaskPanelTab('orchestration');
+        }
+        useSwarmStore.getState().handleEvent(event);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [setShowTaskPanel, setTaskPanelTab]);
+
   // Observability panel toggle button (Advanced+ mode)
   const ObservabilityToggle: React.FC = () => {
     if (!isObservabilityAvailable) return null;
@@ -470,13 +524,13 @@ export const App: React.FC = () => {
                     </div>
                   </Panel>
 
-                  {(showTaskPanel || showSkillsPanel) && (
+                  {(effectiveShowTaskPanel || effectiveShowSkillsPanel) && (
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
-                  {(showTaskPanel || showSkillsPanel) && (
+                  {(effectiveShowTaskPanel || effectiveShowSkillsPanel) && (
                     <Panel defaultSize="25" minSize="15" maxSize="45" id="right-panel">
-                      {showTaskPanel && <TaskPanel />}
-                      {showSkillsPanel && (
+                      {effectiveShowTaskPanel && <TaskPanel />}
+                      {effectiveShowSkillsPanel && (
                         <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
                       )}
                     </Panel>
@@ -573,6 +627,21 @@ export const App: React.FC = () => {
       {/* Cron Center - 定时任务中心 */}
       {showCronCenter && (
         <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+      )}
+
+      {showAgentTeamPanel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-end">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowAgentTeamPanel(false)}
+          />
+          <div className="relative h-full">
+            <AgentTeamPanel
+              initialAgentId={selectedSwarmAgentId ?? undefined}
+              onClose={() => setShowAgentTeamPanel(false)}
+            />
+          </div>
+        </div>
       )}
 
       {/* Desktop Collector Panel - 全局记忆时间线面板 */}

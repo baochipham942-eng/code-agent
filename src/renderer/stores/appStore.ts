@@ -32,6 +32,7 @@ type CloudUIStrings = {
 
 // 设置页 Tab 类型
 export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'products' | 'about';
+export type TaskPanelTab = 'monitor' | 'overview' | 'orchestration';
 
 interface AppState {
   // UI State
@@ -39,6 +40,9 @@ interface AppState {
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   showWorkspace: boolean;
   showTaskPanel: boolean;
+  taskPanelTab: TaskPanelTab;
+  showAgentTeamPanel: boolean;
+  selectedSwarmAgentId: string | null;
   showSkillsPanel: boolean;
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
@@ -106,6 +110,9 @@ interface AppState {
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   setShowWorkspace: (show: boolean) => void;
   setShowTaskPanel: (show: boolean) => void;
+  setTaskPanelTab: (tab: TaskPanelTab) => void;
+  setShowAgentTeamPanel: (show: boolean) => void;
+  setSelectedSwarmAgentId: (agentId: string | null) => void;
   setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
@@ -166,6 +173,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsInitialTab: null,
   showWorkspace: false,
   showTaskPanel: true, // Task panel shown by default
+  taskPanelTab: 'monitor',
+  showAgentTeamPanel: false,
+  selectedSwarmAgentId: null,
   showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
@@ -231,6 +241,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setShowTaskPanel: (show) => set({ showTaskPanel: show }),
+  setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
+  setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),
+  setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),

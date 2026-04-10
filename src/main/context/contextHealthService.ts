@@ -133,6 +133,19 @@ export class ContextHealthService {
   }
 
   /**
+   * 获取最近更新的会话健康状态（用于无 sessionId 的场景）
+   */
+  getLatest(): ContextHealthState {
+    let latest: ContextHealthState | null = null;
+    for (const state of this.sessionStates.values()) {
+      if (!latest || state.lastUpdated > latest.lastUpdated) {
+        latest = state;
+      }
+    }
+    return latest || createEmptyHealthState();
+  }
+
+  /**
    * 清理会话状态
    */
   cleanup(sessionId: string): void {

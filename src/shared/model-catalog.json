@@ -136,6 +136,37 @@
       ]
     },
     {
+      "id": "local",
+      "name": "Local (Ollama)",
+      "description": "本地 Ollama 模型",
+      "apiUrl": "http://localhost:11434/v1",
+      "default": "qwen2.5-coder:7b",
+      "models": [
+        { "id": "qwen2.5-coder:7b", "label": "Qwen 2.5 Coder 7B", "group": "Qwen", "desc": "代码专用" },
+        { "id": "qwen3:8b", "label": "Qwen3 8B", "group": "Qwen", "desc": "通用" },
+        { "id": "qwen3:32b", "label": "Qwen3 32B", "group": "Qwen", "desc": "通用+推理" },
+        { "id": "gemma4:12b", "label": "Gemma4 12B", "group": "Gemma", "desc": "通用" },
+        { "id": "gemma4:27b", "label": "Gemma4 27B", "group": "Gemma", "desc": "通用+推理" },
+        { "id": "deepseek-r1:7b", "label": "DeepSeek R1 7B", "group": "DeepSeek", "desc": "推理" },
+        { "id": "deepseek-r1:32b", "label": "DeepSeek R1 32B", "group": "DeepSeek", "desc": "推理+代码" },
+        { "id": "llama4-scout:17b", "label": "Llama4 Scout 17B", "group": "Meta", "desc": "多模态" },
+        { "id": "codestral:22b", "label": "Codestral 22B", "group": "Mistral", "desc": "代码专用" }
+      ]
+    },
+    {
+      "id": "volcengine",
+      "name": "火山引擎 (豆包)",
+      "description": "字节跳动豆包系列模型",
+      "apiUrl": "https://ark.cn-beijing.volces.com/api/v3",
+      "apiKeyHint": "your-volcengine-key",
+      "default": "doubao-1.5-pro-256k",
+      "models": [
+        { "id": "doubao-1.5-pro-256k", "label": "Doubao 1.5 Pro 256K (推荐)", "desc": "256K 长上下文" },
+        { "id": "doubao-1.5-thinking-pro", "label": "Doubao 1.5 Thinking Pro", "desc": "深度推理" },
+        { "id": "doubao-seed-1-6-vision-250815", "label": "Doubao Seed 1.6 Vision", "desc": "视觉理解" }
+      ]
+    },
+    {
       "id": "grok",
       "name": "Grok",
       "description": "xAI Grok 系列",

@@ -591,4 +591,12 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
   // Telemetry events
   [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
+  // Provider fallback events
+  [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
+}
+
+export interface ProviderFallbackEvent {
+  from: { provider: string; model: string };
+  to: { provider: string; model: string };
+  reason: string;
 }

@@ -91,6 +91,7 @@ export class CLIConfigService {
           minimax: { enabled: false },
           perplexity: { enabled: false },
           openrouter: { enabled: false },
+          volcengine: { enabled: false },
         },
         routing: {
           code: { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat },

@@ -345,6 +345,9 @@ export const IPC_CHANNELS = {
   VOICE_PASTE_STATUS: 'voice-paste:status',
   VOICE_PASTE_GET_STATUS: 'voice-paste:get-status',
   VOICE_PASTE_TOGGLE: 'voice-paste:toggle',
+
+  // Provider fallback channels (错误处理)
+  PROVIDER_FALLBACK: 'provider:fallback',
 } as const;
 
 /** Union type of all IPC channel string literals */

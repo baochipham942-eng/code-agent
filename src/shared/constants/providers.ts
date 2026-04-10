@@ -138,6 +138,13 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
     cloudProxySupported: true,
     displayName: 'OpenRouter',
   },
+  volcengine: {
+    aliases: ['volcengine'],
+    defaultModel: 'doubao-1.5-pro-256k',
+    endpoint: MODEL_API_ENDPOINTS.volcengine,
+    cloudProxySupported: false,
+    displayName: '火山引擎 (豆包)',
+  },
 };
 
 export const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, ModelProvider> = Object.freeze(

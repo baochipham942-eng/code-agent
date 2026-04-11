@@ -44,8 +44,8 @@ export class CLIAgent {
   private turnStartTime: number = 0;
   /** Per-run metrics collector (active when --metrics is set) */
   private metricsCollector: MetricsCollector | null = null;
-  /** Current AgentLoop instance (for cancel/interrupt) */
-  private currentAgentLoop: { cancel(): void; interrupt(msg: string): void } | null = null;
+  /** Current AgentLoop instance (for cancel/interrupt/hooks) */
+  private currentAgentLoop: { cancel(): void; interrupt(msg: string): void; getHookManager?(): unknown } | null = null;
   /** Real token usage from stream_usage events */
   private realInputTokens: number = 0;
   private realOutputTokens: number = 0;
@@ -432,6 +432,13 @@ export class CLIAgent {
    */
   getTokenUsage(): { inputTokens: number; outputTokens: number } {
     return { inputTokens: this.realInputTokens, outputTokens: this.realOutputTokens };
+  }
+
+  /**
+   * 获取 HookManager（供 /hooks 命令使用）
+   */
+  getHookManager(): unknown {
+    return this.currentAgentLoop?.getHookManager?.() ?? null;
   }
 
   /**

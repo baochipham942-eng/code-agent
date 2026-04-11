@@ -46,6 +46,11 @@ describe('Hook Events', () => {
         'SessionStart',
         'SessionEnd',
         'Notification',
+        'TaskCreated',
+        'TaskCompleted',
+        'PermissionDenied',
+        'PostCompact',
+        'StopFailure',
       ];
 
       for (const event of events) {
@@ -55,8 +60,8 @@ describe('Hook Events', () => {
       }
     });
 
-    it('should have 14 event types', () => {
-      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(14);
+    it('should have 19 event types', () => {
+      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(19);
     });
   });
 

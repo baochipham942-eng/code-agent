@@ -228,6 +228,12 @@ export class ToolExecutor {
           });
         }
 
+        // Fire-and-forget: emit PermissionDenied hook
+        options.hookManager?.triggerPermissionDenied(
+          toolName, commandValidation.reason || 'security policy', 'policy',
+          options.sessionId || 'unknown',
+        ).catch(() => {});
+
         return {
           success: false,
           error: `Security: Command blocked - ${commandValidation.reason}`,

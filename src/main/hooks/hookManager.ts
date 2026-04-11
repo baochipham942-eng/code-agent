@@ -219,6 +219,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when a subagent starts (Phase 2)
+   * @experimental API may change between minor versions
    */
   async triggerSubagentStart(
     subagentType: string,
@@ -243,6 +244,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when a permission is requested (Phase 2)
+   * @experimental API may change between minor versions
    */
   async triggerPermissionRequest(
     permissionType: 'read' | 'write' | 'execute' | 'network' | 'dangerous',
@@ -423,6 +425,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when an agent task is created
+   * @planned Defined but not yet wired to real triggers
    */
   async triggerTaskCreated(
     taskId: string,
@@ -441,6 +444,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when an agent task completes or fails
+   * @planned Defined but not yet wired to real triggers
    */
   async triggerTaskCompleted(
     taskId: string,
@@ -456,59 +460,6 @@ export class HookManager {
     };
 
     return this.triggerEventHooks('TaskCompleted', context);
-  }
-
-  /**
-   * Stub: Trigger hooks when files change externally.
-   * Actual file watchers will call this when implemented.
-   */
-  async triggerFileChanged(
-    filePaths: string[],
-    sessionId: string
-  ): Promise<HookTriggerResult> {
-    const context: HookEventContext = {
-      event: 'FileChanged',
-      sessionId,
-      timestamp: Date.now(),
-      workingDirectory: this.config.workingDirectory,
-    };
-
-    return this.triggerEventHooks('FileChanged', context);
-  }
-
-  /**
-   * Stub: Trigger hooks when configuration changes.
-   * Actual config watchers will call this when implemented.
-   */
-  async triggerConfigChange(
-    sessionId: string
-  ): Promise<HookTriggerResult> {
-    const context: HookEventContext = {
-      event: 'ConfigChange',
-      sessionId,
-      timestamp: Date.now(),
-      workingDirectory: this.config.workingDirectory,
-    };
-
-    return this.triggerEventHooks('ConfigChange', context);
-  }
-
-  /**
-   * Stub: Trigger hooks when working directory changes.
-   * Actual cwd tracking will call this when implemented.
-   */
-  async triggerCwdChanged(
-    newCwd: string,
-    sessionId: string
-  ): Promise<HookTriggerResult> {
-    const context: HookEventContext = {
-      event: 'CwdChanged',
-      sessionId,
-      timestamp: Date.now(),
-      workingDirectory: newCwd,
-    };
-
-    return this.triggerEventHooks('CwdChanged', context);
   }
 
   // --------------------------------------------------------------------------

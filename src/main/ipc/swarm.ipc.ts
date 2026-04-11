@@ -9,11 +9,16 @@ import type {
   SwarmLaunchRequest,
   SwarmAgentContextSnapshot,
 } from '../../shared/types/swarm';
+import type { CompletedAgentRun } from '../../shared/types/agentHistory';
 import type { AgentApplicationService } from '../../shared/types/appService';
 import { getPlanApprovalGate } from '../agent/planApproval';
 import { getParallelAgentCoordinator } from '../agent/parallelAgentCoordinator';
 import { getSpawnGuard } from '../agent/spawnGuard';
 import { getSwarmLaunchApprovalGate } from '../agent/swarmLaunchApproval';
+import {
+  persistAgentRun,
+  getRecentAgentHistory,
+} from '../session/agentHistoryPersistence';
 
 // ============================================================================
 // Swarm 事件回调注册（CLI 模式使用）
@@ -505,5 +510,16 @@ export function registerSwarmHandlers(
 
     getSwarmEventEmitter().planRejected(plan.agentId, payload.planId, payload.feedback);
     return true;
+  });
+
+  // Agent 历史持久化
+  ipcMain.handle('swarm:persist-agent-run', async (_, payload: { sessionId: string; run: CompletedAgentRun }) => {
+    await persistAgentRun(payload.sessionId, payload.run);
+    return true;
+  });
+
+  // 获取最近完成的 agent runs
+  ipcMain.handle('swarm:get-agent-history', async (_, payload?: { limit?: number }) => {
+    return getRecentAgentHistory(payload?.limit);
   });
 }

@@ -301,6 +301,8 @@ export const IPC_CHANNELS = {
   SWARM_RETRY_AGENT: 'swarm:retry-agent',
   SWARM_APPROVE_PLAN: 'swarm:approve-plan',
   SWARM_REJECT_PLAN: 'swarm:reject-plan',
+  SWARM_PERSIST_AGENT_RUN: 'swarm:persist-agent-run',
+  SWARM_GET_AGENT_HISTORY: 'swarm:get-agent-history',
 
   // TaskList channels (任务列表可视化)
   TASKLIST_EVENT: 'taskList:event',

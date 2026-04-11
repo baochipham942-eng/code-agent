@@ -118,6 +118,7 @@ import type {
 } from '../types/sessionState';
 
 import type { SwarmEvent } from '../types/swarm';
+import type { CompletedAgentRun } from '../types/agentHistory';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
@@ -439,6 +440,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_APPROVE_PLAN]: (payload: { planId: string; feedback?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_REJECT_PLAN]: (payload: { planId: string; feedback: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_PERSIST_AGENT_RUN]: (payload: { sessionId: string; run: CompletedAgentRun }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_GET_AGENT_HISTORY]: (payload?: { limit?: number }) => Promise<CompletedAgentRun[]>;
 
   // TaskList (任务列表可视化)
   [IPC_CHANNELS.TASKLIST_GET_STATE]: () => Promise<TaskListStateIpc>;

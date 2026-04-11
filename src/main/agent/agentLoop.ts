@@ -354,6 +354,10 @@ export class AgentLoop {
     return this.conversationRuntime.getPlanningService();
   }
 
+  getHookManager(): HookManager | undefined {
+    return this.ctx.hookManager;
+  }
+
   getSerializedCompressionState(): string {
     return this.ctx.compressionState.serialize();
   }

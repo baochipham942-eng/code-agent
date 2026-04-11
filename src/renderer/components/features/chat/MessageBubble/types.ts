@@ -11,10 +11,12 @@ export interface MessageBubbleProps {
 
 export interface UserMessageProps {
   message: Message;
+  onEdit?: (messageId: string, newContent: string) => void;
 }
 
 export interface AssistantMessageProps {
   message: Message;
+  onRegenerate?: (messageId: string) => void;
 }
 
 export interface MessageContentProps {

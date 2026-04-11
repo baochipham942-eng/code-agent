@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { Image, FileText, Pause, Play, ChevronDown, SlashSquare } from 'lucide-react';
+import { Image, FileText, Pause, Play, SlashSquare } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
 
@@ -21,6 +21,7 @@ import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
+import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
@@ -464,15 +465,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 弹性空白 */}
             <div className="flex-1" />
 
-            {/* 模型选择按钮 */}
-            <button
-              type="button"
-              className="flex items-center gap-1 px-2 h-7 rounded-md text-xs text-zinc-400 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors max-w-[180px]"
-              title={modelConfig.model}
-            >
-              <span className="truncate">{modelConfig.model}</span>
-              <ChevronDown className="w-3 h-3 flex-shrink-0 opacity-50" />
-            </button>
+            {/* 模型选择器 */}
+            <div className="text-xs">
+              <ModelSwitcher currentModel={modelConfig.model} />
+            </div>
 
             {/* 语音输入按钮 */}
             {!disabled && (

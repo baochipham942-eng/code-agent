@@ -13,7 +13,7 @@ import { version } from '../../../package.json';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_REGISTRY, MODEL_PRICING_PER_1M } from '../../shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_REGISTRY } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/types';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
@@ -415,6 +415,7 @@ async function handleCommand(
   /model [p/m]        switch model or list available
   /model key <p>      configure API key for provider
   /cost               token usage & cost
+  /context            context window usage
   /tools              list loaded tools
   /skills             list active skills
   /compact            trigger context compaction
@@ -561,51 +562,7 @@ async function handleCommand(
       return false;
     }
 
-    // ────────────────────────────────────────────────────
-    // /cost — Token 用量与成本
-    // ────────────────────────────────────────────────────
-    case 'cost': {
-      const config = agent.getConfig();
-      const history = agent.getHistory();
-      const modelName = config.modelConfig.model;
-      const pricing = MODEL_PRICING_PER_1M[modelName] || MODEL_PRICING_PER_1M['default'];
-
-      // Use real token usage if available, fallback to estimate
-      const realUsage = agent.getTokenUsage();
-      let inputTokens: number;
-      let outputTokens: number;
-      let isEstimate = false;
-
-      if (realUsage.inputTokens > 0 || realUsage.outputTokens > 0) {
-        inputTokens = realUsage.inputTokens;
-        outputTokens = realUsage.outputTokens;
-      } else {
-        // Fallback: ~4 chars per token heuristic
-        let inputChars = 0;
-        let outputChars = 0;
-        for (const msg of history) {
-          if (msg.role === 'user' || msg.role === 'system') {
-            inputChars += (msg.content || '').length;
-          } else {
-            outputChars += (msg.content || '').length;
-          }
-        }
-        inputTokens = Math.round(inputChars / 4);
-        outputTokens = Math.round(outputChars / 4);
-        isEstimate = true;
-      }
-
-      const totalCost = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
-      const prefix = isEstimate ? '~' : '';
-
-      console.log(chalk.dim(`\n  ${chalk.bold('Session cost')}`));
-      console.log(chalk.dim(`  Model:    ${config.modelConfig.provider}/${modelName}`));
-      console.log(chalk.dim(`  Messages: ${history.length}`));
-      console.log(chalk.dim(`  Tokens:   ${prefix}${((inputTokens + outputTokens) / 1000).toFixed(1)}k (${(inputTokens / 1000).toFixed(1)}k in / ${(outputTokens / 1000).toFixed(1)}k out)`));
-      console.log(chalk.dim(`  Cost:     ${prefix}$${totalCost.toFixed(4)}`));
-      console.log(chalk.dim(`  Pricing:  $${pricing.input}/M in, $${pricing.output}/M out\n`));
-      return false;
-    }
+    // /cost — now handled by unified command registry (costCommand in newCommands.ts)
 
     // ────────────────────────────────────────────────────
     // /tools — 列出已加载工具

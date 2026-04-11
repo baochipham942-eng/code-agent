@@ -23,6 +23,9 @@ import {
   Square,
   Trash2,
   Pin,
+  Search,
+  X,
+  FolderOpen,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
@@ -62,6 +65,8 @@ export const Sidebar: React.FC = () => {
     archiveSession,
     unarchiveSession,
     unreadSessionIds,
+    runningSessionIds,
+    sessionRuntimes,
     renameSession,
   } = useSessionStore();
 
@@ -79,6 +84,8 @@ export const Sidebar: React.FC = () => {
   const {
     filter,
     setFilter,
+    searchQuery,
+    setSearchQuery,
     softDelete,
     undoDelete,
     pendingDelete,
@@ -131,10 +138,54 @@ export const Sidebar: React.FC = () => {
     }
   }, [renamingId]);
 
-  // 按日期分组
+  // Filter sessions by search query
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery.trim()) return sessions;
+    const q = searchQuery.toLowerCase();
+    return sessions.filter((s) =>
+      (s.title || '').toLowerCase().includes(q)
+    );
+  }, [sessions, searchQuery]);
+
+  // Group sessions by project (workingDirectory), then by date within each project
+  const projectGroupedSessions = useMemo(() => {
+    // Extract project name from workingDirectory (last path segment)
+    const getProjectName = (dir?: string): string => {
+      if (!dir) return '未分类';
+      const segments = dir.replace(/\/+$/, '').split('/');
+      return segments[segments.length - 1] || '未分类';
+    };
+
+    // Group by project
+    const projectMap = new Map<string, SessionWithMeta[]>();
+    for (const session of filteredSessions) {
+      const project = getProjectName(session.workingDirectory);
+      const existing = projectMap.get(project);
+      if (existing) {
+        existing.push(session);
+      } else {
+        projectMap.set(project, [session]);
+      }
+    }
+
+    // Sort projects: most recently updated first
+    const sorted = Array.from(projectMap.entries()).sort((a, b) => {
+      const aMax = Math.max(...a[1].map((s) => s.updatedAt));
+      const bMax = Math.max(...b[1].map((s) => s.updatedAt));
+      return bMax - aMax;
+    });
+
+    // Within each project, group by date
+    return sorted.map(([project, projectSessions]) => ({
+      project,
+      dateGroups: groupSessions(projectSessions, pinnedSessionIds),
+    }));
+  }, [filteredSessions, pinnedSessionIds]);
+
+  // 按日期分组 (used when search is active — flat list)
   const groupedSessions = useMemo(() => {
-    return groupSessions(sessions, pinnedSessionIds);
-  }, [sessions, pinnedSessionIds]);
+    return groupSessions(filteredSessions, pinnedSessionIds);
+  }, [filteredSessions, pinnedSessionIds]);
 
   const handleNewChat = async () => {
     await createSession('新对话');
@@ -282,6 +333,9 @@ export const Sidebar: React.FC = () => {
     const isChecked = selectedSessionIds.has(session.id);
     const isPinned = pinnedSessionIds.has(session.id);
     const isRenaming = renamingId === session.id;
+    const isRunning = runningSessionIds.has(session.id);
+    const sessionRuntime = sessionRuntimes.get(session.id);
+    const isSessionPaused = sessionRuntime?.status === 'paused';
 
     return (
       <div
@@ -312,6 +366,14 @@ export const Sidebar: React.FC = () => {
         {/* 内容区域 */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
+            {/* 运行状态指示：暂停（黄色）或运行中（绿色） */}
+            {isSessionPaused && !multiSelectMode && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="已暂停" />
+            )}
+            {isRunning && !isSessionPaused && !multiSelectMode && (
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+            )}
+
             {/* 置顶图标 */}
             {isPinned && !multiSelectMode && (
               <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
@@ -359,6 +421,19 @@ export const Sidebar: React.FC = () => {
               </>
             )}
           </div>
+          {/* Meta info: message count + model */}
+          {!isRenaming && (
+            <div className="flex items-center gap-2 mt-0.5">
+              {session.messageCount > 0 && (
+                <span className="text-xs text-zinc-600">{session.messageCount} 条</span>
+              )}
+              {session.modelConfig?.model && (
+                <span className="text-xs text-zinc-600 truncate">
+                  {session.modelConfig.model}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 未读指示器 */}
@@ -400,7 +475,29 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Session List - Grouped */}
+      {/* Search Box */}
+      <div className="px-2 pb-1 flex-shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索会话..."
+            className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-400"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Session List - Project Grouped */}
       <div className="flex-1 overflow-y-auto px-2 min-h-0">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
@@ -415,18 +512,46 @@ export const Sidebar: React.FC = () => {
             <p className="text-sm text-zinc-400 mb-1">暂无对话</p>
             <p className="text-xs text-zinc-500">开始新的对话</p>
           </div>
-        ) : (
+        ) : filteredSessions.length === 0 && searchQuery ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+            <Search className="w-6 h-6 text-zinc-600 mb-2" />
+            <p className="text-sm text-zinc-500">未找到匹配的会话</p>
+          </div>
+        ) : searchQuery ? (
+          /* When searching, show flat date-grouped list */
           <div className="py-2">
             {groupedSessions.map(({ group, label, sessions: groupSessions }) => (
               <div key={group} className="mb-2">
-                {/* 分组标题 - sticky header */}
                 <div className="sticky top-0 z-10 px-3 py-1.5 text-xs font-medium text-zinc-500 bg-zinc-900 backdrop-blur-sm">
                   {label}
                 </div>
-                {/* 分组内容 */}
                 <div className="space-y-0.5">
                   {groupSessions.map((session) => renderSessionItem(session as SessionWithMeta))}
                 </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* Default: project-grouped view */
+          <div className="py-2">
+            {projectGroupedSessions.map(({ project, dateGroups }) => (
+              <div key={project} className="mb-3">
+                {/* Project header */}
+                <div className="sticky top-0 z-20 flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 backdrop-blur-sm">
+                  <FolderOpen className="w-3 h-3 text-zinc-500" />
+                  <span className="text-xs font-medium text-zinc-400">{project}</span>
+                </div>
+                {/* Date groups within project */}
+                {dateGroups.map(({ group, label, sessions: groupSessions }) => (
+                  <div key={`${project}-${group}`} className="mb-1">
+                    <div className="px-3 py-1 text-xs text-zinc-600">
+                      {label}
+                    </div>
+                    <div className="space-y-0.5">
+                      {groupSessions.map((session) => renderSessionItem(session as SessionWithMeta))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

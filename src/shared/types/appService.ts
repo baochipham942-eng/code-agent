@@ -100,4 +100,8 @@ export interface AgentApplicationService {
 
   // === Interaction Mode ===
   setInteractionMode(mode: import('./agent').InteractionMode): void;
+
+  // === Pause / Resume ===
+  pause(sessionId?: string): void;
+  resume(sessionId?: string): void;
 }

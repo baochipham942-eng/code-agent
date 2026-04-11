@@ -108,6 +108,18 @@ export function registerAgentHandlers(
           appService.setInteractionMode((payload as { mode: import('../../shared/types/agent').InteractionMode }).mode);
           return { success: true, data: null };
         }
+        case 'pause': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.pause((payload as { sessionId?: string })?.sessionId);
+          return { success: true, data: null };
+        }
+        case 'resume': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.resume((payload as { sessionId?: string })?.sessionId);
+          return { success: true, data: null };
+        }
         default:
           return {
             success: false,

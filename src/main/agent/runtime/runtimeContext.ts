@@ -66,6 +66,7 @@ export interface RuntimeContext {
   isCancelled: boolean;
   _isRunning: boolean;
   isInterrupted: boolean;
+  isPaused: boolean;
   interruptMessage: string | null;
   needsReinference: boolean;
   abortController: AbortController | null;

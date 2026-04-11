@@ -272,4 +272,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const orchestrator = this.getOrchestratorOrThrow();
     orchestrator.setInteractionMode(mode);
   }
+
+  // === Pause / Resume ===
+
+  pause(sessionId?: string): void {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
+    orchestrator.pause();
+  }
+
+  resume(sessionId?: string): void {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
+    orchestrator.resume();
+  }
 }

@@ -455,7 +455,7 @@ export class ConversationRuntime {
     let iterations = 0;
     let userTurnId: string | undefined;
 
-    while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
+    while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.isPaused && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
       iterations++;
       logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
@@ -809,6 +809,16 @@ export class ConversationRuntime {
   cancel(): void {
     this.ctx.isCancelled = true;
     this.ctx.abortController?.abort();
+  }
+
+  pause(): void {
+    this.ctx.isPaused = true;
+    logger.info('[ConversationRuntime] Paused — will stop after current iteration');
+  }
+
+  resume(): void {
+    this.ctx.isPaused = false;
+    logger.info('[ConversationRuntime] Resumed');
   }
 
   interrupt(newMessage: string): void {

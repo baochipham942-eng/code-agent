@@ -416,6 +416,7 @@ async function handleCommand(
   /model key <p>      configure API key for provider
   /cost               token usage & cost
   /context            context window usage
+  /permissions        security pipeline status
   /tools              list loaded tools
   /skills             list active skills
   /compact            trigger context compaction

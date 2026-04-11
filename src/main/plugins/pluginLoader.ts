@@ -100,7 +100,7 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       await fs.access(entryPath);
 
       // Dynamic import (supports both CommonJS and ESM)
-      const module = await import(entryPath);
+      const module = await import(entryPath + '?t=' + Date.now());
       entry = module.default || module;
 
       if (typeof entry.activate !== 'function') {

@@ -448,52 +448,19 @@ fn run_osascript(_script: &str) -> Result<String, String> {
     Err("AppleScript is only available on macOS".to_string())
 }
 
-// FFI: call macOS permission APIs via dlsym at runtime (not static linking).
-// Static `extern "C"` declarations embed symbol references in the binary, which causes
-// macOS Sequoia to show "Currently Sharing" on app launch even when no screen capture
-// code has run — the OS proactively detects the symbol references + TCC permission.
-// Using dlsym avoids embedding these symbols, so the indicator only appears when
-// screen capture is actually used.
+// FFI: call macOS permission APIs directly from the Tauri process (not via subprocess)
+// so TCC checks apply to the correct app bundle.
 #[cfg(target_os = "macos")]
-mod macos_ffi {
-    use std::ffi::CStr;
-    use std::os::raw::c_void;
-    use std::sync::OnceLock;
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
 
-    extern "C" {
-        fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
-    }
-    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
-
-    type BoolFn = unsafe extern "C" fn() -> bool;
-
-    fn lookup(name: &CStr) -> Option<BoolFn> {
-        let ptr = unsafe { dlsym(RTLD_DEFAULT, name.as_ptr()) };
-        if ptr.is_null() {
-            None
-        } else {
-            Some(unsafe { std::mem::transmute(ptr) })
-        }
-    }
-
-    static CG_PREFLIGHT: OnceLock<Option<BoolFn>> = OnceLock::new();
-    static CG_REQUEST: OnceLock<Option<BoolFn>> = OnceLock::new();
-    static AX_TRUSTED: OnceLock<Option<BoolFn>> = OnceLock::new();
-
-    pub fn cg_preflight_screen_capture_access() -> bool {
-        let f = CG_PREFLIGHT.get_or_init(|| lookup(c"CGPreflightScreenCaptureAccess"));
-        f.map(|f| unsafe { f() }).unwrap_or(false)
-    }
-
-    pub fn cg_request_screen_capture_access() -> bool {
-        let f = CG_REQUEST.get_or_init(|| lookup(c"CGRequestScreenCaptureAccess"));
-        f.map(|f| unsafe { f() }).unwrap_or(false)
-    }
-
-    pub fn ax_is_process_trusted() -> bool {
-        let f = AX_TRUSTED.get_or_init(|| lookup(c"AXIsProcessTrusted"));
-        f.map(|f| unsafe { f() }).unwrap_or(false)
-    }
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
 }
 
 /// Track whether we've already requested screen capture permission this session.
@@ -534,7 +501,8 @@ pub fn desktop_request_microphone_permission() -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn probe_accessibility_permission() -> NativePermissionStatus {
-    let trusted = macos_ffi::ax_is_process_trusted();
+    // Call AXIsProcessTrusted() directly via FFI — checks THIS process's TCC record
+    let trusted = unsafe { AXIsProcessTrusted() };
     if trusted {
         NativePermissionStatus {
             kind: "accessibility".to_string(),
@@ -561,7 +529,8 @@ fn probe_accessibility_permission() -> NativePermissionStatus {
 
 #[cfg(target_os = "macos")]
 fn probe_screen_capture_permission() -> NativePermissionStatus {
-    let granted = macos_ffi::cg_preflight_screen_capture_access();
+    // Call CGPreflightScreenCaptureAccess() directly via FFI — checks THIS process's TCC record
+    let granted = unsafe { CGPreflightScreenCaptureAccess() };
     if granted {
         NativePermissionStatus {
             kind: "screenCapture".to_string(),
@@ -1103,12 +1072,13 @@ fn capture_screenshot_to_path(output_path: &PathBuf, silent: bool) -> Result<Scr
 
     #[cfg(target_os = "macos")]
     {
-        // Check permission via dlsym (lazy loaded) — avoids embedding symbol references that
-        // trigger macOS Sequoia's "Currently Sharing" indicator on app launch.
-        let granted = macos_ffi::cg_preflight_screen_capture_access();
+        // Check permission via FFI — runs in THIS process so TCC checks the correct app bundle.
+        let granted = unsafe { CGPreflightScreenCaptureAccess() };
         if !granted {
+            // First time this session: trigger the system permission dialog via CGRequestScreenCaptureAccess().
+            // This shows the popup ONCE; subsequent calls just return the cached result.
             if !SCREEN_CAPTURE_REQUESTED.swap(true, Ordering::SeqCst) {
-                let requested = macos_ffi::cg_request_screen_capture_access();
+                let requested = unsafe { CGRequestScreenCaptureAccess() };
                 if !requested {
                     return Err("Screen Recording permission not granted. A permission dialog should appear — please allow it and restart the app.".to_string());
                 }

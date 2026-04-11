@@ -10,6 +10,8 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadPolicy, hasPolicyFile } from './policyLoader';
 import type { SecurityPolicy } from './policyFile';
+import type { DecisionStep } from '../../shared/types/decisionTrace';
+import { createTraceStep } from './decisionTraceBuilder';
 
 const logger = createLogger('PolicyEnforcer');
 
@@ -22,6 +24,8 @@ export interface PolicyCheckResult {
   reason?: string;
   /** Which policy section triggered the block */
   section?: string;
+  /** Trace step for decision transparency (only populated on deny) */
+  traceStep?: DecisionStep;
 }
 
 // ----------------------------------------------------------------------------
@@ -70,13 +74,16 @@ export class PolicyEnforcer {
   checkNetwork(url: string): PolicyCheckResult {
     if (!this.active) return { allowed: true };
 
+    const startTime = Date.now();
     const { network } = this.policy;
 
     if (!network.allow) {
+      const reason = 'Network access is disabled by policy';
       return {
         allowed: false,
-        reason: 'Network access is disabled by policy',
+        reason,
         section: 'network',
+        traceStep: createTraceStep('policy_enforcer', 'network.allow=false', 'deny', reason, startTime),
       };
     }
 
@@ -93,10 +100,12 @@ export class PolicyEnforcer {
         });
 
         if (!domainAllowed) {
+          const reason = `Domain "${hostname}" is not in the allowed domains whitelist`;
           return {
             allowed: false,
-            reason: `Domain "${hostname}" is not in the allowed domains whitelist`,
+            reason,
             section: 'network',
+            traceStep: createTraceStep('policy_enforcer', 'network.allowed_domains', 'deny', reason, startTime),
           };
         }
       } catch {
@@ -113,16 +122,19 @@ export class PolicyEnforcer {
   checkFilePath(filePath: string, mode: 'read' | 'write'): PolicyCheckResult {
     if (!this.active) return { allowed: true };
 
+    const startTime = Date.now();
     const { filesystem } = this.policy;
     const normalizedPath = this.normalizePath(filePath);
 
     // Check denied paths first (highest priority)
     for (const pattern of filesystem.denied_paths) {
       if (this.matchGlob(normalizedPath, this.normalizePath(pattern))) {
+        const reason = `Path "${filePath}" is denied by policy (pattern: ${pattern})`;
         return {
           allowed: false,
-          reason: `Path "${filePath}" is denied by policy (pattern: ${pattern})`,
+          reason,
           section: 'filesystem',
+          traceStep: createTraceStep('policy_enforcer', `filesystem.denied_paths: ${pattern}`, 'deny', reason, startTime),
         };
       }
     }
@@ -131,10 +143,12 @@ export class PolicyEnforcer {
     const basename = path.basename(filePath);
     for (const pattern of filesystem.denied_file_patterns) {
       if (this.matchGlob(basename, pattern)) {
+        const reason = `File "${basename}" matches denied pattern "${pattern}"`;
         return {
           allowed: false,
-          reason: `File "${basename}" matches denied pattern "${pattern}"`,
+          reason,
           section: 'filesystem',
+          traceStep: createTraceStep('policy_enforcer', `filesystem.denied_file_patterns: ${pattern}`, 'deny', reason, startTime),
         };
       }
     }
@@ -146,10 +160,12 @@ export class PolicyEnforcer {
       );
 
       if (!isWritable) {
+        const reason = `Path "${filePath}" is not in writable paths`;
         return {
           allowed: false,
-          reason: `Path "${filePath}" is not in writable paths`,
+          reason,
           section: 'filesystem',
+          traceStep: createTraceStep('policy_enforcer', 'filesystem.writable_paths', 'deny', reason, startTime),
         };
       }
     }
@@ -163,13 +179,16 @@ export class PolicyEnforcer {
   checkCommand(command: string): PolicyCheckResult {
     if (!this.active) return { allowed: true };
 
+    const startTime = Date.now();
     const { execution } = this.policy;
 
     if (!execution.allow_shell) {
+      const reason = 'Shell execution is disabled by policy';
       return {
         allowed: false,
-        reason: 'Shell execution is disabled by policy',
+        reason,
         section: 'execution',
+        traceStep: createTraceStep('policy_enforcer', 'execution.allow_shell=false', 'deny', reason, startTime),
       };
     }
 
@@ -178,10 +197,12 @@ export class PolicyEnforcer {
       try {
         const regex = new RegExp(pattern);
         if (regex.test(command)) {
+          const reason = `Command matches denied pattern "${pattern}"`;
           return {
             allowed: false,
-            reason: `Command matches denied pattern "${pattern}"`,
+            reason,
             section: 'execution',
+            traceStep: createTraceStep('policy_enforcer', `execution.denied_commands: ${pattern}`, 'deny', reason, startTime),
           };
         }
       } catch {
@@ -198,10 +219,12 @@ export class PolicyEnforcer {
       );
 
       if (!isAllowed) {
+        const reason = `Command does not match any allowed prefix`;
         return {
           allowed: false,
-          reason: `Command does not match any allowed prefix`,
+          reason,
           section: 'execution',
+          traceStep: createTraceStep('policy_enforcer', 'execution.allowed_command_prefixes', 'deny', reason, startTime),
         };
       }
     }
@@ -215,13 +238,16 @@ export class PolicyEnforcer {
   checkTool(toolName: string): PolicyCheckResult {
     if (!this.active) return { allowed: true };
 
+    const startTime = Date.now();
     const { tools } = this.policy;
 
     if (tools.disabled.includes(toolName)) {
+      const reason = `Tool "${toolName}" is disabled by policy`;
       return {
         allowed: false,
-        reason: `Tool "${toolName}" is disabled by policy`,
+        reason,
         section: 'tools',
+        traceStep: createTraceStep('policy_enforcer', `tools.disabled: ${toolName}`, 'deny', reason, startTime),
       };
     }
 
@@ -234,13 +260,16 @@ export class PolicyEnforcer {
   checkProvider(provider: string): PolicyCheckResult {
     if (!this.active) return { allowed: true };
 
+    const startTime = Date.now();
     const { model } = this.policy;
 
     if (model.allowed_providers.length > 0 && !model.allowed_providers.includes(provider)) {
+      const reason = `Provider "${provider}" is not in the allowed list`;
       return {
         allowed: false,
-        reason: `Provider "${provider}" is not in the allowed list`,
+        reason,
         section: 'model',
+        traceStep: createTraceStep('policy_enforcer', 'model.allowed_providers', 'deny', reason, startTime),
       };
     }
 

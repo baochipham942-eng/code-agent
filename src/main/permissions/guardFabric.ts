@@ -7,6 +7,8 @@
 // ============================================================================
 
 import { getPolicyEngine } from './policyEngine';
+import type { DecisionStep } from '../../shared/types/decisionTrace';
+import { createTraceStep } from '../security/decisionTraceBuilder';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -40,6 +42,8 @@ export interface GuardDecision {
   source: string;
   reason: string;
   allResults: GuardSourceResult[];
+  /** Trace step for decision transparency (only populated on deny/ask) */
+  traceStep?: DecisionStep;
 }
 
 // ----------------------------------------------------------------------------
@@ -69,6 +73,8 @@ export class GuardFabric {
   }
 
   evaluate(request: GuardRequest): GuardDecision {
+    const startTime = Date.now();
+
     // 1. Collect results from all sources
     const results: GuardSourceResult[] = [];
     for (const source of this.sources) {
@@ -84,6 +90,9 @@ export class GuardFabric {
         source: 'topology',
         reason: topologyOverride.reason,
         allResults: results,
+        traceStep: topologyOverride.verdict !== 'allow'
+          ? createTraceStep('guard_fabric', `topology: ${request.tool}/${request.topology}`, topologyOverride.verdict, topologyOverride.reason, startTime)
+          : undefined,
       };
     }
 
@@ -94,19 +103,33 @@ export class GuardFabric {
         source: 'default',
         reason: 'no sources provided a verdict',
         allResults: [],
+        traceStep: createTraceStep('guard_fabric', 'no_sources', 'ask', 'no sources provided a verdict', startTime),
       };
     }
 
     const denies = results.filter((r) => r.verdict === 'deny');
     if (denies.length > 0) {
-      return { verdict: 'deny', source: denies[0].source, reason: denies[0].reason, allResults: results };
+      return {
+        verdict: 'deny',
+        source: denies[0].source,
+        reason: denies[0].reason,
+        allResults: results,
+        traceStep: createTraceStep('guard_fabric', `source: ${denies[0].source}`, 'deny', denies[0].reason, startTime),
+      };
     }
 
     const asks = results.filter((r) => r.verdict === 'ask');
     if (asks.length > 0) {
-      return { verdict: 'ask', source: asks[0].source, reason: asks[0].reason, allResults: results };
+      return {
+        verdict: 'ask',
+        source: asks[0].source,
+        reason: asks[0].reason,
+        allResults: results,
+        traceStep: createTraceStep('guard_fabric', `source: ${asks[0].source}`, 'ask', asks[0].reason, startTime),
+      };
     }
 
+    // allow — no traceStep (zero overhead on hot path)
     const allows = results.filter((r) => r.verdict === 'allow');
     return {
       verdict: 'allow',

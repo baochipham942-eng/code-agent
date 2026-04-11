@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
+import type { DecisionTrace } from '@shared/types';
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
 
@@ -79,6 +80,58 @@ export function RequestDetails({ request }: RequestDetailsProps) {
               ? `${details.changes.slice(0, 500)}...`
               : details.changes}
           </pre>
+        </div>
+      )}
+
+      {/* Decision Trace: 为什么需要审批 */}
+      {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
+        <DecisionTraceView trace={request.decisionTrace} />
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// DecisionTraceView - 决策链透明展示
+// ----------------------------------------------------------------------------
+
+const LAYER_LABELS: Record<string, string> = {
+  policy_enforcer: 'Policy',
+  guard_fabric: 'Guard',
+  permission_classifier: 'Classifier',
+  plan_approval: 'Plan',
+  plugin_hook: 'Hook',
+};
+
+function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-[10px] text-zinc-500 hover:text-zinc-400 flex items-center gap-1"
+      >
+        <span>{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span>为什么需要审批</span>
+        <span className="text-zinc-600">({trace.steps.length} 步)</span>
+      </button>
+      {expanded && (
+        <div className="mt-1.5 space-y-1">
+          {trace.steps.map((step, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-2 text-[10px] text-zinc-500 pl-2 border-l border-zinc-700"
+            >
+              <span className="shrink-0 text-zinc-600">
+                {LAYER_LABELS[step.layer] || step.layer}
+              </span>
+              <span className="shrink-0">
+                {step.result === 'deny' ? '\u2715' : step.result === 'ask' ? '?' : '\u2713'}
+              </span>
+              <span className="text-zinc-400 break-all">{step.reason}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

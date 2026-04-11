@@ -54,4 +54,6 @@ export interface Session {
   archivedAt?: number;             // 归档时间
   // PR 关联
   prLink?: PRLink;                 // GitHub PR 关联信息
+  // Git 分支
+  gitBranch?: string;              // 创建会话时的 git 分支
 }

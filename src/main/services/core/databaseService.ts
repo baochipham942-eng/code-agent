@@ -217,6 +217,7 @@ export class DatabaseService {
       { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
       { column: 'is_deleted', sql: 'ALTER TABLE sessions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0' },
       { column: 'synced_at', sql: 'ALTER TABLE sessions ADD COLUMN synced_at INTEGER' },
+      { column: 'git_branch', sql: 'ALTER TABLE sessions ADD COLUMN git_branch TEXT' },
     ];
 
     for (const migration of migrations) {

@@ -422,9 +422,10 @@ async function handleCommand(
   /compact            trigger context compaction
   /clear, /c          new session
   /history            conversation history
-  /sessions           list sessions
+  /sessions           list sessions (with branch/PR)
   /session            current session info
   /restore <id>       restore session
+  /resume [id]        resume previous session context
   /config             show config
   /vim                toggle vi mode
   !<cmd>              run shell command

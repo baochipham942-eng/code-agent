@@ -69,6 +69,19 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     const now = Date.now();
 
+    // Detect git branch
+    let gitBranch: string | undefined;
+    if (options.workingDirectory) {
+      try {
+        const { execSync } = await import('child_process');
+        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd: options.workingDirectory,
+          timeout: 3000,
+          encoding: 'utf-8',
+        }).trim() || undefined;
+      } catch { /* not a git repo or git not available */ }
+    }
+
     const session: Session = {
       id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       title: options.title || this.generateSessionTitle(),
@@ -77,6 +90,7 @@ export class SessionManager implements Disposable {
       workingDirectory: options.workingDirectory,
       createdAt: now,
       updatedAt: now,
+      gitBranch,
     };
 
     db.createSession(session);

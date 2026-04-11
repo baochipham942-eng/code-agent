@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
+import { builtinModules } from 'module';
 
 /**
  * Vite plugin: inject web server auth token into HTML during dev.
@@ -38,6 +39,10 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     rollupOptions: {
+      external: [
+        ...builtinModules,
+        ...builtinModules.map((m) => `node:${m}`),
+      ],
       output: {
         // 代码分割：将大型依赖拆分为独立 chunk，提升首屏加载速度
         manualChunks: {

@@ -153,6 +153,13 @@ export class RunFinalizer {
       await this.contextAssembly.addAndPersistMessage(errorMessage);
       this.ctx.onEvent({ type: 'message', data: errorMessage });
 
+      // Fire-and-forget: emit StopFailure hook
+      this.ctx.hookManager?.triggerStopFailure(
+        `Circuit breaker tripped after ${iterations} iterations`,
+        'circuit_breaker',
+        this.ctx.sessionId,
+      ).catch(() => {});
+
       langfuse.endTrace(this.ctx.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
       this.ctx.circuitBreaker.reset();
     } else if (iterations >= this.ctx.maxIterations) {
@@ -162,6 +169,14 @@ export class RunFinalizer {
         type: 'error',
         data: { message: 'Max iterations reached' },
       });
+
+      // Fire-and-forget: emit StopFailure hook
+      this.ctx.hookManager?.triggerStopFailure(
+        `Max iterations reached (${this.ctx.maxIterations})`,
+        'max_iterations',
+        this.ctx.sessionId,
+      ).catch(() => {});
+
       langfuse.endTrace(this.ctx.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
       langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);

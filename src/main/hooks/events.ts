@@ -43,6 +43,12 @@ export type HookEvent =
   | 'TaskCreated'
   /** @stability experimental */
   | 'TaskCompleted'
+  /** @stability experimental */
+  | 'PermissionDenied'
+  /** @stability experimental */
+  | 'PostCompact'
+  /** @stability experimental */
+  | 'StopFailure'
   /** @stability internal @deprecated */
   | 'Setup'
   /** @stability internal @deprecated */
@@ -68,6 +74,9 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   Notification: 'Triggered when a notification needs to be sent.',
   TaskCreated: 'Triggered when an agent task is created.',
   TaskCompleted: 'Triggered when an agent task completes.',
+  PermissionDenied: 'Triggered when a tool permission is denied (observer-only).',
+  PostCompact: 'Triggered after context compaction completes (observer-only).',
+  StopFailure: 'Triggered when the agent stops due to an error (observer-only).',
 };
 
 /**
@@ -220,6 +229,37 @@ export interface TaskCompletedContext extends HookEventContext {
 }
 
 /**
+ * Context for permission denied events (observer-only)
+ * @experimental
+ */
+export interface PermissionDeniedContext extends HookEventContext {
+  event: 'PermissionDenied';
+  toolName: string;
+  reason: string;
+  deniedBy: 'user' | 'hook' | 'policy' | 'classifier';
+}
+
+/**
+ * Context for post-compaction events (observer-only)
+ * @experimental
+ */
+export interface PostCompactContext extends HookEventContext {
+  event: 'PostCompact';
+  savedTokens: number;
+  strategy: string;
+}
+
+/**
+ * Context for stop failure events (observer-only)
+ * @experimental
+ */
+export interface StopFailureContext extends HookEventContext {
+  event: 'StopFailure';
+  error: string;
+  phase: string;
+}
+
+/**
  * Union type of all hook contexts
  */
 export type AnyHookContext =
@@ -234,7 +274,10 @@ export type AnyHookContext =
   | CompactContext
   | NotificationContext
   | TaskCreatedContext
-  | TaskCompletedContext;
+  | TaskCompletedContext
+  | PermissionDeniedContext
+  | PostCompactContext
+  | StopFailureContext;
 
 /**
  * Result returned by a hook execution
@@ -331,6 +374,25 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
     if ('taskId' in context) env['HOOK_TASK_ID'] = String(context.taskId);
     if ('agentType' in context) env['HOOK_AGENT_TYPE'] = String(context.agentType);
     if ('success' in context) env['HOOK_TASK_SUCCESS'] = String(context.success);
+  }
+
+  // Permission denied context
+  if (context.event === 'PermissionDenied' && 'deniedBy' in context) {
+    env[HOOK_ENV_VARS.TOOL_NAME] = String((context as PermissionDeniedContext).toolName);
+    env['HOOK_DENIED_BY'] = String((context as PermissionDeniedContext).deniedBy);
+    env['HOOK_REASON'] = String((context as PermissionDeniedContext).reason);
+  }
+
+  // Post compact context
+  if (context.event === 'PostCompact' && 'savedTokens' in context) {
+    env['HOOK_SAVED_TOKENS'] = String((context as PostCompactContext).savedTokens);
+    env['HOOK_STRATEGY'] = String((context as PostCompactContext).strategy);
+  }
+
+  // Stop failure context
+  if (context.event === 'StopFailure' && 'phase' in context) {
+    env[HOOK_ENV_VARS.ERROR_MESSAGE] = String((context as StopFailureContext).error);
+    env['HOOK_PHASE'] = String((context as StopFailureContext).phase);
   }
 
   return env;

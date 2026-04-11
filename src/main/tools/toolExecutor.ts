@@ -310,6 +310,11 @@ export class ToolExecutor {
             tool: toolName,
             reason: classification.reason,
           });
+          // Fire-and-forget: emit PermissionDenied hook
+          options.hookManager?.triggerPermissionDenied(
+            toolName, classification.reason || 'classifier deny', 'classifier',
+            options.sessionId || 'unknown',
+          ).catch(() => {});
           return {
             success: false,
             error: `Denied: ${classification.reason}`,
@@ -387,6 +392,11 @@ export class ToolExecutor {
             permissionRequest.reason,
           );
           if (!hookResult.shouldProceed) {
+            // Fire-and-forget: emit PermissionDenied hook
+            options.hookManager?.triggerPermissionDenied(
+              toolName, hookResult.message || 'blocked', 'hook',
+              options.sessionId || 'unknown',
+            ).catch(() => {});
             return {
               success: false,
               error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
@@ -422,6 +432,11 @@ export class ToolExecutor {
             error: 'Permission denied by user',
           });
         }
+        // Fire-and-forget: emit PermissionDenied hook
+        options.hookManager?.triggerPermissionDenied(
+          toolName, 'Permission denied by user', 'user',
+          options.sessionId || 'unknown',
+        ).catch(() => {});
 
         return {
           success: false,

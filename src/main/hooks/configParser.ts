@@ -87,6 +87,9 @@ export interface HooksConfig {
   Notification?: HookMatcher[];
   TaskCreated?: HookMatcher[];
   TaskCompleted?: HookMatcher[];
+  PermissionDenied?: HookMatcher[];   // Phase 3: observer-only
+  PostCompact?: HookMatcher[];        // Phase 3: observer-only
+  StopFailure?: HookMatcher[];        // Phase 3: observer-only
 }
 
 /**
@@ -168,6 +171,9 @@ const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
   'SubagentStop',
   'TaskCreated',
   'TaskCompleted',
+  'PermissionDenied',
+  'PostCompact',
+  'StopFailure',
 ]);
 
 /**
@@ -195,6 +201,9 @@ function parseHooksObject(
     'Notification',
     'TaskCreated',
     'TaskCompleted',
+    'PermissionDenied',   // Phase 3
+    'PostCompact',        // Phase 3
+    'StopFailure',        // Phase 3
   ];
 
   for (const event of events) {

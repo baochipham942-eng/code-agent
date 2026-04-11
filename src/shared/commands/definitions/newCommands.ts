@@ -192,8 +192,69 @@ export const pluginsCommand: CommandDefinition = {
   },
 };
 
+export const hooksCommand: CommandDefinition = {
+  id: 'hooks',
+  name: 'Hooks',
+  description: '查看 Hook 配置和最近触发历史',
+  category: 'status',
+  surfaces: ['cli', 'gui'],
+  handler: async (ctx) => {
+    const lines: string[] = [];
+
+    try {
+      const agent = ctx.agent as {
+        getHookManager?: () => { getHookStats: () => Record<string, number>; getTriggerHistory: () => Array<{ timestamp: number; event: string; action: string; durationMs: number; hookCount: number; modified: boolean }> } | null;
+      } | undefined;
+
+      const hookManager = agent?.getHookManager?.();
+      if (!hookManager) {
+        ctx.output.info('Hook system not initialized');
+        return { success: true };
+      }
+
+      // Hook Configurations
+      const stats = hookManager.getHookStats();
+      const eventEntries = Object.entries(stats).filter(([, count]) => count > 0);
+
+      lines.push('Hook Configurations:');
+      if (eventEntries.length === 0) {
+        lines.push('  (no hooks configured)');
+      } else {
+        for (const [event, count] of eventEntries) {
+          lines.push(`  ${event}: ${count} hook(s)`);
+        }
+      }
+
+      lines.push('');
+
+      // Recent Triggers
+      const history = hookManager.getTriggerHistory();
+      const recent = history.slice(-10);
+
+      lines.push(`Recent Triggers (${history.length} total, showing last ${recent.length}):`);
+      if (recent.length === 0) {
+        lines.push('  (no triggers yet)');
+      } else {
+        for (const entry of recent) {
+          const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+          const mod = entry.modified ? ' [modified]' : '';
+          lines.push(`  ${time} ${entry.event} → ${entry.action} (${entry.durationMs}ms, ${entry.hookCount} hooks)${mod}`);
+        }
+      }
+
+      ctx.output.info(lines.join('\n'));
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.output.error(`Hooks command failed: ${message}`);
+      return { success: false, message };
+    }
+  },
+};
+
 export const newCommands: CommandDefinition[] = [
   agentsCommand,
   statusCommand,
   pluginsCommand,
+  hooksCommand,
 ];

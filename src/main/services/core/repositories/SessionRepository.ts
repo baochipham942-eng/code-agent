@@ -70,8 +70,8 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
+      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at, git_branch)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
     stmt.run(
@@ -85,7 +85,8 @@ export class SessionRepository {
       session.updatedAt,
       session.workspace || null,
       session.status || 'idle',
-      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null
+      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
+      session.gitBranch || null
     );
   }
 
@@ -545,6 +546,7 @@ export class SessionRepository {
       isArchived,
       archivedAt: isArchived ? (row.updated_at as number) : undefined,
       isDeleted,
+      gitBranch: row.git_branch as string | undefined,
     };
   }
 }

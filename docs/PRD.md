@@ -1,7 +1,7 @@
 # Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.0
-> 日期: 2026-03-16
+> 版本: 2.1
+> 日期: 2026-04-11
 > 作者: Lin Chen
 
 ---
@@ -16,7 +16,7 @@
 
 | 维度 | Code Agent | 竞品（Claude Code / Cursor / Windsurf） |
 |------|-----------|----------------------------------------|
-| 模型绑定 | 11+ Provider 智能路由，按任务复杂度选模型 | 锁定 1-2 家 Provider |
+| 模型绑定 | 13+ Provider 智能路由，按任务复杂度选模型 | 锁定 1-2 家 Provider |
 | 成本控制 | 自适应路由降本 60%（简单任务→免费模型） | 固定模型，无成本优化 |
 | 质量闭环 | 内置 Swiss Cheese 评测框架，132→164/200 可量化 | 无内置评测 |
 | 记忆系统 | Light Memory 文件即记忆，跨会话持续学习 | 无跨会话学习 |
@@ -54,7 +54,7 @@
 | 前端 | React 18 + TypeScript + Tailwind + Zustand |
 | 构建 | esbuild（main/preload）+ Vite（renderer） |
 | 数据库 | SQLite（better-sqlite3）+ Supabase（云同步） |
-| AI 模型 | Kimi K2.5（主）/ DeepSeek / Claude / OpenAI / 智谱 等 11+ Provider |
+| AI 模型 | Kimi K2.5（主）/ DeepSeek / Claude / OpenAI / 智谱 等 13+ Provider |
 
 ---
 
@@ -75,6 +75,12 @@
 | 语音输入 | ✅ | ASR 转写 |
 | 输入历史 | ✅ | 上下箭头浏览历史命令 |
 | Toast 通知 | ✅ | 全局操作反馈（成功/错误/警告/信息） |
+| 工具调用自动分组 | ✅ | 3+ 连续同类工具自动合并显示（收集上下文 / 文件操作） |
+| 流式分阶段反馈 | ✅ | 5 阶段渐进提示 + 已运行计时器 + Force Stop |
+| 消息编辑/重试 | ✅ | 用户消息内联编辑，助手消息重新生成 |
+| Artifact 追踪 | ✅ | 自动提取 chart/spreadsheet/mermaid artifacts 并展示 |
+| 推理强度控制 | ✅ | 4 级 Effort Selector（Low/Med/High/Max） |
+| Code/Plan/Ask 模式 | ✅ | 三种交互模式一键切换 |
 
 #### 3.1.2 工具系统
 
@@ -125,6 +131,8 @@
 | 敏感命令拦截 | rm -rf, git push --force 等二次确认 |
 | 工作目录隔离 | Agent 只能操作指定工作目录 |
 | API Key 安全 | 本地存储，不打包进 DMG |
+| 全局权限模式 | Default / Full Access 一键切换，确认浮窗 |
+| Generative UI 安全 | postMessage 来源校验 + CSP + prompt injection XML 隔离 |
 
 ---
 
@@ -142,11 +150,13 @@
 
 | 能力 | 说明 |
 |------|------|
-| 11+ Provider 支持 | DeepSeek, Claude, OpenAI, Groq, Qwen, Moonshot, Minimax, Zhipu, Perplexity, OpenRouter, Gemini, Local |
+| 13+ Provider 支持 | DeepSeek, Claude, OpenAI, Groq, Qwen, Moonshot, Minimax, Zhipu, Perplexity, OpenRouter, Gemini, 火山引擎 (豆包), Local (Ollama) |
 | 能力匹配选模型 | `selectModelByCapability()` 按任务类型分配 |
 | 自动降级链 | Provider 故障时自动切换备选 |
 | 运行时切换 | StatusBar 下拉菜单实时切换模型 |
 | 测试连接 | ModelSettings 一键验证 API Key |
+| Provider 健康监控 | 四状态机（healthy/degraded/unavailable/recovering），ModelSwitcher 健康色点 |
+| 搜索 + 能力标签 | ModelSwitcher 内搜索模型名，显示 vision/tool/reasoning 标签 |
 
 #### 3.2.2 评测框架（Swiss Cheese）
 
@@ -190,6 +200,8 @@
 | 计划审批 | 高风险操作需用户确认 |
 | 优雅关闭 | 4 阶段：Signal → Grace → Flush → Force |
 | 断点恢复 | 会话中断后可恢复未完成任务 |
+| 暂停/恢复 | Graceful pause，等当前迭代结束后暂停 |
+| 检查点回溯 | 文件回滚 + 消息截断 + "从此重试" Fork |
 
 ---
 
@@ -235,7 +247,8 @@
 |------|---------|
 | 会话 | 新建会话、清空对话、归档 |
 | 视图 | 切换侧边栏、DAG 面板、工作区、评测中心 |
-| 设置 | 打开设置、键盘快捷键 |
+| 设置 | 打开设置、键盘快捷键、设置页搜索（18 项索引，中英文模糊匹配） |
+| 集成 | MCP 服务器添加 UI（stdio/SSE/HTTP 三类型）、Provider 诊断面板（5 类探针） |
 
 ---
 

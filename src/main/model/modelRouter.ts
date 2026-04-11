@@ -17,6 +17,7 @@ import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
 import { getConfigService } from '../services/core/configService';
+import { getProviderHealthMonitor } from './providerHealthMonitor';
 
 const logger = createLogger('ModelRouter');
 import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -375,6 +376,13 @@ export class ModelRouter {
       logger.warn(`[ModelRouter] Provider ${config.provider} exhausted, trying fallback chain...`);
 
       for (const fallback of chain) {
+        // Skip providers that are known to be unavailable
+        const fallbackHealth = getProviderHealthMonitor().getHealth(fallback.provider);
+        if (fallbackHealth?.status === 'unavailable') {
+          logger.warn(`[ModelRouter] Skipping unavailable fallback: ${fallback.provider}`);
+          continue;
+        }
+
         const fallbackApiKey = getConfigService().getApiKey(fallback.provider as ModelProvider);
         if (!fallbackApiKey) continue;
 

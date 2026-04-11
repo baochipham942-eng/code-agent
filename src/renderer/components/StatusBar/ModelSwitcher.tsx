@@ -301,7 +301,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       );
                     })}
                   </div>
-                  <span className="text-gray-500 text-[10px]">
+                  <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
+                    {healthMap[opt.provider] && (
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
+                        title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
+                      />
+                    )}
                     {getProviderDisplayName(opt.provider) ?? opt.provider}
                   </span>
                 </button>

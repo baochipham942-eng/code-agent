@@ -6,30 +6,47 @@
 /**
  * All supported hook event types
  *
- * 13 event types covering the full lifecycle of agent interactions
- * Phase 2: Added PermissionRequest and SubagentStart events
+ * 15 event types covering the full lifecycle of agent interactions.
+ * Each event is annotated with a stability level:
+ *
+ * - **stable**: API is frozen; safe for external consumers.
+ * - **experimental**: API may change between minor versions.
+ * - **planned**: Defined but not yet wired to real triggers.
+ * - **internal @deprecated**: Will be removed in a future version.
  */
 export type HookEvent =
+  /** @stability stable */
   | 'PreToolUse'
+  /** @stability stable */
   | 'PostToolUse'
+  /** @stability stable */
   | 'PostToolUseFailure'
+  /** @stability stable */
   | 'UserPromptSubmit'
+  /** @stability stable */
   | 'Stop'
-  | 'SubagentStop'
-  | 'SubagentStart'      // Phase 2: 子 Agent 启动时触发
-  | 'PermissionRequest'  // Phase 2: 权限请求时触发
-  | 'PostExecution'      // Harness: 每轮 agent turn 结束后触发（GC/健康检查）
+  /** @stability stable */
+  | 'PostExecution'
+  /** @stability stable */
   | 'PreCompact'
-  | 'Setup'
+  /** @stability stable */
   | 'SessionStart'
+  /** @stability stable */
   | 'SessionEnd'
-  | 'Notification'
-  // Phase 3: 新增事件（对齐 Claude Code 27 事件集）
-  | 'FileChanged'        // 外部文件变更检测
-  | 'TaskCreated'        // Agent Task 创建
-  | 'TaskCompleted'      // Agent Task 完成
-  | 'ConfigChange'       // 配置文件变更
-  | 'CwdChanged';        // 工作目录切换
+  /** @stability stable */
+  | 'SubagentStop'
+  /** @stability experimental */
+  | 'SubagentStart'
+  /** @stability experimental */
+  | 'PermissionRequest'
+  /** @stability planned */
+  | 'TaskCreated'
+  /** @stability planned */
+  | 'TaskCompleted'
+  /** @stability internal @deprecated */
+  | 'Setup'
+  /** @stability internal @deprecated */
+  | 'Notification';
 
 /**
  * Event descriptions for documentation and UI
@@ -49,11 +66,8 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   SessionStart: 'Triggered when a new session begins.',
   SessionEnd: 'Triggered when a session ends.',
   Notification: 'Triggered when a notification needs to be sent.',
-  FileChanged: 'Triggered when files are modified externally.',
   TaskCreated: 'Triggered when an agent task is created.',
   TaskCompleted: 'Triggered when an agent task completes.',
-  ConfigChange: 'Triggered when configuration files change.',
-  CwdChanged: 'Triggered when the working directory changes.',
 };
 
 /**

@@ -80,12 +80,8 @@ export interface HooksConfig {
   SessionStart?: HookMatcher[];
   SessionEnd?: HookMatcher[];
   Notification?: HookMatcher[];
-  // Phase 3: 新增事件
-  FileChanged?: HookMatcher[];
   TaskCreated?: HookMatcher[];
   TaskCompleted?: HookMatcher[];
-  ConfigChange?: HookMatcher[];
-  CwdChanged?: HookMatcher[];
 }
 
 /**
@@ -173,6 +169,8 @@ function parseHooksObject(
     'SessionEnd',
     'PostExecution',
     'Notification',
+    'TaskCreated',
+    'TaskCompleted',
   ];
 
   for (const event of events) {

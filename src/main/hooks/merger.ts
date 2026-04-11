@@ -22,6 +22,8 @@ export interface MergedHookConfig {
   parallel: boolean;
   /** Match MCP server tools by server name prefix */
   mcpServer?: string;
+  /** Hook type: 'decision' can block/modify, 'observer' is read-only. Default: 'decision'. */
+  hookType: 'decision' | 'observer';
 }
 
 /**
@@ -119,6 +121,12 @@ function mergeGroup(
   // Phase 2: 如果任何配置标记为并行，则整个组并行执行
   const parallel = sorted.some(config => config.parallel);
 
+  // Observer wins: if any source marks this group as observer, the merged
+  // result is observer (safer default when sources disagree).
+  const hookType = sorted.some(config => config.hookType === 'observer')
+    ? 'observer' as const
+    : 'decision' as const;
+
   return {
     event: first.event,
     matcher: first.matcher,
@@ -126,6 +134,7 @@ function mergeGroup(
     sources: Array.from(sources),
     parallel,
     mcpServer: first.mcpServer,
+    hookType,
   };
 }
 

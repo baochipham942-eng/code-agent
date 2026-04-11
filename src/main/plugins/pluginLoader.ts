@@ -11,6 +11,10 @@ import type {
   LoadedPlugin,
   PluginLoadResult,
 } from './types';
+import {
+  validatePlugin,
+  formatValidationResult,
+} from './pluginValidator';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -89,6 +93,28 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
         success: false,
         error: `No valid manifest found in ${pluginDir}`,
       };
+    }
+
+    // Structured validation
+    try {
+      const validation = await validatePlugin(pluginDir, manifest);
+      if (!validation.valid) {
+        const details = formatValidationResult(validation);
+        return {
+          success: false,
+          error: `Plugin validation failed in ${pluginDir}:\n${details}`,
+        };
+      }
+      // Log warnings even if valid
+      if (validation.warnings.length > 0) {
+        console.warn(
+          `Plugin ${manifest.id} validation warnings:\n${formatValidationResult(validation)}`
+        );
+      }
+    } catch (validationErr: unknown) {
+      // Validation itself should never block loading
+      const msg = validationErr instanceof Error ? validationErr.message : String(validationErr);
+      console.warn(`Plugin validation error (non-blocking) for ${pluginDir}: ${msg}`);
     }
 
     // Load entry module

@@ -43,6 +43,7 @@ import { getSubagentContextStore } from '../context/subagentContextStore';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
 import type { ContextProvenanceCategory } from '../../shared/types/contextView';
+import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -144,6 +145,8 @@ interface SubagentContext {
   worktreePath?: string;
   /** Optional callback for lightweight context updates */
   onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
+  /** HookManager for firing SubagentStart/Stop and TaskCreated/Completed events */
+  hookManager?: HookManager;
 }
 
 type MessageContent = {
@@ -351,8 +354,35 @@ export class SubagentExecutor {
       toolPool: config.availableTools,
     };
     const agentTask = new AgentTask(agentId, taskMetadata);
+
+    // Wire TaskCreated/TaskCompleted hooks via AgentTask lifecycle callbacks
+    const sessionId = ((context.toolContext as ToolContext & { sessionId?: string }).sessionId || '').trim() || 'unknown';
+    if (context.hookManager) {
+      const hm = context.hookManager;
+      agentTask.onHook = (event, payload) => {
+        if (event === 'TaskCreated') {
+          hm.triggerTaskCreated(payload.taskId, payload.agentType, sessionId)
+            .catch(() => {});
+        } else if (event === 'TaskCompleted') {
+          hm.triggerTaskCompleted(payload.taskId, payload.agentType, payload.success ?? false, sessionId)
+            .catch(() => {});
+        }
+      };
+    }
+
     agentTask.register();
     agentTask.start();
+
+    // Fire SubagentStart hook (fire-and-forget)
+    if (context.hookManager) {
+      context.hookManager.triggerSubagentStart(
+        config.name,
+        agentId,
+        prompt,
+        sessionId,
+        context.parentToolUseId,
+      ).catch(() => {});
+    }
 
     const maxIterations = config.maxIterations || 10;
     const toolsUsed: string[] = [];
@@ -448,7 +478,6 @@ export class SubagentExecutor {
     }
 
     const subagentContextStore = getSubagentContextStore();
-    const sessionId = ((context.toolContext as ToolContext & { sessionId?: string }).sessionId || '').trim() || 'unknown';
     const observabilityAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
 
     // Build messages with multimodal support for images
@@ -629,6 +658,8 @@ export class SubagentExecutor {
       if (!budgetCheck.allowed) {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
+        // Fire SubagentStop on early budget failure
+        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(() => {});
         return {
           success: false,
           output: '',
@@ -654,6 +685,8 @@ export class SubagentExecutor {
             ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
             : '任务已取消';
           agentTask.fail(errorMsg);
+          // Fire SubagentStop on abort/timeout
+          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(() => {});
           return {
             success: false,
             output: finalOutput || '',
@@ -995,6 +1028,15 @@ export class SubagentExecutor {
       });
       agentTask.stop();
 
+      // Fire SubagentStop hook (fire-and-forget)
+      if (context.hookManager) {
+        context.hookManager.triggerSubagentStop(
+          config.name,
+          finalOutput || undefined,
+          sessionId,
+        ).catch(() => {});
+      }
+
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
@@ -1013,6 +1055,16 @@ export class SubagentExecutor {
       );
 
       agentTask.fail(error instanceof Error ? error.message : String(error));
+
+      // Fire SubagentStop hook on failure (fire-and-forget)
+      if (context.hookManager) {
+        context.hookManager.triggerSubagentStop(
+          config.name,
+          undefined,
+          sessionId,
+        ).catch(() => {});
+      }
+
       throw error; // re-throw to preserve existing error handling
     }
   }

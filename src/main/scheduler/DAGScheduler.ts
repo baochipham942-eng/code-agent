@@ -443,6 +443,7 @@ export class DAGScheduler extends EventEmitter {
         toolContext: schedContext.toolContext,
         // 传递父工具调用 ID，用于 subagent 消息追踪
         parentToolUseId: schedContext.toolContext.currentToolCallId,
+        hookManager: schedContext.toolContext.hookManager,
       }
     );
 

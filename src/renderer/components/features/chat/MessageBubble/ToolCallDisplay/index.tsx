@@ -151,8 +151,13 @@ export function ToolCallDisplay({
         <ToolHeader toolCall={toolCall} status={status} />
       </div>
 
-      {/* Result summary line with ⎿ connector - only when collapsed and has result */}
-      {toolCall.result && !expanded && <ResultSummary toolCall={toolCall} />}
+      {/* Bash inline output - when collapsed, show command output preview */}
+      {!expanded && isBashTool(toolCall) && toolCall.result && (
+        <BashOutputPreview toolCall={toolCall} status={status} />
+      )}
+
+      {/* Result summary line with ⎿ connector - only when collapsed and has result (skip for Bash, handled above) */}
+      {toolCall.result && !expanded && !isBashTool(toolCall) && <ResultSummary toolCall={toolCall} />}
 
       {/* Quick file actions for Write - shown when collapsed */}
       {!expanded && status === 'success' && toolCall.name === 'Write' && (
@@ -164,6 +169,70 @@ export function ToolCallDisplay({
         <div className="ml-5 animate-fadeIn">
           <ToolDetails toolCall={toolCall} compact={compact} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Bash Output Preview - inline output when Bash is collapsed
+// Pending: last 5 lines (streaming feel)
+// Completed: first 20 lines + "...+N lines" if truncated
+// ============================================================================
+
+const BASH_PREVIEW_LINES_PENDING = 5;
+const BASH_PREVIEW_LINES_COMPLETED = 20;
+
+function isBashTool(toolCall: ToolCall): boolean {
+  return toolCall.name === 'Bash' || toolCall.name === 'bash';
+}
+
+function stripAnsi(str: string): string {
+  if (typeof str !== 'string') return str;
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\?]?[0-9;]*[a-zA-Z]/g, '');
+}
+
+function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: ToolStatus }) {
+  const output = toolCall.result?.output;
+  if (!output || typeof output !== 'string') return null;
+
+  const cleaned = stripAnsi(output).trim();
+  if (!cleaned) return null;
+
+  const allLines = cleaned.split('\n');
+  const isPending = status === 'pending';
+
+  let displayLines: string[];
+  let truncatedCount = 0;
+
+  if (isPending) {
+    // Show last N lines (streaming feel)
+    displayLines = allLines.slice(-BASH_PREVIEW_LINES_PENDING);
+  } else {
+    // Completed: show first N lines
+    if (allLines.length > BASH_PREVIEW_LINES_COMPLETED) {
+      displayLines = allLines.slice(0, BASH_PREVIEW_LINES_COMPLETED);
+      truncatedCount = allLines.length - BASH_PREVIEW_LINES_COMPLETED;
+    } else {
+      displayLines = allLines;
+    }
+  }
+
+  const isError = toolCall.result && !toolCall.result.success;
+
+  return (
+    <div className="ml-5 mt-0.5 mb-0.5">
+      <pre
+        className={`text-xs font-mono leading-relaxed overflow-x-auto max-h-40 ${
+          isError ? 'text-red-400/80' : 'text-zinc-500'
+        }`}
+      >
+        {displayLines.join('\n')}
+      </pre>
+      {truncatedCount > 0 && (
+        <span className="text-xs text-zinc-600 font-mono">
+          ...+{truncatedCount} lines
+        </span>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import { ToolCallDisplay } from './index';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
 import { getToolDisplayName, formatDuration } from './utils';
 import { UI } from '@shared/constants';
+import type { ToolGroup } from '../../../../../utils/toolGrouping';
 
 // Braille spinner for group pending state
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -172,5 +173,196 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
       )}
       <span className="text-zinc-600 text-xs ml-1">▶</span>
     </div>
+  );
+}
+
+// ============================================================================
+// SmartGroupBlock - 单个智能分组渲染（context_gathering / file_operations）
+// ============================================================================
+
+interface SmartGroupProps {
+  group: ToolGroup;
+  startIndex: number;
+  totalTools: number;
+}
+
+function SmartGroupBlock({ group, startIndex, totalTools }: SmartGroupProps) {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
+
+  const statuses = useMemo(
+    () =>
+      group.toolCalls.map((tc) =>
+        getToolStatus(tc, currentSessionId, processingSessionIds)
+      ),
+    [group.toolCalls, currentSessionId, processingSessionIds]
+  );
+
+  const groupStatus: GroupStatus = useMemo(() => {
+    if (statuses.some((s) => s === 'error')) return 'error';
+    if (statuses.some((s) => s === 'pending')) return 'pending';
+    return 'success';
+  }, [statuses]);
+
+  const [collapsed, setCollapsed] = useState(false);
+  const [userToggled, setUserToggled] = useState(false);
+
+  useEffect(() => {
+    if (groupStatus === 'success' && !collapsed && !userToggled) {
+      const timer = setTimeout(
+        () => setCollapsed(true),
+        UI.TOOL_GROUP_COLLAPSE_DELAY
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [groupStatus, collapsed, userToggled]);
+
+  useEffect(() => {
+    if (groupStatus === 'error') {
+      setCollapsed(false);
+      setUserToggled(false);
+    }
+  }, [groupStatus]);
+
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (groupStatus === 'pending') {
+      const interval = setInterval(() => {
+        setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
+      }, 80);
+      return () => clearInterval(interval);
+    }
+  }, [groupStatus]);
+
+  const statusColor = getStatusColor(
+    groupStatus === 'error' ? 'error' : groupStatus === 'pending' ? 'pending' : 'success'
+  );
+
+  const statusIndicator = useMemo(() => {
+    switch (groupStatus) {
+      case 'pending': return BRAILLE_FRAMES[frame];
+      case 'success': return '●';
+      case 'error': return '✗';
+    }
+  }, [groupStatus, frame]);
+
+  const toolSummaries = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tc of group.toolCalls) {
+      const name = getToolDisplayName(tc.name);
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => (count > 1 ? `${name} ×${count}` : name))
+      .join(', ');
+  }, [group.toolCalls]);
+
+  const totalDuration = useMemo(() => {
+    let total = 0;
+    for (const tc of group.toolCalls) {
+      if (tc.result?.duration) total += tc.result.duration;
+    }
+    return total > 0 ? formatDuration(total) : null;
+  }, [group.toolCalls]);
+
+  const errorCount = statuses.filter((s) => s === 'error').length;
+  const categoryIcon = group.type === 'context_gathering' ? '📂' : '✏️';
+
+  if (!collapsed) {
+    return (
+      <div>
+        <div
+          className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors font-mono text-sm mb-0.5"
+          onClick={() => { setCollapsed(true); setUserToggled(true); }}
+        >
+          <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
+            {statusIndicator}
+          </span>
+          <span className="text-zinc-400 text-xs">{categoryIcon}</span>
+          <span className="text-zinc-400 font-semibold text-xs">
+            {group.summary}
+          </span>
+          {errorCount > 0 && (
+            <span className="text-[var(--cc-error)] text-xs">({errorCount} failed)</span>
+          )}
+          <span className="text-zinc-600 text-xs ml-1">▼</span>
+        </div>
+        {group.toolCalls.map((toolCall, idx) => (
+          <ToolCallDisplay
+            key={toolCall.id}
+            toolCall={toolCall}
+            index={startIndex + idx}
+            total={totalTools}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors font-mono text-sm"
+      onClick={() => { setCollapsed(false); setUserToggled(true); }}
+    >
+      <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
+        {statusIndicator}
+      </span>
+      <span className="text-zinc-400 text-xs">{categoryIcon}</span>
+      <span className="text-zinc-400 font-bold text-xs">
+        {group.summary}
+      </span>
+      <span className="text-zinc-600 text-xs">
+        ({toolSummaries})
+      </span>
+      {totalDuration && (
+        <span className="text-zinc-600 text-xs ml-auto">
+          {totalDuration}
+        </span>
+      )}
+      <span className="text-zinc-600 text-xs ml-1">▶</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// ToolCallGroupList - 使用 smart grouping 渲染分组列表
+// ============================================================================
+
+interface ToolCallGroupListProps {
+  groups: ToolGroup[];
+}
+
+export function ToolCallGroupList({ groups }: ToolCallGroupListProps) {
+  let globalIndex = 0;
+  const totalTools = groups.reduce((sum, g) => sum + g.toolCalls.length, 0);
+
+  return (
+    <>
+      {groups.map((group, gi) => {
+        const startIndex = globalIndex;
+        globalIndex += group.toolCalls.length;
+
+        if (group.type === 'single') {
+          const tc = group.toolCalls[0];
+          return (
+            <ToolCallDisplay
+              key={tc.id}
+              toolCall={tc}
+              index={startIndex}
+              total={totalTools}
+            />
+          );
+        }
+
+        return (
+          <SmartGroupBlock
+            key={`group-${gi}-${group.toolCalls[0].id}`}
+            group={group}
+            startIndex={startIndex}
+            totalTools={totalTools}
+          />
+        );
+      })}
+    </>
   );
 }

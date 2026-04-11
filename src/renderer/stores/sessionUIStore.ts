@@ -23,6 +23,7 @@ export interface PendingDelete {
 interface SessionUIState {
   pendingDelete: PendingDelete | null;
   filter: SessionFilter;
+  searchQuery: string;
   inputHistory: string[];
   inputHistoryIndex: number;
   inputHistoryDraft: string;
@@ -30,6 +31,7 @@ interface SessionUIState {
 
 interface SessionUIActions {
   setFilter: (filter: SessionFilter) => void;
+  setSearchQuery: (query: string) => void;
   softDelete: (ids: string[]) => void;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
@@ -44,6 +46,7 @@ type SessionUIStore = SessionUIState & SessionUIActions;
 export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   pendingDelete: null,
   filter: 'active' as SessionFilter,
+  searchQuery: '',
   inputHistory: [],
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
@@ -51,6 +54,10 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   setFilter: (filter: SessionFilter) => {
     set({ filter });
     useSessionStore.getState().loadSessions();
+  },
+
+  setSearchQuery: (query: string) => {
+    set({ searchQuery: query });
   },
 
   softDelete: (ids: string[]) => {

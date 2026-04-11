@@ -6,6 +6,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useModeStore } from '../stores/modeStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
@@ -46,6 +47,8 @@ export const ChatView: React.FC = () => {
   const { showPreviewPanel } = useAppStore();
   const { currentSessionId, hasOlderMessages, isLoadingOlder, loadOlderMessages } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+  const isPaused = useModeStore((s) => s.isPaused);
+  const setIsPaused = useModeStore((s) => s.setIsPaused);
 
   // Register message action store (edit / regenerate)
   const messageActionRegister = useMessageActionStore((s) => s.register);
@@ -147,6 +150,13 @@ export const ChatView: React.FC = () => {
   const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
   // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
   const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
+
+  // Auto-reset isPaused when processing finishes
+  useEffect(() => {
+    if (!effectiveIsProcessing && isPaused) {
+      setIsPaused(false);
+    }
+  }, [effectiveIsProcessing, isPaused, setIsPaused]);
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
   const [bridgeUpdatePrompt, setBridgeUpdatePrompt] = useState<{ currentVersion: string; requiredVersion: string } | null>(null);
@@ -412,6 +422,9 @@ export const ChatView: React.FC = () => {
           isProcessing={effectiveIsProcessing}
           isInterrupting={isInterrupting}
           onStop={cancel}
+          isPaused={isPaused}
+          onPause={() => setIsPaused(true)}
+          onResume={() => setIsPaused(false)}
           hasPlan={false}
         />
       </div>

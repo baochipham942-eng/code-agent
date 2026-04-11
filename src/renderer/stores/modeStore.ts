@@ -25,11 +25,15 @@ interface ModeState {
   // Interaction mode (Code / Plan / Ask)
   interactionMode: import('../../shared/types/agent').InteractionMode;
 
+  // Pause state
+  isPaused: boolean;
+
   // Actions
   setMode: (mode: AppMode) => void;
   toggleMode: () => void;
   setEffortLevel: (level: import('../../shared/types/agent').EffortLevel) => void;
   setInteractionMode: (mode: import('../../shared/types/agent').InteractionMode) => void;
+  setIsPaused: (paused: boolean) => void;
 
   // Derived helpers
   isDeveloperMode: () => boolean;
@@ -51,6 +55,9 @@ export const useModeStore = create<ModeState>()(
 
       // Default interaction mode
       interactionMode: 'code' as import('../../shared/types/agent').InteractionMode,
+
+      // Pause state
+      isPaused: false,
 
       // Set mode (kept for compatibility)
       setMode: (mode) => set({ mode }),
@@ -75,6 +82,17 @@ export const useModeStore = create<ModeState>()(
         import('../services/ipcService').then(({ invokeDomain }) => {
           invokeDomain('domain:agent', 'setInteractionMode', { mode }).catch(() => {
             // Silently ignore if agent not initialized yet — will apply on next message
+          });
+        });
+      },
+
+      // Set pause state and sync to backend via IPC
+      setIsPaused: (paused) => {
+        set({ isPaused: paused });
+        const action = paused ? 'pause' : 'resume';
+        import('../services/ipcService').then(({ invokeDomain }) => {
+          invokeDomain('domain:agent', action, {}).catch(() => {
+            // Silently ignore if agent not initialized yet
           });
         });
       },

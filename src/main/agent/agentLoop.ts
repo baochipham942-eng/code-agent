@@ -172,6 +172,7 @@ export class AgentLoop {
       isCancelled: false,
       _isRunning: false,
       isInterrupted: false,
+      isPaused: false,
       interruptMessage: null,
       needsReinference: false,
       abortController: null,
@@ -318,6 +319,14 @@ export class AgentLoop {
 
   cancel(): void {
     this.conversationRuntime.cancel();
+  }
+
+  pause(): void {
+    this.conversationRuntime.pause();
+  }
+
+  resume(): void {
+    this.conversationRuntime.resume();
   }
 
   interrupt(newMessage: string): void {

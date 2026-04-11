@@ -393,6 +393,24 @@ export class AgentOrchestrator {
     logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);
   }
 
+  pause(): void {
+    this.agentLoop?.pause();
+    const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
+    if (sessionId) {
+      getSessionStateManager().updateStatus(sessionId, 'paused');
+    }
+    logger.info('[AgentOrchestrator] Pause requested');
+  }
+
+  resume(): void {
+    this.agentLoop?.resume();
+    const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
+    if (sessionId) {
+      getSessionStateManager().updateStatus(sessionId, 'running');
+    }
+    logger.info('[AgentOrchestrator] Resume requested');
+  }
+
   setRequirePlanApproval(enabled: boolean): void {
     this.requirePlanApproval = enabled;
     logger.info(`[AgentOrchestrator] Plan approval ${enabled ? 'required' : 'not required'}`);

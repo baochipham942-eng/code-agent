@@ -81,6 +81,8 @@ export interface PermissionRequestData {
   details: Record<string, unknown>;
   reason?: string;
   dangerLevel?: 'normal' | 'warning' | 'danger';
+  /** Decision trace: why this permission was requested (populated on deny/ask) */
+  decisionTrace?: import('../../shared/types/decisionTrace').DecisionTrace;
 }
 
 export interface ToolExecutionResult {

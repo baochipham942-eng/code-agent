@@ -22,6 +22,7 @@ import {
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
 
 const logger = createLogger('ToolExecutor');
 
@@ -275,6 +276,8 @@ export class ToolExecutor {
     if (tool.requiresPermission && !isPreApproved && !isSafeCommand) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
+      // Lazy trace: only created when needed (deny/ask path)
+      const traceBuilder = createTraceBuilder(toolName);
       try {
         const classification = await classifyPermission(toolName, params, {
           workingDirectory: this.workingDirectory,
@@ -289,6 +292,15 @@ export class ToolExecutor {
           });
           needsUserApproval = false;
         } else if (classification.decision === 'deny') {
+          // Collect trace step from classifier
+          if (classification.traceStep) {
+            traceBuilder.addStep(
+              classification.traceStep.layer,
+              classification.traceStep.rule,
+              classification.traceStep.result,
+              classification.traceStep.reason,
+            );
+          }
           logger.warn('Denied by classifier', {
             tool: toolName,
             reason: classification.reason,
@@ -297,8 +309,17 @@ export class ToolExecutor {
             success: false,
             error: `Denied: ${classification.reason}`,
           };
+        } else {
+          // 'ask' — collect trace step for permission request
+          if (classification.traceStep) {
+            traceBuilder.addStep(
+              classification.traceStep.layer,
+              classification.traceStep.rule,
+              classification.traceStep.result,
+              classification.traceStep.reason,
+            );
+          }
         }
-        // 'ask' — needsUserApproval remains true
       } catch (classifierError) {
         logger.debug('Permission classifier error, falling back to user approval', classifierError);
       }
@@ -306,6 +327,9 @@ export class ToolExecutor {
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
       permissionRequest.sessionId = options.sessionId;
+
+      // Attach decision trace to permission request
+      permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       try {

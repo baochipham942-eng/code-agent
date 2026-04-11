@@ -59,6 +59,8 @@ export interface PermissionRequest {
   reason?: string;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
+  /** Decision trace: why this permission was requested (populated on deny/ask) */
+  decisionTrace?: import('./decisionTrace').DecisionTrace;
 }
 
 // 权限响应（兼容旧版）

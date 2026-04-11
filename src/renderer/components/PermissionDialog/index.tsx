@@ -37,6 +37,7 @@ function normalizeRequest(
       preview: request.details.preview,
     },
     timestamp: request.timestamp,
+    decisionTrace: request.decisionTrace,
   };
 }
 

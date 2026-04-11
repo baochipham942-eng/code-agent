@@ -84,3 +84,6 @@ export * from './appService';
 
 // Trace types (Turn-based trace view)
 export * from './trace';
+
+// Decision Trace types (Security decision chain transparency)
+export * from './decisionTrace';

@@ -12,6 +12,8 @@
 import { createLogger } from '../services/infra/logger';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import type { DecisionStep } from '../../shared/types/decisionTrace';
+import { createTraceStep } from '../security/decisionTraceBuilder';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -26,6 +28,8 @@ export interface ClassificationResult {
   reason: string;
   confidence: number; // 0-1
   cached: boolean;
+  /** Trace step for decision transparency (only populated on deny/ask) */
+  traceStep?: DecisionStep;
 }
 
 export interface ClassifierConfig {
@@ -136,6 +140,8 @@ export class PermissionClassifier {
     args: Record<string, unknown>,
     context: ClassificationContext
   ): Promise<ClassificationResult> {
+    const startTime = Date.now();
+
     // 1. 检查缓存
     const cacheKey = this.buildCacheKey(toolName, args);
     const cached = this.getFromCache(cacheKey);
@@ -144,7 +150,7 @@ export class PermissionClassifier {
     }
 
     // 2. Rule-based fast path
-    const ruleResult = this.classifyByRules(toolName, args, context);
+    const ruleResult = this.classifyByRules(toolName, args, context, startTime);
     if (ruleResult) {
       this.setCache(cacheKey, ruleResult);
       return ruleResult;
@@ -167,11 +173,13 @@ export class PermissionClassifier {
     }
 
     // 4. 默认：ask 用户
+    const reason = '无法自动判断安全性，需用户确认';
     const fallback: ClassificationResult = {
       decision: 'ask',
-      reason: '无法自动判断安全性，需用户确认',
+      reason,
       confidence: 0,
       cached: false,
+      traceStep: createTraceStep('permission_classifier', 'fallback', 'ask', reason, startTime),
     };
     return fallback;
   }
@@ -183,9 +191,10 @@ export class PermissionClassifier {
   private classifyByRules(
     toolName: string,
     args: Record<string, unknown>,
-    context: ClassificationContext
+    context: ClassificationContext,
+    startTime: number
   ): ClassificationResult | null {
-    // R1: 只读工具 → approve
+    // R1: 只读工具 → approve (no traceStep on allow)
     if (READ_ONLY_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
@@ -217,21 +226,23 @@ export class PermissionClassifier {
 
     // R4: Bash 命令分类
     if ((toolName === 'bash' || toolName === 'Bash') && typeof args.command === 'string') {
-      return this.classifyBashCommand(args.command, context);
+      return this.classifyBashCommand(args.command, context, startTime);
     }
 
     // R5: 文件写入工具 — 按路径判断
     if (WRITE_TOOLS.has(toolName)) {
-      return this.classifyFileWrite(args, context);
+      return this.classifyFileWrite(args, context, startTime);
     }
 
     // R6: MCP 工具 → ask（未知副作用）
     if (this.isMcpTool(toolName)) {
+      const reason = `MCP 工具 ${toolName} 可能有副作用`;
       return {
         decision: 'ask',
-        reason: `MCP 工具 ${toolName} 可能有副作用`,
+        reason,
         confidence: 0.9,
         cached: false,
+        traceStep: createTraceStep('permission_classifier', 'R6: mcp_tool', 'ask', reason, startTime),
       };
     }
 
@@ -244,18 +255,24 @@ export class PermissionClassifier {
    */
   private classifyBashCommand(
     command: string,
-    context: ClassificationContext
+    context: ClassificationContext,
+    startTime: number
   ): ClassificationResult | null {
     const trimmed = command.trim();
 
     // B1: 危险模式检测
     for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
       if (pattern.test(trimmed)) {
+        const fullReason = `危险命令: ${reason}`;
+        const outcome = decision === 'approve' ? 'allow' : decision === 'deny' ? 'deny' : 'ask';
         return {
           decision,
-          reason: `危险命令: ${reason}`,
+          reason: fullReason,
           confidence: 1.0,
           cached: false,
+          traceStep: outcome !== 'allow'
+            ? createTraceStep('permission_classifier', `B1: ${reason}`, outcome, fullReason, startTime)
+            : undefined,
         };
       }
     }
@@ -316,22 +333,25 @@ export class PermissionClassifier {
    */
   private classifyFileWrite(
     args: Record<string, unknown>,
-    context: ClassificationContext
+    context: ClassificationContext,
+    startTime: number
   ): ClassificationResult | null {
     const filePath = (args.file_path as string) || (args.path as string);
     if (!filePath) {
+      const reason = '文件路径缺失';
       return {
         decision: 'ask',
-        reason: '文件路径缺失',
+        reason,
         confidence: 0.5,
         cached: false,
+        traceStep: createTraceStep('permission_classifier', 'W0: no_path', 'ask', reason, startTime),
       };
     }
 
     const resolved = path.resolve(context.workingDirectory, filePath);
     const cwd = path.resolve(context.workingDirectory);
 
-    // W1: 写入项目目录内 → approve
+    // W1: 写入项目目录内 → approve (no traceStep)
     if (resolved.startsWith(cwd + path.sep) || resolved === cwd) {
       return {
         decision: 'approve',
@@ -341,7 +361,7 @@ export class PermissionClassifier {
       };
     }
 
-    // W2: 写入 /tmp → approve
+    // W2: 写入 /tmp → approve (no traceStep)
     if (resolved.startsWith('/tmp/') || resolved.startsWith('/tmp')) {
       return {
         decision: 'approve',
@@ -352,11 +372,13 @@ export class PermissionClassifier {
     }
 
     // W3: 写入项目目录外 → ask
+    const reason = `写入项目目录外: ${resolved}`;
     return {
       decision: 'ask',
-      reason: `写入项目目录外: ${resolved}`,
+      reason,
       confidence: 0.9,
       cached: false,
+      traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
     };
   }
 

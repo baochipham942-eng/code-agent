@@ -8,6 +8,10 @@
 
 import { create } from 'zustand';
 import type { Message } from '@shared/types';
+import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
+import { useSessionStore } from './sessionStore';
+import { toast } from '../hooks/useToast';
 
 type SendFn = (content: string) => void;
 
@@ -26,6 +30,8 @@ interface MessageActionState {
   editMessage: (messageId: string, newContent: string) => void;
   /** Regenerate an assistant message: re-send the preceding user message */
   regenerateMessage: (messageId: string) => void;
+  /** Fork from a checkpoint: rewind files + truncate messages */
+  forkFromHere: (messageId: string) => void;
 }
 
 export const useMessageActionStore = create<MessageActionState>((set, get) => ({
@@ -55,6 +61,31 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
         _send(messages[i].content!);
         return;
       }
+    }
+  },
+
+  forkFromHere: async (messageId: string) => {
+    const sessionId = useSessionStore.getState().currentSessionId;
+    if (!sessionId) return;
+
+    try {
+      const result = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_FORK, sessionId, messageId);
+      if (result.success) {
+        toast.success(`已回滚到此消息，可继续对话（恢复 ${result.filesRestored} 文件，截断 ${result.messagesTruncated} 条消息）`);
+        // Refresh messages in the store by re-switching to the same session
+        const { _getMessages } = get();
+        if (_getMessages) {
+          const messages = _getMessages();
+          const idx = messages.findIndex((m) => m.id === messageId);
+          if (idx >= 0) {
+            useSessionStore.getState().setMessages(messages.slice(0, idx + 1));
+          }
+        }
+      } else {
+        toast.error(`回滚失败: ${result.error || '未知错误'}`);
+      }
+    } catch (error) {
+      toast.error(`回滚失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   },
 }));

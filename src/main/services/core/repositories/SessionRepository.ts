@@ -418,6 +418,28 @@ export class SessionRepository {
   }
 
   // --------------------------------------------------------------------------
+  // Message Truncation (for checkpoint fork)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Delete all messages after a given message (by timestamp).
+   * Used by checkpoint:fork to truncate conversation history.
+   */
+  truncateMessagesAfter(sessionId: string, messageId: string): number {
+    const msg = this.db.prepare(
+      'SELECT timestamp FROM messages WHERE id = ? AND session_id = ?'
+    ).get(messageId, sessionId) as { timestamp: number } | undefined;
+
+    if (!msg) return 0;
+
+    const result = this.db.prepare(
+      'DELETE FROM messages WHERE session_id = ? AND timestamp > ?'
+    ).run(sessionId, msg.timestamp);
+
+    return result.changes;
+  }
+
+  // --------------------------------------------------------------------------
   // Todos
   // --------------------------------------------------------------------------
 

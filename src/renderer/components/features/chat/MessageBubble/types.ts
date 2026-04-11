@@ -17,6 +17,7 @@ export interface UserMessageProps {
 export interface AssistantMessageProps {
   message: Message;
   onRegenerate?: (messageId: string) => void;
+  onForkFromHere?: (messageId: string) => void;
 }
 
 export interface MessageContentProps {

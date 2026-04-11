@@ -51,6 +51,7 @@ const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const editMessage = useMessageActionStore((s) => s.editMessage);
   const regenerateMessage = useMessageActionStore((s) => s.regenerateMessage);
+  const forkFromHere = useMessageActionStore((s) => s.forkFromHere);
 
   const handleEdit = useCallback(
     (messageId: string, newContent: string) => editMessage(messageId, newContent),
@@ -59,6 +60,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const handleRegenerate = useCallback(
     (messageId: string) => regenerateMessage(messageId),
     [regenerateMessage],
+  );
+  const handleForkFromHere = useCallback(
+    (messageId: string) => forkFromHere(messageId),
+    [forkFromHere],
   );
 
   // CompactionBlock: 渲染压缩摘要卡片
@@ -81,7 +86,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   }
 
   // All assistant messages use the same terminal-style display
-  return <AssistantMessage message={message} onRegenerate={handleRegenerate} />;
+  return <AssistantMessage message={message} onRegenerate={handleRegenerate} onForkFromHere={handleForkFromHere} />;
 };
 
 // Re-export sub-components for direct use if needed

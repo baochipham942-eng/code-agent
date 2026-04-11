@@ -979,6 +979,7 @@ export class DatabaseService {
   markSessionsSynced(sessionIds: string[]): void { this.ensureDb(); this.sessionRepo.markSessionsSynced(sessionIds); }
   getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> { this.ensureDb(); return this.sessionRepo.getUnsyncedMessages(limit); }
   markMessagesSynced(messageIds: string[]): void { this.ensureDb(); this.sessionRepo.markMessagesSynced(messageIds); }
+  truncateMessagesAfter(sessionId: string, messageId: string): number { this.ensureDb(); return this.sessionRepo.truncateMessagesAfter(sessionId, messageId); }
   saveTodos(sessionId: string, todos: TodoItem[]): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos); }
   getTodos(sessionId: string): TodoItem[] { this.ensureDb(); return this.sessionRepo.getTodos(sessionId); }
   listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }

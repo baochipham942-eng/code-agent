@@ -412,14 +412,19 @@ export class ContextAssembly {
       // 创建 AbortController，支持中断/转向时立即终止 API 流
       this.ctx.abortController = new AbortController();
 
+      // Reset partial content accumulator for this inference call
+      this.ctx.lastStreamedContent = '';
+
       const response = await this.ctx.modelRouter.inference(
         modelMessages,
         effectiveTools,
         effectiveConfig,
         (chunk: any) => {
           if (typeof chunk === 'string') {
+            this.ctx.lastStreamedContent += chunk;
             this.ctx.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: this.ctx.currentTurnId } });
           } else if (chunk.type === 'text') {
+            this.ctx.lastStreamedContent += chunk.content;
             this.ctx.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: this.ctx.currentTurnId } });
           } else if (chunk.type === 'reasoning') {
             // 推理模型的思考过程 (glm-4.7 等)

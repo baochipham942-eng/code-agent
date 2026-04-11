@@ -169,6 +169,7 @@ export class AgentLoop {
       telemetryAdapter: config.telemetryAdapter,
 
       // Mutable state
+      lastStreamedContent: '',
       isCancelled: false,
       _isRunning: false,
       isInterrupted: false,

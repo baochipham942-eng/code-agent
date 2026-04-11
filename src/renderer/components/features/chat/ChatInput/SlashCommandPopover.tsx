@@ -266,6 +266,24 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     setSelectedIndex(0);
   }, [filter]);
 
+  // Click outside to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (listRef.current && !listRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    // Delay to avoid catching the opening click itself
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
   // Keyboard navigation via global handler
   useEffect(() => {
     if (!isOpen) return;

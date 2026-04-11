@@ -5,6 +5,8 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AgentApplicationService, SwitchModelParams } from '../../shared/types/appService';
+import type { CrossSessionSearchOptions, CrossSessionSearchResults, CrossSessionSearchResultItem } from '../../shared/ipc/types';
+import { getDefaultSearchManager } from '../session/search';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -90,6 +92,11 @@ export function registerSessionHandlers(
           data = null;
           break;
         }
+        case 'search': {
+          const p = payload as { query: string; options?: CrossSessionSearchOptions };
+          data = await performCrossSessionSearch(p.query, p.options, requireAppService);
+          break;
+        }
         default:
           return {
             success: false,
@@ -118,4 +125,63 @@ export function registerSessionHandlers(
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, async (_, payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => {
     return requireAppService().loadOlderMessages(payload.sessionId, payload.beforeTimestamp, payload.limit ?? 30);
   });
+
+  // Cross-session search
+  ipcMain.handle(IPC_CHANNELS.SESSION_SEARCH, async (_, payload: { query: string; options?: CrossSessionSearchOptions }) => {
+    return performCrossSessionSearch(payload.query, payload.options, requireAppService);
+  });
+}
+
+// ----------------------------------------------------------------------------
+// Helper: Cross-session search
+// ----------------------------------------------------------------------------
+
+async function performCrossSessionSearch(
+  query: string,
+  options: CrossSessionSearchOptions | undefined,
+  getAppService: () => AgentApplicationService
+): Promise<CrossSessionSearchResults> {
+  if (!query.trim()) {
+    return { query, totalMatches: 0, sessionsWithMatches: 0, results: [], searchTime: 0, truncated: false };
+  }
+
+  const searchManager = getDefaultSearchManager();
+  const searchResults = searchManager.search(query, {
+    limit: options?.limit ?? 30,
+    role: options?.role,
+    caseSensitive: options?.caseSensitive ?? false,
+    sortBy: 'relevance',
+    sortOrder: 'desc',
+    includeContext: 80,
+  });
+
+  // Build session title map from app service
+  let sessionTitleMap: Map<string, string> = new Map();
+  try {
+    const sessions = await getAppService().listSessions({ includeArchived: true });
+    for (const s of sessions) {
+      sessionTitleMap.set(s.id, s.title);
+    }
+  } catch {
+    // If listing sessions fails, proceed without titles
+  }
+
+  const results: CrossSessionSearchResultItem[] = searchResults.results.map((r) => ({
+    sessionId: r.sessionId,
+    sessionTitle: sessionTitleMap.get(r.sessionId),
+    role: r.message.role,
+    timestamp: r.message.timestamp,
+    relevance: r.relevance,
+    snippet: r.snippet,
+    matchCount: r.matches.length,
+  }));
+
+  return {
+    query: searchResults.query,
+    totalMatches: searchResults.totalMatches,
+    sessionsWithMatches: searchResults.sessionsWithMatches,
+    results,
+    searchTime: searchResults.searchTime,
+    truncated: searchResults.truncated,
+  };
 }

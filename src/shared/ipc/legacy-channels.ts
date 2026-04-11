@@ -38,6 +38,7 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LOAD_OLDER_MESSAGES: 'session:load-older-messages',
+  SESSION_SEARCH: 'session:search',
 
   // Memory channels
   MEMORY: 'memory:manage',

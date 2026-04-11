@@ -16,6 +16,8 @@ import * as os from 'os';
 import { DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_REGISTRY, MODEL_PRICING_PER_1M } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/types';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
+import { initializeCommands, getCommandRegistry } from '../../shared/commands';
+import type { CommandContext, CommandOutput } from '../../shared/commands';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -154,6 +156,9 @@ export const chatCommand = new Command('chat')
     try {
       // 初始化服务
       await initializeCLIServices();
+
+      // 初始化统一命令注册表
+      initializeCommands();
 
       if (!isJsonMode) {
         // 显示欢迎横幅
@@ -359,8 +364,48 @@ async function handleCommand(
   setViMode?: (v: boolean) => void,
 ): Promise<boolean> {
   const [cmd, ...args] = input.slice(1).split(/\s+/);
+  const cmdLower = cmd.toLowerCase();
 
-  switch (cmd.toLowerCase()) {
+  // CLI-only commands that need local handling (interactive I/O, readline, process exit)
+  const localOnlyCommands = new Set([
+    'login', 'model', 'm', 'vim', 'vi', 'exit', 'quit', 'q',
+    'session', 'restore',
+  ]);
+
+  // Try unified command registry first (for commands not requiring local-only handling)
+  if (!localOnlyCommands.has(cmdLower)) {
+    const registry = getCommandRegistry();
+    const def = registry.get(cmdLower);
+    if (def && def.surfaces.includes('cli')) {
+      const cliOutput: CommandOutput = {
+        info: (msg: string) => terminalOutput.info(msg),
+        success: (msg: string) => terminalOutput.success(msg),
+        error: (msg: string) => terminalOutput.error(msg),
+        warn: (msg: string) => terminalOutput.warning(msg),
+      };
+      const ctx: CommandContext = {
+        surface: 'cli',
+        output: cliOutput,
+        agent,
+        getSessionManager: () => getSessionManager(),
+        getToolExecutor: async () => {
+          const { getToolExecutor } = await import('../bootstrap');
+          return getToolExecutor();
+        },
+        getSessionSkillService: async () => {
+          const { getSessionSkillService } = await import('../../main/services/skills/sessionSkillService');
+          return getSessionSkillService();
+        },
+      };
+      const result = await registry.execute(cmdLower, ctx, args);
+      if (!result.success && result.message) {
+        terminalOutput.error(result.message);
+      }
+      return false;
+    }
+  }
+
+  switch (cmdLower) {
     case 'help':
     case 'h':
       console.log(chalk.dim(`

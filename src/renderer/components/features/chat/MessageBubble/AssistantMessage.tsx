@@ -15,6 +15,11 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { groupToolCalls, extractThinkingSummary } from '../../../../utils/toolGrouping';
 
+function formatTokenCount(count: number): string {
+  if (count >= 1000) return (count / 1000).toFixed(1) + 'k';
+  return String(count);
+}
+
 function getArtifactIcon(type: Artifact['type']): React.ReactNode {
   const cls = "w-3 h-3";
   switch (type) {
@@ -235,6 +240,18 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
               <span className="text-zinc-600">v{artifact.version}</span>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Token usage badge */}
+      {(message.inputTokens || message.outputTokens) && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-600">
+          {message.inputTokens && (
+            <span title="输入 tokens">↓{formatTokenCount(message.inputTokens)}</span>
+          )}
+          {message.outputTokens && (
+            <span title="输出 tokens">↑{formatTokenCount(message.outputTokens)}</span>
+          )}
         </div>
       )}
     </div>

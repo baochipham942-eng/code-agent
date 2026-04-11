@@ -5,6 +5,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import type { HookEvent } from './events';
 
 // ----------------------------------------------------------------------------
@@ -333,13 +334,13 @@ export function getHooksConfigPaths(workingDirectory: string): {
     global: [
       // New format (higher priority)
       {
-        path: path.join(homeDir, '.code-agent', 'hooks', 'hooks.json'),
+        path: path.join(homeDir, CONFIG_DIR_NEW, 'hooks', 'hooks.json'),
         type: 'hooks-json',
         priority: 0,
       },
       // Legacy format (lower priority)
       {
-        path: path.join(homeDir, '.claude', 'settings.json'),
+        path: path.join(homeDir, CONFIG_DIR_LEGACY, 'settings.json'),
         type: 'settings-json',
         priority: 1,
       },
@@ -347,13 +348,13 @@ export function getHooksConfigPaths(workingDirectory: string): {
     project: [
       // New format (higher priority)
       {
-        path: path.join(workingDirectory, '.code-agent', 'hooks', 'hooks.json'),
+        path: path.join(workingDirectory, CONFIG_DIR_NEW, 'hooks', 'hooks.json'),
         type: 'hooks-json',
         priority: 0,
       },
       // Legacy format (lower priority)
       {
-        path: path.join(workingDirectory, '.claude', 'settings.json'),
+        path: path.join(workingDirectory, CONFIG_DIR_LEGACY, 'settings.json'),
         type: 'settings-json',
         priority: 1,
       },

@@ -5,8 +5,8 @@
 import * as pty from 'node-pty';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { getUserConfigDir } from '../../config/configPaths';
 
 // ============================================================================
 // Constants
@@ -76,7 +76,7 @@ const ptySessions: Map<string, PtySessionState> = new Map();
 // ============================================================================
 
 function getPtyDir(): string {
-  const ptyDir = path.join(os.homedir(), '.code-agent', 'pty');
+  const ptyDir = path.join(getUserConfigDir(), 'pty');
   if (!fs.existsSync(ptyDir)) {
     fs.mkdirSync(ptyDir, { recursive: true });
   }
@@ -309,38 +309,33 @@ export function killPtySession(sessionId: string): { success: boolean; error?: s
 /**
  * Get PTY session output
  */
-export function getPtySessionOutput(
+export async function getPtySessionOutput(
   sessionId: string,
   block: boolean = false,
   timeout: number = 30000
 ): Promise<PtySessionOutput | null> {
-  return new Promise(async (resolve) => {
-    const session = ptySessions.get(sessionId);
-    if (!session) {
-      resolve(null);
-      return;
+  const session = ptySessions.get(sessionId);
+  if (!session) return null;
+
+  // If blocking and still running, wait
+  if (block && session.status === 'running') {
+    const startTime = Date.now();
+
+    while (session.status === 'running' && Date.now() - startTime < timeout) {
+      await new Promise((r) => setTimeout(r, 100));
     }
+  }
 
-    // If blocking and still running, wait
-    if (block && session.status === 'running') {
-      const startTime = Date.now();
+  const output = session.output.join('');
+  const duration = (session.endTime || Date.now()) - session.startTime;
 
-      while (session.status === 'running' && Date.now() - startTime < timeout) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
-
-    const output = session.output.join('');
-    const duration = (session.endTime || Date.now()) - session.startTime;
-
-    resolve({
-      sessionId,
-      status: session.status,
-      output,
-      exitCode: session.exitCode,
-      duration,
-    });
-  });
+  return {
+    sessionId,
+    status: session.status,
+    output,
+    exitCode: session.exitCode,
+    duration,
+  };
 }
 
 /**
@@ -505,7 +500,7 @@ interface PersistedPtySession {
   status: 'running' | 'completed' | 'failed';
 }
 
-const PTY_PERSISTENCE_FILE = path.join(os.homedir(), '.code-agent', 'pty-sessions.json');
+const PTY_PERSISTENCE_FILE = path.join(getUserConfigDir(), 'pty-sessions.json');
 
 /**
  * Save running PTY sessions for recovery

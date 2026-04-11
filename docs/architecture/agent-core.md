@@ -451,7 +451,7 @@ planning/
 └── types.ts                 # 类型定义
 ```
 
-**HooksEngine 钩子**:
+**HooksEngine 钩子**（规划系统内部，v0.16.60 起桥接到用户 HookManager）:
 
 | 钩子 | 触发时机 | 功能 |
 |------|----------|------|
@@ -460,6 +460,22 @@ planning/
 | `postToolUse` | 工具执行后 | 2-Action 规则，更新进度提醒 |
 | `onStop` | AI 准备停止 | 验证计划完成度，决定是否强制继续 |
 | `onError` | 发生错误 | 记录错误，检查 3-Strike 规则 |
+
+**用户 Hook 系统**（`src/main/hooks/hookManager.ts`）:
+
+16 种事件类型，分为 decision（可阻止/修改）和 observer（只读）两种模式：
+
+| 稳定性 | 事件 | 模式 |
+|--------|------|------|
+| stable | PreToolUse, PostToolUse, Stop, SessionStart, PostExecution, Notification, PermissionRequest 等 | decision |
+| experimental | SubagentStart, SubagentStop | decision |
+| planned | TaskCreated, TaskCompleted | observer |
+| observer-only | PermissionDenied, PostCompact, StopFailure | observer |
+
+- Observer hook 正常执行但 block/modify 结果被静默忽略
+- Observer-only 事件自动将 decision hook 降级为 observer
+- Trigger history buffer（最近 50 条）供 /hooks 命令查看
+- DecisionHistory 独立记录权限决策（50 条，8 种结果类型）
 
 ---
 

@@ -213,7 +213,7 @@ export class AntiPatternDetector {
     const tracker = this.state.toolFailureTracker.get(toolKey);
     let exactArgsWarning: string | null = null;
 
-    if (tracker && tracker.lastError === error) {
+    if (tracker?.lastError === error) {
       tracker.count++;
       if (tracker.count >= this.config.maxSameToolFailures) {
         logger.warn(`Tool ${toolCall.name} failed ${tracker.count} times with same error`);

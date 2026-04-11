@@ -59,7 +59,7 @@ export const nativeTheme = {
 
 // ── Menu / MenuItem / Tray ─────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export class Menu {
   items: unknown[] = [];
   static setApplicationMenu(..._args: unknown[]) {}

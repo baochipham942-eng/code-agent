@@ -80,9 +80,9 @@ export class TelegramChannel extends BaseChannelPlugin {
       const agent = new HttpsProxyAgent(proxyUrl);
       // 提供自定义 fetch 确保代理在 Electron 环境中也能工作
       // node-fetch v2 支持 agent 选项，但 Electron 内置 fetch 不支持
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       const nf = require('node-fetch');
-      const nodeFetch = (nf.default || nf) as Function;
+      const nodeFetch = (nf.default || nf) as Function; // eslint-disable-line @typescript-eslint/no-unsafe-function-type -- node-fetch vs native fetch type mismatch
       clientOptions.baseFetchConfig = { agent, compress: true };
       clientOptions.fetch = (url: any, init?: any) => nodeFetch(url, { ...init, agent });
       logger.info('Using proxy for Telegram', { proxyUrl });
@@ -172,8 +172,8 @@ export class TelegramChannel extends BaseChannelPlugin {
 
     const agent = new HttpsProxyAgent(this.telegramConfig.fallbackProxyUrl);
     const nf = require('node-fetch');
-    const nodeFetch = (nf.default || nf) as Function;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodeFetch = (nf.default || nf) as Function; // eslint-disable-line @typescript-eslint/no-unsafe-function-type -- node-fetch vs native fetch type mismatch
+     
     this.bot = new Bot(this.telegramConfig.botToken, {
       client: {
         baseFetchConfig: { agent, compress: true } as any,

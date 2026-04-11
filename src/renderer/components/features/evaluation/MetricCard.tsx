@@ -76,7 +76,7 @@ export function MetricCard({ metric }: MetricCardProps) {
           )}
 
           {/* 子指标 */}
-          {metric.subMetrics && metric.subMetrics.map((sub, i) => (
+          {metric.subMetrics?.map((sub, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
               <span className="text-gray-400">{sub.name}</span>
               <span className="text-gray-200">

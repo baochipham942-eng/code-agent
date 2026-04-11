@@ -42,7 +42,7 @@ export async function getPostEditDiagnostics(
     if (!manager) return null;
 
     const server = manager.getServerForFile(filePath);
-    if (!server || server.getState() !== 'ready') return null;
+    if (server?.getState() !== 'ready') return null;
 
     // 读取编辑后的文件内容
     const content = await fs.readFile(filePath, 'utf-8');

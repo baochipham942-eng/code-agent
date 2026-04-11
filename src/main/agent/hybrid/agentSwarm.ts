@@ -55,6 +55,7 @@ import type {
 // Import sub-modules
 import { SwarmCoordinator } from './swarmCoordinator';
 import { ResourceLockManager } from './resourceLock';
+import { AGENT_DEFAULT_MODEL } from '../../../shared/constants/models';
 
 const logger = createLogger('AgentSwarm');
 
@@ -670,7 +671,7 @@ export class AgentSwarm {
           name: taskDef.name,
           prompt: taskDef.prompt,
           tools: taskDef.tools,
-          model: { provider: 'moonshot' as any, model: 'kimi-k2.5' },
+          model: { provider: AGENT_DEFAULT_MODEL.provider as any, model: AGENT_DEFAULT_MODEL.model },
           maxIterations: 20,
           timeout: 300000,
           parentTaskId: `swarm-${Date.now()}`,

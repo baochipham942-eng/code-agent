@@ -751,7 +751,7 @@ export function safeJsonParse(str: string): Record<string, unknown> {
  * 修复常见的 JSON 问题用于 arguments 解析
  */
 function repairJsonForArguments(str: string): Record<string, unknown> | null {
-  if (!str || !str.trim()) return null;
+  if (!str?.trim()) return null;
 
   let repaired = str.trim();
   repaired = repaired.replace(/^[^{\[]*/, '');
@@ -778,7 +778,7 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
  * 从原始字符串提取键值对
  */
 function extractKeyValuePairs(str: string): Record<string, unknown> | null {
-  if (!str || !str.trim()) return null;
+  if (!str?.trim()) return null;
 
   const result: Record<string, unknown> = {};
 

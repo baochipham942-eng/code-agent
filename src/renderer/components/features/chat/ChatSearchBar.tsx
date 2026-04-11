@@ -265,7 +265,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
           ))}
         </div>
       )}
-      {tab === 'cross' && crossResults && crossResults.results.length === 0 && query.trim() && !crossLoading && (
+      {tab === 'cross' && crossResults?.results.length === 0 && query.trim() && !crossLoading && (
         <div className="px-4 py-3 text-xs text-zinc-600 border-t border-zinc-800">
           未找到匹配结果
         </div>

@@ -250,7 +250,7 @@ Examples:
 
     // Check if server already exists and connected
     const existingState = mcpClient.getServerState(name);
-    if (existingState && existingState.status === 'connected') {
+    if (existingState?.status === 'connected') {
       return {
         success: false,
         error: `Server '${name}' is already connected. Use mcp_get_status to see connected servers.`,

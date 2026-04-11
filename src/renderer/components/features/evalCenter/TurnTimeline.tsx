@@ -27,7 +27,7 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
     setLoadingTurns(prev => new Set(prev).add(turnId));
     try {
       const result = await ipcService.invoke(
-        'telemetry:get-turn-detail' as 'telemetry:get-turn-detail',
+        'telemetry:get-turn-detail' as const,
         turnId
       );
       if (result?.toolCalls) {

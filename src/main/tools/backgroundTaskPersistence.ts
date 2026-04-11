@@ -7,13 +7,13 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('BackgroundTaskPersistence');
 
 // Task storage directory
-const TASKS_DIR = path.join(os.homedir(), '.code-agent', 'tasks');
+const TASKS_DIR = path.join(getUserConfigDir(), 'tasks');
 
 /**
  * Status of a background task

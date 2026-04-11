@@ -95,7 +95,7 @@ export const Connectors: React.FC = () => {
     const fetchStatus = async () => {
       try {
         const status = await getMcpStatus();
-        if (status && status.connectedServers) {
+        if (status?.connectedServers) {
           setServers(status.connectedServers.map((server: any) => {
             // Handle both string[] and object[] formats
             if (typeof server === 'string') {

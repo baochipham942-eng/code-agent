@@ -62,7 +62,7 @@ export const Progress: React.FC = () => {
         if (!phase) continue;
 
         const last = phases[phases.length - 1];
-        if (last && last.type === phase) {
+        if (last?.type === phase) {
           last.count++;
         } else {
           // 新阶段开始，之前的阶段标记为已完成

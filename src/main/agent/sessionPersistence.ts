@@ -4,8 +4,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 import type {
   AgentInstance,
   AgentTask,
@@ -153,7 +153,7 @@ export class SessionPersistence {
   private initialized = false;
 
   constructor(baseDir?: string) {
-    this.baseDir = baseDir || path.join(os.homedir(), '.code-agent', SESSION_DIR_NAME);
+    this.baseDir = baseDir || path.join(getUserConfigDir(), SESSION_DIR_NAME);
   }
 
   /**

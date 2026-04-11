@@ -162,7 +162,7 @@ export class TaskListManager {
         // 检查依赖是否已满足
         const depsOk = (task.dependencies || []).every(depId => {
           const dep = this.tasks.get(depId);
-          return dep && dep.status === 'completed';
+          return dep?.status === 'completed';
         });
         if (!depsOk) continue;
 
@@ -181,7 +181,7 @@ export class TaskListManager {
    */
   releaseTask(taskId: string, agentId: string): boolean {
     const task = this.tasks.get(taskId);
-    if (!task || task.assignee !== agentId) return false;
+    if (task?.assignee !== agentId) return false;
     this.updateTask(taskId, { assignee: undefined, status: 'pending' });
     logger.debug(`[TaskList] Task ${taskId} released by ${agentId}`);
     return true;

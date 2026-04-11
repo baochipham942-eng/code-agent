@@ -117,7 +117,6 @@ export function useDisclosure() {
     isExpert: isAtLeast('expert'),
 
     // 常用功能检查（权限层：只读，表示功能是否可用）
-    showTodoPanel: isAtLeast('standard'),
     /** @deprecated 使用 planningPanelEnabled 代替 */
     showPlanningPanel: isAtLeast('advanced'),
     showDebugInfo: isAtLeast('expert'),

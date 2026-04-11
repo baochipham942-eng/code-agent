@@ -8,6 +8,7 @@ import { PlanManager } from './planManager';
 import { HooksEngine } from './hooksEngine';
 import { ErrorTracker } from './errorTracker';
 import { FindingsManager } from './findingsManager';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 import type {
   HookContext,
   PlanningConfig,
@@ -163,7 +164,7 @@ export class PlanningService {
   getPlanDirectory(): string {
     return path.join(
       this.config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'plans',
       this.config.sessionId
     );
@@ -246,7 +247,7 @@ export class PlanningService {
   async cleanup(olderThanDays: number = 7): Promise<number> {
     const plansBaseDir = path.join(
       this.config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'plans'
     );
 

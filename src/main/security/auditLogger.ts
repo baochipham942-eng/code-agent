@@ -7,6 +7,7 @@ import * as path from 'path';
 import { app } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { maskSensitiveData } from './sensitiveDetector';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('AuditLogger');
 
@@ -129,7 +130,7 @@ export class AuditLogger {
       return path.join(userDataPath, 'audit');
     } catch {
       // Fallback for non-Electron environments (e.g., testing)
-      return path.join(process.env.HOME || '/tmp', '.code-agent', 'audit');
+      return path.join(getUserConfigDir(), 'audit');
     }
   }
 

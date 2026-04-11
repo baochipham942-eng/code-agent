@@ -8,16 +8,13 @@ import { URL } from 'url';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 import type { MCPOAuthConfig, OAuthTokens } from './types';
 
 const logger = createLogger('MCP-OAuth');
 
 // Token 存储路径
-const TOKEN_STORE_PATH = path.join(
-  process.env.HOME || process.env.USERPROFILE || '.',
-  '.code-agent',
-  'mcp-tokens.json'
-);
+const TOKEN_STORE_PATH = path.join(getUserConfigDir(), 'mcp-tokens.json');
 
 // 默认回调端口和路径
 const DEFAULT_CALLBACK_PORT = 19876;

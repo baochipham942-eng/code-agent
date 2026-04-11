@@ -1,3 +1,5 @@
+import { AGENT_DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants/models';
+
 export interface AgentModelSelection {
   provider: string;
   model: string;
@@ -5,12 +7,12 @@ export interface AgentModelSelection {
 }
 
 const AGENT_MODEL_DEFAULTS: Record<string, { provider: string; model: string; reason: string }> = {
-  'Code Explorer': { provider: 'moonshot', model: 'kimi-k2.5', reason: '128k window, strong code comprehension' },
-  'Code Reviewer': { provider: 'deepseek', model: 'deepseek-reasoner', reason: 'transparent reasoning chain' },
+  'Code Explorer': { ...AGENT_DEFAULT_MODEL, reason: '128k window, strong code comprehension' },
+  'Code Reviewer': { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reason: 'transparent reasoning chain' },
   'Web Search': { provider: 'perplexity', model: 'sonar-pro', reason: 'native search integration' },
-  'Document Reader': { provider: 'zhipu', model: 'glm-4-flash', reason: 'cheap and fast' },
-  'Technical Writer': { provider: 'moonshot', model: 'kimi-k2.5', reason: 'strong Chinese writing' },
-  'Debugger': { provider: 'deepseek', model: 'deepseek-reasoner', reason: 'complex reasoning' },
+  'Document Reader': { provider: 'zhipu', model: DEFAULT_MODELS.quick, reason: 'cheap and fast' },
+  'Technical Writer': { ...AGENT_DEFAULT_MODEL, reason: 'strong Chinese writing' },
+  'Debugger': { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reason: 'complex reasoning' },
 };
 
 export function selectAgentModel(
@@ -28,7 +30,7 @@ export function selectAgentModel(
 
   // 2. Low budget → cheapest model
   if (options?.budgetRemaining !== undefined && options.budgetRemaining < 0.2) {
-    return { provider: 'zhipu', model: 'glm-4-flash', reason: 'budget constraint (<20% remaining)' };
+    return { provider: 'zhipu', model: DEFAULT_MODELS.quick, reason: 'budget constraint (<20% remaining)' };
   }
 
   // 3. Default lookup
@@ -36,5 +38,5 @@ export function selectAgentModel(
   if (def) return { ...def };
 
   // 4. Fallback for unknown types
-  return { provider: 'moonshot', model: 'kimi-k2.5', reason: 'default model for unknown agent type' };
+  return { ...AGENT_DEFAULT_MODEL, reason: 'default model for unknown agent type' };
 }

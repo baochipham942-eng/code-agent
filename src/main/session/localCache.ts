@@ -10,13 +10,13 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('SessionLocalCache');
 
 // Default cache directory
-const CACHE_DIR = path.join(os.homedir(), '.code-agent', 'cache', 'sessions');
+const CACHE_DIR = path.join(getUserConfigDir(), 'cache', 'sessions');
 
 /**
  * Cache entry with metadata

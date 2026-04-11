@@ -4,6 +4,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import type { TrendDataPoint } from '../types';
 
 const MAX_ENTRIES = 100;
@@ -12,7 +13,7 @@ export class TrendTracker {
   private trendPath: string;
 
   constructor(private workingDir: string) {
-    this.trendPath = path.join(workingDir, '.code-agent', 'eval-trend.json');
+    this.trendPath = path.join(workingDir, CONFIG_DIR_NEW, 'eval-trend.json');
   }
 
   async append(dataPoint: TrendDataPoint): Promise<void> {

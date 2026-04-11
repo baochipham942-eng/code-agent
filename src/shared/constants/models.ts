@@ -35,6 +35,12 @@ export const DEFAULT_MODELS = {
   unlimited: 'claude-sonnet-4-6',
 } as const;
 
+/** Agent 子任务默认模型（包月无限制，适合高频调用） */
+export const AGENT_DEFAULT_MODEL = {
+  provider: 'moonshot',
+  model: DEFAULT_MODELS.compact,
+} as const;
+
 export interface ProviderModelEntry {
   id: string;
   label: string;

@@ -80,7 +80,7 @@ export class RecoveryEngine {
     if (this.learner) {
       try {
         const learnedEvent = await this.learner.handleError(error, context);
-        if (learnedEvent && learnedEvent.recoveryStatus === 'succeeded') {
+        if (learnedEvent?.recoveryStatus === 'succeeded') {
           logger.info('[RecoveryEngine] Used learned recovery strategy', {
             errorCode: learnedEvent.errorCode,
             action: learnedEvent.recoveryAction,

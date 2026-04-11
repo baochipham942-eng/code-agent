@@ -4,7 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
+import { getUserConfigDir } from '../../config/configPaths';
 import type {
   SkillRepository,
   LocalSkillLibrary,
@@ -54,7 +54,7 @@ class SkillRepositoryService implements Disposable {
   }
 
   constructor() {
-    const baseDir = path.join(os.homedir(), '.code-agent');
+    const baseDir = getUserConfigDir();
     this.skillsDir = path.join(baseDir, 'skills');
     this.configPath = path.join(baseDir, 'skill-config.json');
     this.config = {

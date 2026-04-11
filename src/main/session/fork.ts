@@ -306,7 +306,7 @@ export function findRootSession(
       return null;
     }
 
-    if (!session.fork || !session.fork.parentSessionId) {
+    if (!session.fork?.parentSessionId) {
       // This is the root
       return currentId;
     }
@@ -323,7 +323,7 @@ export function getDirectForks(
   cache: SessionLocalCache = getDefaultCache()
 ): ForkedSession[] {
   const session = cache.getSession(sessionId) as ForkedSession | undefined;
-  if (!session || !session.childForks) {
+  if (!session?.childForks) {
     return [];
   }
 
@@ -350,7 +350,7 @@ export function getForkHistory(
     visited.add(currentId);
 
     const session = cache.getSession(currentId) as ForkedSession | undefined;
-    if (!session || !session.fork) {
+    if (!session?.fork) {
       break;
     }
 
@@ -388,9 +388,9 @@ export function deleteFork(
   }
 
   // Remove reference from parent
-  if (session.fork && session.fork.parentSessionId) {
+  if (session.fork?.parentSessionId) {
     const parent = cache.getSession(session.fork.parentSessionId) as ForkedSession | undefined;
-    if (parent && parent.childForks) {
+    if (parent?.childForks) {
       parent.childForks = parent.childForks.filter(id => id !== sessionId);
       cache.setSession(parent);
     }

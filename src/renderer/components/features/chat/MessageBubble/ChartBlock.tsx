@@ -49,7 +49,7 @@ const axisStyle = { fontSize: 11, fill: '#a1a1aa' };
 function parseSpec(raw: string): ChartSpec | null {
   try {
     const spec = JSON.parse(raw);
-    if (!spec || !spec.type || !Array.isArray(spec.data)) return null;
+    if (!spec?.type || !Array.isArray(spec.data)) return null;
     return spec as ChartSpec;
   } catch {
     return null;

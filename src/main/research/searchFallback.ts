@@ -333,7 +333,7 @@ export class SearchFallbackHandler {
     const attempts: SearchAttemptResult[] = [];
     const usedSources: DataSourceType[] = [];
     const failedSources: DataSourceType[] = [];
-    let allResults: SourceResult[] = [];
+    const allResults: SourceResult[] = [];
 
     logger.info('Starting parallel search with fallback', {
       sources,

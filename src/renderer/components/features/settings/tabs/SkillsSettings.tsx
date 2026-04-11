@@ -61,7 +61,7 @@ interface SkillsMPSearchResponse {
 const logger = createLogger('SkillsSettings');
 
 // Helper to invoke skill IPC channels (type-safe channels not yet registered)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -589,7 +589,7 @@ export const SkillsSettings: React.FC = () => {
   };
 
   // Install skill from SkillsMP (kept for potential future use)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const handleInstallFromSkillsMP = async (skill: SkillsMPSearchResult) => {
     // Extract repo info from githubUrl: https://github.com/owner/repo/tree/branch/path
     const match = skill.githubUrl.match(/github\.com\/([^/]+)\/([^/]+)/);

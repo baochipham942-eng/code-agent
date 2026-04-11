@@ -19,6 +19,9 @@ import {
   persistAgentRun,
   getRecentAgentHistory,
 } from '../session/agentHistoryPersistence';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('SwarmIPC');
 
 // ============================================================================
 // Swarm 事件回调注册（CLI 模式使用）
@@ -384,142 +387,198 @@ export function registerSwarmHandlers(
 
   // 用户发送消息给 Agent
   ipcMain.handle('swarm:send-user-message', async (_, payload: { agentId: string; message: string }) => {
-    const service = getTeammateService();
-    service.onUserMessage(payload.agentId, payload.message);
-    // 同时通过事件推送给 UI
-    getSwarmEventEmitter().userMessage(payload.agentId, payload.message);
+    try {
+      const service = getTeammateService();
+      service.onUserMessage(payload.agentId, payload.message);
+      getSwarmEventEmitter().userMessage(payload.agentId, payload.message);
+    } catch (error) {
+      logger.error('swarm:send-user-message failed', { error: String(error) });
+    }
   });
 
   // 获取 Agent 消息历史
   ipcMain.handle('swarm:get-agent-messages', async (_, agentId: string) => {
-    const service = getTeammateService();
-    // 获取该 agent 参与的所有消息
-    const history = service.getHistory(200);
-    return history
-      .filter((m: any) => m.from === agentId || m.to === agentId || m.to === 'all')
-      .map((m: any) => ({
-        from: m.from,
-        to: m.to,
-        content: m.content,
-        timestamp: m.timestamp,
-      }));
+    try {
+      const service = getTeammateService();
+      const history = service.getHistory(200);
+      return history
+        .filter((m: any) => m.from === agentId || m.to === agentId || m.to === 'all')
+        .map((m: any) => ({
+          from: m.from,
+          to: m.to,
+          content: m.content,
+          timestamp: m.timestamp,
+        }));
+    } catch (error) {
+      logger.error('swarm:get-agent-messages failed', { error: String(error) });
+      return [];
+    }
   });
 
   // 切换 delegate 模式
   ipcMain.handle('swarm:set-delegate-mode', async (_, enabled: boolean) => {
-    const appService = getAppService();
-    if (appService) {
-      appService.setDelegateMode(enabled);
+    try {
+      const appService = getAppService();
+      if (appService) {
+        appService.setDelegateMode(enabled);
+      }
+    } catch (error) {
+      logger.error('swarm:set-delegate-mode failed', { error: String(error) });
     }
   });
 
   ipcMain.handle('swarm:get-delegate-mode', async () => {
-    const appService = getAppService();
-    return appService?.isDelegateMode() ?? false;
+    try {
+      const appService = getAppService();
+      return appService?.isDelegateMode() ?? false;
+    } catch (error) {
+      logger.error('swarm:get-delegate-mode failed', { error: String(error) });
+      return false;
+    }
   });
 
   ipcMain.handle('swarm:approve-launch', async (_, payload: { requestId: string; feedback?: string }) => {
-    const gate = getSwarmLaunchApprovalGate();
-    return gate.approve(payload.requestId, payload.feedback);
+    try {
+      const gate = getSwarmLaunchApprovalGate();
+      return gate.approve(payload.requestId, payload.feedback);
+    } catch (error) {
+      logger.error('swarm:approve-launch failed', { error: String(error) });
+      return false;
+    }
   });
 
   ipcMain.handle('swarm:reject-launch', async (_, payload: { requestId: string; feedback: string }) => {
-    const gate = getSwarmLaunchApprovalGate();
-    return gate.reject(payload.requestId, payload.feedback);
+    try {
+      const gate = getSwarmLaunchApprovalGate();
+      return gate.reject(payload.requestId, payload.feedback);
+    } catch (error) {
+      logger.error('swarm:reject-launch failed', { error: String(error) });
+      return false;
+    }
   });
 
   ipcMain.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
-    const guard = getSpawnGuard();
-    const coordinator = getParallelAgentCoordinator();
-    const cancelled = guard.cancel(payload.agentId) || coordinator.abortTask(payload.agentId);
+    try {
+      const guard = getSpawnGuard();
+      const coordinator = getParallelAgentCoordinator();
+      const cancelled = guard.cancel(payload.agentId) || coordinator.abortTask(payload.agentId);
 
-    if (cancelled) {
-      getSwarmEventEmitter().agentUpdated(payload.agentId, {
-        status: 'cancelled',
-        endTime: Date.now(),
-        error: 'Cancelled by user',
-      });
+      if (cancelled) {
+        getSwarmEventEmitter().agentUpdated(payload.agentId, {
+          status: 'cancelled',
+          endTime: Date.now(),
+          error: 'Cancelled by user',
+        });
+      }
+
+      return cancelled;
+    } catch (error) {
+      logger.error('swarm:cancel-agent failed', { error: String(error) });
+      return false;
     }
-
-    return cancelled;
   });
 
   ipcMain.handle('swarm:retry-agent', async (_, payload: { agentId: string }) => {
-    const coordinator = getParallelAgentCoordinator();
-    const task = coordinator.getTaskDefinition(payload.agentId);
-    if (!task) return false;
+    try {
+      const coordinator = getParallelAgentCoordinator();
+      const task = coordinator.getTaskDefinition(payload.agentId);
+      if (!task) return false;
 
-    getSwarmEventEmitter().agentUpdated(payload.agentId, {
-      status: 'running',
-      startTime: Date.now(),
-      endTime: undefined,
-      error: '',
-      lastReport: 'Retrying task',
-    });
-
-    void coordinator.retryTask(payload.agentId)
-      .then((result) => {
-        if (result.success) {
-          getSwarmEventEmitter().agentCompleted(payload.agentId, result.output);
-          return;
-        }
-
-        getSwarmEventEmitter().agentFailed(payload.agentId, result.error || 'Unknown error');
-      })
-      .catch((error: unknown) => {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        getSwarmEventEmitter().agentFailed(payload.agentId, errorMessage);
+      getSwarmEventEmitter().agentUpdated(payload.agentId, {
+        status: 'running',
+        startTime: Date.now(),
+        endTime: undefined,
+        error: '',
+        lastReport: 'Retrying task',
       });
 
-    return true;
+      void coordinator.retryTask(payload.agentId)
+        .then((result) => {
+          if (result.success) {
+            getSwarmEventEmitter().agentCompleted(payload.agentId, result.output);
+            return;
+          }
+
+          getSwarmEventEmitter().agentFailed(payload.agentId, result.error || 'Unknown error');
+        })
+        .catch((error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          getSwarmEventEmitter().agentFailed(payload.agentId, errorMessage);
+        });
+
+      return true;
+    } catch (error) {
+      logger.error('swarm:retry-agent failed', { error: String(error) });
+      return false;
+    }
   });
 
   ipcMain.handle('swarm:approve-plan', async (_, payload: { planId: string; feedback?: string }) => {
-    const gate = getPlanApprovalGate();
-    const plan = gate.getPlan(payload.planId);
-    if (!plan) return false;
-
-    const approved = gate.approve(payload.planId, payload.feedback);
-    if (!approved) return false;
-
     try {
-      const service = getTeammateService();
-      service.approvePlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
-    } catch {
-      // Ignore teammate sync failure; gate state is the source of truth.
-    }
+      const gate = getPlanApprovalGate();
+      const plan = gate.getPlan(payload.planId);
+      if (!plan) return false;
 
-    getSwarmEventEmitter().planApproved(plan.agentId, payload.planId, payload.feedback);
-    return true;
+      const approved = gate.approve(payload.planId, payload.feedback);
+      if (!approved) return false;
+
+      try {
+        const service = getTeammateService();
+        service.approvePlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+      } catch {
+        // Ignore teammate sync failure; gate state is the source of truth.
+      }
+
+      getSwarmEventEmitter().planApproved(plan.agentId, payload.planId, payload.feedback);
+      return true;
+    } catch (error) {
+      logger.error('swarm:approve-plan failed', { error: String(error) });
+      return false;
+    }
   });
 
   ipcMain.handle('swarm:reject-plan', async (_, payload: { planId: string; feedback: string }) => {
-    const gate = getPlanApprovalGate();
-    const plan = gate.getPlan(payload.planId);
-    if (!plan) return false;
-
-    const rejected = gate.reject(payload.planId, payload.feedback);
-    if (!rejected) return false;
-
     try {
-      const service = getTeammateService();
-      service.rejectPlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
-    } catch {
-      // Ignore teammate sync failure; gate state is the source of truth.
-    }
+      const gate = getPlanApprovalGate();
+      const plan = gate.getPlan(payload.planId);
+      if (!plan) return false;
 
-    getSwarmEventEmitter().planRejected(plan.agentId, payload.planId, payload.feedback);
-    return true;
+      const rejected = gate.reject(payload.planId, payload.feedback);
+      if (!rejected) return false;
+
+      try {
+        const service = getTeammateService();
+        service.rejectPlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+      } catch {
+        // Ignore teammate sync failure; gate state is the source of truth.
+      }
+
+      getSwarmEventEmitter().planRejected(plan.agentId, payload.planId, payload.feedback);
+      return true;
+    } catch (error) {
+      logger.error('swarm:reject-plan failed', { error: String(error) });
+      return false;
+    }
   });
 
   // Agent 历史持久化
   ipcMain.handle('swarm:persist-agent-run', async (_, payload: { sessionId: string; run: CompletedAgentRun }) => {
-    await persistAgentRun(payload.sessionId, payload.run);
-    return true;
+    try {
+      await persistAgentRun(payload.sessionId, payload.run);
+      return true;
+    } catch (error) {
+      logger.error('swarm:persist-agent-run failed', { error: String(error) });
+      return false;
+    }
   });
 
   // 获取最近完成的 agent runs
   ipcMain.handle('swarm:get-agent-history', async (_, payload?: { limit?: number }) => {
-    return getRecentAgentHistory(payload?.limit);
+    try {
+      return getRecentAgentHistory(payload?.limit);
+    } catch (error) {
+      logger.error('swarm:get-agent-history failed', { error: String(error) });
+      return [];
+    }
   });
 }

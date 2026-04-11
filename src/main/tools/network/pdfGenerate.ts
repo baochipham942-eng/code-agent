@@ -135,7 +135,7 @@ function parseMarkdown(content: string): Array<{
     // 普通段落
     else if (line.trim()) {
       // 处理行内格式
-      let text = line
+      const text = line
         .replace(/\*\*(.+?)\*\*/g, '$1')  // 粗体
         .replace(/\*(.+?)\*/g, '$1')       // 斜体
         .replace(/`(.+?)`/g, '$1')         // 行内代码

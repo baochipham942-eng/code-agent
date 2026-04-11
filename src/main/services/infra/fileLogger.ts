@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import { app } from '../../platform';
+import { getUserConfigDir } from '../../config/configPaths';
 
 // ============================================================================
 // Constants
@@ -87,7 +88,7 @@ export class FileLogger implements Disposable {
       return path.join(app.getPath('userData'), LOG_CONFIG.DIR_NAME);
     } catch {
       // Fallback for non-Electron environments
-      return path.join(process.env.HOME || '/tmp', '.code-agent', LOG_CONFIG.DIR_NAME);
+      return path.join(getUserConfigDir(), LOG_CONFIG.DIR_NAME);
     }
   }
 

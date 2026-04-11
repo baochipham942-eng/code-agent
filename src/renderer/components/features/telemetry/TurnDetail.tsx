@@ -58,7 +58,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
     setSystemPromptLoading(true);
     try {
       const result = await ipcService.invoke(
-        'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
+        'telemetry:get-system-prompt' as const,
         turn.systemPromptHash
       );
       if (result) {

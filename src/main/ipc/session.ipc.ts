@@ -156,7 +156,7 @@ async function performCrossSessionSearch(
   });
 
   // Build session title map from app service
-  let sessionTitleMap: Map<string, string> = new Map();
+  const sessionTitleMap: Map<string, string> = new Map();
   try {
     const sessions = await getAppService().listSessions({ includeArchived: true });
     for (const s of sessions) {

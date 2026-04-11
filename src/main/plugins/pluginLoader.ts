@@ -208,7 +208,7 @@ export function watchPluginsDir(
   onPluginRemoved: (pluginName: string) => void
 ): () => void {
   const pluginsDir = getPluginsDir();
-  let watcher: fs.FileHandle | null = null;
+  const watcher: fs.FileHandle | null = null;
 
   // Use fs.watch for directory changes
   const abortController = new AbortController();

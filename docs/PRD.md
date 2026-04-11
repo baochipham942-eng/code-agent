@@ -1,6 +1,6 @@
 # Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.1
+> 版本: 2.2
 > 日期: 2026-04-11
 > 作者: Lin Chen
 
@@ -132,6 +132,7 @@
 | 工作目录隔离 | Agent 只能操作指定工作目录 |
 | API Key 安全 | 本地存储，不打包进 DMG |
 | 全局权限模式 | Default / Full Access 一键切换，确认浮窗 |
+| 决策审计 | DecisionHistory 缓冲区（50 条），8 种决策类型，/permissions 可观测 |
 | Generative UI 安全 | postMessage 来源校验 + CSP + prompt injection XML 隔离 |
 
 ---
@@ -202,6 +203,8 @@
 | 断点恢复 | 会话中断后可恢复未完成任务 |
 | 暂停/恢复 | Graceful pause，等当前迭代结束后暂停 |
 | 检查点回溯 | 文件回滚 + 消息截断 + "从此重试" Fork |
+| Git 分支追踪 | 会话创建时自动记录 git 分支，/sessions 显示分支和 PR |
+| 跨会话续传 | /resume 注入历史会话上下文，支持无参自动查找或指定 ID |
 
 ---
 
@@ -233,9 +236,22 @@
 | 系统 | 说明 |
 |------|------|
 | Skills | 可移植能力包，动态加载 |
-| Hooks | 11 种事件类型的自动化触发 |
-| Plugins | 完整生命周期（discover → load → activate → deactivate） |
+| Hooks | 16 种事件类型，decision/observer 双模式，trigger history |
+| Plugins | 完整生命周期（discover → load → activate → deactivate）+ /plugins 控制面板（install/uninstall/validate） |
 | MCP | Model Context Protocol 集成 |
+
+**Hook 事件覆盖**:
+
+| 稳定性 | 事件 |
+|--------|------|
+| stable (9) | PreToolUse, PostToolUse, Stop, SessionStart, PostExecution 等 |
+| experimental (2) | SubagentStart, SubagentStop |
+| planned (2) | TaskCreated, TaskCompleted |
+| observer-only (3) | PermissionDenied, PostCompact, StopFailure |
+
+**Hook 模式**:
+- **decision** — 可阻止或修改工具执行（默认）
+- **observer** — 只读监控，block/modify 结果被忽略
 
 ---
 
@@ -245,7 +261,10 @@
 
 | 分类 | 命令示例 |
 |------|---------|
-| 会话 | 新建会话、清空对话、归档 |
+| 会话 | 新建会话、清空对话、归档、/sessions（分支+PR+目录）、/resume（跨会话续传） |
+| 可观测性 | /cost（token 费用）、/context（上下文占用）、/status（系统概览）、/agents（Agent 历史） |
+| 安全 | /permissions（权限模式 + 决策历史）、/hooks（事件配置 + 触发记录） |
+| 插件 | /plugins（list/install/uninstall/validate/reload-all + MCP 列表） |
 | 视图 | 切换侧边栏、DAG 面板、工作区、评测中心 |
 | 设置 | 打开设置、键盘快捷键、设置页搜索（18 项索引，中英文模糊匹配） |
 | 集成 | MCP 服务器添加 UI（stdio/SSE/HTTP 三类型）、Provider 诊断面板（5 类探针） |

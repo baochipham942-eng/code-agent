@@ -87,3 +87,9 @@ export * from './trace';
 
 // Decision Trace types (Security decision chain transparency)
 export * from './decisionTrace';
+
+// Extension types (Unified plugin/skill management)
+export * from './extension';
+
+// Agent History types (completed agent run records)
+export * from './agentHistory';

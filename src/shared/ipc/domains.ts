@@ -32,6 +32,7 @@ export const IPC_DOMAINS = {
   CAPTURE: 'domain:capture', // 浏览器采集
   DESKTOP: 'domain:desktop', // 原生桌面活动
   SOUL: 'domain:soul',
+  PROVIDER: 'domain:provider',
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

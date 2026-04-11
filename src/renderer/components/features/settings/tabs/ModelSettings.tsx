@@ -125,15 +125,21 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     }
     setIsTesting(true);
     try {
-      const result = await ipcService.invokeDomain<{ success: boolean; error?: string }>(
-        IPC_DOMAINS.SETTINGS,
-        'testApiKey',
+      const result = await ipcService.invokeDomain<{
+        success: boolean;
+        latencyMs: number;
+        error?: { code: string; message: string; suggestion: string };
+      }>(
+        IPC_DOMAINS.PROVIDER,
+        'test_connection',
         { provider: config.provider, apiKey: config.apiKey }
       );
       if (result?.success) {
-        toast.success('连接成功');
+        toast.success(`连接成功，延迟 ${result.latencyMs}ms`);
+      } else if (result?.error) {
+        toast.error(`${result.error.message}\n${result.error.suggestion}`);
       } else {
-        toast.error(result?.error || '连接失败');
+        toast.error('连接失败');
       }
     } catch {
       toast.error('连接测试失败');

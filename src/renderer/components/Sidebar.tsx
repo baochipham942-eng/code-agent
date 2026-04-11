@@ -37,7 +37,7 @@ import ipcService from '../services/ipcService';
 const logger = createLogger('Sidebar');
 
 // 获取相对时间
-function getRelativeTime(timestamp: number): string {
+function getRelativeTime(timestamp: number, compact = false): string {
   if (!timestamp || !Number.isFinite(timestamp)) return '';
   const now = Date.now();
   const diff = now - timestamp;
@@ -45,6 +45,15 @@ function getRelativeTime(timestamp: number): string {
   const minutes = Math.floor(diff / (1000 * 60));
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (compact) {
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}m`;
+    if (hours < 24) return `${hours}h`;
+    if (days < 7) return `${days}d`;
+    if (days < 30) return `${Math.floor(days / 7)}w`;
+    return `${Math.floor(days / 30)}mo`;
+  }
 
   if (minutes < 1) return '刚刚';
   if (minutes < 60) return `${minutes}分钟前`;
@@ -344,7 +353,7 @@ export const Sidebar: React.FC = () => {
         onContextMenu={(e) => handleContextMenu(e, session)}
         onMouseEnter={() => setHoveredSession(session.id)}
         onMouseLeave={() => setHoveredSession(null)}
-        className={`group relative flex items-center px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
+        className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
           isSelected && !multiSelectMode
             ? 'bg-zinc-700/60'
             : isChecked
@@ -354,7 +363,7 @@ export const Sidebar: React.FC = () => {
       >
         {/* 多选模式：Checkbox */}
         {multiSelectMode && (
-          <div className="mr-2 shrink-0">
+          <div className="flex items-center mb-1">
             {isChecked ? (
               <CheckSquare className="w-4 h-4 text-blue-400" />
             ) : (
@@ -363,78 +372,84 @@ export const Sidebar: React.FC = () => {
           </div>
         )}
 
-        {/* 内容区域 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            {/* 运行状态指示：暂停（黄色）或运行中（绿色） */}
-            {isSessionPaused && !multiSelectMode && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="已暂停" />
-            )}
-            {isRunning && !isSessionPaused && !multiSelectMode && (
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-            )}
+        {/* Line 1: status indicators + title */}
+        <div className="flex items-center gap-2">
+          {/* 运行状态指示：暂停（黄色）或运行中（绿色） */}
+          {isSessionPaused && !multiSelectMode && (
+            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="已暂停" />
+          )}
+          {isRunning && !isSessionPaused && !multiSelectMode && (
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+          )}
 
-            {/* 置顶图标 */}
-            {isPinned && !multiSelectMode && (
-              <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
-            )}
+          {/* 置顶图标 */}
+          {isPinned && !multiSelectMode && (
+            <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
+          )}
 
-            {/* 标题：重命名模式 vs 普通 */}
-            {isRenaming ? (
-              <input
-                ref={renameInputRef}
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={handleRenameSubmit}
-                onKeyDown={handleRenameKeyDown}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none"
-              />
-            ) : (
-              <span
-                onDoubleClick={(e) => handleDoubleClick(e, session)}
-                className={`text-sm truncate font-medium flex-1 ${
-                  isSelected ? 'text-zinc-200' : 'text-zinc-400'
-                }`}
-              >
-                {session.title || '未命名会话'}
-              </span>
-            )}
-
-            {/* 时间 + 操作按钮 */}
-            {!isRenaming && (
-              <>
-                <span className="text-xs text-zinc-500 shrink-0">
-                  {getRelativeTime(session.updatedAt)}
-                </span>
-                {hoveredSession === session.id && !multiSelectMode && (
-                  <IconButton
-                    icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-                    aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
-                    onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
-                    variant="ghost"
-                    size="sm"
-                    className="!p-1 opacity-0 group-hover:opacity-100"
-                    title={session.isArchived ? "取消归档" : "归档"}
-                  />
-                )}
-              </>
-            )}
-          </div>
-          {/* Meta info: message count + model */}
-          {!isRenaming && (
-            <div className="flex items-center gap-2 mt-0.5">
-              {session.messageCount > 0 && (
-                <span className="text-xs text-zinc-600">{session.messageCount} 条</span>
-              )}
-              {session.modelConfig?.model && (
-                <span className="text-xs text-zinc-600 truncate">
-                  {session.modelConfig.model}
-                </span>
-              )}
-            </div>
+          {/* 标题：重命名模式 vs 普通 */}
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={handleRenameSubmit}
+              onKeyDown={handleRenameKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none"
+            />
+          ) : (
+            <span
+              onDoubleClick={(e) => handleDoubleClick(e, session)}
+              className={`text-sm truncate font-medium flex-1 ${
+                isSelected ? 'text-zinc-100' : 'text-zinc-400'
+              }`}
+            >
+              {session.title || '未命名会话'}
+            </span>
           )}
         </div>
+
+        {/* Line 2: subtitle (message count) + compact time */}
+        {!isRenaming && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[11px] text-zinc-600 truncate flex-1">
+              {session.messageCount > 0 ? `${session.messageCount} 条消息` : ''}
+            </span>
+            <span className="text-[10px] text-zinc-600 shrink-0">
+              {getRelativeTime(session.updatedAt, true)}
+            </span>
+          </div>
+        )}
+
+        {/* Line 3: meta badges — only show for selected item */}
+        {isSelected && !isRenaming && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {session.messageCount > 0 && (
+              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1">{session.messageCount} 条</span>
+            )}
+            {session.modelConfig?.model && (
+              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1 truncate">
+                {session.modelConfig.model}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Hover actions — absolute positioned top-right */}
+        {hoveredSession === session.id && !multiSelectMode && !isRenaming && (
+          <div className="absolute top-1.5 right-2 flex items-center gap-0.5">
+            <IconButton
+              icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+              aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
+              onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
+              variant="ghost"
+              size="sm"
+              className="!p-1 opacity-0 group-hover:opacity-100"
+              title={session.isArchived ? "取消归档" : "归档"}
+            />
+          </div>
+        )}
 
         {/* 未读指示器 */}
         {isUnread && !multiSelectMode && (

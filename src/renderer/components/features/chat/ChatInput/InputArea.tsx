@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { Paperclip } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { useModeStore } from '../../../../stores/modeStore';
 
 // 图片 MIME 类型
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -220,8 +220,18 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       'application/vnd.ms-excel',
     ].join(',');
 
+    const interactionMode = useModeStore((s) => s.interactionMode);
+
+    // 根据交互模式决定 placeholder 文案和颜色
+    const placeholderConfig = {
+      code: { text: '描述你想解决的问题...', colorClass: 'placeholder-zinc-500' },
+      plan: { text: '描述你的需求，我只出方案不动代码...', colorClass: 'placeholder-amber-500/50' },
+      ask: { text: '问我任何问题...', colorClass: 'placeholder-emerald-500/50' },
+    };
+    const { text: placeholderText, colorClass: placeholderColor } = placeholderConfig[interactionMode] ?? placeholderConfig.code;
+
     return (
-      <div className="relative flex items-center">
+      <div className="relative">
         {/* 隐藏的文件输入 */}
         <input
           ref={fileInputRef}
@@ -231,16 +241,6 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onChange={handleFileChange}
           className="hidden"
         />
-
-        {/* 附件按钮 - 与发送按钮大小一致 */}
-        <button
-          type="button"
-          onClick={handleAttachClick}
-          className="flex-shrink-0 ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700 transition-colors"
-          aria-label="添加图片或文件"
-        >
-          <Paperclip className="w-4 h-4" />
-        </button>
 
         {/* 文本输入框 */}
         <textarea
@@ -259,16 +259,11 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}
-          placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '描述你想解决的问题...')}
+          placeholder={placeholder ?? (hasAttachments ? '添加描述...' : placeholderText)}
           disabled={disabled}
           rows={1}
-          className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-200 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
+          className={`w-full bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 ${placeholderColor} resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed`}
         />
-
-        {/* 操作按钮区（语音输入 + 发送） */}
-        <div className="flex items-center gap-1.5 mr-2">
-          {actionButtons || sendButton}
-        </div>
       </div>
     );
   }

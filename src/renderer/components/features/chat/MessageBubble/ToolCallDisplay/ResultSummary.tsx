@@ -18,14 +18,7 @@ export function ResultSummary({ toolCall }: Props) {
   if (!summary) return null;
 
   return (
-    <div className="flex items-start gap-1.5 pl-1 text-xs">
-      {/* ⎿ connector - same width as StatusIndicator (w-4) */}
-      <span
-        className="w-4 flex-shrink-0 text-center"
-        style={{ color: isError ? 'var(--cc-error)' : 'var(--cc-gutter)' }}
-      >
-        ⎿
-      </span>
+    <div className="ml-6 text-xs">
       <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
         {summary}
       </span>

@@ -136,7 +136,7 @@ export const TaskMonitor: React.FC = () => {
   // ── 渲染 ──
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* 工作目录 */}
       {folderName && (
         <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -174,7 +174,7 @@ export const TaskMonitor: React.FC = () => {
       )}
 
       {/* ═══ Card 1: TodoCard ═══ */}
-      <Card title={t.taskPanel.sectionTodos} count={todoModel.total > 0 ? `${todoModel.completed}/${todoModel.total}` : undefined}>
+      <Card title={t.taskPanel.sectionTodos} count={todoModel.total > 0 ? `${todoModel.completed}/${todoModel.total}` : undefined} isEmpty={todoModel.total === 0 && toolPhases.length === 0} emptyLabel="空闲">
         {todoModel.total > 0 ? (
           <div className="space-y-0.5">
             {todoModel.items.map((todo, index) => (
@@ -257,16 +257,17 @@ export const TaskMonitor: React.FC = () => {
         {/* 大数字 + 进度条 */}
         <div className="space-y-2">
           <div className="flex items-end gap-2">
-            <span className={`text-2xl font-bold tabular-nums ${
+            <span className={`text-xl font-bold tabular-nums ${
               context.warningLevel === 'critical' ? 'text-red-400' :
               context.warningLevel === 'warning' ? 'text-yellow-400' :
               'text-emerald-400'
             }`}>
               {Math.round(context.usagePercent)}%
             </span>
-            <span className="text-xs text-zinc-500 pb-1">
+            <span className="text-sm text-zinc-500 pb-1">
               {formatTokens(context.currentTokens)} / {formatTokens(context.maxTokens)}
             </span>
+            <span className="text-[10px] text-zinc-600 ml-auto">tokens</span>
           </div>
 
           {/* 进度条 */}
@@ -282,12 +283,13 @@ export const TaskMonitor: React.FC = () => {
           </div>
 
           {/* Bucket tabs */}
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+            <style>{`.bucket-tabs::-webkit-scrollbar { height: 0; }`}</style>
             {buckets.map((b) => (
               <button
                 key={b.key}
                 onClick={() => setSelectedBucket(b.key)}
-                className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] whitespace-nowrap shrink-0 transition-colors ${
                   selectedBucket === b.key
                     ? 'bg-white/10 text-zinc-200'
                     : 'text-zinc-500 hover:text-zinc-400'
@@ -295,7 +297,7 @@ export const TaskMonitor: React.FC = () => {
               >
                 {b.label}
                 {b.count > 0 && (
-                  <span className="ml-1 text-zinc-600">{b.count}</span>
+                  <span className="text-zinc-400 bg-zinc-700/60 rounded px-1 min-w-[14px] text-center">{b.count}</span>
                 )}
               </button>
             ))}
@@ -366,7 +368,7 @@ export const TaskMonitor: React.FC = () => {
       </Card>
 
       {/* ═══ Card 3: OutputsCard ═══ */}
-      <Card title={t.taskPanel.sectionOutputs} count={outputs.count > 0 ? String(outputs.count) : undefined}>
+      <Card title={t.taskPanel.sectionOutputs} count={outputs.count > 0 ? String(outputs.count) : undefined} isEmpty={outputs.count === 0} emptyLabel="0">
         {outputs.count > 0 ? (
           <div className="space-y-0.5">
             {outputs.files.map((file) => (
@@ -382,7 +384,7 @@ export const TaskMonitor: React.FC = () => {
       </Card>
 
       {/* ═══ Card 4: ReferencesCard ═══ */}
-      <Card title={t.taskPanel.sectionReferences}>
+      <Card title={t.taskPanel.sectionReferences} isEmpty={mountedSkills.length === 0 && invokedSkills.length === 0} emptyLabel="0">
         {mountedSkills.length > 0 || invokedSkills.length > 0 ? (
           <div className="space-y-0.5">
             {mountedSkills.map((mount) => (
@@ -415,19 +417,31 @@ interface CardProps {
   count?: string;
   highlight?: boolean;
   rightElement?: React.ReactNode;
+  isEmpty?: boolean;
+  emptyLabel?: string;
   children: React.ReactNode;
 }
 
-function Card({ title, count, highlight, rightElement, children }: CardProps) {
+function Card({ title, count, highlight, rightElement, isEmpty, emptyLabel, children }: CardProps) {
   const [expanded, setExpanded] = useState(true);
 
+  // Compact single-line for empty cards
+  if (isEmpty) {
+    return (
+      <div className="bg-white/[0.02] rounded-lg border border-white/[0.04] px-3 py-2 flex items-center justify-between">
+        <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{title}</span>
+        <span className="text-[10px] text-zinc-600">{emptyLabel || '0'}</span>
+      </div>
+    );
+  }
+
   return (
-    <div className={`bg-white/[0.02] backdrop-blur-sm rounded-xl border ${
+    <div className={`bg-white/[0.02] backdrop-blur-sm rounded-lg border ${
       highlight ? 'border-yellow-500/20' : 'border-white/[0.04]'
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center w-full p-3"
+        className="flex items-center w-full px-3 py-2"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
@@ -451,7 +465,7 @@ function Card({ title, count, highlight, rightElement, children }: CardProps) {
         </div>
       </button>
       {expanded && (
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-2.5">
           {children}
         </div>
       )}

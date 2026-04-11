@@ -547,7 +547,7 @@ export const App: React.FC = () => {
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {(effectiveShowTaskPanel || effectiveShowSkillsPanel) && (
-                    <Panel defaultSize="25" minSize="15" maxSize="45" id="right-panel">
+                    <Panel defaultSize="20" minSize="15" maxSize="45" id="right-panel">
                       {effectiveShowTaskPanel && <TaskPanel />}
                       {effectiveShowSkillsPanel && (
                         <SkillsPanel onClose={() => setShowSkillsPanel(false)} />

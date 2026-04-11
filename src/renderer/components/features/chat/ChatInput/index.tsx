@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { Image, FileText, Pause, Play } from 'lucide-react';
+import { Image, FileText, Pause, Play, ChevronDown, SlashSquare } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
 
@@ -19,11 +19,8 @@ import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
-import { useModeStore } from '../../../../stores/modeStore';
 import { ComboSkillCard } from './ComboSkillCard';
-import { EffortSelector } from './EffortSelector';
-import { PermissionToggle } from './PermissionToggle';
-import { ModeSelector } from './ModeSelector';
+import { useAppStore } from '../../../../stores/appStore';
 import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
@@ -329,11 +326,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, []);
 
-  const effortLevel = useModeStore((s) => s.effortLevel);
-  const setEffortLevel = useModeStore((s) => s.setEffortLevel);
-  const interactionMode = useModeStore((s) => s.interactionMode);
-  const setInteractionMode = useModeStore((s) => s.setInteractionMode);
-
+  const modelConfig = useAppStore((s) => s.modelConfig);
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
   return (
@@ -397,21 +390,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
-        {/* 交互模式 + 推理强度 + 权限模式选择器 */}
-        <div className="flex items-center justify-end gap-2 mb-1.5">
-          <PermissionToggle disabled={isProcessing} />
-          <ModeSelector
-            value={interactionMode}
-            onChange={setInteractionMode}
-            disabled={isProcessing}
-          />
-          <EffortSelector
-            value={effortLevel}
-            onChange={setEffortLevel}
-            disabled={isProcessing}
-          />
-        </div>
-
         {/* 输入区域 - 玻璃质感样式 */}
         <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">
           {/* Slash command inline popover */}
@@ -451,47 +429,84 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
-            placeholder="描述你想解决的问题..."
             onHistoryPrev={getPreviousInput}
             onHistoryNext={getNextInput}
             onHistoryReset={resetInputHistoryIndex}
-            actionButtons={
-              <>
-                {/* 语音输入按钮 */}
-                {!disabled && (
-                  <VoiceInputButton
-                    onTranscript={handleVoiceTranscript}
-                    disabled={disabled}
-                  />
-                )}
-                {/* 暂停/恢复按钮 — 仅在处理中时显示 */}
-                {isProcessing && !isInterrupting && (
-                  <button
-                    type="button"
-                    onClick={isPaused ? onResume : onPause}
-                    className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
-                      isPaused
-                        ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                        : 'text-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
-                    }`}
-                    aria-label={isPaused ? '恢复' : '暂停'}
-                    title={isPaused ? '恢复执行' : '暂停（完成当前步骤后停止）'}
-                  >
-                    {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-                  </button>
-                )}
-                {/* 发送/停止/中断按钮 */}
-                <SendButton
-                  disabled={disabled && !isProcessing}
-                  isProcessing={isProcessing}
-                  isInterrupting={isInterrupting}
-                  hasContent={hasContent}
-                  type="submit"
-                  onStop={onStop}
-                />
-              </>
-            }
           />
+          {/* 底部工具栏 */}
+          <div className="flex items-center gap-1 px-3 pb-3">
+            {/* / 命令按钮 */}
+            <button
+              type="button"
+              onClick={() => { setShowSlashPopover(true); setSlashFilter(''); }}
+              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+              aria-label="命令"
+              title="输入 / 命令"
+            >
+              <SlashSquare className="w-4 h-4" />
+            </button>
+
+            {/* 附件按钮 */}
+            <label
+              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors cursor-pointer"
+              aria-label="添加图片或文件"
+              title="添加图片或文件"
+            >
+              <Image className="w-4 h-4" />
+              <input
+                type="file"
+                multiple
+                onChange={(e) => { if (e.target.files) handleFileSelect(e.target.files); e.target.value = ''; }}
+                className="hidden"
+              />
+            </label>
+
+            {/* 弹性空白 */}
+            <div className="flex-1" />
+
+            {/* 模型选择按钮 */}
+            <button
+              type="button"
+              className="flex items-center gap-1 px-2 h-7 rounded-md text-xs text-zinc-400 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors max-w-[180px]"
+              title={modelConfig.model}
+            >
+              <span className="truncate">{modelConfig.model}</span>
+              <ChevronDown className="w-3 h-3 flex-shrink-0 opacity-50" />
+            </button>
+
+            {/* 语音输入按钮 */}
+            {!disabled && (
+              <VoiceInputButton
+                onTranscript={handleVoiceTranscript}
+                disabled={disabled}
+              />
+            )}
+            {/* 暂停/恢复按钮 — 仅在处理中时显示 */}
+            {isProcessing && !isInterrupting && (
+              <button
+                type="button"
+                onClick={isPaused ? onResume : onPause}
+                className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                  isPaused
+                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
+                    : 'text-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
+                }`}
+                aria-label={isPaused ? '恢复' : '暂停'}
+                title={isPaused ? '恢复执行' : '暂停（完成当前步骤后停止）'}
+              >
+                {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+              </button>
+            )}
+            {/* 发送/停止/中断按钮 */}
+            <SendButton
+              disabled={disabled && !isProcessing}
+              isProcessing={isProcessing}
+              isInterrupting={isInterrupting}
+              hasContent={hasContent}
+              type="submit"
+              onStop={onStop}
+            />
+          </div>
         </div>
       </form>
     </div>

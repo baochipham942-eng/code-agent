@@ -80,13 +80,15 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const isActiveMatchTurn = activeMatch?.turnIndex === index;
 
       return (
-        <TurnCard
-          key={turn.turnId}
-          turn={turn}
-          defaultExpanded={isLast || isStreaming}
-          forceExpanded={hasSearchMatch}
-          highlightActive={isActiveMatchTurn}
-        />
+        <div className="max-w-3xl mx-auto">
+          <TurnCard
+            key={turn.turnId}
+            turn={turn}
+            defaultExpanded={isLast || isStreaming}
+            forceExpanded={hasSearchMatch}
+            highlightActive={isActiveMatchTurn}
+          />
+        </div>
       );
     },
     [projection.turns, projection.activeTurnIndex, searchMatches, activeMatchIndex],

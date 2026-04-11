@@ -108,12 +108,20 @@ export interface StatusRailSwarmModel {
   selectedAgentId: string | null;
 }
 
+export interface StatusRailCacheModel {
+  promptCacheHits: number;
+  promptCacheMisses: number;
+  totalCachedTokens: number;
+  hitRate: number; // 0-1
+}
+
 export interface StatusRailModel {
   context: StatusRailContextModel;
   compact: StatusRailCompactModel;
   todos: StatusRailTodoModel;
   outputs: StatusRailOutputModel;
   swarm: StatusRailSwarmModel;
+  cache: StatusRailCacheModel;
 }
 
 // ── Hook ──
@@ -122,6 +130,7 @@ export function useStatusRailModel(): StatusRailModel {
   const contextHealth = useAppStore((s) => s.contextHealth);
   const selectedSwarmAgentId = useAppStore((s) => s.selectedSwarmAgentId);
   const workingDirectory = useAppStore((s) => s.workingDirectory);
+  const cacheStats = useAppStore((s) => s.cacheStats);
 
   const todos = useSessionStore((s) => s.todos);
   const messages = useSessionStore((s) => s.messages);
@@ -182,5 +191,19 @@ export function useStatusRailModel(): StatusRailModel {
     selectedAgentId: selectedSwarmAgentId,
   }), [swarmIsRunning, swarmAgents.length, selectedSwarmAgentId]);
 
-  return { context, compact, todos: todoModel, outputs, swarm };
+  // Cache
+  const cache = useMemo<StatusRailCacheModel>(() => {
+    if (!cacheStats) {
+      return { promptCacheHits: 0, promptCacheMisses: 0, totalCachedTokens: 0, hitRate: 0 };
+    }
+    const total = cacheStats.promptCacheHits + cacheStats.promptCacheMisses;
+    return {
+      promptCacheHits: cacheStats.promptCacheHits,
+      promptCacheMisses: cacheStats.promptCacheMisses,
+      totalCachedTokens: cacheStats.totalCachedTokens,
+      hitRate: total > 0 ? cacheStats.promptCacheHits / total : 0,
+    };
+  }, [cacheStats]);
+
+  return { context, compact, todos: todoModel, outputs, swarm, cache };
 }

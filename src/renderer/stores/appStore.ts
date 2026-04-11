@@ -104,6 +104,13 @@ interface AppState {
   contextHealth: ContextHealthState | null;
   contextHealthCollapsed: boolean;
 
+  // Cache Stats (缓存统计)
+  cacheStats: {
+    promptCacheHits: number;
+    promptCacheMisses: number;
+    totalCachedTokens: number;
+  } | null;
+
   // Actions
   setShowSettings: (show: boolean) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
@@ -155,6 +162,7 @@ interface AppState {
   setWorkingDirectory: (dir: string | null) => void;
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
+  setCacheStats: (stats: { promptCacheHits: number; promptCacheMisses: number; totalCachedTokens: number } | null) => void;
 }
 
 // Default model config — 引用 shared/constants.ts 常量
@@ -234,6 +242,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial Context Health State
   contextHealth: null,
   contextHealthCollapsed: true, // 默认收起
+
+  // Initial Cache Stats
+  cacheStats: null,
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
@@ -378,4 +389,5 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setContextHealth: (health) => set({ contextHealth: health }),
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
+  setCacheStats: (stats) => set({ cacheStats: stats }),
 }));

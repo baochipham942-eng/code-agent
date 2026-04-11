@@ -60,6 +60,11 @@ export interface HookMatcher {
   parallel?: boolean;
   /** Match MCP server tools by server name prefix (e.g., "github" matches "mcp__github__*") */
   mcpServer?: string;
+  /**
+   * Hook type: 'decision' hooks can block or modify; 'observer' hooks execute
+   * but their block/modify results are ignored. Default: 'decision'.
+   */
+  hookType?: 'decision' | 'observer';
 }
 
 /**
@@ -103,6 +108,8 @@ export interface ParsedHookConfig {
   parallel: boolean;
   /** Match MCP server tools by server name prefix */
   mcpServer?: string;
+  /** Hook type: 'decision' can block/modify, 'observer' is read-only. Default: 'decision'. */
+  hookType: 'decision' | 'observer';
 }
 
 // ----------------------------------------------------------------------------
@@ -147,6 +154,23 @@ export async function parseHooksConfig(
 }
 
 /**
+ * Events that are observer-only by nature: they report something that already
+ * happened, so blocking or modifying makes no semantic sense.
+ * If a user configures a 'decision' hook on these events, it is silently
+ * downgraded to 'observer' with a console warning.
+ */
+const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PostExecution',
+  'SessionStart',
+  'SessionEnd',
+  'SubagentStop',
+  'TaskCreated',
+  'TaskCompleted',
+]);
+
+/**
  * Parse hooks object into array of parsed configs
  */
 function parseHooksObject(
@@ -185,6 +209,19 @@ function parseHooksObject(
         continue;
       }
 
+      // Resolve hookType: observer-only events force observer mode
+      let hookType: 'decision' | 'observer' = matcherConfig.hookType ?? 'decision';
+      if (hookType === 'decision' && OBSERVER_ONLY_EVENTS.has(event)) {
+        if (matcherConfig.hookType === 'decision') {
+          // Explicit decision on observer-only event → warn and downgrade
+          console.warn(
+            `[Hooks] Warning: event "${event}" is observer-only. ` +
+              `Downgrading hookType from 'decision' to 'observer' (${source} config).`
+          );
+        }
+        hookType = 'observer';
+      }
+
       result.push({
         event,
         matcher: matcherConfig.matcher ? new RegExp(matcherConfig.matcher) : null,
@@ -192,6 +229,7 @@ function parseHooksObject(
         source,
         parallel: matcherConfig.parallel ?? false,  // Phase 2: 并行执行支持
         mcpServer: matcherConfig.mcpServer,
+        hookType,
       });
     }
   }

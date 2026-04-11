@@ -199,6 +199,27 @@ export interface NotificationContext extends HookEventContext {
 }
 
 /**
+ * Context for task creation events
+ * @planned
+ */
+export interface TaskCreatedContext extends HookEventContext {
+  event: 'TaskCreated';
+  taskId: string;
+  agentType: string;
+}
+
+/**
+ * Context for task completion events
+ * @planned
+ */
+export interface TaskCompletedContext extends HookEventContext {
+  event: 'TaskCompleted';
+  taskId: string;
+  agentType: string;
+  success: boolean;
+}
+
+/**
  * Union type of all hook contexts
  */
 export type AnyHookContext =
@@ -211,7 +232,9 @@ export type AnyHookContext =
   | PostExecutionContext
   | SessionContext
   | CompactContext
-  | NotificationContext;
+  | NotificationContext
+  | TaskCreatedContext
+  | TaskCompletedContext;
 
 /**
  * Result returned by a hook execution
@@ -301,6 +324,13 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
 
   if ('prompt' in context) {
     env[HOOK_ENV_VARS.USER_PROMPT] = context.prompt;
+  }
+
+  // Task lifecycle contexts
+  if (context.event === 'TaskCreated' || context.event === 'TaskCompleted') {
+    if ('taskId' in context) env['HOOK_TASK_ID'] = String(context.taskId);
+    if ('agentType' in context) env['HOOK_AGENT_TYPE'] = String(context.agentType);
+    if ('success' in context) env['HOOK_TASK_SUCCESS'] = String(context.success);
   }
 
   return env;

@@ -16,6 +16,8 @@ import type {
   SessionContext,
   CompactContext,
   PostExecutionContext,
+  TaskCreatedContext,
+  TaskCompletedContext,
 } from './events';
 import type { HookDefinition, ParsedHookConfig } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
@@ -432,11 +434,13 @@ export class HookManager {
     agentType: string,
     sessionId: string
   ): Promise<HookTriggerResult> {
-    const context: HookEventContext = {
+    const context: TaskCreatedContext = {
       event: 'TaskCreated',
       sessionId,
       timestamp: Date.now(),
       workingDirectory: this.config.workingDirectory,
+      taskId,
+      agentType,
     };
 
     return this.triggerEventHooks('TaskCreated', context);
@@ -452,11 +456,14 @@ export class HookManager {
     success: boolean,
     sessionId: string
   ): Promise<HookTriggerResult> {
-    const context: HookEventContext = {
+    const context: TaskCompletedContext = {
       event: 'TaskCompleted',
       sessionId,
       timestamp: Date.now(),
       workingDirectory: this.config.workingDirectory,
+      taskId,
+      agentType,
+      success,
     };
 
     return this.triggerEventHooks('TaskCompleted', context);
@@ -546,11 +553,28 @@ export class HookManager {
 
     // 串行执行剩余 hooks
     for (const config of sequentialConfigs) {
+      const isObserver = config.hookType === 'observer';
+
       for (const hook of config.hooks) {
         const result = await this.executeHook(hook, context);
         results.push(result);
 
-        // Aggregate results
+        // Observer hooks: execute for side-effects but ignore block/modify
+        if (isObserver) {
+          if (result.action === 'block') {
+            logger.info('Observer hook tried to block — ignored', { event: context.event });
+          }
+          if (result.modifiedInput) {
+            logger.info('Observer hook tried to modify input — ignored', { event: context.event });
+          }
+          // Collect messages (observer can still report)
+          if (result.message && result.action !== 'error') {
+            message = message ? `${message}\n${result.message}` : result.message;
+          }
+          continue;
+        }
+
+        // Decision hooks: normal aggregate
         if (result.action === 'block') {
           shouldProceed = false;
           message = result.message || message;
@@ -614,7 +638,25 @@ export class HookManager {
     let message: string | undefined;
     let modifiedInput: string | undefined;
 
-    for (const result of results) {
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const isObserver = allHooks[i].config.hookType === 'observer';
+
+      if (isObserver) {
+        // Observer hooks: ignore block/modify, collect messages only
+        if (result.action === 'block') {
+          logger.info('Parallel observer hook tried to block — ignored', { event: context.event });
+        }
+        if (result.modifiedInput) {
+          logger.info('Parallel observer hook tried to modify input — ignored', { event: context.event });
+        }
+        if (result.message && result.action !== 'error') {
+          message = message ? `${message}\n${result.message}` : result.message;
+        }
+        continue;
+      }
+
+      // Decision hooks: normal aggregate
       if (result.action === 'block') {
         shouldProceed = false;
         message = result.message || message;

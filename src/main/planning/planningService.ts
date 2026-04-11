@@ -9,10 +9,13 @@ import { HooksEngine } from './hooksEngine';
 import { ErrorTracker } from './errorTracker';
 import { FindingsManager } from './findingsManager';
 import type {
+  HookContext,
   PlanningConfig,
   PlanningHooksConfig,
   PlanningRulesConfig,
 } from './types';
+import type { HookPoint } from './hooks/types';
+import type { HookManager } from '../hooks/hookManager';
 
 // ----------------------------------------------------------------------------
 // PlanningService
@@ -21,6 +24,10 @@ import type {
 export interface PlanningServiceOptions {
   hooks?: Partial<PlanningHooksConfig>;
   rules?: Partial<PlanningRulesConfig>;
+  /** HookManager for bridging planning hooks to user hook system */
+  hookManager?: HookManager;
+  /** Session ID for bridge events */
+  sessionId?: string;
 }
 
 export class PlanningService {
@@ -37,12 +44,73 @@ export class PlanningService {
     this._planManager = new PlanManager(config);
     this._errorTracker = new ErrorTracker(config);
     this._findingsManager = new FindingsManager(config);
+
+    const bridgeCallback = options?.hookManager
+      ? this.createBridgeCallback(options.hookManager, options.sessionId || config.sessionId)
+      : undefined;
+
     this._hooksEngine = new HooksEngine(
       this._planManager,
       this._errorTracker,
       this._findingsManager,
-      options
+      {
+        ...options,
+        onBridgeEvent: bridgeCallback,
+      }
     );
+  }
+
+  // ==========================================================================
+  // Bridge to User Hook System
+  // ==========================================================================
+
+  /**
+   * Set bridge hookManager for late binding (when hookManager is not available at construction).
+   * Fire-and-forget: bridge errors are silently caught to never block planning.
+   */
+  setBridgeHookManager(hookManager: HookManager, sessionId?: string): void {
+    const callback = this.createBridgeCallback(hookManager, sessionId || this.config.sessionId);
+    this._hooksEngine.setBridgeCallback(callback);
+  }
+
+  /**
+   * Create a bridge callback that maps planning HookPoints to HookManager triggers.
+   */
+  private createBridgeCallback(
+    hookManager: HookManager,
+    sessionId: string
+  ): (point: HookPoint, ctx: HookContext) => void {
+    return (point: HookPoint, ctx: HookContext) => {
+      if (point === 'pre_tool_use' && ctx.toolName) {
+        hookManager.triggerPreToolUse(
+          ctx.toolName,
+          JSON.stringify(ctx.toolParams || {}),
+          sessionId
+        ).catch(() => {});
+      } else if (point === 'post_tool_use' && ctx.toolName) {
+        const toolOutput = ctx.toolResult?.success
+          ? (ctx.toolResult.output || '')
+          : (ctx.toolResult?.error || '');
+        if (ctx.toolResult?.success) {
+          hookManager.triggerPostToolUse(
+            ctx.toolName,
+            JSON.stringify(ctx.toolParams || {}),
+            toolOutput,
+            sessionId
+          ).catch(() => {});
+        } else {
+          hookManager.triggerPostToolUseFailure(
+            ctx.toolName,
+            JSON.stringify(ctx.toolParams || {}),
+            toolOutput,
+            sessionId
+          ).catch(() => {});
+        }
+      } else if (point === 'on_stop') {
+        hookManager.triggerStop(undefined, sessionId).catch(() => {});
+      }
+      // on_error and session_start are not bridged (planning-internal concerns)
+    };
   }
 
   // ==========================================================================

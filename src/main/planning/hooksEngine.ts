@@ -67,6 +67,7 @@ export class HooksEngine {
   private rulesConfig: PlanningRulesConfig;
   private dualChannelConfig: DualChannelConfig;
   private decisionHooks: Array<{ point: HookPoint; hook: DecisionHook }>;
+  private onBridgeEvent?: (point: HookPoint, context: HookContext) => void;
 
   constructor(
     private planManager: PlanManager,
@@ -76,6 +77,7 @@ export class HooksEngine {
       hooks?: Partial<PlanningHooksConfig>;
       rules?: Partial<PlanningRulesConfig>;
       dualChannel?: Partial<DualChannelConfig>;
+      onBridgeEvent?: (point: HookPoint, context: HookContext) => void;
     }
   ) {
     this.hooksConfig = { ...DEFAULT_HOOKS_CONFIG, ...config?.hooks };
@@ -84,6 +86,7 @@ export class HooksEngine {
       ...DEFAULT_DUAL_CHANNEL_CONFIG,
       ...config?.dualChannel,
     };
+    this.onBridgeEvent = config?.onBridgeEvent;
 
     // Initialize decision hooks with dependencies
     const decisionConfig: DecisionHooksConfig = {
@@ -284,6 +287,15 @@ export class HooksEngine {
       }
     }
 
+    // Fire-and-forget bridge to user hook system
+    if (this.onBridgeEvent) {
+      try {
+        this.onBridgeEvent(point, enrichedContext);
+      } catch {
+        // Bridge errors should never block planning
+      }
+    }
+
     return result;
   }
 
@@ -359,6 +371,13 @@ export class HooksEngine {
   // ==========================================================================
   // Hook Registration (for custom hooks)
   // ==========================================================================
+
+  /**
+   * Set bridge callback for late binding (when hookManager is not available at construction time)
+   */
+  setBridgeCallback(callback: (point: HookPoint, context: HookContext) => void): void {
+    this.onBridgeEvent = callback;
+  }
 
   /**
    * Register a custom decision hook

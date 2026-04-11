@@ -2,7 +2,7 @@
 // MCPSettings - MCP Server Status and Configuration Tab
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   RefreshCw,
   CheckCircle,
@@ -15,6 +15,7 @@ import {
   Cloud,
   Zap,
   ExternalLink,
+  Plus,
 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
@@ -24,6 +25,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
 import ipcService from '../../../../services/ipcService';
+import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 
 const logger = createLogger('MCPSettings');
 
@@ -64,6 +66,7 @@ export const MCPSettings: React.FC = () => {
   const [codexDetectedPath, setCodexDetectedPath] = useState<string | null>(null);
   const [codexSandboxEnabled, setCodexSandboxEnabled] = useState(false);
   const [codexCrossVerifyEnabled, setCodexCrossVerifyEnabled] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   // 自动清除成功消息
   useEffect(() => {
@@ -179,6 +182,21 @@ export const MCPSettings: React.FC = () => {
       setReconnectingServer(null);
     }
   };
+
+  const handleAddServer = useCallback(async (config: McpServerConfig) => {
+    try {
+      const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', { config });
+      if (result?.success) {
+        setMessage({ type: 'success', text: `服务器 "${config.name}" 已添加` });
+        await loadMCPStatus();
+      } else {
+        setMessage({ type: 'error', text: result?.error?.message || '添加服务器失败' });
+      }
+    } catch (error) {
+      logger.error('Failed to add MCP server', error);
+      setMessage({ type: 'error', text: '添加服务器失败' });
+    }
+  }, []);
 
   const getStatusColor = (status: MCPServerState['status']): string => {
     switch (status) {
@@ -343,7 +361,17 @@ export const MCPSettings: React.FC = () => {
 
       {/* Server List */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-200">服务器列表</h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-zinc-200">服务器列表</h4>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsEditorOpen(true)}
+            leftIcon={<Plus className="w-3 h-3" />}
+          >
+            添加服务器
+          </Button>
+        </div>
         {serverStates.length === 0 ? (
           <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
             没有配置任何 MCP 服务器
@@ -449,6 +477,13 @@ export const MCPSettings: React.FC = () => {
           已配置的服务器会在应用启动时自动连接。云端配置支持热更新，无需重启应用。
         </p>
       </div>
+
+      {/* Add Server Editor Modal */}
+      <McpServerEditor
+        isOpen={isEditorOpen}
+        onClose={() => setIsEditorOpen(false)}
+        onSave={handleAddServer}
+      />
     </div>
   );
 };

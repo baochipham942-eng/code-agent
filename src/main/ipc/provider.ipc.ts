@@ -10,6 +10,8 @@ import {
   MCP,
 } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/types';
+import { runDiagnostics } from './doctor.ipc';
+import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -216,6 +218,19 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
       switch (action) {
         case 'test_connection': {
           const data = await handleTestConnection(payload as TestConnectionPayload);
+          return { success: true, data };
+        }
+        case 'run_diagnostics': {
+          const data = await runDiagnostics();
+          return { success: true, data };
+        }
+        case 'getHealthStatus': {
+          const monitor = getProviderHealthMonitor();
+          const healthMap = monitor.getHealthMap();
+          const data: Record<string, { status: string; latencyP50: number; errorRate: number }> = {};
+          for (const [name, health] of healthMap) {
+            data[name] = { status: health.status, latencyP50: health.latencyP50, errorRate: health.errorRate };
+          }
           return { success: true, data };
         }
         default:

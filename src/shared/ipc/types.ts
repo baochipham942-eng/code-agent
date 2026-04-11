@@ -353,3 +353,57 @@ export interface AxialCodingEntryIpc {
   avgSeverity: number;
   caseIds: string[];
 }
+
+// ----------------------------------------------------------------------------
+// Cross-session search types (跨会话搜索)
+// ----------------------------------------------------------------------------
+
+export interface CrossSessionSearchOptions {
+  /** Maximum results to return */
+  limit?: number;
+  /** Filter by message role */
+  role?: 'user' | 'assistant' | 'system';
+  /** Case-sensitive search */
+  caseSensitive?: boolean;
+}
+
+export interface CrossSessionSearchMatch {
+  /** Start position of match */
+  start: number;
+  /** End position of match */
+  end: number;
+  /** Matched text */
+  text: string;
+}
+
+export interface CrossSessionSearchResultItem {
+  /** Session ID */
+  sessionId: string;
+  /** Session title (for display) */
+  sessionTitle?: string;
+  /** Message role */
+  role: 'user' | 'assistant' | 'system';
+  /** Message timestamp */
+  timestamp: number;
+  /** Relevance score (0-1) */
+  relevance: number;
+  /** Highlighted content snippet */
+  snippet: string;
+  /** Match count in this message */
+  matchCount: number;
+}
+
+export interface CrossSessionSearchResults {
+  /** Search query */
+  query: string;
+  /** Total matches found */
+  totalMatches: number;
+  /** Number of sessions with matches */
+  sessionsWithMatches: number;
+  /** Individual results */
+  results: CrossSessionSearchResultItem[];
+  /** Search time (ms) */
+  searchTime: number;
+  /** Whether results were truncated */
+  truncated: boolean;
+}

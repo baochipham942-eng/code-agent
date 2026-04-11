@@ -23,6 +23,7 @@ import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddlew
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('ToolExecutor');
 
@@ -69,6 +70,8 @@ export interface ExecuteOptions {
   currentToolCallId?: string;
   // 模型回调（工具内二次调用模型，如 PPT 内容生成）
   modelCallback?: (prompt: string) => Promise<string>;
+  // Hook 系统：传递给工具上下文（subagent/permission 事件触发）
+  hookManager?: HookManager;
 }
 
 // ----------------------------------------------------------------------------
@@ -192,6 +195,8 @@ export class ToolExecutor {
       currentToolCallId: options.currentToolCallId,
       // 模型回调（工具内二次调用模型）
       modelCallback: options.modelCallback,
+      // Hook 系统（subagent/permission 事件触发）
+      hookManager: options.hookManager,
     };
 
     // Security: Pre-execution validation for bash commands
@@ -357,6 +362,39 @@ export class ToolExecutor {
         }
       } catch (error) {
         logger.debug('ConfirmationGate preview error:', error);
+      }
+
+      // PermissionRequest hook: allow hooks to intercept/block before user prompt
+      if (options.hookManager) {
+        try {
+          const permType = (permissionRequest.type === 'dangerous_command' ? 'dangerous'
+            : permissionRequest.type === 'command' ? 'execute'
+            : permissionRequest.type === 'file_read' ? 'read'
+            : permissionRequest.type === 'file_write' || permissionRequest.type === 'file_edit' ? 'write'
+            : permissionRequest.type === 'network' ? 'network'
+            : 'execute') as 'read' | 'write' | 'execute' | 'network' | 'dangerous';
+          const resource = String(
+            permissionRequest.details.path
+            || permissionRequest.details.command
+            || permissionRequest.details.url
+            || toolName,
+          );
+          const hookResult = await options.hookManager.triggerPermissionRequest(
+            permType,
+            resource,
+            toolName,
+            options.sessionId || 'unknown',
+            permissionRequest.reason,
+          );
+          if (!hookResult.shouldProceed) {
+            return {
+              success: false,
+              error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
+            };
+          }
+        } catch (hookError) {
+          logger.debug('PermissionRequest hook error, continuing to user approval', hookError);
+        }
       }
 
       const approved = await this.requestPermission(permissionRequest);

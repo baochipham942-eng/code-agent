@@ -71,6 +71,13 @@ export interface ToolContext {
 
   /** 模型推理回调：接收 prompt 文本，返回模型响应文本 */
   modelCallback?: (prompt: string) => Promise<string>;
+
+  // ============================================================================
+  // Hook 系统支持
+  // ============================================================================
+
+  /** HookManager 引用（用于 subagent/permission 事件触发） */
+  hookManager?: import('../hooks/hookManager').HookManager;
 }
 
 export interface PermissionRequestData {

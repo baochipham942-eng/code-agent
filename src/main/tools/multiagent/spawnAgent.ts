@@ -379,6 +379,7 @@ When NOT to spawn:
         spawnGuardId: agentId,
         executionAgentId: agentId,
         worktreePath: worktreeInfo?.worktreePath,
+        hookManager: context.hookManager,
       };
 
       const executorConfig = {

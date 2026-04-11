@@ -421,13 +421,34 @@ export class HookManager {
     return this.triggerEventHooks('PostExecution', context);
   }
 
+  /**
+   * Trigger hooks when a subagent stops/completes (Phase 2)
+   * @experimental API may change between minor versions
+   */
+  async triggerSubagentStop(
+    subagentType: string,
+    response: string | undefined,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: StopContext = {
+      event: 'SubagentStop',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      response,
+      subagentType,
+    };
+
+    return this.triggerEventHooks('SubagentStop', context);
+  }
+
   // ==========================================================================
   // Phase 3: Task lifecycle + environmental event hooks
   // ==========================================================================
 
   /**
    * Trigger hooks when an agent task is created
-   * @planned Defined but not yet wired to real triggers
+   * Wired via AgentTask.onHook callback in subagentExecutor
    */
   async triggerTaskCreated(
     taskId: string,
@@ -448,7 +469,7 @@ export class HookManager {
 
   /**
    * Trigger hooks when an agent task completes or fails
-   * @planned Defined but not yet wired to real triggers
+   * Wired via AgentTask.onHook callback in subagentExecutor
    */
   async triggerTaskCompleted(
     taskId: string,

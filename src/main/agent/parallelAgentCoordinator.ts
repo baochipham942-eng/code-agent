@@ -294,6 +294,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
               snapshot,
             } satisfies TaskProgressEvent);
           },
+          hookManager: toolContext.hookManager,
         }
       );
 

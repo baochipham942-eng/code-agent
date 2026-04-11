@@ -452,6 +452,8 @@ export class ToolExecutionEngine {
           currentToolCallId: toolCall.id,
           // 模型回调：工具可用此回调二次调用模型（如 PPT 内容生成）
           modelCallback: this.createModelCallback(),
+          // Hook 系统：传递给工具上下文（subagent/permission 事件触发）
+          hookManager: this.ctx.hookManager,
         }
       );
       clearInterval(progressInterval);

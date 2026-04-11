@@ -309,6 +309,7 @@ Parameters:
           ),
           toolContext: context,
           parentToolUseId: context.currentToolCallId,
+          hookManager: context.hookManager,
         }
       );
 

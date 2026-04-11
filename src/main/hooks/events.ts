@@ -39,9 +39,9 @@ export type HookEvent =
   | 'SubagentStart'
   /** @stability experimental */
   | 'PermissionRequest'
-  /** @stability planned */
+  /** @stability experimental */
   | 'TaskCreated'
-  /** @stability planned */
+  /** @stability experimental */
   | 'TaskCompleted'
   /** @stability internal @deprecated */
   | 'Setup'

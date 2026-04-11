@@ -273,6 +273,7 @@ export class CoworkOrchestrator {
           modelConfig: this.config.modelConfig,
           toolRegistry: this.config.toolRegistry,
           toolContext: this.config.toolContext,
+          hookManager: this.config.toolContext.hookManager,
         }
       );
 

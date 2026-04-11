@@ -7,12 +7,66 @@ import type { CommandDefinition } from '../types';
 export const agentsCommand: CommandDefinition = {
   id: 'agents',
   name: 'Agent 列表',
-  description: '查看 Agent 历史记录',
+  description: '查看运行中和历史 Agent 记录',
   category: 'status',
   surfaces: ['cli', 'gui'],
   handler: async (ctx) => {
-    ctx.output.info('Agent 历史视图开发中');
-    return { success: true, message: 'Agent 历史视图开发中' };
+    const lines: string[] = [];
+
+    // --- 运行中 ---
+    try {
+      const { getSessionStateManager } = await import(
+        '../../../main/session/sessionStateManager'
+      );
+      const manager = getSessionStateManager();
+      const running = manager.getRunning();
+
+      lines.push('运行中');
+      if (running.length === 0) {
+        lines.push('  (无)');
+      } else {
+        for (const session of running) {
+          const agentCount = manager.getActiveAgentCount(session.sessionId);
+          lines.push(`  ● ${session.sessionId}  agents: ${agentCount}  status: ${session.status}`);
+        }
+      }
+    } catch {
+      lines.push('运行中');
+      lines.push('  (无法获取)');
+    }
+
+    lines.push('');
+
+    // --- 最近完成 ---
+    try {
+      const { getRecentAgentHistory } = await import(
+        '../../../main/session/agentHistoryPersistence'
+      );
+      const history = await getRecentAgentHistory(10);
+
+      lines.push('最近完成');
+      if (history.length === 0) {
+        lines.push('  (无历史记录)');
+      } else {
+        for (const run of history) {
+          const icon = run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '○';
+          const duration = run.durationMs < 1000
+            ? `${run.durationMs}ms`
+            : `${(run.durationMs / 1000).toFixed(1)}s`;
+          const tokens = run.tokenUsage.input + run.tokenUsage.output;
+          const tokenStr = tokens > 0 ? `${(tokens / 1000).toFixed(1)}k tok` : '';
+          const preview = run.resultPreview ? `  "${run.resultPreview.slice(0, 60)}${run.resultPreview.length > 60 ? '...' : ''}"` : '';
+
+          lines.push(`  ${icon} ${run.name} (${run.role})  ${run.status}  ${duration}  ${tokenStr}${preview}`);
+        }
+      }
+    } catch {
+      lines.push('最近完成');
+      lines.push('  (无法获取)');
+    }
+
+    ctx.output.info(lines.join('\n'));
+    return { success: true };
   },
 };
 

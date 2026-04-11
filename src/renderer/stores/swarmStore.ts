@@ -11,6 +11,9 @@ import type {
   SwarmAggregation,
   SwarmLaunchRequest,
 } from '@shared/types/swarm';
+import type { CompletedAgentRun } from '@shared/types/agentHistory';
+import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
+import { invoke } from '../services/ipcService';
 
 export type SwarmExecutionPhase =
   | 'idle'
@@ -58,6 +61,7 @@ interface SwarmStore extends SwarmExecutionState {
   planReviews: SwarmPlanReview[];
   messages: SwarmConversationMessage[];
   eventLog: SwarmTimelineEvent[];
+  completedRuns: CompletedAgentRun[];
   lastEventAt?: number;
   handleEvent: (event: SwarmEvent) => void;
   reset: () => void;
@@ -67,6 +71,8 @@ type SwarmStateSnapshot = Omit<SwarmStore, 'handleEvent' | 'reset'>;
 
 const MAX_MESSAGES = 40;
 const MAX_EVENT_LOG = 80;
+
+const MAX_COMPLETED_RUNS = 10;
 
 const initialState: Pick<
   SwarmStore,
@@ -80,6 +86,7 @@ const initialState: Pick<
   | 'planReviews'
   | 'messages'
   | 'eventLog'
+  | 'completedRuns'
   | 'startTime'
   | 'lastEventAt'
 > = {
@@ -104,6 +111,7 @@ const initialState: Pick<
   planReviews: [],
   messages: [],
   eventLog: [],
+  completedRuns: [],
 };
 
 function mergeAgentState(
@@ -478,7 +486,46 @@ function appendMessage(
   ].slice(-MAX_MESSAGES);
 }
 
-export const useSwarmStore = create<SwarmStore>((set) => ({
+/**
+ * 从 merged agent state 构建 CompletedAgentRun 记录
+ */
+function buildCompletedRun(
+  agent: SwarmAgentState,
+  status: 'completed' | 'failed' | 'cancelled',
+): CompletedAgentRun {
+  const endTime = agent.endTime ?? Date.now();
+  const startTime = agent.startTime ?? endTime;
+  return {
+    id: agent.id,
+    name: agent.name,
+    role: agent.role,
+    status,
+    startTime,
+    endTime,
+    durationMs: endTime - startTime,
+    tokenUsage: agent.tokenUsage ?? { input: 0, output: 0 },
+    toolCalls: agent.toolCalls ?? 0,
+    resultPreview: (agent.resultPreview || agent.lastReport || agent.error || '')
+      .slice(0, 200) || undefined,
+    sessionId: '',  // 由调用方填充
+  };
+}
+
+/**
+ * 将 CompletedAgentRun 通过 IPC 持久化到 main 进程（fire-and-forget）
+ */
+function persistRunViaIPC(run: CompletedAgentRun): void {
+  try {
+    void invoke(IPC_CHANNELS.SWARM_PERSIST_AGENT_RUN, {
+      sessionId: run.sessionId,
+      run,
+    });
+  } catch {
+    // 静默失败 — 持久化为增强功能，不影响核心流程
+  }
+}
+
+export const useSwarmStore = create<SwarmStore>((set, get) => ({
   ...initialState,
 
   handleEvent: (event: SwarmEvent) => {
@@ -526,9 +573,22 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         case 'swarm:agent:failed': {
           if (event.data.agentState) {
             const agents = updateAgentCollection(state.agents, event.data.agentState);
+            let { completedRuns } = state;
+
+            // 在 completed/failed 事件时构建 run 记录并追加到本地列表
+            if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
+              const mergedAgent = agents.find((a) => a.id === event.data.agentState!.id);
+              if (mergedAgent) {
+                const runStatus = event.type === 'swarm:agent:completed' ? 'completed' : 'failed';
+                const run = buildCompletedRun(mergedAgent, runStatus);
+                completedRuns = [...completedRuns, run].slice(-MAX_COMPLETED_RUNS);
+              }
+            }
+
             nextState = {
               ...state,
               agents,
+              completedRuns,
               lastEventAt: event.timestamp,
               statistics: calculateStatistics(agents, state.statistics),
             };
@@ -584,6 +644,15 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         eventLog,
       };
     });
+
+    // Side effect: 持久化 completed/failed runs（在 set 之后执行）
+    if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
+      const currentState = get();
+      const lastRun = currentState.completedRuns[currentState.completedRuns.length - 1];
+      if (lastRun) {
+        persistRunViaIPC(lastRun);
+      }
+    }
   },
 
   reset: () => set(initialState),

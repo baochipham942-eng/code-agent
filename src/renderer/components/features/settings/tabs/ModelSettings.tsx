@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
-import { Key } from 'lucide-react';
+import { Key, Stethoscope } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -24,6 +24,7 @@ import type { ModelConfig } from '@shared/types';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -72,6 +73,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isTesting, setIsTesting] = useState(false);
+  const [isDoctorOpen, setIsDoctorOpen] = useState(false);
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() =>
@@ -139,10 +141,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       } else if (result?.error) {
         toast.error(`${result.error.message}\n${result.error.suggestion}`);
       } else {
-        toast.error('连接失败');
+        toast.error('连接失败，请检查 API Key 和网络连接');
       }
-    } catch {
-      toast.error('连接测试失败');
+    } catch (err) {
+      toast.error('连接测试失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查网络连接');
     } finally {
       setIsTesting(false);
     }
@@ -153,7 +155,17 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       <WebModeBanner />
       {/* Provider Selection */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-4">{t.model.title}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-zinc-200">{t.model.title}</h3>
+          <button
+            onClick={() => setIsDoctorOpen(true)}
+            disabled={isWebMode()}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Stethoscope className="w-3.5 h-3.5" />
+            运行诊断
+          </button>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {providers.map((provider) => (
             <button
@@ -250,6 +262,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           测试连接
         </Button>
       </div>
+
+      {/* Diagnostics Dialog */}
+      <ProviderDoctorDialog
+        isOpen={isDoctorOpen}
+        onClose={() => setIsDoctorOpen(false)}
+      />
     </div>
   );
 };

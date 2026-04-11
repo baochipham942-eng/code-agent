@@ -161,7 +161,7 @@ export const pluginsCommand: CommandDefinition = {
   category: 'tools',
   surfaces: ['cli', 'gui'],
   args: [
-    { name: 'subcommand', description: 'list (默认) | enable <id> | disable <id> | reload [id]', required: false },
+    { name: 'subcommand', description: 'list | install <spec> | uninstall <id> | enable <id> | disable <id> | reload [id] | validate <id>', required: false },
   ],
   handler: async (ctx, args) => {
     try {
@@ -217,7 +217,54 @@ export const pluginsCommand: CommandDefinition = {
         return { success: true };
       }
 
-      ctx.output.error(`Unknown subcommand: ${sub}. Use list | enable | disable | reload`);
+      // -- install --------------------------------------------------------------
+      if (sub === 'install') {
+        const spec = args[1];
+        if (!spec) {
+          ctx.output.error('Usage: /plugins install <spec>');
+          return { success: false };
+        }
+        await svc.install(spec);
+        ctx.output.success(`Installed: ${spec}`);
+        return { success: true };
+      }
+
+      // -- uninstall ------------------------------------------------------------
+      if (sub === 'uninstall') {
+        const id = args[1];
+        if (!id) {
+          ctx.output.error('Usage: /plugins uninstall <id>');
+          return { success: false };
+        }
+        await svc.uninstall(id);
+        ctx.output.success(`Uninstalled: ${id}`);
+        return { success: true };
+      }
+
+      // -- validate -------------------------------------------------------------
+      if (sub === 'validate') {
+        const id = args[1];
+        if (!id) {
+          ctx.output.error('Usage: /plugins validate <id>');
+          return { success: false };
+        }
+        const result = await svc.validate(id);
+        if (result.valid) {
+          ctx.output.success(`Valid: ${id}`);
+        } else {
+          const lines = [`Invalid: ${id}`];
+          for (const err of result.errors) {
+            lines.push(`  [error] ${err.field}: ${err.message}`);
+          }
+          for (const warn of result.warnings) {
+            lines.push(`  [warn]  ${warn.field}: ${warn.message}`);
+          }
+          ctx.output.error(lines.join('\n'));
+        }
+        return { success: result.valid };
+      }
+
+      ctx.output.error(`Unknown subcommand: ${sub}. Use list | install | uninstall | enable | disable | reload | validate`);
       return { success: false };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

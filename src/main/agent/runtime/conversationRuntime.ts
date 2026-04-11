@@ -165,6 +165,11 @@ export class ConversationRuntime {
     if (this.ctx.hookManager) {
       await this.ctx.hookManager.initialize();
       this.ctx.userHooksInitialized = true;
+
+      // Bridge planning hooks to user hook system (fire-and-forget)
+      if (this.ctx.planningService) {
+        this.ctx.planningService.setBridgeHookManager(this.ctx.hookManager, this.ctx.sessionId);
+      }
     }
   }
 

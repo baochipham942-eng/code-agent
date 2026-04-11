@@ -5,6 +5,7 @@
 
 import { logger } from './shared';
 import { EventEmitter } from 'events';
+import { getProviderHealthMonitor } from '../providerHealthMonitor';
 
 /** Global retry event emitter for CLI visibility */
 export const retryEvents = new EventEmitter();
@@ -19,6 +20,14 @@ const NON_RETRYABLE_PATTERNS = [
   'invalid_api_key',          // 401 key 错误
   'Invalid token',            // 智谱 token 错误
   'authentication_error',     // 认证失败
+  'insufficient_quota',       // 配额耗尽，跳过重试直接降级
+  'payment required',         // 402 账户余额不足
+  'content_policy',           // 内容策略违规，重试无意义
+  'content filter',           // 内容过滤
+  'moderation',               // 内容审核拒绝
+  'model deprecated',         // 模型已弃用，需切换
+  'model decommissioned',     // 模型已下线
+  'model retired',            // 模型已退役
 ];
 
 /** 瞬态错误匹配模式（检查 message + code） */
@@ -102,10 +111,14 @@ export async function withTransientRetry<T>(
   options: RetryOptions
 ): Promise<T> {
   const { providerName, maxRetries = 2, baseDelay = 1000, signal, onRetry } = options;
+  const healthMonitor = getProviderHealthMonitor();
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const startTime = Date.now();
     try {
-      return await fn();
+      const result = await fn();
+      healthMonitor.recordSuccess(providerName, Date.now() - startTime);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const errCode = (err as NodeJS.ErrnoException).code;
@@ -119,6 +132,7 @@ export async function withTransientRetry<T>(
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
+      healthMonitor.recordFailure(providerName);
       throw err;
     }
   }

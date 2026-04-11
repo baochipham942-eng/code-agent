@@ -37,7 +37,7 @@ export const GeneralSettings: React.FC = () => {
           setPermissionMode(currentMode as PermissionMode);
         }
       } catch (error) {
-        toast.error('加载权限模式失败');
+        toast.error('加载权限模式失败: ' + (error instanceof Error ? error.message : '未知错误'));
       } finally {
         setIsLoading(false);
       }
@@ -52,7 +52,7 @@ export const GeneralSettings: React.FC = () => {
         setPermissionMode(newMode);
       }
     } catch (error) {
-      toast.error('设置权限模式失败');
+      toast.error('设置权限模式失败: ' + (error instanceof Error ? error.message : '未知错误'));
     }
   };
 

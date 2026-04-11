@@ -124,7 +124,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerStatusHandlers();
 
   // Context health handlers (上下文健康度)
-  registerContextHealthHandlers();
+  registerContextHealthHandlers({ getAppService, getTaskManager });
 
   // Session status handlers (多会话并行)
   registerSessionStatusHandlers();

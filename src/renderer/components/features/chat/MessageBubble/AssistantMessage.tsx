@@ -3,17 +3,18 @@
 // Unified display for both developer and cowork modes
 // ============================================================================
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Copy, Check, FileText } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Copy, Check, FileText, RefreshCw } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
-import { ToolCallGroup } from './ToolCallDisplay/ToolCallGroup';
+import { ToolCallGroupList } from './ToolCallDisplay/ToolCallGroup';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import { groupToolCalls, extractThinkingSummary } from '../../../../utils/toolGrouping';
 
-export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
+export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onRegenerate }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
@@ -74,6 +75,16 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   const reasoningContent = message.thinking || message.reasoning;
   const effortLabel = message.effortLevel || '';
+  const thinkingSummary = useMemo(
+    () => extractThinkingSummary(reasoningContent),
+    [reasoningContent]
+  );
+
+  // Smart tool grouping for fallback path
+  const toolGroups = useMemo(
+    () => message.toolCalls ? groupToolCalls(message.toolCalls) : [],
+    [message.toolCalls]
+  );
 
   return (
     <div
@@ -83,25 +94,39 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Copy action bar - top right on hover */}
-      {message.content && hovered && (
+      {/* Action bar - top right on hover */}
+      {hovered && (
         <div className="absolute top-1 right-4 flex items-center gap-0.5 bg-zinc-800 border border-zinc-700 rounded-md px-0.5 py-0.5 z-10 shadow-lg">
-          <button
-            onClick={() => handleCopy('markdown')}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-            title="复制 Markdown"
-            aria-label="复制 Markdown"
-          >
-            {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
-          </button>
-          <button
-            onClick={() => handleCopy('plain')}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-            title="复制纯文本"
-            aria-label="复制纯文本"
-          >
-            {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-          </button>
+          {onRegenerate && (
+            <button
+              onClick={() => message.id && onRegenerate(message.id)}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+              title="重新生成"
+              aria-label="重新生成"
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
+          )}
+          {message.content && (
+            <>
+              <button
+                onClick={() => handleCopy('markdown')}
+                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+                title="复制 Markdown"
+                aria-label="复制 Markdown"
+              >
+                {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
+              </button>
+              <button
+                onClick={() => handleCopy('plain')}
+                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+                title="复制纯文本"
+                aria-label="复制纯文本"
+              >
+                {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -124,12 +149,17 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         <div className="mb-2">
           <button
             onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors min-w-0"
           >
-            <span className="font-mono">{showReasoning ? '▼' : '▶'}</span>
-            <span>
+            <span className="font-mono flex-shrink-0">{showReasoning ? '▼' : '▶'}</span>
+            <span className="flex-shrink-0">
               thinking{effortLabel ? ` (${effortLabel})` : ''}
             </span>
+            {!showReasoning && thinkingSummary && (
+              <span className="text-zinc-600 truncate">
+                — {thinkingSummary}
+              </span>
+            )}
           </button>
           <div
             ref={reasoningRef}
@@ -148,33 +178,9 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         </div>
       )}
 
-      {/* 有 contentParts 时按交错顺序渲染，否则 fallback 到旧逻辑 */}
+      {/* 有 contentParts 时按交错顺序渲染（连续 tool_call 自动分组），否则 fallback */}
       {message.contentParts && message.contentParts.length > 0 ? (
-        <>
-          {message.contentParts.map((part, i) => {
-            if (part.type === 'text' && part.text) {
-              return (
-                <div key={`text-${i}`} className="text-zinc-200 leading-relaxed select-text">
-                  <MessageContent content={part.text} isUser={false} />
-                </div>
-              );
-            }
-            if (part.type === 'tool_call') {
-              const tc = message.toolCalls?.find(t => t.id === part.toolCallId);
-              if (tc) {
-                return (
-                  <ToolCallDisplay
-                    key={tc.id}
-                    toolCall={tc}
-                    index={message.toolCalls!.indexOf(tc)}
-                    total={message.toolCalls!.length}
-                  />
-                );
-              }
-            }
-            return null;
-          })}
-        </>
+        <ContentPartsRenderer message={message} />
       ) : (
         <>
           {/* Text content */}
@@ -184,21 +190,10 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
             </div>
           )}
 
-          {/* Tool calls - terminal style, no spacing between items */}
+          {/* Tool calls - smart grouping with auto-collapse */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className="mt-2 space-y-0">
-              {message.toolCalls.length >= UI.TOOL_GROUP_THRESHOLD ? (
-                <ToolCallGroup toolCalls={message.toolCalls} startIndex={0} />
-              ) : (
-                message.toolCalls.map((toolCall, index) => (
-                  <ToolCallDisplay
-                    key={toolCall.id}
-                    toolCall={toolCall}
-                    index={index}
-                    total={message.toolCalls!.length}
-                  />
-                ))
-              )}
+              <ToolCallGroupList groups={toolGroups} />
             </div>
           )}
         </>
@@ -206,3 +201,81 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     </div>
   );
 };
+
+// ============================================================================
+// ContentPartsRenderer - renders contentParts with smart grouping
+// Consecutive tool_call parts are grouped using toolGrouping logic
+// ============================================================================
+
+import type { Message, ToolCall } from './types';
+
+function ContentPartsRenderer({ message }: { message: Message }) {
+  const parts = message.contentParts!;
+  const toolCalls = message.toolCalls;
+
+  // Build render segments: merge consecutive tool_call parts into groups
+  const segments = useMemo(() => {
+    const result: Array<
+      | { type: 'text'; text: string; key: string }
+      | { type: 'tool_group'; groups: ReturnType<typeof groupToolCalls>; key: string }
+    > = [];
+
+    let i = 0;
+    while (i < parts.length) {
+      const part = parts[i];
+
+      if (part.type === 'text' && part.text) {
+        result.push({ type: 'text', text: part.text, key: `text-${i}` });
+        i++;
+        continue;
+      }
+
+      if (part.type === 'tool_call') {
+        // Collect consecutive tool_call parts
+        const consecutiveToolCalls: ToolCall[] = [];
+        while (i < parts.length && parts[i].type === 'tool_call') {
+          const p = parts[i];
+          if (p.type === 'tool_call') {
+            const tc = toolCalls?.find(t => t.id === p.toolCallId);
+            if (tc) consecutiveToolCalls.push(tc);
+          }
+          i++;
+        }
+
+        if (consecutiveToolCalls.length > 0) {
+          const groups = groupToolCalls(consecutiveToolCalls);
+          result.push({
+            type: 'tool_group',
+            groups,
+            key: `tools-${consecutiveToolCalls[0].id}`,
+          });
+        }
+        continue;
+      }
+
+      i++;
+    }
+
+    return result;
+  }, [parts, toolCalls]);
+
+  return (
+    <>
+      {segments.map(segment => {
+        if (segment.type === 'text') {
+          return (
+            <div key={segment.key} className="text-zinc-200 leading-relaxed select-text">
+              <MessageContent content={segment.text} isUser={false} />
+            </div>
+          );
+        }
+
+        return (
+          <div key={segment.key} className="space-y-0">
+            <ToolCallGroupList groups={segment.groups} />
+          </div>
+        );
+      })}
+    </>
+  );
+}

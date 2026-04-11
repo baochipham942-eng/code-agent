@@ -443,6 +443,13 @@ export async function enablePlugin(pluginInput: string): Promise<void> {
   state[pluginSpec] = record;
   await saveInstalledPlugins(state);
 
+  // Trigger skill discovery reload so changes take effect immediately
+  const { getSkillDiscoveryService } = await import('../../services/skills/skillDiscoveryService');
+  const discoveryService = getSkillDiscoveryService();
+  if (discoveryService) {
+    await discoveryService.reload();
+  }
+
   logger.info('Plugin enabled', { pluginSpec });
 }
 
@@ -465,6 +472,13 @@ export async function disablePlugin(pluginInput: string): Promise<void> {
   record.isEnabled = false;
   state[pluginSpec] = record;
   await saveInstalledPlugins(state);
+
+  // Trigger skill discovery reload so changes take effect immediately
+  const { getSkillDiscoveryService } = await import('../../services/skills/skillDiscoveryService');
+  const discoveryService = getSkillDiscoveryService();
+  if (discoveryService) {
+    await discoveryService.reload();
+  }
 
   logger.info('Plugin disabled', { pluginSpec });
 }

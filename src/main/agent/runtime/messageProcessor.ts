@@ -27,6 +27,7 @@ import type { RunFinalizer } from './runFinalizer';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
+import { extractArtifacts } from '../artifactExtractor';
 
 const logger = createLogger('MessageProcessor');
 
@@ -232,10 +233,11 @@ export class MessageProcessor {
       this.ctx._consecutiveTruncations = 0;
     }
 
+    const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
     const assistantMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
-      content: this.contextAssembly.stripInternalFormatMimicry(response.content || ''),
+      content: strippedContent,
       timestamp: Date.now(),
       thinking: response.thinking,
       effortLevel: this.ctx.effortLevel,
@@ -245,6 +247,13 @@ export class MessageProcessor {
         p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
       ),
     };
+
+    // Artifact extraction
+    const artifacts = extractArtifacts(strippedContent);
+    if (artifacts.length > 0) {
+      assistantMessage.artifacts = artifacts;
+    }
+
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
@@ -405,6 +414,15 @@ export class MessageProcessor {
         p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
       ),
     };
+
+    // Artifact extraction
+    if (cleanedContent) {
+      const artifacts = extractArtifacts(cleanedContent);
+      if (artifacts.length > 0) {
+        assistantMessage.artifacts = artifacts;
+      }
+    }
+
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
     logger.debug('[AgentLoop] Emitting message event for tool calls');

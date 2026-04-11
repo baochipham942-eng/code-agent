@@ -4,8 +4,9 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Copy, Check, FileText, RefreshCw } from 'lucide-react';
+import { Copy, Check, FileText, RefreshCw, BarChart3, Table, Code, GitBranch } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
+import type { Artifact } from '@shared/types/message';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
 import { ToolCallGroupList } from './ToolCallDisplay/ToolCallGroup';
@@ -13,6 +14,18 @@ import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { groupToolCalls, extractThinkingSummary } from '../../../../utils/toolGrouping';
+
+function getArtifactIcon(type: Artifact['type']): React.ReactNode {
+  const cls = "w-3 h-3";
+  switch (type) {
+    case 'chart': return <BarChart3 className={cls} />;
+    case 'spreadsheet': return <Table className={cls} />;
+    case 'document': return <FileText className={cls} />;
+    case 'generative_ui': return <Code className={cls} />;
+    case 'mermaid': return <GitBranch className={cls} />;
+    default: return <FileText className={cls} />;
+  }
+}
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onRegenerate }) => {
   const [showReasoning, setShowReasoning] = useState(false);
@@ -197,6 +210,22 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
             </div>
           )}
         </>
+      )}
+
+      {/* Artifacts bar */}
+      {message.artifacts && message.artifacts.length > 0 && (
+        <div className="mt-2 flex gap-1.5 flex-wrap">
+          {message.artifacts.map((artifact) => (
+            <span
+              key={artifact.id}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-400 border border-zinc-700"
+            >
+              {getArtifactIcon(artifact.type)}
+              <span>{artifact.title || artifact.type}</span>
+              <span className="text-zinc-600">v{artifact.version}</span>
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );

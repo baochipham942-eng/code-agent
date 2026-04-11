@@ -6,6 +6,7 @@ import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TraceTurn } from '@shared/types/trace';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
+import { StreamingIndicator } from './StreamingIndicator';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -106,14 +107,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({ turn, defaultExpanded = fals
 
           {/* Streaming indicator at bottom of active turn */}
           {isStreaming && turn.nodes.length > 0 && (
-            <div className="flex items-center gap-2 py-1">
-              <div className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-xs text-zinc-500">思考中...</span>
-            </div>
+            <StreamingIndicator startTime={turn.startTime} />
           )}
         </div>
       )}

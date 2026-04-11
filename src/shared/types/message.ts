@@ -67,7 +67,7 @@ export interface CompactionBlock {
 // Generative UI Artifact（可视化产物）
 export interface Artifact {
   id: string;           // 唯一标识，如 'artifact_1'
-  type: 'chart' | 'generative_ui';
+  type: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'mermaid';
   title?: string;       // 可视化标题
   content: string;      // chart JSON spec 或 HTML 源码
   version: number;      // 版本号，用于追踪修改

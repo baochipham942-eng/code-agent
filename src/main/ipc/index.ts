@@ -48,6 +48,7 @@ import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
 import { registerVoicePasteHandlers } from './voicePaste.ipc';
 import { registerContextHandlers } from './context.ipc';
+import { registerProviderHandlers } from './provider.ipc';
 
 export * from './types';
 
@@ -195,6 +196,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Context observability handlers (/context true-view)
   registerContextHandlers({ getAppService });
+
+  // Provider handlers (连接测试)
+  registerProviderHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

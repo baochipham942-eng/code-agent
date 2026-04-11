@@ -94,4 +94,10 @@ export interface AgentApplicationService {
   // === Delegate Mode ===
   setDelegateMode(enabled: boolean): void;
   isDelegateMode(): boolean;
+
+  // === Effort Level ===
+  setEffortLevel(level: import('./agent').EffortLevel): void;
+
+  // === Interaction Mode ===
+  setInteractionMode(mode: import('./agent').InteractionMode): void;
 }

@@ -383,6 +383,16 @@ export class AgentOrchestrator {
     return this.delegateMode;
   }
 
+  setEffortLevel(level: import('../../shared/types/agent').EffortLevel): void {
+    this.agentLoop?.setEffortLevel(level);
+    logger.info(`[AgentOrchestrator] Effort level set to ${level}`);
+  }
+
+  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+    this.agentLoop?.setInteractionMode(mode);
+    logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);
+  }
+
   setRequirePlanApproval(enabled: boolean): void {
     this.requirePlanApproval = enabled;
     logger.info(`[AgentOrchestrator] Plan approval ${enabled ? 'required' : 'not required'}`);

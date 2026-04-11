@@ -258,4 +258,18 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const orchestrator = tm.getOrCreateCurrentOrchestrator();
     return orchestrator?.isDelegateMode() ?? false;
   }
+
+  // === Effort Level ===
+
+  setEffortLevel(level: import('../../shared/types/agent').EffortLevel): void {
+    const orchestrator = this.getOrchestratorOrThrow();
+    orchestrator.setEffortLevel(level);
+  }
+
+  // === Interaction Mode ===
+
+  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+    const orchestrator = this.getOrchestratorOrThrow();
+    orchestrator.setInteractionMode(mode);
+  }
 }

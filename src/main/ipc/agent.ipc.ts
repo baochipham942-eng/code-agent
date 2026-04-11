@@ -96,6 +96,18 @@ export function registerAgentHandlers(
         case 'interrupt':
           await handleInterrupt(getAppService, payload as InterruptPayload);
           return { success: true, data: null };
+        case 'setEffortLevel': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.setEffortLevel((payload as { level: import('../../shared/types/agent').EffortLevel }).level);
+          return { success: true, data: null };
+        }
+        case 'setInteractionMode': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.setInteractionMode((payload as { mode: import('../../shared/types/agent').InteractionMode }).mode);
+          return { success: true, data: null };
+        }
         default:
           return {
             success: false,

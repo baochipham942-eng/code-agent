@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
 import { UserQuestionModal } from './components/UserQuestionModal';
+import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
@@ -43,7 +44,7 @@ import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-res
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
+import type { UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/types';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -101,6 +102,7 @@ export const App: React.FC = () => {
   const effectiveShowSkillsPanel = showSkillsPanel && !isNarrowViewport;
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
+  const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -290,6 +292,21 @@ export const App: React.FC = () => {
       (request: UserQuestionRequest) => {
         logger.info('Received user question', { id: request.id });
         setUserQuestion(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Listen for MCP elicitation events
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.MCP_ELICITATION_REQUEST,
+      (request: MCPElicitationRequest) => {
+        logger.info('Received MCP elicitation request', { id: request.id, server: request.serverName });
+        setMcpElicitation(request);
       }
     );
 
@@ -561,6 +578,14 @@ export const App: React.FC = () => {
         <UserQuestionModal
           request={userQuestion}
           onClose={() => setUserQuestion(null)}
+        />
+      )}
+
+      {/* MCP Elicitation Modal */}
+      {mcpElicitation && (
+        <MCPElicitationModal
+          request={mcpElicitation}
+          onClose={() => setMcpElicitation(null)}
         />
       )}
 

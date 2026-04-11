@@ -81,6 +81,7 @@ export function createTransport(config: MCPServerConfig): { transport: Transport
 
 /**
  * 创建 MCP SDK Client 实例
+ * 声明 form elicitation 能力，使 MCP 服务器可以请求用户输入
  */
 export function createMCPSDKClient(): Client {
   return new Client(
@@ -89,7 +90,11 @@ export function createMCPSDKClient(): Client {
       version: '0.1.0',
     },
     {
-      capabilities: {},
+      capabilities: {
+        elicitation: {
+          form: {},
+        },
+      },
     }
   );
 }

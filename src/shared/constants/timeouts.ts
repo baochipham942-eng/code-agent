@@ -58,6 +58,8 @@ export const INTERACTION_TIMEOUTS = {
   CONFIRM_ACTION: 60_000,
   /** 权限请求超时 */
   PERMISSION: 60_000,
+  /** MCP Elicitation 用户输入超时 */
+  MCP_ELICITATION: 60_000,
 } as const;
 
 /** 锁和资源管理超时 */

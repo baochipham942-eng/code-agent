@@ -16,6 +16,7 @@ export * from './types/session';
 export * from './types/workspace';
 export * from './types/planning';
 export * from './types/question';
+export * from './types/elicitation';
 export * from './types/agent';
 export * from './types/skill';
 export * from './types/agentSkill';

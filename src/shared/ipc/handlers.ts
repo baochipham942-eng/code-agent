@@ -15,6 +15,8 @@ import type {
   PlanningState,
   UserQuestionRequest,
   UserQuestionResponse,
+  MCPElicitationRequest,
+  MCPElicitationResponse,
   AuthUser,
   AuthStatus,
   SyncStatus,
@@ -230,6 +232,9 @@ export interface IpcInvokeHandlers {
 
   // User question (Gen 3+ ask_user_question)
   [IPC_CHANNELS.USER_QUESTION_RESPONSE]: (response: UserQuestionResponse) => Promise<void>;
+
+  // MCP Elicitation (server requests user input)
+  [IPC_CHANNELS.MCP_ELICITATION_RESPONSE]: (response: MCPElicitationResponse) => Promise<void>;
 
   // Confirm action (Gen 3+ confirm_action)
   [IPC_CHANNELS.CONFIRM_ACTION_RESPONSE]: (response: { requestId: string; confirmed: boolean }) => Promise<void>;
@@ -565,6 +570,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
+  [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;

@@ -36,6 +36,7 @@ import { isStdioConfig, isInProcessConfig } from './types';
 // Import sub-modules
 import { createTransport, createMCPSDKClient, connectWithTimeout } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import { registerElicitationHandler } from './mcpElicitation';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -261,6 +262,9 @@ export class MCPClient {
       // 外部服务器（Stdio/SSE/HTTP Streamable）
       const { transport, connectTimeout } = createTransport(config);
       const client = createMCPSDKClient();
+
+      // Register elicitation handler before connecting (required by SDK)
+      registerElicitationHandler(client, config.name);
 
       await connectWithTimeout(client, transport, config, connectTimeout);
 

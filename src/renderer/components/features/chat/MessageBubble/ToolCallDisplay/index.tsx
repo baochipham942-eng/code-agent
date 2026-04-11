@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FileText, ExternalLink, Folder, Copy } from 'lucide-react';
+import { FileText, ExternalLink, Folder } from 'lucide-react';
 import type { ToolCall } from '@shared/types';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -134,14 +134,14 @@ export function ToolCallDisplay({
 
   return (
     <div
-      className={`font-mono text-sm ${
+      className={`group font-mono text-sm ${
         status === 'error' ? 'border-l-2 border-[var(--cc-error)] pl-2' : ''
       }`}
       style={{ animationDelay: `${index * 30}ms` }}
     >
-      {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [duration right] */}
+      {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
-        className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
+        className="group/row flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
         onClick={() => {
           setExpanded(!expanded);
           setUserToggled(true);
@@ -149,6 +149,10 @@ export function ToolCallDisplay({
       >
         <StatusIndicator status={status} />
         <ToolHeader toolCall={toolCall} status={status} />
+        {/* Inline file badge for Write tool */}
+        {!expanded && status === 'success' && toolCall.name === 'Write' && (
+          <span className="ml-auto"><QuickFileActions filePath={extractWriteFilePath(toolCall)} inline /></span>
+        )}
       </div>
 
       {/* Bash inline output - when collapsed, show command output preview */}
@@ -156,17 +160,16 @@ export function ToolCallDisplay({
         <BashOutputPreview toolCall={toolCall} status={status} />
       )}
 
-      {/* Result summary line with ⎿ connector - only when collapsed and has result (skip for Bash, handled above) */}
-      {toolCall.result && !expanded && !isBashTool(toolCall) && <ResultSummary toolCall={toolCall} />}
-
-      {/* Quick file actions for Write - shown when collapsed */}
-      {!expanded && status === 'success' && toolCall.name === 'Write' && (
-        <QuickFileActions filePath={extractWriteFilePath(toolCall)} />
+      {/* Result summary line - hidden by default, show on hover or when expanded */}
+      {toolCall.result && !expanded && !isBashTool(toolCall) && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <ResultSummary toolCall={toolCall} />
+        </div>
       )}
 
-      {/* Expanded details - indented under tool name (ml-5 aligns with text after StatusIndicator) */}
+      {/* Expanded details - indented under tool name */}
       {expanded && (
-        <div className="ml-5 animate-fadeIn">
+        <div className="ml-6 animate-fadeIn">
           <ToolDetails toolCall={toolCall} compact={compact} />
         </div>
       )}
@@ -221,7 +224,7 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
   const isError = toolCall.result && !toolCall.result.success;
 
   return (
-    <div className="ml-5 mt-0.5 mb-0.5">
+    <div className="ml-6 mt-0.5 mb-0.5">
       <pre
         className={`text-xs font-mono leading-relaxed overflow-x-auto max-h-40 ${
           isError ? 'text-red-400/80' : 'text-zinc-500'
@@ -238,8 +241,8 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
   );
 }
 
-// Quick file actions component - shown inline when Write is collapsed
-function QuickFileActions({ filePath }: { filePath: string | null }) {
+// Quick file actions component - inline mode for main row, block mode for standalone
+function QuickFileActions({ filePath, inline = false }: { filePath: string | null; inline?: boolean }) {
   if (!filePath) return null;
 
   const fileName = filePath.split('/').pop() || filePath;
@@ -281,8 +284,46 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
     openPreview(resolvedPath);
   };
 
+  // Inline mode: compact badge + actions in the main tool row
+  if (inline) {
+    return (
+      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+          <FileText className="w-3 h-3" />
+          <span className="truncate max-w-[150px]" title={filePath}>{fileName}</span>
+        </div>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+          {isHtml && (
+            <button
+              onClick={handlePreview}
+              className="p-0.5 rounded hover:bg-gray-700/50 text-blue-400 hover:text-blue-300 transition-colors"
+              title="预览"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+          <button
+            onClick={handleOpenFile}
+            className="p-0.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
+            title="打开文件"
+          >
+            <ExternalLink className="w-3 h-3" />
+          </button>
+          <button
+            onClick={handleShowInFolder}
+            className="p-0.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
+            title="在 Finder 中显示"
+          >
+            <Folder className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Block mode (legacy)
   return (
-    <div className="ml-5 mt-1 flex items-center gap-2">
+    <div className="ml-6 mt-1 flex items-center gap-2">
       <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
         <FileText className="w-3 h-3" />
         <span className="truncate max-w-[200px]" title={filePath}>{fileName}</span>

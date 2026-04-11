@@ -7,10 +7,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Plus, Trash2, Archive, FileText, FolderOpen,
   BarChart2, Settings, Keyboard, HelpCircle,
-  Terminal, Cpu, Plug, Zap,
+  Terminal, Cpu, Plug, Zap, ClipboardList,
+  MessageCircleQuestion, ZapOff, Flame, Rocket,
+  Lock, LockOpen,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useModeStore } from '../../../../stores/modeStore';
+import { usePermissionStore } from '../../../../stores/permissionStore';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 
@@ -56,6 +60,10 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     archiveSession,
     currentSessionId,
   } = useSessionStore();
+
+  const setInteractionMode = useModeStore((s) => s.setInteractionMode);
+  const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  const setGlobalMode = usePermissionStore((s) => s.setGlobalMode);
 
   // Icon mapping for registry commands
   const registryIconMap: Record<string, React.ReactNode> = useMemo(() => ({
@@ -148,11 +156,75 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <Keyboard className="w-4 h-4" />,
       action: () => setShowSettings(true),
     },
+    // --- 模式 / 强度 / 权限命令 ---
+    {
+      id: 'code',
+      label: 'Code 模式',
+      description: '切换到 Code 模式',
+      icon: <Terminal className="w-4 h-4" />,
+      action: () => setInteractionMode('code'),
+    },
+    {
+      id: 'plan',
+      label: 'Plan 模式',
+      description: '切换到 Plan 模式（只出方案不动代码）',
+      icon: <ClipboardList className="w-4 h-4" />,
+      action: () => setInteractionMode('plan'),
+    },
+    {
+      id: 'ask',
+      label: 'Ask 模式',
+      description: '切换到 Ask 模式（只回答问题）',
+      icon: <MessageCircleQuestion className="w-4 h-4" />,
+      action: () => setInteractionMode('ask'),
+    },
+    {
+      id: 'low',
+      label: '低推理强度',
+      description: '设置低推理强度',
+      icon: <ZapOff className="w-4 h-4" />,
+      action: () => setEffortLevel('low'),
+    },
+    {
+      id: 'med',
+      label: '中推理强度',
+      description: '设置中推理强度',
+      icon: <Zap className="w-4 h-4" />,
+      action: () => setEffortLevel('medium'),
+    },
+    {
+      id: 'high',
+      label: '高推理强度',
+      description: '设置高推理强度',
+      icon: <Flame className="w-4 h-4" />,
+      action: () => setEffortLevel('high'),
+    },
+    {
+      id: 'max',
+      label: '最大推理强度',
+      description: '设置最大推理强度',
+      icon: <Rocket className="w-4 h-4" />,
+      action: () => setEffortLevel('max'),
+    },
+    {
+      id: 'default',
+      label: '默认权限',
+      description: '默认权限模式',
+      icon: <Lock className="w-4 h-4" />,
+      action: () => setGlobalMode('default'),
+    },
+    {
+      id: 'fullaccess',
+      label: '完全访问',
+      description: '完全访问模式（跳过确认）',
+      icon: <LockOpen className="w-4 h-4" />,
+      action: () => setGlobalMode('full_access'),
+    },
   ], [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
-    setShowEvalCenter,
+    setShowEvalCenter, setInteractionMode, setEffortLevel, setGlobalMode,
   ]);
 
   // Merge registry commands (gui surface) with GUI-only commands

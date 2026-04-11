@@ -23,9 +23,22 @@ import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddlew
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
 import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('ToolExecutor');
+
+/** Record a permission decision to the history buffer */
+function recordDecision(
+  toolName: string, params: Record<string, unknown>,
+  outcome: DecisionOutcome, reason: string, startTime: number
+): void {
+  const summary = String(params.command || params.file_path || params.path || params.pattern || toolName).substring(0, 80);
+  getDecisionHistory().record({
+    timestamp: Date.now(), toolName, summary, outcome, reason,
+    durationMs: Date.now() - startTime,
+  });
+}
 
 // ----------------------------------------------------------------------------
 // Types
@@ -200,6 +213,7 @@ export class ToolExecutor {
     };
 
     // Security: Pre-execution validation for bash commands
+    const permStartTime = Date.now();
     let commandValidation: ValidationResult | undefined;
     if (toolName === 'bash' && params.command) {
       const commandMonitor = getCommandMonitor(options.sessionId);
@@ -233,6 +247,7 @@ export class ToolExecutor {
           toolName, commandValidation.reason || 'security policy', 'policy',
           options.sessionId || 'unknown',
         ).catch(() => {});
+        recordDecision(toolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime);
 
         return {
           success: false,
@@ -254,6 +269,7 @@ export class ToolExecutor {
     const isPreApproved = this.isToolPreApproved(toolName, params, options.preApprovedTools);
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName });
+      recordDecision(toolName, params, 'auto-approve', 'pre-approved', permStartTime);
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
@@ -267,7 +283,9 @@ export class ToolExecutor {
         if (policyDecision === 'allow') {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
+          recordDecision(toolName, params, 'policy-allow', 'exec-policy', permStartTime);
         } else if (policyDecision === 'forbidden') {
+          recordDecision(toolName, params, 'policy-deny', 'exec-policy', permStartTime);
           return {
             success: false,
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
@@ -281,6 +299,7 @@ export class ToolExecutor {
       if (!isSafeCommand && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
+        recordDecision(toolName, params, 'auto-approve', 'safe-command', permStartTime);
       }
     }
 
@@ -302,6 +321,7 @@ export class ToolExecutor {
             cached: classification.cached,
           });
           needsUserApproval = false;
+          recordDecision(toolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime);
         } else if (classification.decision === 'deny') {
           // Collect trace step from classifier
           if (classification.traceStep) {
@@ -321,6 +341,7 @@ export class ToolExecutor {
             toolName, classification.reason || 'classifier deny', 'classifier',
             options.sessionId || 'unknown',
           ).catch(() => {});
+          recordDecision(toolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime);
           return {
             success: false,
             error: `Denied: ${classification.reason}`,
@@ -403,6 +424,7 @@ export class ToolExecutor {
               toolName, hookResult.message || 'blocked', 'hook',
               options.sessionId || 'unknown',
             ).catch(() => {});
+            recordDecision(toolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime);
             return {
               success: false,
               error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
@@ -414,6 +436,10 @@ export class ToolExecutor {
       }
 
       const approved = await this.requestPermission(permissionRequest);
+
+      if (approved) {
+        recordDecision(toolName, params, 'ask-approved', 'user', permStartTime);
+      }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
       if (approved && toolName === 'bash' && params.command) {
@@ -443,6 +469,7 @@ export class ToolExecutor {
           toolName, 'Permission denied by user', 'user',
           options.sessionId || 'unknown',
         ).catch(() => {});
+        recordDecision(toolName, params, 'ask-denied', 'user', permStartTime);
 
         return {
           success: false,

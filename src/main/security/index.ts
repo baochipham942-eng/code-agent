@@ -70,3 +70,11 @@ export {
   type PrefixRule,
   type PolicyDecision,
 } from './execPolicy';
+
+// Decision History (in-memory circular buffer)
+export {
+  getDecisionHistory,
+  resetDecisionHistory,
+  type DecisionHistoryEntry,
+  type DecisionOutcome,
+} from './decisionHistory';

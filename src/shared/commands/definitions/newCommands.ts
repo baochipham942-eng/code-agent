@@ -381,6 +381,85 @@ export const contextCommand: CommandDefinition = {
   },
 };
 
+function fmtRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+export const permissionsCommand: CommandDefinition = {
+  id: 'permissions',
+  name: 'Permissions',
+  description: '查看安全决策链状态',
+  category: 'status',
+  surfaces: ['cli', 'gui'],
+  handler: async (ctx) => {
+    const lines: string[] = [];
+
+    // Section 1: Mode
+    try {
+      const { getPermissionModeManager } = await import('../../../main/permissions/modes');
+      const manager = getPermissionModeManager();
+      const mode = manager.getMode();
+      const config = manager.getModeConfig();
+      lines.push('Permissions');
+      lines.push(`  Mode:     ${mode} — ${config.description}`);
+    } catch {
+      lines.push('Permissions');
+      lines.push('  Mode:     default');
+    }
+
+    lines.push('');
+
+    // Section 2: Exec Policy Rules
+    try {
+      const { getExecPolicyStore } = await import('../../../main/security/execPolicy');
+      const rules = getExecPolicyStore().getRules();
+      lines.push(`  Exec Policy (${rules.length} rules):`);
+      if (rules.length === 0) {
+        lines.push('    (no rules learned yet)');
+      } else {
+        for (const rule of rules.slice(0, 15)) {
+          const pattern = rule.pattern.join(' ') + ' *';
+          const time = fmtRelativeTime(rule.createdAt);
+          const src = rule.source === 'builtin' ? 'builtin' : time;
+          lines.push(`    ${pattern.padEnd(24)} → ${rule.decision}  (${src})`);
+        }
+        if (rules.length > 15) {
+          lines.push(`    ... and ${rules.length - 15} more`);
+        }
+      }
+    } catch {
+      lines.push('  Exec Policy: (not initialized)');
+    }
+
+    lines.push('');
+
+    // Section 3: Recent Decisions
+    try {
+      const { getDecisionHistory } = await import('../../../main/security/decisionHistory');
+      const recent = getDecisionHistory().getRecent(10);
+      const total = getDecisionHistory().getAll().length;
+      lines.push(`  Recent Decisions (${total} total, showing last ${recent.length}):`);
+      if (recent.length === 0) {
+        lines.push('    (no decisions yet)');
+      } else {
+        for (const entry of recent) {
+          const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
+          lines.push(`    ${time} ${entry.toolName}(${entry.summary.substring(0, 40)}) → ${entry.outcome}  (${entry.reason}, ${entry.durationMs}ms)`);
+        }
+      }
+    } catch {
+      lines.push('  Recent Decisions: (not available)');
+    }
+
+    ctx.output.info(lines.join('\n'));
+    return { success: true };
+  },
+};
+
 export const newCommands: CommandDefinition[] = [
   agentsCommand,
   statusCommand,
@@ -388,4 +467,5 @@ export const newCommands: CommandDefinition[] = [
   hooksCommand,
   costCommand,
   contextCommand,
+  permissionsCommand,
 ];

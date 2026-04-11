@@ -851,6 +851,11 @@ export class ConversationRuntime {
     return this.ctx.effortLevel;
   }
 
+  setInteractionMode(mode: import('../../../shared/types/agent').InteractionMode): void {
+    this.ctx.interactionMode = mode;
+    logger.debug(`[AgentLoop] Interaction mode set to: ${mode}`);
+  }
+
   generateTruncationWarning(): string {
     return this.messageProcessor.generateTruncationWarning();
   }

@@ -8,7 +8,7 @@ import type {
   ToolResult,
 } from '../../../shared/types';
 import type { StructuredOutputConfig } from '../structuredOutput';
-import type { EffortLevel } from '../../../shared/types/agent';
+import type { EffortLevel, InteractionMode } from '../../../shared/types/agent';
 import type { ModelConfig } from '../../../shared/types/model';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
@@ -125,6 +125,9 @@ export interface RuntimeContext {
   // --- Thinking ---
   effortLevel: EffortLevel;
   thinkingStepCount: number;
+
+  // --- Interaction mode ---
+  interactionMode: InteractionMode;
 
   // --- Task stats ---
   runStartTime: number;

@@ -229,6 +229,9 @@ export class AgentLoop {
       effortLevel: 'high' as any,
       thinkingStepCount: 0,
 
+      // Interaction mode
+      interactionMode: 'code' as any,
+
       // Persistent system context
       persistentSystemContext: [],
 
@@ -307,6 +310,10 @@ export class AgentLoop {
 
   getEffortLevel(): import('../../shared/types/agent').EffortLevel {
     return this.conversationRuntime.getEffortLevel();
+  }
+
+  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+    this.conversationRuntime.setInteractionMode(mode);
   }
 
   cancel(): void {

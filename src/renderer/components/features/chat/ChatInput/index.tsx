@@ -19,7 +19,11 @@ import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { useModeStore } from '../../../../stores/modeStore';
 import { ComboSkillCard } from './ComboSkillCard';
+import { EffortSelector } from './EffortSelector';
+import { PermissionToggle } from './PermissionToggle';
+import { ModeSelector } from './ModeSelector';
 import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
@@ -316,6 +320,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, []);
 
+  const effortLevel = useModeStore((s) => s.effortLevel);
+  const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  const interactionMode = useModeStore((s) => s.interactionMode);
+  const setInteractionMode = useModeStore((s) => s.setInteractionMode);
+
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
   return (
@@ -378,6 +387,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {value.trim().length === 0 && suggestions.length > 0 && (
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
+
+        {/* 交互模式 + 推理强度 + 权限模式选择器 */}
+        <div className="flex items-center justify-end gap-2 mb-1.5">
+          <PermissionToggle disabled={isProcessing} />
+          <ModeSelector
+            value={interactionMode}
+            onChange={setInteractionMode}
+            disabled={isProcessing}
+          />
+          <EffortSelector
+            value={effortLevel}
+            onChange={setEffortLevel}
+            disabled={isProcessing}
+          />
+        </div>
 
         {/* 输入区域 - 玻璃质感样式 */}
         <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">

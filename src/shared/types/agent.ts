@@ -12,6 +12,9 @@ import type { FileDiff } from './diff';
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 
+// Interaction Mode: Code / Plan / Ask
+export type InteractionMode = 'code' | 'plan' | 'ask';
+
 export interface AgentConfig {
   model: ModelConfig;
   workingDirectory: string;

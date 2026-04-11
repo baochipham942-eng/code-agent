@@ -21,6 +21,7 @@ import { ChatSearchBar } from './features/chat/ChatSearchBar';
 import type { SearchMatch } from './features/chat/ChatSearchBar';
 import { InlineStrip } from './features/chat/InlineStrip';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
+import { useMessageActionStore } from '../stores/messageActionStore';
 import { isWebMode } from '../utils/platform';
 
 import { PreviewPanel } from './PreviewPanel';
@@ -45,6 +46,19 @@ export const ChatView: React.FC = () => {
   const { showPreviewPanel } = useAppStore();
   const { currentSessionId, hasOlderMessages, isLoadingOlder, loadOlderMessages } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+
+  // Register message action store (edit / regenerate)
+  const messageActionRegister = useMessageActionStore((s) => s.register);
+  const messageActionUnregister = useMessageActionStore((s) => s.unregister);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  useEffect(() => {
+    messageActionRegister(
+      (content: string) => sendMessage(content),
+      () => messagesRef.current,
+    );
+    return () => messageActionUnregister();
+  }, [sendMessage, messageActionRegister, messageActionUnregister]);
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);

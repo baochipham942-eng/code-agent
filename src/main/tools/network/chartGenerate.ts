@@ -235,6 +235,35 @@ chart_generate {
 
       logger.info('Chart generated', { type, path: finalPath });
 
+      // Build renderSpec matching ChartBlock's ChartSpec format for inline preview
+      const isPieType = ['pie', 'doughnut', 'polarArea'].includes(type);
+      const renderSpec: Record<string, unknown> = {
+        type: type === 'doughnut' || type === 'polarArea' ? 'pie' : type,
+        title: title,
+      };
+
+      if (isPieType) {
+        // Pie charts use { name, value } format
+        renderSpec.data = labels.map((label, i) => ({
+          name: label,
+          value: datasets[0]?.data[i] ?? 0,
+        }));
+      } else {
+        // Non-pie charts use xKey + series format
+        renderSpec.xKey = 'label';
+        renderSpec.data = labels.map((label, i) => {
+          const row: Record<string, unknown> = { label };
+          datasets.forEach(ds => {
+            row[ds.label || 'value'] = ds.data[i];
+          });
+          return row;
+        });
+        renderSpec.series = datasets.map(ds => ({
+          key: ds.label || 'value',
+          name: ds.label || 'Value',
+        }));
+      }
+
       return {
         success: true,
         output: `✅ 图表已生成！
@@ -249,6 +278,7 @@ chart_generate {
           fileName: path.basename(finalPath),
           fileSize: stats.size,
           chartType: type,
+          renderSpec,
           attachment: {
             id: `chart-${timestamp}`,
             type: 'file',

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Copy, Check, FileText, RefreshCw, BarChart3, Table, Code, GitBranch } from 'lucide-react';
+import { Copy, Check, FileText, RefreshCw, RotateCcw, BarChart3, Table, Code, GitBranch } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import type { Artifact } from '@shared/types/message';
 import { MessageContent } from './MessageContent';
@@ -27,7 +27,7 @@ function getArtifactIcon(type: Artifact['type']): React.ReactNode {
   }
 }
 
-export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onRegenerate }) => {
+export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onRegenerate, onForkFromHere }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
@@ -118,6 +118,16 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
               aria-label="重新生成"
             >
               <RefreshCw className="w-3 h-3" />
+            </button>
+          )}
+          {onForkFromHere && message.id && (
+            <button
+              onClick={() => onForkFromHere(message.id)}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+              title="从此重试"
+              aria-label="从此重试"
+            >
+              <RotateCcw className="w-3 h-3" />
             </button>
           )}
           {message.content && (

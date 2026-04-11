@@ -313,6 +313,7 @@ export const IPC_CHANNELS = {
   CHECKPOINT_LIST: 'checkpoint:list',
   CHECKPOINT_REWIND: 'checkpoint:rewind',
   CHECKPOINT_PREVIEW: 'checkpoint:preview',
+  CHECKPOINT_FORK: 'checkpoint:fork',
 
   // Suggestions channels (智能提示)
   SUGGESTIONS_GET: 'suggestions:get',

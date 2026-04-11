@@ -460,6 +460,12 @@ export interface IpcInvokeHandlers {
     filePath: string;
     status: 'added' | 'modified' | 'deleted';
   }>>;
+  [IPC_CHANNELS.CHECKPOINT_FORK]: (sessionId: string, messageId: string) => Promise<{
+    success: boolean;
+    filesRestored: number;
+    messagesTruncated: number;
+    error?: string;
+  }>;
 
   // Suggestions (智能提示)
   [IPC_CHANNELS.SUGGESTIONS_GET]: () => Promise<Array<{

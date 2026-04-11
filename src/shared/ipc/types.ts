@@ -367,15 +367,6 @@ export interface CrossSessionSearchOptions {
   caseSensitive?: boolean;
 }
 
-export interface CrossSessionSearchMatch {
-  /** Start position of match */
-  start: number;
-  /** End position of match */
-  end: number;
-  /** Matched text */
-  text: string;
-}
-
 export interface CrossSessionSearchResultItem {
   /** Session ID */
   sessionId: string;

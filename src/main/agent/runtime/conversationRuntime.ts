@@ -807,6 +807,18 @@ export class ConversationRuntime {
   // ========================================================================
 
   cancel(): void {
+    // Preserve partial streaming content before aborting
+    if (this.ctx.lastStreamedContent) {
+      const partialMessage: Message = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: this.ctx.lastStreamedContent + '\n\n[cancelled]',
+        timestamp: Date.now(),
+      };
+      this.ctx.messages.push(partialMessage);
+      this.ctx.persistMessage?.(partialMessage);
+      this.ctx.lastStreamedContent = '';
+    }
     this.ctx.isCancelled = true;
     this.ctx.abortController?.abort();
   }

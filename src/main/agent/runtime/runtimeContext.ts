@@ -63,6 +63,7 @@ export interface RuntimeContext {
   telemetryAdapter?: TelemetryAdapter;
 
   // --- Mutable run state ---
+  lastStreamedContent: string;
   isCancelled: boolean;
   _isRunning: boolean;
   isInterrupted: boolean;

@@ -84,6 +84,26 @@ class ExtensionOpsService {
       logger.warn('Failed to list marketplace plugins', { error: err });
     }
 
+    // 3. MCP servers from mcpClient
+    try {
+      const { getMCPClient } = await import('../mcp/mcpClient');
+      const status = getMCPClient().getStatus();
+      for (const name of [...status.connectedServers, ...status.inProcessServers]) {
+        const mcpId = `mcp:${name}`;
+        if (seen.has(mcpId)) continue;
+        results.push({
+          id: mcpId,
+          name,
+          type: 'command',
+          status: 'active',
+          source: 'local',
+        });
+        seen.add(mcpId);
+      }
+    } catch {
+      // MCP client not available
+    }
+
     // Rebuild type cache
     this.typeCache = new Map();
     for (const ext of results) {
@@ -210,6 +230,19 @@ class ExtensionOpsService {
       await getSkillDiscoveryService().reload();
     } catch (err) {
       logger.warn('Failed to reload skill discovery', { error: err });
+    }
+
+    // Reload JS plugins
+    try {
+      const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+      const registry = getPluginRegistry();
+      for (const plugin of registry.getPlugins()) {
+        await registry.reloadPlugin(plugin.manifest.id).catch((e: unknown) => {
+          logger.warn(`Failed to reload plugin ${plugin.manifest.id}`, { error: e });
+        });
+      }
+    } catch (err) {
+      logger.warn('Failed to reload JS plugins', { error: err });
     }
 
     this.typeCache = null;

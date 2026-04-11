@@ -1,8 +1,22 @@
 // ============================================================================
-// New Commands - /agents, /status, /plugins (stubs)
+// New Commands - /agents, /status, /plugins, /hooks, /cost, /context
 // ============================================================================
 
 import type { CommandDefinition } from '../types';
+import { MODEL_PRICING_PER_1M } from '../../constants';
+
+// Formatting helpers
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+function fmtCost(n: number): string {
+  return `$${n.toFixed(3)}`;
+}
+function fmtNum(n: number): string {
+  return n.toLocaleString('en-US');
+}
 
 export const agentsCommand: CommandDefinition = {
   id: 'agents',
@@ -54,10 +68,13 @@ export const agentsCommand: CommandDefinition = {
             ? `${run.durationMs}ms`
             : `${(run.durationMs / 1000).toFixed(1)}s`;
           const tokens = run.tokenUsage.input + run.tokenUsage.output;
-          const tokenStr = tokens > 0 ? `${(tokens / 1000).toFixed(1)}k tok` : '';
+          const tokenStr = tokens > 0 ? `${fmtTokens(tokens)} tok` : '';
+          const defaultPricing = MODEL_PRICING_PER_1M['default'];
+          const cost = (run.tokenUsage.input * defaultPricing.input + run.tokenUsage.output * defaultPricing.output) / 1_000_000;
+          const costStr = cost > 0 ? ` (${fmtCost(cost)})` : '';
           const preview = run.resultPreview ? `  "${run.resultPreview.slice(0, 60)}${run.resultPreview.length > 60 ? '...' : ''}"` : '';
 
-          lines.push(`  ${icon} ${run.name} (${run.role})  ${run.status}  ${duration}  ${tokenStr}${preview}`);
+          lines.push(`  ${icon} ${run.name} (${run.role})  ${run.status}  ${duration}  ${tokenStr}${costStr}${preview}`);
         }
       }
     } catch {
@@ -82,6 +99,7 @@ export const statusCommand: CommandDefinition = {
       getHistory?: () => Array<unknown>;
       getSessionId?: () => string | null;
       getTokenUsage?: () => { inputTokens: number; outputTokens: number };
+      getCostInfo?: () => { inputTokens: number; outputTokens: number; model: string; provider: string };
     } | undefined;
 
     if (!agent?.getConfig) {
@@ -95,16 +113,33 @@ export const statusCommand: CommandDefinition = {
     const usage = agent.getTokenUsage?.();
 
     const totalTokens = usage ? usage.inputTokens + usage.outputTokens : 0;
-    const tokenStr = totalTokens > 0
-      ? `${(totalTokens / 1000).toFixed(1)}k`
-      : 'N/A';
+    const tokenStr = totalTokens > 0 ? fmtTokens(totalTokens) : 'N/A';
+
+    // Cost info
+    let costSuffix = '';
+    if (agent.getCostInfo && totalTokens > 0) {
+      const info = agent.getCostInfo();
+      const pricing = MODEL_PRICING_PER_1M[info.model] || MODEL_PRICING_PER_1M['default'];
+      const totalCost = (info.inputTokens * pricing.input + info.outputTokens * pricing.output) / 1_000_000;
+      costSuffix = ` (${fmtCost(totalCost)})`;
+    }
+
+    // Context info
+    let contextLine = '';
+    try {
+      const { getContextHealthService } = await import('../../../main/context/contextHealthService');
+      const health = getContextHealthService().getLatest();
+      if (health.lastUpdated > 0) {
+        contextLine = `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`;
+      }
+    } catch { /* context service not available */ }
 
     ctx.output.info(
       `Status\n` +
       `  Model:    ${config.modelConfig.provider}/${config.modelConfig.model}\n` +
       `  Session:  ${sessionId}\n` +
       `  Messages: ${history.length}\n` +
-      `  Tokens:   ${tokenStr}`
+      `  Tokens:   ${tokenStr}${costSuffix}${contextLine}`
     );
 
     return {
@@ -252,9 +287,105 @@ export const hooksCommand: CommandDefinition = {
   },
 };
 
+export const costCommand: CommandDefinition = {
+  id: 'cost',
+  name: 'Cost',
+  description: '查看当前会话的 token 用量和成本',
+  category: 'status',
+  surfaces: ['cli', 'gui'],
+  handler: async (ctx) => {
+    const agent = ctx.agent as {
+      getCostInfo?: () => { inputTokens: number; outputTokens: number; model: string; provider: string };
+    } | undefined;
+
+    const info = agent?.getCostInfo?.();
+    if (!info) {
+      ctx.output.info('Cost data not available');
+      return { success: true };
+    }
+
+    const pricing = MODEL_PRICING_PER_1M[info.model] || MODEL_PRICING_PER_1M['default'];
+    const inputCost = (info.inputTokens * pricing.input) / 1_000_000;
+    const outputCost = (info.outputTokens * pricing.output) / 1_000_000;
+    const totalCost = inputCost + outputCost;
+
+    const lines: string[] = [
+      'Cost (session)',
+      `  Model:    ${info.provider}/${info.model}`,
+      `  Input:    ${fmtTokens(info.inputTokens)} tokens (${fmtCost(inputCost)})`,
+      `  Output:   ${fmtTokens(info.outputTokens)} tokens (${fmtCost(outputCost)})`,
+      `  Total:    ${fmtCost(totalCost)}`,
+    ];
+
+    // Budget info (optional)
+    try {
+      const { getBudgetService } = await import('../../../main/services/core/budgetService');
+      const budget = getBudgetService();
+      const status = budget.checkBudget();
+      if (status.maxBudget > 0) {
+        lines.push(`  Budget:   ${fmtCost(status.currentCost)} / ${fmtCost(status.maxBudget)} (${status.usagePercentage.toFixed(1)}%)`);
+      }
+    } catch { /* budget service not available */ }
+
+    ctx.output.info(lines.join('\n'));
+    return { success: true };
+  },
+};
+
+export const contextCommand: CommandDefinition = {
+  id: 'context',
+  name: 'Context',
+  description: '查看上下文窗口使用情况',
+  category: 'context',
+  surfaces: ['cli', 'gui'],
+  handler: async (ctx) => {
+    try {
+      const { getContextHealthService } = await import('../../../main/context/contextHealthService');
+      const health = getContextHealthService().getLatest();
+
+      if (health.lastUpdated === 0 || health.currentTokens === 0) {
+        ctx.output.info('Context data not yet available (send a message first)');
+        return { success: true };
+      }
+
+      const total = health.currentTokens;
+      const pctSys = total > 0 ? ((health.breakdown.systemPrompt / total) * 100).toFixed(1) : '0';
+      const pctMsg = total > 0 ? ((health.breakdown.messages / total) * 100).toFixed(1) : '0';
+      const pctTool = total > 0 ? ((health.breakdown.toolResults / total) * 100).toFixed(1) : '0';
+
+      const lines: string[] = [
+        'Context',
+        `  Usage:    ${fmtNum(health.currentTokens)} / ${fmtNum(health.maxTokens)} tokens (${health.usagePercent.toFixed(1)}%)`,
+        `  System:   ${fmtNum(health.breakdown.systemPrompt)} tokens (${pctSys}%)`,
+        `  Messages: ${fmtNum(health.breakdown.messages)} tokens (${pctMsg}%)`,
+        `  Tools:    ${fmtNum(health.breakdown.toolResults)} tokens (${pctTool}%)`,
+        `  Turns:    ~${health.estimatedTurnsRemaining} remaining`,
+      ];
+
+      // Compression stats
+      try {
+        const { getAutoCompressor } = await import('../../../main/context/autoCompressor');
+        const stats = getAutoCompressor().getStats();
+        if (stats.compressionCount > 0) {
+          lines.push(`  Compressed: ${stats.compressionCount} times, saved ${fmtNum(stats.totalSavedTokens)} tokens`);
+        }
+      } catch { /* compressor not available */ }
+
+      ctx.output.info(lines.join('\n'));
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.output.error(`Context command failed: ${message}`);
+      return { success: false, message };
+    }
+  },
+};
+
 export const newCommands: CommandDefinition[] = [
   agentsCommand,
   statusCommand,
   pluginsCommand,
   hooksCommand,
+  costCommand,
+  contextCommand,
 ];

@@ -435,6 +435,18 @@ export class CLIAgent {
   }
 
   /**
+   * 获取成本信息（供 /cost、/status 命令使用）
+   */
+  getCostInfo(): { inputTokens: number; outputTokens: number; model: string; provider: string } {
+    return {
+      inputTokens: this.realInputTokens,
+      outputTokens: this.realOutputTokens,
+      model: this.config.modelConfig.model,
+      provider: this.config.modelConfig.provider,
+    };
+  }
+
+  /**
    * 获取 HookManager（供 /hooks 命令使用）
    */
   getHookManager(): unknown {

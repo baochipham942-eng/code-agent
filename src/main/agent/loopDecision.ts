@@ -108,6 +108,21 @@ export function decideNextAction(state: LoopState): LoopDecision {
         }
         return { action: 'continue', reason: 'will retry' };
 
+      case 'quota_exhaustion':
+        return { action: 'fallback', reason: 'quota exhausted, switching provider' };
+
+      case 'content_policy':
+        return { action: 'terminate', reason: 'content policy violation, user must modify prompt' };
+
+      case 'malformed_response':
+        if (state.consecutiveErrors <= 1) {
+          return { action: 'continue', reason: 'malformed response, retrying once' };
+        }
+        return { action: 'fallback', reason: 'repeated malformed responses' };
+
+      case 'model_deprecated':
+        return { action: 'fallback', reason: 'model deprecated, switching to alternative' };
+
       default:
         // 'unknown' – fall through to normal handling below
         break;

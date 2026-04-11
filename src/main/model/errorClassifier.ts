@@ -8,6 +8,10 @@ export type ErrorClass =
   | 'auth'
   | 'network'
   | 'unavailable'
+  | 'quota_exhaustion'
+  | 'content_policy'
+  | 'malformed_response'
+  | 'model_deprecated'
   | 'unknown';
 
 // --------------------------------------------------------------------------
@@ -33,12 +37,21 @@ function getMessage(error: unknown): string {
   return '';
 }
 
+function getHeaders(error: unknown): Record<string, string> | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const e = error as Record<string, unknown>;
+  const h = e['headers'];
+  if (typeof h === 'object' && h !== null) return h as Record<string, string>;
+  return undefined;
+}
+
 // --------------------------------------------------------------------------
 // Status-code → class mappings
 // --------------------------------------------------------------------------
 
 const STATUS_MAP: Array<[number[], ErrorClass]> = [
   [[413], 'overflow'],
+  [[402], 'quota_exhaustion'],
   [[429], 'rate_limit'],
   [[401, 403], 'auth'],
   [[500, 502, 503, 504], 'unavailable'],
@@ -53,6 +66,10 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
     /context_length_exceeded|maximum context length|prompt is too long|request too large|token limit/i,
     'overflow',
   ],
+  [/billing|payment required|insufficient_quota|credit|x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
+  [/content.?filter|content.?policy|safety|harmful|violat(?:es?|ion)|moderation/i, 'content_policy'],
+  [/unexpected.?token|JSON\.parse|invalid json|SyntaxError|tool_use.*corrupt|malformed.*json/i, 'malformed_response'],
+  [/model.*(?:not.?found|deprecated|decommission|retired|does not exist)|(?:deprecated|retired).*model/i, 'model_deprecated'],
   [/rate limit|too many requests|quota exceeded/i, 'rate_limit'],
   [/invalid_api_key|authentication_error|invalid token|unauthorized|forbidden/i, 'auth'],
   [/econnreset|econnrefused|etimedout|socket hang up|network error|fetch failed/i, 'network'],
@@ -75,6 +92,25 @@ export function classifyError(error: unknown): ErrorClass {
     for (const [codes, cls] of STATUS_MAP) {
       if (codes.includes(status)) return cls;
     }
+
+    // HTTP 404 + model-related keywords → model_deprecated
+    if (status === 404) {
+      const msg = getMessage(error);
+      if (/model|engine|deployment/i.test(msg)) return 'model_deprecated';
+    }
+
+    // HTTP 400 + content policy keywords → content_policy
+    if (status === 400) {
+      const msg = getMessage(error);
+      if (/content.?filter|content.?policy|safety|harmful|violat|moderation/i.test(msg)) return 'content_policy';
+    }
+  }
+
+  // Check headers for quota exhaustion (x-ratelimit-remaining: 0)
+  const headers = getHeaders(error);
+  if (headers) {
+    const remaining = headers['x-ratelimit-remaining'];
+    if (remaining === '0') return 'quota_exhaustion';
   }
 
   const message = getMessage(error);

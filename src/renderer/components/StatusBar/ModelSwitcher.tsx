@@ -96,6 +96,14 @@ const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }
   },
 };
 
+// 健康状态颜色映射
+const HEALTH_DOT_COLOR: Record<string, string> = {
+  healthy: 'bg-green-400',
+  degraded: 'bg-yellow-400',
+  unavailable: 'bg-red-400',
+  recovering: 'bg-blue-400',
+};
+
 interface ModelSwitcherProps {
   currentModel: string;
 }
@@ -104,6 +112,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
   const ref = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -130,6 +139,19 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       requestAnimationFrame(() => {
         searchInputRef.current?.focus();
       });
+    }
+  }, [open]);
+
+  // 打开时拉取 provider 健康状态
+  useEffect(() => {
+    if (open) {
+      window.domainAPI?.invoke<Record<string, { status: string; latencyP50: number; errorRate: number }>>(
+        IPC_DOMAINS.PROVIDER,
+        'getHealthStatus',
+        {}
+      )
+        .then((res) => { if (res?.success && res.data) setHealthMap(res.data); })
+        .catch(() => { /* 静默失败，健康点不显示即可 */ });
     }
   }, [open]);
 
@@ -160,7 +182,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           setOverrideModel(res.data.model);
         }
       })
-      .catch(() => toast.error('加载模型覆盖失败'));
+      .catch((err: unknown) => toast.error('加载模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误')));
   }, [sessionId]);
 
   const handleSelect = useCallback(
@@ -173,8 +195,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           model: option.model,
         });
         setOverrideModel(option.model);
-      } catch {
-        toast.error('模型切换失败');
+      } catch (err) {
+        toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
       }
       setOpen(false);
     },
@@ -190,8 +212,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       );
       setOverrideModel(null);
-    } catch {
-      toast.error('清除模型覆盖失败');
+    } catch (err) {
+      toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
     setOpen(false);
   }, [sessionId]);

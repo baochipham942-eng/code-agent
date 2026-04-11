@@ -43,6 +43,12 @@ export enum DetailedErrorType {
   MODEL_CONTEXT_LENGTH = 'model_context_length',
   MODEL_RESPONSE_INVALID = 'model_response_invalid',
   MODEL_NOT_AVAILABLE = 'model_not_available',
+  MODEL_DEPRECATED = 'model_deprecated',
+  MODEL_CONTENT_POLICY = 'model_content_policy',
+  MODEL_MALFORMED_RESPONSE = 'model_malformed_response',
+
+  // 配额相关
+  QUOTA_EXHAUSTION = 'quota_exhaustion',
 
   // 工具相关
   TOOL_NOT_FOUND = 'tool_not_found',
@@ -293,6 +299,50 @@ export class ErrorClassifier {
       category: 'model',
       isTransient: false,
       retryable: false,
+    },
+    {
+      type: DetailedErrorType.MODEL_DEPRECATED,
+      patterns: [
+        'model deprecated', 'model decommissioned', 'model retired',
+        /deprecated.*model/i, /retired.*model/i,
+      ],
+      category: 'model',
+      isTransient: false,
+      retryable: false, // 需要切换模型
+    },
+    {
+      type: DetailedErrorType.MODEL_CONTENT_POLICY,
+      patterns: [
+        /content.?filter/i, /content.?policy/i, 'safety',
+        'harmful', /violat(?:es?|ion)/i, 'moderation',
+      ],
+      category: 'model',
+      isTransient: false,
+      retryable: false, // 需要修改 prompt
+    },
+    {
+      type: DetailedErrorType.MODEL_MALFORMED_RESPONSE,
+      patterns: [
+        'unexpected token', 'JSON.parse', 'invalid json',
+        'SyntaxError', /tool_use.*corrupt/i, /malformed.*json/i,
+      ],
+      category: 'model',
+      isTransient: true,
+      retryable: true,
+      retryDelay: 1000,
+      maxRetries: 1,
+    },
+
+    // 配额相关
+    {
+      type: DetailedErrorType.QUOTA_EXHAUSTION,
+      patterns: [
+        'billing', 'payment required', 'insufficient_quota',
+        'credit', /x-ratelimit-remaining.*\b0\b/i,
+      ],
+      category: 'rate_limit',
+      isTransient: false,
+      retryable: false, // 跳过重试，直接降级
     },
 
     // 工具相关

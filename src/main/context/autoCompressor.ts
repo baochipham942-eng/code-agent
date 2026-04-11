@@ -216,6 +216,11 @@ export class AutoContextCompressor {
       logger.info(
         `[AutoCompressor] Compressed using ${strategy}: saved ${result.savedTokens} tokens`
       );
+
+      // Fire-and-forget: emit PostCompact hook
+      hookManager?.triggerPostCompact(
+        result.savedTokens, strategy, sessionId,
+      ).catch(() => {});
     }
 
     return result;

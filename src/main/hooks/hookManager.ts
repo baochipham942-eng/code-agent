@@ -5,7 +5,6 @@
 import type { Message } from '../../shared/types';
 import type {
   HookEvent,
-  HookEventContext,
   AnyHookContext,
   HookExecutionResult,
   ToolHookContext,
@@ -18,8 +17,11 @@ import type {
   PostExecutionContext,
   TaskCreatedContext,
   TaskCompletedContext,
+  PermissionDeniedContext,
+  PostCompactContext,
+  StopFailureContext,
 } from './events';
-import type { HookDefinition, ParsedHookConfig } from './configParser';
+import type { HookDefinition } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
 
@@ -53,6 +55,20 @@ export interface HookManagerConfig {
   enabled?: boolean;
 }
 
+/**
+ * Entry in the trigger history circular buffer
+ */
+export interface TriggerHistoryEntry {
+  timestamp: number;
+  event: HookEvent;
+  action: 'allow' | 'block';
+  durationMs: number;
+  hookCount: number;
+  modified: boolean;
+}
+
+const MAX_TRIGGER_HISTORY = 50;
+
 export interface HookTriggerResult {
   /** Whether the action should proceed */
   shouldProceed: boolean;
@@ -75,6 +91,7 @@ export class HookManager {
   private hooks: MergedHookConfig[] = [];
   private initialized = false;
   private executedOnceHooks: Set<string> = new Set();
+  private triggerHistory: TriggerHistoryEntry[] = [];
 
   constructor(config: HookManagerConfig) {
     this.config = {
@@ -490,6 +507,104 @@ export class HookManager {
     return this.triggerEventHooks('TaskCompleted', context);
   }
 
+  /**
+   * Trigger hooks when a tool permission is denied (observer-only)
+   * @experimental
+   */
+  async triggerPermissionDenied(
+    toolName: string,
+    reason: string,
+    deniedBy: 'user' | 'hook' | 'policy' | 'classifier',
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: PermissionDeniedContext = {
+      event: 'PermissionDenied',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      toolName,
+      reason,
+      deniedBy,
+    };
+
+    return this.triggerEventHooks('PermissionDenied', context);
+  }
+
+  /**
+   * Trigger hooks after context compaction completes (observer-only)
+   * @experimental
+   */
+  async triggerPostCompact(
+    savedTokens: number,
+    strategy: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: PostCompactContext = {
+      event: 'PostCompact',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      savedTokens,
+      strategy,
+    };
+
+    return this.triggerEventHooks('PostCompact', context);
+  }
+
+  /**
+   * Trigger hooks when the agent stops due to an error (observer-only)
+   * @experimental
+   */
+  async triggerStopFailure(
+    error: string,
+    phase: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: StopFailureContext = {
+      event: 'StopFailure',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      error,
+      phase,
+    };
+
+    return this.triggerEventHooks('StopFailure', context);
+  }
+
+  // ==========================================================================
+  // Trigger History
+  // ==========================================================================
+
+  /**
+   * Get the trigger history (most recent entries, max 50)
+   */
+  getTriggerHistory(): readonly TriggerHistoryEntry[] {
+    return this.triggerHistory;
+  }
+
+  /**
+   * Record a trigger in the history buffer
+   */
+  private recordTrigger(
+    event: HookEvent,
+    result: HookTriggerResult
+  ): void {
+    const entry: TriggerHistoryEntry = {
+      timestamp: Date.now(),
+      event,
+      action: result.shouldProceed ? 'allow' : 'block',
+      durationMs: result.totalDuration,
+      hookCount: result.results.length,
+      modified: !!result.modifiedInput,
+    };
+
+    this.triggerHistory.push(entry);
+    if (this.triggerHistory.length > MAX_TRIGGER_HISTORY) {
+      this.triggerHistory.shift();
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Internal Methods
   // --------------------------------------------------------------------------
@@ -507,7 +622,9 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForTool(this.hooks, event, toolName);
-    return this.executeHooks(matchingHooks, context);
+    const result = await this.executeHooks(matchingHooks, context);
+    this.recordTrigger(event, result);
+    return result;
   }
 
   /**
@@ -522,7 +639,9 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForEvent(this.hooks, event);
-    return this.executeHooks(matchingHooks, context);
+    const result = await this.executeHooks(matchingHooks, context);
+    this.recordTrigger(event, result);
+    return result;
   }
 
   /**

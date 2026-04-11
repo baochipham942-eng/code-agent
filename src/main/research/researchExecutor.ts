@@ -225,7 +225,7 @@ export class ResearchExecutor {
     const enableReflection = researchConfig.enableReflection !== false;
 
     // Execute initial research steps
-    let updatedPlan = await this.execute(plan);
+    const updatedPlan = await this.execute(plan);
 
     if (!enableReflection) {
       return updatedPlan;

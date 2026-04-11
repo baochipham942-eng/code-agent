@@ -226,7 +226,7 @@ export class TaskManager extends EventEmitter {
    */
   async interruptTask(sessionId: string): Promise<void> {
     const state = this.sessionStates.get(sessionId);
-    if (!state || state.status !== 'running') {
+    if (state?.status !== 'running') {
       logger.warn(`Cannot interrupt session ${sessionId}: not running`);
       return;
     }
@@ -602,7 +602,7 @@ export class TaskManager extends EventEmitter {
     for (let i = 0; i < this.waitingQueue.length; i++) {
       const sessionId = this.waitingQueue[i];
       const state = this.sessionStates.get(sessionId);
-      if (state && state.status === 'queued') {
+      if (state?.status === 'queued') {
         state.queuePosition = i + 1;
       }
     }

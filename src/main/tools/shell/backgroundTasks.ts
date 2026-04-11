@@ -5,8 +5,8 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { getUserConfigDir } from '../../config/configPaths';
 
 // ============================================================================
 // Constants
@@ -72,7 +72,7 @@ const backgroundTasks: Map<string, TaskState> = new Map();
 // ============================================================================
 
 function getTasksDir(): string {
-  const tasksDir = path.join(os.homedir(), '.code-agent', 'tasks');
+  const tasksDir = path.join(getUserConfigDir(), 'tasks');
   if (!fs.existsSync(tasksDir)) {
     fs.mkdirSync(tasksDir, { recursive: true });
   }
@@ -275,38 +275,33 @@ export function killBackgroundTask(taskId: string): { success: boolean; error?: 
 /**
  * Get task output
  */
-export function getTaskOutput(
+export async function getTaskOutput(
   taskId: string,
   block: boolean = false,
   timeout: number = 30000
 ): Promise<TaskOutput | null> {
-  return new Promise(async (resolve) => {
-    const task = backgroundTasks.get(taskId);
-    if (!task) {
-      resolve(null);
-      return;
+  const task = backgroundTasks.get(taskId);
+  if (!task) return null;
+
+  // If blocking and still running, wait
+  if (block && task.status === 'running') {
+    const startTime = Date.now();
+
+    while (task.status === 'running' && Date.now() - startTime < timeout) {
+      await new Promise((r) => setTimeout(r, 100));
     }
+  }
 
-    // If blocking and still running, wait
-    if (block && task.status === 'running') {
-      const startTime = Date.now();
+  const output = task.output.join('');
+  const duration = (task.endTime || Date.now()) - task.startTime;
 
-      while (task.status === 'running' && Date.now() - startTime < timeout) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
-
-    const output = task.output.join('');
-    const duration = (task.endTime || Date.now()) - task.startTime;
-
-    resolve({
-      taskId,
-      status: task.status,
-      output,
-      exitCode: task.exitCode,
-      duration,
-    });
-  });
+  return {
+    taskId,
+    status: task.status,
+    output,
+    exitCode: task.exitCode,
+    duration,
+  };
 }
 
 /**
@@ -412,7 +407,7 @@ interface PersistedTask {
   status: 'running' | 'completed' | 'failed';
 }
 
-const PERSISTENCE_FILE = path.join(os.homedir(), '.code-agent', 'background-tasks.json');
+const PERSISTENCE_FILE = path.join(getUserConfigDir(), 'background-tasks.json');
 
 /**
  * Save running tasks for recovery

@@ -319,8 +319,7 @@ export class TrajectoryBuilder {
         prev.type === 'tool_call' &&
         curr.type === 'tool_call' &&
         prev.toolCall &&
-        curr.toolCall &&
-        prev.toolCall.name === curr.toolCall.name &&
+        prev.toolCall.name === curr.toolCall?.name &&
         JSON.stringify(prev.toolCall.args) === JSON.stringify(curr.toolCall.args)
       ) {
         redundantSteps++;

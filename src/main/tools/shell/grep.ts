@@ -167,7 +167,7 @@ async function tryRipgrep(
     }
 
     // ENOENT / EACCES = rg not installed — signal fallback to grep
-    if (e.code === 'ENOENT' || (e.message && e.message.includes('ENOENT'))) {
+    if (e.code === 'ENOENT' || (e.message?.includes('ENOENT'))) {
       return { found: false, noMatches: false, stdout: '' };
     }
 

@@ -303,7 +303,7 @@ function hasOutputRedirection(command: string): boolean {
  */
 export function isKnownSafeCommand(command: string): boolean {
   // 0. 空命令不安全
-  if (!command || !command.trim()) {
+  if (!command?.trim()) {
     return false;
   }
 

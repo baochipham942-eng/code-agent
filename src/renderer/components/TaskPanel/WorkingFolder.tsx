@@ -33,7 +33,7 @@ export const WorkingFolder: React.FC = () => {
           if (['Write', 'Edit', 'Read'].includes(toolCall.name)) {
             const args = toolCall.arguments as Record<string, unknown>;
             const filePath = (args?.path || args?.file_path) as string | undefined;
-            if (filePath && filePath.startsWith('/')) {
+            if (filePath?.startsWith('/')) {
               // Extract directory from file path
               const lastSlash = filePath.lastIndexOf('/');
               if (lastSlash > 0) {

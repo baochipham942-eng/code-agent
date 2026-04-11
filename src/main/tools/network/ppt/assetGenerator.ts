@@ -145,7 +145,7 @@ function parseNumericValue(value: string): number | null {
   if (!value) return null;
 
   // 移除货币符号
-  let cleaned = value.replace(/[$€¥￥£]/g, '').trim();
+  const cleaned = value.replace(/[$€¥￥£]/g, '').trim();
 
   // 提取数字部分
   const numMatch = cleaned.match(/(\d+[\d.,]*)/);

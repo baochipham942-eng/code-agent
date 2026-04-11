@@ -95,8 +95,7 @@ export class DeviationDetector {
         const next = steps[j];
         if (
           next.type === 'tool_call' &&
-          next.toolCall &&
-          next.toolCall.name === step.toolCall.name
+          next.toolCall?.name === step.toolCall.name
         ) {
           hasRecovery = true;
           break;

@@ -363,7 +363,7 @@ export class ToolExecutionEngine {
 
     // Check for parse errors in arguments
     const args = toolCall.arguments as Record<string, unknown>;
-    if (args && args.__parseError === true) {
+    if (args?.__parseError === true) {
       const errorMessage = args.__errorMessage as string || 'Unknown JSON parse error';
       const rawArgs = args.__rawArguments as string || '';
 

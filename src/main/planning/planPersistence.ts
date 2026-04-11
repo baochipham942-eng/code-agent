@@ -10,6 +10,7 @@ import { createHash } from 'crypto';
 import { createLogger } from '../services/infra/logger';
 import type { TaskPlan } from './types';
 import type { PlanSnapshot, Checkpoint } from './feasibilityChecker';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 
 const logger = createLogger('PlanPersistence');
 
@@ -57,7 +58,7 @@ export class PlanPersistence {
     this.config = { ...DEFAULT_CONFIG, ...config } as PersistenceConfig;
     this.snapshotDir = path.join(
       config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'snapshots',
       config.sessionId
     );

@@ -103,7 +103,7 @@ class MacOSOperator {
     const screenH = params.screenHeight;
 
     const getCoords = (box?: string, coords?: [number, number] | []): { x: number; y: number } | null => {
-      if (coords && coords.length === 2) {
+      if (coords?.length === 2) {
         return { x: coords[0] / scaleFactor, y: coords[1] / scaleFactor };
       }
       if (box) {
@@ -347,7 +347,7 @@ IMPORTANT:
       let stepCount = 0;
       let finalStatus = 'unknown';
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MacOSOperator 实现了 Operator 接口但未继承 SDK 抽象类
+       
       const guiAgent = new GUIAgent({
         model: {
           baseURL: MODEL_API_ENDPOINTS.volcengine,

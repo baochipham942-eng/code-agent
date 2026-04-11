@@ -36,7 +36,7 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
     setSystemPrompt(null);
     if (!sessionId || !ipcService.isAvailable()) return;
     ipcService.invoke(
-      'telemetry:get-turns' as 'telemetry:get-turns',
+      'telemetry:get-turns' as const,
       sessionId
     ).then((result: TelemetryTurn[]) => {
       if (result?.length) setTurns(result);
@@ -51,7 +51,7 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
     setSystemPromptLoading(true);
     try {
       const result = await ipcService.invoke(
-        'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
+        'telemetry:get-system-prompt' as const,
         systemPromptHash
       );
       setSystemPrompt(result?.content || '系统提示词不可用');

@@ -131,7 +131,7 @@ export function truncateMiddle(
   const lines = text.split('\n');
 
   // Keep lines from start
-  let startLines: string[] = [];
+  const startLines: string[] = [];
   let startTokens = 0;
   for (const line of lines) {
     const lineTokens = estimateTokens(line);
@@ -141,7 +141,7 @@ export function truncateMiddle(
   }
 
   // Keep lines from end
-  let endLines: string[] = [];
+  const endLines: string[] = [];
   let endTokens = 0;
   for (let i = lines.length - 1; i >= startLines.length; i--) {
     const lineTokens = estimateTokens(lines[i]);

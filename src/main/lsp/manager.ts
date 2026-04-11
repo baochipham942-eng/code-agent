@@ -271,7 +271,7 @@ export class LSPServer extends EventEmitter {
   }
 
   private sendMessage(message: any): void {
-    if (!this.process || !this.process.stdin) {
+    if (!this.process?.stdin) {
       throw new Error('Process not started');
     }
 

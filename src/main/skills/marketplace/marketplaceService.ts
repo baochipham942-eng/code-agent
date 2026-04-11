@@ -8,8 +8,8 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import os from 'os';
 import { randomUUID } from 'crypto';
+import { getUserConfigDir as getBaseConfigDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
 import type {
   MarketplaceSource,
@@ -30,7 +30,6 @@ const logger = createLogger('MarketplaceService');
 // Constants
 // ----------------------------------------------------------------------------
 
-const CONFIG_BASE_DIR = '.code-agent';
 const KNOWN_MARKETPLACES_FILE = 'known_marketplaces.json';
 const MARKETPLACES_CACHE_DIR = 'marketplaces';
 
@@ -39,7 +38,7 @@ const MARKETPLACES_CACHE_DIR = 'marketplaces';
 // ----------------------------------------------------------------------------
 
 function getUserConfigDir(): string {
-  return path.join(os.homedir(), CONFIG_BASE_DIR);
+  return getBaseConfigDir();
 }
 
 function getMarketplacesDir(): string {

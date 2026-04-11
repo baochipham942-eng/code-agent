@@ -27,7 +27,7 @@ export const FailureAnalysisPage: React.FC = () => {
           EVALUATION_CHANNELS.LOAD_EXPERIMENT as 'evaluation:load-experiment',
           experiments[0].id
         ) as { cases: Array<{ case_id: string; status: string; score: number; duration_ms: number; data_json: string }> } | null | undefined;
-        if (data && data.cases) {
+        if (data?.cases) {
           // Convert experiment cases to TestCaseResult format
           const converted: TestCaseResult[] = data.cases.map(ec => {
             let parsed: Record<string, unknown> = {};

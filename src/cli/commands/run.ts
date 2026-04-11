@@ -79,7 +79,7 @@ export const runCommand = new Command('run')
     }
 
     // 检测空 prompt，优雅处理
-    if (!fullPrompt || !fullPrompt.trim()) {
+    if (!fullPrompt?.trim()) {
       if (isJson) {
         console.log(JSON.stringify({ success: true, output: '请提供任务描述' }));
       } else {

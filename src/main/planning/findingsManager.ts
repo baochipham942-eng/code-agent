@@ -5,6 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Finding, FindingCategory, PlanningConfig } from './types';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 
 // ----------------------------------------------------------------------------
 // Category Labels
@@ -30,7 +31,7 @@ export class FindingsManager {
   constructor(private config: PlanningConfig) {
     this.findingsPath = path.join(
       config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'plans',
       config.sessionId,
       'findings.md'

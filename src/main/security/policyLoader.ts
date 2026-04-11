@@ -21,6 +21,7 @@ import {
   parseSimpleToml,
   policyFromToml,
 } from './policyFile';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('PolicyLoader');
 
@@ -34,13 +35,11 @@ const POLICY_FILENAME = 'code-agent-policy.toml';
  * Get all candidate policy file paths in priority order (lowest to highest)
  */
 function getPolicyPaths(projectDir: string): string[] {
-  const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
-
   return [
     // 3. Project level (lowest priority)
     path.join(projectDir, POLICY_FILENAME),
     // 2. User level
-    path.join(home, '.code-agent', 'policy.toml'),
+    path.join(getUserConfigDir(), 'policy.toml'),
     // 1. System level (highest priority)
     '/etc/code-agent/policy.toml',
   ];

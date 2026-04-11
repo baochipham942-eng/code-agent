@@ -15,6 +15,7 @@ import { AnnotationProxy } from '../evaluation/annotationProxy';
 import type { EvaluationExportFormat } from '../../shared/types/evaluation';
 import { scoreToGrade } from '../../shared/types/evaluation';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
+import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('EvaluationIPC');
@@ -514,10 +515,10 @@ export function registerEvaluationHandlers(): void {
           const { loadAllTestSuites } = await import('../testing/testCaseLoader');
           const appPath = app.getAppPath();
           const possibleDirs = [
-            path.join(appPath, '.claude', 'test-cases'),
-            path.join(process.cwd(), '.claude', 'test-cases'),
-            path.join(appPath, '.code-agent', 'test-cases'),
-            path.join(process.cwd(), '.code-agent', 'test-cases'),
+            path.join(appPath, CONFIG_DIR_LEGACY, 'test-cases'),
+            path.join(process.cwd(), CONFIG_DIR_LEGACY, 'test-cases'),
+            path.join(appPath, CONFIG_DIR_NEW, 'test-cases'),
+            path.join(process.cwd(), CONFIG_DIR_NEW, 'test-cases'),
           ];
 
           let suites: Awaited<ReturnType<typeof loadAllTestSuites>> = [];

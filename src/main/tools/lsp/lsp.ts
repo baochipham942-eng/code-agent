@@ -475,7 +475,7 @@ function formatWorkspaceSymbolResult(
   }
 
   const symbols = result.filter(
-    (s: any) => s && s.location && s.location.uri && isValidLocation(s.location)
+    (s: any) => s?.location?.uri && isValidLocation(s.location)
   );
 
   if (symbols.length === 0) {
@@ -581,7 +581,7 @@ function formatCallsResult(
 
   const validCalls = result.filter((call: any) => {
     const item = call[callItem];
-    return item && item.uri && item.range;
+    return item?.uri && item.range;
   });
 
   if (validCalls.length === 0) {

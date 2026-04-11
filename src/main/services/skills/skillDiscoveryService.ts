@@ -12,7 +12,7 @@ import { getBuiltinSkills } from './builtinSkills';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../../tools/search';
-import { getSkillsDir } from '../../config';
+import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
 
@@ -204,7 +204,7 @@ class SkillDiscoveryService {
    * 路径: ~/.code-agent/skills/
    */
   private async loadFromLibraries(): Promise<void> {
-    const librariesDir = path.join(os.homedir(), '.code-agent', 'skills');
+    const librariesDir = path.join(getUserConfigDir(), 'skills');
 
     try {
       await fs.access(librariesDir);

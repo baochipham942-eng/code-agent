@@ -158,7 +158,7 @@ export class BuiltinHookExecutor {
     const enabledForEvent = Array.from(this.enabledHooks.values()).filter(
       (config) => {
         const template = getTemplateById(config.templateId);
-        return template && template.event === event && config.enabled;
+        return template?.event === event && config.enabled;
       }
     );
 
@@ -484,7 +484,7 @@ export class BuiltinHookExecutor {
   hasEnabledHooksFor(event: HookEvent): boolean {
     return Array.from(this.enabledHooks.values()).some((config) => {
       const template = getTemplateById(config.templateId);
-      return template && template.event === event && config.enabled;
+      return template?.event === event && config.enabled;
     });
   }
 }

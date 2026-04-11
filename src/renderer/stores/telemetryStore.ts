@@ -99,7 +99,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadEvents: async (sessionId: string) => {
     try {
-      const events = await ipcService.invoke('telemetry:get-events' as 'telemetry:get-events', sessionId);
+      const events = await ipcService.invoke('telemetry:get-events' as const, sessionId);
       if (events) set({ events });
     } catch (error) {
       console.error('Failed to load telemetry events:', error);

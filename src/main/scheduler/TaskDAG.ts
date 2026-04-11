@@ -433,7 +433,7 @@ export class TaskDAG extends EventEmitter {
 
     for (const depId of completedTask.dependents) {
       const depTask = this.tasks.get(depId);
-      if (!depTask || depTask.status !== 'pending') continue;
+      if (depTask?.status !== 'pending') continue;
 
       // 检查所有依赖是否都已完成
       const allDepsCompleted = depTask.dependencies.every(d => {
@@ -480,7 +480,7 @@ export class TaskDAG extends EventEmitter {
     if (failedTask.allowFailure) {
       for (const depId of failedTask.dependents) {
         const depTask = this.tasks.get(depId);
-        if (!depTask || depTask.status !== 'pending') continue;
+        if (depTask?.status !== 'pending') continue;
 
         // 检查所有依赖是否都已满足（completed 或 allowFailure 的 failed）
         const allDepsSatisfied = depTask.dependencies.every(d => {

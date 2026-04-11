@@ -75,7 +75,7 @@ export const TaskMonitor: React.FC = () => {
         const phase = classifyTool(tc.name);
         if (!phase) continue;
         const last = phases[phases.length - 1];
-        if (last && last.type === phase) {
+        if (last?.type === phase) {
           last.count++;
         } else {
           if (phases.length > 0) phases[phases.length - 1].status = 'completed';

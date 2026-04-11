@@ -145,7 +145,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const analysis = await ipcService.invoke(
-        'evaluation:get-session-analysis' as 'evaluation:get-session-analysis',
+        'evaluation:get-session-analysis' as const,
         sessionId
       );
       if (analysis) {
@@ -172,7 +172,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     set({ replayLoading: true });
     try {
       const data = await ipcService.invoke(
-        'replay:get-structured-data' as 'replay:get-structured-data',
+        'replay:get-structured-data' as const,
         sessionId
       );
       set({ replayData: (data as StructuredReplay) || null, replayLoading: false });
@@ -185,7 +185,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     set({ sessionListLoading: true });
     try {
       const sessions = await ipcService.invoke(
-        'telemetry:list-sessions' as 'telemetry:list-sessions',
+        'telemetry:list-sessions' as const,
         { limit: 200 }
       );
       if (sessions) {

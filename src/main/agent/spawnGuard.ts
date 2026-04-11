@@ -167,7 +167,7 @@ class SpawnGuard {
     promise.then(
       (result) => {
         const a = this.agents.get(id);
-        if (a && a.status === 'running') {
+        if (a?.status === 'running') {
           a.status = result.success ? 'completed' : 'failed';
           a.result = result;
           a.error = result.error;
@@ -178,7 +178,7 @@ class SpawnGuard {
       },
       (err) => {
         const a = this.agents.get(id);
-        if (a && a.status === 'running') {
+        if (a?.status === 'running') {
           a.status = 'failed';
           a.error = err instanceof Error ? err.message : 'Unknown error';
           a.completedAt = Date.now();
@@ -228,7 +228,7 @@ class SpawnGuard {
    */
   cancel(id: string): boolean {
     const agent = this.agents.get(id);
-    if (!agent || agent.status !== 'running') return false;
+    if (agent?.status !== 'running') return false;
 
     agent.abortController.abort('cancelled');
     agent.status = 'cancelled';
@@ -310,7 +310,7 @@ class SpawnGuard {
    */
   sendMessage(id: string, message: string | AgentMessage): boolean {
     const agent = this.agents.get(id);
-    if (!agent || agent.status !== 'running') return false;
+    if (agent?.status !== 'running') return false;
 
     const structured: AgentMessage = typeof message === 'string'
       ? createTextMessage('parent', message)

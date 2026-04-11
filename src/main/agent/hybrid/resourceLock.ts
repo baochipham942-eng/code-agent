@@ -38,7 +38,7 @@ export class ResourceLockManager {
    */
   release(resource: string, agentId: string): boolean {
     const lock = this.locks.get(resource);
-    if (lock && lock.owner === agentId) {
+    if (lock?.owner === agentId) {
       this.locks.delete(resource);
       return true;
     }

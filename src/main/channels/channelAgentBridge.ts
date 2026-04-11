@@ -483,7 +483,7 @@ export class ChannelAgentBridge {
       return null;
     }
 
-    if (session.workingDirectory && session.workingDirectory.trim()) {
+    if (session.workingDirectory?.trim()) {
       orchestrator.setWorkingDirectory(session.workingDirectory);
     }
 

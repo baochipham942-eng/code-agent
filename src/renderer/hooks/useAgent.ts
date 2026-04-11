@@ -505,7 +505,9 @@ export const useAgent = () => {
             // Update todos - only for current session (fix cross-session pollution)
             // Events from other sessions should be ignored
             if (event.data && isCurrentSessionEvent) {
-              setTodos(event.data);
+              // SSE wraps array data as { items: [...], sessionId } — unwrap back to TodoItem[]
+              const todos = Array.isArray(event.data) ? event.data : event.data.items;
+              if (todos) setTodos(todos);
             }
             break;
 

@@ -7,7 +7,7 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import os from 'os';
+import { getUserConfigDir as getBaseConfigDir, getProjectConfigDir as getBaseProjectConfigDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
 import { getMarketplaceInfo, listMarketplaces } from './marketplaceService';
 import type {
@@ -25,7 +25,6 @@ const logger = createLogger('PluginInstallService');
 // Constants
 // ----------------------------------------------------------------------------
 
-const CONFIG_BASE_DIR = '.code-agent';
 const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
 
 // ----------------------------------------------------------------------------
@@ -33,11 +32,11 @@ const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
 // ----------------------------------------------------------------------------
 
 function getUserConfigDir(): string {
-  return path.join(os.homedir(), CONFIG_BASE_DIR);
+  return getBaseConfigDir();
 }
 
 function getProjectConfigDir(projectPath: string): string {
-  return path.join(projectPath, CONFIG_BASE_DIR);
+  return getBaseProjectConfigDir(projectPath);
 }
 
 function getScopeBaseDir(scope: PluginScope, projectPath?: string): string {

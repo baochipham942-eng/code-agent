@@ -548,7 +548,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // Check if this is a code block (has a parent pre element)
         // react-markdown wraps code blocks in <pre><code>
         const isCodeBlock = node?.position?.start.line !== node?.position?.end.line ||
-          (className && className.startsWith('language-'));
+          (className?.startsWith('language-'));
 
         // Get the actual code content
         const codeContent = String(children).replace(/\n$/, '');

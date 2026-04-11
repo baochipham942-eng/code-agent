@@ -137,7 +137,7 @@ export class PlanApprovalGate {
    */
   approve(planId: string, feedback?: string): boolean {
     const plan = this.pendingPlans.get(planId);
-    if (!plan || plan.status !== 'pending') return false;
+    if (plan?.status !== 'pending') return false;
 
     plan.status = 'approved';
     plan.feedback = feedback;
@@ -151,7 +151,7 @@ export class PlanApprovalGate {
    */
   reject(planId: string, reason: string): boolean {
     const plan = this.pendingPlans.get(planId);
-    if (!plan || plan.status !== 'pending') return false;
+    if (plan?.status !== 'pending') return false;
 
     plan.status = 'rejected';
     plan.feedback = reason;

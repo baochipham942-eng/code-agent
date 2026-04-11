@@ -80,7 +80,7 @@ function truncatePlain(text: string, maxTokens: number): string {
   const half = Math.floor(maxTokens / 2);
 
   // Take lines from head
-  let headLines: string[] = [];
+  const headLines: string[] = [];
   let headTokens = 0;
   for (const line of lines) {
     const lt = estimateTokens(line) + 1; // +1 for newline
@@ -90,7 +90,7 @@ function truncatePlain(text: string, maxTokens: number): string {
   }
 
   // Take lines from tail
-  let tailLines: string[] = [];
+  const tailLines: string[] = [];
   let tailTokens = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     const lt = estimateTokens(lines[i]) + 1;
@@ -111,7 +111,7 @@ function truncateTail(text: string, maxTokens: number): string {
   if (currentTokens <= maxTokens) return text;
 
   const lines = text.split('\n');
-  let tailLines: string[] = [];
+  const tailLines: string[] = [];
   let tailTokens = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     const lt = estimateTokens(lines[i]) + 1;

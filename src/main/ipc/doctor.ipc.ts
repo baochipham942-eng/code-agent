@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { stat } from 'fs/promises';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getUserConfigDir } from '../config/configPaths';
 
 export interface DiagnosticItem {
   category: 'environment' | 'network' | 'config' | 'database' | 'disk';
@@ -52,7 +52,7 @@ function checkNodeVersion(): DiagnosticItem {
 }
 
 function checkConfigDir(): DiagnosticItem {
-  const configDir = join(homedir(), '.code-agent');
+  const configDir = getUserConfigDir();
   const exists = existsSync(configDir);
   return {
     category: 'config',
@@ -64,7 +64,7 @@ function checkConfigDir(): DiagnosticItem {
 }
 
 async function checkDatabase(): Promise<DiagnosticItem> {
-  const dbPath = join(homedir(), '.code-agent', 'code-agent.db');
+  const dbPath = join(getUserConfigDir(), 'code-agent.db');
   if (!existsSync(dbPath)) {
     return { category: 'database', name: 'SQLite database', status: 'warn', message: 'Database not found' };
   }
@@ -78,7 +78,7 @@ async function checkDatabase(): Promise<DiagnosticItem> {
 }
 
 async function checkDiskUsage(): Promise<DiagnosticItem> {
-  const configDir = join(homedir(), '.code-agent');
+  const configDir = getUserConfigDir();
   if (!existsSync(configDir)) {
     return { category: 'disk', name: 'Disk usage', status: 'pass', message: 'No data directory' };
   }

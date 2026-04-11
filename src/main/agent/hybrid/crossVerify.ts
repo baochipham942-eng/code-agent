@@ -41,7 +41,7 @@ export interface CrossVerifyResult {
  */
 export function isCodexAvailable(): boolean {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const { getMCPClient } = require('../../mcp/mcpClient');
     const client = getMCPClient();
     // 使用 isConnected 而非 getTools()，避免跳过 lazy-load 的服务器
@@ -133,7 +133,7 @@ export async function crossVerifyWithCodex(
 // ============================================================================
 
 async function callCodex(task: string, cwd: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const { getMCPClient } = require('../../mcp/mcpClient');
   const client = getMCPClient();
 

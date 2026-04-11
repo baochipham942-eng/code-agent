@@ -51,7 +51,12 @@ export function registerChannelHandlers(
 
   // 获取所有账号
   ipcMain.handle(CHANNEL_CHANNELS.LIST_ACCOUNTS, async (): Promise<ChannelAccount[]> => {
-    return channelManager.getAccounts();
+    try {
+      return channelManager.getAccounts();
+    } catch (error) {
+      logger.error('LIST_ACCOUNTS failed', { error: String(error) });
+      return [];
+    }
   });
 
   // 获取可用通道类型
@@ -60,28 +65,38 @@ export function registerChannelHandlers(
     name: string;
     description?: string;
   }>> => {
-    const types = channelManager.getRegisteredChannelTypes();
-    return types.map(type => {
-      const meta = channelManager.getChannelMeta(type);
-      return {
-        type,
-        name: meta?.name || type,
-        description: meta?.description,
-      };
-    });
+    try {
+      const types = channelManager.getRegisteredChannelTypes();
+      return types.map(type => {
+        const meta = channelManager.getChannelMeta(type);
+        return {
+          type,
+          name: meta?.name || type,
+          description: meta?.description,
+        };
+      });
+    } catch (error) {
+      logger.error('GET_CHANNEL_TYPES failed', { error: String(error) });
+      return [];
+    }
   });
 
   // 添加账号
   ipcMain.handle(
     CHANNEL_CHANNELS.ADD_ACCOUNT,
-    async (_, request: AddChannelAccountRequest): Promise<ChannelAccount> => {
-      logger.info('Adding channel account', { name: request.name, type: request.type });
-      return channelManager.addAccount(
-        request.name,
-        request.type,
-        request.config,
-        request.defaultAgentId
-      );
+    async (_, request: AddChannelAccountRequest): Promise<ChannelAccount | null> => {
+      try {
+        logger.info('Adding channel account', { name: request.name, type: request.type });
+        return channelManager.addAccount(
+          request.name,
+          request.type,
+          request.config,
+          request.defaultAgentId
+        );
+      } catch (error) {
+        logger.error('ADD_ACCOUNT failed', { error: String(error) });
+        return null;
+      }
     }
   );
 
@@ -89,13 +104,18 @@ export function registerChannelHandlers(
   ipcMain.handle(
     CHANNEL_CHANNELS.UPDATE_ACCOUNT,
     async (_, request: UpdateChannelAccountRequest): Promise<ChannelAccount | null> => {
-      logger.info('Updating channel account', { id: request.id });
-      return channelManager.updateAccount(request.id, {
-        name: request.name,
-        config: request.config,
-        enabled: request.enabled,
-        defaultAgentId: request.defaultAgentId,
-      });
+      try {
+        logger.info('Updating channel account', { id: request.id });
+        return channelManager.updateAccount(request.id, {
+          name: request.name,
+          config: request.config,
+          enabled: request.enabled,
+          defaultAgentId: request.defaultAgentId,
+        });
+      } catch (error) {
+        logger.error('UPDATE_ACCOUNT failed', { error: String(error) });
+        return null;
+      }
     }
   );
 
@@ -103,8 +123,13 @@ export function registerChannelHandlers(
   ipcMain.handle(
     CHANNEL_CHANNELS.DELETE_ACCOUNT,
     async (_, accountId: string): Promise<boolean> => {
-      logger.info('Deleting channel account', { accountId });
-      return channelManager.deleteAccount(accountId);
+      try {
+        logger.info('Deleting channel account', { accountId });
+        return channelManager.deleteAccount(accountId);
+      } catch (error) {
+        logger.error('DELETE_ACCOUNT failed', { error: String(error) });
+        return false;
+      }
     }
   );
 

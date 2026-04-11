@@ -37,6 +37,7 @@ interface MessageWriteOptions {
   skipTimestampUpdate?: boolean;
   syncOrigin?: SyncOrigin;
   syncedAt?: number | null;
+  updatedAt?: number;
 }
 
 export class SessionRepository {
@@ -274,7 +275,7 @@ export class SessionRepository {
     );
 
     if (!options?.skipTimestampUpdate) {
-      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(Date.now(), sessionId);
+      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(options?.updatedAt ?? Date.now(), sessionId);
     }
   }
 
@@ -444,8 +445,8 @@ export class SessionRepository {
   // Todos
   // --------------------------------------------------------------------------
 
-  saveTodos(sessionId: string, todos: TodoItem[]): void {
-    const now = Date.now();
+  saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void {
+    const now = updatedAt ?? Date.now();
 
     const saveFn = this.db.transaction(() => {
       this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);

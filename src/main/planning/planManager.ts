@@ -14,6 +14,7 @@ import type {
   PlanningConfig,
 } from './types';
 import { createLogger } from '../services/infra/logger';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 
 const logger = createLogger('PlanManager');
 
@@ -40,7 +41,7 @@ export class PlanManager {
   constructor(private config: PlanningConfig) {
     this.planPath = path.join(
       config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'plans',
       config.sessionId,
       'task_plan.md'

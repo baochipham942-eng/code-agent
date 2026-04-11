@@ -210,7 +210,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
    * 停止录音
    */
   const stop = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
   }, []);

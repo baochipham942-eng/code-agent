@@ -57,6 +57,7 @@ import {
   buildRuntimeModeBlock,
 } from '../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../lightMemory/indexLoader';
+import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { buildSessionMetadataBlock } from '../../lightMemory/sessionMetadata';
 import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
@@ -1013,8 +1014,8 @@ ${deferredToolsSummary}
   loadResearchSkillPrompt(): string | null {
     // Try project-level skill first, then user-level
     const candidates = [
-      join(this.ctx.workingDirectory || process.cwd(), '.code-agent', 'skills', 'research', 'SKILL.md'),
-      join(process.env.HOME || '~', '.code-agent', 'skills', 'research', 'SKILL.md'),
+      join(this.ctx.workingDirectory || process.cwd(), CONFIG_DIR_NEW, 'skills', 'research', 'SKILL.md'),
+      join(process.env.HOME || '~', CONFIG_DIR_NEW, 'skills', 'research', 'SKILL.md'),
     ];
 
     for (const skillPath of candidates) {

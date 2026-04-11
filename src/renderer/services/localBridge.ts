@@ -149,7 +149,7 @@ export class LocalBridgeClient {
    * 建立 WebSocket 连接
    */
   connectWebSocket(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return;
 
     const wsUrl = this.baseUrl.replace(/^http/, 'ws') + '/ws';
     const url = this.token ? `${wsUrl}?token=${encodeURIComponent(this.token)}` : wsUrl;

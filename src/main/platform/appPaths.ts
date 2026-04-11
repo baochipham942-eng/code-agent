@@ -5,6 +5,7 @@
 import os from 'os';
 import path from 'path';
 import { readFileSync } from 'fs';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -15,7 +16,7 @@ let _userDataPath: string | null = null;
 export function getUserDataPath(): string {
   if (_userDataPath) return _userDataPath;
   _userDataPath = process.env.CODE_AGENT_DATA_DIR
-    || path.join(os.homedir(), '.code-agent');
+    || path.join(os.homedir(), CONFIG_DIR_NEW);
   return _userDataPath;
 }
 

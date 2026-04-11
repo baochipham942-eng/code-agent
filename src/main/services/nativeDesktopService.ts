@@ -7,6 +7,7 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { app } from '../platform';
+import { getUserConfigDir } from '../config/configPaths';
 import { createLogger } from './infra/logger';
 import type {
   AudioSegment,
@@ -42,7 +43,7 @@ export class NativeDesktopService {
     if (envRoot) roots.add(envRoot);
     if (userData) roots.add(userData);
     if (home) {
-      roots.add(path.join(home, '.code-agent'));
+      roots.add(getUserConfigDir());
       roots.add(path.join(home, 'Library', 'Application Support', 'code-agent'));
     }
 
@@ -59,7 +60,7 @@ export class NativeDesktopService {
 
     const fallbackBase = process.env.CODE_AGENT_DATA_DIR
       || app?.getPath?.('userData')
-      || path.join(os.homedir(), '.code-agent');
+      || getUserConfigDir();
     return path.join(fallbackBase, 'native-desktop');
   }
 

@@ -52,7 +52,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
 
   // Subscribe to IPC events
   useEffect(() => {
-    const unsubscribe = ipcService.on('telemetry:event' as 'telemetry:event', (event) => {
+    const unsubscribe = ipcService.on('telemetry:event' as const, (event) => {
       handlePushEvent(event as Parameters<typeof handlePushEvent>[0]);
     });
     return () => {

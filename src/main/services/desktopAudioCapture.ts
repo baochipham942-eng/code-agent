@@ -9,6 +9,7 @@ import os from 'os';
 import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { createLogger } from './infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('DesktopAudioCapture');
 
@@ -75,7 +76,7 @@ let captureMode: CaptureMode = 'microphone';
 let powerMode: 'full' | 'reduced' | 'paused' = 'full';
 let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
-let asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
+const asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
 let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
 let ffmpegBinaryPath: string | null = null; // 缓存 ffmpeg 二进制路径
 let systemAudioBinaryPath: string | null = null; // 缓存 system-audio-capture 路径
@@ -106,7 +107,7 @@ function findSystemAudioCaptureBinary(): string | null {
     path.join(scriptDir, SYSTEM_AUDIO_CAPTURE_NAME),
     // Tauri 打包后: __dirname = Resources/_up_/dist/web/, binary = Resources/_up_/scripts/
     path.join(__dirname, '..', '..', 'scripts', SYSTEM_AUDIO_CAPTURE_NAME),
-    path.join(os.homedir(), '.code-agent', 'bin', SYSTEM_AUDIO_CAPTURE_NAME),
+    path.join(getUserConfigDir(), 'bin', SYSTEM_AUDIO_CAPTURE_NAME),
   ];
 
   for (const p of candidates) {
@@ -402,7 +403,7 @@ function getAudioDir(): string {
   const status = service.getStatus();
   const root = status.sqliteDbPath
     ? path.dirname(status.sqliteDbPath)
-    : path.join(os.homedir(), '.code-agent', 'native-desktop');
+    : path.join(getUserConfigDir(), 'native-desktop');
   return path.join(root, 'audio');
 }
 
@@ -919,7 +920,7 @@ function startRecCapture(mode: CaptureMode = 'microphone'): boolean {
     });
 
     // 捕获 stderr — rec 权限/设备错误会输出到这里
-    let stderrChunks: string[] = [];
+    const stderrChunks: string[] = [];
     recProcess.stderr!.on('data', (data: Buffer) => {
       const msg = data.toString().trim();
       if (msg) stderrChunks.push(msg);

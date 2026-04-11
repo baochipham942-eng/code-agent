@@ -4,6 +4,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import type { EvalBaseline, BaselineDelta, TestRunSummary } from '../types';
 
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
@@ -16,7 +17,7 @@ export class BaselineManager {
   private baselinePath: string;
 
   constructor(private workingDir: string) {
-    this.baselinePath = path.join(workingDir, '.code-agent', 'eval-baseline.json');
+    this.baselinePath = path.join(workingDir, CONFIG_DIR_NEW, 'eval-baseline.json');
   }
 
   async load(): Promise<EvalBaseline | null> {

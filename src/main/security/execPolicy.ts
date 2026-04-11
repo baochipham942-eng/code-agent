@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { getProjectConfigDir } from '../config/configPaths';
 
 const logger = createLogger('ExecPolicy');
 
@@ -52,7 +53,7 @@ export class ExecPolicyStore {
   private dirty = false;
 
   constructor(projectDir: string) {
-    this.filePath = path.join(projectDir, '.code-agent', 'exec-policy.json');
+    this.filePath = path.join(getProjectConfigDir(projectDir), 'exec-policy.json');
     this.load();
   }
 

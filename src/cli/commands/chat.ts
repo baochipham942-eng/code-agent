@@ -239,7 +239,7 @@ export const chatCommand = new Command('chat')
         output: isJsonMode ? undefined : process.stdout,
         terminal: !isJsonMode,
       });
-      let rl = createRl();
+      const rl = createRl();
 
       // ESC / Ctrl+C keypress handling
       if (!isJsonMode && process.stdin.isTTY) {
@@ -376,7 +376,7 @@ async function handleCommand(
   if (!localOnlyCommands.has(cmdLower)) {
     const registry = getCommandRegistry();
     const def = registry.get(cmdLower);
-    if (def && def.surfaces.includes('cli')) {
+    if (def?.surfaces.includes('cli')) {
       const cliOutput: CommandOutput = {
         info: (msg: string) => terminalOutput.info(msg),
         success: (msg: string) => terminalOutput.success(msg),

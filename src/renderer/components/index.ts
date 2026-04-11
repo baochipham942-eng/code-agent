@@ -27,7 +27,6 @@ export { ChatView } from './ChatView';
 // -----------------------------------------------------------------------------
 // Panel Components
 // -----------------------------------------------------------------------------
-export { TodoPanel } from './TodoPanel';
 export { WorkspacePanel } from './WorkspacePanel';
 
 // Planning panels (Gen 3+ persistent planning)

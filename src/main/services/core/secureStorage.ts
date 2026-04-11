@@ -9,6 +9,7 @@ import { app, safeStorage } from '../../platform';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { getUserConfigDir } from '../../config/configPaths';
 // 延迟加载 keytar，处理 native 模块版本不匹配的情况
 // CLI 模式下 keytar 为 Electron headers 编译，系统 Node.js 加载会 segfault（不是 JS 异常，try-catch 无法捕获）
 // 必须在 require 之前用环境变量判断，CLI 模式直接跳过
@@ -33,7 +34,7 @@ const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
 const KEYCHAIN_ACCOUNT_APIKEYS = 'api-keys'; // New: API keys in Keychain
 
 // Storage keys use dot notation by design (e.g., 'supabase.session')
-// eslint-disable-next-line @typescript-eslint/naming-convention
+ 
 interface SecureStorageData {
   // Auth tokens
   'supabase.access_token'?: string;
@@ -124,7 +125,7 @@ function resolveStoreBaseDir(): string {
     // Electron app path is unavailable in CLI mode.
   }
 
-  const dataDir = process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent');
+  const dataDir = process.env.CODE_AGENT_DATA_DIR || getUserConfigDir();
   fs.mkdirSync(dataDir, { recursive: true });
   return dataDir;
 }

@@ -11,7 +11,7 @@
  * 3. 查找第一个 `{` 到最后一个 `}` 之间的内容
  */
 export function extractJSON(text: string): unknown | null {
-  if (!text || !text.trim()) return null;
+  if (!text?.trim()) return null;
 
   // 策略 1：提取 ```json ... ``` 代码块
   const codeBlockMatch = text.match(/```json\s*\n?([\s\S]*?)\n?\s*```/);

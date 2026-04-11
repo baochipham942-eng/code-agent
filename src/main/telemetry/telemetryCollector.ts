@@ -245,7 +245,7 @@ export class TelemetryCollector {
   }
 
   endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) {
+    if (this.activeTurn?.id !== turnId) {
       logger.warn('[TelemetryCollector] endTurn: turnId mismatch', {
         expected: this.activeTurn?.id,
         received: turnId,
@@ -348,7 +348,7 @@ export class TelemetryCollector {
   // --------------------------------------------------------------------------
 
   recordModelCall(turnId: string, call: TelemetryModelCall): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) {
+    if (this.activeTurn?.id !== turnId) {
       logger.warn('[TelemetryCollector] recordModelCall: turnId mismatch', {
         expected: this.activeTurn?.id,
         received: turnId,
@@ -374,7 +374,7 @@ export class TelemetryCollector {
     index: number,
     parallel: boolean
   ): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) return;
+    if (this.activeTurn?.id !== turnId) return;
 
     const pending: PendingToolCall = {
       id: generateMessageId(),
@@ -396,7 +396,7 @@ export class TelemetryCollector {
     durationMs: number,
     output: string | undefined,
   ): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) return;
+    if (this.activeTurn?.id !== turnId) return;
 
     const pending = this.pendingToolCalls.get(toolCallId);
     if (!pending) return;

@@ -5,6 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { ErrorRecord, PlanningConfig } from './types';
+import { CONFIG_DIR_NEW } from '../config/configPaths';
 
 // ----------------------------------------------------------------------------
 // ErrorTracker
@@ -18,7 +19,7 @@ export class ErrorTracker {
   constructor(private config: PlanningConfig) {
     this.errorsPath = path.join(
       config.workingDirectory,
-      '.code-agent',
+      CONFIG_DIR_NEW,
       'plans',
       config.sessionId,
       'errors.md'

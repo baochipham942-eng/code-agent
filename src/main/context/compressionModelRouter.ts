@@ -5,6 +5,8 @@
 // L1-L3 and L6 layers are model-free (rule-based); L4/L5 require a model.
 // ============================================================================
 
+import { AGENT_DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants/models';
+
 export interface CompressionModelConfig {
   provider: string;
   model: string;
@@ -15,8 +17,8 @@ export interface CompressionModelRouterConfig {
 }
 
 const LAYER_MODEL_DEFAULTS: Record<string, CompressionModelConfig> = {
-  contextCollapse: { provider: 'zhipu', model: 'glm-4-flash' },
-  autocompact: { provider: 'moonshot', model: 'kimi-k2.5' },
+  contextCollapse: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+  autocompact: { ...AGENT_DEFAULT_MODEL },
 };
 
 const MODEL_FREE_LAYERS = new Set([

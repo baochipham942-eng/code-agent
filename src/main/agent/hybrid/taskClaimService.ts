@@ -134,7 +134,7 @@ export class TaskClaimService {
    */
   claim(taskId: string, agentId: string): ClaimableTask | null {
     const entry = this.tasks.get(taskId);
-    if (!entry || entry.status !== 'available') {
+    if (entry?.status !== 'available') {
       return null;
     }
 
@@ -156,7 +156,7 @@ export class TaskClaimService {
    */
   release(taskId: string, agentId: string): boolean {
     const entry = this.tasks.get(taskId);
-    if (!entry || entry.status !== 'claimed' || entry.claim?.agentId !== agentId) {
+    if (entry?.status !== 'claimed' || entry.claim?.agentId !== agentId) {
       return false;
     }
 

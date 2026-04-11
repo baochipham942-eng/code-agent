@@ -149,7 +149,7 @@ async function generatePptx(slides: StructuredSlide[], themeName: string, output
   const { registerSlideMasters } = await import('../slideMasters');
   const { fillStructuredSlide, selectMasterForStructuredSlide, resetLayoutRotation } = await import('../layouts');
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const PptxGenJS = require('pptxgenjs');
   const pptx = new PptxGenJS();
   const themeConfig = getThemeConfig(themeName);

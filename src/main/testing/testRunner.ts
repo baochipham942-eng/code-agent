@@ -205,7 +205,7 @@ export class TestRunner {
 
       // Stop on first failure if configured
       const lastResult = results[results.length - 1];
-      if (this.config.stopOnFailure && lastResult && lastResult.status === 'failed') {
+      if (this.config.stopOnFailure && lastResult?.status === 'failed') {
         logger.info('Stopping on first failure');
         break;
       }

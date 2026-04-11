@@ -405,7 +405,7 @@ export class PluginRegistry {
     }
 
     // Execute hooks in priority order
-    let result: PluginHookResult = { allow: true };
+    const result: PluginHookResult = { allow: true };
 
     for (const hook of matchingHooks) {
       try {

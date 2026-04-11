@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { CONFIG_DIR_NEW } from '../../../config/configPaths';
 import type { StructuredSlide, ListContent, Cards3Content, TimelineContent, ComparisonContent } from './slideSchemas';
 import type { SlideImage } from './types';
 import {
@@ -110,10 +111,10 @@ function scoreSlideForIllustration(slide: StructuredSlide, _index: number): numb
     if (content.steps && Array.isArray(content.steps)) {
       textParts.push(...content.steps.map((s: any) => `${s.title || ''} ${s.description || ''}`));
     }
-    if (content.left && content.left.points) {
+    if (content.left?.points) {
       textParts.push(...content.left.points);
     }
-    if (content.right && content.right.points) {
+    if (content.right?.points) {
       textParts.push(...content.right.points);
     }
   }
@@ -239,7 +240,7 @@ export async function generateSlideIllustrations(
   const fluxModel = resolveFluxModel();
 
   // Prepare output directory
-  const imgDir = outputDir || path.join(process.cwd(), '.code-agent', 'ppt-illustrations');
+  const imgDir = outputDir || path.join(process.cwd(), CONFIG_DIR_NEW, 'ppt-illustrations');
   if (!fs.existsSync(imgDir)) {
     fs.mkdirSync(imgDir, { recursive: true });
   }

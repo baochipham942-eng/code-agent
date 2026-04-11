@@ -5,12 +5,13 @@
 // Both developer and cowork modes now use the same terminal-style display.
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Archive } from 'lucide-react';
 import type { MessageBubbleProps } from './types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
+import { useMessageActionStore } from '../../../../stores/messageActionStore';
 
 // CompactionBlock 渲染组件（折叠摘要卡片）
 const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] }> = ({ message }) => {
@@ -48,6 +49,18 @@ const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] 
 
 // Main MessageBubble component - routes to appropriate display
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+  const editMessage = useMessageActionStore((s) => s.editMessage);
+  const regenerateMessage = useMessageActionStore((s) => s.regenerateMessage);
+
+  const handleEdit = useCallback(
+    (messageId: string, newContent: string) => editMessage(messageId, newContent),
+    [editMessage],
+  );
+  const handleRegenerate = useCallback(
+    (messageId: string) => regenerateMessage(messageId),
+    [regenerateMessage],
+  );
+
   // CompactionBlock: 渲染压缩摘要卡片
   if (message.compaction) {
     return <CompactionBlockDisplay message={message} />;
@@ -64,11 +77,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   }
 
   if (message.role === 'user') {
-    return <UserMessage message={message} />;
+    return <UserMessage message={message} onEdit={handleEdit} />;
   }
 
   // All assistant messages use the same terminal-style display
-  return <AssistantMessage message={message} />;
+  return <AssistantMessage message={message} onRegenerate={handleRegenerate} />;
 };
 
 // Re-export sub-components for direct use if needed

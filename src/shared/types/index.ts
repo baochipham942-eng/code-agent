@@ -13,6 +13,7 @@ export * from './session';
 export * from './workspace';
 export * from './planning';
 export * from './question';
+export * from './elicitation';
 export * from './agent';
 export * from './skill';
 export * from './agentSkill';

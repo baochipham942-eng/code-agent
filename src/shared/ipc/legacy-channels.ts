@@ -93,6 +93,10 @@ export const IPC_CHANNELS = {
   CONFIRM_ACTION_ASK: 'confirm-action:ask',
   CONFIRM_ACTION_RESPONSE: 'confirm-action:response',
 
+  // MCP Elicitation channels (server requests user input)
+  MCP_ELICITATION_REQUEST: 'mcp-elicitation:request',
+  MCP_ELICITATION_RESPONSE: 'mcp-elicitation:response',
+
   // Auth channels
   AUTH_GET_STATUS: 'auth:get-status',
   AUTH_SIGN_IN_EMAIL: 'auth:sign-in-email',

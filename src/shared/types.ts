@@ -88,3 +88,6 @@ export * from './types/appService';
 
 // Trace types
 export * from './types/trace';
+
+// Decision Trace types (Security decision chain transparency)
+export * from './types/decisionTrace';

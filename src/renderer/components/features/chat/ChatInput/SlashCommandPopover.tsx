@@ -7,9 +7,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Plus, Trash2, Archive, FileText, FolderOpen,
   BarChart2, Settings, Keyboard, HelpCircle,
+  Terminal, Cpu, Plug, Zap,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { initializeCommands, getCommandRegistry } from '@shared/commands';
+import type { CommandDefinition } from '@shared/commands';
 
 interface SlashCommand {
   id: string;
@@ -54,7 +57,21 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     currentSessionId,
   } = useSessionStore();
 
-  const allCommands: SlashCommand[] = useMemo(() => [
+  // Icon mapping for registry commands
+  const registryIconMap: Record<string, React.ReactNode> = useMemo(() => ({
+    clear: <Trash2 className="w-4 h-4" />,
+    help: <HelpCircle className="w-4 h-4" />,
+    config: <Settings className="w-4 h-4" />,
+    model: <Cpu className="w-4 h-4" />,
+    cost: <BarChart2 className="w-4 h-4" />,
+    compact: <Zap className="w-4 h-4" />,
+    agents: <Terminal className="w-4 h-4" />,
+    status: <BarChart2 className="w-4 h-4" />,
+    plugins: <Plug className="w-4 h-4" />,
+  }), []);
+
+  // GUI-only commands (operate on store/UI directly, not in registry)
+  const guiOnlyCommands: SlashCommand[] = useMemo(() => [
     {
       id: 'new',
       label: '新建会话',
@@ -70,6 +87,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: '⌘K',
       action: () => clearCurrentSession(),
+    },
+    {
+      id: 'help',
+      label: '帮助',
+      description: '查看帮助文档',
+      icon: <HelpCircle className="w-4 h-4" />,
+      action: () => window.open('https://github.com/anthropics/claude-code/issues', '_blank'),
     },
     {
       id: 'archive',
@@ -124,19 +148,38 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <Keyboard className="w-4 h-4" />,
       action: () => setShowSettings(true),
     },
-    {
-      id: 'help',
-      label: '帮助',
-      description: '查看帮助文档',
-      icon: <HelpCircle className="w-4 h-4" />,
-      action: () => window.open('https://github.com/anthropics/claude-code/issues', '_blank'),
-    },
   ], [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
     setShowEvalCenter,
   ]);
+
+  // Merge registry commands (gui surface) with GUI-only commands
+  const allCommands: SlashCommand[] = useMemo(() => {
+    initializeCommands();
+    const registry = getCommandRegistry();
+    const registryDefs = registry.list('gui');
+    const guiOnlyIds = new Set(guiOnlyCommands.map(c => c.id));
+
+    // Convert registry commands to SlashCommand format (skip those already in GUI-only)
+    const fromRegistry: SlashCommand[] = registryDefs
+      .filter((def: CommandDefinition) => !guiOnlyIds.has(def.id))
+      .map((def: CommandDefinition) => ({
+        id: def.id,
+        label: def.name,
+        description: def.description,
+        icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
+        action: () => {
+          // Registry command execution in GUI: log to console for now
+          // Full IPC execution will be added in a future phase
+          console.log(`[Command] /${def.id} — ${def.description}`);
+        },
+      }));
+
+    // GUI-only first, then registry commands
+    return [...guiOnlyCommands, ...fromRegistry];
+  }, [guiOnlyCommands, registryIconMap]);
 
   const filtered = useMemo(() => {
     if (!filter) return allCommands;

@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.0 (对应 v0.16.57)
-> 日期: 2026-04-01
+> 版本: 9.1 (对应 v0.16.59)
+> 日期: 2026-04-11
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -49,7 +49,7 @@
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | Kimi K2.5 (主要), 智谱/DeepSeek/OpenAI (备用) |
+| AI 模型 | Kimi K2.5 (主要), 智谱/DeepSeek/OpenAI/火山引擎 (备用), Local/Ollama (本地) |
 | 本地桥接 | packages/bridge (localhost:9527) |
 
 ### 目录结构
@@ -78,8 +78,8 @@ code-agent/
 │   │   ├── errors/             # 统一错误处理（分类、恢复引擎、自动学习）
 │   │   ├── events/             # 事件三通道（InternalEventStore 持久化 + ControlStream 实时 + Mailbox 协调）
 │   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook）
-│   │   ├── ipc/                # IPC handler 层（前后端通信桥梁）
-│   │   ├── model/              # ModelRouter, Provider, 自适应路由, 智能 Fallback, 请求规范化中间件
+│   │   ├── ipc/                # IPC handler 层（前后端通信桥梁，含 provider.ipc.ts 连通性测试+诊断+健康状态）
+│   │   ├── model/              # ModelRouter, Provider, 自适应路由, 智能 Fallback, HealthMonitor, 请求规范化中间件
 │   │   ├── permissions/        # 权限矩阵（GuardFabric 多源竞争 + PolicyEngine + 拓扑感知）
 │   │   ├── platform/           # 平台抽象层（Tauri/Electron/Web 差异封装）
 │   │   ├── prompts/            # Prompt 矩阵（4 Profile × 5 层 Overlay + 缓存稳定性）
@@ -152,6 +152,19 @@ code-agent/
 > **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。TOOL_ALIASES 兼容层已删除（v0.16.56），所有代码统一使用 PascalCase。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **Phase 3 文档编辑统一**: DocEdit 统一入口 + ExcelAutomate(edit) + ppt_edit 加固。富文档从全量生成升级为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### v0.16.59 竞品追赶 (2026-04-11)
+
+6 条并行工作流，17 commits，61 files，+3249 lines：
+
+| 模块 | 新增能力 |
+|------|---------|
+| Provider 系统 | 火山引擎 + 本地模型 8 扩充 + Health Monitor 四状态机 + 连通性测试 |
+| 错误处理 | 4 类新错误分类 + 可操作化 toast + 流式分阶段反馈 + 诊断面板 |
+| 会话控制 | 推理强度 4 级 + Code/Plan/Ask 模式 + 暂停/恢复 + 检查点 Fork |
+| 聊天显示 | 工具自动分组 + Thinking 摘要 + 消息编辑/重试 + Artifact 追踪 |
+| 设置导航 | 设置搜索 + 会话搜索/项目分组 + MCP 添加 UI + 权限模式切换 |
+| 安全 | postMessage 校验 + CSP + prompt injection 防护 + 图表路径统一 |
 
 ---
 

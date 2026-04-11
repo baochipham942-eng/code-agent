@@ -68,12 +68,73 @@ export const statusCommand: CommandDefinition = {
 export const pluginsCommand: CommandDefinition = {
   id: 'plugins',
   name: '插件',
-  description: '管理已安装插件',
+  description: '列出并管理已安装扩展（插件 + 技能）',
   category: 'tools',
   surfaces: ['cli', 'gui'],
-  handler: async (ctx) => {
-    ctx.output.info('插件管理开发中');
-    return { success: true, message: '插件管理开发中' };
+  args: [
+    { name: 'subcommand', description: 'list (默认) | enable <id> | disable <id> | reload [id]', required: false },
+  ],
+  handler: async (ctx, args) => {
+    try {
+      const { getExtensionOpsService } = await import(
+        '../../../main/services/extensionOpsService'
+      );
+      const svc = getExtensionOpsService();
+
+      const sub = args[0]?.toLowerCase() ?? 'list';
+
+      // -- list ---------------------------------------------------------------
+      if (sub === 'list' || args.length === 0) {
+        const extensions = await svc.list();
+        if (extensions.length === 0) {
+          ctx.output.info('No extensions installed');
+          return { success: true, data: { count: 0 } };
+        }
+
+        const lines: string[] = [`Extensions (${extensions.length})`];
+        for (const ext of extensions) {
+          const badge = ext.status === 'active' ? '+' : ext.status === 'error' ? '!' : '-';
+          const ver = ext.version ? ` v${ext.version}` : '';
+          const src = ext.source !== 'local' ? ` [${ext.source}]` : '';
+          const err = ext.error ? ` (${ext.error})` : '';
+          lines.push(`  ${badge} ${ext.id}  ${ext.type}  ${ext.status}${ver}${src}${err}`);
+        }
+        ctx.output.info(lines.join('\n'));
+        return { success: true, data: { count: extensions.length } };
+      }
+
+      // -- enable / disable ---------------------------------------------------
+      if (sub === 'enable' || sub === 'disable') {
+        const id = args[1];
+        if (!id) {
+          ctx.output.error(`Usage: /plugins ${sub} <id>`);
+          return { success: false };
+        }
+        if (sub === 'enable') {
+          await svc.enable(id);
+          ctx.output.success(`Enabled: ${id}`);
+        } else {
+          await svc.disable(id);
+          ctx.output.success(`Disabled: ${id}`);
+        }
+        return { success: true };
+      }
+
+      // -- reload -------------------------------------------------------------
+      if (sub === 'reload') {
+        const id = args[1]; // optional
+        await svc.reload(id);
+        ctx.output.success(id ? `Reloaded: ${id}` : 'All extensions reloaded');
+        return { success: true };
+      }
+
+      ctx.output.error(`Unknown subcommand: ${sub}. Use list | enable | disable | reload`);
+      return { success: false };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.output.error(`Plugin operation failed: ${message}`);
+      return { success: false, message };
+    }
   },
 };
 

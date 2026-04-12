@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getTask, listTasks } from './taskStore';
+import { getTask, listTasks } from '../../services/planning/taskStore';
 
 export const taskGetTool: Tool = {
   name: 'task_get',

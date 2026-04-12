@@ -19,7 +19,7 @@ import type {
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
-import { getToolSearchService } from '../../tools/search';
+import { getToolSearchService } from '../../services/toolSearch';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
@@ -69,7 +69,7 @@ import { GoalTracker } from '../../agent/goalTracker';
 import { NudgeManager } from '../../agent/nudgeManager';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../agent/activeAgentContext';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
-import { getIncompleteTasks } from '../../tools/planning/taskStore';
+import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
   parseTodos,
   mergeTodos,

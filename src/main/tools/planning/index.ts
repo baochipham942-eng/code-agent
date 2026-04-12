@@ -20,7 +20,7 @@ export { taskListTool } from './taskList';
 export { taskUpdateTool } from './taskUpdate';
 
 // Task Store utilities
-export { listTasks, getIncompleteTasks, clearTasks } from './taskStore';
+export { listTasks, getIncompleteTasks, clearTasks } from '../../services/planning/taskStore';
 
 // Unified tools (Phase 2)
 export { TaskManagerTool } from './TaskManagerTool';

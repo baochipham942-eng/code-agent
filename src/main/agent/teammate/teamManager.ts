@@ -22,7 +22,7 @@ import {
 import {
   exportTasks,
   importTasks,
-} from '../../tools/planning/taskStore';
+} from '../../services/planning/taskStore';
 import type { SharedContext } from '../parallelAgentCoordinator';
 
 const logger = createLogger('TeamManager');

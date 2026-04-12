@@ -4,7 +4,7 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { SessionTaskPriority } from '../../../shared/contract/planning';
-import { createTask, listTasks } from './taskStore';
+import { createTask, listTasks } from '../../services/planning/taskStore';
 
 export const taskCreateTool: Tool = {
   name: 'task_create',

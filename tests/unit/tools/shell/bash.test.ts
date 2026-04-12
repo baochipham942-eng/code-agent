@@ -16,7 +16,7 @@ vi.mock('../../../../src/main/tools/dataFingerprint', () => ({
   dataFingerprintStore: { recordFact: () => {} },
 }));
 
-vi.mock('../../../../src/main/tools/shell/codexSandbox', () => ({
+vi.mock('../../../../src/main/services/codex/codexSandbox', () => ({
   isCodexSandboxEnabled: () => false,
   runInCodexSandbox: () => Promise.resolve({ success: false }),
 }));

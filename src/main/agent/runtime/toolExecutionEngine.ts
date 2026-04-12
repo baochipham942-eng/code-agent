@@ -61,7 +61,7 @@ import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
 import { NudgeManager } from '../../agent/nudgeManager';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
-import { getIncompleteTasks } from '../../tools/planning/taskStore';
+import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
   parseTodos,
   mergeTodos,

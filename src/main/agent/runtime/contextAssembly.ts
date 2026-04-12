@@ -34,6 +34,7 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { isProtocolExposeEnabled, getPocToolDefinitions } from '../../tools/protocolRegistry';
 
 // Import refactored modules
 import type {
@@ -213,6 +214,14 @@ export class ContextAssembly {
       // 传统模式：发送所有工具
       tools = this.ctx.toolRegistry.getToolDefinitions();
       logger.debug('Tools:', tools.map((t: any) => t.name));
+    }
+
+    // P0-5 B 阶段：env 命中时把 POC schema 暴露给 LLM
+    // 注意：会改变 prompt cache 命中（tools 列表变了），仅 dev/eval 用
+    if (isProtocolExposeEnabled()) {
+      const pocDefs = getPocToolDefinitions();
+      tools = [...tools, ...pocDefs];
+      logger.debug(`Tools (POC exposed): +${pocDefs.length} = ${tools.length} total`);
     }
 
     let modelMessages = await this.buildModelMessages();

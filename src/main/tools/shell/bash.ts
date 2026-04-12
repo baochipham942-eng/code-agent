@@ -13,7 +13,7 @@ import { getShellPath } from '../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../dataFingerprint';
 import { createSanitizedEnv } from '../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../utils/truncate';
-import { isCodexSandboxEnabled, runInCodexSandbox } from './codexSandbox';
+import { isCodexSandboxEnabled, runInCodexSandbox } from '../../services/codex/codexSandbox';
 import { isKnownSafeCommand } from '../../security/commandSafety';
 
 const execAsync = promisify(exec);

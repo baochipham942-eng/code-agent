@@ -160,7 +160,7 @@ vi.mock('../../../src/main/agent/structuredOutput', () => ({
   generateFormatCorrectionPrompt: vi.fn().mockReturnValue('correction prompt'),
 }));
 
-vi.mock('../../../src/main/tools/planning/taskStore', () => ({
+vi.mock('../../../src/main/services/planning/taskStore', () => ({
   getIncompleteTasks: vi.fn().mockReturnValue([]),
 }));
 
@@ -309,7 +309,7 @@ vi.mock('../../../src/main/memory/continuousLearningService', () => ({
   getContinuousLearningService: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/search', () => ({
+vi.mock('../../../src/main/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 

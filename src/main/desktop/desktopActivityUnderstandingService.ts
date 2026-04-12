@@ -24,7 +24,7 @@ import type { MemoryRecord } from '../services/core/repositories';
 import { getEventBus } from '../events/eventBus';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import { createTask, listTasks, updateTask } from '../tools/planning/taskStore';
+import { createTask, listTasks, updateTask } from '../services/planning/taskStore';
 
 const logger = createLogger('DesktopActivityUnderstanding');
 

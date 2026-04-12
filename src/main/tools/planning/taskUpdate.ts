@@ -4,7 +4,7 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../desktop/desktopActivityUnderstandingService';
-import { updateTask, getTask, listTasks } from './taskStore';
+import { updateTask, getTask, listTasks } from '../../services/planning/taskStore';
 
 export const taskUpdateTool: Tool = {
   name: 'task_update',

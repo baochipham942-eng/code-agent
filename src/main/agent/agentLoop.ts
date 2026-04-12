@@ -15,7 +15,7 @@ import type { StructuredOutputConfig, StructuredOutputResult } from './structure
 import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
 import type { ToolRegistryLike } from '../tools/types';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import { getToolSearchService } from '../tools/search';
+import { getToolSearchService } from '../services/toolSearch';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
@@ -60,7 +60,7 @@ import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
 import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
-import { getIncompleteTasks } from '../tools/planning/taskStore';
+import { getIncompleteTasks } from '../services/planning/taskStore';
 import {
   parseTodos,
   mergeTodos,

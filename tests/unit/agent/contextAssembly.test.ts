@@ -176,7 +176,7 @@ vi.mock('../../../src/main/agent/todoParser', () => ({
   clearSessionTodos: vi.fn(),
 }));
 
-vi.mock('../../../src/main/tools/planning/taskStore', () => ({
+vi.mock('../../../src/main/services/planning/taskStore', () => ({
   getIncompleteTasks: vi.fn().mockReturnValue([]),
 }));
 

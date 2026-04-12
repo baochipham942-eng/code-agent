@@ -27,7 +27,7 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { detectCodexCLI } from '../tools/shell/codexSandbox';
+import { detectCodexCLI } from '../services/codex/codexSandbox';
 import { SYNC, UPDATE, CLOUD, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../events';

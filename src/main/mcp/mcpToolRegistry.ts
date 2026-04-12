@@ -6,7 +6,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { MCP_TIMEOUTS } from '../../shared/constants';
-import { getToolSearchService } from '../tools/search';
+import { getToolSearchService } from '../services/toolSearch';
 import type {
   MCPTool,
   MCPToolAnnotations,

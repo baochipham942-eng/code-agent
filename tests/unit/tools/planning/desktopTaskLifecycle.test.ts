@@ -6,7 +6,7 @@ vi.mock('electron', () => ({
 }));
 
 import type { ToolContext } from '../../../../src/main/tools/types';
-import { createTask, clearTasks } from '../../../../src/main/tools/planning/taskStore';
+import { createTask, clearTasks } from '../../../../src/main/services/planning/taskStore';
 
 const desktopActivityMocks = vi.hoisted(() => ({
   recordTodoFeedbackForTask: vi.fn(),

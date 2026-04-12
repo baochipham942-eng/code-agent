@@ -7,7 +7,7 @@ import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } f
 import { recordWorkspaceActivityFeedback, clearWorkspaceActivityFeedback } from '../../desktop/workspaceActivitySearchService';
 import type { PlanningService, TaskStep, TaskStepStatus, TaskPhaseStatus } from '../../planning';
 import { WORKSPACE_RECOVERY_PHASE_TITLE } from '../../planning/recoveredWorkOrchestrator';
-import { listTasks } from './taskStore';
+import { listTasks } from '../../services/planning/taskStore';
 
 function computeWorkspacePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
   if (steps.length === 0) return 'pending';

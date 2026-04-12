@@ -69,7 +69,7 @@ import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
-import { getIncompleteTasks } from '../../tools/planning/taskStore';
+import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
   parseTodos,
   mergeTodos,

@@ -11,7 +11,7 @@ import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
-import { getToolSearchService } from '../../tools/search';
+import { getToolSearchService } from '../toolSearch';
 import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');

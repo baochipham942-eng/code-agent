@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolExecutionResult, ToolContext } from '../types';
-import { getToolSearchService } from './toolSearchService';
+import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('tool_search');

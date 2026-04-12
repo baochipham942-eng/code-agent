@@ -16,7 +16,7 @@ import { join } from 'path';
 import { app } from '../../platform';
 import { getMCPClient } from '../../mcp/mcpClient';
 import { CODEX_SANDBOX } from '../../../shared/constants';
-import { createLogger } from '../../services/infra/logger';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CodexSandbox');
 

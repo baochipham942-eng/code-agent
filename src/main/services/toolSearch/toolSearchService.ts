@@ -10,7 +10,7 @@ import type {
   ToolSearchQueryMode,
 } from '../../../shared/contract/toolSearch';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName } from './deferredTools';
-import { createLogger } from '../../services/infra/logger';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('ToolSearchService');
 

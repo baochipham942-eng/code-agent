@@ -215,6 +215,112 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./shell/gitWorktree')).gitWorktreeModule,
   );
 
+  // ── batch 3: search/skill/lsp wrapper 模式 ────────────────────────────
+  registry.register(
+    {
+      name: 'ToolSearch',
+      description: 'Search for or select deferred tools to make them available.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          max_results: { type: 'number' },
+        },
+        required: ['query'],
+      },
+      category: 'fs',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./search/toolSearch')).toolSearchModule,
+  );
+
+  registry.register(
+    {
+      name: 'SkillCreate',
+      description: '创建新的可复用 skill。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string' },
+          content: { type: 'string' },
+          scope: { type: 'string' },
+          allowedTools: { type: 'string' },
+        },
+        required: ['name', 'description', 'content'],
+      },
+      category: 'skill',
+      permissionLevel: 'write',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./skill/skillCreate')).skillCreateModule,
+  );
+
+  registry.register(
+    {
+      name: 'Skill',
+      description: '执行已注册的 skill',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string' },
+          args: { type: 'string' },
+        },
+        required: ['command'],
+      },
+      category: 'skill',
+      permissionLevel: 'read',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./skill/skill')).skillModule,
+  );
+
+  registry.register(
+    {
+      name: 'diagnostics',
+      description: 'Query LSP diagnostics for a file or the entire project.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string' },
+          severity_filter: { type: 'string', enum: ['error', 'warning', 'all'] },
+        },
+        required: [],
+      },
+      category: 'lsp',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./lsp/diagnostics')).diagnosticsModule,
+  );
+
+  registry.register(
+    {
+      name: 'lsp',
+      description: 'LSP code intelligence operations (goToDefinition, findReferences, hover, ...).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          operation: { type: 'string' },
+          file_path: { type: 'string' },
+          line: { type: 'number' },
+          character: { type: 'number' },
+        },
+        required: ['operation', 'file_path', 'line', 'character'],
+      },
+      category: 'lsp',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./lsp/lsp')).lspModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

@@ -1,10 +1,14 @@
 // ============================================================================
-// planning/ batch — 16 工具的 wrapper 模式实现
+// planning/ batch — 13 工具的 wrapper 模式实现
 //
 // 部分工具依赖 ctx.planningService（plan_read/plan_update/findings_write/
 // plan_recover_recent_work）。我们的 buildLegacyCtxFromProtocol 把
 // ctx.planningService(opaque) 透传到 legacy ctx.planningService —— 验证
 // opaque service handle 模式在生产工具上能跑通。
+//
+// Batch B1 (P0-6.3) 把 enter_plan_mode / exit_plan_mode / PlanMode 迁移到
+// 原生 ToolModule（见同目录 enterPlanMode.ts / exitPlanMode.ts /
+// planModeFacade.ts），这里不再 wrap 这三个工具。
 // ============================================================================
 
 import { planRecoverRecentWorkTool } from '../../planning/planRecoverRecentWork';
@@ -18,9 +22,6 @@ import { taskGetTool } from '../../planning/taskGet';
 import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { taskUpdateTool } from '../../planning/taskUpdate';
 import { TaskManagerTool } from '../../planning/TaskManagerTool';
-import { enterPlanModeTool } from '../../planning/enterPlanMode';
-import { exitPlanModeTool } from '../../planning/exitPlanMode';
-import { PlanModeTool } from '../../planning/PlanModeTool';
 import { findingsWriteTool } from '../../planning/findingsWrite';
 import { taskTool } from '../../planning/task';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
@@ -52,11 +53,10 @@ export const planRecoverRecentWorkModule = wrapLegacyTool(planRecoverRecentWorkT
 export const planUpdateModule = wrapLegacyTool(planUpdateTool, PLAN_WRITE);
 export const findingsWriteModule = wrapLegacyTool(findingsWriteTool, PLAN_WRITE);
 
-// ── 计划 facade & mode ──
+// ── 计划 facade ──
+// plan_mode facade (PlanMode / enter_plan_mode / exit_plan_mode) 已迁移到
+// native ToolModule（见 planModeFacade.ts / enterPlanMode.ts / exitPlanMode.ts）
 export const planModule = wrapLegacyTool(PlanTool, PLAN_WRITE);
-export const planModeModule = wrapLegacyTool(PlanModeTool, PLAN_WRITE);
-export const enterPlanModeModule = wrapLegacyTool(enterPlanModeTool, PLAN_WRITE);
-export const exitPlanModeModule = wrapLegacyTool(exitPlanModeTool, PLAN_WRITE);
 
 // ── 任务管理 ──
 export const taskListModule = wrapLegacyTool(taskListTool, PLAN_READ);

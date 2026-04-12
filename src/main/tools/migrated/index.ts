@@ -722,6 +722,109 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/wrappers')).exploreModule,
   );
 
+  // ── batch 8: network/ wrapper（31 个，最终批）────────────────────────────
+  // 全部用最小 schema 占位，真实 schema 由 ToolModule.schema 提供（resolve 时校验）
+  // 但 register 接口要求 schema 立即提供，所以这里给最小化的兼容定义
+  const netSchema = (props: Record<string, { type: string }> = {}, required: string[] = []) => ({
+    type: 'object' as const,
+    properties: props,
+    required,
+  });
+  const REGISTER_NET = (
+    name: string,
+    desc: string,
+    perm: 'read' | 'write' | 'network',
+    importFn: import('../../protocol/tools').ToolLoader,
+    readOnly = false,
+  ) => {
+    registry.register(
+      {
+        name,
+        description: desc,
+        inputSchema: netSchema(),
+        category: 'network',
+        permissionLevel: perm,
+        readOnly,
+        allowInPlanMode: readOnly,
+      },
+      importFn,
+    );
+  };
+
+  // HTTP / Web fetching (4)
+  REGISTER_NET('web_fetch', 'Fetch a URL and extract content via AI.', 'network',
+    async () => (await import('./network/wrappers')).webFetchModule, true);
+  REGISTER_NET('WebFetch', 'Unified web fetch facade (action: fetch | request).', 'network',
+    async () => (await import('./network/wrappers')).webFetchUnifiedModule, true);
+  REGISTER_NET('WebSearch', 'Search the web via Perplexity/Exa/Tavily.', 'network',
+    async () => (await import('./network/wrappers')).webSearchModule, true);
+  REGISTER_NET('http_request', 'Generic HTTP request (GET/POST/PUT/DELETE).', 'network',
+    async () => (await import('./network/wrappers')).httpRequestModule, false);
+
+  // Document reading (4)
+  REGISTER_NET('ReadDocument', 'Unified document reader facade (PDF/DOCX/XLSX).', 'read',
+    async () => (await import('./network/wrappers')).readDocumentModule, true);
+  REGISTER_NET('read_docx', 'Read text content from a .docx file.', 'read',
+    async () => (await import('./network/wrappers')).readDocxModule, true);
+  REGISTER_NET('read_pdf', 'Read text content from a .pdf file.', 'read',
+    async () => (await import('./network/wrappers')).readPdfModule, true);
+  REGISTER_NET('read_xlsx', 'Read tabular data from a .xlsx file.', 'read',
+    async () => (await import('./network/wrappers')).readXlsxModule, true);
+
+  // Document generation (6)
+  REGISTER_NET('docx_generate', 'Generate a .docx document.', 'write',
+    async () => (await import('./network/wrappers')).docxGenerateModule, false);
+  REGISTER_NET('excel_generate', 'Generate a .xlsx spreadsheet.', 'write',
+    async () => (await import('./network/wrappers')).excelGenerateModule, false);
+  REGISTER_NET('pdf_generate', 'Generate a .pdf document.', 'write',
+    async () => (await import('./network/wrappers')).pdfGenerateModule, false);
+  REGISTER_NET('pdf_compress', 'Compress an existing PDF.', 'write',
+    async () => (await import('./network/wrappers')).pdfCompressModule, false);
+  REGISTER_NET('PdfAutomate', 'Unified PDF facade (generate/compress/read/merge/split/extract_tables/convert_to_docx).', 'write',
+    async () => (await import('./network/wrappers')).pdfAutomateModule, false);
+  REGISTER_NET('xlwings_execute', 'Run xlwings Python script against a workbook.', 'write',
+    async () => (await import('./network/wrappers')).xlwingsExecuteModule, false);
+
+  // Media (8)
+  REGISTER_NET('image_generate', 'Generate an image (DALL-E / Stable Diffusion / etc.).', 'network',
+    async () => (await import('./network/wrappers')).imageGenerateModule, false);
+  REGISTER_NET('image_process', 'Process an image (resize/crop/rotate/format).', 'write',
+    async () => (await import('./network/wrappers')).imageProcessModule, false);
+  REGISTER_NET('image_analyze', 'Analyze an image with vision models.', 'network',
+    async () => (await import('./network/wrappers')).imageAnalyzeModule, true);
+  REGISTER_NET('image_annotate', 'Annotate an image (boxes, arrows, text).', 'write',
+    async () => (await import('./network/wrappers')).imageAnnotateModule, false);
+  REGISTER_NET('video_generate', 'Generate a video clip from prompt.', 'network',
+    async () => (await import('./network/wrappers')).videoGenerateModule, false);
+  REGISTER_NET('text_to_speech', 'Convert text to speech audio.', 'network',
+    async () => (await import('./network/wrappers')).textToSpeechModule, false);
+  REGISTER_NET('speech_to_text', 'Transcribe audio to text via cloud ASR.', 'network',
+    async () => (await import('./network/wrappers')).speechToTextModule, true);
+  REGISTER_NET('local_speech_to_text', 'Transcribe audio to text via local ASR.', 'read',
+    async () => (await import('./network/wrappers')).localSpeechToTextModule, true);
+
+  // Visual helpers (4)
+  REGISTER_NET('chart_generate', 'Generate a chart image (bar/line/pie/scatter).', 'write',
+    async () => (await import('./network/wrappers')).chartGenerateModule, false);
+  REGISTER_NET('mermaid_export', 'Export a Mermaid diagram to SVG/PNG.', 'write',
+    async () => (await import('./network/wrappers')).mermaidExportModule, false);
+  REGISTER_NET('qrcode_generate', 'Generate a QR code image.', 'write',
+    async () => (await import('./network/wrappers')).qrcodeGenerateModule, false);
+  REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
+    async () => (await import('./network/wrappers')).screenshotPageModule, true);
+
+  // External integrations (5)
+  REGISTER_NET('jira', 'Jira integration (search/create/update/comment).', 'network',
+    async () => (await import('./network/wrappers')).jiraModule, false);
+  REGISTER_NET('github_pr', 'GitHub PR management (create/view/list/comment/review/merge).', 'network',
+    async () => (await import('./network/wrappers')).githubPrModule, false);
+  REGISTER_NET('twitter_fetch', 'Fetch tweets / threads / user timelines.', 'network',
+    async () => (await import('./network/wrappers')).twitterFetchModule, true);
+  REGISTER_NET('youtube_transcript', 'Fetch transcript of a YouTube video.', 'network',
+    async () => (await import('./network/wrappers')).youtubeTranscriptModule, true);
+  REGISTER_NET('academic_search', 'Search academic papers (arxiv/openalex/semanticscholar).', 'network',
+    async () => (await import('./network/wrappers')).academicSearchModule, true);
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

@@ -40,7 +40,6 @@ export interface PRLink {
 export interface Session {
   id: string;
   title: string;
-  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
   createdAt: number;

@@ -11,8 +11,9 @@ import {
   MODE_CONFIGS,
   getPermissionModeManager,
 } from '../permissions/modes';
-import { getPolicyEngine, type PolicyRequest } from '../permissions/policyEngine';
-import type { AgentDefinition, PermissionConstraints } from './types';
+import type { PolicyRequest } from '../permissions/policyEngine';
+import { getGuardFabric, type ExecutionTopology, type GuardDecision } from '../permissions/guardFabric';
+import type { AgentDefinition, AgentExecutionMode, PermissionConstraints } from './types';
 
 const logger = createLogger('SubAgentPermissions');
 
@@ -55,6 +56,9 @@ export interface SubAgentPermissionContext {
 
   /** Session ID for audit */
   sessionId?: string;
+
+  /** Agent ID (for GuardFabric tracing) */
+  agentId?: string;
 }
 
 /**
@@ -89,6 +93,18 @@ const MODE_HIERARCHY: PermissionMode[] = [
   'plan',               // (4)
   'dontAsk',            // Most restrictive (5)
 ];
+
+/**
+ * Map AgentExecutionMode to ExecutionTopology for GuardFabric
+ */
+function mapTopology(mode: AgentExecutionMode): ExecutionTopology {
+  switch (mode) {
+    case 'autonomous': return 'async_agent';
+    case 'supervised': return 'coordinator';
+    case 'interactive': return 'teammate';
+    default: return 'main';
+  }
+}
 
 /**
  * Get the restrictiveness level of a mode (higher = more restrictive)
@@ -322,20 +338,28 @@ export class SubAgentPermissionManager {
       }
     }
 
-    // Use policy engine with effective mode
-    const policyEngine = getPolicyEngine();
-    const policyResult = policyEngine.evaluate({
-      ...request,
+    // Use GuardFabric for multi-source permission coordination
+    const topology = mapTopology(context.agentDefinition.executionMode);
+    const guardDecision: GuardDecision = getGuardFabric().evaluate({
+      tool: request.tool || request.description || '',
+      args: { command: (request as PolicyRequest).command, filePath: (request as PolicyRequest).filePath },
+      topology,
       sessionId: context.sessionId,
-    } as PolicyRequest);
+      agentId: context.agentId,
+    });
+
+    // Map GuardFabric verdict to PermissionAction
+    const guardAction: PermissionAction =
+      guardDecision.verdict === 'allow' ? 'allow'
+        : guardDecision.verdict === 'deny' ? 'deny'
+        : 'prompt';
 
     // Apply mode contraction if needed
-    const modeManager = getPermissionModeManager();
     const modeConfig = MODE_CONFIGS[effectiveMode];
     const modeAction = modeConfig.defaults[request.level];
 
     // Take the more restrictive action
-    let finalAction = policyResult.action;
+    let finalAction = guardAction;
     const actionOrder: Record<PermissionAction, number> = { allow: 0, prompt: 1, deny: 2 };
 
     if (actionOrder[modeAction] > actionOrder[finalAction]) {
@@ -351,11 +375,16 @@ export class SubAgentPermissionManager {
       appliedConstraints.push(`Permissions contracted from '${originalMode}' to '${effectiveMode}'`);
     }
 
+    // Record topology-based decisions
+    if (guardDecision.source === 'topology') {
+      appliedConstraints.push(`Topology rule: ${guardDecision.reason}`);
+    }
+
     return {
       action: finalAction,
       effectiveMode,
       contracted,
-      reason: policyResult.reason,
+      reason: guardDecision.reason,
       appliedConstraints,
     };
   }

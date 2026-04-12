@@ -13,7 +13,6 @@ export {
 
 export {
   getFeatureFlagService,
-  isGen8Enabled,
   isCloudAgentEnabled,
   isMemoryEnabled,
   isComputerUseEnabled,

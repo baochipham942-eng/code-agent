@@ -350,7 +350,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../../shared/constants');
             dbForSession.createSessionWithId(sessionId, {
               title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
-              generationId: 'gen8',
               modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
             });
           }
@@ -420,7 +419,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             id: sessionId,
             user_id: sb.userId,
             title,
-            generation_id: 'gen8',
             model_provider: DEFAULT_PROVIDER,
             model_name: DEFAULT_MODELS.chat,
             created_at: Date.now(),

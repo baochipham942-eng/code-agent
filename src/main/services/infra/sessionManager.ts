@@ -32,7 +32,6 @@ export interface SessionWithMessages extends Session {
 
 export interface SessionCreateOptions {
   title?: string;
-  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
 }
@@ -85,7 +84,6 @@ export class SessionManager implements Disposable {
     const session: Session = {
       id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       title: options.title || this.generateSessionTitle(),
-      generationId: options.generationId,
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
       createdAt: now,
@@ -307,7 +305,6 @@ export class SessionManager implements Disposable {
           // model_provider 从云端来是 string，需要断言为 ModelProvider
           db.createSessionWithId(cloudSession.id, {
             title: cloudSession.title,
-            generationId: cloudSession.generation_id,
             modelConfig: {
               provider: cloudSession.model_provider as ModelConfig['provider'],
               model: cloudSession.model_name,
@@ -322,7 +319,6 @@ export class SessionManager implements Disposable {
           // 云端更新，更新本地元数据（保留云端原始时间戳）
           db.updateSession(cloudSession.id, {
             title: cloudSession.title,
-            generationId: cloudSession.generation_id,
             modelConfig: {
               provider: cloudSession.model_provider as ModelConfig['provider'],
               model: cloudSession.model_name,
@@ -750,7 +746,6 @@ export class SessionManager implements Disposable {
     const session: Session = {
       id: newId,
       title: data.title,
-      generationId: data.generationId,
       modelConfig: data.modelConfig,
       workingDirectory: data.workingDirectory,
       createdAt: now,

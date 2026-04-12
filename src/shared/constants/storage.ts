@@ -18,6 +18,10 @@ export const MEMORY = {
   EMBEDDING_CACHE_TTL: 10 * 60 * 1000,
   /** Deduplication Jaccard similarity threshold */
   DEDUP_SIMILARITY_THRESHOLD: 0.85,
+  /** Memory record time decay half-life in days (longer than relations, memories are more durable) */
+  RECORD_DECAY_DAYS: 90,
+  /** Minimum memory confidence after decay */
+  RECORD_MIN_CONFIDENCE: 0.1,
 } as const;
 
 /** 向量存储配置 */

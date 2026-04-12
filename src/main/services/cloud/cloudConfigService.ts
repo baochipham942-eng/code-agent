@@ -34,7 +34,6 @@ const logger = createLogger('CloudConfigService');
  * const service = getCloudConfigService();
  * await service.initialize();
  *
- * const prompt = service.getPrompt('gen4');
  * const skills = service.getSkills();
  * ```
  *
@@ -116,14 +115,6 @@ export class CloudConfigService {
 
     // 没有缓存，返回内置配置
     return getBuiltinConfig();
-  }
-
-  /**
-   * 获取指定代际的 System Prompt
-   */
-  getPrompt(genId: string): string {
-    const config = this.getConfig();
-    return config.prompts[genId] || '';
   }
 
   /**

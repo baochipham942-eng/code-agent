@@ -15,7 +15,6 @@ import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
  * 提供便捷的 Feature Flag 检查接口，底层数据来自 CloudConfigService。
  *
  * 支持的 Flags：
- * - enableGen8：是否启用 Gen8 自我进化工具
  * - enableCloudAgent：是否启用云端 Agent
  * - maxIterations：Agent 最大迭代次数
  * - enableMemory：是否启用记忆系统
@@ -24,10 +23,6 @@ import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
  * @example
  * ```typescript
  * const flags = getFeatureFlagService();
- *
- * if (flags.isGen8Enabled()) {
- *   // 启用 Gen8 工具
- * }
  *
  * const maxIter = getMaxIterations();
  * ```
@@ -47,13 +42,6 @@ export class FeatureFlagService {
    */
   get<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
     return getCloudConfigService().getFeatureFlag(key);
-  }
-
-  /**
-   * 检查 Gen8 是否启用
-   */
-  isGen8Enabled(): boolean {
-    return this.get('enableGen8');
   }
 
   /**
@@ -121,7 +109,6 @@ export function getFeatureFlagService(): FeatureFlagService {
 }
 
 // 便捷函数导出
-export const isGen8Enabled = () => getFeatureFlagService().isGen8Enabled();
 export const isCloudAgentEnabled = () => getFeatureFlagService().isCloudAgentEnabled();
 export const isMemoryEnabled = () => getFeatureFlagService().isMemoryEnabled();
 export const isComputerUseEnabled = () => getFeatureFlagService().isComputerUseEnabled();

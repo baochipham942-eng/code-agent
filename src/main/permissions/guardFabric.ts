@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { getPolicyEngine } from './policyEngine';
+import { HookGuardSource } from './hookSource';
 import type { DecisionStep } from '../../shared/types/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 
@@ -198,7 +199,12 @@ export class PolicyEngineSource implements GuardSource {
 let instance: GuardFabric | null = null;
 
 export function getGuardFabric(): GuardFabric {
-  if (!instance) instance = new GuardFabric();
+  if (!instance) {
+    instance = new GuardFabric();
+    // Register default sources
+    instance.registerSource(new PolicyEngineSource());
+    instance.registerSource(new HookGuardSource());
+  }
   return instance;
 }
 

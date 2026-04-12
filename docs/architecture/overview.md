@@ -40,18 +40,24 @@
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                           Tool Layer                                   │  │
+│  │                      Tool Layer (96 工具, 9 类)                        │  │
 │  │                                                                        │  │
-│  │  Gen1-2 基础     Gen3-4 规划+网络   Gen5-6 记忆+视觉   Gen7-8 多Agent  │  │
-│  │  ┌──────────┐   ┌──────────┐       ┌──────────┐      ┌──────────┐    │  │
-│  │  │bash,read │   │task,skill│       │memory    │      │spawn_    │    │  │
-│  │  │write,edit│   │web_fetch │       │screenshot│      │agent     │    │  │
-│  │  │glob,grep │   │web_search│       │computer  │      │strategy  │    │  │
-│  │  └──────────┘   └──────────┘       └──────────┘      └──────────┘    │  │
+│  │  Shell & 文件    规划 & 任务      文档 & 媒体      多 Agent            │  │
+│  │  ┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐         │  │
+│  │  │Bash,Read │   │Task,Plan │    │DocEdit   │    │AgentSpawn│         │  │
+│  │  │Write,Edit│   │PlanMode  │    │Excel,PPT │    │WaitAgent │         │  │
+│  │  │Glob,Grep │   │AskUser   │    │Image,PDF │    │Teammate  │         │  │
+│  │  └──────────┘   └──────────┘    └──────────┘    └──────────┘         │  │
+│  │  Web & 搜索     连接器           视觉 & 浏览器   记忆                  │  │
+│  │  ┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐         │  │
+│  │  │WebSearch │   │Calendar  │    │Computer  │    │Memory    │         │  │
+│  │  │WebFetch  │   │Mail      │    │Browser   │    │Write/Read│         │  │
+│  │  │ReadDoc   │   │Reminders │    │GuiAgent  │    │          │         │  │
+│  │  └──────────┘   └──────────┘    └──────────┘    └──────────┘         │  │
 │  │                                                                        │  │
 │  │  ┌─────────────────────────────────────────────────────────────────┐   │  │
-│  │  │  DocEdit 统一入口 (Excel 14ops / PPT 8ops / Word 7ops)          │   │  │
-│  │  │  Deferred Tools: 31→9 统一工具 (action 参数分发)                  │   │  │
+│  │  │  15 核心工具 (始终可见) + 81 延迟工具 (ToolSearch 按需加载)       │   │  │
+│  │  │  统一入口: Process, MCPUnified, DocEdit, ExcelAutomate 等        │   │  │
 │  │  └─────────────────────────────────────────────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
@@ -110,7 +116,7 @@
 |------|------|----------|
 | Presentation | UI 组件、状态管理、Generative UI、用户交互 | [frontend.md](./frontend.md) |
 | Application | Agent 编排、平台抽象、Light Memory、Skills 系统 | [agent-core.md](./agent-core.md) |
-| Tool | 工具实现、代际演进、DocEdit 统一入口、Deferred Tools | [tool-system.md](./tool-system.md) |
+| Tool | 96 个工具（9 类），Core/Deferred 双层、统一入口 | [tool-system.md](./tool-system.md) |
 | Data | 本地存储、云端同步 | [data-storage.md](./data-storage.md) |
 | Cloud | 云端任务、多设备同步 | [cloud-architecture.md](./cloud-architecture.md) |
 
@@ -141,27 +147,30 @@
 | **Desktop Vision** | `desktopVisionAnalyzer.ts` + Rust FFI | 后台截图 + 视觉模型语义描述（Ollama 本地 / 智谱云端） |
 | **Cron Center** | renderer `features/cron/` | 定时任务管理面板 |
 
-## 8 代工具演进
+## 工具体系（96 个注册工具）
 
-| 代际 | 核心能力 | 工具集 |
-|------|----------|--------|
-| Gen1 | 基础文件操作 | bash, read_file, write_file, edit_file |
-| Gen2 | 代码搜索 | + glob, grep, list_directory, mcp |
-| Gen3 | 任务规划 | + task, todo_write, ask_user_question, plan_mode |
-| Gen4 | 网络能力 | + skill, web_fetch, web_search, hooks |
-| Gen5 | 记忆系统 | + memory_store, memory_search, code_index |
-| Gen6 | 视觉交互 | + screenshot, computer_use, browser_action |
-| Gen7 | 多代理 | + spawn_agent, agent_message, workflow_orchestrate |
-| Gen8 | 自我进化 | + strategy_optimize, tool_create, self_evaluate |
+15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。按功能分为 9 类：
 
-> **Deferred Tools 合并（Phase 2）**：31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。旧名通过 TOOL_ALIASES 保持兼容。
+| 分类 | 数量 | 代表工具 |
+|------|------|----------|
+| Shell & 文件 | 14 | Bash, Read, Write, Edit, Glob, Grep, GitCommit |
+| 规划 & 任务 | 12 | TaskManager, Plan, PlanMode, AskUserQuestion |
+| Web & 搜索 | 5 | WebSearch, WebFetch, ReadDocument, LSP |
+| 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart |
+| 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
+| 记忆 | 2 | MemoryWrite, MemoryRead |
+| 视觉 & 浏览器 | 5 | Computer, Browser, GuiAgent |
+| 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, Teammate |
+| 统一入口 + 元工具 | 13 | Process, MCPUnified, DocEdit, ToolSearch |
+
+> **统一入口**：细粒度工具通过 action 参数合并（如 ReadDocument 合并 read_pdf/read_docx/read_xlsx）。
 >
-> **DocEdit 统一入口（Phase 3）**：自动识别格式（.xlsx/.pptx/.docx）路由到对应编辑引擎。Excel 14 操作 / PPT 8 操作 / Word 7 操作，原子操作替代全量重写。
+> **DocEdit**：自动识别格式（.xlsx/.pptx/.docx）路由到对应编辑引擎，原子操作替代全量重写。
 
 ## 相关文档
 
 - [Agent 核心](./agent-core.md) - AgentLoop、消息流、规划系统
-- [工具系统](./tool-system.md) - 工具注册、执行、代际演进
+- [工具系统](./tool-system.md) - 工具注册、执行、分类
 - [前端架构](./frontend.md) - React 组件、状态管理
 - [数据存储](./data-storage.md) - SQLite、Supabase、向量数据库
 - [云端架构](./cloud-architecture.md) - 云端任务、多设备同步

@@ -14,7 +14,7 @@ interface SessionInfo {
   modelName: string;
   startTime: number;
   endTime?: number;
-  generationId: string;
+  generationId?: string;
   workingDirectory: string;
   status: string;
   turnCount: number;

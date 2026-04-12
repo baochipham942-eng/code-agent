@@ -28,7 +28,6 @@ export interface CLIGlobalOptions {
  */
 export interface CLIConfig {
   workingDirectory: string;
-  generationId: string;
   modelConfig: ModelConfig;
   outputFormat: 'text' | 'json' | 'stream-json';
   enablePlanning: boolean;

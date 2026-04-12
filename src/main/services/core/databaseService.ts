@@ -961,7 +961,7 @@ export class DatabaseService {
 
   // --- SessionRepository ---
   createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
-  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number | string; updatedAt?: number | string; isDeleted?: boolean }, options?: { syncOrigin?: 'local' | 'remote' }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
+  createSessionWithId(id: string, data: { title: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number | string; updatedAt?: number | string; isDeleted?: boolean }, options?: { syncOrigin?: 'local' | 'remote' }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
   getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId, options); }
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }
@@ -994,7 +994,7 @@ export class DatabaseService {
   updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null { this.ensureDb(); return this.memoryRepo.updateMemory(id, updates); }
   deleteMemory(id: string): boolean { this.ensureDb(); return this.memoryRepo.deleteMemory(id); }
   deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number { this.ensureDb(); return this.memoryRepo.deleteMemories(filter); }
-  searchMemories(query: string, options?: { type?: string; category?: string; limit?: number }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.searchMemories(query, options); }
+  searchMemories(query: string, options?: { type?: string; category?: string; limit?: number; applyDecay?: boolean }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.searchMemories(query, options); }
   getMemoryStats(): { total: number; byType: Record<string, number>; bySource: Record<string, number>; byCategory: Record<string, number> } { this.ensureDb(); return this.memoryRepo.getMemoryStats(); }
   recordMemoryAccess(id: string): void { this.ensureDb(); this.memoryRepo.recordMemoryAccess(id); }
   addRelation(params: { sourceId: string; targetId: string; relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references'; confidence: number; evidence: string; sessionId: string }): void { if (!this.db) return; this.memoryRepo.addRelation(params); }

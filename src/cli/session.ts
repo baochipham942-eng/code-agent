@@ -23,7 +23,6 @@ export interface SessionWithMessages extends Session {
 
 export interface SessionCreateOptions {
   title?: string;
-  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
 }
@@ -82,7 +81,6 @@ export class CLISessionManager {
     const session: Session = {
       id: `cli_session_${now}_${crypto.randomUUID().split('-')[0]}`,
       title: options.title || this.generateSessionTitle(),
-      generationId: options.generationId,
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
       createdAt: now,

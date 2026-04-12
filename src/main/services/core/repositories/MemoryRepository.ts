@@ -212,7 +212,7 @@ export class MemoryRepository {
     return result.changes;
   }
 
-  searchMemories(query: string, options: { type?: string; category?: string; limit?: number } = {}): MemoryRecord[] {
+  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean } = {}): MemoryRecord[] {
     const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
     const params: unknown[] = [`%${query}%`, `%${query}%`];
 
@@ -225,15 +225,36 @@ export class MemoryRepository {
       params.push(options.category);
     }
 
-    const limit = options.limit || 20;
+    // Fetch more rows than needed so decay filtering still returns enough
+    const requestedLimit = options.limit || 20;
+    const fetchLimit = (options.applyDecay !== false) ? requestedLimit * 3 : requestedLimit;
 
     const rows = this.db.prepare(`
       SELECT * FROM memories WHERE ${conditions.join(' AND ')}
       ORDER BY access_count DESC, updated_at DESC
       LIMIT ?
-    `).all(...params, limit) as SQLiteRow[];
+    `).all(...params, fetchLimit) as SQLiteRow[];
 
-    return rows.map(row => this.rowToMemoryRecord(row));
+    let records = rows.map(row => this.rowToMemoryRecord(row));
+
+    // Apply read-time decay: confidence decreases with time since last access (or update).
+    // Refresh-on-read: memories accessed recently via recordMemoryAccess() stay fresh.
+    if (options.applyDecay !== false) {
+      const now = Date.now();
+      const halfLifeMs = MEMORY.RECORD_DECAY_DAYS * 24 * 60 * 60 * 1000;
+
+      records = records
+        .map(r => {
+          const lastTouch = r.lastAccessedAt || r.updatedAt;
+          const ageMs = now - lastTouch;
+          const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
+          return { ...r, confidence: r.confidence * decayFactor };
+        })
+        .filter(r => r.confidence >= MEMORY.RECORD_MIN_CONFIDENCE)
+        .sort((a, b) => b.confidence - a.confidence);
+    }
+
+    return records.slice(0, requestedLimit);
   }
 
   getMemoryStats(): {

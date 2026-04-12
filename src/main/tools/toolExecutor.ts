@@ -12,10 +12,10 @@ import type {
 import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
-  getCommandMonitor,
   getAuditLogger,
   maskSensitiveData,
   isKnownSafeCommand,
+  validateCommand,
   getExecPolicyStore,
   type ValidationResult,
 } from '../security';
@@ -216,8 +216,7 @@ export class ToolExecutor {
     const permStartTime = Date.now();
     let commandValidation: ValidationResult | undefined;
     if (toolName === 'bash' && params.command) {
-      const commandMonitor = getCommandMonitor(options.sessionId);
-      commandValidation = commandMonitor.preExecute(params.command as string);
+      commandValidation = validateCommand(params.command as string);
 
       // Block critical risk commands
       if (!commandValidation.allowed) {

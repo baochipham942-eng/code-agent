@@ -5,7 +5,7 @@
 // NOTE: This module intentionally uses child_process.spawn for sandbox execution.
 // The spawn calls are safe because:
 // 1. Commands are executed inside a sandboxed environment (bwrap)
-// 2. User input is validated by CommandMonitor before reaching here
+// 2. User input is validated by commandSafety (validateCommand) before reaching here
 // 3. The sandbox restricts what the command can access
 
 import { spawn, execSync } from 'child_process';

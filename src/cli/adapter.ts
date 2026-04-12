@@ -66,7 +66,6 @@ export class CLIAgent {
   async initSession(): Promise<string> {
     const sessionManager = getSessionManager();
     const session = await sessionManager.getOrCreateCurrentSession({
-      generationId: this.config.generationId as string,
       modelConfig: this.config.modelConfig,
       workingDirectory: this.config.workingDirectory,
     });

@@ -39,7 +39,6 @@ export interface SessionAnalysisResult {
     modelName: string;
     startTime: number;
     endTime?: number;
-    generationId: string;
     workingDirectory: string;
     status: string;
     turnCount: number;
@@ -114,7 +113,6 @@ export interface TaskListEventIpc {
 export interface SessionExport {
   id: string;
   title: string;
-  generationId?: string;
   modelConfig: any;
   workingDirectory?: string;
   messages: Message[];

@@ -10,7 +10,7 @@ import type {
   TaskStatus,
   AgentTaskConfig,
   DAGEvent,
-} from '../../../src/shared/types/taskDAG';
+} from '../../../src/shared/contract/taskDAG';
 
 // Mock logger
 vi.mock('../../../src/main/services/infra/logger', () => ({

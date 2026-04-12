@@ -10,8 +10,8 @@ import type {
   SwarmVerificationResult,
   SwarmAggregation,
   SwarmLaunchRequest,
-} from '@shared/types/swarm';
-import type { CompletedAgentRun } from '@shared/types/agentHistory';
+} from '@shared/contract/swarm';
+import type { CompletedAgentRun } from '@shared/contract/agentHistory';
 import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
 import { invoke } from '../services/ipcService';
 

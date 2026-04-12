@@ -15,7 +15,7 @@ import {
   FileSearch,
   ExternalLink,
 } from 'lucide-react';
-import type { Finding, FindingCategory } from '@shared/types';
+import type { Finding, FindingCategory } from '@shared/contract';
 
 interface FindingsPanelProps {
   findings: Finding[];

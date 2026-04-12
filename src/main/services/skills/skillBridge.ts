@@ -3,8 +3,8 @@
 // 将旧的 SkillDefinition 转换为新的 ParsedSkill
 // ============================================================================
 
-import type { SkillDefinition } from '../../../shared/types/skill';
-import type { ParsedSkill } from '../../../shared/types/agentSkill';
+import type { SkillDefinition } from '../../../shared/contract/skill';
+import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 
 /**
  * 将云端/旧格式的 SkillDefinition 转换为 ParsedSkill

@@ -23,7 +23,7 @@ import type {
   StartTrainingResponse,
   InferenceRequest,
   InferenceResult,
-} from '../../../shared/types/lab';
+} from '../../../shared/contract/lab';
 
 const execFileAsync = promisify(execFile);
 import { Disposable, getServiceRegistry } from '../serviceRegistry';

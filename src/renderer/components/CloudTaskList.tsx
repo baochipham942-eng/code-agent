@@ -33,7 +33,7 @@ import type {
   CloudAgentType,
   CloudTaskStatus,
   TaskExecutionLocation,
-} from '@shared/types/cloud';
+} from '@shared/contract/cloud';
 
 // ============================================================================
 // 类型定义

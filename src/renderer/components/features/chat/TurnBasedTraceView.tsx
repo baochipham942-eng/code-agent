@@ -5,8 +5,8 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import type { TraceProjection } from '@shared/types/trace';
-import type { TaskPlan } from '@shared/types';
+import type { TraceProjection } from '@shared/contract/trace';
+import type { TaskPlan } from '@shared/contract';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';

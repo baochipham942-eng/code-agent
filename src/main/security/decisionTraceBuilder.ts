@@ -4,7 +4,7 @@
 //
 // Only creates trace objects on deny/ask paths. Allow hot path = zero overhead.
 
-import type { DecisionStep, DecisionTrace, DecisionLayer, DecisionOutcome } from '../../shared/types/decisionTrace';
+import type { DecisionStep, DecisionTrace, DecisionLayer, DecisionOutcome } from '../../shared/contract/decisionTrace';
 
 export class DecisionTraceBuilder {
   private toolName: string;

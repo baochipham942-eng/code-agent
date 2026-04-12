@@ -2,7 +2,7 @@
 // MCP Types - Model Context Protocol 类型定义
 // ============================================================================
 
-import type { ToolDefinition, ToolResult } from '../../shared/types';
+import type { ToolDefinition, ToolResult } from '../../shared/contract';
 
 // ----------------------------------------------------------------------------
 // Server Configuration Types

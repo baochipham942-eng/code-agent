@@ -11,7 +11,7 @@ import {
   convertToolsToClaude,
 } from '../../../src/main/model/providers/shared';
 import type { ModelMessage } from '../../../src/main/model/types';
-import type { ToolDefinition } from '../../../src/shared/types';
+import type { ToolDefinition } from '../../../src/shared/contract';
 
 // ----------------------------------------------------------------------------
 // Type helpers for test assertions

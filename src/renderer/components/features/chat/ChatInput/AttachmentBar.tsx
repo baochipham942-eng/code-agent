@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { X, FileText, Code, Database, Globe, File, Folder } from 'lucide-react';
-import type { MessageAttachment, AttachmentCategory } from '../../../../../shared/types';
+import type { MessageAttachment, AttachmentCategory } from '../../../../../shared/contract';
 import { IconButton } from '../../../primitives';
 
 export interface AttachmentBarProps {

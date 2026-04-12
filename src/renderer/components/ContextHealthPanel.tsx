@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Activity, AlertTriangle, AlertCircle, Sparkles } from 'lucide-react';
-import type { ContextHealthState, ContextHealthWarningLevel } from '@shared/types/contextHealth';
+import type { ContextHealthState, ContextHealthWarningLevel } from '@shared/contract/contextHealth';
 
 interface ContextHealthPanelProps {
   health: ContextHealthState | null;

@@ -30,7 +30,7 @@ import { PreviewPanel } from './PreviewPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
-import type { MessageAttachment, TaskPlan } from '../../shared/types';
+import type { MessageAttachment, TaskPlan } from '../../shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import {
@@ -267,7 +267,7 @@ export const ChatView: React.FC = () => {
     setIsGlobalDragOver(false);
 
     const items = e.dataTransfer.items;
-    const newAttachments: import('../../shared/types').MessageAttachment[] = [];
+    const newAttachments: import('../../shared/contract').MessageAttachment[] = [];
 
     if (items) {
       const entries: FileSystemEntry[] = [];

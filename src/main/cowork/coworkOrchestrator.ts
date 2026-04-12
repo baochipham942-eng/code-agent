@@ -3,13 +3,13 @@
 // Phase 1: Cowork 角色体系重构
 // ============================================================================
 
-import type { ModelConfig } from '../../shared/types';
+import type { ModelConfig } from '../../shared/contract';
 import type {
   CoworkContract,
   CoworkTaskInput,
   CoworkResult,
   CoworkAgentResult,
-} from '../../shared/types/cowork';
+} from '../../shared/contract/cowork';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import {
   resolveContract,

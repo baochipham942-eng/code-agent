@@ -14,7 +14,7 @@ import type {
   TelemetryToolStat,
   TelemetryIntentStat,
   TelemetryPushEvent,
-} from '@shared/types/telemetry';
+} from '@shared/contract/telemetry';
 
 interface TurnDetailData {
   turn: TelemetryTurn;

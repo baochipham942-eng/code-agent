@@ -7,12 +7,12 @@ import type {
   MessageAttachment,
   PermissionResponse,
   TodoItem,
-} from '../types';
+} from '../contract';
 
 import type {
   ObjectiveMetrics,
   SubjectiveAssessment,
-} from '../types/sessionAnalytics';
+} from '../contract/sessionAnalytics';
 
 // 带附件的消息请求
 export interface AgentMessageRequest {

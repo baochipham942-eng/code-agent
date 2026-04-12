@@ -13,7 +13,7 @@ import {
 } from '../infra/supabaseService';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { getSecureStorage } from '../core';
-import type { AuthUser, AuthStatus } from '../../../shared/types';
+import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('AuthService');

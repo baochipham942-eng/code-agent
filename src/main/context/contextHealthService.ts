@@ -11,7 +11,7 @@ import {
   getWarningLevel,
   createEmptyHealthState,
   TokenBreakdown,
-} from '../../shared/types/contextHealth';
+} from '../../shared/contract/contextHealth';
 import {
   estimateTokens,
   estimateConversationTokens,

@@ -4,8 +4,8 @@
 
 import chalk from 'chalk';
 import ora, { type Ora } from 'ora';
-import type { AgentEvent, ToolCall, ToolResult } from '../../shared/types';
-import type { SwarmEvent, SwarmAgentState } from '../../shared/types/swarm';
+import type { AgentEvent, ToolCall, ToolResult } from '../../shared/contract';
+import type { SwarmEvent, SwarmAgentState } from '../../shared/contract/swarm';
 
 // ♠♥♣♦ 旋转扑克牌思考动效
 const POKER_SPINNER = {

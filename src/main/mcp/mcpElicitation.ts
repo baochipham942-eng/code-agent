@@ -19,7 +19,7 @@ import type {
   MCPElicitationRequest,
   MCPElicitationResponse,
   ElicitationFieldSchema,
-} from '../../shared/types';
+} from '../../shared/contract';
 
 const logger = createLogger('MCPElicitation');
 

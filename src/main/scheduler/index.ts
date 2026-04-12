@@ -46,7 +46,7 @@ export type {
   ParallelTaskConfig,
   ConditionalTaskConfig,
   CheckpointTaskConfig,
-} from '../../shared/types/taskDAG';
+} from '../../shared/contract/taskDAG';
 
 export {
   DEFAULT_DAG_OPTIONS,
@@ -56,4 +56,4 @@ export {
   isTaskExecutable,
   getNextTaskStatus,
   getPriorityValue,
-} from '../../shared/types/taskDAG';
+} from '../../shared/contract/taskDAG';

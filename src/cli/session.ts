@@ -8,7 +8,7 @@ import type {
   Message,
   ModelConfig,
   TodoItem,
-} from '../shared/types';
+} from '../shared/contract';
 import crypto from 'crypto';
 
 // ----------------------------------------------------------------------------

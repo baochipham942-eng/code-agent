@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { summarizeTool } from './summarizers';
 
 interface Props {

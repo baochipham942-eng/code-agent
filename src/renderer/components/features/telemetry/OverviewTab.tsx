@@ -7,7 +7,7 @@ import type {
   TelemetrySession,
   TelemetryToolStat,
   TelemetryIntentStat,
-} from '@shared/types/telemetry';
+} from '@shared/contract/telemetry';
 import { Activity, Cpu, Wrench, AlertTriangle } from 'lucide-react';
 
 interface OverviewTabProps {

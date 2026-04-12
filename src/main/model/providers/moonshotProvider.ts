@@ -3,7 +3,7 @@
 // ============================================================================
 
 import https from 'https';
-import type { ModelConfig } from '../../../shared/types';
+import type { ModelConfig } from '../../../shared/contract';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { httpsAgent } from './shared';

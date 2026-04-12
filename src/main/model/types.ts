@@ -2,7 +2,7 @@
 // Model Router Types
 // ============================================================================
 
-import type { ToolCall } from '../../shared/types';
+import type { ToolCall } from '../../shared/contract';
 
 // ----------------------------------------------------------------------------
 // Message Types
@@ -113,8 +113,8 @@ export interface Provider {
   readonly name: string;
   inference(
     messages: ModelMessage[],
-    tools: import('../../shared/types').ToolDefinition[],
-    config: import('../../shared/types').ModelConfig,
+    tools: import('../../shared/contract').ToolDefinition[],
+    config: import('../../shared/contract').ModelConfig,
     onStream?: StreamCallback,
     signal?: AbortSignal
   ): Promise<ModelResponse>;

@@ -6,10 +6,10 @@ import type {
   Message,
   AgentEvent,
   ToolResult,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import type { StructuredOutputConfig } from '../structuredOutput';
-import type { EffortLevel, InteractionMode } from '../../../shared/types/agent';
-import type { ModelConfig } from '../../../shared/types/model';
+import type { EffortLevel, InteractionMode } from '../../../shared/contract/agent';
+import type { ModelConfig } from '../../../shared/contract/model';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
@@ -23,7 +23,7 @@ import type { HookMessageBuffer, MessageHistoryCompressor } from '../../context/
 import type { AutoContextCompressor } from '../../context/autoCompressor';
 import type { CompressionState } from '../../context/compressionState';
 import type { CompressionPipeline } from '../../context/compressionPipeline';
-import type { TelemetryAdapter } from '../../../shared/types/telemetry';
+import type { TelemetryAdapter } from '../../../shared/contract/telemetry';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.

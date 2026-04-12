@@ -34,7 +34,7 @@ import { createProgressAggregator, type ProgressAggregator } from './progressAgg
 import { createParallelErrorHandler, type ParallelErrorHandler } from './parallelErrorHandler';
 import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
-import type { ModelConfig } from '../../shared/types';
+import type { ModelConfig } from '../../shared/contract';
 import type { Tool, ToolContext } from '../tools/types';
 import { getUserConfigDir } from '../config/configPaths';
 

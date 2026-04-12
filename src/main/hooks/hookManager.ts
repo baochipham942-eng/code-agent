@@ -2,7 +2,7 @@
 // Hook Manager - Unified API for the hooks system
 // ============================================================================
 
-import type { Message } from '../../shared/types';
+import type { Message } from '../../shared/contract';
 import type {
   HookEvent,
   AnyHookContext,

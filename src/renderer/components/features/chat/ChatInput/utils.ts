@@ -2,7 +2,7 @@
 // ChatInput 工具函数 - 文件处理相关
 // ============================================================================
 
-import type { AttachmentCategory } from '../../../../../shared/types';
+import type { AttachmentCategory } from '../../../../../shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 

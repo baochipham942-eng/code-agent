@@ -44,7 +44,7 @@ import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-res
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import type { UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/types';
+import type { UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -201,7 +201,7 @@ export const App: React.FC = () => {
 
         // 加载模型配置
         if (settings?.models) {
-          const defaultProvider = (settings.models.default || DEFAULT_PROVIDER) as import('@shared/types').ModelProvider;
+          const defaultProvider = (settings.models.default || DEFAULT_PROVIDER) as import('@shared/contract').ModelProvider;
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
-import type { ToolResult } from '../../../../shared/types';
+import type { ToolResult } from '../../../../shared/contract';
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;

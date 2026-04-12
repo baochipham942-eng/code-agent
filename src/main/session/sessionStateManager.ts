@@ -3,15 +3,15 @@
 // ============================================================================
 
 import { BrowserWindow } from '../platform';
-import type { Message } from '../../shared/types';
-import type { ContextHealthState } from '../../shared/types/contextHealth';
-import { createEmptyHealthState } from '../../shared/types/contextHealth';
+import type { Message } from '../../shared/contract';
+import type { ContextHealthState } from '../../shared/contract/contextHealth';
+import { createEmptyHealthState } from '../../shared/contract/contextHealth';
 import type {
   SessionStatus,
   SubagentState,
   SessionStatusUpdateEvent,
   SessionRuntimeSummary,
-} from '../../shared/types/sessionState';
+} from '../../shared/contract/sessionState';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
 

@@ -27,7 +27,7 @@ import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { PermissionResponse } from '../shared/types';
+import type { PermissionResponse } from '../shared/contract';
 
 const logger = createLogger('WebServer');
 

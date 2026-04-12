@@ -2,7 +2,7 @@
 // Built-in Hook Executor - 执行内置钩子
 // ============================================================================
 
-import type { Message } from '../../shared/types';
+import type { Message } from '../../shared/contract';
 import type {
   HookEvent,
   HookExecutionResult,

@@ -3,7 +3,7 @@
 // Including: OpenAI, Groq, Qwen, MiniMax, Perplexity, Local (Ollama)
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import {
   logger,

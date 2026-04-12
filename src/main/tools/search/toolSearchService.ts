@@ -8,7 +8,7 @@ import type {
   ToolSearchOptions,
   DeferredToolMeta,
   ToolSearchQueryMode,
-} from '../../../shared/types/toolSearch';
+} from '../../../shared/contract/toolSearch';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName } from './deferredTools';
 import { createLogger } from '../../services/infra/logger';
 

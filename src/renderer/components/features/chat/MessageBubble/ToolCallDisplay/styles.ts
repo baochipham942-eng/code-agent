@@ -3,7 +3,7 @@
 // Uses --cc-* CSS custom properties for Claude Code terminal consistency
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 // ============================================================================
 // Status Types

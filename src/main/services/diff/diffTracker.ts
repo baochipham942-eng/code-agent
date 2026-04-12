@@ -7,7 +7,7 @@
 
 import * as Diff from 'diff';
 import { createLogger } from '../infra/logger';
-import type { FileDiff, DiffSummary } from '../../../shared/types/diff';
+import type { FileDiff, DiffSummary } from '../../../shared/contract/diff';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('DiffTracker');

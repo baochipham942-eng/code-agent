@@ -2,7 +2,7 @@
 // Built-in Skills - 内置 Skill 定义
 // ============================================================================
 
-import type { ParsedSkill } from '../../../shared/types/agentSkill';
+import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 
 /**
  * 内置 Skill 定义列表

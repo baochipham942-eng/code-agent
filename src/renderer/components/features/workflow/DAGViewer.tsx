@@ -27,14 +27,14 @@ import type {
   DAGLayoutOptions,
   TaskNodeData,
   DependencyEdgeData,
-} from '../../../../shared/types/dagVisualization';
-import type { DAGStatus, DAGStatistics } from '../../../../shared/types/taskDAG';
+} from '../../../../shared/contract/dagVisualization';
+import type { DAGStatus, DAGStatistics } from '../../../../shared/contract/taskDAG';
 import {
   TASK_STATUS_COLORS,
   formatDuration,
   formatCost,
   calculateProgress,
-} from '../../../../shared/types/dagVisualization';
+} from '../../../../shared/contract/dagVisualization';
 
 // Re-export TaskNodeData for external use
 export type { TaskNodeData };

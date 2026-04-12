@@ -1,7 +1,7 @@
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { classifyError } from '../telemetry/telemetryCollector';
-import type { ObjectiveMetrics } from '../../shared/types/sessionAnalytics';
+import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
 import type { SessionSnapshot, TurnSnapshot, QualitySignals as EvaluationQualitySignals } from './types';
 
 const logger = createLogger('TelemetryQueryService');

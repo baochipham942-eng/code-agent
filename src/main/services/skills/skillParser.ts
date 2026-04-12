@@ -9,11 +9,11 @@ import type {
   ParsedSkill,
   SkillFrontmatter,
   SkillSource,
-} from '../../../shared/types/agentSkill';
+} from '../../../shared/contract/agentSkill';
 import {
   SkillParseError,
   SkillValidationError,
-} from '../../../shared/types/agentSkill';
+} from '../../../shared/contract/agentSkill';
 
 // Frontmatter 正则：匹配 --- 开头和结尾的 YAML 块
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;

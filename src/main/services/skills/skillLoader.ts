@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import type { ParsedSkill, SkillDependencyStatus } from '../../../shared/types/agentSkill';
+import type { ParsedSkill, SkillDependencyStatus } from '../../../shared/contract/agentSkill';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('SkillLoader');

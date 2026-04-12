@@ -25,7 +25,7 @@ import type {
   PythonEnvStatus,
   LabProjectStatus,
   TrainingProgressEvent,
-} from '../../../../../shared/types/lab';
+} from '../../../../../shared/contract/lab';
 
 type TrainingMode = 'pretrain' | 'finetune';
 type InitFrom = 'scratch' | 'gpt2' | 'gpt2-medium';

@@ -2,8 +2,8 @@
 // DAG Status Management - Visualization event helpers
 // ============================================================================
 
-import type { AgentEvent } from '../../../shared/types';
-import type { DAGVisualizationEvent, TaskStatusEventData } from '../../../shared/types/dagVisualization';
+import type { AgentEvent } from '../../../shared/contract';
+import type { DAGVisualizationEvent, TaskStatusEventData } from '../../../shared/contract/dagVisualization';
 
 /**
  * 根据 AgentEvent 类型生成对应的 DAG 任务状态更新

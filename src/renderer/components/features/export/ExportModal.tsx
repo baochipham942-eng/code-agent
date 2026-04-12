@@ -6,7 +6,7 @@
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, FileJson, Check, Copy, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { Message } from '@shared/types';
+import type { Message } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 
 const logger = createLogger('ExportModal');

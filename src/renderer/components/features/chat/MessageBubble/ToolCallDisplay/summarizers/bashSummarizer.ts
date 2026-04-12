@@ -2,7 +2,7 @@
 // Bash Summarizer - Smart summaries for bash command output
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 export function summarizeBash(toolCall: ToolCall): string | null {
   const output = toolCall.result?.output;

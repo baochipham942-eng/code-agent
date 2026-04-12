@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { CaptureItem, CaptureRequest, CaptureSearchResult, CaptureStats, CaptureSource } from '@shared/types/capture';
+import type { CaptureItem, CaptureRequest, CaptureSearchResult, CaptureStats, CaptureSource } from '@shared/contract/capture';
 
 interface CaptureState {
   items: CaptureItem[];

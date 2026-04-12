@@ -19,8 +19,8 @@ import type {
   TaskNode,
   DependencyEdge,
   TaskNodeData,
-} from '@shared/types/dagVisualization';
-import type { DAGStatus, DAGStatistics, TaskStatus } from '@shared/types/taskDAG';
+} from '@shared/contract/dagVisualization';
+import type { DAGStatus, DAGStatistics, TaskStatus } from '@shared/contract/taskDAG';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('DAGStore');

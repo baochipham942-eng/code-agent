@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Image, FileText, Pause, Play, SlashSquare } from 'lucide-react';
-import type { MessageAttachment } from '../../../../../shared/types';
+import type { MessageAttachment } from '../../../../../shared/contract';
 import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';

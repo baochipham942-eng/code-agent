@@ -6,7 +6,7 @@ import type { IpcMain, BrowserWindow } from '../platform';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
-import type { AgentApplicationService } from '../../shared/types/appService';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('IPC');

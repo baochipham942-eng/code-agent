@@ -11,7 +11,7 @@ import {
 import { useExplorerStore } from '../../../stores/explorerStore';
 import { useAppStore } from '../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { FileInfo } from '@shared/types';
+import type { FileInfo } from '@shared/contract';
 
 // ── Helpers ──
 

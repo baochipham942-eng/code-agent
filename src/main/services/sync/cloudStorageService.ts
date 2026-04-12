@@ -4,7 +4,7 @@
 
 import { getDatabase, type StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
-import type { Message } from '../../../shared/types';
+import type { Message } from '../../../shared/contract';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('CloudStorageService');

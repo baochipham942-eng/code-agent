@@ -1,4 +1,4 @@
-import type { SessionTask } from '../../shared/types';
+import type { SessionTask } from '../../shared/contract';
 import type {
   PlanningService,
   TaskPhase,

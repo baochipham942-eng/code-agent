@@ -10,7 +10,7 @@ import type {
   Message,
   ModelProvider,
   TodoItem,
-} from '../../../../shared/types';
+} from '../../../../shared/contract';
 import { createLogger } from '../../infra/logger';
 
 const logger = createLogger('SessionRepository');

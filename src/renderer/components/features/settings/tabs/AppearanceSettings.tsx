@@ -98,7 +98,7 @@ export const AppearanceSettings: React.FC = () => {
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { theme: newTheme },
-      } as Partial<import('@shared/types').AppSettings>);
+      } as Partial<import('@shared/contract').AppSettings>);
       logger.info('Theme saved', { theme: newTheme });
     } catch (error) {
       logger.error('Failed to save theme', error);
@@ -111,7 +111,7 @@ export const AppearanceSettings: React.FC = () => {
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { language: lang },
-      } as Partial<import('@shared/types').AppSettings>);
+      } as Partial<import('@shared/contract').AppSettings>);
       logger.info('Language saved', { lang });
     } catch (error) {
       logger.error('Failed to save language', error);
@@ -128,7 +128,7 @@ export const AppearanceSettings: React.FC = () => {
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { fontSize: sizeMap[size] },
-      } as Partial<import('@shared/types').AppSettings>);
+      } as Partial<import('@shared/contract').AppSettings>);
       logger.info('Font size saved', { size });
     } catch (error) {
       logger.error('Failed to save font size', error);

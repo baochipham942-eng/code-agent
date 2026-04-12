@@ -4,7 +4,7 @@
 // ============================================================================
 
 import https from 'https';
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODEL, getModelMaxOutputTokens } from '../../../shared/constants';

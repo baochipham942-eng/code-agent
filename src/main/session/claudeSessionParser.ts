@@ -22,7 +22,7 @@ import fsSync from 'fs';
 import path from 'path';
 import os from 'os';
 import readline from 'readline';
-import type { Message } from '../../shared/types/message';
+import type { Message } from '../../shared/contract/message';
 
 // ============================================================================
 // Types

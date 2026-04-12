@@ -5,7 +5,7 @@
 
 import { createLogger } from '../../services/infra/logger';
 import type { CompactContext, HookExecutionResult } from '../events';
-import type { Message } from '../../../shared/types';
+import type { Message } from '../../../shared/contract';
 
 const logger = createLogger('ContextHooks');
 

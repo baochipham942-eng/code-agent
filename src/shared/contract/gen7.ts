@@ -4,11 +4,11 @@
 //
 // This file provides a single import point for all Gen7 multi-agent types.
 // Usage:
-//   import { BuiltInAgentRole, WorkflowTemplate, BUILT_IN_AGENTS } from '@shared/types/gen7';
+//   import { BuiltInAgentRole, WorkflowTemplate, BUILT_IN_AGENTS } from '@shared/contract/gen7';
 //
 // Instead of importing from multiple files:
-//   import { BuiltInAgentRole } from '@shared/types/builtInAgents';
-//   import { WorkflowTemplate } from '@shared/types/workflow';
+//   import { BuiltInAgentRole } from '@shared/contract/builtInAgents';
+//   import { WorkflowTemplate } from '@shared/contract/workflow';
 
 // ============================================================================
 // Built-in Agent Types

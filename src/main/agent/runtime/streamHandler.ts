@@ -6,7 +6,7 @@
 import type {
   Message,
   AgentEvent,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import type { ModelResponse } from '../../agent/loopTypes';
 import {
   estimateModelMessageTokens,

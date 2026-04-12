@@ -13,7 +13,7 @@
 // - LangGraph 的条件路由机制
 // ============================================================================
 
-import type { ModelProvider } from '../../../shared/types/model';
+import type { ModelProvider } from '../../../shared/contract/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
 import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';

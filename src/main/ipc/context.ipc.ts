@@ -6,13 +6,13 @@
 
 import { ipcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import type { AgentApplicationService } from '../../shared/types/appService';
-import type { Message } from '../../shared/types';
+import type { AgentApplicationService } from '../../shared/contract/appService';
+import type { Message } from '../../shared/contract';
 import { ProjectionEngine, type ProjectableMessage } from '../context/projectionEngine';
 import { CompressionState, type CompressionCommit } from '../context/compressionState';
 import { estimateTokens } from '../context/tokenEstimator';
 import { getContextHealthService } from '../context/contextHealthService';
-import { createEmptyHealthState } from '../../shared/types/contextHealth';
+import { createEmptyHealthState } from '../../shared/contract/contextHealth';
 import { getContextInterventionState } from '../context/contextInterventionState';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getSubagentContextStore, type SubagentContextAnnotation } from '../context/subagentContextStore';
@@ -36,7 +36,7 @@ import type {
   ContextViewResponse as SharedContextViewResponse,
   ContextViewRequest,
   ContextViewResponse,
-} from '../../shared/types/contextView';
+} from '../../shared/contract/contextView';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ContextIPC');

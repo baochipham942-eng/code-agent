@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { Globe, FileText, MessageCircle, FolderOpen, Trash2, ExternalLink } from 'lucide-react';
-import type { CaptureItem, CaptureSource } from '@shared/types/capture';
+import type { CaptureItem, CaptureSource } from '@shared/contract/capture';
 
 const SOURCE_CONFIG: Record<CaptureSource, { icon: React.ReactNode; label: string; color: string }> = {
   browser_extension: { icon: <Globe className="w-3 h-3" />, label: '网页', color: 'text-blue-400 bg-blue-500/20' },

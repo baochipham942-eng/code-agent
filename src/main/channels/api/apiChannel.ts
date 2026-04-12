@@ -17,7 +17,7 @@ import type {
   SendMessageOptions,
   SendMessageResult,
   ChannelCapabilities,
-} from '../../../shared/types/channel';
+} from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
 import { registerCaptureRoutes } from './captureRoutes';
 

@@ -5,7 +5,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../core';
 import { createLogger } from '../infra/logger';
-import type { FileCheckpoint, RewindResult, FileCheckpointConfig } from '../../../shared/types';
+import type { FileCheckpoint, RewindResult, FileCheckpointConfig } from '../../../shared/contract';
 
 const logger = createLogger('FileCheckpointService');
 

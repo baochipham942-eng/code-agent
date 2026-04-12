@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { FileInfo } from '@shared/types';
+import type { FileInfo } from '@shared/contract';
 
 export interface ExplorerTab {
   id: string;

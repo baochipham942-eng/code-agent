@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '../../../shared/types';
+import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '../../../shared/contract';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { BrowserWindow, ipcMain } from '../../platform';
 import { createLogger } from '../../services/infra/logger';

@@ -18,7 +18,7 @@ import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
 import { applyContextCollapse } from './layers/contextCollapse';
 import { applyOverflowRecovery } from './layers/overflowRecovery';
-import type { ContextInterventionSnapshot } from '../../shared/types/contextView';
+import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 import { getProtectedMessageIds } from './contextInterventionHelpers';
 
 export interface PipelineConfig {

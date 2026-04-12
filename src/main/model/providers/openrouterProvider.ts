@@ -2,7 +2,7 @@
 // OpenRouterProvider - OpenRouter API Provider 实现
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToOpenAIMessages, convertToTextOnlyMessages, normalizeJsonSchema } from './shared';

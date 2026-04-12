@@ -2,7 +2,7 @@
 // Context Intervention State - Tracks pin/exclude/retain selections per session/agent
 // ============================================================================
 
-import type { ContextInterventionSnapshot } from '../../shared/types/contextView';
+import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 
 type InterventionKey = string;
 

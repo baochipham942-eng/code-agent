@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
+import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/contract';
 import ipcService from '../../services/ipcService';
 
 interface UseToolProgressResult {

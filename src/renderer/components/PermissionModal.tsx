@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { Shield, FileEdit, FolderOpen, Terminal, Globe, AlertTriangle } from 'lucide-react';
-import type { PermissionRequest } from '@shared/types';
+import type { PermissionRequest } from '@shared/contract';
 import { Modal, ModalHeader, ModalFooter } from './primitives/Modal';
 import { UI } from '@shared/constants';
 

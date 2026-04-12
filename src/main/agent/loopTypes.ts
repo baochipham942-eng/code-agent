@@ -9,8 +9,8 @@ import type {
   ToolCall,
   ToolResult,
   AgentEvent,
-} from '../../shared/types';
-import type { TelemetryAdapter } from '../../shared/types/telemetry';
+} from '../../shared/contract';
+import type { TelemetryAdapter } from '../../shared/contract/telemetry';
 import type { StructuredOutputConfig } from './structuredOutput';
 import type { ToolRegistryLike } from '../tools/types';
 import type { ToolExecutor } from '../tools/toolExecutor';
@@ -49,7 +49,7 @@ export interface AgentLoopConfig {
   /** 遥测适配器（可选，用于记录原始数据） */
   telemetryAdapter?: TelemetryAdapter;
   /** 工具执行日志回调 */
-  onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/types').ToolResult }) => void;
+  onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
 }

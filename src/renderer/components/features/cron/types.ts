@@ -8,7 +8,7 @@ import type {
   ShellAction,
   ToolAction,
   WebhookAction,
-} from '@shared/types';
+} from '@shared/contract';
 
 export interface CronJobDraft {
   name: string;

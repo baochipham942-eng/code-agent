@@ -5,7 +5,7 @@
 import type {
   ToolDefinition,
   JSONSchema,
-} from '../../shared/types';
+} from '../../shared/contract';
 import type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import { getCloudConfigService } from '../services/cloud';

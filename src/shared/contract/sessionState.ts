@@ -2,7 +2,7 @@
 // Session State Types - 会话运行时状态类型定义
 // ============================================================================
 
-import type { Message } from '../types';
+import type { Message } from '../contract';
 import type { ContextHealthState } from './contextHealth';
 
 // ----------------------------------------------------------------------------

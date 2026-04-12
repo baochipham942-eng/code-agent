@@ -6,7 +6,7 @@ import { ipcMain, BrowserWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { BACKGROUND_CHANNELS } from '../../shared/ipc/channels';
-import type { BackgroundTaskInfo } from '../../shared/types/sessionState';
+import type { BackgroundTaskInfo } from '../../shared/contract/sessionState';
 
 const logger = createLogger('Background-IPC');
 

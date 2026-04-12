@@ -5,7 +5,7 @@
 import type { Express, Request, Response } from 'express';
 import { getCaptureService } from '../../services/captureService';
 import { createLogger } from '../../services/infra/logger';
-import type { CaptureRequest } from '@shared/types/capture';
+import type { CaptureRequest } from '@shared/contract/capture';
 
 const logger = createLogger('CaptureRoutes');
 

@@ -14,7 +14,7 @@ import {
 import { getDatabase } from '../core';
 import { getAuthService } from '../auth';
 import { getSecureStorage } from '../core';
-import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } from '../../../shared/types';
+import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } from '../../../shared/contract';
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../../shared/constants';

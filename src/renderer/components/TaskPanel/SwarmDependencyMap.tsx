@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 import DAGViewer, { type DAGVisualizationState } from '../features/workflow/DAGViewer';
-import type { DAGStatus, TaskPriority, TaskStatus } from '@shared/types/taskDAG';
+import type { DAGStatus, TaskPriority, TaskStatus } from '@shared/contract/taskDAG';
 import type {
   SwarmAgentContextSnapshot,
   SwarmAgentState,
   SwarmLaunchRequest,
-} from '@shared/types/swarm';
+} from '@shared/contract/swarm';
 import type { SwarmExecutionPhase } from '../../stores/swarmStore';
 
 const PHASE_STATUS_MAP: Record<SwarmExecutionPhase, DAGStatus> = {

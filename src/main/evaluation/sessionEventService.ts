@@ -7,7 +7,7 @@
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 
 const logger = createLogger('SessionEventService');
 

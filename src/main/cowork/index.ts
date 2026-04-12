@@ -13,7 +13,7 @@ export type {
   CoworkAgentResult,
   CoworkResult,
   CoworkTemplateId,
-} from '../../shared/types/cowork';
+} from '../../shared/contract/cowork';
 
 // Contract Management
 export {

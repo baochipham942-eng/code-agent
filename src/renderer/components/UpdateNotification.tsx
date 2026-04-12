@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
-import type { UpdateInfo, DownloadProgress } from '../../shared/types';
+import type { UpdateInfo, DownloadProgress } from '../../shared/contract';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 

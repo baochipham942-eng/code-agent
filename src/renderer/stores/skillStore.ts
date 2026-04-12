@@ -8,8 +8,8 @@ import type {
   SessionSkillMount,
   LocalSkillLibrary,
   SkillRecommendation,
-} from '@shared/types/skillRepository';
-import type { ParsedSkill } from '@shared/types/agentSkill';
+} from '@shared/contract/skillRepository';
+import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 

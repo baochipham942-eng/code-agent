@@ -2,10 +2,10 @@
 // Agent Orchestrator - Types & Constants
 // ============================================================================
 
-import type { AgentEvent } from '../../../shared/types';
+import type { AgentEvent } from '../../../shared/contract';
 import type { ConfigService } from '../../services/core/configService';
 import type { PlanningService } from '../../planning';
-import type { DAGVisualizationEvent } from '../../../shared/types/dagVisualization';
+import type { DAGVisualizationEvent } from '../../../shared/contract/dagVisualization';
 
 /**
  * Agent Orchestrator 配置

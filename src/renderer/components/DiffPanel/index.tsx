@@ -6,7 +6,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { DiffView } from '../DiffView';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { FileDiff, DiffSummary } from '@shared/types/diff';
+import type { FileDiff, DiffSummary } from '@shared/contract/diff';
 
 interface DiffPanelProps {
   sessionId: string;

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { ObjectiveMetrics } from '@shared/types/sessionAnalytics';
+import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
 import ipcService from '../services/ipcService';
 
 interface SessionInfo {

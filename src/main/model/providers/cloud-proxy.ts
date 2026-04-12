@@ -3,7 +3,7 @@
 // ============================================================================
 
 import axios from 'axios';
-import type { ModelConfig, ToolDefinition, ToolCall, ModelInfo } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition, ToolCall, ModelInfo } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import {

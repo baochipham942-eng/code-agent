@@ -7,7 +7,7 @@
 // - 可独立使用，也可与 TelemetryCollector 组合（compose）
 // ============================================================================
 
-import type { TelemetryAdapter, TelemetryModelCall } from '../../shared/types/telemetry';
+import type { TelemetryAdapter, TelemetryModelCall } from '../../shared/contract/telemetry';
 
 // ----------------------------------------------------------------------------
 // Types

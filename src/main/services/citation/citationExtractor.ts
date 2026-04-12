@@ -5,7 +5,7 @@
 // 按工具类型分发提取逻辑，不修改工具本身，只从 ToolResult 中提取。
 
 import path from 'path';
-import type { Citation, CitationType } from '../../../shared/types/citation';
+import type { Citation, CitationType } from '../../../shared/contract/citation';
 
 let citationCounter = 0;
 

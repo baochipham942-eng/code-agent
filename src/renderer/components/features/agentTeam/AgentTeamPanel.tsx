@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
-import type { SwarmAgentState } from '@shared/types/swarm';
+import type { SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 

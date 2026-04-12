@@ -8,7 +8,7 @@ import * as path from 'path';
 import { glob } from 'glob';
 import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
-import type { ToolResult } from '../../../shared/types';
+import type { ToolResult } from '../../../shared/contract';
 
 const logger = createLogger('CodeIndexServer');
 

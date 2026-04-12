@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { CloudTask, CreateCloudTaskRequest, CloudTaskFilter, TaskSyncState, CloudExecutionStats } from '../../shared/types/cloud';
+import type { CloudTask, CreateCloudTaskRequest, CloudTaskFilter, TaskSyncState, CloudExecutionStats } from '../../shared/contract/cloud';
 import {
   getCloudTaskService,
   isCloudTaskServiceInitialized,

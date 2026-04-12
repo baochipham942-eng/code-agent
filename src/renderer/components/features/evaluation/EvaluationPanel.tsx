@@ -8,11 +8,11 @@ import { MetricCard } from './MetricCard';
 import type {
   EvaluationResult,
   EvaluationExportFormat,
-} from '../../../../shared/types/evaluation';
+} from '../../../../shared/contract/evaluation';
 import {
   GRADE_COLORS,
   GRADE_BG_COLORS,
-} from '../../../../shared/types/evaluation';
+} from '../../../../shared/contract/evaluation';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import { formatDuration } from '../../../../shared/utils/format';
 import ipcService from '../../../services/ipcService';

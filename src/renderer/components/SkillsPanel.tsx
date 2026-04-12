@@ -18,8 +18,8 @@ import {
 import { useSkillStore } from '../stores/skillStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
-import type { SessionSkillMount } from '@shared/types/skillRepository';
-import type { ParsedSkill } from '@shared/types/agentSkill';
+import type { SessionSkillMount } from '@shared/contract/skillRepository';
+import type { ParsedSkill } from '@shared/contract/agentSkill';
 
 // ----------------------------------------------------------------------------
 // Props

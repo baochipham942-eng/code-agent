@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { PermissionRequest, PermissionResponse } from '../../shared/types';
+import type { PermissionRequest, PermissionResponse } from '../../shared/contract';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import { sseClients, broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';

@@ -10,7 +10,7 @@ import {
   getToolStatusText,
   getToolStatusClass,
 } from '../../../src/renderer/utils/toolSummary';
-import type { ToolCall } from '../../../src/shared/types/tool';
+import type { ToolCall } from '../../../src/shared/contract/tool';
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {

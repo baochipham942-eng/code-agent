@@ -6,8 +6,8 @@
 import type {
   SessionSkillMount,
   SkillRecommendation,
-} from '../../../shared/types/skillRepository';
-import type { ParsedSkill } from '../../../shared/types/agentSkill';
+} from '../../../shared/contract/skillRepository';
+import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { SKILL_KEYWORDS, DEFAULT_ENABLED_SKILLS } from './skillRepositories';
 import { createLogger } from '../infra/logger';

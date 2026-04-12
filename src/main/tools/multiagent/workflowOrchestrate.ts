@@ -5,19 +5,19 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { ModelConfig, ModelProvider } from '../../../shared/types';
+import type { ModelConfig, ModelProvider } from '../../../shared/contract';
 import type {
   WorkflowStage,
   WorkflowTemplate,
   StageContext,
   StageResult,
   GeneratedFile,
-} from '../../../shared/types/workflow';
+} from '../../../shared/contract/workflow';
 import {
   BUILT_IN_WORKFLOWS,
   getBuiltInWorkflow,
   listBuiltInWorkflows,
-} from '../../../shared/types/workflow';
+} from '../../../shared/contract/workflow';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getPredefinedAgent,

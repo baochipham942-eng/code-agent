@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
-import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/types';
+import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/contract';
 import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { startDesktopVisionAnalyzer } from '../services/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktopAudioCapture';

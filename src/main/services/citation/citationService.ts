@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
-import type { Citation } from '../../../shared/types/citation';
+import type { Citation } from '../../../shared/contract/citation';
 import { extractCitations } from './citationExtractor';
 
 const logger = createLogger('CitationService');

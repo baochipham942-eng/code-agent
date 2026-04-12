@@ -3,7 +3,7 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronServiceStats,
-} from '@shared/types';
+} from '@shared/contract';
 
 export type CronJobFilter = {
   enabled?: boolean;

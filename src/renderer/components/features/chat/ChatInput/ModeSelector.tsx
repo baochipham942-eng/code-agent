@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Terminal, ClipboardList, MessageCircleQuestion } from 'lucide-react';
-import type { InteractionMode } from '../../../../../shared/types/agent';
+import type { InteractionMode } from '../../../../../shared/contract/agent';
 
 // ============================================================================
 // 配置

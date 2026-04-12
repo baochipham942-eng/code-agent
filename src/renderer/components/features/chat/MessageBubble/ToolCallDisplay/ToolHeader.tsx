@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { formatParams, formatDuration, getToolDisplayName } from './utils';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';

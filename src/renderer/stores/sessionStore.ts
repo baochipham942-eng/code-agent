@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import type { Session, Message, TodoItem } from '@shared/types';
+import type { Session, Message, TodoItem } from '@shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
-import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/types/sessionState';
+import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 

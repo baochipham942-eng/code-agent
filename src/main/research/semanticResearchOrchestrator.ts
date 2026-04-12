@@ -13,7 +13,7 @@ import type {
   DataSourceType,
   ResearchUserSettings,
 } from './types';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import { IntentClassifier } from '../routing/intentClassifier';

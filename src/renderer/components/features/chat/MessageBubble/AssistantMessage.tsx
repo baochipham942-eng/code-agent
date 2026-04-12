@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Copy, Check, FileText, RefreshCw, RotateCcw, BarChart3, Table, Code, GitBranch } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
-import type { Artifact } from '@shared/types/message';
+import type { Artifact } from '@shared/contract/message';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
 import { ToolCallGroupList } from './ToolCallDisplay/ToolCallGroup';

@@ -13,7 +13,7 @@ import { ConfigService } from '../services';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { getTaskManager, type TaskManager } from '../task';
 import type { PlanningService } from '../planning';
-import type { AgentApplicationService } from '../../shared/types/appService';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 import { AgentAppServiceImpl } from './agentAppService';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';

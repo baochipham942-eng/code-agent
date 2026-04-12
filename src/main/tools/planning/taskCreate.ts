@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { SessionTaskPriority } from '../../../shared/types/planning';
+import type { SessionTaskPriority } from '../../../shared/contract/planning';
 import { createTask, listTasks } from './taskStore';
 
 export const taskCreateTool: Tool = {

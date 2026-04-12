@@ -10,7 +10,7 @@ import type {
   PermissionResponse,
   ModelConfig,
   ModelProvider,
-} from '../../shared/types';
+} from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -30,10 +30,10 @@ import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getModelSessionState } from '../session/modelSessionState';
 import { getRoutingService } from '../routing';
-import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
+import type { RoutingContext, RoutingResolution } from '../../shared/contract/agentRouting';
 import { getTelemetryCollector } from '../telemetry';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
-import type { EffortLevel } from '../../shared/types/agent';
+import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
@@ -93,7 +93,7 @@ export class AgentOrchestrator {
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
-  private broadcastDAGEvent?: (event: import('../../shared/types/dagVisualization').DAGVisualizationEvent) => void;
+  private broadcastDAGEvent?: (event: import('../../shared/contract/dagVisualization').DAGVisualizationEvent) => void;
 
   constructor(config: AgentOrchestratorConfig) {
     this.configService = config.configService;
@@ -383,12 +383,12 @@ export class AgentOrchestrator {
     return this.delegateMode;
   }
 
-  setEffortLevel(level: import('../../shared/types/agent').EffortLevel): void {
+  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
     this.agentLoop?.setEffortLevel(level);
     logger.info(`[AgentOrchestrator] Effort level set to ${level}`);
   }
 
-  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     this.agentLoop?.setInteractionMode(mode);
     logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);
   }

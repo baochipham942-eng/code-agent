@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Message } from '../../src/shared/types';
+import type { Message } from '../../src/shared/contract';
 
 // ============================================================================
 // 辅助函数: 模拟消息提取逻辑 (从 channelAgentBridge.ts:244-247 提取)

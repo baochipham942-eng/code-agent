@@ -3,7 +3,7 @@
 // 完全不同的 API 格式：generateContent / streamGenerateContent
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import {
   electronFetch,

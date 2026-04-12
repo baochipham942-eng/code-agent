@@ -22,14 +22,14 @@ import type {
   DAGEventType,
   AgentTaskConfig,
   ShellTaskConfig,
-} from '../../shared/types/taskDAG';
+} from '../../shared/contract/taskDAG';
 import {
   DEFAULT_DAG_OPTIONS,
   createDefaultMetadata,
   isTaskTerminal,
   getPriorityValue,
   getNextTaskStatus,
-} from '../../shared/types/taskDAG';
+} from '../../shared/contract/taskDAG';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('TaskDAG');

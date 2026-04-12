@@ -3,7 +3,7 @@
 // 包含自适应限流器，防止并发过高触发限流
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';

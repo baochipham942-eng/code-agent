@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { TelemetryTurn } from '@shared/types/telemetry';
+import type { TelemetryTurn } from '@shared/contract/telemetry';
 import { Wrench, MessageSquare, CheckCircle, AlertTriangle, XCircle, HelpCircle } from 'lucide-react';
 
 interface TurnListProps {

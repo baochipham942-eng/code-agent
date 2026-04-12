@@ -4,10 +4,10 @@
 
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
-import type { SwarmVerificationResult } from '../../../shared/types/swarm';
+import type { SwarmVerificationResult } from '../../../shared/contract/swarm';
 
 // Import and re-export AgentStatus from shared types
-import type { AgentStatus } from '../../../shared/types/swarm';
+import type { AgentStatus } from '../../../shared/contract/swarm';
 export type { AgentStatus };
 
 /**

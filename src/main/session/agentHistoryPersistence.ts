@@ -6,7 +6,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
-import type { CompletedAgentRun } from '../../shared/types/agentHistory';
+import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 
 const logger = createLogger('AgentHistoryPersistence');
 

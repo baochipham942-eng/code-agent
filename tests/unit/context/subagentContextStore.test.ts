@@ -9,8 +9,8 @@ import path from 'path';
 import os from 'os';
 import { CompressionState } from '../../../src/main/context/compressionState';
 import { SubagentContextStore } from '../../../src/main/context/subagentContextStore';
-import type { Message } from '../../../src/shared/types';
-import type { SwarmAgentContextSnapshot } from '../../../src/shared/types/swarm';
+import type { Message } from '../../../src/shared/contract';
+import type { SwarmAgentContextSnapshot } from '../../../src/shared/contract/swarm';
 
 describe('SubagentContextStore', () => {
   let tempDir: string;

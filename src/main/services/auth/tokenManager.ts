@@ -2,7 +2,7 @@
 // Token Manager - 上下文窗口管理和 Token 计数
 // ============================================================================
 
-import type { Message } from '../../../shared/types';
+import type { Message } from '../../../shared/contract';
 import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW } from '../../../shared/constants';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 

@@ -18,8 +18,8 @@ import type {
   QualitySignals,
   TelemetryPushEvent,
   ErrorCategory,
-} from '../../shared/types/telemetry';
-import type { AgentEvent } from '../../shared/types';
+} from '../../shared/contract/telemetry';
+import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 
 

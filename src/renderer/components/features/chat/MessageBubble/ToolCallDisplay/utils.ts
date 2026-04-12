@@ -31,7 +31,7 @@ import {
   Image,
   Presentation,
 } from 'lucide-react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 export { formatDuration } from '../../../../../../shared/utils/format';
 
 // ============================================================================

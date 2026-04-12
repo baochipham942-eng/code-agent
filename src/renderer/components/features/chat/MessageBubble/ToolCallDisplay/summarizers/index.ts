@@ -2,7 +2,7 @@
 // Tool Summarizers - Smart result summaries for different tool types
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';

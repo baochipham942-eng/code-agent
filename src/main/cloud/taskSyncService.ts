@@ -11,7 +11,7 @@ import type {
   CloudTaskStatus,
   TaskSyncState,
   TaskProgressEvent,
-} from '../../shared/types/cloud';
+} from '../../shared/contract/cloud';
 import { createLogger } from '../services/infra/logger';
 import { TASK_SYNC } from '../../shared/constants';
 

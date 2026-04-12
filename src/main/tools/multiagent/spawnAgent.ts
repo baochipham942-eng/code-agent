@@ -6,8 +6,8 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { ModelConfig } from '../../../shared/types';
-import type { FullAgentConfig } from '../../../shared/types/agentTypes';
+import type { ModelConfig } from '../../../shared/contract';
+import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getParallelAgentCoordinator,
@@ -770,7 +770,7 @@ async function executeParallelAgents(
   const onTaskProgress = (evt: {
     taskId: string;
     role: string;
-    snapshot: import('../../../shared/types/swarm').SwarmAgentContextSnapshot;
+    snapshot: import('../../../shared/contract/swarm').SwarmAgentContextSnapshot;
   }) => {
     emitter.agentUpdated(evt.taskId, {
       status: 'running',

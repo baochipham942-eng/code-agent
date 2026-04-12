@@ -10,7 +10,7 @@ import type {
   ToolResult,
   AgentEvent,
   AgentTaskPhase,
-} from '../../shared/types';
+} from '../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
 import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
 import type { ToolRegistryLike } from '../tools/types';
@@ -27,7 +27,7 @@ import { getTaskOrchestrator } from '../planning/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 import { HookManager, createHookManager } from '../hooks';
-import type { BudgetEventData } from '../../shared/types';
+import type { BudgetEventData } from '../../shared/contract';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
@@ -306,15 +306,15 @@ export class AgentLoop {
     return this.conversationRuntime.getStructuredOutput();
   }
 
-  setEffortLevel(level: import('../../shared/types/agent').EffortLevel): void {
+  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
     this.conversationRuntime.setEffortLevel(level);
   }
 
-  getEffortLevel(): import('../../shared/types/agent').EffortLevel {
+  getEffortLevel(): import('../../shared/contract/agent').EffortLevel {
     return this.conversationRuntime.getEffortLevel();
   }
 
-  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     this.conversationRuntime.setInteractionMode(mode);
   }
 

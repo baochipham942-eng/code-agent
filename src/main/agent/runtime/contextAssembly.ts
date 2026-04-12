@@ -15,7 +15,7 @@ import type {
   ToolResult,
   AgentEvent,
   AgentTaskPhase,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
@@ -30,7 +30,7 @@ import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
 import { HookManager, createHookManager } from '../../hooks';
-import type { BudgetEventData } from '../../../shared/types';
+import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
@@ -103,7 +103,7 @@ import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunFinalizer } from './runFinalizer';
-import type { ContextInterventionSnapshot } from '../../../shared/types/contextView';
+import type { ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { ContextEventRecord } from '../../context/contextEventLedger';
 
 // Process-level file read cache to avoid redundant readFileSync calls
@@ -1662,8 +1662,8 @@ ${deferredToolsSummary}
    */
 
   generateThinkingPrompt(
-    toolCalls: import('../../../shared/types').ToolCall[],
-    toolResults: import('../../../shared/types').ToolResult[]
+    toolCalls: import('../../../shared/contract').ToolCall[],
+    toolResults: import('../../../shared/contract').ToolResult[]
   ): string {
     const hasErrors = toolResults.some(r => !r.success);
     const toolNames = toolCalls.map(tc => tc.name).join(', ');
@@ -1701,8 +1701,8 @@ ${deferredToolsSummary}
    */
 
   async maybeInjectThinking(
-    toolCalls: import('../../../shared/types').ToolCall[],
-    toolResults: import('../../../shared/types').ToolResult[]
+    toolCalls: import('../../../shared/contract').ToolCall[],
+    toolResults: import('../../../shared/contract').ToolResult[]
   ): Promise<void> {
     const hasErrors = toolResults.some(r => !r.success);
 

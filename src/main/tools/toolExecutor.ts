@@ -506,7 +506,7 @@ export class ToolExecutor {
 
       // Cache successful results for cacheable tools
       if (result.success && toolCache.isCacheable(toolName) && result.result !== undefined) {
-        toolCache.set(toolName, params, result.result as import('../../shared/types').ToolResult);
+        toolCache.set(toolName, params, result.result as import('../../shared/contract').ToolResult);
         logger.debug('Cached result', { toolName });
       }
 

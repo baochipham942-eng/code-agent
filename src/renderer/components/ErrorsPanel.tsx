@@ -14,7 +14,7 @@ import {
   Terminal,
   Clock,
 } from 'lucide-react';
-import type { ErrorRecord } from '@shared/types';
+import type { ErrorRecord } from '@shared/contract';
 
 interface ErrorsPanelProps {
   errors: ErrorRecord[];

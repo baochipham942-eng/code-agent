@@ -59,7 +59,7 @@ export interface PermissionRequest {
   dangerLevel?: DangerLevel;
   timestamp?: number;
   /** Decision trace: why this permission was requested */
-  decisionTrace?: import('@shared/types').DecisionTrace;
+  decisionTrace?: import('@shared/contract').DecisionTrace;
 }
 
 // 权限配置

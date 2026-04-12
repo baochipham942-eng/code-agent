@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { AlertCircle, AlertTriangle, Info, XCircle, RefreshCw, Settings, HelpCircle } from 'lucide-react';
-import { ErrorCode, ErrorSeverity, type SerializedError } from '../../shared/types/error';
+import { ErrorCode, ErrorSeverity, type SerializedError } from '../../shared/contract/error';
 
 // ============================================================================
 // Types

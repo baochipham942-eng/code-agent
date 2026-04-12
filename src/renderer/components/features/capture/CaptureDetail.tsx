@@ -5,7 +5,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { X, Globe, ExternalLink, Clock, Tag } from 'lucide-react';
-import type { CaptureItem } from '@shared/types/capture';
+import type { CaptureItem } from '@shared/contract/capture';
 
 interface CaptureDetailProps {
   item: CaptureItem;

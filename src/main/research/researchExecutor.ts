@@ -12,7 +12,7 @@ import type {
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import type { ModelProvider } from '../../shared/types/model';
+import type { ModelProvider } from '../../shared/contract/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { UrlCompressor } from './urlCompressor';

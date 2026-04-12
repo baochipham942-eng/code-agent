@@ -11,8 +11,8 @@ import type {
   CreateSessionConfig,
   SwitchModelParams,
   ModelOverride,
-} from '../../shared/types/appService';
-import type { PermissionResponse, Session, Message, ModelProvider } from '../../shared/types';
+} from '../../shared/contract/appService';
+import type { PermissionResponse, Session, Message, ModelProvider } from '../../shared/contract';
 import type { TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
@@ -259,14 +259,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Effort Level ===
 
-  setEffortLevel(level: import('../../shared/types/agent').EffortLevel): void {
+  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
     const orchestrator = this.getOrchestratorOrThrow();
     orchestrator.setEffortLevel(level);
   }
 
   // === Interaction Mode ===
 
-  setInteractionMode(mode: import('../../shared/types/agent').InteractionMode): void {
+  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     const orchestrator = this.getOrchestratorOrThrow();
     orchestrator.setInteractionMode(mode);
   }

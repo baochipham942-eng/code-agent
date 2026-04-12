@@ -2,7 +2,7 @@
 // Edit Summarizer - Smart summaries for edit_file and write_file results
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 export function summarizeEdit(toolCall: ToolCall): string | null {
   // For successful edit_file, show Done or line change info

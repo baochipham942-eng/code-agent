@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../src/shared/types';
+import type { Message } from '../../../src/shared/contract';
 import { CompressionPipeline } from '../../../src/main/context/compressionPipeline';
 import { CompressionState } from '../../../src/main/context/compressionState';
 import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';

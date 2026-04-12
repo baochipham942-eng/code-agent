@@ -6,7 +6,7 @@
 import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback, ResponseContentPart, Provider } from '../types';
 import {
   logger,

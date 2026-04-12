@@ -15,8 +15,8 @@ import type {
   DependencyEdge,
   TaskNodeData,
   DAGInitEventData,
-} from '../../shared/types/dagVisualization';
-import type { DAGEvent, DAGEventType, DAGStatistics, DAGTask } from '../../shared/types/taskDAG';
+} from '../../shared/contract/dagVisualization';
+import type { DAGEvent, DAGEventType, DAGStatistics, DAGTask } from '../../shared/contract/taskDAG';
 import { getDAGScheduler } from './DAGScheduler';
 import { TaskDAG } from './TaskDAG';
 import { createLogger } from '../services/infra/logger';

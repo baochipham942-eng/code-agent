@@ -2,7 +2,7 @@
 // Glob Summarizer - Smart summaries for glob search results
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 export function summarizeGlob(toolCall: ToolCall): string | null {
   const output = toolCall.result?.output;

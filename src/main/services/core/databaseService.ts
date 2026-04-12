@@ -47,8 +47,8 @@ import type {
   ToolResult,
   ModelProvider,
   TodoItem,
-} from '../../../shared/types';
-import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/types/capture';
+} from '../../../shared/contract';
+import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 
 // Re-export types from repositories（保持外部调用方零修改）
 export type {

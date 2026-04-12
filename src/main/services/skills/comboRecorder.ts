@@ -9,7 +9,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getEventBus } from '../../events/eventBus';
 import type { BusEvent } from '../../events/types';
-import type { ToolResult } from '@shared/types';
+import type { ToolResult } from '@shared/contract';
 import { getSkillsDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 

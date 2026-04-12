@@ -5,7 +5,7 @@
 
 import { useEffect, useCallback, useState } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { MemoryLearnedEvent, MemoryConfirmRequest } from '@shared/types/memory';
+import type { MemoryLearnedEvent, MemoryConfirmRequest } from '@shared/contract/memory';
 import { useUIStore } from '../stores/uiStore';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';

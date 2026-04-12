@@ -5,7 +5,7 @@
 // 的 span 操作，实现 turn-based 采集与 span-based 追踪的统一。
 // ============================================================================
 
-import type { TelemetryAdapter, TelemetryModelCall } from '../../shared/types/telemetry';
+import type { TelemetryAdapter, TelemetryModelCall } from '../../shared/contract/telemetry';
 import { getTelemetryService } from './telemetryService';
 import type { TelemetryService } from './telemetryService';
 

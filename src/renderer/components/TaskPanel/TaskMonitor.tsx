@@ -19,7 +19,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { CompactResult } from '@shared/types/contextHealth';
+import type { CompactResult } from '@shared/contract/contextHealth';
 import ipcService from '../../services/ipcService';
 import type { ContextBucket, ContextItem } from '../../utils/contextBuckets';
 

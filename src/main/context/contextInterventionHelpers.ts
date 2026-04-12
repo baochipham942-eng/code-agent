@@ -2,7 +2,7 @@
 // Context Intervention Helpers - shared transcript materialization utilities
 // ============================================================================
 
-import type { ContextInterventionSnapshot } from '../../shared/types/contextView';
+import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 
 export function getProtectedMessageIds(interventions: ContextInterventionSnapshot): Set<string> {
   return new Set([

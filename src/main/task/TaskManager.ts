@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { AgentEvent, Message, ToolCall } from '../../shared/types';
+import type { AgentEvent, Message, ToolCall } from '../../shared/contract';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';

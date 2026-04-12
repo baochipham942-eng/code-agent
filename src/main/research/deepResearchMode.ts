@@ -11,7 +11,7 @@ import type {
   ResearchPhase,
   ResearchProgressData,
 } from './types';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import { ResearchPlanner } from './researchPlanner';

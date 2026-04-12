@@ -17,7 +17,7 @@ import type {
   DesktopSearchQuery,
   DesktopSearchResult,
   DesktopTimelineQuery,
-} from '@shared/types';
+} from '@shared/contract';
 
 const logger = createLogger('NativeDesktopService');
 

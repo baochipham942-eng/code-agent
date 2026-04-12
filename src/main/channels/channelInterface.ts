@@ -12,7 +12,7 @@ import type {
   SendMessageOptions,
   SendMessageResult,
   ChannelEvent,
-} from '../../shared/types/channel';
+} from '../../shared/contract/channel';
 import { EventEmitter } from 'events';
 
 /**

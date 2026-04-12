@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CronJobExecution } from '@shared/types';
+import type { CronJobExecution } from '@shared/contract';
 import {
   formatDateTime,
   formatDuration,

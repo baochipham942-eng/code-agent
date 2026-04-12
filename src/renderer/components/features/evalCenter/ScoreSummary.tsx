@@ -4,8 +4,8 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
-import type { EvaluationResult, EvaluationMetric } from '../../../../shared/types/evaluation';
-import { scoreToGrade, GRADE_COLORS, GRADE_BG_COLORS } from '../../../../shared/types/evaluation';
+import type { EvaluationResult, EvaluationMetric } from '../../../../shared/contract/evaluation';
+import { scoreToGrade, GRADE_COLORS, GRADE_BG_COLORS } from '../../../../shared/contract/evaluation';
 import ipcService from '../../../services/ipcService';
 
 interface SessionInfo {

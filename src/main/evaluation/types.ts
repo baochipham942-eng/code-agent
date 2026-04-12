@@ -2,10 +2,10 @@
 // Evaluation Internal Types - 评测模块内部类型
 // ============================================================================
 
-import type { EvaluationMetric, EvaluationDimension } from '../../shared/types/evaluation';
+import type { EvaluationMetric, EvaluationDimension } from '../../shared/contract/evaluation';
 
 // Re-export TranscriptMetrics from shared (canonical source) for backward compatibility
-export type { TranscriptMetrics } from '../../shared/types/evaluation';
+export type { TranscriptMetrics } from '../../shared/contract/evaluation';
 
 /**
  * 对话类型分类
@@ -94,7 +94,7 @@ export interface ToolCallStats {
   redundantCalls: number;
 }
 
-// TranscriptMetrics moved to shared/types/evaluation.ts (canonical source)
+// TranscriptMetrics moved to shared/contract/evaluation.ts (canonical source)
 // Re-exported above for backward compatibility
 
 /**

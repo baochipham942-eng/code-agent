@@ -7,7 +7,7 @@ import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-r
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import type { UpdateInfo } from '@shared/types';
+import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import { tauriCheckForUpdate, tauriInstallUpdate } from '../../../../utils/tauriUpdater';

@@ -3,7 +3,7 @@
 // Extracted from AgentLoop (all methods are no-ops after Memory service removal)
 // ============================================================================
 
-import type { AgentEvent } from '../../../shared/types';
+import type { AgentEvent } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
 
 export class LearningPipeline {

@@ -6,7 +6,7 @@ import { EventEmitter } from 'events';
 import { BrowserWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
-import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../../shared/types/sessionState';
+import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
 
 const logger = createLogger('BackgroundTaskManager');
 

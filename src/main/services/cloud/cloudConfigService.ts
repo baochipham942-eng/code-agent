@@ -3,7 +3,7 @@
 // ============================================================================
 // 负责从云端拉取配置、缓存管理、离线降级
 
-import type { SkillDefinition } from '../../../shared/types';
+import type { SkillDefinition } from '../../../shared/contract';
 import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';

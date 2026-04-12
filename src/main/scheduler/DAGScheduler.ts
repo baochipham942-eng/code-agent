@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { ModelConfig } from '../../shared/types';
+import type { ModelConfig } from '../../shared/contract';
 import type {
   DAGTask,
   TaskOutput,
@@ -15,8 +15,8 @@ import type {
   AgentTaskConfig,
   ShellTaskConfig,
   CheckpointTaskConfig,
-} from '../../shared/types/taskDAG';
-import { isTaskTerminal } from '../../shared/types/taskDAG';
+} from '../../shared/contract/taskDAG';
+import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
 import type { Tool, ToolContext } from '../tools/types';
 import { getSubagentExecutor } from '../agent/subagentExecutor';

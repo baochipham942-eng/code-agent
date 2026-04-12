@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
-import type { ModelProvider } from '../../../shared/types/model';
+import type { ModelProvider } from '../../../shared/contract/model';
 import {
   type CoreAgentId,
   type ModelTier,

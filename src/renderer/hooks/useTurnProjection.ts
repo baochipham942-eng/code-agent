@@ -4,8 +4,8 @@
 // ============================================================================
 
 import { useMemo } from 'react';
-import type { Message } from '@shared/types';
-import type { TraceProjection, TraceTurn, TraceNode } from '@shared/types/trace';
+import type { Message } from '@shared/contract';
+import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 
 export function useTurnProjection(

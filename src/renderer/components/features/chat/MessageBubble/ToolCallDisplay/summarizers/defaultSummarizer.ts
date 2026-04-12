@@ -2,7 +2,7 @@
 // Default Summarizer - Fallback summaries for other tools
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 export function summarizeDefault(toolCall: ToolCall): string | null {
   const output = toolCall.result?.output;

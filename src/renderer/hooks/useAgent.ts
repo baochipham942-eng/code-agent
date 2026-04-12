@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/contract';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import ipcService from '../services/ipcService';

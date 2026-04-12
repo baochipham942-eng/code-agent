@@ -12,7 +12,7 @@ import type {
   ConfirmationPreview,
   ConfirmationContext,
   ToolConfirmationConfig,
-} from '../../shared/types/confirmation';
+} from '../../shared/contract/confirmation';
 
 const logger = createLogger('ConfirmationGate');
 

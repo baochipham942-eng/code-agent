@@ -8,7 +8,7 @@ import React, { useState, useCallback } from 'react';
 import { Shrink, Loader2 } from 'lucide-react';
 import { useStatusRailModel } from '../../../hooks/useStatusRailModel';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { CompactResult } from '@shared/types/contextHealth';
+import type { CompactResult } from '@shared/contract/contextHealth';
 import ipcService from '../../../services/ipcService';
 
 function formatTokens(n: number): string {

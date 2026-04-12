@@ -2,7 +2,7 @@
 // DAG Scheduler - Dependency-aware tool execution scheduling
 // ============================================================================
 
-import type { ToolCall } from '../../../shared/types';
+import type { ToolCall } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
 import { MAX_PARALLEL_TOOLS } from '../loopTypes';
 

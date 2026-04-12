@@ -2,7 +2,7 @@
 // PerplexityProvider - Perplexity API Provider 实现（联网搜索）
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToOpenAIMessages } from './shared';

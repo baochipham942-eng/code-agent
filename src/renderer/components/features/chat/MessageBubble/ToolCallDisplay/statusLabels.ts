@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { ToolStatus } from './styles';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 interface StatusLabels {
   preparing: string;   // _streaming === true (args arriving)

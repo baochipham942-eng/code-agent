@@ -2,7 +2,7 @@
 // Read Summarizer - Smart summaries for read_file results
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 export function summarizeRead(toolCall: ToolCall): string | null {
   const output = toolCall.result?.output;

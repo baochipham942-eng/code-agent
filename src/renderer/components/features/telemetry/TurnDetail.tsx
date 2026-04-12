@@ -8,7 +8,7 @@ import type {
   TelemetryModelCall,
   TelemetryToolCall,
   TelemetryTimelineEvent,
-} from '@shared/types/telemetry';
+} from '@shared/contract/telemetry';
 import { ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
 

@@ -7,7 +7,7 @@ import { Key, Stethoscope } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { ModelProvider } from '@shared/types';
+import type { ModelProvider } from '@shared/contract';
 import { UI, MODEL, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderModelEntry } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
@@ -20,7 +20,7 @@ const logger = createLogger('ModelSettings');
 // ============================================================================
 
 // Re-export ModelConfig from shared types for consistency
-import type { ModelConfig } from '@shared/types';
+import type { ModelConfig } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
@@ -108,7 +108,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             },
           },
         },
-      } as Partial<import('@shared/types').AppSettings>);
+      } as Partial<import('@shared/contract').AppSettings>);
       logger.info('Config saved', { provider: config.provider });
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);

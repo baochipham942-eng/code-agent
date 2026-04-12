@@ -5,8 +5,8 @@
 import type { IpcMain, BrowserWindow } from '../platform';
 import { dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { FileInfo } from '../../shared/types';
-import type { AgentApplicationService } from '../../shared/types/appService';
+import type { FileInfo } from '../../shared/contract';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers

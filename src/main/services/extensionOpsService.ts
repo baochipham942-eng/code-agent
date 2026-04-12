@@ -11,7 +11,7 @@ import type {
   ExtensionType,
   ExtensionStatus,
   ExtensionSource,
-} from '../../shared/types/extension';
+} from '../../shared/contract/extension';
 import type { ValidationResult } from '../plugins/pluginValidator';
 import { createLogger } from './infra/logger';
 

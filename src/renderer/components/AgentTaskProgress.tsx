@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Loader2, Sparkles, Wrench, PenLine, CheckCircle2, XCircle } from 'lucide-react';
-import type { AgentTaskPhase, TaskProgressData } from '@shared/types';
+import type { AgentTaskPhase, TaskProgressData } from '@shared/contract';
 
 // ============================================================================
 // 类型定义

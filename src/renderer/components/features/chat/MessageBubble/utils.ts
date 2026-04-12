@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { MarkdownBlockData, LanguageConfig, AttachmentIconConfig } from './types';
-import type { AttachmentCategory } from '@shared/types';
+import type { AttachmentCategory } from '@shared/contract';
 
 // Format timestamp to readable time
 export function formatTime(timestamp: number): string {

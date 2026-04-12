@@ -16,7 +16,7 @@ import type {
   SessionTask,
   SessionTaskPriority,
   TodoItem,
-} from '../../shared/types';
+} from '../../shared/contract';
 import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';

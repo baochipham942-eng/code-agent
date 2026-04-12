@@ -8,7 +8,7 @@ import { createTUI } from './index';
 import type { TUIScreen } from './screen';
 import type { CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 import { MODEL_PRICING_PER_1M } from '../../shared/constants/pricing';
 
 /**

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { X, FileText, CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import type { TaskPlan, TaskPhase, TaskStep } from '@shared/types';
+import type { TaskPlan, TaskPhase, TaskStep } from '@shared/contract';
 
 // ============================================================================
 // 类型定义

@@ -3,15 +3,8 @@
 # Circular Dependency Check
 # 用 madge 扫描 src/main，循环依赖数超过 baseline 即阻断。
 #
-# Baseline: 8 条（2026-04 P0-6.2 retire legacy ToolRegistry 后实测）
+# Baseline: 4 条（2026-04 protocol 层迁移后实测）
 # 当前允许值: MAX_CIRCULAR
-#
-# 其中 4 条 (#5-#8) 是 migrated/index.ts 的 lazy plugin-loading 模式导致的
-# phantom cycle：protocolRegistry → migrated/index → wrappers → tool
-# → toolResolver/shadowAdapter → protocolRegistry。
-# wrappers 全部走 `await import(...)` 懒加载，模块首次调用才触发实际装载，
-# 运行时无问题。madge 无法区分 static import 与 dynamic import，所以这些
-# cycle 出现在静态报告里。
 #
 # 本地安装到 git hooks:
 #   echo 'bash scripts/check-circular-deps.sh || exit 1' >> .git/hooks/pre-commit
@@ -19,7 +12,7 @@
 
 set -e
 
-MAX_CIRCULAR=8
+MAX_CIRCULAR=4
 SCAN_ROOT="src/main"
 
 RED='\033[0;31m'

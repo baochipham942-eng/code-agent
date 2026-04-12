@@ -10,7 +10,7 @@ import { EventEmitter } from 'events';
 import type { ModelConfig } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/toolResolver';
+import type { ToolResolver } from '../protocol/dispatch/toolResolver';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';

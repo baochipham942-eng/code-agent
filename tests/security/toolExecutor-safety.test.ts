@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToolExecutor } from '../../src/main/tools/toolExecutor';
-import { resetToolResolver } from '../../src/main/tools/toolResolver';
+import { resetToolResolver } from '../../src/main/protocol/dispatch/toolResolver';
 
 // Mock tool resolver — register a fake 'bash' tool with permission required
-vi.mock('../../src/main/tools/toolResolver', () => {
+vi.mock('../../src/main/protocol/dispatch/toolResolver', () => {
   const bashDef = {
     name: 'bash',
     description: 'Execute bash commands',

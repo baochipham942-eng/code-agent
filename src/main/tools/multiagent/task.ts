@@ -7,7 +7,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/contract';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
-import { getToolResolver } from '../toolResolver';
+import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getPredefinedAgent,
   listPredefinedAgents,
@@ -305,7 +305,7 @@ Parameters:
         {
           // P4: 使用子代理专用模型配置
           modelConfig: effectiveModelConfig,
-          toolResolver: getToolResolver(),
+          toolResolver: context.resolver as ToolResolver,
           toolContext: context,
           parentToolUseId: context.currentToolCallId,
           hookManager: context.hookManager,

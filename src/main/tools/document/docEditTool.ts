@@ -10,8 +10,7 @@ import * as path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { executeExcelEdit, type ExcelEditParams } from '../excel/excelEdit';
 import { executeDocxEdit, type DocxEditParams } from './docxEdit';
-// NOTE: protocol modules loaded lazily to avoid a static cycle:
-// protocolRegistry → migrated/index → document/wrappers → docEditTool.
+import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -115,10 +114,11 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
 
       case 'pptx': {
         // PPT edit has a different interface (single action per call).
-        // Route to ppt_edit via protocol (lazy import to break static cycle).
-        const { getProtocolRegistry } = await import('../protocolRegistry');
-        const { executePocToolViaProtocol } = await import('../shadowAdapter');
-        if (!getProtocolRegistry().has('ppt_edit')) {
+        // Route to ppt_edit via ctx.resolver — 走 protocol resolver，避免 tools/ 反向
+        // 静态引用 protocol/dispatch/ 形成 cycle。resolver 由 shadowAdapter 在构造
+        // protocol ctx 时注入，再由 legacyAdapter 反向映射回 legacy ctx。
+        const resolver = context.resolver as ToolResolver | undefined;
+        if (!resolver || !resolver.has('ppt_edit')) {
           return {
             success: false,
             error: 'PPT editing requires the ppt_edit tool. Use ppt_edit directly for .pptx files.',
@@ -127,13 +127,11 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
         const results: string[] = [];
         for (const op of operations) {
           const pptOp = op as Record<string, unknown>;
-          const result = await executePocToolViaProtocol({
-            toolName: 'ppt_edit',
-            params: { file_path: filePath, ...pptOp },
-            workingDirectory: context.workingDirectory,
-            requestPermission: context.requestPermission,
-            sessionId: (context as { sessionId?: string }).sessionId,
-          });
+          const result = await resolver.execute(
+            'ppt_edit',
+            { file_path: filePath, ...pptOp },
+            context,
+          );
           if (!result.success) {
             return {
               success: false,

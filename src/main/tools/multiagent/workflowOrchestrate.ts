@@ -19,7 +19,7 @@ import {
   listBuiltInWorkflows,
 } from '../../../shared/contract/workflow';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
-import { getToolResolver } from '../toolResolver';
+import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getPredefinedAgent,
   getAgentPrompt,
@@ -481,7 +481,7 @@ async function executeStage(
       },
       {
         modelConfig: effectiveModelConfig,
-        toolResolver: getToolResolver(),
+        toolResolver: context.resolver as ToolResolver,
         toolContext: context,
         // Pass attachments for multimodal support
         attachments: attachments,

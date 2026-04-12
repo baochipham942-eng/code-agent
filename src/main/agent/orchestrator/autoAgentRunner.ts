@@ -9,7 +9,7 @@ import { getAgentRequirementsAnalyzer } from '../agentRequirementsAnalyzer';
 import { getSessionManager } from '../../services';
 import { TaskDAG } from '../../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../../scheduler/dagEventBridge';
-import { getToolResolver } from '../../tools/toolResolver';
+import { getToolResolver } from '../../protocol/dispatch/toolResolver';
 import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
 

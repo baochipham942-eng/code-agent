@@ -62,6 +62,8 @@ export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyTool
       else ctx.planMode!.exit();
     } : undefined,
     isPlanMode: ctx.planMode ? () => ctx.planMode!.isActive() : undefined,
+    // 跨工具调度 resolver — 由 shadowAdapter 在 protocol ctx 构造时注入
+    resolver: ctx.resolver,
   } as LegacyToolContext;
 }
 

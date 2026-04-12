@@ -10,11 +10,13 @@
 // 本模块对外暴露 ToolResolver 接口 + 默认实现（单例，走 protocol registry）。
 // subagentExecutor / multiagent task / skill / planning.task 拿 resolver 替代
 // 原来的 Map<string, Tool>。
+//
+// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
 // ============================================================================
 
-import type { ToolDefinition } from '../../shared/contract';
-import type { ToolContext, ToolExecutionResult } from './types';
-import { getProtocolRegistry } from './protocolRegistry';
+import type { ToolDefinition } from '../../../shared/contract';
+import type { ToolContext, ToolExecutionResult } from '../../tools/types';
+import { getProtocolRegistry } from '../../tools/protocolRegistry';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
 
@@ -72,6 +74,7 @@ class ProtocolToolResolver implements ToolResolver {
         sessionId: (ctx as { sessionId?: string }).sessionId,
         workingDirectory: ctx.workingDirectory,
         legacyCtx: ctx,
+        resolver: this,
       });
       const canUseTool = buildCanUseToolFromLegacy(ctx, name);
 

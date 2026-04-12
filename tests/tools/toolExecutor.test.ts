@@ -36,7 +36,7 @@ let mockExecuteResult: { success: boolean; output?: string; error?: string } | E
   output: 'Test output',
 };
 
-vi.mock('../../src/main/tools/toolResolver', () => ({
+vi.mock('../../src/main/protocol/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     list: () => (mockToolDef ? [mockToolDef.name] : []),
     getDefinition: (name: string) =>

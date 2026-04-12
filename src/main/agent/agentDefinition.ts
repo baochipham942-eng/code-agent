@@ -10,7 +10,7 @@
 // - agentSwarm.ts: 并行执行引擎
 // ============================================================================
 
-// 重新导出分层类型（从 shared/types/agentTypes.ts）
+// 重新导出分层类型（从 shared/contract/agentTypes.ts）
 export type {
   ModelTier,
   AgentCore,
@@ -22,7 +22,7 @@ export type {
   FullAgentConfig,
   DynamicAgentConfig,
   AgentDefinition,
-} from '../../shared/types/agentTypes';
+} from '../../shared/contract/agentTypes';
 
 export {
   MODEL_TIER_CONFIG,
@@ -36,7 +36,7 @@ export {
   isFullAgentConfig,
   isReadonlyAgent,
   canRunInParallel,
-} from '../../shared/types/agentTypes';
+} from '../../shared/contract/agentTypes';
 
 // 重新导出上下文级别配置
 export {
@@ -57,9 +57,9 @@ import {
   MODEL_CONFIG,
 } from './hybrid';
 
-import type { FullAgentConfig } from '../../shared/types/agentTypes';
-import type { PermissionPreset } from '../services/core/permissionPresets';
-import type { ModelProvider } from '../../shared/types/model';
+import type { FullAgentConfig } from '../../shared/contract/agentTypes';
+import type { PermissionPreset } from '@shared/contract';
+import type { ModelProvider } from '../../shared/contract/model';
 
 // ============================================================================
 // 核心角色到完整配置的适配

@@ -7,42 +7,17 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../infra/logger';
-import type { PRLink } from '../../../shared/types/session';
+import type { PRLink } from '../../../shared/contract/session';
 
 const execAsync = promisify(exec);
 const logger = createLogger('PRLinkService');
 
 // ----------------------------------------------------------------------------
-// Types
+// Types — 定义迁移至 src/main/protocol/types/github.ts
 // ----------------------------------------------------------------------------
 
-export interface PRContext {
-  /** PR 基本信息 */
-  owner: string;
-  repo: string;
-  number: number;
-  title: string;
-  body: string;
-  /** 分支信息 */
-  headBranch: string;
-  baseBranch: string;
-  /** 状态 */
-  state: 'open' | 'closed' | 'merged';
-  /** 文件变更 */
-  changedFiles: number;
-  additions: number;
-  deletions: number;
-  /** 标签 */
-  labels: string[];
-  /** URL */
-  url: string;
-}
-
-export interface ParsedPRUrl {
-  owner: string;
-  repo: string;
-  number: number;
-}
+import type { PRContext, ParsedPRUrl } from '../../protocol/types/github';
+export type { PRContext, ParsedPRUrl };
 
 // ----------------------------------------------------------------------------
 // PR Link Service

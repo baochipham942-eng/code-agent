@@ -3,8 +3,8 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { Message, MessageAttachment, ModelConfig, ToolCall } from '../../shared/types';
-import type { SwarmAgentContextSnapshot } from '../../shared/types/swarm';
+import type { Message, MessageAttachment, ModelConfig, ToolCall } from '../../shared/contract';
+import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { Tool, ToolContext } from '../tools/types';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
@@ -22,7 +22,7 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from './agentDefinition';
-import type { PermissionPreset } from '../services/core/permissionPresets';
+import type { PermissionPreset } from '@shared/contract';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import {
   normalizeImageData,
@@ -37,12 +37,12 @@ import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, type ParentContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { estimateTokens } from '../context/tokenEstimator';
-import { getWarningLevel } from '../../shared/types/contextHealth';
+import { getWarningLevel } from '../../shared/contract/contextHealth';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
-import type { ContextProvenanceCategory } from '../../shared/types/contextView';
+import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
 import type { HookManager } from '../hooks/hookManager';
 
 const logger = createLogger('SubagentExecutor');

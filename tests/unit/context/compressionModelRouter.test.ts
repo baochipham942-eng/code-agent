@@ -52,7 +52,7 @@ describe('CompressionModelRouter', () => {
     it('L4 (contextCollapse) returns zhipu/glm-4-flash', () => {
       expect(router.selectModel('contextCollapse')).toEqual({
         provider: 'zhipu',
-        model: 'glm-4-flash',
+        model: 'glm-4.7-flash',
       });
     });
 
@@ -89,7 +89,7 @@ describe('CompressionModelRouter', () => {
       router.clearPreference();
       expect(router.selectModel('contextCollapse')).toEqual({
         provider: 'zhipu',
-        model: 'glm-4-flash',
+        model: 'glm-4.7-flash',
       });
       expect(router.selectModel('autocompact')).toEqual({
         provider: 'moonshot',

@@ -237,9 +237,10 @@ describe('ModelRouter', () => {
 
     it('should allow overriding fallback models', () => {
       router.setFallbackModel('vision', 'openai', 'gpt-4o');
+      // 用 deepseek（无 vision 模型），强制走默认 fallback 而非 same-provider
       const originalConfig: ModelConfig = {
-        provider: 'local',
-        model: 'qwen2.5-coder:7b',
+        provider: 'deepseek',
+        model: 'deepseek-chat',
         maxTokens: 8192,
       };
       const fallback = router.getFallbackConfig('vision', originalConfig);

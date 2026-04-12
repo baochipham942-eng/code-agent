@@ -16,8 +16,15 @@
 import type {
   ToolContext as ProtocolToolContext,
   ToolResult as ProtocolToolResult,
+  ToolHandler,
+  ToolModule,
+  ToolSchema,
+  ToolCategory,
+  PermissionLevel,
+  CanUseToolFn,
+  ToolProgressFn,
 } from '../../../protocol/tools';
-import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../../types';
+import type { Tool, ToolContext as LegacyToolContext, ToolExecutionResult } from '../../types';
 
 /**
  * 构造 legacy ToolContext，把新 ctx 字段映射回旧字段
@@ -75,5 +82,63 @@ export function adaptLegacyResult(result: ToolExecutionResult): ProtocolToolResu
     ok: false,
     error: result.error ?? 'unknown error',
     meta: result.metadata,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// wrapLegacyTool factory — 通用 wrapper 工厂
+//
+// 把 legacy Tool 包成 ToolModule。批量迁移期所有 wrapper 类工具直接复用，
+// 不需要每个工具写一遍 4 参数样板。
+// ----------------------------------------------------------------------------
+
+export interface WrapOptions {
+  category: ToolCategory;
+  permissionLevel: PermissionLevel;
+  readOnly?: boolean;
+  allowInPlanMode?: boolean;
+}
+
+export function wrapLegacyTool(legacyTool: Tool, opts: WrapOptions): ToolModule {
+  const schema: ToolSchema = {
+    name: legacyTool.name,
+    description: legacyTool.description,
+    inputSchema: legacyTool.inputSchema,
+    category: opts.category,
+    permissionLevel: opts.permissionLevel,
+    readOnly: opts.readOnly ?? false,
+    allowInPlanMode: opts.allowInPlanMode ?? false,
+  };
+
+  class Handler implements ToolHandler<Record<string, unknown>, string> {
+    readonly schema = schema;
+
+    async execute(
+      args: Record<string, unknown>,
+      ctx: ProtocolToolContext,
+      canUseTool: CanUseToolFn,
+      onProgress?: ToolProgressFn,
+    ): Promise<ProtocolToolResult<string>> {
+      const permit = await canUseTool(schema.name, args);
+      if (!permit.allow) {
+        return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+      }
+      if (ctx.abortSignal.aborted) {
+        return { ok: false, error: 'aborted', code: 'ABORTED' };
+      }
+
+      onProgress?.({ stage: 'starting', detail: legacyTool.name });
+      const legacyResult = await legacyTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+      onProgress?.({ stage: 'completing', percent: 100 });
+      ctx.logger.debug(`${legacyTool.name} done`, { ok: legacyResult.success });
+      return adaptLegacyResult(legacyResult);
+    }
+  }
+
+  return {
+    schema,
+    createHandler() {
+      return new Handler();
+    },
   };
 }

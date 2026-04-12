@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Code Agent 模块依赖架构图</title>
+<style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#faf7f2;}</style>
+</head><body>
+<svg viewBox="0 0 1200 820" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif; }
+    .title { font-size: 20px; font-weight: 600; fill: #2d2a26; }
+    .subtitle { font-size: 12px; fill: #6b6560; }
+    .layer-label { font-size: 13px; font-weight: 600; fill: #8a8278; }
+    .label { font-size: 14px; font-weight: 600; fill: #2d2a26; }
+    .sublabel { font-size: 11px; fill: #6b6560; }
+    .detail { font-size: 10px; fill: #8a8278; }
+    .arrow-text { font-size: 11px; fill: #6b6560; }
+    .metric { font-size: 11px; font-weight: 600; }
+    .warn-text { font-size: 12px; fill: #b45309; }
+    .legend-text { font-size: 11px; fill: #6b6560; }
+  </style>
+  <defs>
+    <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.06"/></filter>
+    <filter id="shadow-strong"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.1"/></filter>
+    <marker id="arr-blue" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4a7fd4"/>
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5ba67d"/>
+    </marker>
+    <marker id="arr-orange" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#d4854a"/>
+    </marker>
+    <marker id="arr-purple" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7d6bb5"/>
+    </marker>
+    <marker id="arr-gray" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a09890"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="820" fill="#faf7f2"/>
+
+  <!-- Title -->
+  <text x="600" y="36" text-anchor="middle" class="title">Code Agent — 模块依赖架构图</text>
+  <text x="600" y="54" text-anchor="middle" class="subtitle">706 modules · 2,076 edges · madge scan 2026-04-12</text>
+
+  <!-- ==================== LAYER 1: INTERFACE ==================== -->
+  <rect x="50" y="72" width="1100" height="90" rx="12" fill="rgba(125,107,181,0.04)" stroke="#d4cfc8" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="70" y="92" class="layer-label">接口层 Interface</text>
+
+  <!-- ipc -->
+  <rect x="120" y="100" width="150" height="50" rx="10" fill="#fff" stroke="#c4b5e0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="195" y="122" text-anchor="middle" class="label">ipc</text>
+  <text x="195" y="140" text-anchor="middle" class="sublabel">40 files</text>
+
+  <!-- app -->
+  <rect x="330" y="100" width="130" height="50" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="395" y="122" text-anchor="middle" class="label">app</text>
+  <text x="395" y="140" text-anchor="middle" class="sublabel">7 files</text>
+
+  <!-- channels -->
+  <rect x="520" y="100" width="130" height="50" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="585" y="122" text-anchor="middle" class="label">channels</text>
+  <text x="585" y="140" text-anchor="middle" class="sublabel">9 files</text>
+
+  <!-- desktop -->
+  <rect x="710" y="100" width="130" height="50" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="775" y="122" text-anchor="middle" class="label">desktop</text>
+  <text x="775" y="140" text-anchor="middle" class="sublabel">4 files</text>
+
+  <!-- evaluation -->
+  <rect x="900" y="100" width="140" height="50" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="970" y="122" text-anchor="middle" class="label">evaluation</text>
+  <text x="970" y="140" text-anchor="middle" class="sublabel">35 files</text>
+
+  <!-- ==================== LAYER 2: CORE ==================== -->
+  <rect x="50" y="180" width="1100" height="170" rx="12" fill="rgba(212,133,74,0.04)" stroke="#d4cfc8" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="70" y="200" class="layer-label">核心层 Core</text>
+
+  <!-- agent (primary node - larger) -->
+  <rect x="80" y="212" width="200" height="70" rx="10" fill="#fff" stroke="#e07a5f" stroke-width="2" filter="url(#shadow-strong)"/>
+  <circle cx="104" cy="232" r="8" fill="#e07a5f" opacity="0.15"/>
+  <text x="116" y="236" class="detail" fill="#e07a5f" font-weight="600">核心</text>
+  <text x="180" y="240" text-anchor="middle" class="label" font-size="15">agent</text>
+  <text x="180" y="258" text-anchor="middle" class="sublabel">77 files · fan-out 最高</text>
+  <text x="180" y="272" text-anchor="middle" class="detail">agentLoop · contextAssembly</text>
+
+  <!-- tools (primary node - larger) -->
+  <rect x="340" y="212" width="200" height="70" rx="10" fill="#fff" stroke="#4a9fb5" stroke-width="2" filter="url(#shadow-strong)"/>
+  <circle cx="364" cy="232" r="8" fill="#4a9fb5" opacity="0.15"/>
+  <text x="376" y="236" class="detail" fill="#4a9fb5" font-weight="600">最大</text>
+  <text x="440" y="240" text-anchor="middle" class="label" font-size="15">tools</text>
+  <text x="440" y="258" text-anchor="middle" class="sublabel">173 files · 最多模块</text>
+  <text x="440" y="272" text-anchor="middle" class="detail">network · planning · multiagent</text>
+
+  <!-- model -->
+  <rect x="600" y="212" width="160" height="70" rx="10" fill="#fff" stroke="#5ba67d" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="680" y="240" text-anchor="middle" class="label">model</text>
+  <text x="680" y="258" text-anchor="middle" class="sublabel">34 files</text>
+  <text x="680" y="272" text-anchor="middle" class="detail">modelRouter · providers</text>
+
+  <!-- context -->
+  <rect x="820" y="212" width="150" height="70" rx="10" fill="#fff" stroke="#c9a84c" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="895" y="240" text-anchor="middle" class="label">context</text>
+  <text x="895" y="258" text-anchor="middle" class="sublabel">33 files</text>
+  <text x="895" y="272" text-anchor="middle" class="detail">tokenEstimator · compression</text>
+
+  <!-- prompts -->
+  <rect x="1020" y="212" width="120" height="70" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1080" y="240" text-anchor="middle" class="label">prompts</text>
+  <text x="1080" y="258" text-anchor="middle" class="sublabel">31 files</text>
+
+  <!-- research -->
+  <rect x="80" y="300" width="130" height="40" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="145" y="324" text-anchor="middle" class="label">research</text>
+
+  <!-- ==================== LAYER 3: SUPPORT ==================== -->
+  <rect x="50" y="368" width="1100" height="150" rx="12" fill="rgba(74,127,212,0.03)" stroke="#d4cfc8" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="70" y="388" class="layer-label">支撑层 Support</text>
+
+  <!-- Agent 扩展 group -->
+  <rect x="70" y="398" width="380" height="54" rx="8" fill="rgba(212,133,74,0.05)" stroke="#e8e0d4" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="84" y="413" class="detail" fill="#8a8278">Agent 扩展</text>
+
+  <rect x="80" y="418" width="90" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="125" y="436" text-anchor="middle" class="sublabel" font-weight="500">mcp · 11</text>
+
+  <rect x="180" y="418" width="110" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="235" y="436" text-anchor="middle" class="sublabel" font-weight="500">planning · 16</text>
+
+  <rect x="300" y="418" width="120" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="360" y="436" text-anchor="middle" class="sublabel" font-weight="500">scheduler · 4</text>
+
+  <!-- 执行支撑 group -->
+  <rect x="470" y="398" width="370" height="54" rx="8" fill="rgba(91,166,125,0.05)" stroke="#e8e0d4" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="484" y="413" class="detail" fill="#8a8278">执行支撑</text>
+
+  <rect x="480" y="418" width="90" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="525" y="436" text-anchor="middle" class="sublabel" font-weight="500">hooks · 14</text>
+
+  <rect x="580" y="418" width="100" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="630" y="436" text-anchor="middle" class="sublabel" font-weight="500">security · 10</text>
+
+  <rect x="690" y="418" width="130" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="755" y="436" text-anchor="middle" class="sublabel" font-weight="500">connectors · 7</text>
+
+  <!-- 状态管理 group -->
+  <rect x="860" y="398" width="280" height="54" rx="8" fill="rgba(125,107,181,0.05)" stroke="#e8e0d4" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="874" y="413" class="detail" fill="#8a8278">状态 & 可观测</text>
+
+  <rect x="870" y="418" width="100" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="920" y="436" text-anchor="middle" class="sublabel" font-weight="500">session · 6</text>
+
+  <rect x="980" y="418" width="140" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="1050" y="436" text-anchor="middle" class="sublabel" font-weight="500">lightMemory · 7</text>
+
+  <!-- Row 2 of support -->
+  <rect x="80" y="462" width="100" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="130" y="480" text-anchor="middle" class="sublabel" font-weight="500">routing · 3</text>
+
+  <rect x="195" y="462" width="110" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="250" y="480" text-anchor="middle" class="sublabel" font-weight="500">telemetry · 7</text>
+
+  <rect x="320" y="462" width="80" height="28" rx="6" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="360" y="480" text-anchor="middle" class="sublabel" font-weight="500">lsp · 2</text>
+
+  <!-- ==================== LAYER 4: INFRA ==================== -->
+  <rect x="50" y="535" width="1100" height="110" rx="12" fill="rgba(74,127,212,0.05)" stroke="#d4cfc8" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="70" y="555" class="layer-label">基础设施 Infra</text>
+
+  <!-- services (primary infra node) -->
+  <rect x="100" y="565" width="260" height="65" rx="10" fill="#fff" stroke="#4a7fd4" stroke-width="2.5" filter="url(#shadow-strong)"/>
+  <rect x="112" y="575" width="56" height="18" rx="4" fill="#4a7fd4" opacity="0.1"/>
+  <text x="140" y="588" text-anchor="middle" class="metric" fill="#4a7fd4">fan-in 408</text>
+  <text x="230" y="592" text-anchor="middle" class="label" font-size="16">services</text>
+  <text x="230" y="610" text-anchor="middle" class="sublabel">70 files · logger 被引用 306 次</text>
+  <text x="230" y="622" text-anchor="middle" class="detail">database · serviceRegistry</text>
+
+  <!-- shared -->
+  <rect x="420" y="565" width="220" height="65" rx="10" fill="#fff" stroke="#5ba67d" stroke-width="2" filter="url(#shadow-strong)"/>
+  <rect x="432" y="575" width="56" height="18" rx="4" fill="#5ba67d" opacity="0.1"/>
+  <text x="460" y="588" text-anchor="middle" class="metric" fill="#5ba67d">fan-in 185</text>
+  <text x="530" y="592" text-anchor="middle" class="label" font-size="15">shared</text>
+  <text x="530" y="610" text-anchor="middle" class="sublabel">33 files · constants · ipc · utils</text>
+
+  <!-- platform -->
+  <rect x="700" y="565" width="160" height="65" rx="10" fill="#fff" stroke="#7d6bb5" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="712" y="575" width="50" height="18" rx="4" fill="#7d6bb5" opacity="0.1"/>
+  <text x="737" y="588" text-anchor="middle" class="metric" fill="#7d6bb5">fan-in 58</text>
+  <text x="780" y="592" text-anchor="middle" class="label">platform</text>
+  <text x="780" y="610" text-anchor="middle" class="sublabel">9 files · OS 抽象层</text>
+
+  <!-- config -->
+  <rect x="920" y="565" width="150" height="65" rx="10" fill="#fff" stroke="#8a8278" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="932" y="575" width="50" height="18" rx="4" fill="#8a8278" opacity="0.1"/>
+  <text x="957" y="588" text-anchor="middle" class="metric" fill="#8a8278">fan-in 40</text>
+  <text x="995" y="592" text-anchor="middle" class="label">config</text>
+  <text x="995" y="610" text-anchor="middle" class="sublabel">3 files · configPaths</text>
+
+  <!-- ==================== DEPENDENCY ARROWS ==================== -->
+
+  <!-- === Heavy: →services (blue) === -->
+
+  <!-- tools → services: 94 -->
+  <path d="M440,282 C440,420 300,500 270,565" fill="none" stroke="#4a7fd4" stroke-width="3" opacity="0.45" marker-end="url(#arr-blue)"/>
+  <rect x="310" y="410" width="36" height="20" rx="4" fill="#fff" stroke="#e8e0d4" stroke-width="0.5"/>
+  <text x="328" y="424" text-anchor="middle" class="arrow-text" fill="#4a7fd4" font-weight="600">94</text>
+
+  <!-- agent → services: 86 -->
+  <path d="M180,282 C180,420 210,480 220,565" fill="none" stroke="#4a7fd4" stroke-width="2.8" opacity="0.45" marker-end="url(#arr-blue)"/>
+  <rect x="162" y="420" width="36" height="20" rx="4" fill="#fff" stroke="#e8e0d4" stroke-width="0.5"/>
+  <text x="180" y="434" text-anchor="middle" class="arrow-text" fill="#4a7fd4" font-weight="600">86</text>
+
+  <!-- ipc → services: 55 -->
+  <path d="M170,150 C100,300 120,460 150,565" fill="none" stroke="#4a7fd4" stroke-width="2.2" opacity="0.35" marker-end="url(#arr-blue)"/>
+  <rect x="88" y="350" width="36" height="20" rx="4" fill="#fff" stroke="#e8e0d4" stroke-width="0.5"/>
+  <text x="106" y="364" text-anchor="middle" class="arrow-text" fill="#4a7fd4" font-weight="600">55</text>
+
+  <!-- app → services: 21 -->
+  <path d="M395,150 C380,350 320,480 280,565" fill="none" stroke="#4a7fd4" stroke-width="1.5" opacity="0.25" marker-end="url(#arr-blue)"/>
+
+  <!-- model → services: 14 -->
+  <path d="M640,282 C500,440 340,520 310,565" fill="none" stroke="#4a7fd4" stroke-width="1.2" opacity="0.2" marker-end="url(#arr-blue)"/>
+
+  <!-- context → services: 13 -->
+  <path d="M850,282 C700,440 360,520 320,565" fill="none" stroke="#4a7fd4" stroke-width="1.2" opacity="0.2" marker-end="url(#arr-blue)"/>
+
+  <!-- === Medium: →shared (green) === -->
+
+  <!-- ipc → shared: 38 -->
+  <path d="M270,140 C450,200 510,400 520,565" fill="none" stroke="#5ba67d" stroke-width="2" opacity="0.35" marker-end="url(#arr-green)"/>
+  <rect x="452" y="310" width="36" height="20" rx="4" fill="#fff" stroke="#e8e0d4" stroke-width="0.5"/>
+  <text x="470" y="324" text-anchor="middle" class="arrow-text" fill="#5ba67d" font-weight="600">38</text>
+
+  <!-- model → shared: 29 -->
+  <path d="M680,282 C660,420 580,500 550,565" fill="none" stroke="#5ba67d" stroke-width="1.8" opacity="0.3" marker-end="url(#arr-green)"/>
+
+  <!-- agent → shared: 28 -->
+  <path d="M260,282 C350,400 460,500 500,565" fill="none" stroke="#5ba67d" stroke-width="1.6" opacity="0.25" marker-end="url(#arr-green)"/>
+
+  <!-- tools → shared: 29 -->
+  <path d="M500,282 C530,400 540,480 540,565" fill="none" stroke="#5ba67d" stroke-width="1.8" opacity="0.25" marker-end="url(#arr-green)"/>
+
+  <!-- === →platform (purple) === -->
+
+  <!-- ipc → platform: 20 -->
+  <path d="M270,130 C600,130 750,350 770,565" fill="none" stroke="#7d6bb5" stroke-width="1.5" opacity="0.25" marker-end="url(#arr-purple)"/>
+
+  <!-- services → platform: 12 -->
+  <path d="M360,597 L700,597" fill="none" stroke="#7d6bb5" stroke-width="1.2" opacity="0.2" marker-end="url(#arr-purple)"/>
+
+  <!-- === Core internal: agent→context (gray) === -->
+
+  <!-- agent → context: 30 -->
+  <path d="M280,247 L820,247" fill="none" stroke="#a09890" stroke-width="2" opacity="0.3" marker-end="url(#arr-gray)"/>
+  <rect x="530" y="232" width="36" height="20" rx="4" fill="#fff" stroke="#e8e0d4" stroke-width="0.5"/>
+  <text x="548" y="246" text-anchor="middle" class="arrow-text" font-weight="600">30</text>
+
+  <!-- agent → model: 9 -->
+  <path d="M280,255 L600,255" fill="none" stroke="#a09890" stroke-width="1" opacity="0.2" marker-end="url(#arr-gray)"/>
+
+  <!-- ==================== CIRCULAR DEPENDENCY (orange dashed) ==================== -->
+
+  <!-- agent → tools: 26 -->
+  <path d="M280,230 C310,210 340,210 340,230" fill="none" stroke="#d4854a" stroke-width="2.2" opacity="0.65" stroke-dasharray="6 4" marker-end="url(#arr-orange)"/>
+
+  <!-- tools → agent: 29 -->
+  <path d="M340,268 C310,288 280,288 280,268" fill="none" stroke="#d4854a" stroke-width="2.2" opacity="0.65" stroke-dasharray="6 4" marker-end="url(#arr-orange)"/>
+
+  <!-- Cycle label -->
+  <rect x="285" y="293" width="110" height="22" rx="6" fill="#fff8f0" stroke="#d4854a" stroke-width="1"/>
+  <text x="340" y="308" text-anchor="middle" class="detail" fill="#b45309" font-weight="600">⟲ 循环 26+29</text>
+
+  <!-- ==================== WARNING CALLOUT ==================== -->
+  <rect x="60" y="660" width="540" height="72" rx="10" fill="#fffbeb" stroke="#d4854a" stroke-width="1.5"/>
+  <text x="80" y="682" class="warn-text" font-weight="600">⚠ 4 条循环依赖（集中在并行 Agent 调度模块）</text>
+  <text x="80" y="700" class="sublabel" fill="#92400e">agentDefinition → hybrid/agentSwarm → swarm.ipc → parallelCoordinator → subagentExecutor</text>
+  <text x="80" y="717" class="detail" fill="#a16207">agent ↔ tools 双向 55 条 import，建议拆分 shared interface 打破循环</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="650" y="660" width="500" height="72" rx="10" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="670" y="682" class="sublabel" font-weight="600" fill="#2d2a26">图例</text>
+
+  <!-- Arrow types -->
+  <line x1="670" y1="700" x2="710" y2="700" stroke="#4a7fd4" stroke-width="2.5" opacity="0.45"/>
+  <text x="718" y="704" class="legend-text">→ services（重度依赖）</text>
+
+  <line x1="850" y1="700" x2="890" y2="700" stroke="#5ba67d" stroke-width="2" opacity="0.35"/>
+  <text x="898" y="704" class="legend-text">→ shared</text>
+
+  <line x1="970" y1="700" x2="1010" y2="700" stroke="#7d6bb5" stroke-width="1.5" opacity="0.3"/>
+  <text x="1018" y="704" class="legend-text">→ platform</text>
+
+  <line x1="670" y1="720" x2="710" y2="720" stroke="#d4854a" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="718" y="724" class="legend-text">循环依赖</text>
+
+  <line x1="815" y1="720" x2="855" y2="720" stroke="#a09890" stroke-width="1.5" opacity="0.3"/>
+  <text x="863" y="724" class="legend-text">核心层内部调用</text>
+
+  <text x="1010" y="724" class="detail">线宽 = import 次数</text>
+
+  <!-- ==================== FAN-IN SUMMARY BAR ==================== -->
+  <rect x="60" y="748" width="1090" height="44" rx="8" fill="#fff" stroke="#e8e0d4" stroke-width="1"/>
+  <text x="80" y="768" class="sublabel" font-weight="600" fill="#2d2a26">Fan-in 排行（被引用次数 = 改它的风险）</text>
+
+  <!-- Bar chart mini -->
+  <rect x="80" y="776" width="306" height="8" rx="3" fill="#4a7fd4" opacity="0.3"/>
+  <text x="392" y="784" class="detail" fill="#4a7fd4">services 408</text>
+
+  <rect x="460" y="776" width="185" height="8" rx="3" fill="#5ba67d" opacity="0.3"/>
+  <text x="651" y="784" class="detail" fill="#5ba67d">shared 185</text>
+
+  <rect x="700" y="776" width="58" height="8" rx="3" fill="#7d6bb5" opacity="0.3"/>
+  <text x="764" y="784" class="detail" fill="#7d6bb5">platform 58</text>
+
+  <rect x="820" y="776" width="47" height="8" rx="3" fill="#a09890" opacity="0.3"/>
+  <text x="873" y="784" class="detail">context 47</text>
+
+  <rect x="930" y="776" width="40" height="8" rx="3" fill="#8a8278" opacity="0.3"/>
+  <text x="976" y="784" class="detail">config 40</text>
+
+  <rect x="1030" y="776" width="39" height="8" rx="3" fill="#e07a5f" opacity="0.2"/>
+  <text x="1075" y="784" class="detail">agent 39</text>
+
+</svg>
+</body></html>

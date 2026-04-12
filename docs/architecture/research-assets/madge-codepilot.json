@@ -1,0 +1,2817 @@
+{
+  "__tests__/e2e/chat-enhanced.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/chat.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/layout.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/plugins.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/project-panel.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/settings.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/skills.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/smoke.spec.ts": [
+    "__tests__/helpers.ts"
+  ],
+  "__tests__/e2e/visual-regression.spec.ts": [],
+  "__tests__/functional-test.ts": [],
+  "__tests__/helpers.ts": [],
+  "__tests__/smoke-test.ts": [],
+  "__tests__/targeted-test.ts": [],
+  "__tests__/unit/agent-loop-messages.test.ts": [
+    "lib/message-builder.ts"
+  ],
+  "__tests__/unit/assistant-workspace.test.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/utils.ts",
+    "lib/workspace-indexer.ts",
+    "lib/workspace-organizer.ts",
+    "lib/workspace-retrieval.ts"
+  ],
+  "__tests__/unit/bg-notify-poll.test.ts": [
+    "lib/bg-notify-parser.ts"
+  ],
+  "__tests__/unit/claude-session-parser.test.ts": [
+    "lib/claude-session-parser.ts"
+  ],
+  "__tests__/unit/cli-tools-mcp.test.ts": [],
+  "__tests__/unit/context-assembler.test.ts": [
+    "lib/context-assembler.ts",
+    "types/index.ts"
+  ],
+  "__tests__/unit/context-estimator.test.ts": [
+    "lib/context-estimator.ts"
+  ],
+  "__tests__/unit/db-shutdown.test.ts": [
+    "lib/db.ts"
+  ],
+  "__tests__/unit/discord-bridge.test.ts": [
+    "lib/bridge/markdown/discord.ts"
+  ],
+  "__tests__/unit/file-checkpoint.test.ts": [
+    "lib/file-checkpoint.ts"
+  ],
+  "__tests__/unit/files-security.test.ts": [
+    "lib/files.ts"
+  ],
+  "__tests__/unit/heartbeat-notify.test.ts": [
+    "lib/notification-manager.ts"
+  ],
+  "__tests__/unit/mcp-config.test.ts": [
+    "types/index.ts"
+  ],
+  "__tests__/unit/mcp-loader.test.ts": [
+    "lib/mcp-loader.ts"
+  ],
+  "__tests__/unit/memory-extractor.test.ts": [
+    "lib/memory-extractor.ts"
+  ],
+  "__tests__/unit/message-input-interactions.test.ts": [
+    "hooks/useProviderModels.ts",
+    "lib/constants/commands.ts",
+    "lib/message-input-logic.ts",
+    "types/index.ts"
+  ],
+  "__tests__/unit/message-normalizer.test.ts": [
+    "lib/message-normalizer.ts"
+  ],
+  "__tests__/unit/message-persistence.test.ts": [
+    "types/index.ts"
+  ],
+  "__tests__/unit/native-runtime.test.ts": [
+    "lib/agent-system-prompt.ts",
+    "lib/claude-code-compat/claude-code-compat-model.ts",
+    "lib/claude-code-compat/sse-parser.ts",
+    "lib/claude-code-compat/types.ts",
+    "lib/permission-checker.ts",
+    "lib/runtime/event-bus.ts"
+  ],
+  "__tests__/unit/onboarding-completion.test.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/onboarding-completion.ts",
+    "lib/utils.ts"
+  ],
+  "__tests__/unit/prompt-dialog-replacement.test.ts": [],
+  "__tests__/unit/provider-key-lifecycle.test.ts": [],
+  "__tests__/unit/provider-preset.test.ts": [
+    "lib/provider-catalog.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "__tests__/unit/provider-resolver.test.ts": [
+    "lib/db.ts",
+    "lib/provider-catalog.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "__tests__/unit/resolve-session-model.test.ts": [
+    "lib/resolve-session-model.ts"
+  ],
+  "__tests__/unit/runtime-selection.test.ts": [],
+  "__tests__/unit/sdk-availability.test.ts": [
+    "lib/db.ts",
+    "lib/runtime/sdk-runtime.ts"
+  ],
+  "__tests__/unit/skill-kind.test.ts": [
+    "lib/message-input-logic.ts",
+    "types/index.ts"
+  ],
+  "__tests__/unit/sse-stream.test.ts": [
+    "hooks/useSSEStream.ts"
+  ],
+  "__tests__/unit/stale-default-provider.test.ts": [
+    "lib/db.ts",
+    "lib/error-classifier.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "__tests__/unit/structured-output.test.ts": [],
+  "__tests__/unit/task-scheduler.test.ts": [
+    "lib/task-scheduler.ts"
+  ],
+  "__tests__/unit/theme-loader.test.ts": [
+    "lib/theme/loader.ts"
+  ],
+  "__tests__/unit/theme-render-css.test.ts": [
+    "lib/theme/render-css.ts",
+    "lib/theme/types.ts"
+  ],
+  "__tests__/unit/timezone-boundaries.test.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/utils.ts"
+  ],
+  "__tests__/unit/update-release.test.ts": [
+    "lib/update-release.ts"
+  ],
+  "__tests__/unit/weixin-adapter-ack.test.ts": [
+    "lib/bridge/adapters/weixin-adapter.ts",
+    "lib/db.ts"
+  ],
+  "__tests__/unit/weixin-api.test.ts": [
+    "lib/bridge/adapters/weixin/weixin-api.ts"
+  ],
+  "__tests__/unit/weixin-ids.test.ts": [
+    "lib/bridge/adapters/weixin/weixin-ids.ts"
+  ],
+  "__tests__/unit/weixin-media.test.ts": [
+    "lib/bridge/adapters/weixin/weixin-media.ts"
+  ],
+  "__tests__/unit/weixin-session-guard.test.ts": [
+    "lib/bridge/adapters/weixin/weixin-session-guard.ts"
+  ],
+  "__tests__/unit/widget-system.test.ts": [
+    "components/chat/MessageItem.tsx",
+    "lib/widget-css-bridge.ts",
+    "lib/widget-guidelines.ts",
+    "lib/widget-sanitizer.ts"
+  ],
+  "__tests__/unit/working-directory.test.ts": [
+    "lib/working-directory.ts"
+  ],
+  "app/api/app/updates/route.ts": [
+    "lib/platform.ts",
+    "lib/update-release.ts"
+  ],
+  "app/api/bridge/channels/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/bridge/route.ts": [
+    "lib/bridge/bridge-manager.ts"
+  ],
+  "app/api/bridge/settings/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/chat/interrupt/route.ts": [
+    "lib/conversation-registry.ts",
+    "lib/runtime/index.ts"
+  ],
+  "app/api/chat/messages/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/chat/mode/route.ts": [],
+  "app/api/chat/model/route.ts": [],
+  "app/api/chat/permission/route.ts": [
+    "lib/db.ts",
+    "lib/permission-registry.ts",
+    "lib/types/agent-types.ts",
+    "types/index.ts"
+  ],
+  "app/api/chat/rewind/route.ts": [
+    "lib/conversation-registry.ts",
+    "lib/db.ts",
+    "lib/file-checkpoint.ts"
+  ],
+  "app/api/chat/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/checkin-processor.ts",
+    "lib/claude-client.ts",
+    "lib/context-assembler.ts",
+    "lib/context-compressor.ts",
+    "lib/context-estimator.ts",
+    "lib/db.ts",
+    "lib/heartbeat.ts",
+    "lib/mcp-loader.ts",
+    "lib/media-saver.ts",
+    "lib/memory-extractor.ts",
+    "lib/message-normalizer.ts",
+    "lib/model-context.ts",
+    "lib/onboarding-completion.ts",
+    "lib/onboarding-processor.ts",
+    "lib/provider-resolver.ts",
+    "lib/runtime/index.ts",
+    "lib/task-scheduler.ts",
+    "lib/telegram-bot.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "app/api/chat/sessions/[id]/messages/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/chat/sessions/[id]/route.ts": [
+    "lib/bridge/permission-broker.ts",
+    "lib/db.ts"
+  ],
+  "app/api/chat/sessions/by-cwd/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/chat/sessions/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/chat/structured/route.ts": [
+    "lib/ai-provider.ts"
+  ],
+  "app/api/claude-auth/route.ts": [],
+  "app/api/claude-sessions/import/route.ts": [
+    "lib/claude-session-parser.ts",
+    "lib/db.ts"
+  ],
+  "app/api/claude-sessions/route.ts": [
+    "lib/claude-session-parser.ts"
+  ],
+  "app/api/claude-status/invalidate/route.ts": [
+    "lib/claude-client.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/claude-status/route.ts": [
+    "lib/platform.ts"
+  ],
+  "app/api/claude-upgrade/route.ts": [
+    "lib/claude-client.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/cli-tools/[id]/describe/route.ts": [
+    "lib/claude-client.ts",
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/cli-tools/[id]/detail/route.ts": [
+    "lib/cli-tools-catalog.ts"
+  ],
+  "app/api/cli-tools/[id]/install/route.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/cli-tools/[id]/status/route.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts"
+  ],
+  "app/api/cli-tools/catalog/route.ts": [
+    "lib/cli-tools-catalog.ts"
+  ],
+  "app/api/cli-tools/custom/[id]/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/cli-tools/custom/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/cli-tools/descriptions/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/cli-tools/installed/route.ts": [
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/dashboard/refresh/route.ts": [
+    "lib/claude-client.ts",
+    "lib/dashboard-cli-reader.ts",
+    "lib/dashboard-file-reader.ts",
+    "lib/dashboard-store.ts",
+    "types/dashboard.ts"
+  ],
+  "app/api/dashboard/route.ts": [
+    "lib/dashboard-store.ts"
+  ],
+  "app/api/doctor/export/route.ts": [
+    "lib/provider-doctor.ts",
+    "lib/provider-resolver.ts",
+    "lib/runtime-log.ts"
+  ],
+  "app/api/doctor/repair/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/doctor/route.ts": [
+    "lib/provider-doctor.ts"
+  ],
+  "app/api/files/browse/route.ts": [
+    "types/index.ts"
+  ],
+  "app/api/files/open/route.ts": [],
+  "app/api/files/preview/route.ts": [
+    "lib/files.ts",
+    "types/index.ts"
+  ],
+  "app/api/files/raw/route.ts": [],
+  "app/api/files/route.ts": [
+    "lib/files.ts",
+    "types/index.ts"
+  ],
+  "app/api/files/serve/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/git/branches/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/checkout/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/commit-detail/[sha]/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/commit/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/log/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/push/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/status/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/git/worktrees/derive/route.ts": [
+    "lib/db.ts",
+    "lib/git/service.ts"
+  ],
+  "app/api/git/worktrees/route.ts": [
+    "lib/git/service.ts"
+  ],
+  "app/api/health/route.ts": [],
+  "app/api/media/[id]/favorite/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/[id]/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/[id]/tags/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/gallery/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/generate/route.ts": [
+    "lib/image-generator.ts"
+  ],
+  "app/api/media/jobs/[id]/cancel/route.ts": [
+    "lib/db.ts",
+    "lib/job-executor.ts"
+  ],
+  "app/api/media/jobs/[id]/items/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/media/jobs/[id]/pause/route.ts": [
+    "lib/db.ts",
+    "lib/job-executor.ts"
+  ],
+  "app/api/media/jobs/[id]/progress/route.ts": [
+    "lib/db.ts",
+    "lib/job-executor.ts",
+    "types/index.ts"
+  ],
+  "app/api/media/jobs/[id]/resume/route.ts": [
+    "lib/db.ts",
+    "lib/job-executor.ts"
+  ],
+  "app/api/media/jobs/[id]/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/jobs/[id]/start/route.ts": [
+    "lib/db.ts",
+    "lib/job-executor.ts"
+  ],
+  "app/api/media/jobs/[id]/sync-context/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/jobs/plan/route.ts": [
+    "lib/db.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "types/index.ts"
+  ],
+  "app/api/media/jobs/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/media/serve/route.ts": [],
+  "app/api/media/tags/[id]/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/media/tags/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/openai-oauth/callback/route.ts": [],
+  "app/api/openai-oauth/start/route.ts": [
+    "lib/openai-oauth-manager.ts"
+  ],
+  "app/api/openai-oauth/status/route.ts": [
+    "lib/openai-oauth-manager.ts"
+  ],
+  "app/api/plugins/[id]/route.ts": [
+    "lib/plugin-discovery.ts",
+    "types/index.ts"
+  ],
+  "app/api/plugins/mcp/[name]/route.ts": [
+    "lib/mcp-loader.ts",
+    "types/index.ts"
+  ],
+  "app/api/plugins/mcp/reconnect/route.ts": [
+    "lib/mcp-connection-manager.ts"
+  ],
+  "app/api/plugins/mcp/route.ts": [
+    "lib/mcp-loader.ts",
+    "types/index.ts"
+  ],
+  "app/api/plugins/mcp/status/route.ts": [
+    "lib/agent-sdk-capabilities.ts",
+    "lib/db.ts"
+  ],
+  "app/api/plugins/mcp/toggle/route.ts": [
+    "lib/mcp-connection-manager.ts",
+    "lib/mcp-loader.ts"
+  ],
+  "app/api/plugins/route.ts": [
+    "lib/plugin-discovery.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/[id]/activate/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/[id]/models/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/[id]/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/models/route.ts": [
+    "lib/agent-sdk-capabilities.ts",
+    "lib/db.ts",
+    "lib/model-context.ts",
+    "lib/openai-oauth-manager.ts",
+    "lib/provider-catalog.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/options/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/providers/set-default/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/providers/test/route.ts": [
+    "lib/claude-client.ts",
+    "lib/db.ts",
+    "lib/provider-catalog.ts",
+    "types/index.ts"
+  ],
+  "app/api/sdk/account/route.ts": [
+    "lib/agent-sdk-capabilities.ts"
+  ],
+  "app/api/settings/app/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/discord/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/discord/verify/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/feishu/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/feishu/verify/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/qq/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/qq/verify/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/route.ts": [],
+  "app/api/settings/sentry/route.ts": [],
+  "app/api/settings/telegram/route.ts": [
+    "lib/db.ts",
+    "lib/telegram-bot.ts"
+  ],
+  "app/api/settings/telegram/verify/route.ts": [
+    "lib/bridge/adapters/telegram-utils.ts",
+    "lib/db.ts",
+    "lib/telegram-bot.ts"
+  ],
+  "app/api/settings/weixin/accounts/[accountId]/route.ts": [
+    "lib/bridge/bridge-manager.ts",
+    "lib/db.ts"
+  ],
+  "app/api/settings/weixin/accounts/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/weixin/login/start/route.ts": [
+    "lib/bridge/adapters/weixin/weixin-auth.ts"
+  ],
+  "app/api/settings/weixin/login/wait/route.ts": [
+    "lib/bridge/adapters/weixin/weixin-auth.ts",
+    "lib/bridge/bridge-manager.ts"
+  ],
+  "app/api/settings/weixin/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/settings/workspace/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/workspace-taxonomy.ts"
+  ],
+  "app/api/setup/recent-projects/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/setup/route.ts": [
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "app/api/skills/[name]/route.ts": [
+    "types/index.ts"
+  ],
+  "app/api/skills/marketplace/install/route.ts": [],
+  "app/api/skills/marketplace/readme/route.ts": [],
+  "app/api/skills/marketplace/remove/route.ts": [],
+  "app/api/skills/marketplace/search/route.ts": [
+    "lib/skills-lock.ts",
+    "types/index.ts"
+  ],
+  "app/api/skills/route.ts": [
+    "lib/agent-sdk-capabilities.ts",
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/skills/search/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/tasks/[id]/pause/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/tasks/[id]/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/tasks/[id]/run/route.ts": [
+    "lib/db.ts",
+    "lib/task-scheduler.ts"
+  ],
+  "app/api/tasks/list/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/tasks/notify/route.ts": [
+    "lib/notification-manager.ts"
+  ],
+  "app/api/tasks/route.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "app/api/tasks/schedule/route.ts": [
+    "lib/db.ts",
+    "lib/task-scheduler.ts"
+  ],
+  "app/api/uploads/route.ts": [],
+  "app/api/usage/stats/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/workspace/checkin/route.ts": [
+    "lib/checkin-processor.ts"
+  ],
+  "app/api/workspace/docs/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts"
+  ],
+  "app/api/workspace/evolve-buddy/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/buddy.ts",
+    "lib/db.ts"
+  ],
+  "app/api/workspace/hatch-buddy/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/buddy.ts",
+    "lib/db.ts"
+  ],
+  "app/api/workspace/hook-triggered/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts"
+  ],
+  "app/api/workspace/index/route.ts": [
+    "lib/db.ts",
+    "lib/workspace-indexer.ts"
+  ],
+  "app/api/workspace/inspect/route.ts": [],
+  "app/api/workspace/latest-session/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/workspace/onboarding/route.ts": [
+    "lib/onboarding-processor.ts"
+  ],
+  "app/api/workspace/organize/route.ts": [
+    "lib/db.ts",
+    "lib/workspace-organizer.ts"
+  ],
+  "app/api/workspace/quick-actions/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts"
+  ],
+  "app/api/workspace/search/route.ts": [
+    "lib/db.ts",
+    "lib/workspace-retrieval.ts"
+  ],
+  "app/api/workspace/session/route.ts": [
+    "lib/db.ts"
+  ],
+  "app/api/workspace/summary/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts"
+  ],
+  "app/api/workspace/wizard/route.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/buddy.ts",
+    "lib/db.ts",
+    "lib/heartbeat.ts",
+    "lib/utils.ts"
+  ],
+  "app/bridge/page.tsx": [
+    "components/bridge/BridgeLayout.tsx",
+    "components/ui/icon.tsx"
+  ],
+  "app/chat/[id]/page.tsx": [
+    "components/chat/ChatView.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "lib/resolve-session-model.ts",
+    "types/index.ts"
+  ],
+  "app/chat/page.tsx": [
+    "components/assistant/OnboardingWizard.tsx",
+    "components/chat/ChatComposerActionBar.tsx",
+    "components/chat/ChatEmptyState.tsx",
+    "components/chat/ChatPermissionSelector.tsx",
+    "components/chat/FolderPicker.tsx",
+    "components/chat/ImageGenToggle.tsx",
+    "components/chat/MessageInput.tsx",
+    "components/chat/MessageList.tsx",
+    "components/chat/ModeIndicator.tsx",
+    "components/chat/PermissionPrompt.tsx",
+    "components/ui/error-banner.tsx",
+    "hooks/useNativeFolderPicker.ts",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "app/cli-tools/page.tsx": [
+    "components/cli-tools/CliToolsManager.tsx"
+  ],
+  "app/design-system/layout.tsx": [],
+  "app/design-system/page.tsx": [
+    "components/patterns/index.ts",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx"
+  ],
+  "app/extensions/page.tsx": [],
+  "app/gallery/page.tsx": [
+    "components/gallery/GalleryDetail.tsx",
+    "components/gallery/GalleryGrid.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "app/globals.css": [],
+  "app/layout.tsx": [
+    "app/globals.css",
+    "components/layout/AppShell.tsx",
+    "components/layout/I18nProvider.tsx",
+    "components/layout/ThemeFamilyProvider.tsx",
+    "components/layout/ThemeProvider.tsx",
+    "lib/db.ts",
+    "lib/theme/loader.ts",
+    "lib/theme/render-css.ts"
+  ],
+  "app/mcp/page.tsx": [
+    "components/plugins/McpManager.tsx"
+  ],
+  "app/page.tsx": [],
+  "app/plugins/mcp/page.tsx": [],
+  "app/plugins/page.tsx": [],
+  "app/settings/page.tsx": [
+    "components/settings/SettingsLayout.tsx",
+    "components/ui/icon.tsx"
+  ],
+  "app/skills/page.tsx": [
+    "components/skills/SkillsManager.tsx"
+  ],
+  "components/ai-elements/artifact.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/tooltip.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/chain-of-thought.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/code-block.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/select.tsx",
+    "lib/lru-map.ts",
+    "lib/theme/code-themes.ts",
+    "lib/theme/context.ts",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/confirmation.tsx": [
+    "components/ui/alert.tsx",
+    "components/ui/button.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/conversation.tsx": [
+    "components/ui/button.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/file-tree.tsx": [
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/message.tsx": [
+    "components/ui/button-group.tsx",
+    "components/ui/button.tsx",
+    "components/ui/tooltip.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/model-selector.tsx": [
+    "components/ui/command.tsx",
+    "components/ui/dialog.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/prompt-input.tsx": [
+    "components/ui/command.tsx",
+    "components/ui/dropdown-menu.tsx",
+    "components/ui/hover-card.tsx",
+    "components/ui/input-group.tsx",
+    "components/ui/select.tsx",
+    "components/ui/spinner.tsx",
+    "components/ui/tooltip.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/reasoning.tsx": [
+    "components/ai-elements/shimmer.tsx",
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/shimmer.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/sources.tsx": [
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/suggestion.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/scroll-area.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/task.tsx": [
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/terminal.tsx": [
+    "components/ai-elements/shimmer.tsx",
+    "components/ui/button.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ai-elements/tool-actions-group.tsx": [
+    "components/ai-elements/shimmer.tsx",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/ai-elements/tool.tsx": [
+    "components/ai-elements/code-block.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/collapsible.tsx",
+    "lib/utils.ts"
+  ],
+  "components/assistant/OnboardingWizard.tsx": [
+    "components/ui/AssistantAvatar.tsx",
+    "components/ui/button.tsx",
+    "components/ui/card.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/buddy.ts",
+    "lib/utils.ts"
+  ],
+  "components/bridge/BridgeLayout.tsx": [
+    "components/bridge/BridgeSection.tsx",
+    "components/bridge/DiscordBridgeSection.tsx",
+    "components/bridge/FeishuBridgeSection.tsx",
+    "components/bridge/QqBridgeSection.tsx",
+    "components/bridge/TelegramBridgeSection.tsx",
+    "components/bridge/WeixinBridgeSection.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/bridge/BridgeSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useBridgeStatus.ts",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/bridge/DiscordBridgeSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/bridge/FeishuBridgeSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/bridge/QqBridgeSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/bridge/TelegramBridgeSection.tsx": [
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/bridge/WeixinBridgeSection.tsx": [
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts"
+  ],
+  "components/chat/ChatComposerActionBar.tsx": [],
+  "components/chat/ChatEmptyState.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/card.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/buddy.ts"
+  ],
+  "components/chat/ChatPermissionSelector.tsx": [
+    "components/ui/alert-dialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dropdown-menu.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/chat/ChatView.tsx": [
+    "components/chat/ChatComposerActionBar.tsx",
+    "components/chat/ChatPermissionSelector.tsx",
+    "components/chat/ContextUsageIndicator.tsx",
+    "components/chat/ImageGenToggle.tsx",
+    "components/chat/MessageInput.tsx",
+    "components/chat/MessageList.tsx",
+    "components/chat/ModeIndicator.tsx",
+    "components/chat/PermissionPrompt.tsx",
+    "components/chat/RuntimeBadge.tsx",
+    "components/chat/batch-image-gen/index.ts",
+    "components/ui/button.tsx",
+    "hooks/useAssistantTrigger.ts",
+    "hooks/useChatCommands.ts",
+    "hooks/usePanel.ts",
+    "hooks/useStreamSubscription.ts",
+    "hooks/useTranslation.ts",
+    "lib/image-ref-store.ts",
+    "lib/stream-session-manager.ts",
+    "types/index.ts"
+  ],
+  "components/chat/CliToolsPopover.tsx": [
+    "components/patterns/index.ts",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/chat/CodePilotLogo.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/chat/ContextUsageIndicator.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/hover-card.tsx",
+    "hooks/useContextUsage.ts",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/chat/EffortSelectorDropdown.tsx": [
+    "components/ai-elements/prompt-input.tsx",
+    "components/patterns/index.ts",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/chat/FileAttachmentDisplay.tsx": [
+    "components/chat/FileCard.tsx",
+    "components/chat/ImageLightbox.tsx",
+    "components/chat/ImageThumbnail.tsx",
+    "types/index.ts"
+  ],
+  "components/chat/FileCard.tsx": [
+    "components/ui/icon.tsx",
+    "types/index.ts"
+  ],
+  "components/chat/FolderPicker.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/dropdown-menu.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/scroll-area.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/chat/ImageGenCard.tsx": [
+    "components/chat/ImageLightbox.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/chat/ImageGenConfirmation.tsx": [
+    "components/chat/ImageGenCard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useImageGen.ts",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/chat/ImageGenToggle.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useImageGen.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/chat/ImageLightbox.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx"
+  ],
+  "components/chat/ImageThumbnail.tsx": [
+    "components/ui/button.tsx"
+  ],
+  "components/chat/MediaPreview.tsx": [
+    "components/chat/ImageLightbox.tsx",
+    "types/index.ts"
+  ],
+  "components/chat/MessageInput.tsx": [
+    "components/ai-elements/prompt-input.tsx",
+    "components/chat/CliToolsPopover.tsx",
+    "components/chat/EffortSelectorDropdown.tsx",
+    "components/chat/MessageInputParts.tsx",
+    "components/chat/ModelSelectorDropdown.tsx",
+    "components/chat/QuickActions.tsx",
+    "components/chat/SlashCommandButton.tsx",
+    "components/chat/SlashCommandPopover.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useCliToolsFetch.ts",
+    "hooks/useCommandBadge.ts",
+    "hooks/useImageGen.ts",
+    "hooks/usePopoverState.ts",
+    "hooks/useProviderModels.ts",
+    "hooks/useSlashCommands.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/constants/image-agent-prompt.ts",
+    "lib/file-utils.ts",
+    "lib/image-ref-store.ts",
+    "lib/message-input-logic.ts",
+    "types/index.ts"
+  ],
+  "components/chat/MessageInputParts.tsx": [
+    "components/ai-elements/prompt-input.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/message-input-logic.ts"
+  ],
+  "components/chat/MessageItem.tsx": [
+    "components/ai-elements/message.tsx",
+    "components/ai-elements/tool-actions-group.tsx",
+    "components/chat/FileAttachmentDisplay.tsx",
+    "components/chat/ImageGenCard.tsx",
+    "components/chat/ImageGenConfirmation.tsx",
+    "components/chat/MediaPreview.tsx",
+    "components/chat/WidgetRenderer.tsx",
+    "components/chat/batch-image-gen/BatchPlanInlinePreview.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "lib/buddy.ts",
+    "lib/dashboard-export.ts",
+    "lib/image-ref-store.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/chat/MessageList.tsx": [
+    "components/ai-elements/conversation.tsx",
+    "components/chat/CodePilotLogo.tsx",
+    "components/chat/MessageItem.tsx",
+    "components/chat/StreamingMessage.tsx",
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/buddy.ts",
+    "types/index.ts"
+  ],
+  "components/chat/ModeIndicator.tsx": [
+    "components/ui/icon.tsx",
+    "components/ui/tabs.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/chat/ModelSelectorDropdown.tsx": [
+    "components/ai-elements/prompt-input.tsx",
+    "components/patterns/index.ts",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/chat/PermissionPrompt.tsx": [
+    "components/ai-elements/confirmation.tsx",
+    "components/ai-elements/message.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/chat/QuickActions.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/chat/RuntimeBadge.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/hover-card.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/chat/SlashCommandButton.tsx": [
+    "components/ai-elements/prompt-input.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/chat/SlashCommandPopover.tsx": [
+    "components/patterns/index.ts",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/chat/StreamingMessage.tsx": [
+    "components/ai-elements/message.tsx",
+    "components/ai-elements/shimmer.tsx",
+    "components/ai-elements/tool-actions-group.tsx",
+    "components/chat/ImageGenConfirmation.tsx",
+    "components/chat/MediaPreview.tsx",
+    "components/chat/MessageItem.tsx",
+    "components/chat/WidgetRenderer.tsx",
+    "components/chat/batch-image-gen/BatchPlanInlinePreview.tsx",
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "lib/image-ref-store.ts",
+    "types/index.ts"
+  ],
+  "components/chat/WidgetErrorBoundary.tsx": [
+    "hooks/useTranslation.ts"
+  ],
+  "components/chat/WidgetRenderer.tsx": [
+    "components/chat/WidgetErrorBoundary.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/widget-css-bridge.ts",
+    "lib/widget-sanitizer.ts"
+  ],
+  "components/chat/batch-image-gen/BatchContextSync.tsx": [
+    "components/ui/button.tsx",
+    "hooks/useBatchImageGen.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/chat/batch-image-gen/BatchExecutionDashboard.tsx": [
+    "components/chat/batch-image-gen/BatchExecutionItem.tsx",
+    "components/ui/button.tsx",
+    "hooks/useBatchImageGen.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/chat/batch-image-gen/BatchExecutionItem.tsx": [
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/chat/batch-image-gen/BatchPlanInlinePreview.tsx": [
+    "components/chat/batch-image-gen/BatchContextSync.tsx",
+    "components/chat/batch-image-gen/BatchExecutionDashboard.tsx",
+    "components/chat/batch-image-gen/BatchPlanRow.tsx",
+    "components/ui/button.tsx",
+    "hooks/useBatchImageGen.ts",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/chat/batch-image-gen/BatchPlanRow.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/chat/batch-image-gen/index.ts": [
+    "components/chat/batch-image-gen/BatchContextSync.tsx",
+    "components/chat/batch-image-gen/BatchExecutionDashboard.tsx",
+    "components/chat/batch-image-gen/BatchExecutionItem.tsx",
+    "components/chat/batch-image-gen/BatchPlanInlinePreview.tsx",
+    "components/chat/batch-image-gen/BatchPlanRow.tsx"
+  ],
+  "components/cli-tools/CliToolAddDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/cli-tools/CliToolBatchDescribeDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/select.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/cli-tools/CliToolCard.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/cli-tools/CliToolDetailDialog.tsx": [
+    "components/cli-tools/CliToolCard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/cli-tools/CliToolExtraDetailDialog.tsx": [
+    "components/cli-tools/CliToolCard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/cli-tools/CliToolInstallDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/cli-tools/CliToolsManager.tsx": [
+    "components/cli-tools/CliToolBatchDescribeDialog.tsx",
+    "components/cli-tools/CliToolCard.tsx",
+    "components/cli-tools/CliToolDetailDialog.tsx",
+    "components/cli-tools/CliToolExtraDetailDialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/cli-tools-catalog.ts",
+    "types/index.ts"
+  ],
+  "components/gallery/GalleryDetail.tsx": [
+    "components/gallery/GalleryGrid.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/gallery/GalleryGrid.tsx": [
+    "components/ui/icon.tsx"
+  ],
+  "components/gallery/TagManager.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/git/CommitDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/git/DeriveWorktreeDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/git/GitBranchSelector.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/git/GitCommitDetailDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/git/GitCommitSection.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/git/GitHistorySection.tsx": [
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/git/GitPanel.tsx": [
+    "components/git/DeriveWorktreeDialog.tsx",
+    "components/git/GitBranchSelector.tsx",
+    "components/git/GitCommitDetailDialog.tsx",
+    "components/git/GitHistorySection.tsx",
+    "components/git/GitStatusSection.tsx",
+    "components/git/GitWorktreeSection.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useGitStatus.ts",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts"
+  ],
+  "components/git/GitStatusSection.tsx": [
+    "components/git/CommitDialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/git/GitWorktreeSection.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/layout/AppShell.tsx": [
+    "components/layout/ChatListPanel.tsx",
+    "components/layout/ErrorBoundary.tsx",
+    "components/layout/FeatureAnnouncementDialog.tsx",
+    "components/layout/PanelZone.tsx",
+    "components/layout/ResizeHandle.tsx",
+    "components/layout/SentryInit.tsx",
+    "components/layout/SplitChatContainer.tsx",
+    "components/layout/UnifiedTopBar.tsx",
+    "components/layout/UpdateBanner.tsx",
+    "components/layout/UpdateDialog.tsx",
+    "components/setup/SetupCenter.tsx",
+    "components/ui/toast.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useBatchImageGen.ts",
+    "hooks/useGitStatus.ts",
+    "hooks/useImageGen.ts",
+    "hooks/useNotificationPoll.ts",
+    "hooks/usePanel.ts",
+    "hooks/useSplit.ts",
+    "hooks/useUpdate.ts",
+    "hooks/useUpdateChecker.ts",
+    "lib/stream-session-manager.ts"
+  ],
+  "components/layout/ChatListPanel.tsx": [
+    "components/chat/ChatEmptyState.tsx",
+    "components/chat/FolderPicker.tsx",
+    "components/layout/ProjectGroupHeader.tsx",
+    "components/layout/SessionListItem.tsx",
+    "components/layout/chat-list-utils.ts",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/scroll-area.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useAssistantWorkspace.ts",
+    "hooks/useNativeFolderPicker.ts",
+    "hooks/usePanel.ts",
+    "hooks/useSplit.ts",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/layout/ConnectionStatus.tsx": [
+    "components/layout/InstallWizard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/layout/ErrorBoundary.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/layout/FeatureAnnouncementDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/layout/I18nProvider.tsx": [
+    "i18n/index.ts"
+  ],
+  "components/layout/ImportSessionDialog.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/layout/InstallWizard.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/layout/NavRail.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/layout/PanelZone.tsx": [
+    "components/layout/panels/AssistantPanel.tsx",
+    "components/layout/panels/DashboardPanel.tsx",
+    "components/layout/panels/FileTreePanel.tsx",
+    "components/layout/panels/GitPanel.tsx",
+    "components/layout/panels/PreviewPanel.tsx",
+    "hooks/usePanel.ts"
+  ],
+  "components/layout/ProjectGroupHeader.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dropdown-menu.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/buddy.ts",
+    "lib/utils.ts"
+  ],
+  "components/layout/ResizeHandle.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/layout/SentryInit.tsx": [],
+  "components/layout/SessionListItem.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dropdown-menu.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/prompt-dialog.tsx",
+    "i18n/index.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/layout/SplitChatContainer.tsx": [
+    "components/layout/SplitColumn.tsx",
+    "hooks/useSplit.ts"
+  ],
+  "components/layout/SplitColumn.tsx": [
+    "components/chat/ChatView.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "lib/resolve-session-model.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/layout/ThemeFamilyProvider.tsx": [
+    "lib/theme/context.ts",
+    "lib/theme/types.ts"
+  ],
+  "components/layout/ThemeProvider.tsx": [],
+  "components/layout/UnifiedTopBar.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useClientPlatform.ts",
+    "hooks/usePanel.ts",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts",
+    "lib/buddy.ts"
+  ],
+  "components/layout/UpdateBanner.tsx": [
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "hooks/useUpdate.ts"
+  ],
+  "components/layout/UpdateDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "hooks/useTranslation.ts",
+    "hooks/useUpdate.ts"
+  ],
+  "components/layout/chat-list-utils.ts": [
+    "i18n/index.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/layout/panels/AssistantPanel.tsx": [
+    "components/ui/AssistantAvatar.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts"
+  ],
+  "components/layout/panels/DashboardPanel.tsx": [
+    "components/chat/WidgetRenderer.tsx",
+    "components/layout/ResizeHandle.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useToast.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/buddy.ts",
+    "lib/dashboard-export.ts",
+    "lib/utils.ts",
+    "types/dashboard.ts"
+  ],
+  "components/layout/panels/FileTreePanel.tsx": [
+    "components/layout/ResizeHandle.tsx",
+    "components/project/FileTree.tsx",
+    "components/project/TaskList.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts"
+  ],
+  "components/layout/panels/GitPanel.tsx": [
+    "components/git/GitPanel.tsx",
+    "components/layout/ResizeHandle.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts"
+  ],
+  "components/layout/panels/PreviewPanel.tsx": [
+    "components/layout/ResizeHandle.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "lib/theme/code-themes.ts",
+    "lib/theme/context.ts",
+    "types/index.ts"
+  ],
+  "components/patterns/CommandList.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/input.tsx",
+    "lib/utils.ts"
+  ],
+  "components/patterns/EmptyState.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/patterns/FieldRow.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/patterns/IconAction.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/tooltip.tsx",
+    "lib/utils.ts"
+  ],
+  "components/patterns/SectionPage.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/patterns/SettingsCard.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/patterns/StatusBanner.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/patterns/index.ts": [
+    "components/patterns/CommandList.tsx",
+    "components/patterns/EmptyState.tsx",
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/IconAction.tsx",
+    "components/patterns/SectionPage.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx"
+  ],
+  "components/plugins/ConfigEditor.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/label.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/plugins/McpManager.tsx": [
+    "components/plugins/ConfigEditor.tsx",
+    "components/plugins/McpServerEditor.tsx",
+    "components/plugins/McpServerList.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tabs.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/plugins/McpServerEditor.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/label.tsx",
+    "components/ui/tabs.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/plugins/McpServerList.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/card.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/plugins/PluginCard.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/card.tsx",
+    "components/ui/icon.tsx"
+  ],
+  "components/plugins/PluginDetail.tsx": [
+    "components/plugins/PluginCard.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/separator.tsx"
+  ],
+  "components/plugins/PluginList.tsx": [
+    "components/plugins/PluginCard.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/tabs.tsx"
+  ],
+  "components/project/FilePreview.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/scroll-area.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "lib/theme/code-themes.ts",
+    "lib/theme/context.ts",
+    "types/index.ts"
+  ],
+  "components/project/FileTree.tsx": [
+    "components/ai-elements/file-tree.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/project/TaskCard.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/project/TaskList.tsx": [
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/settings/AppearanceSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/select.tsx",
+    "hooks/useTranslation.ts",
+    "lib/theme/code-themes.ts",
+    "lib/theme/context.ts",
+    "lib/utils.ts"
+  ],
+  "components/settings/AssistantWorkspaceSection.tsx": [
+    "components/assistant/OnboardingWizard.tsx",
+    "components/settings/WorkspaceConfirmDialogs.tsx",
+    "components/settings/WorkspaceStatusCards.tsx",
+    "components/settings/WorkspaceTabPanels.tsx",
+    "components/settings/workspace-types.ts",
+    "components/ui/AssistantAvatar.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/prompt-dialog.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/en.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/settings/CliSettingsSection.tsx": [
+    "components/layout/ImportSessionDialog.tsx",
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/ui/alert-dialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/label.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "components/ui/tabs.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useClaudeStatus.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/settings/GeneralSection.tsx": [
+    "components/patterns/FieldRow.tsx",
+    "components/patterns/SettingsCard.tsx",
+    "components/patterns/StatusBanner.tsx",
+    "components/settings/AppearanceSection.tsx",
+    "components/ui/alert-dialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useAccountInfo.ts",
+    "hooks/useTranslation.ts",
+    "hooks/useUpdate.ts",
+    "i18n/index.ts"
+  ],
+  "components/settings/PresetConnectDialog.tsx": [
+    "components/settings/ProviderForm.tsx",
+    "components/settings/provider-presets.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/label.tsx",
+    "components/ui/select.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/settings/ProviderDoctorDialog.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/settings/ProviderForm.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/label.tsx",
+    "components/ui/select.tsx",
+    "components/ui/textarea.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/settings/ProviderManager.tsx": [
+    "components/settings/PresetConnectDialog.tsx",
+    "components/settings/ProviderDoctorDialog.tsx",
+    "components/settings/ProviderForm.tsx",
+    "components/settings/ProviderOptionsSection.tsx",
+    "components/settings/provider-presets.tsx",
+    "components/ui/alert-dialog.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/select.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/settings/ProviderOptionsSection.tsx": [
+    "components/ui/select.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "types/index.ts"
+  ],
+  "components/settings/SettingsLayout.tsx": [
+    "components/settings/AssistantWorkspaceSection.tsx",
+    "components/settings/CliSettingsSection.tsx",
+    "components/settings/GeneralSection.tsx",
+    "components/settings/ProviderManager.tsx",
+    "components/settings/UsageStatsSection.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/settings/UsageStatsSection.tsx": [
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/settings/WorkspaceConfirmDialogs.tsx": [
+    "components/ui/alert-dialog.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/settings/WorkspaceStatusCards.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/switch.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/settings/WorkspaceTabPanels.tsx": [
+    "components/settings/workspace-types.ts",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/settings/provider-presets.tsx": [
+    "components/ui/icon.tsx",
+    "lib/provider-catalog.ts",
+    "types/index.ts"
+  ],
+  "components/settings/workspace-types.ts": [],
+  "components/setup/ClaudeCodeCard.tsx": [
+    "components/setup/SetupCard.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/setup/ProjectDirCard.tsx": [
+    "components/chat/FolderPicker.tsx",
+    "components/setup/SetupCard.tsx",
+    "components/ui/button.tsx",
+    "hooks/useNativeFolderPicker.ts",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/setup/ProviderCard.tsx": [
+    "components/setup/SetupCard.tsx",
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/setup/SetupCard.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/setup/SetupCenter.tsx": [
+    "components/setup/ClaudeCodeCard.tsx",
+    "components/setup/ProjectDirCard.tsx",
+    "components/setup/ProviderCard.tsx",
+    "components/setup/WelcomeCard.tsx",
+    "components/ui/button.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/setup/WelcomeCard.tsx": [
+    "hooks/useTranslation.ts"
+  ],
+  "components/skills/CreateSkillDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "components/ui/label.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/skills/InstallProgressDialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts"
+  ],
+  "components/skills/MarketplaceBrowser.tsx": [
+    "components/skills/MarketplaceSkillCard.tsx",
+    "components/skills/MarketplaceSkillDetail.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/skills/MarketplaceSkillCard.tsx": [
+    "components/ui/badge.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "components/skills/MarketplaceSkillDetail.tsx": [
+    "components/skills/InstallProgressDialog.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useTranslation.ts",
+    "types/index.ts"
+  ],
+  "components/skills/SkillEditor.tsx": [
+    "components/skills/SkillListItem.tsx",
+    "components/ui/badge.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/textarea.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/skills/SkillListItem.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/tooltip.tsx",
+    "hooks/useTranslation.ts",
+    "lib/utils.ts"
+  ],
+  "components/skills/SkillsManager.tsx": [
+    "components/skills/CreateSkillDialog.tsx",
+    "components/skills/MarketplaceBrowser.tsx",
+    "components/skills/SkillEditor.tsx",
+    "components/skills/SkillListItem.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "components/ui/input.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTranslation.ts",
+    "i18n/index.ts",
+    "lib/utils.ts"
+  ],
+  "components/terminal/TerminalDrawer.tsx": [
+    "components/terminal/TerminalInstance.tsx",
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/usePanel.ts",
+    "hooks/useTerminal.ts",
+    "hooks/useTranslation.ts"
+  ],
+  "components/terminal/TerminalInstance.tsx": [
+    "hooks/useTerminal.ts"
+  ],
+  "components/ui/AssistantAvatar.tsx": [
+    "lib/buddy.ts",
+    "lib/identicon.ts",
+    "lib/utils.ts"
+  ],
+  "components/ui/alert-dialog.tsx": [
+    "components/ui/button.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/alert.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/badge.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/button-group.tsx": [
+    "components/ui/separator.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/button.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/card.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/collapsible.tsx": [],
+  "components/ui/command.tsx": [
+    "components/ui/dialog.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/dialog.tsx": [
+    "components/ui/button.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/dropdown-menu.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/error-banner.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/hover-card.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/icon.tsx": [],
+  "components/ui/input-group.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/input.tsx",
+    "components/ui/textarea.tsx",
+    "lib/utils.ts"
+  ],
+  "components/ui/input.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/label.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/prompt-dialog.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/ui/input.tsx"
+  ],
+  "components/ui/scroll-area.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/select.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/separator.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/sheet.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/spinner.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/switch.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/tabs.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/textarea.tsx": [
+    "lib/utils.ts"
+  ],
+  "components/ui/toast.tsx": [
+    "components/ui/button.tsx",
+    "components/ui/icon.tsx",
+    "hooks/useToast.ts",
+    "lib/utils.ts"
+  ],
+  "components/ui/tooltip.tsx": [
+    "lib/utils.ts"
+  ],
+  "hooks/useAccountInfo.ts": [],
+  "hooks/useAppTheme.ts": [
+    "lib/theme/context.ts"
+  ],
+  "hooks/useAssistantTrigger.ts": [
+    "lib/stream-session-manager.ts",
+    "types/index.ts"
+  ],
+  "hooks/useAssistantWorkspace.ts": [
+    "lib/utils.ts"
+  ],
+  "hooks/useBatchImageGen.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useBridgeAdapter.ts": [],
+  "hooks/useBridgeStatus.ts": [],
+  "hooks/useChatCommands.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useClaudeStatus.ts": [],
+  "hooks/useCliToolsFetch.ts": [
+    "lib/cli-tools-catalog.ts",
+    "types/index.ts"
+  ],
+  "hooks/useClientPlatform.ts": [],
+  "hooks/useCommandBadge.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useContextUsage.ts": [
+    "lib/model-context.ts",
+    "types/index.ts"
+  ],
+  "hooks/useGitBranches.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useGitLog.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useGitStatus.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useGitWorktrees.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useImageGen.ts": [],
+  "hooks/useNativeFolderPicker.ts": [],
+  "hooks/useNotificationPoll.ts": [
+    "hooks/useToast.ts"
+  ],
+  "hooks/usePanel.ts": [],
+  "hooks/usePopoverState.ts": [
+    "lib/message-input-logic.ts",
+    "types/index.ts"
+  ],
+  "hooks/useProviderModels.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useSSEStream.ts": [
+    "types/index.ts"
+  ],
+  "hooks/useSettings.ts": [],
+  "hooks/useSlashCommands.ts": [
+    "lib/constants/command-icons.ts",
+    "lib/constants/commands.ts",
+    "lib/message-input-logic.ts",
+    "types/index.ts"
+  ],
+  "hooks/useSplit.ts": [],
+  "hooks/useStreamSubscription.ts": [
+    "lib/image-ref-store.ts",
+    "lib/stream-session-manager.ts",
+    "types/index.ts"
+  ],
+  "hooks/useTerminal.ts": [
+    "hooks/usePanel.ts"
+  ],
+  "hooks/useToast.ts": [],
+  "hooks/useTranslation.ts": [
+    "components/layout/I18nProvider.tsx"
+  ],
+  "hooks/useUpdate.ts": [],
+  "hooks/useUpdateChecker.ts": [
+    "hooks/useUpdate.ts"
+  ],
+  "i18n/en.ts": [],
+  "i18n/index.ts": [
+    "i18n/en.ts",
+    "i18n/zh.ts"
+  ],
+  "i18n/zh.ts": [
+    "i18n/en.ts"
+  ],
+  "instrumentation.ts": [
+    "lib/runtime-log.ts",
+    "lib/task-scheduler.ts"
+  ],
+  "lib/agent-loop.ts": [
+    "lib/agent-tools.ts",
+    "lib/ai-provider.ts",
+    "lib/context-pruner.ts",
+    "lib/db.ts",
+    "lib/error-classifier.ts",
+    "lib/file-checkpoint.ts",
+    "lib/mcp-connection-manager.ts",
+    "lib/message-builder.ts",
+    "lib/permission-checker.ts",
+    "lib/runtime/event-bus.ts",
+    "types/index.ts"
+  ],
+  "lib/agent-registry.ts": [],
+  "lib/agent-sdk-agents.ts": [],
+  "lib/agent-sdk-capabilities.ts": [
+    "lib/conversation-registry.ts"
+  ],
+  "lib/agent-system-prompt.ts": [],
+  "lib/agent-tools.ts": [
+    "lib/builtin-tools/index.ts",
+    "lib/db.ts",
+    "lib/mcp-tool-adapter.ts",
+    "lib/permission-checker.ts",
+    "lib/permission-registry.ts",
+    "lib/runtime/event-bus.ts",
+    "lib/tools/index.ts"
+  ],
+  "lib/ai-provider.ts": [
+    "lib/claude-code-compat/index.ts",
+    "lib/openai-oauth-manager.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "lib/assistant-workspace.ts": [
+    "lib/heartbeat.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "lib/bash-validator.ts": [],
+  "lib/bg-notify-parser.ts": [],
+  "lib/bridge/adapters/discord-adapter.ts": [
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/adapters/feishu-adapter.ts": [
+    "lib/bridge/channel-adapter.ts",
+    "lib/channels/channel-plugin-adapter.ts",
+    "lib/channels/feishu/index.ts"
+  ],
+  "lib/bridge/adapters/index.ts": [
+    "lib/bridge/adapters/discord-adapter.ts",
+    "lib/bridge/adapters/feishu-adapter.ts",
+    "lib/bridge/adapters/qq-adapter.ts",
+    "lib/bridge/adapters/telegram-adapter.ts",
+    "lib/bridge/adapters/weixin-adapter.ts"
+  ],
+  "lib/bridge/adapters/qq-adapter.ts": [
+    "lib/bridge/adapters/qq-api.ts",
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/adapters/qq-api.ts": [],
+  "lib/bridge/adapters/telegram-adapter.ts": [
+    "lib/bridge/adapters/telegram-media.ts",
+    "lib/bridge/adapters/telegram-utils.ts",
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/adapters/telegram-media.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/adapters/telegram-utils.ts": [],
+  "lib/bridge/adapters/weixin-adapter.ts": [
+    "lib/bridge/adapters/weixin/weixin-api.ts",
+    "lib/bridge/adapters/weixin/weixin-ids.ts",
+    "lib/bridge/adapters/weixin/weixin-media.ts",
+    "lib/bridge/adapters/weixin/weixin-session-guard.ts",
+    "lib/bridge/adapters/weixin/weixin-types.ts",
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/adapters/weixin/weixin-api.ts": [
+    "lib/bridge/adapters/weixin/weixin-types.ts"
+  ],
+  "lib/bridge/adapters/weixin/weixin-auth.ts": [
+    "lib/bridge/adapters/weixin/weixin-api.ts",
+    "lib/bridge/adapters/weixin/weixin-types.ts",
+    "lib/db.ts"
+  ],
+  "lib/bridge/adapters/weixin/weixin-ids.ts": [],
+  "lib/bridge/adapters/weixin/weixin-media.ts": [
+    "lib/bridge/adapters/weixin/weixin-api.ts",
+    "lib/bridge/adapters/weixin/weixin-types.ts"
+  ],
+  "lib/bridge/adapters/weixin/weixin-session-guard.ts": [],
+  "lib/bridge/adapters/weixin/weixin-types.ts": [],
+  "lib/bridge/bridge-manager.ts": [
+    "lib/bridge/adapters/index.ts",
+    "lib/bridge/adapters/telegram-utils.ts",
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/channel-router.ts",
+    "lib/bridge/conversation-engine.ts",
+    "lib/bridge/delivery-layer.ts",
+    "lib/bridge/markdown/discord.ts",
+    "lib/bridge/markdown/telegram.ts",
+    "lib/bridge/permission-broker.ts",
+    "lib/bridge/security/validators.ts",
+    "lib/bridge/types.ts",
+    "lib/channels/channel-plugin-adapter.ts",
+    "lib/channels/feishu/index.ts",
+    "lib/channels/feishu/message-actions.ts",
+    "lib/channels/types.ts",
+    "lib/db.ts",
+    "lib/telegram-bot.ts"
+  ],
+  "lib/bridge/channel-adapter.ts": [
+    "lib/bridge/types.ts",
+    "lib/channels/types.ts"
+  ],
+  "lib/bridge/channel-router.ts": [
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "lib/working-directory.ts"
+  ],
+  "lib/bridge/conversation-engine.ts": [
+    "lib/bridge/types.ts",
+    "lib/claude-client.ts",
+    "lib/context-assembler.ts",
+    "lib/db.ts",
+    "lib/mcp-loader.ts",
+    "lib/provider-resolver.ts",
+    "lib/runtime/index.ts",
+    "types/index.ts"
+  ],
+  "lib/bridge/delivery-layer.ts": [
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/markdown/telegram.ts",
+    "lib/bridge/security/rate-limiter.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts"
+  ],
+  "lib/bridge/markdown/discord.ts": [],
+  "lib/bridge/markdown/feishu.ts": [],
+  "lib/bridge/markdown/ir.ts": [],
+  "lib/bridge/markdown/render.ts": [
+    "lib/bridge/markdown/ir.ts"
+  ],
+  "lib/bridge/markdown/telegram.ts": [
+    "lib/bridge/markdown/ir.ts",
+    "lib/bridge/markdown/render.ts"
+  ],
+  "lib/bridge/permission-broker.ts": [
+    "lib/bridge/adapters/telegram-utils.ts",
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/delivery-layer.ts",
+    "lib/bridge/types.ts",
+    "lib/db.ts",
+    "lib/permission-registry.ts"
+  ],
+  "lib/bridge/security/rate-limiter.ts": [],
+  "lib/bridge/security/validators.ts": [],
+  "lib/bridge/types.ts": [
+    "types/index.ts"
+  ],
+  "lib/buddy.ts": [],
+  "lib/builtin-mcp-bridge.ts": [],
+  "lib/builtin-tools/cli-tools.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "lib/builtin-tools/dashboard.ts": [
+    "lib/dashboard-file-reader.ts",
+    "lib/dashboard-store.ts"
+  ],
+  "lib/builtin-tools/index.ts": [],
+  "lib/builtin-tools/media.ts": [
+    "lib/image-generator.ts",
+    "lib/media-saver.ts"
+  ],
+  "lib/builtin-tools/memory-search.ts": [
+    "lib/workspace-retrieval.ts"
+  ],
+  "lib/builtin-tools/notification.ts": [
+    "lib/notification-manager.ts"
+  ],
+  "lib/builtin-tools/widget-guidelines.ts": [
+    "lib/widget-guidelines.ts"
+  ],
+  "lib/channels/channel-plugin-adapter.ts": [
+    "lib/bridge/channel-adapter.ts",
+    "lib/bridge/types.ts",
+    "lib/channels/types.ts"
+  ],
+  "lib/channels/feishu/card-controller.ts": [
+    "lib/channels/feishu/outbound.ts",
+    "lib/channels/feishu/types.ts",
+    "lib/channels/types.ts"
+  ],
+  "lib/channels/feishu/config.ts": [
+    "lib/channels/feishu/types.ts",
+    "lib/db.ts"
+  ],
+  "lib/channels/feishu/gateway.ts": [
+    "lib/channels/feishu/types.ts"
+  ],
+  "lib/channels/feishu/identity.ts": [
+    "lib/channels/feishu/types.ts"
+  ],
+  "lib/channels/feishu/inbound.ts": [
+    "lib/bridge/types.ts",
+    "lib/channels/feishu/types.ts"
+  ],
+  "lib/channels/feishu/index.ts": [
+    "lib/bridge/types.ts",
+    "lib/channels/feishu/card-controller.ts",
+    "lib/channels/feishu/config.ts",
+    "lib/channels/feishu/gateway.ts",
+    "lib/channels/feishu/inbound.ts",
+    "lib/channels/feishu/outbound.ts",
+    "lib/channels/feishu/policy.ts",
+    "lib/channels/feishu/types.ts",
+    "lib/channels/types.ts"
+  ],
+  "lib/channels/feishu/message-actions.ts": [
+    "lib/channels/feishu/types.ts"
+  ],
+  "lib/channels/feishu/outbound.ts": [
+    "lib/bridge/types.ts"
+  ],
+  "lib/channels/feishu/policy.ts": [
+    "lib/channels/feishu/types.ts"
+  ],
+  "lib/channels/feishu/types.ts": [],
+  "lib/channels/types.ts": [
+    "lib/bridge/types.ts"
+  ],
+  "lib/checkin-processor.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "lib/utils.ts",
+    "lib/workspace-organizer.ts"
+  ],
+  "lib/claude-client.ts": [
+    "lib/agent-sdk-capabilities.ts",
+    "lib/cli-tools-mcp.ts",
+    "lib/context-compressor.ts",
+    "lib/context-estimator.ts",
+    "lib/conversation-registry.ts",
+    "lib/dashboard-mcp.ts",
+    "lib/db.ts",
+    "lib/error-classifier.ts",
+    "lib/image-gen-mcp.ts",
+    "lib/media-import-mcp.ts",
+    "lib/memory-search-mcp.ts",
+    "lib/message-normalizer.ts",
+    "lib/model-context.ts",
+    "lib/notification-mcp.ts",
+    "lib/permission-registry.ts",
+    "lib/platform.ts",
+    "lib/provider-catalog.ts",
+    "lib/provider-resolver.ts",
+    "lib/provider-transport.ts",
+    "lib/runtime/index.ts",
+    "lib/telegram-bot.ts",
+    "lib/widget-guidelines.ts",
+    "lib/working-directory.ts",
+    "types/index.ts"
+  ],
+  "lib/claude-code-compat/claude-code-compat-model.ts": [
+    "lib/claude-code-compat/request-builder.ts",
+    "lib/claude-code-compat/sse-parser.ts",
+    "lib/claude-code-compat/types.ts"
+  ],
+  "lib/claude-code-compat/index.ts": [
+    "lib/claude-code-compat/claude-code-compat-model.ts",
+    "lib/claude-code-compat/types.ts"
+  ],
+  "lib/claude-code-compat/request-builder.ts": [
+    "lib/claude-code-compat/types.ts"
+  ],
+  "lib/claude-code-compat/sse-parser.ts": [
+    "lib/claude-code-compat/types.ts"
+  ],
+  "lib/claude-code-compat/types.ts": [],
+  "lib/claude-session-parser.ts": [
+    "types/index.ts"
+  ],
+  "lib/cli-tools-catalog.ts": [
+    "types/index.ts"
+  ],
+  "lib/cli-tools-context.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts"
+  ],
+  "lib/cli-tools-detect.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/platform.ts",
+    "types/index.ts"
+  ],
+  "lib/cli-tools-mcp.ts": [
+    "lib/cli-tools-catalog.ts",
+    "lib/cli-tools-detect.ts",
+    "lib/db.ts",
+    "lib/platform.ts"
+  ],
+  "lib/constants/command-icons.ts": [
+    "components/ui/icon.tsx",
+    "types/index.ts"
+  ],
+  "lib/constants/commands.ts": [
+    "types/index.ts"
+  ],
+  "lib/constants/image-agent-prompt.ts": [],
+  "lib/context-assembler.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/buddy.ts",
+    "lib/dashboard-store.ts",
+    "lib/db.ts",
+    "lib/widget-guidelines.ts",
+    "lib/workspace-indexer.ts",
+    "types/index.ts"
+  ],
+  "lib/context-compressor.ts": [
+    "lib/claude-client.ts",
+    "lib/context-estimator.ts",
+    "lib/message-normalizer.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "lib/context-estimator.ts": [],
+  "lib/context-pruner.ts": [],
+  "lib/conversation-registry.ts": [],
+  "lib/dashboard-cli-reader.ts": [],
+  "lib/dashboard-export.ts": [
+    "lib/widget-css-bridge.ts",
+    "lib/widget-sanitizer.ts"
+  ],
+  "lib/dashboard-file-reader.ts": [],
+  "lib/dashboard-mcp.ts": [
+    "lib/dashboard-file-reader.ts",
+    "lib/dashboard-store.ts",
+    "types/dashboard.ts"
+  ],
+  "lib/dashboard-store.ts": [
+    "types/dashboard.ts"
+  ],
+  "lib/db.ts": [
+    "lib/bridge/types.ts",
+    "lib/utils.ts",
+    "types/index.ts"
+  ],
+  "lib/error-classifier.ts": [],
+  "lib/file-checkpoint.ts": [],
+  "lib/file-utils.ts": [
+    "types/index.ts"
+  ],
+  "lib/files.ts": [
+    "types/index.ts"
+  ],
+  "lib/git/service.ts": [
+    "types/index.ts"
+  ],
+  "lib/heartbeat.ts": [],
+  "lib/identicon.ts": [],
+  "lib/image-gen-mcp.ts": [
+    "lib/image-generator.ts"
+  ],
+  "lib/image-generator.ts": [
+    "lib/db.ts"
+  ],
+  "lib/image-ref-store.ts": [
+    "types/index.ts"
+  ],
+  "lib/job-executor.ts": [
+    "lib/db.ts",
+    "lib/image-generator.ts",
+    "types/index.ts"
+  ],
+  "lib/lru-map.ts": [],
+  "lib/mcp-connection-manager.ts": [
+    "types/index.ts"
+  ],
+  "lib/mcp-loader.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/mcp-tool-adapter.ts": [
+    "lib/mcp-connection-manager.ts"
+  ],
+  "lib/media-import-mcp.ts": [
+    "lib/media-saver.ts"
+  ],
+  "lib/media-saver.ts": [
+    "lib/db.ts",
+    "types/index.ts"
+  ],
+  "lib/memory-extractor.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "lib/utils.ts"
+  ],
+  "lib/memory-search-mcp.ts": [
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "lib/workspace-indexer.ts",
+    "lib/workspace-retrieval.ts",
+    "types/index.ts"
+  ],
+  "lib/message-builder.ts": [
+    "types/index.ts"
+  ],
+  "lib/message-input-logic.ts": [
+    "lib/constants/commands.ts",
+    "types/index.ts"
+  ],
+  "lib/message-normalizer.ts": [],
+  "lib/model-context.ts": [],
+  "lib/notification-manager.ts": [
+    "lib/telegram-bot.ts"
+  ],
+  "lib/notification-mcp.ts": [
+    "lib/buddy.ts",
+    "lib/notification-manager.ts",
+    "lib/task-scheduler.ts"
+  ],
+  "lib/onboarding-completion.ts": [],
+  "lib/onboarding-processor.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "lib/utils.ts",
+    "lib/workspace-config.ts",
+    "lib/workspace-taxonomy.ts"
+  ],
+  "lib/openai-oauth-manager.ts": [
+    "lib/db.ts",
+    "lib/openai-oauth.ts"
+  ],
+  "lib/openai-oauth.ts": [],
+  "lib/permission-checker.ts": [],
+  "lib/permission-registry.ts": [
+    "lib/db.ts",
+    "lib/types/agent-types.ts"
+  ],
+  "lib/platform.ts": [],
+  "lib/plugin-discovery.ts": [
+    "types/index.ts"
+  ],
+  "lib/provider-catalog.ts": [],
+  "lib/provider-doctor.ts": [
+    "lib/db.ts",
+    "lib/error-classifier.ts",
+    "lib/openai-oauth-manager.ts",
+    "lib/platform.ts",
+    "lib/provider-catalog.ts",
+    "lib/provider-resolver.ts"
+  ],
+  "lib/provider-resolver.ts": [
+    "lib/db.ts",
+    "lib/openai-oauth-manager.ts",
+    "lib/openai-oauth.ts",
+    "lib/provider-catalog.ts",
+    "types/index.ts"
+  ],
+  "lib/provider-transport.ts": [
+    "lib/provider-resolver.ts"
+  ],
+  "lib/resolve-session-model.ts": [],
+  "lib/runtime-log.ts": [],
+  "lib/runtime/event-bus.ts": [],
+  "lib/runtime/index.ts": [
+    "lib/runtime/native-runtime.ts",
+    "lib/runtime/registry.ts",
+    "lib/runtime/sdk-runtime.ts",
+    "lib/runtime/types.ts"
+  ],
+  "lib/runtime/native-runtime.ts": [
+    "lib/agent-loop.ts",
+    "lib/agent-system-prompt.ts",
+    "lib/mcp-connection-manager.ts",
+    "lib/openai-oauth-manager.ts",
+    "lib/provider-resolver.ts",
+    "lib/runtime/types.ts",
+    "types/index.ts"
+  ],
+  "lib/runtime/registry.ts": [
+    "lib/db.ts",
+    "lib/runtime/types.ts"
+  ],
+  "lib/runtime/sdk-runtime.ts": [
+    "lib/conversation-registry.ts",
+    "lib/db.ts",
+    "lib/platform.ts",
+    "lib/runtime/types.ts",
+    "types/index.ts"
+  ],
+  "lib/runtime/types.ts": [
+    "types/index.ts"
+  ],
+  "lib/skill-discovery.ts": [
+    "lib/skill-parser.ts"
+  ],
+  "lib/skill-executor.ts": [
+    "lib/skill-parser.ts"
+  ],
+  "lib/skill-parser.ts": [],
+  "lib/skills-lock.ts": [
+    "types/index.ts"
+  ],
+  "lib/stream-session-manager.ts": [
+    "hooks/useSSEStream.ts",
+    "lib/image-ref-store.ts",
+    "types/index.ts"
+  ],
+  "lib/task-scheduler.ts": [
+    "lib/assistant-workspace.ts",
+    "lib/db.ts",
+    "lib/notification-manager.ts",
+    "lib/provider-resolver.ts",
+    "lib/text-generator.ts",
+    "types/index.ts"
+  ],
+  "lib/telegram-bot.ts": [
+    "lib/bridge/adapters/telegram-utils.ts",
+    "lib/db.ts"
+  ],
+  "lib/text-generator.ts": [
+    "lib/ai-provider.ts"
+  ],
+  "lib/theme/code-themes.ts": [
+    "lib/theme/types.ts"
+  ],
+  "lib/theme/context.ts": [
+    "lib/theme/types.ts"
+  ],
+  "lib/theme/loader.ts": [
+    "lib/theme/types.ts"
+  ],
+  "lib/theme/render-css.ts": [
+    "lib/theme/types.ts"
+  ],
+  "lib/theme/types.ts": [],
+  "lib/tools/agent.ts": [
+    "lib/agent-loop.ts",
+    "lib/agent-registry.ts",
+    "lib/agent-tools.ts",
+    "lib/ai-provider.ts",
+    "lib/permission-checker.ts"
+  ],
+  "lib/tools/bash.ts": [
+    "lib/tools/index.ts"
+  ],
+  "lib/tools/edit.ts": [
+    "lib/file-checkpoint.ts",
+    "lib/tools/index.ts"
+  ],
+  "lib/tools/glob.ts": [
+    "lib/tools/index.ts"
+  ],
+  "lib/tools/grep.ts": [
+    "lib/tools/index.ts"
+  ],
+  "lib/tools/index.ts": [
+    "lib/tools/agent.ts",
+    "lib/tools/bash.ts",
+    "lib/tools/edit.ts",
+    "lib/tools/glob.ts",
+    "lib/tools/grep.ts",
+    "lib/tools/read.ts",
+    "lib/tools/skill.ts",
+    "lib/tools/write.ts"
+  ],
+  "lib/tools/read.ts": [
+    "lib/tools/index.ts"
+  ],
+  "lib/tools/skill.ts": [
+    "lib/skill-discovery.ts",
+    "lib/skill-executor.ts"
+  ],
+  "lib/tools/write.ts": [
+    "lib/file-checkpoint.ts",
+    "lib/tools/index.ts"
+  ],
+  "lib/types/agent-types.ts": [],
+  "lib/update-release.ts": [
+    "lib/platform.ts"
+  ],
+  "lib/utils.ts": [],
+  "lib/widget-css-bridge.ts": [],
+  "lib/widget-guidelines.ts": [],
+  "lib/widget-sanitizer.ts": [],
+  "lib/working-directory.ts": [],
+  "lib/workspace-config.ts": [
+    "types/index.ts"
+  ],
+  "lib/workspace-indexer.ts": [
+    "lib/workspace-config.ts",
+    "lib/workspace-taxonomy.ts",
+    "types/index.ts"
+  ],
+  "lib/workspace-organizer.ts": [
+    "lib/workspace-config.ts",
+    "lib/workspace-indexer.ts",
+    "lib/workspace-taxonomy.ts",
+    "types/index.ts"
+  ],
+  "lib/workspace-retrieval.ts": [
+    "lib/workspace-indexer.ts",
+    "types/index.ts"
+  ],
+  "lib/workspace-taxonomy.ts": [
+    "types/index.ts"
+  ],
+  "types/dashboard.ts": [],
+  "types/electron.d.ts": [],
+  "types/index.ts": [
+    "i18n/index.ts",
+    "lib/error-classifier.ts"
+  ]
+}

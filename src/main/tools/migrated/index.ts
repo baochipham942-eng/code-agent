@@ -623,6 +623,105 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).planReviewModule,
   );
 
+  // ── batch 7: mcp/document/excel/planning（21 个）─────────────────────────
+  const minSchema = (props: Record<string, { type: string }> = {}, required: string[] = []) => ({
+    type: 'object' as const,
+    properties: props,
+    required,
+  });
+
+  // mcp (3)
+  registry.register(
+    { name: 'mcp', description: 'Direct MCP tool invocation.', inputSchema: minSchema({ server: { type: 'string' }, tool: { type: 'string' } }), category: 'mcp', permissionLevel: 'network' },
+    async () => (await import('./mcp/wrappers')).mcpModule,
+  );
+  registry.register(
+    { name: 'MCPUnified', description: 'Unified MCP facade for cross-server tool calls.', inputSchema: minSchema({ action: { type: 'string' } }), category: 'mcp', permissionLevel: 'network' },
+    async () => (await import('./mcp/wrappers')).mcpUnifiedModule,
+  );
+  registry.register(
+    { name: 'mcp_add_server', description: 'Register a new MCP server.', inputSchema: minSchema({ name: { type: 'string' }, command: { type: 'string' } }), category: 'mcp', permissionLevel: 'write' },
+    async () => (await import('./mcp/wrappers')).mcpAddServerModule,
+  );
+
+  // document (1)
+  registry.register(
+    { name: 'DocEdit', description: 'Edit DOCX/RTF documents (insert/replace/delete sections).', inputSchema: minSchema({ file_path: { type: 'string' }, action: { type: 'string' } }), category: 'document', permissionLevel: 'write' },
+    async () => (await import('./document/wrappers')).docEditModule,
+  );
+
+  // excel (1)
+  registry.register(
+    { name: 'ExcelAutomate', description: 'Automate Excel workbook operations (read/write cells, formulas, sheets).', inputSchema: minSchema({ file_path: { type: 'string' }, action: { type: 'string' } }), category: 'excel', permissionLevel: 'write' },
+    async () => (await import('./excel/wrappers')).excelAutomateModule,
+  );
+
+  // planning (16)
+  registry.register(
+    { name: 'plan_read', description: 'Read the current persistent plan.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).planReadModule,
+  );
+  registry.register(
+    { name: 'plan_recover_recent_work', description: 'Recover recent uncommitted work into a plan.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).planRecoverRecentWorkModule,
+  );
+  registry.register(
+    { name: 'plan_update', description: 'Update the persistent plan (add/edit/complete tasks).', inputSchema: minSchema({ updates: { type: 'object' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).planUpdateModule,
+  );
+  registry.register(
+    { name: 'findings_write', description: 'Persist research findings into the plan.', inputSchema: minSchema({ findings: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).findingsWriteModule,
+  );
+  registry.register(
+    { name: 'Plan', description: 'Plan tool facade — read/write/update plans.', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).planModule,
+  );
+  registry.register(
+    { name: 'PlanMode', description: 'Plan mode toggle facade (enter/exit/status).', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).planModeModule,
+  );
+  registry.register(
+    { name: 'enter_plan_mode', description: 'Enter plan mode (read-only tools allowed).', inputSchema: minSchema(), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).enterPlanModeModule,
+  );
+  registry.register(
+    { name: 'exit_plan_mode', description: 'Exit plan mode and resume normal execution.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).exitPlanModeModule,
+  );
+  registry.register(
+    { name: 'task_list', description: 'List all session todos.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).taskListModule,
+  );
+  registry.register(
+    { name: 'task_get', description: 'Get a specific todo by id.', inputSchema: minSchema({ id: { type: 'string' } }), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).taskGetModule,
+  );
+  registry.register(
+    { name: 'task_create', description: 'Create a new todo.', inputSchema: minSchema({ content: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).taskCreateModule,
+  );
+  registry.register(
+    { name: 'task_update', description: 'Update a todo (status, content).', inputSchema: minSchema({ id: { type: 'string' }, status: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).taskUpdateModule,
+  );
+  registry.register(
+    { name: 'TaskManager', description: 'Task manager facade for todos (list/create/update/get).', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
+    async () => (await import('./planning/wrappers')).taskManagerModule,
+  );
+  registry.register(
+    { name: 'AskUserQuestion', description: 'Ask the user a clarifying question and wait for their answer.', inputSchema: minSchema({ question: { type: 'string' } }, ['question']), category: 'planning', permissionLevel: 'execute' },
+    async () => (await import('./planning/wrappers')).askUserQuestionModule,
+  );
+  registry.register(
+    { name: 'confirm_action', description: 'Ask the user to confirm an upcoming action.', inputSchema: minSchema({ action: { type: 'string' } }, ['action']), category: 'planning', permissionLevel: 'execute' },
+    async () => (await import('./planning/wrappers')).confirmActionModule,
+  );
+  registry.register(
+    { name: 'Explore', description: 'Spawn an explorer sub-agent to gather context.', inputSchema: minSchema({ prompt: { type: 'string' } }, ['prompt']), category: 'planning', permissionLevel: 'execute' },
+    async () => (await import('./planning/wrappers')).exploreModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

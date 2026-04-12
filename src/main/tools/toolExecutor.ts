@@ -25,8 +25,8 @@ import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
 import type { HookManager } from '../hooks/hookManager';
-import { isProtocolShadowEnabled, resolveShadowToolName, isPocToolName, getProtocolRegistry } from './protocolRegistry';
-import { runShadowCompare, executePocToolViaProtocol } from './shadowAdapter';
+import { isProtocolToolName } from './protocolRegistry';
+import { executePocToolViaProtocol } from './shadowAdapter';
 
 const logger = createLogger('ToolExecutor');
 
@@ -167,11 +167,9 @@ export class ToolExecutor {
   ): Promise<ToolExecutionResult> {
     logger.debug('Executing tool', { toolName, params: JSON.stringify(params).substring(0, 200) });
 
-    // P0-5 B 阶段：POC 名字（ReadPoc/BashPoc/...）走 protocol registry 真路径
-    // 优先级高于旧 registry，命中即 return；不依赖 isProtocolShadowEnabled，因为
-    // POC 名字本身就是 opt-in（旧路径根本没注册这些名字）
-    if (isPocToolName(toolName)) {
-      logger.debug('Dispatching POC tool to protocol registry', { toolName });
+    // Protocol registry dispatch：已注册的 tool 名字（POC + 迁移）走 protocol 路径
+    if (isProtocolToolName(toolName)) {
+      logger.debug('Dispatching to protocol registry', { toolName });
       return executePocToolViaProtocol({
         toolName,
         params,
@@ -519,21 +517,6 @@ export class ToolExecutor {
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName, success: result.success, error: result.error });
-
-      // P0-5 POC: Shadow compare — 仅在 env + 白名单命中时运行
-      // await 等完成确保在 CLI 单次调用场景下也能写入 jsonl（exec-tool 立即退出）。
-      // 生产 agent loop 路径下延迟可忽略（POC 工具 <5ms），runShadowCompare 内部
-      // 自带 try/catch，永不抛。
-      if (isProtocolShadowEnabled() && resolveShadowToolName(toolName)) {
-        await runShadowCompare({
-          toolName,
-          params,
-          legacyResult: result,
-          legacyCtx: context,
-          workingDirectory: this.workingDirectory,
-          sessionId: options.sessionId,
-        });
-      }
 
       // Cache successful results for cacheable tools
       if (result.success && toolCache.isCacheable(toolName) && result.result !== undefined) {

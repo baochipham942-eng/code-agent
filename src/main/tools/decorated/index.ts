@@ -39,11 +39,9 @@
 
 export { GlobTool } from './GlobTool';
 export { ReadFileTool } from './ReadFileTool';
-export { BashTool } from './BashTool';
 
 import { GlobTool } from './GlobTool';
 import { ReadFileTool } from './ReadFileTool';
-import { BashTool } from './BashTool';
 import type { ITool } from '../decorators';
 
 /**
@@ -55,5 +53,4 @@ import type { ITool } from '../decorators';
 export const DecoratedToolClasses: Array<new () => ITool> = [
   GlobTool,
   ReadFileTool,
-  BashTool,
 ];

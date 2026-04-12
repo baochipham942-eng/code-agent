@@ -14,6 +14,8 @@ export const FILE = {
 export const BASH = {
   /** 默认超时 (2 分钟) */
   DEFAULT_TIMEOUT: 120000,
+  /** 最大超时 (10 分钟) */
+  MAX_TIMEOUT: 600000,
   /** 最大输出长度 */
   MAX_OUTPUT_LENGTH: 30000,
   /** 最大缓冲区大小 (10MB) */

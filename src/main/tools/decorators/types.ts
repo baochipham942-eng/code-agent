@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { JSONSchema } from '../../../shared/contract';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 
 // ----------------------------------------------------------------------------
 

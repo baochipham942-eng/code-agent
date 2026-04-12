@@ -108,7 +108,8 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(ctx.hookManager).toBe(fakeHookManager);
     expect(ctx.planningService).toBe(fakePlanningService);
     expect(ctx.modelConfig).toBe(fakeModelConfig);
-    expect(ctx.legacyToolRegistry).toBe(fakeRegistry);
+    // legacyToolRegistry field removed after protocol migration; fakeRegistry no longer passed through
+    void fakeRegistry;
 
     expect(ctx.modelCallback).toBe(fakeModelCallback);
     expect(ctx.currentToolCallId).toBe('call_123');

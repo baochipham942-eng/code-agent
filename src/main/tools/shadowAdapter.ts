@@ -101,7 +101,6 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     hookManager: legacy?.hookManager,
     planningService: legacy?.planningService,
     modelConfig: legacy?.modelConfig,
-    legacyToolRegistry: legacy?.toolRegistry,
   };
 }
 

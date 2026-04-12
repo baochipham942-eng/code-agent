@@ -16,7 +16,8 @@ import type {
   TaskProgressEvent,
 } from '../../shared/contract/cloud';
 import type { ModelConfig } from '../../shared/contract';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import { CLOUD, TASK_ANALYSIS, RETRY } from '../../shared/constants';
 
 // ============================================================================
@@ -82,7 +83,7 @@ export class HybridTaskCoordinator extends EventEmitter {
   private runningLocal: Set<string> = new Set();
   private runningCloud: Set<string> = new Set();
   private modelConfig?: ModelConfig;
-  private toolRegistry?: Map<string, Tool>;
+  private toolResolver?: ToolResolver;
   private toolContext?: ToolContext;
 
   constructor(config: Partial<CoordinatorConfig> = {}) {
@@ -100,11 +101,11 @@ export class HybridTaskCoordinator extends EventEmitter {
    */
   initialize(context: {
     modelConfig: ModelConfig;
-    toolRegistry: Map<string, Tool>;
+    toolResolver: ToolResolver;
     toolContext: ToolContext;
   }): void {
     this.modelConfig = context.modelConfig;
-    this.toolRegistry = context.toolRegistry;
+    this.toolResolver = context.toolResolver;
     this.toolContext = context.toolContext;
   }
 
@@ -203,7 +204,7 @@ export class HybridTaskCoordinator extends EventEmitter {
         },
         {
           modelConfig: this.modelConfig!,
-          toolRegistry: this.toolRegistry!,
+          toolResolver: this.toolResolver!,
           toolContext: this.toolContext!,
         }
       );

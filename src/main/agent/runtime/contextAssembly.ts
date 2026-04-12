@@ -17,7 +17,6 @@ import type {
   AgentTaskPhase,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { getToolSearchService } from '../../services/toolSearch';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
@@ -35,6 +34,12 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 import { isProtocolExposeEnabled, getPocToolDefinitions } from '../../tools/protocolRegistry';
+import {
+  getCoreToolDefinitions,
+  getLoadedDeferredToolDefinitions,
+  getAllToolDefinitions,
+  getDeferredToolsSummary,
+} from '../../tools/toolDefinitions';
 
 // Import refactored modules
 import type {
@@ -206,14 +211,14 @@ export class ContextAssembly {
     let tools;
     if (this.ctx.enableToolDeferredLoading) {
       // 使用核心工具 + 已加载的延迟工具
-      const coreTools = this.ctx.toolRegistry.getCoreToolDefinitions();
-      const loadedDeferredTools = this.ctx.toolRegistry.getLoadedDeferredToolDefinitions();
+      const coreTools = getCoreToolDefinitions();
+      const loadedDeferredTools = getLoadedDeferredToolDefinitions();
       tools = [...coreTools, ...loadedDeferredTools];
       logger.debug(`Tools (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
     } else {
       // 传统模式：发送所有工具
-      tools = this.ctx.toolRegistry.getToolDefinitions();
-      logger.debug('Tools:', tools.map((t: any) => t.name));
+      tools = getAllToolDefinitions();
+      logger.debug('Tools:', tools.map((t) => t.name));
     }
 
     // P0-5 B 阶段：env 命中时把 POC schema 暴露给 LLM
@@ -665,7 +670,7 @@ export class ContextAssembly {
 
     // 注入延迟工具提示
     if (this.ctx.enableToolDeferredLoading) {
-      const deferredToolsSummary = this.ctx.toolRegistry.getDeferredToolsSummary();
+      const deferredToolsSummary = getDeferredToolsSummary();
       if (deferredToolsSummary) {
         systemPrompt += `
 

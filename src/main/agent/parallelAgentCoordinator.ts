@@ -9,7 +9,8 @@
 import { EventEmitter } from 'events';
 import type { ModelConfig } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
-import type { Tool, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
@@ -104,7 +105,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private taskDefinitions: Map<string, AgentTask> = new Map();
   private sharedContext: SharedContext;
   private modelConfig?: ModelConfig;
-  private toolRegistry?: Map<string, Tool>;
+  private toolResolver?: ToolResolver;
   private toolContext?: ToolContext;
 
   constructor(config: Partial<CoordinatorConfig> = {}) {
@@ -123,11 +124,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
    */
   initialize(context: {
     modelConfig: ModelConfig;
-    toolRegistry: Map<string, Tool>;
+    toolResolver: ToolResolver;
     toolContext: ToolContext;
   }): void {
     this.modelConfig = context.modelConfig;
-    this.toolRegistry = context.toolRegistry;
+    this.toolResolver = context.toolResolver;
     this.toolContext = context.toolContext;
   }
 
@@ -135,7 +136,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Execute multiple agent tasks in parallel with dependency resolution
    */
   async executeParallel(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
-    if (!this.modelConfig || !this.toolRegistry || !this.toolContext) {
+    if (!this.modelConfig || !this.toolResolver || !this.toolContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -247,10 +248,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
    */
   private async executeTask(task: AgentTask): Promise<AgentTaskResult> {
     const modelConfig = this.modelConfig;
-    const toolRegistry = this.toolRegistry;
+    const toolResolver = this.toolResolver;
     const toolContext = this.toolContext;
 
-    if (!modelConfig || !toolRegistry || !toolContext) {
+    if (!modelConfig || !toolResolver || !toolContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -282,7 +283,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
         },
         {
           modelConfig,
-          toolRegistry,
+          toolResolver,
           toolContext,
           parentToolUseId: toolContext.currentToolCallId,
           executionAgentId: task.id,
@@ -604,7 +605,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Provides better dependency handling and parallel scheduling
    */
   async executeWithDAG(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
-    if (!this.modelConfig || !this.toolRegistry || !this.toolContext) {
+    if (!this.modelConfig || !this.toolResolver || !this.toolContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
@@ -654,7 +655,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const scheduler = getDAGScheduler();
     const result = await scheduler.execute(dag, {
       modelConfig: this.modelConfig,
-      toolRegistry: this.toolRegistry,
+      toolResolver: this.toolResolver,
       toolContext: this.toolContext,
       workingDirectory: process.cwd(),
     });

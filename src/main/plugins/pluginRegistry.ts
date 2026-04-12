@@ -2,8 +2,10 @@
 // Plugin Registry - Manage plugin lifecycle
 // ============================================================================
 
-import type { Tool } from '../tools/toolRegistry';
-import { registerTool, unregisterTool } from '../tools/toolRegistry';
+import type { Tool } from '../tools/types';
+import { getProtocolRegistry } from '../tools/protocolRegistry';
+import { wrapLegacyTool } from '../tools/migrated/_helpers/legacyAdapter';
+import type { ToolCategory } from '../protocol/tools';
 import type {
   LoadedPlugin,
   PluginAPI,
@@ -130,7 +132,12 @@ export class PluginRegistry {
           ...tool,
           name: `${plugin.manifest.id}:${tool.name}`,
         };
-        registerTool(prefixedTool);
+        const category = 'file' as ToolCategory;
+        const wrapped = wrapLegacyTool(prefixedTool, {
+          category,
+          permissionLevel: prefixedTool.permissionLevel,
+        });
+        getProtocolRegistry().register(wrapped.schema, async () => wrapped);
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
         logger.info(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
@@ -138,7 +145,7 @@ export class PluginRegistry {
 
       unregisterTool: (toolName: string) => {
         const prefixedName = `${plugin.manifest.id}:${toolName}`;
-        unregisterTool(prefixedName);
+        getProtocolRegistry().unregister(prefixedName);
         const idx = plugin.registeredTools.indexOf(prefixedName);
         if (idx !== -1) {
           plugin.registeredTools.splice(idx, 1);
@@ -261,7 +268,7 @@ export class PluginRegistry {
 
       // Unregister all tools
       for (const toolName of plugin.registeredTools) {
-        unregisterTool(toolName);
+        getProtocolRegistry().unregister(toolName);
       }
       plugin.registeredTools = [];
 

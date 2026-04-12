@@ -15,7 +15,7 @@ import type {
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { notificationService } from '../services/infra/notificationService';
-import { getToolRegistry } from '../tools/toolRegistry';
+import { getToolResolver } from '../tools/toolResolver';
 
 const execAsync = promisify(exec);
 
@@ -485,10 +485,10 @@ export class HeartbeatService {
       }
 
       case 'tool': {
-        const registry = getToolRegistry();
-        const tool = registry.get(check.toolName);
+        const resolver = getToolResolver();
+        const toolDef = resolver.getDefinition(check.toolName);
 
-        if (!tool) {
+        if (!toolDef) {
           return {
             success: false,
             output: `Tool "${check.toolName}" is not registered`,
@@ -500,8 +500,8 @@ export class HeartbeatService {
           output: JSON.stringify({
             toolName: check.toolName,
             registered: true,
-            description: tool.description,
-            requiresPermission: tool.requiresPermission,
+            description: toolDef.description,
+            requiresPermission: toolDef.requiresPermission,
             parameters: check.parameters ?? {},
           }),
         };

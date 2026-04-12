@@ -2,7 +2,7 @@
 // Plugin System Types
 // ============================================================================
 
-import type { Tool } from '../tools/toolRegistry';
+import type { Tool } from '../tools/types';
 import type { HookEvent } from '../hooks/events';
 
 /**

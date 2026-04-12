@@ -9,14 +9,13 @@ import { getAgentRequirementsAnalyzer } from '../agentRequirementsAnalyzer';
 import { getSessionManager } from '../../services';
 import { TaskDAG } from '../../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../../scheduler/dagEventBridge';
-import type { ToolRegistry, Tool } from '../../tools/toolRegistry';
+import { getToolResolver } from '../../tools/toolResolver';
 import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('AutoAgentRunner');
 
 export interface AutoAgentRunnerDeps {
-  toolRegistry: ToolRegistry;
   workingDirectory: string;
   sessionId: string | null;
   taskListManager: TaskListManager;
@@ -123,15 +122,11 @@ export async function runAutoAgentMode(
 
   // Execute agents through coordinator
   const coordinator = getAutoAgentCoordinator();
-  const toolMap = new Map<string, Tool>();
-  for (const tool of deps.toolRegistry.getAllTools()) {
-    toolMap.set(tool.name, tool);
-  }
 
   const result = await coordinator.execute(agents, requirements, {
     sessionId: sessionId || 'unknown',
     modelConfig,
-    toolRegistry: toolMap,
+    toolResolver: getToolResolver(),
     toolContext: {
       workingDirectory: deps.workingDirectory,
       requestPermission: async () => true,

@@ -19,6 +19,7 @@ import {
   listBuiltInWorkflows,
 } from '../../../shared/contract/workflow';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getToolResolver } from '../toolResolver';
 import {
   getPredefinedAgent,
   getAgentPrompt,
@@ -176,10 +177,10 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
     const parallel = params.parallel !== false;
 
     // Check for required context
-    if (!context.toolRegistry || !context.modelConfig) {
+    if (!context.modelConfig) {
       return {
         success: false,
-        error: 'workflow_orchestrate requires toolRegistry and modelConfig in context',
+        error: 'workflow_orchestrate requires modelConfig in context',
       };
     }
 
@@ -480,9 +481,7 @@ async function executeStage(
       },
       {
         modelConfig: effectiveModelConfig,
-        toolRegistry: new Map(
-          context.toolRegistry!.getAllTools().map((t) => [t.name, t])
-        ),
+        toolResolver: getToolResolver(),
         toolContext: context,
         // Pass attachments for multimodal support
         attachments: attachments,

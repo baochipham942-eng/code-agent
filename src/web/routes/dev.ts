@@ -222,13 +222,9 @@ async function getRealApprovalDevToolExecutor(
   await initializeCLIServices();
 
   if (!devRealApprovalToolExecutor) {
-    const [{ ToolExecutor }, { getToolRegistry }] = await Promise.all([
-      import('../../main/tools/toolExecutor'),
-      import('../../main/tools/toolRegistry'),
-    ]);
+    const { ToolExecutor } = await import('../../main/tools/toolExecutor');
 
     devRealApprovalToolExecutor = new ToolExecutor({
-      toolRegistry: getToolRegistry(),
       requestPermission: (req) => requestDevToolPermission(pendingDevPermissions, req),
       workingDirectory: process.cwd(),
     });

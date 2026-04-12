@@ -18,7 +18,8 @@ import type {
 } from '../../shared/contract/taskDAG';
 import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
-import type { Tool, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
 import {
   getPredefinedAgent,
@@ -73,7 +74,7 @@ const DEFAULT_CONFIG: DAGSchedulerConfig = {
  */
 export interface SchedulerContext {
   modelConfig: ModelConfig;
-  toolRegistry: Map<string, Tool>;
+  toolResolver: ToolResolver;
   toolContext: ToolContext;
   workingDirectory: string;
   remainingBudget?: number;
@@ -439,7 +440,7 @@ export class DAGScheduler extends EventEmitter {
       },
       {
         modelConfig: schedContext.modelConfig,
-        toolRegistry: schedContext.toolRegistry,
+        toolResolver: schedContext.toolResolver,
         toolContext: schedContext.toolContext,
         // 传递父工具调用 ID，用于 subagent 消息追踪
         parentToolUseId: schedContext.toolContext.currentToolCallId,

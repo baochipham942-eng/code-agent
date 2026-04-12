@@ -10,7 +10,6 @@ import type {
 import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel, InteractionMode } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
-import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
@@ -33,7 +32,6 @@ export interface RuntimeContext {
   // --- Configuration ---
   systemPrompt: string;
   modelConfig: ModelConfig;
-  toolRegistry: ToolRegistryLike;
   toolExecutor: ToolExecutor;
   messages: Message[];
   onEvent: (event: AgentEvent) => void;

@@ -3,12 +3,11 @@
 // ============================================================================
 
 import type {
-  Tool,
   ToolContext,
   ToolExecutionResult,
   PermissionRequestData,
-  ToolRegistryLike,
 } from './types';
+import type { ToolDefinition } from '../../shared/contract';
 import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
@@ -25,8 +24,7 @@ import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
 import type { HookManager } from '../hooks/hookManager';
-import { isProtocolToolName } from './protocolRegistry';
-import { executePocToolViaProtocol } from './shadowAdapter';
+import { getToolResolver } from './toolResolver';
 
 const logger = createLogger('ToolExecutor');
 
@@ -51,7 +49,6 @@ function recordDecision(
  * @internal
  */
 export interface ToolExecutorConfig {
-  toolRegistry: ToolRegistryLike;
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
 }
@@ -118,13 +115,11 @@ export interface ExecuteOptions {
  * @see ToolCache - 工具结果缓存
  */
 export class ToolExecutor {
-  private toolRegistry: ToolRegistryLike;
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private auditEnabled = true;
 
   constructor(config: ToolExecutorConfig) {
-    this.toolRegistry = config.toolRegistry;
     this.requestPermission = config.requestPermission;
     this.workingDirectory = config.workingDirectory;
   }
@@ -167,21 +162,10 @@ export class ToolExecutor {
   ): Promise<ToolExecutionResult> {
     logger.debug('Executing tool', { toolName, params: JSON.stringify(params).substring(0, 200) });
 
-    // Protocol registry dispatch：已注册的 tool 名字（POC + 迁移）走 protocol 路径
-    if (isProtocolToolName(toolName)) {
-      logger.debug('Dispatching to protocol registry', { toolName });
-      return executePocToolViaProtocol({
-        toolName,
-        params,
-        workingDirectory: this.workingDirectory,
-        requestPermission: this.requestPermission,
-        sessionId: options.sessionId,
-      });
-    }
+    const resolver = getToolResolver();
+    const toolDef = resolver.getDefinition(toolName);
 
-    const tool = this.toolRegistry.get(toolName);
-
-    if (!tool) {
+    if (!toolDef) {
       logger.debug('Tool not found', { toolName });
       return {
         success: false,
@@ -205,8 +189,6 @@ export class ToolExecutor {
       workingDirectory: this.workingDirectory,
       requestPermission: this.requestPermission,
       planningService: options.planningService,
-      // For subagent execution (task, skill tools)
-      toolRegistry: this.toolRegistry,
       modelConfig: options.modelConfig,
       // Plan Mode support (borrowed from Claude Code v2.0)
       setPlanMode: options.setPlanMode,
@@ -316,7 +298,7 @@ export class ToolExecutor {
       }
     }
 
-    if (tool.requiresPermission && !isPreApproved && !isSafeCommand) {
+    if (toolDef.requiresPermission && !isPreApproved && !isSafeCommand) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
@@ -324,7 +306,7 @@ export class ToolExecutor {
       try {
         const classification = await classifyPermission(toolName, params, {
           workingDirectory: this.workingDirectory,
-          permissionLevel: tool.permissionLevel,
+          permissionLevel: toolDef.permissionLevel,
         });
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
@@ -375,7 +357,7 @@ export class ToolExecutor {
       }
 
       if (needsUserApproval) {
-      const permissionRequest = this.buildPermissionRequest(tool, params);
+      const permissionRequest = this.buildPermissionRequest(toolDef, params);
       permissionRequest.sessionId = options.sessionId;
 
       // Attach decision trace to permission request
@@ -511,9 +493,9 @@ export class ToolExecutor {
 
     const startTime = Date.now();
     try {
-      // Execute the tool
-      logger.debug('Calling tool.execute', { toolName });
-      const result = await tool.execute(params, context);
+      // Execute the tool via protocol resolver
+      logger.debug('Dispatching to protocol resolver', { toolName });
+      const result = await resolver.execute(toolName, params, context);
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName, success: result.success, error: result.error });
@@ -593,11 +575,9 @@ export class ToolExecutor {
   }
 
   private buildPermissionRequest(
-    tool: Tool,
+    tool: ToolDefinition,
     params: Record<string, unknown>
   ): PermissionRequestData {
-    const details: Record<string, unknown> = {};
-
     switch (tool.name) {
       case 'bash':
       case 'Bash':

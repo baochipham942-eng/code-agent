@@ -10,7 +10,8 @@ import type {
   CoworkResult,
   CoworkAgentResult,
 } from '../../shared/contract/cowork';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import {
   resolveContract,
   mergeContractOverrides,
@@ -41,7 +42,7 @@ const logger = createLogger('CoworkOrchestrator');
 
 export interface CoworkOrchestratorConfig {
   modelConfig: ModelConfig;
-  toolRegistry: Map<string, Tool>;
+  toolResolver: ToolResolver;
   toolContext: ToolContext;
   /** 最大并行数（默认 4） */
   maxParallelism?: number;
@@ -271,7 +272,7 @@ export class CoworkOrchestrator {
         },
         {
           modelConfig: this.config.modelConfig,
-          toolRegistry: this.config.toolRegistry,
+          toolResolver: this.config.toolResolver,
           toolContext: this.config.toolContext,
           hookManager: this.config.toolContext.hookManager,
         }

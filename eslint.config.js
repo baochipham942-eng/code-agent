@@ -150,8 +150,6 @@ export default tseslint.config(
       'src/main/tools/multiagent/**',
       'src/main/tools/connectors/**',
       'src/main/tools/vision/**',
-      // legacy 聚合入口（计划在 P0-6.2 删除）
-      'src/main/tools/toolRegistry.ts',
     ],
     rules: {
       'no-restricted-imports': [

@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getToolResolver } from '../toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
@@ -121,7 +122,7 @@ async function handleForkExecution(
   context: ToolContext
 ): Promise<ToolExecutionResult> {
   // 检查是否有执行 subagent 所需的上下文
-  if (!context.toolRegistry || !context.modelConfig) {
+  if (!context.modelConfig) {
     return {
       success: false,
       error: 'Subagent context not available for fork execution mode',
@@ -149,9 +150,7 @@ async function handleForkExecution(
       },
       {
         modelConfig: context.modelConfig as ModelConfig,
-        toolRegistry: new Map(
-          context.toolRegistry.getAllTools().map((t) => [t.name, t])
-        ),
+        toolResolver: getToolResolver(),
         toolContext: context,
       }
     );

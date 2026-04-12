@@ -35,7 +35,8 @@ import { createParallelErrorHandler, type ParallelErrorHandler } from './paralle
 import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
 import type { ModelConfig } from '../../shared/contract';
-import type { Tool, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('AutoAgentCoordinator');
@@ -88,7 +89,7 @@ export interface CoordinationResult {
 export interface CoordinatorContext {
   sessionId: string;
   modelConfig: ModelConfig;
-  toolRegistry: Map<string, Tool>;
+  toolResolver: ToolResolver;
   toolContext: ToolContext;
   onProgress?: (agentId: string, status: AgentExecutionStatus, progress?: number) => void;
 }
@@ -473,7 +474,7 @@ export class AutoAgentCoordinator {
         },
         {
           modelConfig: context.modelConfig,
-          toolRegistry: context.toolRegistry,
+          toolResolver: context.toolResolver,
           toolContext: context.toolContext,
         }
       );

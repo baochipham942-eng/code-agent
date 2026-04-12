@@ -9,6 +9,12 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+// NOTE: toolResolver is imported lazily inside functions to avoid a static
+// cycle: protocolRegistry → migrated/index → multiagent/wrappers → spawnAgent
+// → toolResolver → toolDefinitions/shadowAdapter → protocolRegistry.
+async function loadToolResolver() {
+  return (await import('../toolResolver')).getToolResolver();
+}
 import {
   getParallelAgentCoordinator,
   type AgentTask,
@@ -174,10 +180,10 @@ When NOT to spawn:
     const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
 
     // Check for required context
-    if (!context.toolRegistry || !context.modelConfig) {
+    if (!context.modelConfig) {
       return {
         success: false,
-        error: 'spawn_agent requires toolRegistry and modelConfig in context',
+        error: 'spawn_agent requires modelConfig in context',
       };
     }
 
@@ -370,9 +376,7 @@ When NOT to spawn:
       // Build executor context
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
-        toolRegistry: new Map(
-          context.toolRegistry.getAllTools().map((t) => [t.name, t])
-        ),
+        toolResolver: await loadToolResolver(),
         toolContext: context,
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
@@ -603,9 +607,7 @@ async function executeParallelAgents(
   // Initialize coordinator with context
   coordinator.initialize({
     modelConfig: context.modelConfig as ModelConfig,
-    toolRegistry: new Map(
-      context.toolRegistry!.getAllTools().map((t) => [t.name, t])
-    ),
+    toolResolver: await loadToolResolver(),
     toolContext: context,
   });
 

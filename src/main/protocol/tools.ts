@@ -134,8 +134,6 @@ export interface ToolContext {
   readonly planningService?: unknown;
   /** ModelConfig 引用，用 cast: `ctx.modelConfig as ModelConfig` */
   readonly modelConfig?: unknown;
-  /** Legacy ToolRegistry 引用（仅 Task/Skill subagent 临时用，全量迁完后删除）*/
-  readonly legacyToolRegistry?: unknown;
 }
 
 // ----------------------------------------------------------------------------
@@ -236,6 +234,9 @@ export interface ToolRegistry {
 
   /** 是否已注册 */
   has(name: string): boolean;
+
+  /** 注销一个已注册工具（用于插件卸载/热重载）。返回是否实际删除 */
+  unregister(name: string): boolean;
 
   /** 测试/热重载用 */
   reset(): void;

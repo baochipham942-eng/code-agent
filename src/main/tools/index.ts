@@ -3,7 +3,6 @@
 // ============================================================================
 
 // Tool infrastructure
-export { ToolRegistry } from './toolRegistry';
-export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData, ToolRegistryLike } from './types';
+export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 export { ToolExecutor } from './toolExecutor';
 

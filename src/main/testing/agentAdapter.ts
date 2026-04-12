@@ -267,15 +267,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // Dynamic imports (safe after electron mock is in place)
       const { AgentLoop } = await import('../agent/agentLoop');
       const { SYSTEM_PROMPT } = await import('../prompts/builder');
-      const { ToolRegistry } = await import('../tools/toolRegistry');
       const { ToolExecutor } = await import('../tools/toolExecutor');
 
       // 1. System prompt
 
-      // 2. ToolRegistry + ToolExecutor (auto-approve all permissions for testing)
-      const toolRegistry = new ToolRegistry();
+      // 2. ToolExecutor (auto-approve all permissions for testing)
       const toolExecutor = new ToolExecutor({
-        toolRegistry,
         requestPermission: async () => true,
         workingDirectory: this.workingDirectory,
       });
@@ -296,7 +293,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
           temperature: 0.3,
           maxTokens: MODEL_MAX_TOKENS.DEFAULT,
         },
-        toolRegistry,
         toolExecutor,
         messages,
         enableHooks: false,

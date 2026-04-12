@@ -43,7 +43,6 @@ export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyTool
     emit: wrapEmit,
     emitEvent: wrapEmit,
     // P0-5 ctx 扩展字段反向映射回 legacy
-    toolRegistry: ctx.legacyToolRegistry as LegacyToolContext['toolRegistry'],
     modelConfig: ctx.modelConfig,
     hookManager: ctx.hookManager as LegacyToolContext['hookManager'],
     planningService: ctx.planningService,
@@ -108,6 +107,8 @@ export function wrapLegacyTool(legacyTool: Tool, opts: WrapOptions): ToolModule 
     permissionLevel: opts.permissionLevel,
     readOnly: opts.readOnly ?? false,
     allowInPlanMode: opts.allowInPlanMode ?? false,
+    // 透传 legacy 动态描述生成器（bash/webSearch/skillMeta 依赖它）
+    ...(legacyTool.dynamicDescription ? { dynamicDescription: legacyTool.dynamicDescription } : {}),
   };
 
   class Handler implements ToolHandler<Record<string, unknown>, string> {

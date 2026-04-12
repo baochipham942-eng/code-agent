@@ -993,16 +993,24 @@ Git: NEVER --force push or --no-verify unless explicitly requested.`,
   registry.register(
     {
       name: 'Grep',
-      description: 'Search file contents with ripgrep regex.',
+      description:
+        'Searches file contents using regex patterns. Use this instead of Bash grep or rg. ' +
+        'Supports regex syntax, file type filtering, glob patterns, and context lines. ' +
+        'Use context params (before_context/after_context/context) to see surrounding lines. ' +
+        'Use head_limit + offset for pagination by match group.',
       inputSchema: {
         type: 'object',
         properties: {
           pattern: { type: 'string' },
           path: { type: 'string' },
-          glob: { type: 'string' },
+          include: { type: 'string' },
+          case_insensitive: { type: 'boolean' },
           type: { type: 'string' },
-          output_mode: { type: 'string' },
+          before_context: { type: 'number' },
+          after_context: { type: 'number' },
+          context: { type: 'number' },
           head_limit: { type: 'number' },
+          offset: { type: 'number' },
         },
         required: ['pattern'],
       },
@@ -1011,7 +1019,7 @@ Git: NEVER --force push or --no-verify unless explicitly requested.`,
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./shell/wrappers')).grepModule,
+    async () => (await import('./shell/grep')).grepModule,
   );
 
   // lightMemory (2): MemoryRead / MemoryWrite (P0-6.3 Batch 3 — native ToolModule)

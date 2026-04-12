@@ -34,6 +34,8 @@ export const GREP = {
   MAX_TOTAL_MATCHES: 200,
   /** EAGAIN 重试标志 — 降级为单线程 */
   EAGAIN_RETRY_THREADS: 1,
+  /** -A / -B / -C 上限（防止 LLM 写出爆炸性的 context=10000） */
+  MAX_CONTEXT_LINES: 10,
 } as const;
 
 /** 沙箱配置 */

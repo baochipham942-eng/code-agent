@@ -2,69 +2,94 @@
 // Smoke Tests — 验证 WebFetch/WebSearch/Grep 优化后的核心行为
 // ============================================================================
 
-import { describe, it, expect, vi } from 'vitest';
-import { grepTool } from '../../../src/main/tools/shell/grep';
+import { describe, it, expect } from 'vitest';
+import { grepModule } from '../../../src/main/tools/migrated/shell/grep';
 import { smartHtmlToText } from '../../../src/main/tools/network/htmlUtils';
-import { fetchDocument, clearFetchCache } from '../../../src/main/tools/network/fetchDocument';
+import { clearFetchCache } from '../../../src/main/tools/network/fetchDocument';
 import { WEB_FETCH, GREP } from '../../../src/shared/constants';
+import type { ToolContext, CanUseToolFn, Logger } from '../../../src/main/protocol/tools';
 
 const cwd = process.cwd();
-const ctx = { workingDirectory: cwd } as any;
+
+function makeLogger(): Logger {
+  return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+}
+
+function makeCtx(): ToolContext {
+  return {
+    sessionId: 'smoke',
+    workingDir: cwd,
+    abortSignal: new AbortController().signal,
+    logger: makeLogger(),
+    emit: () => void 0,
+  };
+}
+
+const allowAll: CanUseToolFn = async () => ({ allow: true });
+
+async function runGrep(args: Record<string, unknown>) {
+  const handler = await grepModule.createHandler();
+  return handler.execute(args, makeCtx(), allowAll);
+}
 
 describe('Grep Tool — execFile + pagination', () => {
   it('should find matches using execFile (no shell)', async () => {
-    const result = await grepTool.execute(
-      { pattern: 'export const GREP', path: 'src/shared/constants/tools.ts' },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('export const GREP');
+    const result = await runGrep({
+      pattern: 'export const GREP',
+      path: 'src/shared/constants/tools.ts',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('export const GREP');
   });
 
   it('should apply head_limit pagination', async () => {
-    const result = await grepTool.execute(
-      { pattern: 'export', path: 'src/shared/constants/tools.ts', head_limit: 3 },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('showing 1-3 of');
+    const result = await runGrep({
+      pattern: 'export',
+      path: 'src/shared/constants/tools.ts',
+      head_limit: 3,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('showing 1-3 of');
   });
 
   it('should apply offset + head_limit', async () => {
-    const result = await grepTool.execute(
-      { pattern: 'export', path: 'src/shared/constants/tools.ts', head_limit: 2, offset: 2 },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('showing 3-4 of');
+    const result = await runGrep({
+      pattern: 'export',
+      path: 'src/shared/constants/tools.ts',
+      head_limit: 2,
+      offset: 2,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('showing 3-4 of');
   });
 
   it('should handle no matches gracefully', async () => {
-    const result = await grepTool.execute(
-      { pattern: 'ZZZZZ_NONEXISTENT_12345', path: 'src/shared/constants/tools.ts' },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('No matches found');
+    const result = await runGrep({
+      pattern: 'ZZZZZ_NONEXISTENT_12345',
+      path: 'src/shared/constants/tools.ts',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('No matches found');
   });
 
   it('should support type filter', async () => {
-    const result = await grepTool.execute(
-      { pattern: 'fetchDocument', path: 'src/main/tools/network', type: 'ts' },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('fetchDocument');
+    const result = await runGrep({
+      pattern: 'fetchDocument',
+      path: 'src/main/tools/network',
+      type: 'ts',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('fetchDocument');
   });
 
   it('should handle special regex chars via execFile safely', async () => {
     // This pattern contains shell-dangerous chars — execFile should handle it safely
-    const result = await grepTool.execute(
-      { pattern: 'export const \\w+', path: 'src/shared/constants/tools.ts' },
-      ctx
-    );
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('export const');
+    const result = await runGrep({
+      pattern: 'export const \\w+',
+      path: 'src/shared/constants/tools.ts',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('export const');
   });
 });
 

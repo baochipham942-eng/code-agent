@@ -15,7 +15,6 @@ export interface ToolMetadata {
 }
 
 export interface FeatureFlags {
-  enableGen8: boolean;
   enableCloudAgent: boolean;
   enableMemory: boolean;
   enableComputerUse: boolean;
@@ -154,30 +153,7 @@ const ATTACHMENT_HANDLING_RULES = `
 - 可以使用 offset 和 limit 参数分段读取超大文件
 `;
 
-// ----------------------------------------------------------------------------
-// Base Prompts
-// ----------------------------------------------------------------------------
-
-const BASE_PROMPTS: Partial<Record<string, string>> = {
-  gen8: `你是一个 AI 编程助手（Gen8 - 自我进化）。
-
-你可以使用以下工具：
-- 所有 Gen7 工具
-- strategy_optimize: 策略优化
-- tool_create: 创建新工具
-- self_evaluate: 自我评估`,
-};
-
-const GENERATION_RULES: Partial<Record<string, string[]>> = {
-  gen8: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-};
-
-function buildPrompt(gen: string): string {
-  const base = BASE_PROMPTS[gen];
-  const rules = GENERATION_RULES[gen];
-  if (!base || !rules) return '';
-  return [base, ...rules].join('\n\n');
-}
+// (gen8 prompt building logic removed — system prompt now comes from src/main/prompts/builder)
 
 // ----------------------------------------------------------------------------
 // Skills
@@ -267,7 +243,6 @@ const BUILTIN_TOOL_META: Record<string, ToolMetadata> = {
 // ----------------------------------------------------------------------------
 
 const BUILTIN_FEATURE_FLAGS: FeatureFlags = {
-  enableGen8: true,
   enableCloudAgent: true,
   enableMemory: true,
   enableComputerUse: true,
@@ -542,16 +517,9 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
 const BUILTIN_VERSION = '2025.01.19.1';
 
 export function getBuiltinConfig(): CloudConfig {
-  const prompts = {} as Record<string, string>;
-  const generations: string[] = ['gen8'];
-
-  for (const gen of generations) {
-    prompts[gen] = buildPrompt(gen);
-  }
-
   return {
     version: BUILTIN_VERSION,
-    prompts,
+    prompts: {},
     skills: BUILTIN_SKILLS,
     toolMeta: BUILTIN_TOOL_META,
     featureFlags: BUILTIN_FEATURE_FLAGS,

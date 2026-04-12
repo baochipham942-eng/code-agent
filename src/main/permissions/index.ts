@@ -30,6 +30,19 @@ export {
   type PolicyAuditEntry,
 } from './policyEngine';
 
+// Guard Fabric (multi-source permission coordinator)
+export {
+  GuardFabric,
+  getGuardFabric,
+  resetGuardFabric,
+  PolicyEngineSource,
+  type GuardVerdict,
+  type ExecutionTopology,
+  type GuardSource,
+  type GuardRequest,
+  type GuardDecision,
+} from './guardFabric';
+
 // Specifier Parser
 export {
   parseToolSpecifier,

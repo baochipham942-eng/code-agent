@@ -157,7 +157,6 @@ export class CloudStorageService implements Disposable {
           db.createSession({
             id: session.id,
             title: session.title,
-            generationId: session.generationId,
             modelConfig: session.modelConfig,
             workingDirectory: session.workingDirectory,
             createdAt: session.createdAt,

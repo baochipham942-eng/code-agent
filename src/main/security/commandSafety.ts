@@ -1,13 +1,17 @@
 // ============================================================================
-// Command Safety - 安全命令白名单 + 复合命令解析
+// Command Safety - 安全命令白名单 + 危险命令检测 + 复合命令解析
 // ============================================================================
 //
-// 借鉴 Codex CLI 的 is_known_safe_command 设计：
-// - 无条件安全命令：永远不修改文件系统或网络
-// - 条件安全命令：特定参数组合下安全
+// 统一的命令安全评估模块：
+// - 安全命令白名单（isKnownSafeCommand）：安全命令自动跳过审批
+// - 危险命令检测（validateCommand）：critical 级别直接拦截
 // - 复合命令解析：支持 &&, ||, ;, | 操作符
 //
-// 用于 ToolExecutor 中，安全命令自动跳过审批。
+// 原 CommandMonitor 的危险模式已合并到此文件。
+
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('CommandSafety');
 
 // ----------------------------------------------------------------------------
 // 无条件安全的命令 — 只读操作，不修改任何状态
@@ -353,4 +357,132 @@ export function classifyCommand(command: string): 'safe' | 'conditional' | 'unkn
   if (parsed && CONDITIONALLY_SAFE[parsed.program]) return 'conditional';
 
   return 'unknown';
+}
+
+// ----------------------------------------------------------------------------
+// 危险命令检测（原 CommandMonitor 逻辑）
+// ----------------------------------------------------------------------------
+
+export type RiskLevel = 'safe' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface ValidationResult {
+  allowed: boolean;
+  reason?: string;
+  riskLevel: RiskLevel;
+  securityFlags: string[];
+  suggestion?: string;
+}
+
+interface DangerousPattern {
+  pattern: RegExp;
+  riskLevel: RiskLevel;
+  flag: string;
+  reason: string;
+  suggestion?: string;
+}
+
+// 绝对拦截的命令（永远不允许执行）
+const BLOCKED_PATTERNS: DangerousPattern[] = [
+  { pattern: /rm\s+-rf\s+\/\s*$/, riskLevel: 'critical', flag: 'root_delete', reason: 'Attempting to delete root filesystem' },
+  { pattern: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/, riskLevel: 'critical', flag: 'fork_bomb', reason: 'Fork bomb detected' },
+  { pattern: />\s*\/dev\/sda\s*$/, riskLevel: 'critical', flag: 'disk_wipe', reason: 'Attempting to wipe primary disk' },
+];
+
+// 危险命令模式（按风险等级标记，critical 级别拦截）
+const DANGEROUS_PATTERNS: DangerousPattern[] = [
+  // 文件系统破坏
+  { pattern: /rm\s+(-[rRf]+\s+)*[\/~]/, riskLevel: 'critical', flag: 'recursive_delete', reason: 'Recursive deletion from root or home directory', suggestion: 'Specify a more precise path or use trash instead of rm' },
+  { pattern: /rm\s+-rf?\s+\*/, riskLevel: 'critical', flag: 'wildcard_delete', reason: 'Recursive deletion with wildcard' },
+  { pattern: /rm\s+-rf?\s+\.\s*$/, riskLevel: 'critical', flag: 'current_dir_delete', reason: 'Deleting current directory' },
+  // 磁盘操作
+  { pattern: />\s*\/dev\/sd[a-z]/, riskLevel: 'critical', flag: 'disk_overwrite', reason: 'Writing directly to disk device' },
+  { pattern: /mkfs\./, riskLevel: 'critical', flag: 'format_disk', reason: 'Formatting disk' },
+  { pattern: /dd\s+if=.*of=\/dev\//, riskLevel: 'critical', flag: 'dd_to_device', reason: 'Direct disk write with dd' },
+  // Fork bomb
+  { pattern: /:\(\)\s*\{.*\}/, riskLevel: 'critical', flag: 'fork_bomb', reason: 'Potential fork bomb detected' },
+  // Git 危险操作
+  { pattern: /git\s+push\s+.*--force/, riskLevel: 'high', flag: 'git_force_push', reason: 'Force push may overwrite remote history', suggestion: 'Use --force-with-lease for safer force push' },
+  { pattern: /git\s+reset\s+--hard/, riskLevel: 'high', flag: 'git_hard_reset', reason: 'Hard reset discards uncommitted changes', suggestion: 'Consider git stash before reset' },
+  { pattern: /git\s+clean\s+-[dxf]+/, riskLevel: 'medium', flag: 'git_clean', reason: 'Git clean removes untracked files', suggestion: 'Use git clean -n first to preview' },
+  // 权限变更
+  { pattern: /chmod\s+(-R\s+)?777/, riskLevel: 'high', flag: 'chmod_777', reason: 'Setting world-writable permissions', suggestion: 'Use more restrictive permissions like 755 or 644' },
+  { pattern: /chmod\s+-R\s+/, riskLevel: 'medium', flag: 'recursive_chmod', reason: 'Recursive permission change' },
+  { pattern: /chown\s+-R\s+/, riskLevel: 'medium', flag: 'recursive_chown', reason: 'Recursive ownership change' },
+  // 提权
+  { pattern: /sudo\s+rm\s+-rf?/, riskLevel: 'critical', flag: 'sudo_rm', reason: 'Privileged recursive deletion' },
+  { pattern: /sudo\s+chmod/, riskLevel: 'high', flag: 'sudo_chmod', reason: 'Privileged permission change' },
+  // 管道到 shell
+  { pattern: /curl.*\|\s*(ba)?sh/, riskLevel: 'high', flag: 'pipe_to_shell', reason: 'Piping remote content to shell', suggestion: 'Download and review script before executing' },
+  { pattern: /wget.*\|\s*(ba)?sh/, riskLevel: 'high', flag: 'pipe_to_shell', reason: 'Piping remote content to shell' },
+  // 进程操作
+  { pattern: /kill\s+-9\s+-1/, riskLevel: 'critical', flag: 'kill_all', reason: 'Killing all processes' },
+  { pattern: /killall\s+-9/, riskLevel: 'high', flag: 'killall', reason: 'Force killing processes by name' },
+  // 系统控制
+  { pattern: /shutdown|reboot|halt|poweroff/, riskLevel: 'high', flag: 'system_shutdown', reason: 'System shutdown or reboot command' },
+  // 历史清除
+  { pattern: /history\s+-c/, riskLevel: 'medium', flag: 'history_clear', reason: 'Clearing command history' },
+  // 环境变量篡改
+  { pattern: /export\s+PATH=["']?[^:$]/, riskLevel: 'medium', flag: 'path_override', reason: 'Overriding PATH environment variable' },
+  // 敏感文件
+  { pattern: /cat\s+.*\/etc\/shadow/, riskLevel: 'high', flag: 'shadow_access', reason: 'Accessing password shadow file' },
+  // SSH 密钥
+  { pattern: /ssh-keygen.*-y.*>/, riskLevel: 'medium', flag: 'ssh_key_export', reason: 'Exporting SSH public key from private key' },
+];
+
+// 敏感环境变量访问检测
+const SENSITIVE_ENV_PATTERNS = [
+  /\$\{?[A-Z_]*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z_]*\}?/i,
+  /env\s+[A-Z_]*(?:KEY|SECRET|TOKEN)/i,
+  /printenv\s+[A-Z_]*(?:KEY|SECRET)/i,
+];
+
+/**
+ * 验证命令安全性（危险命令检测）
+ *
+ * @returns ValidationResult — critical 级别命令会被拦截（allowed=false）
+ */
+export function validateCommand(command: string): ValidationResult {
+  if (!command?.trim()) {
+    return { allowed: true, riskLevel: 'safe', securityFlags: [] };
+  }
+
+  // 绝对拦截
+  for (const p of BLOCKED_PATTERNS) {
+    if (p.pattern.test(command)) {
+      logger.warn('Blocked command detected', { command: command.substring(0, 100), flag: p.flag });
+      return { allowed: false, reason: p.reason, riskLevel: 'critical', securityFlags: [p.flag] };
+    }
+  }
+
+  // 危险模式匹配
+  const securityFlags: string[] = [];
+  let highestRisk: RiskLevel = 'safe';
+  let blockReason: string | undefined;
+  let suggestion: string | undefined;
+  const riskOrder: RiskLevel[] = ['safe', 'low', 'medium', 'high', 'critical'];
+
+  for (const p of DANGEROUS_PATTERNS) {
+    if (p.pattern.test(command)) {
+      securityFlags.push(p.flag);
+      if (riskOrder.indexOf(p.riskLevel) > riskOrder.indexOf(highestRisk)) {
+        highestRisk = p.riskLevel;
+        blockReason = p.reason;
+        suggestion = p.suggestion;
+      }
+    }
+  }
+
+  // 敏感环境变量访问
+  if (SENSITIVE_ENV_PATTERNS.some(p => p.test(command))) {
+    securityFlags.push('env_access');
+    if (highestRisk === 'safe') highestRisk = 'low';
+  }
+
+  return {
+    allowed: highestRisk !== 'critical',
+    riskLevel: highestRisk,
+    securityFlags,
+    reason: blockReason,
+    suggestion,
+  };
 }

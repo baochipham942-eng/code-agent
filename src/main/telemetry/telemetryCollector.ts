@@ -51,7 +51,6 @@ const logger = createLogger('TelemetryCollector');
 
 interface SessionConfig {
   title: string;
-  generationId: string;
   modelProvider: string;
   modelName: string;
   workingDirectory: string;
@@ -126,7 +125,7 @@ export class TelemetryCollector {
     const session: TelemetrySession = {
       id: sessionId,
       title: config.title || 'Untitled',
-      generationId: config.generationId,
+      generationId: 'gen8',
       modelProvider: config.modelProvider,
       modelName: config.modelName,
       workingDirectory: config.workingDirectory,

@@ -62,7 +62,6 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         const title = req.body?.title || 'New Session';
         const session = await sm.createSession({
           title,
-          generationId: 'gen8',
           modelConfig: {
             provider: DEFAULT_PROVIDER,
             model: DEFAULT_MODELS.chat,
@@ -84,7 +83,6 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
           id: sessionId,
           user_id: sb.userId,
           title: req.body?.title || 'New Session',
-          generation_id: 'gen8',
           model_provider: DEFAULT_PROVIDER,
           model_name: DEFAULT_MODELS.chat,
           created_at: now,

@@ -255,7 +255,6 @@ function registerHandlers(): void {
         case 'create':
           data = await sm.createSession({
             title: payload?.title || 'New Session',
-            generationId: 'gen8',
             modelConfig: {
               provider: 'moonshot',
               model: 'kimi-k2.5',

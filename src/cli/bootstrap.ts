@@ -216,9 +216,6 @@ export function buildCLIConfig(options: {
     ? path.resolve(options.project)
     : process.cwd();
 
-  // 代际
-  const generationId = 'gen8';
-
   // 模型配置
   const provider = options.provider || settings.model?.provider || DEFAULT_PROVIDER;
   const model = options.model || settings.model?.model || DEFAULT_MODELS.chat;
@@ -241,7 +238,6 @@ export function buildCLIConfig(options: {
 
   return {
     workingDirectory,
-    generationId,
     modelConfig,
     outputFormat,
     enablePlanning: options.plan || false,
@@ -295,7 +291,6 @@ export function createAgentLoop(
       const collector = getTelemetryCollector();
       collector.startSession(effectiveSessionId, {
         title: 'CLI Session',
-        generationId: config.generationId,
         modelProvider: config.modelConfig.provider,
         modelName: config.modelConfig.model,
         workingDirectory: config.workingDirectory,

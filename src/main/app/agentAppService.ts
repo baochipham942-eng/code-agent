@@ -90,7 +90,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const session = await sessionManager.createSession({
       title: config?.title || 'New Session',
-      generationId: 'gen8',
       modelConfig: {
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
@@ -146,7 +145,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
       const newSession = await sessionManager.createSession({
         title: 'New Session',
-        generationId: 'gen8',
         modelConfig: {
           provider: settings.model?.provider || DEFAULT_PROVIDER,
           model: settings.model?.model || DEFAULT_MODELS.chat,

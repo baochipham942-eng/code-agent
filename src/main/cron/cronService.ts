@@ -584,7 +584,6 @@ export class CronService implements Disposable {
 
     return sessionManager.createSession({
       title: `[Cron] ${definition.name}`,
-      generationId: 'gen8',
       modelConfig: {
         provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,

@@ -553,7 +553,6 @@ export class AgentOrchestrator {
       sessionStateManager.updateStatus(sessionId, 'running');
       getTelemetryCollector().startSession(sessionId, {
         title: content.substring(0, 80),
-        generationId: 'gen8',
         modelProvider: modelConfig.provider,
         modelName: modelConfig.model,
         workingDirectory: this.workingDirectory,

@@ -2,15 +2,14 @@
 // Security Module - Runtime security monitoring and audit logging
 // ============================================================================
 
-// Command Monitor
+// Command Safety (safe whitelist + dangerous pattern detection)
 export {
-  CommandMonitor,
-  getCommandMonitor,
-  resetCommandMonitor,
+  isKnownSafeCommand,
+  classifyCommand,
+  validateCommand,
   type ValidationResult,
-  type ExecutionResult,
-  type CommandAuditEntry,
-} from './commandMonitor';
+  type RiskLevel,
+} from './commandSafety';
 
 // Sensitive Detector
 export {
@@ -56,11 +55,7 @@ export {
   type SanitizationMode,
 } from './inputSanitizer';
 
-// Command Safety (Codex-style safe command whitelist)
-export {
-  isKnownSafeCommand,
-  classifyCommand,
-} from './commandSafety';
+// (commandSafety exports are at the top of this file)
 
 // Exec Policy (persistent approval rules)
 export {

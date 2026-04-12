@@ -26,11 +26,11 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
 };
 
 // ----------------------------------------------------------------------------
-// 获取所有工具描述（Sprint 2: 移除代际过滤，始终返回全部）
+// 获取所有工具描述
 // ----------------------------------------------------------------------------
 
 /**
- * 返回所有工具描述。代际参数已废弃，保留签名兼容性。
+ * 返回所有工具描述。
  */
 export function getToolDescriptions(): string[] {
   return Object.values(TOOL_DESCRIPTIONS).filter(Boolean);

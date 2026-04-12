@@ -78,7 +78,7 @@ export class SessionRepository {
     stmt.run(
       session.id,
       session.title,
-      session.generationId,
+      null, // generation_id column kept for historical compatibility
       session.modelConfig.provider,
       session.modelConfig.model,
       session.workingDirectory || null,
@@ -95,7 +95,6 @@ export class SessionRepository {
     id: string,
     data: {
       title: string;
-      generationId?: string;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
       createdAt?: number | string;
@@ -115,7 +114,7 @@ export class SessionRepository {
     stmt.run(
       id,
       data.title,
-      data.generationId,
+      null, // generation_id column kept for historical compatibility
       data.modelConfig.provider,
       data.modelConfig.model,
       data.workingDirectory || null,
@@ -185,7 +184,7 @@ export class SessionRepository {
 
     const result = stmt.run(
       updates.title ?? null,
-      updates.generationId ?? null,
+      null, // generation_id column kept for historical compatibility
       updates.modelConfig?.provider ?? null,
       updates.modelConfig?.model ?? null,
       updates.workingDirectory ?? null,
@@ -532,7 +531,6 @@ export class SessionRepository {
     return {
       id: row.id as string,
       title: row.title as string,
-      generationId: row.generation_id as string,
       modelConfig: {
         provider: row.model_provider as ModelProvider,
         model: row.model_name as string,

@@ -28,7 +28,7 @@
 | ADR | 标题 | 状态 |
 |-----|------|------|
 | [001](./decisions/001-turn-based-messaging.md) | Turn-Based 消息流架构 | accepted |
-| [002](./decisions/002-eight-generation-tool-evolution.md) | 8 代工具演进策略 | accepted |
+| [002](./decisions/002-eight-generation-tool-evolution.md) | ~~8 代工具演进策略~~ | superseded |
 | [003](./decisions/003-cloud-local-hybrid-architecture.md) | 云端-本地混合执行架构 | accepted |
 | [004](./decisions/004-unified-plugin-config-structure.md) | 统一插件配置目录结构 | proposed |
 | [005](./decisions/005-eval-engineering.md) | Eval Engineering Key Decisions | accepted |
@@ -136,22 +136,26 @@ code-agent/
 └── supabase/                    # 数据库迁移
 ```
 
-### 8 代工具演进
+### 工具体系（96 个注册工具）
 
-| 代际 | 核心能力 | 工具集 |
-|------|----------|--------|
-| Gen1 | 基础文件操作 | bash, read_file, write_file, edit_file |
-| Gen2 | 代码搜索 | + glob, grep, list_directory, mcp |
-| Gen3 | 任务规划 | + task, todo_write, ask_user_question |
-| Gen4 | 网络能力 | + skill, web_fetch, **web_search** |
-| Gen5 | 记忆系统 | + memory_store, memory_search |
-| Gen6 | 视觉交互 | + screenshot, computer_use |
-| Gen7 | 多代理 | + spawn_agent, agent_message, wait_agent, close_agent, send_input |
-| Gen8 | 自我进化 | + strategy_optimize, tool_create |
+按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。
 
-> **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。TOOL_ALIASES 兼容层已删除（v0.16.56），所有代码统一使用 PascalCase。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
+| 分类 | 数量 | 代表工具 |
+|------|------|----------|
+| Shell & 文件 | 14 | Bash, Read, Write, Edit, Glob, Grep, GitCommit, NotebookEdit |
+| 规划 & 任务 | 12 | TaskManager, Plan, PlanMode, AskUserQuestion, Task |
+| Web & 搜索 | 5 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
+| 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart/QRCode, Speech |
+| 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
+| 记忆 | 2 | MemoryWrite, MemoryRead |
+| 视觉 & 浏览器 | 5 | Computer, Browser, Screenshot, GuiAgent |
+| 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, CloseAgent, SendInput, Teammate |
+| 统一入口 (Deferred) | 12 | Process, MCPUnified, DocEdit, ExcelAutomate, PdfAutomate |
+| 元工具 | 1 | ToolSearch |
+
+> **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
-> **Phase 3 文档编辑统一**: DocEdit 统一入口 + ExcelAutomate(edit) + ppt_edit 加固。富文档从全量生成升级为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+> **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
 
 ### v0.16.59 竞品追赶 (2026-04-11)
 

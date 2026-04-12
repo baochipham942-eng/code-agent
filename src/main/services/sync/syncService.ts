@@ -338,7 +338,6 @@ class SyncService implements Disposable {
           // 云端数据类型与本地类型不完全匹配，需要类型断言
           db.createSessionWithId(remote.id, {
             title: remote.title,
-            generationId: remote.generation_id as string,
             modelConfig: {
               provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
               model: remote.model_name || DEFAULT_MODEL,
@@ -368,7 +367,6 @@ class SyncService implements Disposable {
               // No conflict, update local (preserve remote timestamp)
               db.updateSession(remote.id, {
                 title: remote.title,
-                generationId: remote.generation_id as string,
                 modelConfig: {
                   provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
                   model: remote.model_name || DEFAULT_MODEL,
@@ -466,7 +464,7 @@ class SyncService implements Disposable {
           id: s.id,
           user_id: userId,
           title: s.title,
-          generation_id: s.generationId,
+          generation_id: null, // deprecated field, kept for cloud schema compatibility
           model_provider: s.modelConfig.provider,
           model_name: s.modelConfig.model,
           working_directory: s.workingDirectory || null,
@@ -565,7 +563,6 @@ class SyncService implements Disposable {
         // TODO: Supabase update 类型限制
         await (supabase.from('sessions') as any).update({
           title: local.title,
-          generation_id: local.generationId,
           updated_at: Date.now(),
           source_device_id: this.deviceId,
         }).eq('id', conflict.id);
@@ -577,7 +574,6 @@ class SyncService implements Disposable {
         const remote = conflict.remoteRecord as SessionRow;
         db.updateSession(conflict.id, {
           title: remote.title,
-          generationId: remote.generation_id as string,
           updatedAt: remote.updated_at as number,
         }, {
           syncOrigin: 'remote',

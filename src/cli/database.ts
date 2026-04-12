@@ -237,7 +237,7 @@ export class CLIDatabaseService {
     stmt.run(
       session.id,
       session.title,
-      session.generationId,
+      'gen8',
       session.modelConfig.provider,
       session.modelConfig.model,
       session.workingDirectory || null,
@@ -307,7 +307,7 @@ export class CLIDatabaseService {
 
     stmt.run(
       updates.title ?? session.title,
-      updates.generationId ?? session.generationId,
+      'gen8',
       updates.modelConfig?.provider ?? session.modelConfig.provider,
       updates.modelConfig?.model ?? session.modelConfig.model,
       updates.workingDirectory ?? session.workingDirectory,
@@ -347,7 +347,6 @@ export class CLIDatabaseService {
     return {
       id: row.id as string,
       title: row.title as string,
-      generationId: row.generation_id as string,
       modelConfig: {
         provider: row.model_provider as ModelProvider,
         model: row.model_name as string,

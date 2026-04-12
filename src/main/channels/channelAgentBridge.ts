@@ -439,7 +439,6 @@ export class ChannelAgentBridge {
 
     const session = await sessionManager.createSession({
       title: this.buildChannelSessionTitle(accountId, message),
-      generationId: 'gen8',
       modelConfig: this.getChannelModelConfig(),
     });
 

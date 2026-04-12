@@ -342,7 +342,6 @@ export class SessionAnalyticsService {
     modelName: string;
     startTime: number;
     endTime?: number;
-    generationId: string;
     workingDirectory: string;
     status: string;
     turnCount: number;
@@ -379,7 +378,6 @@ export class SessionAnalyticsService {
           modelName: row.model_name as string,
           startTime: row.start_time as number,
           endTime: row.end_time as number | undefined,
-          generationId: (row.generation_id as string) || '',
           workingDirectory: (row.working_directory as string) || '',
           status: (row.status as string) || 'completed',
           turnCount: (row.turn_count as number) || 0,
@@ -404,7 +402,6 @@ export class SessionAnalyticsService {
           modelName: (row.model_name as string) || '',
           startTime: (row.created_at as number) || Date.now(),
           endTime: row.updated_at as number | undefined,
-          generationId: (row.generation_id as string) || '',
           workingDirectory: (row.working_directory as string) || '',
           status: 'completed',
           turnCount: 0,

@@ -160,29 +160,12 @@ import { PdfAutomateTool } from './network';
 /**
  * Tool Registry - 工具注册表
  *
- * 管理所有可用工具的注册、查询和代际过滤。
- * 支持 8 代工具的渐进式注册。
+ * 管理所有可用工具的注册、查询和加载。
  *
  * 核心功能：
  * - 工具注册和注销
- * - 按代际过滤工具
  * - 云端工具元数据合并
  * - 工具定义导出（供模型调用）
- * - 工具别名支持（legacy snake_case → PascalCase）
- *
- * @example
- * ```typescript
- * const registry = new ToolRegistry();
- *
- * // 获取 Gen4 可用的所有工具
- * const tools = registry.getAll();
- *
- * // 获取特定工具
- * const bash = registry.get('bash');
- *
- * // 注册自定义工具
- * registry.register(myCustomTool);
- * ```
  *
  * @see ToolExecutor - 工具执行器
  * @see Tool - 工具接口定义
@@ -195,52 +178,50 @@ export class ToolRegistry {
   }
 
   private registerAllTools(): void {
-    // Gen 1 tools
+    // ── Shell & 文件 ──────────────────────────────
     this.register(bashTool);
     this.register(readFileTool);
     this.register(writeFileTool);
-    this.register(editFileTool); // single-edit tool (old_string/new_string)
+    this.register(editFileTool);
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
+    this.register(globTool);
+    this.register(grepTool);
+    this.register(listDirectoryTool);
+    this.register(readClipboardTool);
 
-    // Git tools (CodePilot parity)
+    // ── Git ──────────────────────────────────────
     this.register(gitCommitTool);
     this.register(gitDiffTool);
     this.register(gitWorktreeTool);
 
-    // Gen 2 tools
-    this.register(globTool);
-    this.register(grepTool);
-    this.register(listDirectoryTool);
-
-    // Gen 3 tools
+    // ── 规划 & 任务 ─────────────────────────────
     this.register(taskTool);
-    // this.register(todoWriteTool); // 已移除：改为 agentLoop 自动解析任务列表
     this.register(askUserQuestionTool);
     this.register(confirmActionTool);
-    this.register(readClipboardTool);
     this.register(planReadTool);
     this.register(planUpdateTool);
     this.register(findingsWriteTool);
     this.register(enterPlanModeTool);
     this.register(exitPlanModeTool);
-    // Task API (Claude Code 2.x compatible)
     this.register(taskCreateTool);
     this.register(taskGetTool);
     this.register(taskListTool);
     this.register(taskUpdateTool);
 
-    // Gen 4 tools - Skill Meta Tool (Agent Skills Standard)
+    // ── Skills ───────────────────────────────────
     this.register(skillMetaTool);
     this.register(skillCreateTool);
+
+    // ── Web & 搜索 ──────────────────────────────
     this.register(webFetchTool);
     this.register(webSearchTool);
     this.register(readPdfTool);
     this.register(lspTool);
     this.register(diagnosticsTool);
 
-    // Gen 5 tools - Office Documents & Image & Data
+    // ── 文档 & 媒体生成 ─────────────────────────
     this.register(pptGenerateTool);
     this.register(imageGenerateTool);
     this.register(videoGenerateTool);
@@ -251,19 +232,6 @@ export class ToolRegistry {
     this.register(qrcodeGenerateTool);
     this.register(readDocxTool);
     this.register(readXlsxTool);
-    this.register(jiraTool);
-    this.register(githubPrTool);
-    this.register(calendarTool);
-    this.register(calendarCreateEventTool);
-    this.register(calendarDeleteEventTool);
-    this.register(calendarUpdateEventTool);
-    this.register(mailTool);
-    this.register(mailDraftTool);
-    this.register(mailSendTool);
-    this.register(remindersTool);
-    this.register(remindersCreateTool);
-    this.register(remindersDeleteTool);
-    this.register(remindersUpdateTool);
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);
@@ -278,34 +246,41 @@ export class ToolRegistry {
     this.register(imageAnnotateTool);
     this.register(xlwingsExecuteTool);
 
+    // ── 外部服务连接器 ──────────────────────────
+    this.register(jiraTool);
+    this.register(githubPrTool);
+    this.register(calendarTool);
+    this.register(calendarCreateEventTool);
+    this.register(calendarDeleteEventTool);
+    this.register(calendarUpdateEventTool);
+    this.register(mailTool);
+    this.register(mailDraftTool);
+    this.register(mailSendTool);
+    this.register(remindersTool);
+    this.register(remindersCreateTool);
+    this.register(remindersDeleteTool);
+    this.register(remindersUpdateTool);
 
-    // Light Memory tools (File-as-Memory)
+    // ── 记忆 ────────────────────────────────────
     this.register(memoryWriteTool);
     this.register(memoryReadTool);
 
-    // Gen 5 legacy memory tools removed (src/main/tools/memory/ deleted)
-
-    // Gen 6 tools - Computer Use
+    // ── 视觉 & 浏览器 ──────────────────────────
     this.register(screenshotTool);
     this.register(computerUseTool);
     this.register(browserNavigateTool);
     this.register(browserActionTool);
     this.register(guiAgentTool);
 
-    // Gen 7 tools - Multi-Agent
-    // SDK-compatible Task tool (simplified interface)
+    // ── 多 Agent ────────────────────────────────
     this.register(sdkTaskTool);
-    // PascalCase tools (legacy snake_case retired — aliases handle backward compat)
     this.register(agentSpawnTool);
     this.register(AgentMessageTool);
     this.register(WorkflowOrchestrateTool);
     this.register(TeammateTool);
-    // Plan review (cross-agent approval)
     this.register(planReviewTool);
-    // Phase 2: Agent lifecycle control
     this.register(WaitAgentTool);
     this.register(CloseAgentTool);
-    // Phase 3: Agent communication
     this.register(SendInputTool);
 
 
@@ -364,21 +339,14 @@ export class ToolRegistry {
   }
 
   /**
-   * 获取指定代际可用的所有工具
-   *
-   * @returns 该代际可用的工具数组
+   * 获取所有已注册工具
    */
-  
   getAll(): Tool[] {
     return Array.from(this.tools.values());
   }
 
   /**
-   * 获取指定代际的工具定义（供模型调用）
-   *
-   * 会自动合并云端工具元数据（如描述）
-   *
-   * @returns 工具定义数组
+   * 获取工具定义（供模型调用），自动合并云端工具元数据
    */
   getToolDefinitions(): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();

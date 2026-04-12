@@ -2,7 +2,7 @@
 
 > ⚠️ **历史文档**：以下为早期设计稿。v0.16.55 的 Agent Team 实际实现请参见：
 > - [ARCHITECTURE.md → v0.16.55 新增模块](../ARCHITECTURE.md) — 整体架构
-> - [tool-system.md → Gen7 多代理](./tool-system.md) — SpawnGuard + 工具清单
+> - [tool-system.md → 多 Agent 工具](./tool-system.md) — SpawnGuard + 工具清单
 > - [agent-core.md → 子代理上下文注入](./agent-core.md) — 异步通知机制
 > - 核心代码：`src/main/agent/spawnGuard.ts`, `src/main/tools/multiagent/`, `src/main/agent/activeAgentContext.ts`
 

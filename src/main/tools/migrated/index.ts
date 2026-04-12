@@ -96,4 +96,45 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     },
     async () => (await import('./file/readClipboard')).readClipboardModule,
   );
+
+  // ── shell/ batch 2a ───────────────────────────────────────────────────
+  registry.register(
+    {
+      name: 'kill_shell',
+      description: 'Kill a running background bash shell by its task_id.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+        },
+        required: ['task_id'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./shell/killShell')).killShellModule,
+  );
+
+  registry.register(
+    {
+      name: 'task_output',
+      description: 'Get output from a running or completed background task.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          block: { type: 'boolean' },
+          timeout: { type: 'number' },
+        },
+        required: [],
+      },
+      category: 'shell',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./shell/taskOutput')).taskOutputModule,
+  );
 }

@@ -46,6 +46,11 @@ vi.mock('../../src/main/tools/middleware/fileCheckpointMiddleware', () => ({
   createFileCheckpointIfNeeded: vi.fn(),
 }));
 
+// Mock permission classifier — 强制走 ask 路径，让 mockRequestPermission 生效
+vi.mock('../../src/main/tools/permissionClassifier', () => ({
+  classifyPermission: vi.fn().mockResolvedValue({ decision: 'ask', reason: 'test' }),
+}));
+
 describe('ToolExecutor safety integration', () => {
   let executor: ToolExecutor;
   let permissionRequested: boolean;

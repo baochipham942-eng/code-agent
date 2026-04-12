@@ -23,6 +23,12 @@ vi.mock('../../src/main/services/infra/logger', () => ({
   })),
 }));
 
+// Mock permission classifier — 强制走"ask"路径，让 mockRequestPermission 生效
+// 否则 classifier 可能 auto-approve，绕过测试中的权限检查
+vi.mock('../../src/main/tools/permissionClassifier', () => ({
+  classifyPermission: vi.fn().mockResolvedValue({ decision: 'ask', reason: 'test' }),
+}));
+
 import { ToolExecutor } from '../../src/main/tools/toolExecutor';
 import type { ToolRegistry, Tool } from '../../src/main/tools/toolRegistry';
 

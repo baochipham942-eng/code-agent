@@ -34,7 +34,7 @@ describe('selectAgentModel', () => {
     it('Document Reader → zhipu / glm-4-flash', () => {
       const result = selectAgentModel('Document Reader');
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4-flash');
+      expect(result.model).toBe('glm-4.7-flash');
     });
 
     it('Technical Writer → moonshot / kimi-k2.5', () => {
@@ -110,7 +110,7 @@ describe('selectAgentModel', () => {
     it('budget < 0.2 → cheapest model', () => {
       const result = selectAgentModel('Code Explorer', { budgetRemaining: 0.1 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4-flash');
+      expect(result.model).toBe('glm-4.7-flash');
       expect(result.reason).toContain('budget constraint');
     });
 
@@ -123,19 +123,19 @@ describe('selectAgentModel', () => {
     it('budget at 0.19 triggers budget constraint', () => {
       const result = selectAgentModel('Code Explorer', { budgetRemaining: 0.19 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4-flash');
+      expect(result.model).toBe('glm-4.7-flash');
     });
 
     it('budget = 0 triggers budget constraint', () => {
       const result = selectAgentModel('Web Search', { budgetRemaining: 0 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4-flash');
+      expect(result.model).toBe('glm-4.7-flash');
     });
 
     it('budget constraint applies to unknown agent types too', () => {
       const result = selectAgentModel('Unknown Agent', { budgetRemaining: 0.05 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4-flash');
+      expect(result.model).toBe('glm-4.7-flash');
     });
   });
 

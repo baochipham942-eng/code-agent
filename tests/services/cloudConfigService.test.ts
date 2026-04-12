@@ -36,10 +36,10 @@ describe('CloudConfigService', () => {
   // Configuration Access Tests
   // --------------------------------------------------------------------------
   describe('配置访问', () => {
-    it('getPrompt 应该返回字符串', () => {
+    it('getRule 对未定义 key 应该返回空字符串', () => {
       const service = getCloudConfigService();
-      const prompt = service.getPrompt('gen4');
-      expect(typeof prompt).toBe('string');
+      const rule = service.getRule('nonexistent-rule');
+      expect(typeof rule).toBe('string');
     });
 
     it('getSkills 应该返回数组', () => {
@@ -52,7 +52,7 @@ describe('CloudConfigService', () => {
       const service = getCloudConfigService();
       const flags = service.getFeatureFlags();
       expect(typeof flags).toBe('object');
-      expect(flags).toHaveProperty('enableGen8');
+      expect(flags).toHaveProperty('enableCloudAgent');
     });
 
     it('getConfig 应该返回完整配置', () => {
@@ -70,8 +70,8 @@ describe('CloudConfigService', () => {
   describe('Feature Flags', () => {
     it('getFeatureFlag 应该返回特定 flag 值', () => {
       const service = getCloudConfigService();
-      const enableGen8 = service.getFeatureFlag('enableGen8');
-      expect(typeof enableGen8).toBe('boolean');
+      const enableCloudAgent = service.getFeatureFlag('enableCloudAgent');
+      expect(typeof enableCloudAgent).toBe('boolean');
     });
 
     it('maxIterations 应该有默认值', () => {

@@ -1,6 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToolExecutor } from '../../src/main/tools/toolExecutor';
-import { ToolRegistry } from '../../src/main/tools/toolRegistry';
+import { resetToolResolver } from '../../src/main/tools/toolResolver';
+
+// Mock tool resolver — register a fake 'bash' tool with permission required
+vi.mock('../../src/main/tools/toolResolver', () => {
+  const bashDef = {
+    name: 'bash',
+    description: 'Execute bash commands',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { command: { type: 'string' as const } },
+      required: ['command'],
+    },
+    requiresPermission: true,
+    permissionLevel: 'write' as const,
+  };
+  const fakeResolver = {
+    list: () => ['bash'],
+    getDefinition: (name: string) => (name === 'bash' ? bashDef : undefined),
+    listDefinitions: () => [bashDef],
+    has: (name: string) => name === 'bash',
+    execute: vi.fn().mockResolvedValue({ success: true, output: '' }),
+  };
+  return {
+    getToolResolver: () => fakeResolver,
+    resetToolResolver: () => {},
+  };
+});
 
 // Mock security modules
 vi.mock('../../src/main/security', async (importOriginal) => {
@@ -57,26 +83,9 @@ describe('ToolExecutor safety integration', () => {
 
   beforeEach(() => {
     permissionRequested = false;
+    resetToolResolver();
 
-    const registry = new ToolRegistry();
-    // ToolRegistry constructor may fail to register tools in test environment
-    // due to transitive import failures. Ensure bash tool is registered.
-    if (!registry.get('bash')) {
-      registry.register({
-        name: 'bash',
-        description: 'Execute bash commands',
-        requiresPermission: true,
-        permissionLevel: 'write',
-        inputSchema: {
-          type: 'object',
-          properties: { command: { type: 'string' } },
-          required: ['command'],
-        },
-        execute: async () => ({ success: true, output: '' }),
-      });
-    }
     executor = new ToolExecutor({
-      toolRegistry: registry,
       requestPermission: async () => {
         permissionRequested = true;
         return true; // always approve
@@ -86,9 +95,7 @@ describe('ToolExecutor safety integration', () => {
     executor.setAuditEnabled(false);
   });
 
-  const execOptions = {
-    generation: { id: 'gen8' as const, name: 'Gen 8' },
-  };
+  const execOptions = {};
 
   describe('safe commands skip permission', () => {
     it('ls does not request permission', async () => {

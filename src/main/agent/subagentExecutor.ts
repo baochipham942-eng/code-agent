@@ -3,9 +3,10 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { Message, MessageAttachment, ModelConfig, ToolCall } from '../../shared/contract';
+import type { Message, MessageAttachment, ModelConfig, ToolCall, ToolDefinition } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
-import type { Tool, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
+import type { ToolResolver } from '../tools/toolResolver';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
@@ -120,7 +121,7 @@ export interface SubagentResult {
 
 interface SubagentContext {
   modelConfig: ModelConfig;
-  toolRegistry: Map<string, Tool>;
+  toolResolver: ToolResolver;
   toolContext: ToolContext;
   /** Attachments (images, files) to include in the first message */
   attachments?: Array<{
@@ -457,7 +458,8 @@ export class SubagentExecutor {
       }
     }
 
-    const allowedTools = this.filterTools(effectiveToolNames, context.toolRegistry);
+    const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);
+    const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
 
     // Check if the model supports tool calls
     const providerConfig = PROVIDER_REGISTRY[context.modelConfig.provider];
@@ -465,7 +467,7 @@ export class SubagentExecutor {
     const supportsTool = modelInfo?.supportsTool ?? true; // Default to true if unknown
 
     // Only provide tool definitions if the model supports them
-    const toolDefinitions = supportsTool ? allowedTools.map((tool) => ({
+    const toolDefinitions = supportsTool ? allowedToolDefs.map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -473,7 +475,7 @@ export class SubagentExecutor {
       permissionLevel: tool.permissionLevel,
     })) : [];
 
-    if (!supportsTool && allowedTools.length > 0) {
+    if (!supportsTool && allowedToolDefs.length > 0) {
       logger.warn(`[${config.name}] Model ${context.modelConfig.model} does not support tool calls, tools will be ignored`);
     }
 
@@ -810,8 +812,10 @@ export class SubagentExecutor {
           });
 
           for (const toolCall of response.toolCalls) {
-            const tool = allowedTools.find((t) => t.name === toolCall.name);
-            if (!tool) {
+            const toolDef = allowedNames.has(toolCall.name)
+              ? context.toolResolver.getDefinition(toolCall.name)
+              : undefined;
+            if (!toolDef) {
               toolResults.push(`Error: Tool ${toolCall.name} not available`);
               pushObservabilityMessage({
                 id: generateMessageId(),
@@ -830,7 +834,7 @@ export class SubagentExecutor {
             // Build tool execution request for pipeline
             const toolRequest: ToolExecutionRequest = {
               toolName: toolCall.name,
-              permissionLevel: tool.permissionLevel,
+              permissionLevel: toolDef.permissionLevel,
               path: toolCall.arguments.path as string | undefined
                 || toolCall.arguments.file_path as string | undefined,
               command: toolCall.arguments.command as string | undefined,
@@ -908,7 +912,11 @@ export class SubagentExecutor {
 
             const toolStartTime = Date.now();
             try {
-              const result = await tool.execute(toolCall.arguments, context.toolContext);
+              const result = await context.toolResolver.execute(
+                toolCall.name,
+                toolCall.arguments,
+                context.toolContext,
+              );
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
@@ -1090,24 +1098,24 @@ export class SubagentExecutor {
     return this.execute(prompt, config, context);
   }
 
-  private filterTools(
+  private filterToolDefs(
     allowedToolNames: string[],
-    toolRegistry: Map<string, Tool>
-  ): Tool[] {
-    const tools: Tool[] = [];
+    resolver: ToolResolver,
+  ): ToolDefinition[] {
+    const defs: ToolDefinition[] = [];
     const missing: string[] = [];
     for (const name of allowedToolNames) {
-      const tool = toolRegistry.get(name);
-      if (tool) {
-        tools.push(tool);
+      const def = resolver.getDefinition(name);
+      if (def) {
+        defs.push(def);
       } else {
         missing.push(name);
       }
     }
     if (missing.length > 0) {
-      logger.warn(`filterTools: ${missing.length} tools not found in registry: ${missing.join(', ')} (registry size: ${toolRegistry.size})`);
+      logger.warn(`filterToolDefs: ${missing.length} tools not found in registry: ${missing.join(', ')}`);
     }
-    return tools;
+    return defs;
   }
 }
 

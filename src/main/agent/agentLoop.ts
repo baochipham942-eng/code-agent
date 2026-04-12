@@ -13,7 +13,6 @@ import type {
 } from '../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
 import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
-import type { ToolRegistryLike } from '../tools/types';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import { getToolSearchService } from '../services/toolSearch';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
@@ -135,7 +134,6 @@ export class AgentLoop {
     this.ctx = {
       systemPrompt: config.systemPrompt || '',
       modelConfig: config.modelConfig,
-      toolRegistry: config.toolRegistry,
       toolExecutor: config.toolExecutor,
       messages: config.messages,
       onEvent: config.onEvent,

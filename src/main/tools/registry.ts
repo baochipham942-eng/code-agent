@@ -91,6 +91,15 @@ export class ToolRegistry implements IToolRegistry {
     return this.schemas.has(name);
   }
 
+  unregister(name: string): boolean {
+    if (!this.schemas.has(name)) return false;
+    this.schemas.delete(name);
+    this.loaders.delete(name);
+    this.handlers.delete(name);
+    this.inflight.delete(name);
+    return true;
+  }
+
   reset(): void {
     this.schemas.clear();
     this.loaders.clear();

@@ -21,6 +21,8 @@ import { readPdfTool } from '../../network/readPdf';
 import { readXlsxTool } from '../../network/readXlsx';
 
 // Document generation
+import { pptGenerateTool } from '../../network/ppt';
+import { pptEditTool } from '../../network/ppt/editTool';
 import { docxGenerateTool } from '../../network/docxGenerate';
 import { excelGenerateTool } from '../../network/excelGenerate';
 import { pdfGenerateTool } from '../../network/pdfGenerate';
@@ -86,7 +88,9 @@ export const readDocxModule = wrapLegacyTool(readDocxTool, NET_READ);
 export const readPdfModule = wrapLegacyTool(readPdfTool, NET_READ);
 export const readXlsxModule = wrapLegacyTool(readXlsxTool, NET_READ);
 
-// ── Document generation (6) ─────────────────────────────────────────────
+// ── Document generation (8) ─────────────────────────────────────────────
+export const pptGenerateModule = wrapLegacyTool(pptGenerateTool, NET_NETWORK_WRITE);
+export const pptEditModule = wrapLegacyTool(pptEditTool, NET_WRITE);
 export const docxGenerateModule = wrapLegacyTool(docxGenerateTool, NET_WRITE);
 export const excelGenerateModule = wrapLegacyTool(excelGenerateTool, NET_WRITE);
 export const pdfGenerateModule = wrapLegacyTool(pdfGenerateTool, NET_WRITE);

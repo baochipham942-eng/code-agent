@@ -17,7 +17,6 @@ import type {
   AgentTaskPhase,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';

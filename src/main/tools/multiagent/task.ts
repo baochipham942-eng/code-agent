@@ -7,6 +7,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/contract';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getToolResolver } from '../toolResolver';
 import {
   getPredefinedAgent,
   listPredefinedAgents,
@@ -220,11 +221,11 @@ Parameters:
     const taskHash = taskDeduplication.registerTask(subagentType, prompt);
 
     // Check for required context
-    if (!context.toolRegistry || !context.modelConfig) {
+    if (!context.modelConfig) {
       taskDeduplication.failTask(taskHash);
       return {
         success: false,
-        error: 'Task requires toolRegistry and modelConfig in context',
+        error: 'Task requires modelConfig in context',
       };
     }
 
@@ -304,9 +305,7 @@ Parameters:
         {
           // P4: 使用子代理专用模型配置
           modelConfig: effectiveModelConfig,
-          toolRegistry: new Map(
-            context.toolRegistry.getAllTools().map((t) => [t.name, t])
-          ),
+          toolResolver: getToolResolver(),
           toolContext: context,
           parentToolUseId: context.currentToolCallId,
           hookManager: context.hookManager,

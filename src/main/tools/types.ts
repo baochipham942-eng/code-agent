@@ -4,7 +4,6 @@
 
 import type {
   ToolDefinition,
-  JSONSchema,
 } from '../../shared/contract';
 
 export interface Tool extends ToolDefinition {
@@ -22,7 +21,6 @@ export interface ToolContext {
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
   planningService?: unknown; // PlanningService instance for persistent planning
   // For subagent execution
-  toolRegistry?: ToolRegistryLike;
   modelConfig?: unknown;
   // Plan Mode support (borrowed from Claude Code v2.0)
   setPlanMode?: (active: boolean) => void;
@@ -102,17 +100,3 @@ export interface ToolExecutionResult {
   metadata?: Record<string, unknown>; // Additional metadata for UI/workflow
 }
 
-export interface ToolRegistryLike {
-  get(name: string): Tool | undefined;
-  getDefaultParamsForAlias(name: string): Record<string, unknown> | undefined;
-  register(tool: Tool): void;
-  unregister(name: string): boolean;
-  getAll(): Tool[];
-  getAllTools(): Tool[];
-  getToolDefinitions(): ToolDefinition[];
-  getCoreToolDefinitions(): ToolDefinition[];
-  getDeferredToolDefinitions(): ToolDefinition[];
-  getLoadedDeferredToolDefinitions(): ToolDefinition[];
-  getDeferredToolsSummary(): string;
-  getToolDefinitionWithCloudMeta(name: string): ToolDefinition | undefined;
-}

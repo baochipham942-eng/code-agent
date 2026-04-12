@@ -5,6 +5,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/contract';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getToolResolver } from '../toolResolver';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('TaskTool');
@@ -151,7 +152,7 @@ When to use task tool:
     }
 
     // Check if we have the required context for subagent execution
-    if (!context.toolRegistry || !context.modelConfig) {
+    if (!context.modelConfig) {
       return {
         success: true,
         output:
@@ -177,9 +178,7 @@ When to use task tool:
         },
         {
           modelConfig: context.modelConfig as ModelConfig,
-          toolRegistry: new Map(
-            context.toolRegistry.getAllTools().map((t) => [t.name, t])
-          ),
+          toolResolver: getToolResolver(),
           toolContext: context,
         }
       );

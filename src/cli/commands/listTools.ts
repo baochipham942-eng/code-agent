@@ -7,15 +7,14 @@ import { Command } from 'commander';
 export const listToolsCommand = new Command('list-tools')
   .description('列出所有已注册的工具定义 (JSON)')
   .option('--gen <id>', '按代际过滤 (gen1-gen8)')
-  .action(async (options: { gen?: string }) => {
+  .action(async (_options: { gen?: string }) => {
     try {
       // 动态导入避免在顶层加载重量级模块
-      const { ToolRegistry } = await import('../../main/tools/toolRegistry');
-      const registry = new ToolRegistry();
-
-      const tools = options.gen
-        ? registry.getAll()
-        : registry.getAllTools();
+      const { getToolResolver } = await import('../../main/tools/toolResolver');
+      const { getProtocolRegistry } = await import('../../main/tools/protocolRegistry');
+      // 触发 protocol registry 初始化（注册所有工具）
+      getProtocolRegistry();
+      const tools = getToolResolver().listDefinitions();
 
       const output = tools.map(tool => {
         const params = tool.inputSchema.properties
@@ -26,10 +25,7 @@ export const listToolsCommand = new Command('list-tools')
             }))
           : [];
 
-        // 确定工具所属的最低代际作为 category
-        const category = (tool as any).tags?.length > 0
-          ? (tool as any).tags[0]
-          : 'unknown';
+        const category = tool.tags?.[0] ?? 'unknown';
 
         return {
           name: tool.name,

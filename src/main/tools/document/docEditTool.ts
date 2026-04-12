@@ -10,6 +10,8 @@ import * as path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { executeExcelEdit, type ExcelEditParams } from '../excel/excelEdit';
 import { executeDocxEdit, type DocxEditParams } from './docxEdit';
+// NOTE: protocol modules loaded lazily to avoid a static cycle:
+// protocolRegistry → migrated/index → document/wrappers → docEditTool.
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -111,41 +113,43 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
           { file_path: filePath, operations: operations as DocxEditParams['operations'], dry_run: dryRun },
         );
 
-      case 'pptx':
+      case 'pptx': {
         // PPT edit has a different interface (single action per call).
-        // Route to ppt_edit tool if available, otherwise inform user.
-        if (context.toolRegistry) {
-          const pptEdit = context.toolRegistry.get('ppt_edit');
-          if (pptEdit) {
-            // Execute operations sequentially for PPT
-            const results: string[] = [];
-            for (const op of operations) {
-              const pptOp = op as Record<string, unknown>;
-              const result = await pptEdit.execute(
-                { file_path: filePath, ...pptOp },
-                context,
-              );
-              if (!result.success) {
-                return {
-                  success: false,
-                  error: `PPT edit failed at operation ${results.length + 1}: ${result.error}`,
-                  metadata: { completedOps: results },
-                };
-              }
-              results.push(result.output || 'OK');
-            }
+        // Route to ppt_edit via protocol (lazy import to break static cycle).
+        const { getProtocolRegistry } = await import('../protocolRegistry');
+        const { executePocToolViaProtocol } = await import('../shadowAdapter');
+        if (!getProtocolRegistry().has('ppt_edit')) {
+          return {
+            success: false,
+            error: 'PPT editing requires the ppt_edit tool. Use ppt_edit directly for .pptx files.',
+          };
+        }
+        const results: string[] = [];
+        for (const op of operations) {
+          const pptOp = op as Record<string, unknown>;
+          const result = await executePocToolViaProtocol({
+            toolName: 'ppt_edit',
+            params: { file_path: filePath, ...pptOp },
+            workingDirectory: context.workingDirectory,
+            requestPermission: context.requestPermission,
+            sessionId: (context as { sessionId?: string }).sessionId,
+          });
+          if (!result.success) {
             return {
-              success: true,
-              output: `PPT edited (${operations.length} operations):\n${results.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`,
-              outputPath: filePath,
-              metadata: { operationCount: operations.length },
+              success: false,
+              error: `PPT edit failed at operation ${results.length + 1}: ${result.error}`,
+              metadata: { completedOps: results },
             };
           }
+          results.push(result.output || 'OK');
         }
         return {
-          success: false,
-          error: 'PPT editing requires the ppt_edit tool. Use ppt_edit directly for .pptx files.',
+          success: true,
+          output: `PPT edited (${operations.length} operations):\n${results.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`,
+          outputPath: filePath,
+          metadata: { operationCount: operations.length },
         };
+      }
 
       default:
         return { success: false, error: `Unsupported format: ${format}` };

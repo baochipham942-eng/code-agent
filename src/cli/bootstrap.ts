@@ -31,7 +31,6 @@ import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
-let ToolRegistry: typeof import('../main/tools/toolRegistry').ToolRegistry;
 let ToolExecutor: typeof import('../main/tools/toolExecutor').ToolExecutor;
 let getSkillDiscoveryService: typeof import('../main/services/skills').getSkillDiscoveryService;
 let getTelemetryCollector: typeof import('../main/telemetry').getTelemetryCollector;
@@ -50,7 +49,6 @@ function getCLIDataDir(): string {
 let configService: CLIConfigService | null = null;
 let databaseService: CLIDatabaseService | null = null;
 let sessionManager: CLISessionManager | null = null;
-let toolRegistry: InstanceType<typeof ToolRegistry> | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
 let currentTelemetrySessionId: string | null = null;
@@ -96,9 +94,6 @@ export async function initializeCLIServices(): Promise<void> {
     const agentLoopModule = await import('../main/agent/agentLoop');
     AgentLoop = agentLoopModule.AgentLoop;
 
-    const toolRegistryModule = await import('../main/tools/toolRegistry');
-    ToolRegistry = toolRegistryModule.ToolRegistry;
-
     const toolExecutorModule = await import('../main/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
@@ -115,16 +110,12 @@ export async function initializeCLIServices(): Promise<void> {
 
   // 初始化代际管理器
 
-  // 初始化工具注册表
-  toolRegistry = new ToolRegistry();
-
   // 初始化工具执行器（CLI 模式下自动批准所有工具）
   toolExecutor = new ToolExecutor({
-    toolRegistry,
     requestPermission: async () => true, // CLI 模式自动批准
     workingDirectory: process.cwd(),
   });
-  cliLog('ToolRegistry & ToolExecutor initialized');
+  cliLog('ToolExecutor initialized');
 
   // Memory service removed — Light Memory (file-based) is used instead
 
@@ -259,7 +250,7 @@ export function createAgentLoop(
   extraTelemetryAdapter?: TelemetryAdapter,
   toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../main/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> }
 ): InstanceType<typeof AgentLoop> {
-  if (!toolRegistry || !toolExecutor || !AgentLoop) {
+  if (!toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
   }
 
@@ -323,7 +314,6 @@ export function createAgentLoop(
   const agentLoop = new AgentLoop({
     systemPrompt,
     modelConfig: config.modelConfig,
-    toolRegistry,
     toolExecutor: (toolExecutorOverride || toolExecutor) as InstanceType<typeof ToolExecutor>,
     messages,
     onEvent: (event: AgentEvent) => {

@@ -9,7 +9,7 @@
 
 import { sdkTaskTool } from '../../multiagent/task';
 import { teammateTool } from '../../multiagent/teammate';
-import { spawnAgentTool } from '../../multiagent/spawnAgent';
+import { spawnAgentTool, agentSpawnTool } from '../../multiagent/spawnAgent';
 import { waitAgentTool } from '../../multiagent/waitAgent';
 import { closeAgentTool } from '../../multiagent/closeAgent';
 import { agentMessageTool } from '../../multiagent/agentMessage';
@@ -30,6 +30,7 @@ const MA_READ = {
 export const taskModule = wrapLegacyTool(sdkTaskTool, MA_EXECUTE);
 export const teammateModule = wrapLegacyTool(teammateTool, MA_EXECUTE);
 export const spawnAgentModule = wrapLegacyTool(spawnAgentTool, MA_EXECUTE);
+export const agentSpawnModule = wrapLegacyTool(agentSpawnTool, MA_EXECUTE);
 export const closeAgentModule = wrapLegacyTool(closeAgentTool, MA_EXECUTE);
 export const sendInputModule = wrapLegacyTool(sendInputTool, MA_EXECUTE);
 export const workflowOrchestrateModule = wrapLegacyTool(workflowOrchestrateTool, MA_EXECUTE);

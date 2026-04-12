@@ -14,7 +14,6 @@ import type {
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { SYSTEM_PROMPT } from '../prompts/builder';
-import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
@@ -59,7 +58,6 @@ const logger = createLogger('AgentOrchestrator');
 
 export class AgentOrchestrator {
   private configService: ConfigService;
-  private toolRegistry: ToolRegistry;
   private toolExecutor: ToolExecutor;
   private agentLoop: AgentLoop | null = null;
   private deepResearchMode: DeepResearchMode | null = null;
@@ -106,9 +104,7 @@ export class AgentOrchestrator {
     logger.info('Initial working directory:', this.workingDirectory);
     this.planningService = config.planningService;
 
-    this.toolRegistry = new ToolRegistry();
     this.toolExecutor = new ToolExecutor({
-      toolRegistry: this.toolRegistry,
       requestPermission: this.requestPermission.bind(this),
       workingDirectory: this.workingDirectory,
     });
@@ -576,7 +572,6 @@ export class AgentOrchestrator {
 
       if (requirements.needsAutoAgent) {
         await runAutoAgentMode(content, requirements, onEvent, modelConfig, {
-          toolRegistry: this.toolRegistry,
           workingDirectory: this.workingDirectory,
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
@@ -695,7 +690,6 @@ export class AgentOrchestrator {
     this.agentLoop = new AgentLoop({
       systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
       modelConfig: effectiveModelConfig,
-      toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
       onEvent: dagAwareOnEvent,

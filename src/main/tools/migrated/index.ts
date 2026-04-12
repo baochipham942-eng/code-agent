@@ -560,6 +560,16 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
   registry.register(
     {
+      name: 'AgentSpawn',
+      description: 'Advanced agent creation with full control (PascalCase alias for SDK compatibility).',
+      inputSchema: minimalMASchema({ command: { type: 'string' } }, ['command']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).agentSpawnModule,
+  );
+  registry.register(
+    {
       name: 'wait_agent',
       description: 'Wait for a spawned agent to complete and return its output.',
       inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
@@ -851,5 +861,183 @@ export function registerMigratedTools(registry: ToolRegistry): void {
       allowInPlanMode: false,
     },
     async () => (await import('./shell/process')).processModule,
+  );
+
+  // ── P0-6.2: legacy core tool wrappers (Bash/Read/Write/Glob/Grep/ppt/memory) ──
+  // 这批 tool 迁移前只在 legacy toolRegistry 里注册，dispatch 走 fallback 分支。
+  // P0-6.2 删 legacy 前必须把它们 wrap 进 protocol registry，让 isProtocolToolName
+  // 覆盖所有 runtime 必须的 tool。
+
+  // file (3): Read / Write / Glob
+  registry.register(
+    {
+      name: 'Read',
+      description: 'Read file contents (supports offset/limit line ranges).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string' },
+          offset: { type: 'number' },
+          limit: { type: 'number' },
+        },
+        required: ['file_path'],
+      },
+      category: 'fs',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./file/wrappers')).readModule,
+  );
+  registry.register(
+    {
+      name: 'Write',
+      description: 'Write content to a file (creates or overwrites).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['file_path', 'content'],
+      },
+      category: 'fs',
+      permissionLevel: 'write',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./file/wrappers')).writeModule,
+  );
+  registry.register(
+    {
+      name: 'Glob',
+      description: 'Find files matching a glob pattern.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string' },
+          path: { type: 'string' },
+        },
+        required: ['pattern'],
+      },
+      category: 'fs',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./file/wrappers')).globModule,
+  );
+
+  // shell (2): Bash / Grep
+  registry.register(
+    {
+      name: 'Bash',
+      description: 'Execute a shell command (with permission gating and background task support).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string' },
+          timeout: { type: 'number' },
+          run_in_background: { type: 'boolean' },
+          description: { type: 'string' },
+        },
+        required: ['command'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./shell/wrappers')).bashModule,
+  );
+  registry.register(
+    {
+      name: 'Grep',
+      description: 'Search file contents with ripgrep regex.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string' },
+          path: { type: 'string' },
+          glob: { type: 'string' },
+          type: { type: 'string' },
+          output_mode: { type: 'string' },
+          head_limit: { type: 'number' },
+        },
+        required: ['pattern'],
+      },
+      category: 'fs',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./shell/wrappers')).grepModule,
+  );
+
+  // lightMemory (2): MemoryRead / MemoryWrite
+  registry.register(
+    {
+      name: 'MemoryRead',
+      description: 'Read from lightMemory store (file-as-memory).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'string' },
+          key: { type: 'string' },
+        },
+        required: [],
+      },
+      category: 'fs',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./lightMemory/wrappers')).memoryReadModule,
+  );
+  registry.register(
+    {
+      name: 'MemoryWrite',
+      description: 'Write to lightMemory store (file-as-memory).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'string' },
+          key: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: [],
+      },
+      category: 'fs',
+      permissionLevel: 'write',
+      readOnly: false,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./lightMemory/wrappers')).memoryWriteModule,
+  );
+
+  // network (2): ppt_generate / ppt_edit
+  registry.register(
+    {
+      name: 'ppt_generate',
+      description: 'Generate a PowerPoint presentation from an outline or topic.',
+      inputSchema: netSchema({ topic: { type: 'string' }, outline: { type: 'string' } }),
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./network/wrappers')).pptGenerateModule,
+  );
+  registry.register(
+    {
+      name: 'ppt_edit',
+      description: 'Edit an existing PowerPoint presentation (insert/replace/delete slides or text).',
+      inputSchema: netSchema({ file_path: { type: 'string' }, action: { type: 'string' } }),
+      category: 'network',
+      permissionLevel: 'write',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./network/wrappers')).pptEditModule,
   );
 }

@@ -125,5 +125,38 @@ export default tseslint.config(
     rules: {
       'no-console': 'off',
     },
+  },
+  {
+    // protocol 层严禁反向依赖 agent/tools/services/ipc/context
+    // 参考 Codex codex-protocol crate 的约束：protocol 只能被别人依赖，不能依赖别人
+    // 规则见 src/main/protocol/README.md
+    files: ['src/main/protocol/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/agent/**',
+                '**/tools/**',
+                '**/services/**',
+                '**/ipc/**',
+                '**/context/**',
+                '**/model/**',
+                '**/skills/**',
+                '**/evaluation/**',
+                '**/planning/**',
+                '**/scheduler/**',
+                '**/hooks/**',
+                '**/mcp/**',
+              ],
+              message:
+                'protocol 层禁止反向依赖业务模块。如果这里需要类型，说明这个类型应该从业务模块抽到 protocol/ 里再被业务模块反向 import。',
+            },
+          ],
+        },
+      ],
+    },
   }
 );

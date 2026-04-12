@@ -138,6 +138,83 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./shell/taskOutput')).taskOutputModule,
   );
 
+  // ── shell/ batch 2c: git 三件套 ───────────────────────────────────────
+  registry.register(
+    {
+      name: 'git_diff',
+      description: 'Git 差异分析: diff (未暂存) | diff_staged | diff_branch | show.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['diff', 'diff_staged', 'diff_branch', 'show'] },
+          files: { type: 'array', items: { type: 'string' } },
+          stat_only: { type: 'boolean' },
+          base: { type: 'string' },
+          head: { type: 'string' },
+          commit: { type: 'string' },
+        },
+        required: ['action'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./shell/gitDiff')).gitDiffModule,
+  );
+
+  registry.register(
+    {
+      name: 'git_commit',
+      description: 'Git 提交管理: status | add | commit | push | log.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['status', 'add', 'commit', 'push', 'log'] },
+          files: { type: 'array', items: { type: 'string' } },
+          all: { type: 'boolean' },
+          message: { type: 'string' },
+          amend: { type: 'boolean' },
+          remote: { type: 'string' },
+          branch: { type: 'string' },
+          set_upstream: { type: 'boolean' },
+          limit: { type: 'number' },
+          oneline: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./shell/gitCommit')).gitCommitModule,
+  );
+
+  registry.register(
+    {
+      name: 'git_worktree',
+      description: 'Git 工作树管理: list | add | remove | prune.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['list', 'add', 'remove', 'prune'] },
+          path: { type: 'string' },
+          branch: { type: 'string' },
+          new_branch: { type: 'string' },
+          base: { type: 'string' },
+          force: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./shell/gitWorktree')).gitWorktreeModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

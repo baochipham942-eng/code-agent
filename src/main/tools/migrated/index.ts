@@ -321,6 +321,82 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./lsp/lsp')).lspModule,
   );
 
+  // ── batch 4: vision/ wrapper 模式（7 个，wrappers.ts 单文件聚合 module）─
+  // 注：register 要求 schema 立即提供（getSchemas 用），所以这里写完整 schema
+  // loader 内 lazy 拉 wrappers.ts 拿对应 module
+  registry.register(
+    {
+      name: 'Browser',
+      description: 'Browser facade — list pages, take screenshots, click, type, etc.',
+      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).browserModule,
+  );
+  registry.register(
+    {
+      name: 'Computer',
+      description: 'Computer use facade — screenshot, click, type, key, scroll on the desktop.',
+      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).computerModule,
+  );
+  registry.register(
+    {
+      name: 'browser_action',
+      description: 'Direct browser action sub-tool used by the Browser facade.',
+      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).browserActionModule,
+  );
+  registry.register(
+    {
+      name: 'browser_navigate',
+      description: 'Navigate the browser to a URL or back/forward in history.',
+      inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: [] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).browserNavigateModule,
+  );
+  registry.register(
+    {
+      name: 'computer_use',
+      description: 'Direct computer use sub-tool used by the Computer facade.',
+      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).computerUseModule,
+  );
+  registry.register(
+    {
+      name: 'screenshot',
+      description: 'Take a screenshot of the desktop or a specific window/region.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      category: 'vision',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./vision/wrappers')).screenshotModule,
+  );
+  registry.register(
+    {
+      name: 'gui_agent',
+      description: 'Run a GUI automation agent task with high-level instructions.',
+      inputSchema: { type: 'object', properties: { task: { type: 'string' } }, required: ['task'] },
+      category: 'vision',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./vision/wrappers')).guiAgentModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

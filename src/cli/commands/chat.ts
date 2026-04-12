@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_REGISTRY } from '../../shared/constants';
-import type { ModelProvider } from '../../shared/types';
+import type { ModelProvider } from '../../shared/contract';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';

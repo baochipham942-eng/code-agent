@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
-import type { CaptureItem, CaptureSource, CaptureStats } from '../../../../shared/types/capture';
+import type { CaptureItem, CaptureSource, CaptureStats } from '../../../../shared/contract/capture';
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;

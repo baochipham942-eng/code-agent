@@ -16,7 +16,7 @@ import {
   Edit3,
 } from 'lucide-react';
 
-import type { FileInfo } from '@shared/types';
+import type { FileInfo } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../utils/logger';
 import { isWebMode } from '../utils/platform';

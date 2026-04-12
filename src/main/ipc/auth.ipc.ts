@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AuthUser, AuthStatus } from '../../shared/types';
+import type { AuthUser, AuthStatus } from '../../shared/contract';
 import { getAuthService } from '../services';
 import { getSecureStorage } from '../services/core/secureStorage';
 

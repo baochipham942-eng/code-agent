@@ -2,7 +2,7 @@
 // Message Converter - Convert between different message formats
 // ============================================================================
 
-import type { Message, MessageAttachment, ToolCall, ToolResult } from '../../../shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelMessage, MessageContent } from '../loopTypes';
 import { LARGE_DATA_FIELDS, LARGE_DATA_THRESHOLD } from '../loopTypes';
 import { createLogger } from '../../services/infra/logger';

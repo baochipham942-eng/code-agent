@@ -8,9 +8,9 @@ import type {
   SwarmAggregation,
   SwarmLaunchRequest,
   SwarmAgentContextSnapshot,
-} from '../../shared/types/swarm';
-import type { CompletedAgentRun } from '../../shared/types/agentHistory';
-import type { AgentApplicationService } from '../../shared/types/appService';
+} from '../../shared/contract/swarm';
+import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 import { getPlanApprovalGate } from '../agent/planApproval';
 import { getParallelAgentCoordinator } from '../agent/parallelAgentCoordinator';
 import { getSpawnGuard } from '../agent/spawnGuard';

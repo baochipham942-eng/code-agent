@@ -14,11 +14,11 @@ import {
   ContextHealthState,
   CompressionStats,
   getCompressionStatus,
-} from '../../shared/types/contextHealth';
+} from '../../shared/contract/contextHealth';
 import { getContextHealthService } from './contextHealthService';
 import { compactModelSummarize } from './compactModel';
 import type { HookManager } from '../hooks/hookManager';
-import type { Message, CompactionBlock } from '../../shared/types';
+import type { Message, CompactionBlock } from '../../shared/contract';
 import { getDocumentContextService } from './documentContext';
 import { dataFingerprintStore } from '../tools/dataFingerprint';
 

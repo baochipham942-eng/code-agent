@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { ContextHealthPanel } from './ContextHealthPanel';
 
 // 事件类型 - 7个核心分类（Gen4 新增 MCP 和 Skill）

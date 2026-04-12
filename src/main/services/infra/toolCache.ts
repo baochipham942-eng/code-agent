@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { getDatabase } from '../core';
-import type { ToolResult } from '../../../shared/types';
+import type { ToolResult } from '../../../shared/contract';
 import { createLogger } from './logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';

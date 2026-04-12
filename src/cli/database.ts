@@ -14,7 +14,7 @@ import type {
   TodoItem,
   TokenUsage,
   PRLink,
-} from '../shared/types';
+} from '../shared/contract';
 
 // ----------------------------------------------------------------------------
 // Types

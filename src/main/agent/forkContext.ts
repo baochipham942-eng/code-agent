@@ -3,7 +3,7 @@
 // 多 subagent 共享字节一致的前缀，最大化 Anthropic API 缓存命中
 // ============================================================================
 
-import type { Message, ToolDefinition } from '../../shared/types';
+import type { Message, ToolDefinition } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ForkContext');

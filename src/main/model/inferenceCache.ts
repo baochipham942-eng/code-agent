@@ -5,7 +5,7 @@
 import { createHash } from 'crypto';
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage, ModelResponse } from './types';
-import type { ModelConfig } from '../../shared/types';
+import type { ModelConfig } from '../../shared/contract';
 
 const logger = createLogger('InferenceCache');
 

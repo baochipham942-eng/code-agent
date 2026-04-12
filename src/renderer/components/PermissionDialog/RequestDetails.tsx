@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
-import type { DecisionTrace } from '@shared/types';
+import type { DecisionTrace } from '@shared/contract';
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
 

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Loader2 } from 'lucide-react';
-import type { CloudTaskStatus } from '@shared/types/cloud';
+import type { CloudTaskStatus } from '@shared/contract/cloud';
 
 // ============================================================================
 // 类型定义

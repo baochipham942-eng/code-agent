@@ -11,8 +11,8 @@ import {
   type IPCRequest,
   type IPCResponse
 } from '../../shared/ipc';
-import type { PermissionResponse } from '../../shared/types';
-import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/types/appService';
+import type { PermissionResponse } from '../../shared/contract';
+import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -99,13 +99,13 @@ export function registerAgentHandlers(
         case 'setEffortLevel': {
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');
-          appService.setEffortLevel((payload as { level: import('../../shared/types/agent').EffortLevel }).level);
+          appService.setEffortLevel((payload as { level: import('../../shared/contract/agent').EffortLevel }).level);
           return { success: true, data: null };
         }
         case 'setInteractionMode': {
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');
-          appService.setInteractionMode((payload as { mode: import('../../shared/types/agent').InteractionMode }).mode);
+          appService.setInteractionMode((payload as { mode: import('../../shared/contract/agent').InteractionMode }).mode);
           return { success: true, data: null };
         }
         case 'pause': {

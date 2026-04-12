@@ -6,7 +6,7 @@ import {
   EvaluationDimension,
   DIMENSION_WEIGHTS,
   type EvaluationMetric,
-} from '../../../shared/types/evaluation';
+} from '../../../shared/contract/evaluation';
 import type { SessionSnapshot, DimensionEvaluator } from '../types';
 
 // 危险命令模式

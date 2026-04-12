@@ -5,7 +5,7 @@
 // 其他保持 single
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { UI } from '@shared/constants';
 
 export type ToolGroupType = 'context_gathering' | 'file_operations' | 'single';

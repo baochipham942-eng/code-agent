@@ -2,7 +2,7 @@
 // Google Gemini Provider Implementation
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import {
   electronFetch,

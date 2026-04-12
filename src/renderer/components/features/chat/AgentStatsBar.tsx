@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import type { TaskStatsData } from '@shared/types/agent';
+import type { TaskStatsData } from '@shared/contract/agent';
 
 // ============================================================================
 // Types

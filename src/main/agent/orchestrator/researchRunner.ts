@@ -2,7 +2,7 @@
 // Research Mode Runners - Deep research and semantic research execution
 // ============================================================================
 
-import type { AgentEvent, Message, ModelConfig } from '../../../shared/types';
+import type { AgentEvent, Message, ModelConfig } from '../../../shared/contract';
 import type { ReportStyle, ResearchUserSettings } from '../../research/types';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../../research';
 import { ModelRouter } from '../../model/modelRouter';

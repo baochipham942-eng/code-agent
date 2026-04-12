@@ -5,7 +5,7 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { UpdateInfo } from '../../shared/types';
+import type { UpdateInfo } from '../../shared/contract';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 
 // ----------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadPolicy, hasPolicyFile } from './policyLoader';
 import type { SecurityPolicy } from './policyFile';
-import type { DecisionStep } from '../../shared/types/decisionTrace';
+import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from './decisionTraceBuilder';
 
 const logger = createLogger('PolicyEnforcer');

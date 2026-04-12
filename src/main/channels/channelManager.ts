@@ -19,7 +19,7 @@ import type {
   ChannelMessage,
   ChannelEvent,
   SendMessageResult,
-} from '../../shared/types/channel';
+} from '../../shared/contract/channel';
 import { ApiChannel, createApiChannelFactory } from './api/apiChannel';
 import { FeishuChannel, createFeishuChannelFactory } from './feishu/feishuChannel';
 import { TelegramChannel, createTelegramChannelFactory } from './telegram/telegramChannel';

@@ -11,7 +11,7 @@ import {
   DEFAULT_MODELS,
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
-import type { ModelCapability, ModelConfig } from '../../../src/shared/types';
+import type { ModelCapability, ModelConfig } from '../../../src/shared/contract';
 
 // --------------------------------------------------------------------------
 // Mocks

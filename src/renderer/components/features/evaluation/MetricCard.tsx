@@ -3,14 +3,14 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import type { EvaluationMetric } from '../../../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../../../shared/contract/evaluation';
 import {
   DIMENSION_NAMES,
   DIMENSION_ICONS,
   scoreToGrade,
   GRADE_COLORS,
   GRADE_BG_COLORS,
-} from '../../../../shared/types/evaluation';
+} from '../../../../shared/contract/evaluation';
 
 interface MetricCardProps {
   metric: EvaluationMetric;

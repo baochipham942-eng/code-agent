@@ -6,7 +6,7 @@ import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSes
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
-import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/types';
+import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
 import { getModelMaxOutputTokens } from '../shared/constants';
 import { createLogger } from '../main/services/infra/logger';
 import { getSessionSkillService } from '../main/services/skills/sessionSkillService';

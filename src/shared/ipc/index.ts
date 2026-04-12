@@ -3,7 +3,7 @@
 // ============================================================================
 
 // Re-export context health types for consumer convenience
-export type { ContextHealthState, ContextHealthUpdateEvent } from '../types/contextHealth';
+export type { ContextHealthState, ContextHealthUpdateEvent } from '../contract/contextHealth';
 
 // Re-export session state types for consumer convenience
 export type {
@@ -11,7 +11,7 @@ export type {
   SubagentState,
   SessionRuntimeSummary,
   SessionStatusUpdateEvent,
-} from '../types/sessionState';
+} from '../contract/sessionState';
 
 // Sub-modules
 export * from './types';

@@ -13,7 +13,7 @@ import type {
   TelemetrySessionListItem,
   TelemetryToolStat,
   TelemetryIntentStat,
-} from '../../shared/types/telemetry';
+} from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 

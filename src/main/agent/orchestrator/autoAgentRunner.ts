@@ -2,7 +2,7 @@
 // Auto Agent Runner - Dynamic multi-agent execution
 // ============================================================================
 
-import type { AgentEvent, Message, ModelConfig } from '../../../shared/types';
+import type { AgentEvent, Message, ModelConfig } from '../../../shared/contract';
 import { getAutoAgentCoordinator } from '../autoAgentCoordinator';
 import { getDynamicAgentFactory } from '../dynamicAgentFactory';
 import { getAgentRequirementsAnalyzer } from '../agentRequirementsAnalyzer';

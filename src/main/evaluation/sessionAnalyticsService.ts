@@ -12,7 +12,7 @@ import type {
   ToolCallRecord,
   MessageRecord,
   SessionAnalysis,
-} from '../../shared/types/sessionAnalytics';
+} from '../../shared/contract/sessionAnalytics';
 import { getSessionEventService } from './sessionEventService';
 import { getTelemetryQueryService } from './telemetryQueryService';
 

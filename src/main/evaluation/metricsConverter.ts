@@ -2,8 +2,8 @@
 // Metrics Converter - SwissCheeseResult → EvaluationMetric 转换
 // ============================================================================
 
-import type { EvaluationMetric } from '../../shared/types/evaluation';
-import { EvaluationDimension } from '../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../shared/contract/evaluation';
+import { EvaluationDimension } from '../../shared/contract/evaluation';
 import type { SwissCheeseResult } from './swissCheeseEvaluator';
 
 /**

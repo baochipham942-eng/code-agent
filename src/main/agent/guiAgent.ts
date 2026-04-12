@@ -10,7 +10,7 @@ import type {
   ScreenCapture,
   ComputerAction,
   ModelConfig,
-} from '../../shared/types';
+} from '../../shared/contract';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 

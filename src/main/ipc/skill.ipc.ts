@@ -9,7 +9,7 @@ import { getSkillRepositoryService } from '../services/skills/skillRepositorySer
 import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import { RECOMMENDED_REPOSITORIES } from '../services/skills/skillRepositories';
-import type { SkillRepository } from '../../shared/types/skillRepository';
+import type { SkillRepository } from '../../shared/contract/skillRepository';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getComboRecorder } from '../services/skills/comboRecorder';

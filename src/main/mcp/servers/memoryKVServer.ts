@@ -8,7 +8,7 @@ import * as path from 'path';
 import { app } from '../../platform';
 import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
-import type { ToolResult } from '../../../shared/types';
+import type { ToolResult } from '../../../shared/contract';
 
 const logger = createLogger('MemoryKVServer');
 

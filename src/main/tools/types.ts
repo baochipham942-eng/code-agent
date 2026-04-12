@@ -5,7 +5,7 @@
 import type {
   ToolDefinition,
   JSONSchema,
-} from '../../shared/types';
+} from '../../shared/contract';
 
 export interface Tool extends ToolDefinition {
   execute: (
@@ -46,7 +46,7 @@ export interface ToolContext {
   /** 会话 ID（用于上下文追踪） */
   sessionId?: string;
   /** 对话历史（用于 Subagent 上下文注入） */
-  messages?: import('../../shared/types').Message[];
+  messages?: import('../../shared/contract').Message[];
   /** 已修改的文件集合（用于 Subagent 上下文注入） */
   modifiedFiles?: Set<string>;
   /** TODO 列表（用于 Subagent 上下文注入） */
@@ -89,7 +89,7 @@ export interface PermissionRequestData {
   reason?: string;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
-  decisionTrace?: import('../../shared/types/decisionTrace').DecisionTrace;
+  decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;
 }
 
 export interface ToolExecutionResult {

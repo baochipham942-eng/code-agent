@@ -4,8 +4,8 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { TraceNode } from '@shared/types/trace';
-import type { ToolCall } from '@shared/types';
+import type { TraceNode } from '@shared/contract/trace';
+import type { ToolCall } from '@shared/contract';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
@@ -16,7 +16,7 @@ import { UI } from '@shared/constants';
 interface TraceNodeRendererProps {
   node: TraceNode;
   /** Message attachments for user nodes */
-  attachments?: import('@shared/types').MessageAttachment[];
+  attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
 }
@@ -37,7 +37,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, atta
 };
 
 // ---- User Node ----
-const UserNode: React.FC<{ content: string; attachments?: import('@shared/types').MessageAttachment[] }> = ({ content, attachments }) => (
+const UserNode: React.FC<{ content: string; attachments?: import('@shared/contract').MessageAttachment[] }> = ({ content, attachments }) => (
   <div className="select-text">
     {attachments && attachments.length > 0 && (
       <div className="mb-2">

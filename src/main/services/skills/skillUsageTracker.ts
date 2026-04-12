@@ -8,7 +8,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { getUserConfigDir } from '../../config/configPaths';
-import type { SkillSource } from '../../../shared/types/agentSkill';
+import type { SkillSource } from '../../../shared/contract/agentSkill';
 
 export interface SkillUsageRecord {
   lastUsedAt: string;   // ISO8601

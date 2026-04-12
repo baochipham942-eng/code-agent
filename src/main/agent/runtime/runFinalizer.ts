@@ -15,7 +15,7 @@ import type {
   ToolResult,
   AgentEvent,
   AgentTaskPhase,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
@@ -31,7 +31,7 @@ import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
 import { HookManager, createHookManager } from '../../hooks';
-import type { BudgetEventData } from '../../../shared/types';
+import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
@@ -246,7 +246,7 @@ export class RunFinalizer {
 
   tryParseTodosFromResponse(response: { content?: string; thinking?: string }): void {
     // 优先从 thinking content 中解析（计划通常出现在思考过程中）
-    let parsed: import('../../../shared/types').TodoItem[] | null = null;
+    let parsed: import('../../../shared/contract').TodoItem[] | null = null;
 
     if (response.thinking) {
       parsed = parseTodos(response.thinking);
@@ -397,7 +397,7 @@ export class RunFinalizer {
     }
   }
 
-  processSkillActivation(skillResult: import('../../../shared/types/agentSkill').SkillToolResult): void {
+  processSkillActivation(skillResult: import('../../../shared/contract/agentSkill').SkillToolResult): void {
     logger.debug('[AgentLoop] Processing Skill activation result');
 
     if (skillResult.newMessages) {

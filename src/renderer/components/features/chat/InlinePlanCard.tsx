@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle2, Circle, Loader2, FileText } from 'lucide-react';
-import type { TaskPlan, TaskPhase, TaskStep } from '@shared/types';
+import type { TaskPlan, TaskPhase, TaskStep } from '@shared/contract';
 
 interface InlinePlanCardProps {
   plan: TaskPlan;

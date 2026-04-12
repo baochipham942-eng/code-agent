@@ -5,7 +5,7 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings } from '../../shared/contract';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 

@@ -8,11 +8,11 @@ import type {
   SkillMessage,
   SkillToolResult,
   SkillContextModifier,
-} from '../../../shared/types/agentSkill';
+} from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
-import type { ModelConfig } from '../../../shared/types';
+import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('SkillMetaTool');

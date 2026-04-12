@@ -23,7 +23,7 @@ import type {
   DeviceInfo,
   UpdateInfo,
   DownloadProgress,
-} from '../types';
+} from '../contract';
 
 import type {
   CloudTask,
@@ -32,7 +32,7 @@ import type {
   TaskProgressEvent,
   TaskSyncState,
   CloudExecutionStats,
-} from '../types/cloud';
+} from '../contract/cloud';
 
 import type {
   MemoryItem,
@@ -41,12 +41,12 @@ import type {
   MemoryExport,
   MemoryLearnedEvent,
   MemoryConfirmRequest,
-} from '../types/memory';
+} from '../contract/memory';
 
 import type {
   ContextHealthState,
   ContextHealthUpdateEvent,
-} from '../types/contextHealth';
+} from '../contract/contextHealth';
 
 import type {
   ContextInterventionRequest,
@@ -54,9 +54,9 @@ import type {
   ContextInterventionSnapshot,
   ContextViewRequest,
   ContextViewResponse,
-} from '../types/contextView';
+} from '../contract/contextView';
 
-import type { DAGVisualizationEvent } from '../types/dagVisualization';
+import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import { DAG_CHANNELS } from './channels';
 
 import type {
@@ -69,19 +69,19 @@ import type {
   TelemetryToolStat,
   TelemetryIntentStat,
   TelemetryPushEvent,
-} from '../types/telemetry';
+} from '../contract/telemetry';
 
 import type {
   ObjectiveMetrics,
   SubjectiveAssessment,
-} from '../types/sessionAnalytics';
+} from '../contract/sessionAnalytics';
 
 import type {
   ChannelAccount,
   ChannelType,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
-} from '../types/channel';
+} from '../contract/channel';
 
 import type {
   LabProjectType,
@@ -96,7 +96,7 @@ import type {
   StartTrainingResponse,
   InferenceRequest,
   InferenceResult,
-} from '../types/lab';
+} from '../contract/lab';
 
 import type {
   MarketplaceInfo,
@@ -104,21 +104,21 @@ import type {
   InstalledPlugin,
   MarketplaceResult,
   PluginInstallResult,
-} from '../types/marketplace';
+} from '../contract/marketplace';
 
 import type {
   EvaluationResult,
-} from '../types/evaluation';
+} from '../contract/evaluation';
 
 import type {
   SessionRuntimeSummary,
   SessionStatusUpdateEvent,
   BackgroundTaskInfo,
   BackgroundTaskUpdateEvent,
-} from '../types/sessionState';
+} from '../contract/sessionState';
 
-import type { SwarmEvent } from '../types/swarm';
-import type { CompletedAgentRun } from '../types/agentHistory';
+import type { SwarmEvent } from '../contract/swarm';
+import type { CompletedAgentRun } from '../contract/agentHistory';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
@@ -486,7 +486,7 @@ export interface IpcInvokeHandlers {
   }>>;
 
   // Context compact (部分压缩)
-  [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<import('../../shared/types/contextHealth').CompactResult>;
+  [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<import('../../shared/contract/contextHealth').CompactResult>;
 
   // Context intervention controls (pin/exclude/retain)
   [IPC_CHANNELS.CONTEXT_INTERVENTION_GET]: (request: ContextInterventionRequest) => Promise<ContextInterventionSnapshot>;

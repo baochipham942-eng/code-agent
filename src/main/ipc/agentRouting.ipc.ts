@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import type { AgentRoutingConfig } from '../../shared/types/agentRouting';
+import type { AgentRoutingConfig } from '../../shared/contract/agentRouting';
 import { getRoutingService } from '../routing';
 import { createLogger } from '../services/infra/logger';
 

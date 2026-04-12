@@ -6,7 +6,7 @@
 // 用户可在对话中途切换模型，下一轮生效。
 
 import { createLogger } from '../services/infra/logger';
-import type { ModelProvider } from '../../shared/types/model';
+import type { ModelProvider } from '../../shared/contract/model';
 
 const logger = createLogger('ModelSessionState');
 

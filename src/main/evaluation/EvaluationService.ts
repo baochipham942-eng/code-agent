@@ -14,12 +14,12 @@ import type {
   EvaluationMetric,
   EvaluationExportFormat,
   BaselineComparison,
-} from '../../shared/types/evaluation';
+} from '../../shared/contract/evaluation';
 import {
   EvaluationDimension,
   DIMENSION_NAMES,
   scoreToGrade,
-} from '../../shared/types/evaluation';
+} from '../../shared/contract/evaluation';
 import type { TestReportListItem, TestRunReport } from '../../shared/ipc';
 import type { SessionSnapshot, DimensionEvaluator } from './types';
 import {

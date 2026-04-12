@@ -3,7 +3,7 @@
 // Provides Claude Agent SDK compatible streaming interface
 // ============================================================================
 
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 import type { AgentOrchestrator } from './agentOrchestrator';
 
 // ----------------------------------------------------------------------------

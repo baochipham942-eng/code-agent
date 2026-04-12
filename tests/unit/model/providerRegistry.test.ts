@@ -11,7 +11,7 @@ import {
   MODEL_API_ENDPOINTS,
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
-import type { ModelCapability, ModelProvider } from '../../../src/shared/types';
+import type { ModelCapability, ModelProvider } from '../../../src/shared/contract';
 
 describe('ProviderRegistry', () => {
   // --------------------------------------------------------------------------

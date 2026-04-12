@@ -28,7 +28,7 @@ import type {
   HttpApiChannelConfig,
   FeishuChannelConfig,
   TelegramChannelConfig,
-} from '@shared/types/channel';
+} from '@shared/contract/channel';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';

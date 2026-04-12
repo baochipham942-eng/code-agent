@@ -9,7 +9,7 @@ import type {
   TaskRoutingDecision,
   CreateCloudTaskRequest,
   HybridTaskConfig,
-} from '../../shared/types/cloud';
+} from '../../shared/contract/cloud';
 import { TASK_ANALYSIS } from '../../shared/constants';
 
 // ============================================================================

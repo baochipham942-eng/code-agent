@@ -3,7 +3,7 @@
 // 用于将内置工具暴露为 MCP 服务，无需跨进程通信
 // ============================================================================
 
-import type { ToolResult } from '../../shared/types';
+import type { ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import type {
   MCPTool,

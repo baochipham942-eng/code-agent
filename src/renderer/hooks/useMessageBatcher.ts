@@ -4,7 +4,7 @@
 // 用于减少流式输出时的重渲染频率，提升性能
 
 import { useRef, useCallback, useEffect, useState } from 'react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 // ============================================================================
 // Types

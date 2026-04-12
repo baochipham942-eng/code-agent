@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useCallback } from 'react';
-import type { MessageAttachment } from '../../../../../shared/types';
+import type { MessageAttachment } from '../../../../../shared/contract';
 import {
   MAX_FILE_SIZE,
   MAX_FOLDER_FILES,

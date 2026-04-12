@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useMemo } from 'react';
-import type { Message, ToolCall } from '@shared/types';
+import type { Message, ToolCall } from '@shared/contract';
 
 // -----------------------------------------------------------------------------
 // Types

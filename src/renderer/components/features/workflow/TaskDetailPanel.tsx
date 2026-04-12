@@ -4,13 +4,13 @@
 // ============================================================================
 
 import React, { memo, useMemo } from 'react';
-import type { TaskNodeData } from '../../../../shared/types/dagVisualization';
+import type { TaskNodeData } from '../../../../shared/contract/dagVisualization';
 import {
   TASK_STATUS_COLORS,
   TASK_TYPE_ICONS,
   formatDuration,
   formatCost,
-} from '../../../../shared/types/dagVisualization';
+} from '../../../../shared/contract/dagVisualization';
 
 interface TaskDetailPanelProps {
   task: TaskNodeData | null;

@@ -13,7 +13,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { ToolDefinition, ToolResult } from '../../shared/types';
+import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
 // Import types from the types module

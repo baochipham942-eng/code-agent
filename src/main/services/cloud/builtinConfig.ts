@@ -2,7 +2,7 @@
 // Builtin Config - 内置配置（云端不可用时的降级方案）
 // ============================================================================
 
-import type { SkillDefinition } from '../../../shared/types';
+import type { SkillDefinition } from '../../../shared/contract';
 
 // ----------------------------------------------------------------------------
 // Types

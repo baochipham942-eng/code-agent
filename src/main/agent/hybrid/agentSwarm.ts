@@ -29,7 +29,7 @@ import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentW
 import { getPermissionProxy } from '../worker/permissionProxy';
 import { TeammateProxy } from '../worker/teammateProxy';
 import { WorkerMonitor } from '../worker/workerMonitor';
-import type { SwarmVerificationResult } from '../../../shared/types/swarm';
+import type { SwarmVerificationResult } from '../../../shared/contract/swarm';
 
 // Re-export all types from swarmTypes (preserving public API)
 export type {

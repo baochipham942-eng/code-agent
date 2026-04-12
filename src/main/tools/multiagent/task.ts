@@ -5,7 +5,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { ModelConfig } from '../../../shared/types';
+import type { ModelConfig } from '../../../shared/contract';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getPredefinedAgent,

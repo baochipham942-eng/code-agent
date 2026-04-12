@@ -4,8 +4,8 @@
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
-import type { EvaluationResult, BaselineComparison } from '../../../../shared/types/evaluation';
-import type { TelemetryTurn } from '../../../../shared/types/telemetry';
+import type { EvaluationResult, BaselineComparison } from '../../../../shared/contract/evaluation';
+import type { TelemetryTurn } from '../../../../shared/contract/telemetry';
 import { ScoreSummary } from './ScoreSummary';
 import { GraderGrid } from './GraderGrid';
 import { ErrorTags } from './ErrorTags';

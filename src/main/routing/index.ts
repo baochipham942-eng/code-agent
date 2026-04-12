@@ -17,7 +17,7 @@ export type {
   RoutingResolution,
   AgentsConfigFile,
   AgentRoutingEvent,
-} from '../../shared/types/agentRouting';
+} from '../../shared/contract/agentRouting';
 
 // Intent Classifier (unified — research + hybrid agent routing)
 export {

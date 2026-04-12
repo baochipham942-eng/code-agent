@@ -2,7 +2,7 @@
 // Provider Registry - 模型能力注册表
 // ============================================================================
 
-import type { ProviderConfig } from '../../shared/types';
+import type { ProviderConfig } from '../../shared/contract';
 import { MODEL_API_ENDPOINTS } from '../../shared/constants';
 
 /**

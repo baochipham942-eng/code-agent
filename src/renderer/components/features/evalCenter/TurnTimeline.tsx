@@ -5,7 +5,7 @@
 import React, { useState, useCallback } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { CollapsibleSection } from './CollapsibleSection';
-import type { TelemetryTurn, TelemetryToolCall } from '../../../../shared/types/telemetry';
+import type { TelemetryTurn, TelemetryToolCall } from '../../../../shared/contract/telemetry';
 import ipcService from '../../../services/ipcService';
 
 interface TurnTimelineProps {

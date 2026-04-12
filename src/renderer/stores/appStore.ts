@@ -11,8 +11,8 @@ import type {
   PermissionRequest,
   TaskProgressData,
   TaskCompleteData,
-} from '@shared/types';
-import type { ContextHealthState } from '@shared/types/contextHealth';
+} from '@shared/contract';
+import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
 import {
   DEFAULT_PROVIDER,

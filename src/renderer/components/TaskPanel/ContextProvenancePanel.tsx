@@ -8,7 +8,7 @@ import type {
   ContextProvenanceAction,
   ContextProvenanceCategory,
   ContextProvenanceListEntry,
-} from '@shared/types/contextView';
+} from '@shared/contract/contextView';
 
 const actionLabels: Record<ContextProvenanceAction, string> = {
   added: '加入',

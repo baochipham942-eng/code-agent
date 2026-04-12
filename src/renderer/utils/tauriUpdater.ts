@@ -6,7 +6,7 @@
  *   - install_update    → void (downloads, installs, restarts)
  */
 
-import type { UpdateInfo } from '@shared/types';
+import type { UpdateInfo } from '@shared/contract';
 
 // Mirror the Rust TauriUpdateInfo struct (snake_case from serde)
 interface TauriUpdateResult {

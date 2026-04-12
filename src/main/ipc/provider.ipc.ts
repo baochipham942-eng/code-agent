@@ -9,7 +9,7 @@ import {
   PROVIDER_REGISTRY,
   MCP,
 } from '../../shared/constants';
-import type { ModelProvider } from '../../shared/types';
+import type { ModelProvider } from '../../shared/contract';
 import { runDiagnostics } from './doctor.ipc';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 

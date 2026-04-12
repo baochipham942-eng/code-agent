@@ -12,7 +12,7 @@ import type {
   ChannelAccountConfig,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
-} from '../../shared/types/channel';
+} from '../../shared/contract/channel';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ChannelIPC');

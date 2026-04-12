@@ -2,7 +2,7 @@
 // Tool Summary - 工具调用摘要生成
 // ============================================================================
 
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 
 /**
  * 工具图标名称映射（使用 Lucide 图标名称）

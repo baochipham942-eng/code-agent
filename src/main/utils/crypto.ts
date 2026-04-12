@@ -4,7 +4,7 @@
 // ============================================================================
 
 import crypto from 'crypto';
-import type { EncryptedPayload } from '../../shared/types/cloud';
+import type { EncryptedPayload } from '../../shared/contract/cloud';
 
 // 加密算法配置
 const ALGORITHM = 'aes-256-gcm';

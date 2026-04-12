@@ -29,7 +29,7 @@ import type {
   PythonEnvStatus,
   LabProjectStatus,
   TrainingProgressEvent,
-} from '../../../../../shared/types/lab';
+} from '../../../../../shared/contract/lab';
 
 // 项目状态
 type ProjectUIStatus = 'not_downloaded' | 'downloading' | 'downloaded' | 'error';

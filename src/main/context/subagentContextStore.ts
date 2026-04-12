@@ -1,6 +1,6 @@
-import type { Message } from '../../shared/types';
-import type { ContextProvenanceCategory } from '../../shared/types/contextView';
-import type { SwarmAgentContextSnapshot } from '../../shared/types/swarm';
+import type { Message } from '../../shared/contract';
+import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
+import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import { CompressionState } from './compressionState';
 import { getContextEventLedger } from './contextEventLedger';
 import path from 'path';

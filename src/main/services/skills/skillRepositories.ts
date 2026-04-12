@@ -2,7 +2,7 @@
 // Skill Repositories - Preconfigured and Recommended Repositories
 // ============================================================================
 
-import type { SkillRepository } from '@shared/types/skillRepository';
+import type { SkillRepository } from '@shared/contract/skillRepository';
 
 // ============================================================================
 // Recommended Repositories

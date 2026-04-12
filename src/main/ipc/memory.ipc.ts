@@ -5,7 +5,7 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
-import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/types';
+import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { listMemoryFiles, readMemoryFile, deleteMemoryFile, getLightMemoryStats } from '../lightMemory/lightMemoryIpc';
 

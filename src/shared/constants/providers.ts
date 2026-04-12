@@ -1,4 +1,4 @@
-import type { ModelProvider, ModelProviderAlias } from '../types';
+import type { ModelProvider, ModelProviderAlias } from '../contract';
 import { DEFAULT_MODEL } from './defaults';
 import { DEFAULT_MODELS } from './models';
 

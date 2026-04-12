@@ -137,7 +137,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const history = (sessionMessages.get(sessionId) || []).map(({ id, role, content, timestamp }) => ({
         id, role: role as 'user' | 'assistant', content, timestamp,
       }));
-      const messages = [...history, userMsg] as import('../../shared/types').Message[];
+      const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 
       // ── Tool Executor 选择 ──
       // webServer 本身是 Node.js 进程，默认直接用 originalExecutor 执行本地工具。
@@ -362,7 +362,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               role: 'user',
               content: prompt,
               timestamp: userMsg.timestamp,
-            } as import('../../shared/types').Message);
+            } as import('../../shared/contract').Message);
             if (assistantText || assistantToolCalls.length > 0) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
@@ -371,7 +371,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: Date.now(),
                 toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
                 thinking: assistantThinking || undefined,
-              } as import('../../shared/types').Message);
+              } as import('../../shared/contract').Message);
             }
           } else {
             // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
@@ -382,7 +382,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               role: 'user',
               content: prompt,
               timestamp: userMsg.timestamp,
-            } as import('../../shared/types').Message);
+            } as import('../../shared/contract').Message);
             if (assistantText || assistantToolCalls.length > 0) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
@@ -391,7 +391,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: Date.now(),
                 toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
                 thinking: assistantThinking || undefined,
-              } as import('../../shared/types').Message);
+              } as import('../../shared/contract').Message);
             }
           }
           // 更新会话标题/时间戳

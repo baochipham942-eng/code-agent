@@ -4,7 +4,7 @@
 
 import https from 'https';
 import http from 'http';
-import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { openAISSEStream } from './sseStream';

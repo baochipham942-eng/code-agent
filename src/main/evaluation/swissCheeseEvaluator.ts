@@ -10,7 +10,7 @@
 
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
-import type { EvaluationMetric } from '../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../shared/contract/evaluation';
 import type { SessionSnapshot, TranscriptMetrics, ConversationType } from './types';
 
 // Sub-modules

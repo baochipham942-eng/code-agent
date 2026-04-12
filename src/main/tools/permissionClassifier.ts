@@ -12,7 +12,7 @@
 import { createLogger } from '../services/infra/logger';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import type { DecisionStep } from '../../shared/types/decisionTrace';
+import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 
 const logger = createLogger('PermissionClassifier');

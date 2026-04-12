@@ -12,7 +12,7 @@
 // - full: 传递完整历史摘要（执行类，需要完整上下文）
 // ============================================================================
 
-import type { Message, ToolResult } from '../../shared/types';
+import type { Message, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SubagentContextBuilder');

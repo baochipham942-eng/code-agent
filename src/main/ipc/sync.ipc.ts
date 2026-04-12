@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { SyncStatus, DeviceInfo } from '../../shared/types';
+import type { SyncStatus, DeviceInfo } from '../../shared/contract';
 import { getAuthService, getSyncService } from '../services';
 
 // ----------------------------------------------------------------------------

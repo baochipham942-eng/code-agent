@@ -20,7 +20,7 @@ import type {
   TaskStep,
   TaskStepStatus,
   TaskPhaseStatus,
-} from '@shared/types';
+} from '@shared/contract';
 
 interface PlanningPanelProps {
   plan: TaskPlan | null;

@@ -2,8 +2,8 @@
 // Deferred Tools Configuration - 延迟工具配置
 // ============================================================================
 
-import type { DeferredToolMeta } from '../../../shared/types/toolSearch';
-import type { ToolTag } from '../../../shared/types/tool';
+import type { DeferredToolMeta } from '../../../shared/contract/toolSearch';
+import type { ToolTag } from '../../../shared/contract/tool';
 
 /**
  * 核心工具列表

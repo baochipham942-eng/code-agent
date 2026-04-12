@@ -13,7 +13,7 @@ import type {
   AgentInstanceState,
 } from './types';
 import type { PermissionMode } from '../permissions/modes';
-import type { Message } from '../../shared/types';
+import type { Message } from '../../shared/contract';
 
 const logger = createLogger('SessionPersistence');
 

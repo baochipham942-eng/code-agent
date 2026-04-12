@@ -4,7 +4,7 @@
  */
 
 import { createLogger } from '../services/infra/logger';
-import type { FailureStage, FailureFunnelResult, VerifierResult, VerifierType } from '../../shared/types/evaluation';
+import type { FailureStage, FailureFunnelResult, VerifierResult, VerifierType } from '../../shared/contract/evaluation';
 
 const logger = createLogger('FailureFunnel');
 

@@ -11,8 +11,8 @@ import type { ProjectableMessage } from '../../../src/main/context/projectionEng
 import { getSubagentContextStore } from '../../../src/main/context/subagentContextStore';
 import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
 import { getContextEventLedger } from '../../../src/main/context/contextEventLedger';
-import type { AgentApplicationService } from '../../../src/shared/types/appService';
-import type { Message, ToolResult } from '../../../src/shared/types';
+import type { AgentApplicationService } from '../../../src/shared/contract/appService';
+import type { Message, ToolResult } from '../../../src/shared/contract';
 
 // ---------------------------------------------------------------------------
 // Helpers

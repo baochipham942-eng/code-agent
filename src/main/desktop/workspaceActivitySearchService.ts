@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { getDesktopActivityUnderstandingService } from './desktopActivityUnderstandingService';
-import type { DesktopActivitySemanticMatch } from '../../shared/types';
+import type { DesktopActivitySemanticMatch } from '../../shared/contract';
 import { estimateTokens } from '../context/tokenOptimizer';
 import { getWorkspaceArtifactIndexService } from './workspaceArtifactIndexService';
 

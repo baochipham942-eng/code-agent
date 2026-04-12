@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
-import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swarm';
+import type { SwarmAgentState, SwarmVerificationResult } from '@shared/contract/swarm';
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {

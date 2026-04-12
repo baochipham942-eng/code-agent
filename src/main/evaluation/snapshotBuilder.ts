@@ -12,7 +12,7 @@ import type {
   SnapshotToolCall,
   SnapshotFileDiff,
   SnapshotVerification,
-} from '../../shared/types/evaluation';
+} from '../../shared/contract/evaluation';
 
 const logger = createLogger('SnapshotBuilder');
 

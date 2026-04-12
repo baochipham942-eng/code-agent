@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AgentApplicationService, SwitchModelParams } from '../../shared/types/appService';
+import type { AgentApplicationService, SwitchModelParams } from '../../shared/contract/appService';
 import type { CrossSessionSearchOptions, CrossSessionSearchResults, CrossSessionSearchResultItem } from '../../shared/ipc/types';
 import { getDefaultSearchManager } from '../session/search';
 
@@ -64,7 +64,7 @@ export function registerSessionHandlers(
           break;
         }
         case 'update': {
-          const p = payload as { sessionId: string; updates: Partial<import('../../shared/types/session').Session> };
+          const p = payload as { sessionId: string; updates: Partial<import('../../shared/contract/session').Session> };
           await requireAppService().updateSession(p.sessionId, p.updates);
           data = null;
           break;

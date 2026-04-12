@@ -5,7 +5,7 @@
 // 支持：markdown checkbox、编号列表格式
 // 规则：忽略代码块内的列表，连续 3+ 行才视为任务列表
 
-import type { TodoItem, TodoStatus } from '../../shared/types';
+import type { TodoItem, TodoStatus } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('TodoParser');

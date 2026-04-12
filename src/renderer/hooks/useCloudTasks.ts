@@ -15,7 +15,7 @@ import type {
   CloudTaskStatus,
   TaskSyncState,
   CloudExecutionStats,
-} from '@shared/types/cloud';
+} from '@shared/contract/cloud';
 
 async function invokeCloud<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.CLOUD, action, payload);

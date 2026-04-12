@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
-import type { AppSettings, ModelProvider, PermissionLevel } from '../shared/types';
+import type { AppSettings, ModelProvider, PermissionLevel } from '../shared/contract';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_MAX_TOKENS } from '../shared/constants';
 
 // 加载 .env 文件

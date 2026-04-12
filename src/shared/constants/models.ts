@@ -1,4 +1,4 @@
-import type { ModelProvider } from '../types';
+import type { ModelProvider } from '../contract';
 import catalog from '../model-catalog.json';
 
 /** 模型配置 */

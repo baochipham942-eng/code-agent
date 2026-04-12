@@ -7,7 +7,7 @@ import { createLogger } from '../services/infra/logger';
 import type {
   SwarmLaunchRequest,
   SwarmLaunchTaskPreview,
-} from '../../shared/types/swarm';
+} from '../../shared/contract/swarm';
 import { emitSwarmEvent } from '../ipc/swarm.ipc';
 
 const logger = createLogger('SwarmLaunchApprovalGate');

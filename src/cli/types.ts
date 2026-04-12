@@ -2,7 +2,7 @@
 // CLI Types
 // ============================================================================
 
-import type { AgentEvent, ModelConfig } from '../shared/types';
+import type { AgentEvent, ModelConfig } from '../shared/contract';
 
 /**
  * CLI 全局选项

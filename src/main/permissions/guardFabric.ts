@@ -8,7 +8,7 @@
 
 import { getPolicyEngine } from './policyEngine';
 import { HookGuardSource } from './hookSource';
-import type { DecisionStep } from '../../shared/types/decisionTrace';
+import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 
 // ----------------------------------------------------------------------------

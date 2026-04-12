@@ -20,10 +20,10 @@ interface ModeState {
   mode: AppMode;
 
   // Effort level (Adaptive Thinking)
-  effortLevel: import('../../shared/types/agent').EffortLevel;
+  effortLevel: import('../../shared/contract/agent').EffortLevel;
 
   // Interaction mode (Code / Plan / Ask)
-  interactionMode: import('../../shared/types/agent').InteractionMode;
+  interactionMode: import('../../shared/contract/agent').InteractionMode;
 
   // Pause state
   isPaused: boolean;
@@ -31,8 +31,8 @@ interface ModeState {
   // Actions
   setMode: (mode: AppMode) => void;
   toggleMode: () => void;
-  setEffortLevel: (level: import('../../shared/types/agent').EffortLevel) => void;
-  setInteractionMode: (mode: import('../../shared/types/agent').InteractionMode) => void;
+  setEffortLevel: (level: import('../../shared/contract/agent').EffortLevel) => void;
+  setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
   // Derived helpers
@@ -51,10 +51,10 @@ export const useModeStore = create<ModeState>()(
       mode: 'cowork',
 
       // Default effort level
-      effortLevel: 'high' as import('../../shared/types/agent').EffortLevel,
+      effortLevel: 'high' as import('../../shared/contract/agent').EffortLevel,
 
       // Default interaction mode
-      interactionMode: 'code' as import('../../shared/types/agent').InteractionMode,
+      interactionMode: 'code' as import('../../shared/contract/agent').InteractionMode,
 
       // Pause state
       isPaused: false,

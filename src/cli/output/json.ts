@@ -2,8 +2,8 @@
 // JSON Output - JSON 格式输出
 // ============================================================================
 
-import type { AgentEvent, ToolCall, ToolResult } from '../../shared/types';
-import type { SwarmEvent } from '../../shared/types/swarm';
+import type { AgentEvent, ToolCall, ToolResult } from '../../shared/contract';
+import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { CLIOutputEvent, CLIRunResult } from '../types';
 
 /**

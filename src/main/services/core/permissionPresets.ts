@@ -2,11 +2,11 @@
 // Permission Presets - 权限预设配置
 // ============================================================================
 
-import type { PermissionLevel, PermissionPreset } from '@shared/types';
+import type { PermissionLevel, PermissionPreset } from '@shared/contract';
 
-// PermissionPreset 类型已移至 shared/types/permission.ts
+// PermissionPreset 类型已移至 shared/contract/permission.ts
 // 此处通过 re-export 保持向后兼容
-export type { PermissionPreset } from '@shared/types';
+export type { PermissionPreset } from '@shared/contract';
 
 /**
  * 权限配置接口

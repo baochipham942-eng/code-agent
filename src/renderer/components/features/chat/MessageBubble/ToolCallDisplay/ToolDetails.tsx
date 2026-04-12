@@ -13,7 +13,7 @@ import {
   Video,
   Download,
 } from 'lucide-react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';

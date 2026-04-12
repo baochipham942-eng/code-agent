@@ -4,7 +4,7 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { Search, X, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
-import type { TraceProjection } from '@shared/types/trace';
+import type { TraceProjection } from '@shared/contract/trace';
 import type { CrossSessionSearchResultItem, CrossSessionSearchResults } from '@shared/ipc/types';
 import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
 import { ipcService } from '../../../services/ipcService';

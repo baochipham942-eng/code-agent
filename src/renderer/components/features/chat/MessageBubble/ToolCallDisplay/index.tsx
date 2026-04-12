@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { FileText, ExternalLink, Folder } from 'lucide-react';
-import type { ToolCall } from '@shared/types';
+import type { ToolCall } from '@shared/contract';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';

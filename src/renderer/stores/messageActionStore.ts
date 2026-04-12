@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { Message } from '@shared/types';
+import type { Message } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { useSessionStore } from './sessionStore';

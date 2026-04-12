@@ -4,7 +4,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { AgentEvent, MemoryLearnedData } from '@shared/types';
+import type { AgentEvent, MemoryLearnedData } from '@shared/contract';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 

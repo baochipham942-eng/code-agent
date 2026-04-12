@@ -27,7 +27,7 @@ import type {
   LocalSkillLibrary,
   LocalSkillInfo,
   SkillRepository,
-} from '@shared/types/skillRepository';
+} from '@shared/contract/skillRepository';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';

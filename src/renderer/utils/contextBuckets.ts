@@ -2,7 +2,7 @@
 // Context Buckets - 将 context 来源分类为 4 个首屏 bucket
 // ============================================================================
 
-import type { Message } from '@shared/types';
+import type { Message } from '@shared/contract';
 
 export type ContextBucket = 'rules' | 'files' | 'web' | 'other';
 

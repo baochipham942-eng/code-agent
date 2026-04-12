@@ -3,12 +3,12 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import type { EvaluationMetric } from '../../../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../../../shared/contract/evaluation';
 import {
   DIMENSION_NAMES,
   DIMENSION_ICONS,
   DIMENSION_WEIGHTS,
-} from '../../../../shared/types/evaluation';
+} from '../../../../shared/contract/evaluation';
 
 type Verdict = 'PASS' | 'FAIL' | 'PARTIAL' | 'SKIP' | 'INFO';
 

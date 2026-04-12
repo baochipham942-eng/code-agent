@@ -4,7 +4,7 @@
 
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { ToolDefinition, ToolCall } from '../../../shared/types';
+import type { ToolDefinition, ToolCall } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';

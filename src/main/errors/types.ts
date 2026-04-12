@@ -3,9 +3,9 @@
 // ============================================================================
 
 // Re-export shared error types (single source of truth)
-export { ErrorCode, ErrorSeverity } from '../../shared/types/error';
-export type { SerializedError } from '../../shared/types/error';
-import { ErrorCode, ErrorSeverity, type SerializedError } from '../../shared/types/error';
+export { ErrorCode, ErrorSeverity } from '../../shared/contract/error';
+export type { SerializedError } from '../../shared/contract/error';
+import { ErrorCode, ErrorSeverity, type SerializedError } from '../../shared/contract/error';
 
 /**
  * Base error class for all Code Agent errors

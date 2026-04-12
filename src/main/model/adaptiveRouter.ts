@@ -4,7 +4,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage } from './types';
-import type { ModelConfig, ModelProvider } from '../../shared/types';
+import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import {
   DEFAULT_MODELS,
   MODEL_MAX_TOKENS,

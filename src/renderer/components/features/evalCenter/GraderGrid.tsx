@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React from 'react';
-import type { EvaluationMetric } from '../../../../shared/types/evaluation';
-import { V3_SCORING_DIMENSIONS, V3_INFO_DIMENSIONS } from '../../../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../../../shared/contract/evaluation';
+import { V3_SCORING_DIMENSIONS, V3_INFO_DIMENSIONS } from '../../../../shared/contract/evaluation';
 import { GraderCard } from './GraderCard';
 import { CollapsibleSection } from './CollapsibleSection';
 

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { TelemetryTimelineEvent } from '@shared/types/telemetry';
+import type { TelemetryTimelineEvent } from '@shared/contract/telemetry';
 import { Wrench, MessageSquare, AlertTriangle, Zap, Info, Play, Square } from 'lucide-react';
 
 interface TimelineViewProps {

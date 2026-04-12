@@ -8,8 +8,8 @@ import type {
   CoworkAgentRole,
   CoworkExecutionRules,
   CoworkTemplateId,
-} from '../../shared/types/cowork';
-import { COWORK_TEMPLATES, getCoworkTemplate } from '../../shared/types/cowork';
+} from '../../shared/contract/cowork';
+import { COWORK_TEMPLATES, getCoworkTemplate } from '../../shared/contract/cowork';
 import { getPredefinedAgent } from '../agent/agentDefinition';
 import { createLogger } from '../services/infra/logger';
 
@@ -316,4 +316,4 @@ export {
   COWORK_TEMPLATES,
   getCoworkTemplate,
   listCoworkTemplates,
-} from '../../shared/types/cowork';
+} from '../../shared/contract/cowork';

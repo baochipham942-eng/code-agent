@@ -10,7 +10,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import { getCaptureService } from '../services/captureService';
 import { getDocumentContextService } from '../context/documentContext/documentContextService';
 import { createLogger } from '../services/infra/logger';
-import type { CaptureRequest, CaptureSource } from '@shared/types/capture';
+import type { CaptureRequest, CaptureSource } from '@shared/contract/capture';
 
 const logger = createLogger('CaptureIPC');
 

@@ -4,7 +4,7 @@
 // 展示从工具结果中提取的引用源（文件行号、URL、单元格等）
 
 import React from 'react';
-import type { Citation } from '@shared/types/citation';
+import type { Citation } from '@shared/contract/citation';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode, copyPathToClipboard } from '../../utils/platform';
 import ipcService from '../../services/ipcService';

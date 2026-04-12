@@ -5,7 +5,7 @@
 import crypto from 'crypto';
 import { createLogger } from './infra/logger';
 import { getDatabase } from './core/databaseService';
-import type { CaptureItem, CaptureRequest, CaptureSearchResult, CaptureStats, CaptureSource } from '@shared/types/capture';
+import type { CaptureItem, CaptureRequest, CaptureSearchResult, CaptureStats, CaptureSource } from '@shared/contract/capture';
 
 const logger = createLogger('CaptureService');
 

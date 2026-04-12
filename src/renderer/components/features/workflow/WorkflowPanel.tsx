@@ -8,7 +8,7 @@ import { X, Workflow } from 'lucide-react';
 import { DAGViewer } from './DAGViewer';
 import { useDAGStore, useCurrentDAG, useDAGList } from '../../../stores/dagStore';
 import { DAG_CHANNELS } from '@shared/ipc/channels';
-import type { DAGVisualizationEvent } from '@shared/types/dagVisualization';
+import type { DAGVisualizationEvent } from '@shared/contract/dagVisualization';
 import ipcService from '../../../services/ipcService';
 
 interface WorkflowPanelProps {

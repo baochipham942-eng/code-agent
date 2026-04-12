@@ -13,7 +13,7 @@ import { GoalTracker } from './goalTracker';
 import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../tools/planning/taskStore';
 import { READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, type TaskProgressState } from './loopTypes';
-import type { Message } from '../../shared/types';
+import type { Message } from '../../shared/contract';
 
 const logger = createLogger('NudgeManager');
 

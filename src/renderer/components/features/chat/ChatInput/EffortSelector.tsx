@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Zap, ZapOff, Flame, Rocket } from 'lucide-react';
-import type { EffortLevel } from '../../../../../shared/types/agent';
+import type { EffortLevel } from '../../../../../shared/contract/agent';
 
 // ============================================================================
 // 配置

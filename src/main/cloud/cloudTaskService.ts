@@ -15,7 +15,7 @@ import type {
   TaskProgressEvent,
   CloudTaskStatus,
   EncryptedPayload,
-} from '../../shared/types/cloud';
+} from '../../shared/contract/cloud';
 import { createLogger } from '../services/infra/logger';
 import { CLOUD, TASK_SYNC } from '../../shared/constants';
 
@@ -687,7 +687,7 @@ export class CloudTaskService extends EventEmitter {
   /**
    * 获取同步状态
    */
-  getSyncState(): import('../../shared/types/cloud').TaskSyncState {
+  getSyncState(): import('../../shared/contract/cloud').TaskSyncState {
     const tasks = Array.from(this.localTasks.values());
     const pendingTasks = tasks.filter((t) => ['pending', 'queued'].includes(t.status));
     const failedTasks = tasks.filter((t) => t.status === 'failed');
@@ -707,13 +707,13 @@ export class CloudTaskService extends EventEmitter {
   /**
    * 获取执行统计
    */
-  async getStats(): Promise<import('../../shared/types/cloud').CloudExecutionStats | null> {
+  async getStats(): Promise<import('../../shared/contract/cloud').CloudExecutionStats | null> {
     const tasks = Array.from(this.localTasks.values());
     const completed = tasks.filter((t) => t.status === 'completed');
     const failed = tasks.filter((t) => t.status === 'failed');
 
     // 按类型分组统计
-    const byType: import('../../shared/types/cloud').CloudExecutionStats['byType'] = {
+    const byType: import('../../shared/contract/cloud').CloudExecutionStats['byType'] = {
       researcher: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
       analyzer: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
       writer: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
@@ -722,7 +722,7 @@ export class CloudTaskService extends EventEmitter {
     };
 
     // 按位置分组统计
-    const byLocation: import('../../shared/types/cloud').CloudExecutionStats['byLocation'] = {
+    const byLocation: import('../../shared/contract/cloud').CloudExecutionStats['byLocation'] = {
       local: { total: 0, completed: 0, failed: 0 },
       cloud: { total: 0, completed: 0, failed: 0 },
       hybrid: { total: 0, completed: 0, failed: 0 },

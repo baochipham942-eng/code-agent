@@ -11,7 +11,7 @@ import type {
   RoutingContext,
   RoutingResolution,
   AgentsConfigFile,
-} from '../../shared/types/agentRouting';
+} from '../../shared/contract/agentRouting';
 import { createLogger } from '../services/infra/logger';
 import { getAgentsConfigPath, resolvePathWithFallback } from '../config';
 

@@ -7,7 +7,7 @@ import type {
   OutcomeEvaluation,
   QualitySignals,
   UserIntentCategory,
-} from '../../shared/types/telemetry';
+} from '../../shared/contract/telemetry';
 
 // ----------------------------------------------------------------------------
 // Intent Classification (Rule-based, Phase 1)

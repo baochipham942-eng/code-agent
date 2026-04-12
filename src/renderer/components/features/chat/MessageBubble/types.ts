@@ -2,7 +2,7 @@
 // MessageBubble Types
 // ============================================================================
 
-import type { Message, ToolCall, MessageAttachment, AttachmentCategory } from '@shared/types';
+import type { Message, ToolCall, MessageAttachment, AttachmentCategory } from '@shared/contract';
 
 // Props types
 export interface MessageBubbleProps {
@@ -81,4 +81,4 @@ export interface AttachmentIconConfig {
 }
 
 // Re-export types from shared
-export type { Message, ToolCall, ToolResult, MessageAttachment, AttachmentCategory } from '@shared/types';
+export type { Message, ToolCall, ToolResult, MessageAttachment, AttachmentCategory } from '@shared/contract';

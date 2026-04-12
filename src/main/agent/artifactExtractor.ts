@@ -2,7 +2,7 @@
 // Artifact Extractor - 从消息内容中提取可视化产物
 // ============================================================================
 
-import type { Artifact } from '../../shared/types/message';
+import type { Artifact } from '../../shared/contract/message';
 
 let artifactCounter = 0;
 

@@ -10,7 +10,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { UpdateInfo } from '@shared/types';
+import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { isElectronMode } from '../../../utils/platform';
 import { SettingsSearch } from './SettingsSearch';

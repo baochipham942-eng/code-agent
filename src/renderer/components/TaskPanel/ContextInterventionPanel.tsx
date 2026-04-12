@@ -14,7 +14,7 @@ import type {
   ContextItemView,
   ContextInterventionAction,
   ContextSelectionMode,
-} from '@shared/types/contextView';
+} from '@shared/contract/contextView';
 
 const selectionLabels: Record<ContextSelectionMode, { label: string; tone: string }> = {
   default: { label: '默认', tone: 'border-white/20 bg-white/5 text-zinc-100' },

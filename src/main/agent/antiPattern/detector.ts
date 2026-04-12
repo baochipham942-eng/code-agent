@@ -2,7 +2,7 @@
 // Anti-Pattern Detector - Detect and prevent common loop patterns
 // ============================================================================
 
-import type { ToolCall } from '../../../shared/types';
+import type { ToolCall } from '../../../shared/contract';
 import type { AntiPatternState, FailedToolCallMatch, ToolFailureEntry } from '../loopTypes';
 import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
 import { cleanXmlResidues } from './cleanXml';

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { ObjectiveMetrics } from '@shared/types/sessionAnalytics';
+import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
 import { formatDuration } from '../../../../shared/utils/format';
 
 interface MetricStripProps {

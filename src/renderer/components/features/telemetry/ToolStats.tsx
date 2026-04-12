@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { TelemetryToolStat } from '@shared/types/telemetry';
+import type { TelemetryToolStat } from '@shared/contract/telemetry';
 import { CheckCircle, XCircle } from 'lucide-react';
 
 interface ToolStatsProps {

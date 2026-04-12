@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { PlanningState } from '../../shared/types';
+import type { PlanningState } from '../../shared/contract';
 import type { PlanningService } from '../planning';
 import { createLogger } from '../services/infra/logger';
 

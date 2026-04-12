@@ -7,8 +7,8 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAutoCompressor } from '../context/autoCompressor';
 import { estimateTokens } from '../context/tokenEstimator';
-import type { CompactResult } from '../../shared/types/contextHealth';
-import type { AgentApplicationService } from '../../shared/types/appService';
+import type { CompactResult } from '../../shared/contract/contextHealth';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { CompressedMessage } from '../context/tokenOptimizer';
 import type { TaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
@@ -111,7 +111,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
         // Summary message created by compactFrom — build a minimal Message
         return {
           id: `compact-summary-${Date.now()}`,
-          role: cm.role as import('../../shared/types').MessageRole,
+          role: cm.role as import('../../shared/contract').MessageRole,
           content: cm.content,
           timestamp: Date.now(),
         };

@@ -1,4 +1,4 @@
-import type { PlanningState } from '../../shared/types';
+import type { PlanningState } from '../../shared/contract';
 import { getMainWindow } from '../app/window';
 import { createLogger } from '../services/infra/logger';
 import type { PlanningService } from './planningService';

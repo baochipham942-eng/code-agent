@@ -14,7 +14,7 @@ import type {
   Message,
   ModelConfig,
   TodoItem,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import { createLogger } from './logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';

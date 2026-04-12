@@ -8,8 +8,8 @@ import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import type { TodoItem } from '@shared/types';
-import type { ContextHealthWarningLevel, CompressionStats } from '@shared/types/contextHealth';
+import type { TodoItem } from '@shared/contract';
+import type { ContextHealthWarningLevel, CompressionStats } from '@shared/contract/contextHealth';
 import { computeBucketSummary, extractContextItems, type BucketSummary, type ContextItem } from '../utils/contextBuckets';
 
 // ── 产物提取（复用 TaskMonitor 的逻辑，提取为独立函数）──

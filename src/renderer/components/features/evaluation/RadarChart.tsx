@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React from 'react';
-import type { EvaluationMetric } from '../../../../shared/types/evaluation';
-import { DIMENSION_NAMES } from '../../../../shared/types/evaluation';
+import type { EvaluationMetric } from '../../../../shared/contract/evaluation';
+import { DIMENSION_NAMES } from '../../../../shared/contract/evaluation';
 
 interface RadarChartProps {
   metrics: EvaluationMetric[];

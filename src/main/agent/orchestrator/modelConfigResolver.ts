@@ -2,7 +2,7 @@
 // Model Config Resolution - Provider/model selection logic
 // ============================================================================
 
-import type { ModelConfig, ModelProvider, PermissionRequest } from '../../../shared/types';
+import type { ModelConfig, ModelProvider, PermissionRequest } from '../../../shared/contract';
 import type { ConfigService } from '../../services/core/configService';
 import {
   DEFAULT_MODELS,

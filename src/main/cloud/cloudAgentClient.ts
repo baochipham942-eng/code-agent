@@ -7,7 +7,7 @@ import type {
   CloudAgentStatus,
   CloudTaskRequest,
   CloudTaskResponse,
-} from '../../shared/types';
+} from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { CLOUD } from '../../shared/constants';
 

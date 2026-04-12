@@ -4,7 +4,7 @@
 
 import { ModelRouter } from '../../model/modelRouter';
 import { createLogger } from '../../services/infra/logger';
-import type { ModelProvider } from '../../../shared/types';
+import type { ModelProvider } from '../../../shared/contract';
 import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('DynamicDescription');

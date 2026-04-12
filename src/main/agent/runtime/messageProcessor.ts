@@ -8,7 +8,7 @@ import type {
   AgentEvent,
   ToolCall,
   ToolResult,
-} from '../../../shared/types';
+} from '../../../shared/contract';
 import type { ModelResponse, AgentLoopConfig } from '../../agent/loopTypes';
 import {
   sanitizeToolResultsForHistory,
@@ -663,7 +663,7 @@ export class MessageProcessor {
         continue;
       }
       this.runFinalizer.processSkillActivation(
-        result.metadata.skillResult as import('../../../shared/types/agentSkill').SkillToolResult
+        result.metadata.skillResult as import('../../../shared/contract/agentSkill').SkillToolResult
       );
     }
   }

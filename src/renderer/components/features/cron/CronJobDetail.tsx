@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { CronJobDefinition } from '@shared/types';
+import type { CronJobDefinition } from '@shared/contract';
 import { Activity, Pencil, Play, Power, Trash2 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import {

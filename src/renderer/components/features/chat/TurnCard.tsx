@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useMemo } from 'react';
-import type { TraceTurn } from '@shared/types/trace';
+import type { TraceTurn } from '@shared/contract/trace';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator } from './StreamingIndicator';
 

@@ -5,7 +5,7 @@
 import type { AgentInterface } from './testRunner';
 import type { ToolExecutionRecord } from './types';
 import type { AgentLoop } from '../agent/agentLoop';
-import type { ModelProvider } from '../../shared/types';
+import type { ModelProvider } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 
@@ -281,7 +281,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       });
 
       // 3. Shared messages array (AgentLoop writes into it directly)
-      const messages: import('../../shared/types').Message[] = [];
+      const messages: import('../../shared/contract').Message[] = [];
 
       // 4. Create AgentLoop with correct event handlers
       this.currentSessionId = `test-${Date.now()}`;
@@ -347,7 +347,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         role: 'user',
         content: prompt,
         timestamp: Date.now(),
-      } as import('../../shared/types').Message);
+      } as import('../../shared/contract').Message);
 
       await loop.run(prompt);
 

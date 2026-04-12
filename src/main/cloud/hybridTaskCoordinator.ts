@@ -14,8 +14,8 @@ import type {
   TaskExecutionResult,
   CloudAgentType,
   TaskProgressEvent,
-} from '../../shared/types/cloud';
-import type { ModelConfig } from '../../shared/types';
+} from '../../shared/contract/cloud';
+import type { ModelConfig } from '../../shared/contract';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { CLOUD, TASK_ANALYSIS, RETRY } from '../../shared/constants';
 

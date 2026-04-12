@@ -15,7 +15,7 @@ import type {
   CronScheduleConfig,
   CronJobAction,
   CronServiceStats,
-} from '../../shared/types/cron';
+} from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';

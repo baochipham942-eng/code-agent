@@ -3,7 +3,7 @@
 import type { IpcMain } from '../platform';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { createLogger } from '../services/infra/logger';
-import type { FileCheckpoint } from '../../shared/types';
+import type { FileCheckpoint } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
 const logger = createLogger('CheckpointIPC');

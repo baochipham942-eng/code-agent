@@ -2,7 +2,7 @@
 // Parallel Execution Strategy - Tool execution parallelization logic
 // ============================================================================
 
-import type { ToolCall } from '../../../shared/types';
+import type { ToolCall } from '../../../shared/contract';
 import type { MCPToolAnnotations } from '../../mcp/types';
 import type { ToolClassification } from '../loopTypes';
 import { PARALLEL_SAFE_TOOLS, MAX_PARALLEL_TOOLS } from '../loopTypes';

@@ -8,7 +8,7 @@ import type {
   ModelCapability,
   ModelInfo,
   ModelProvider
-} from '../../shared/types';
+} from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';

@@ -12,7 +12,7 @@ import type {
   UploadDataRequest,
   StartTrainingRequest,
   InferenceRequest,
-} from '../../shared/types/lab';
+} from '../../shared/contract/lab';
 
 // ----------------------------------------------------------------------------
 // Public Registration

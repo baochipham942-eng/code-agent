@@ -5,7 +5,7 @@ import { createLogger } from '../services/infra/logger';
 import type {
   ContextProvenanceAction,
   ContextProvenanceCategory,
-} from '../../shared/types/contextView';
+} from '../../shared/contract/contextView';
 import type { CompressionCommit } from './compressionState';
 import type { SubagentContextAnnotation } from './subagentContextStore';
 

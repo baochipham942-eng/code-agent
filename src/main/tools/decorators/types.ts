@@ -2,7 +2,7 @@
 // Tool Decorator Types
 // ============================================================================
 
-import type { JSONSchema } from '../../../shared/types';
+import type { JSONSchema } from '../../../shared/contract';
 import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 // ----------------------------------------------------------------------------

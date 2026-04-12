@@ -24,8 +24,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { Message } from '@shared/types';
-import type { SwarmLaunchRequest } from '@shared/types/swarm';
+import type { Message } from '@shared/contract';
+import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import { formatDuration } from '../../../shared/utils/format';
 import {
   useSwarmStore,
@@ -43,7 +43,7 @@ import type {
   ContextInterventionAction,
   ContextProvenanceListEntry,
   ContextViewResponse,
-} from '@shared/types/contextView';
+} from '@shared/contract/contextView';
 
 const phaseMeta: Record<SwarmExecutionPhase, { label: string; className: string }> = {
   idle: { label: '空闲', className: 'bg-zinc-700/60 text-zinc-300' },

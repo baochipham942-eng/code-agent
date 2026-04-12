@@ -19,7 +19,7 @@ import type {
   SendMessageResult,
   ChannelCapabilities,
   ChannelAttachment,
-} from '../../../shared/types/channel';
+} from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('FeishuChannel');

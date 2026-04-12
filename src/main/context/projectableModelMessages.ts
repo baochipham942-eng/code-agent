@@ -2,8 +2,8 @@
 // Projectable model messages - shared model-input expansion for runtime + IPC
 // ============================================================================
 
-import type { Message, MessageAttachment, ToolCall } from '../../shared/types';
-import type { ContextInterventionSnapshot } from '../../shared/types/contextView';
+import type { Message, MessageAttachment, ToolCall } from '../../shared/contract';
+import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 import type { ModelMessage } from '../model/types';
 import { buildMultimodalContent, formatToolCallForHistory } from '../agent/messageHandling/converter';
 import type { ProjectableMessage } from './projectionEngine';

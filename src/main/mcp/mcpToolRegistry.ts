@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { ToolDefinition, ToolResult } from '../../shared/types';
+import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import { getToolSearchService } from '../tools/search';

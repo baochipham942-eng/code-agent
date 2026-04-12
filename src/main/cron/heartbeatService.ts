@@ -12,7 +12,7 @@ import type {
   HeartbeatStatus,
   HeartbeatCheck,
   HeartbeatExpectation,
-} from '../../shared/types/cron';
+} from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { notificationService } from '../services/infra/notificationService';
 import { getToolRegistry } from '../tools/toolRegistry';

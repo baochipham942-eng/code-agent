@@ -10,7 +10,7 @@ import {
   type SessionIndexEntry,
 } from './sessionPersistence';
 import { getAgentRegistry, type AgentInstance, type AgentDefinition } from './types';
-import type { Message } from '../../shared/types';
+import type { Message } from '../../shared/contract';
 import type { PermissionMode } from '../permissions/modes';
 
 const logger = createLogger('SessionResume');

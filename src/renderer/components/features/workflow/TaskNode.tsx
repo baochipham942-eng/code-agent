@@ -5,7 +5,7 @@
 
 import React, { memo, useMemo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { TaskStatus } from '../../../../shared/types/taskDAG';
+import type { TaskStatus } from '../../../../shared/contract/taskDAG';
 import {
   type TaskNodeData,
   TASK_STATUS_COLORS,
@@ -14,7 +14,7 @@ import {
   formatDuration,
   formatCost,
   getStatusAnimationClass,
-} from '../../../../shared/types/dagVisualization';
+} from '../../../../shared/contract/dagVisualization';
 
 // Re-export for use by other files
 export type { TaskNodeData };

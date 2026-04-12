@@ -8,7 +8,7 @@ import { createCLIAgent, CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
 import { cleanup, initializeCLIServices, buildCLIConfig } from '../bootstrap';
 import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse, SSEEvent } from '../types';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent } from '../../shared/contract';
 import { createLogger } from '../../main/services/infra/logger';
 
 const logger = createLogger('CLI-Serve');

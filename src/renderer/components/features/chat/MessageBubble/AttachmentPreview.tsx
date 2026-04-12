@@ -16,7 +16,7 @@ import {
   Sheet,
 } from 'lucide-react';
 import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
-import type { AttachmentCategory, MessageAttachment } from '@shared/types';
+import type { AttachmentCategory, MessageAttachment } from '@shared/contract';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';

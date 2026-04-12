@@ -2,7 +2,7 @@
 // 智谱 GLM Provider Implementation
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition, ModelInfo, ProviderConfig } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition, ModelInfo, ProviderConfig } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';

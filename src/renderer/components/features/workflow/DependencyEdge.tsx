@@ -10,7 +10,7 @@ import {
   getBezierPath,
   type Position,
 } from '@xyflow/react';
-import type { DependencyEdgeData } from '../../../../shared/types/dagVisualization';
+import type { DependencyEdgeData } from '../../../../shared/contract/dagVisualization';
 
 // Re-export for use by other files
 export type { DependencyEdgeData };

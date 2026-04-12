@@ -126,7 +126,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
             }));
             if (memMessages.length > 0) {
               logger.info('GET /api/sessions/:id — DB messages empty, falling back to in-memory cache', { sessionId, memCount: memMessages.length });
-              session.messages = memMessages as import('../../shared/types').Message[];
+              session.messages = memMessages as import('../../shared/contract').Message[];
             }
           }
           res.json({ success: true, data: session });

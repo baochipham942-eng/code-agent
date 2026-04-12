@@ -139,7 +139,7 @@ export interface UninstallResult {
 }
 
 // ----------------------------------------------------------------------------
-// IPC Types (canonical definitions in shared/types/marketplace.ts)
+// IPC Types (canonical definitions in shared/contract/marketplace.ts)
 // Re-exported here for backward compatibility with main/ imports
 // ----------------------------------------------------------------------------
 export type {
@@ -148,4 +148,4 @@ export type {
   InstalledPlugin,
   MarketplaceResult,
   PluginInstallResult,
-} from '../../../shared/types/marketplace';
+} from '../../../shared/contract/marketplace';

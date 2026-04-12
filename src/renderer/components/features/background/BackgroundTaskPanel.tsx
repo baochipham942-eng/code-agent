@@ -5,7 +5,7 @@
 import React from 'react';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { Play, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
-import type { BackgroundTaskInfo } from '@shared/types/sessionState';
+import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
 
 /**
  * 格式化持续时间

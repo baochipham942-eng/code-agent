@@ -5,8 +5,8 @@
 
 import { useCallback, useMemo } from 'react';
 import dagre from 'dagre';
-import type { TaskNode, DependencyEdge, DAGLayoutOptions } from '../../../../shared/types/dagVisualization';
-import { DEFAULT_LAYOUT_OPTIONS } from '../../../../shared/types/dagVisualization';
+import type { TaskNode, DependencyEdge, DAGLayoutOptions } from '../../../../shared/contract/dagVisualization';
+import { DEFAULT_LAYOUT_OPTIONS } from '../../../../shared/contract/dagVisualization';
 
 /**
  * 节点尺寸

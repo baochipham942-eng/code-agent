@@ -9,7 +9,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { CaptureCard } from './CaptureCard';
 import { CaptureDetail } from './CaptureDetail';
 import { CaptureAddDialog } from './CaptureAddDialog';
-import type { CaptureSource } from '@shared/types/capture';
+import type { CaptureSource } from '@shared/contract/capture';
 
 const SOURCE_FILTERS: Array<{ key: CaptureSource | 'all'; label: string; icon: React.ReactNode }> = [
   { key: 'all', label: '全部', icon: <BookOpen className="w-3.5 h-3.5" /> },

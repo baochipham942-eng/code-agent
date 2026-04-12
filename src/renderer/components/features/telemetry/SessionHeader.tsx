@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { TelemetrySession } from '@shared/types/telemetry';
+import type { TelemetrySession } from '@shared/contract/telemetry';
 import { Activity, Clock, Cpu, AlertTriangle, CheckCircle } from 'lucide-react';
 import { formatDuration } from '../../../../shared/utils/format';
 

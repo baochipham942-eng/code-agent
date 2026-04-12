@@ -8,7 +8,7 @@ import type {
   SessionTaskPriority,
   CreateTaskInput,
   UpdateTaskInput,
-} from '../../../shared/types/planning';
+} from '../../../shared/contract/planning';
 
 // Session-scoped task storage: Map<sessionId, Map<taskId, SessionTask>>
 const sessionTasks: Map<string, Map<string, SessionTask>> = new Map();

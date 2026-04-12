@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Check, HelpCircle } from 'lucide-react';
-import type { UserQuestionRequest, UserQuestionResponse } from '@shared/types';
+import type { UserQuestionRequest, UserQuestionResponse } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
 import { createLogger } from '../utils/logger';

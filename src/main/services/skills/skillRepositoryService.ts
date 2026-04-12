@@ -12,7 +12,7 @@ import type {
   SkillConfig,
   DownloadResult,
   UpdateResult,
-} from '@shared/types/skillRepository';
+} from '@shared/contract/skillRepository';
 import {
   downloadRepository,
   parseGitHubUrl,

@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { ParsedSkill, SkillSource } from '../../../shared/types/agentSkill';
+import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
 import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';

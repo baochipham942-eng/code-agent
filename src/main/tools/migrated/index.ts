@@ -868,17 +868,27 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   // P0-6.2 删 legacy 前必须把它们 wrap 进 protocol registry，让 isProtocolToolName
   // 覆盖所有 runtime 必须的 tool。
 
-  // file (3): Read / Write / Glob
+  // file (3): Read / Write / Glob (P0-6.3 Batch 1 — native ToolModule)
   registry.register(
     {
       name: 'Read',
-      description: 'Read file contents (supports offset/limit line ranges).',
+      description:
+        'Reads a file from the local filesystem. Supports offset/limit for line ranges.',
       inputSchema: {
         type: 'object',
         properties: {
-          file_path: { type: 'string' },
-          offset: { type: 'number' },
-          limit: { type: 'number' },
+          file_path: {
+            type: 'string',
+            description: 'Absolute path to the file. Supports ~ for home directory.',
+          },
+          offset: {
+            type: 'number',
+            description: 'Line number to start reading from (1-indexed). Default: 1.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of lines to read. Default: 2000.',
+          },
         },
         required: ['file_path'],
       },
@@ -887,17 +897,24 @@ export function registerMigratedTools(registry: ToolRegistry): void {
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./file/wrappers')).readModule,
+    async () => (await import('./file/read')).readModule,
   );
   registry.register(
     {
       name: 'Write',
-      description: 'Write content to a file (creates or overwrites).',
+      description:
+        'Writes a file to the local filesystem. Overwrites existing files; creates parent directories.',
       inputSchema: {
         type: 'object',
         properties: {
-          file_path: { type: 'string' },
-          content: { type: 'string' },
+          file_path: {
+            type: 'string',
+            description: 'Absolute path where the file will be created or overwritten.',
+          },
+          content: {
+            type: 'string',
+            description: 'The complete file content to write (replaces entire file).',
+          },
         },
         required: ['file_path', 'content'],
       },
@@ -906,17 +923,24 @@ export function registerMigratedTools(registry: ToolRegistry): void {
       readOnly: false,
       allowInPlanMode: false,
     },
-    async () => (await import('./file/wrappers')).writeModule,
+    async () => (await import('./file/write')).writeModule,
   );
   registry.register(
     {
       name: 'Glob',
-      description: 'Find files matching a glob pattern.',
+      description:
+        'Fast file pattern matching. Use to find files by name pattern (e.g. "**/*.ts").',
       inputSchema: {
         type: 'object',
         properties: {
-          pattern: { type: 'string' },
-          path: { type: 'string' },
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern (e.g. "**/*.ts", "src/**/*.tsx").',
+          },
+          path: {
+            type: 'string',
+            description: 'Directory to search in. Default: working directory.',
+          },
         },
         required: ['pattern'],
       },
@@ -925,7 +949,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./file/wrappers')).globModule,
+    async () => (await import('./file/glob')).globModule,
   );
 
   // shell (2): Bash / Grep

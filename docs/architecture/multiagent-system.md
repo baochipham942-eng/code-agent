@@ -1,10 +1,85 @@
 # 多 Agent 编排系统架构设计
 
-> ⚠️ **历史文档**：以下为早期设计稿。v0.16.55 的 Agent Team 实际实现请参见：
-> - [ARCHITECTURE.md → v0.16.55 新增模块](../ARCHITECTURE.md) — 整体架构
-> - [tool-system.md → 多 Agent 工具](./tool-system.md) — SpawnGuard + 工具清单
-> - [agent-core.md → 子代理上下文注入](./agent-core.md) — 异步通知机制
-> - 核心代码：`src/main/agent/spawnGuard.ts`, `src/main/tools/multiagent/`, `src/main/agent/activeAgentContext.ts`
+> 核心代码：
+> - `src/main/agent/autoAgentCoordinator.ts` — 唯一的多 Agent 协调器
+> - `src/main/agent/parallelAgentCoordinator.ts` — 并行 Agent 协调器（含 SharedContext）
+> - `src/main/agent/taskDag.ts` — DAG 依赖调度
+> - `src/main/tools/multiagent/` — spawnAgent 等工具
+
+## 0. 通信级别模型 (Communication Levels)
+
+借鉴 Hermes Agent 的 L0-L3 分级，对现有多 Agent 通信模式进行显式建模。
+选择依据：**按任务需求选最低够用的级别**，级别越低隔离越强、调试越容易。
+
+### 级别定义
+
+| Level | Name | 描述 | 适用场景 |
+|-------|------|------|----------|
+| **L0** | Isolated | 完全隔离，无数据共享，父 agent 手动中继 | 独立子任务（代码生成、文档生成） |
+| **L1** | Result Passing | 上游输出自动注入下游 context | 流水线式任务（分析→编码→测试） |
+| **L2** | Shared Context | 共享 KV 存储，coordinator 中转读写 | 并行任务需发现共享（并行搜索→合成） |
+| **L3** | Live Dialogue | Agent 间 turn-based 对话 | 辩论/交叉审查（未实现，P2 交叉验证是简化版） |
+
+### 代码映射
+
+```
+L0 — executeParallel() 中的并行 agent，各自独立执行
+L1 — executeSequential() 的 previousOutput 链式传递
+L2 — ParallelAgentCoordinator.SharedContext（findings/files/decisions KV）
+L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
+```
+
+### 策略与级别的对应
+
+| ExecutionStrategy | 默认级别 | 说明 |
+|-------------------|---------|------|
+| `direct` | L0 | 单 agent，无需通信 |
+| `sequential` | L1 | 上游结果自动注入下游 |
+| `parallel` | L0 + L2(可选) | 主 agent 串行(L1) → 并行 agent 隔离(L0)，可开 SharedContext 升到 L2 |
+
+### 设计原则
+
+1. **不做 L3** — Agent 间直接对话引入非确定性交互，调试成本极高。需要交叉验证时走 MCP P2
+2. **L2 仅 coordinator 中转** — 不暴露自由读写 KV，避免共享可变状态的一致性问题
+3. **升级需显式** — 默认走 L0/L1，只有 `enableSharedContext: true` 时才升到 L2
+
+## 0.1 节点级 Checkpoint（断点恢复）
+
+多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。
+Checkpoint 机制在每个节点成功后持久化结果，重新执行时自动跳过。
+
+### 机制
+
+| 项 | 说明 |
+|----|------|
+| **存储位置** | `~/.code-agent/coordination-checkpoints/<sessionId>.json` |
+| **存储粒度** | Agent 节点级（非工具调用级） |
+| **缓存条件** | 仅 `completed` 状态持久化，`failed` 不缓存以支持重试 |
+| **恢复条件** | sessionId 相同 + agentIds 列表完全匹配 |
+| **清理时机** | 全部 agent 成功后自动删除 checkpoint 文件 |
+
+### 流程
+
+```
+execute() 入口
+  ├── loadCheckpoint(sessionId, agentIds)
+  │   ├── 文件不存在 → createCheckpoint()（新执行）
+  │   ├── agentIds 不匹配 → deleteCheckpoint() + createCheckpoint()（执行计划变了）
+  │   └── 匹配 → 恢复（跳过已完成节点）
+  │
+  ├── executeSequential / executeParallel
+  │   ├── 每个 agent 执行前：检查 checkpoint.completedNodes[agentId]
+  │   │   ├── 命中 → skip + 使用缓存 output 作为 L1 传递
+  │   │   └── 未命中 → 正常执行
+  │   └── 每个 agent 成功后：saveCheckpoint()
+  │
+  └── aggregateResults
+      └── 全部成功 → deleteCheckpoint()
+```
+
+---
+
+> ⚠️ **以下为早期设计稿**（v0.16.55 前），保留作为历史参考。
 
 ## 1. 问题诊断
 

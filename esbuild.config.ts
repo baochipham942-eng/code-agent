@@ -55,6 +55,8 @@ interface BuildTarget {
   alias?: Record<string, string>;
   minify?: boolean;
   sourcemap?: boolean;
+  /** 注入到 bundle 最顶部的 JS 代码，先于一切 require 执行 */
+  banner?: string;
   postBuild?: () => void;
 }
 
@@ -69,6 +71,11 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       alias: ELECTRON_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
+      // 必须在任何 require 之前设置 CLI 模式，让 secureStorage.ts 跳过 keytar
+      // require（keytar 为 electron headers 编译，系统 Node 加载会 SIGSEGV）。
+      // cli/index.ts 源码的 process.env 赋值在 import 后才执行（import hoisting），
+      // 所以必须走 esbuild banner 注入。
+      banner: 'process.env.CODE_AGENT_CLI_MODE="true";process.env.DOTENV_CONFIG_QUIET="true";',
       postBuild() {
         // Inject shebang for npm bin
         const content = readFileSync('dist/cli/index.cjs', 'utf-8');
@@ -134,6 +141,7 @@ async function build(target: BuildTarget): Promise<void> {
     alias: target.alias,
     minify: target.minify,
     sourcemap: target.sourcemap,
+    banner: target.banner ? { js: target.banner } : undefined,
     logLevel: 'error',
   });
 

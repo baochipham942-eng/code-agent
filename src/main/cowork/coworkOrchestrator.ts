@@ -11,7 +11,7 @@ import type {
   CoworkAgentResult,
 } from '../../shared/contract/cowork';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../tools/toolResolver';
+import type { ToolResolver } from '../protocol/dispatch/toolResolver';
 import {
   resolveContract,
   mergeContractOverrides,

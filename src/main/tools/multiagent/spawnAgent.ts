@@ -9,12 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
-// NOTE: toolResolver is imported lazily inside functions to avoid a static
-// cycle: protocolRegistry → migrated/index → multiagent/wrappers → spawnAgent
-// → toolResolver → toolDefinitions/shadowAdapter → protocolRegistry.
-async function loadToolResolver() {
-  return (await import('../toolResolver')).getToolResolver();
-}
+import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getParallelAgentCoordinator,
   type AgentTask,
@@ -376,7 +371,7 @@ When NOT to spawn:
       // Build executor context
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
-        toolResolver: await loadToolResolver(),
+        toolResolver: context.resolver as ToolResolver,
         toolContext: context,
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
@@ -607,7 +602,7 @@ async function executeParallelAgents(
   // Initialize coordinator with context
   coordinator.initialize({
     modelConfig: context.modelConfig as ModelConfig,
-    toolResolver: await loadToolResolver(),
+    toolResolver: context.resolver as ToolResolver,
     toolContext: context,
   });
 

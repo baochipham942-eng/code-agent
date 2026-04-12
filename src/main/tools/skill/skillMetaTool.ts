@@ -11,7 +11,7 @@ import type {
 } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
-import { getToolResolver } from '../toolResolver';
+import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
@@ -150,7 +150,7 @@ async function handleForkExecution(
       },
       {
         modelConfig: context.modelConfig as ModelConfig,
-        toolResolver: getToolResolver(),
+        toolResolver: context.resolver as ToolResolver,
         toolContext: context,
       }
     );

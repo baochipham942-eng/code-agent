@@ -2,6 +2,7 @@
 // Tool Deny Rules — 全局工具黑名单
 //
 // 原属 toolRegistry.ts（legacy 聚合入口），P0-6.2 抽出为独立模块。
+// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录。
 // Registry 不应承担跨服务过滤职责：deny rules 的来源是 config/policy 层，
 // registry 的责任只是列 schema + 解析 handler。
 //
@@ -10,7 +11,7 @@
 // 模式支持精确名或前缀通配（如 "mcp__slack__*"）。
 // ============================================================================
 
-import type { ToolDefinition } from '../../shared/contract';
+import type { ToolDefinition } from '../../../shared/contract';
 
 export interface DenyRule {
   /** Tool name pattern (exact or prefix with *) */

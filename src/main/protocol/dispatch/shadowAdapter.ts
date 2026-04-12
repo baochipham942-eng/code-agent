@@ -1,21 +1,21 @@
 // ============================================================================
 // Protocol Adapter — 旧 ToolContext → protocol ToolContext 的桥接 + 执行入口
 //
-// 历史：原为 shadow-compare 适配层（P0-5 A 阶段），现 shadow 机制已退役，
-// 仅保留 protocol 执行入口（executePocToolViaProtocol）。本文件将在
-// Step 5 重命名为 protocolAdapter.ts。
+// 历史：原为 shadow-compare 适配层（P0-5 A 阶段），shadow 机制已退役，
+// 仅保留 protocol 执行入口（executePocToolViaProtocol）。
+// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
 // ============================================================================
 
-import { createLogger } from '../services/infra/logger';
+import { createLogger } from '../../services/infra/logger';
 import type {
   ToolContext as ProtocolToolContext,
   CanUseToolFn,
   CanUseToolResult,
   FileReadCache,
-} from '../protocol/tools';
-import type { AgentEvent } from '../protocol/events';
-import type { ToolContext as LegacyToolContext, ToolExecutionResult } from './types';
-import { getProtocolRegistry } from './protocolRegistry';
+} from '../tools';
+import type { AgentEvent } from '../events';
+import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../../tools/types';
+import { getProtocolRegistry } from '../../tools/protocolRegistry';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存
@@ -44,6 +44,12 @@ export interface ProtocolContextInput {
   workingDirectory: string;
   abortSignal?: AbortSignal;
   legacyCtx: LegacyToolContext;
+  /**
+   * 跨工具调度 resolver。调用方（例如 ProtocolToolResolver.execute）注入，
+   * 避免 shadowAdapter 反向 import toolResolver 形成静态 cycle。
+   * 外部独立调用 executePocToolViaProtocol 不需要 resolver（无跨工具调度场景）。
+   */
+  resolver?: unknown;
 }
 
 /** 从 legacy ToolContext 构造 protocol ToolContext，用于 executePocToolViaProtocol */
@@ -101,6 +107,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     hookManager: legacy?.hookManager,
     planningService: legacy?.planningService,
     modelConfig: legacy?.modelConfig,
+    resolver: input.resolver ?? (legacy?.resolver as unknown),
   };
 }
 

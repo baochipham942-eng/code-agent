@@ -39,7 +39,7 @@ import {
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
   getDeferredToolsSummary,
-} from '../../tools/toolDefinitions';
+} from '../../protocol/dispatch/toolDefinitions';
 
 // Import refactored modules
 import type {

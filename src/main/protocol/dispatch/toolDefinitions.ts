@@ -3,9 +3,10 @@
 //
 // 原属 toolRegistry.ts 的 getCoreToolDefinitions / getLoadedDeferredToolDefinitions
 // / getDeferredToolsSummary / cloud meta 合并，P0-6.2 抽出为独立模块。
+// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
 //
 // 职责定位：
-//   - protocol registry 只管 schema + handler 解析（registry.ts / protocolRegistry.ts）
+//   - protocol registry 只管 schema + handler 解析（tools/registry.ts / tools/protocolRegistry.ts）
 //   - 业务层（本文件）负责把 protocol schema 映射成 ToolDefinition 并合并 cloud meta
 //   - contextAssembly 消费的是本文件导出的自由函数，不再穿透 ctx.toolRegistry
 //
@@ -15,11 +16,11 @@
 //   - getToolSearchService() → 延迟加载已解锁的工具名
 // ============================================================================
 
-import type { ToolDefinition } from '../../shared/contract';
-import type { ToolSchema, PermissionLevel } from '../protocol/tools';
-import { getProtocolRegistry } from './protocolRegistry';
-import { getCloudConfigService } from '../services/cloud';
-import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from './search';
+import type { ToolDefinition } from '../../../shared/contract';
+import type { ToolSchema, PermissionLevel } from '../tools';
+import { getProtocolRegistry } from '../../tools/protocolRegistry';
+import { getCloudConfigService } from '../../services/cloud';
+import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../../tools/search';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 

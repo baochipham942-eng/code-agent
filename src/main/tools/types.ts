@@ -76,6 +76,18 @@ export interface ToolContext {
 
   /** HookManager 引用（用于 subagent/permission 事件触发） */
   hookManager?: import('../hooks/hookManager').HookManager;
+
+  // ============================================================================
+  // 跨工具调度 / subagent spawn
+  // ============================================================================
+
+  /**
+   * ToolResolver 引用。工具内需要调度兄弟工具（DocEdit → ppt_edit）或 spawn
+   * subagent 时，用 ctx.resolver 而不是 import 单例，避免 tools/* 反向静态引用
+   * protocol/dispatch/* 形成静态闭环。使用点 cast：
+   * `(ctx.resolver as import('../protocol/dispatch/toolResolver').ToolResolver).execute(...)`
+   */
+  resolver?: unknown;
 }
 
 export interface PermissionRequestData {

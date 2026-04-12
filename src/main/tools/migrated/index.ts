@@ -137,4 +137,32 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     },
     async () => (await import('./shell/taskOutput')).taskOutputModule,
   );
+
+  // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
+  registry.register(
+    {
+      name: 'Process',
+      description: 'Unified process management: list/poll/log/write/submit/kill/output background tasks and PTY sessions.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['list', 'poll', 'log', 'write', 'submit', 'kill', 'output'] },
+          filter: { type: 'string', enum: ['all', 'running', 'completed', 'failed', 'pty', 'background'] },
+          session_id: { type: 'string' },
+          task_id: { type: 'string' },
+          block: { type: 'boolean' },
+          timeout: { type: 'number' },
+          tail: { type: 'number' },
+          data: { type: 'string' },
+          input: { type: 'string' },
+        },
+        required: ['action'],
+      },
+      category: 'shell',
+      permissionLevel: 'execute',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./shell/process')).processModule,
+  );
 }

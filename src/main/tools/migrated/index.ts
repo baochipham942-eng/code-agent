@@ -974,45 +974,49 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./shell/wrappers')).grepModule,
   );
 
-  // lightMemory (2): MemoryRead / MemoryWrite
+  // lightMemory (2): MemoryRead / MemoryWrite (P0-6.3 Batch 3 — native ToolModule)
   registry.register(
     {
       name: 'MemoryRead',
-      description: 'Read from lightMemory store (file-as-memory).',
+      description:
+        'Read a memory detail file from the persistent file-based memory system.',
       inputSchema: {
         type: 'object',
         properties: {
-          scope: { type: 'string' },
-          key: { type: 'string' },
+          filename: { type: 'string' },
         },
-        required: [],
+        required: ['filename'],
       },
       category: 'fs',
       permissionLevel: 'read',
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./lightMemory/wrappers')).memoryReadModule,
+    async () => (await import('./lightMemory/memoryRead')).memoryReadModule,
   );
   registry.register(
     {
       name: 'MemoryWrite',
-      description: 'Write to lightMemory store (file-as-memory).',
+      description:
+        'Write, update, or delete a memory file; auto-maintains INDEX.md.',
       inputSchema: {
         type: 'object',
         properties: {
-          scope: { type: 'string' },
-          key: { type: 'string' },
+          action: { type: 'string', enum: ['write', 'delete'] },
+          filename: { type: 'string' },
+          name: { type: 'string' },
+          description: { type: 'string' },
+          type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
           content: { type: 'string' },
         },
-        required: [],
+        required: ['action', 'filename'],
       },
       category: 'fs',
       permissionLevel: 'write',
       readOnly: false,
       allowInPlanMode: true,
     },
-    async () => (await import('./lightMemory/wrappers')).memoryWriteModule,
+    async () => (await import('./lightMemory/memoryWrite')).memoryWriteModule,
   );
 
   // network (2): ppt_generate / ppt_edit

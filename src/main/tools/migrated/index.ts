@@ -688,16 +688,56 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/wrappers')).planModule,
   );
   registry.register(
-    { name: 'PlanMode', description: 'Plan mode toggle facade (enter/exit/status).', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).planModeModule,
+    {
+      name: 'PlanMode',
+      description: 'Plan mode toggle facade (enter/exit).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['enter', 'exit'] },
+          reason: { type: 'string' },
+          plan: { type: 'string' },
+        },
+        required: ['action'],
+      },
+      category: 'planning',
+      permissionLevel: 'write',
+      allowInPlanMode: true,
+    },
+    async () => (await import('./planning/planModeFacade')).planModeFacadeModule,
   );
   registry.register(
-    { name: 'enter_plan_mode', description: 'Enter plan mode (read-only tools allowed).', inputSchema: minSchema(), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).enterPlanModeModule,
+    {
+      name: 'enter_plan_mode',
+      description: 'Enter plan mode (read-only tools allowed).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string' },
+        },
+      },
+      category: 'planning',
+      permissionLevel: 'write',
+      allowInPlanMode: true,
+    },
+    async () => (await import('./planning/enterPlanMode')).enterPlanModeModule,
   );
   registry.register(
-    { name: 'exit_plan_mode', description: 'Exit plan mode and resume normal execution.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).exitPlanModeModule,
+    {
+      name: 'exit_plan_mode',
+      description: 'Exit plan mode and resume normal execution.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          plan: { type: 'string' },
+        },
+        required: ['plan'],
+      },
+      category: 'planning',
+      permissionLevel: 'write',
+      allowInPlanMode: true,
+    },
+    async () => (await import('./planning/exitPlanMode')).exitPlanModeModule,
   );
   registry.register(
     { name: 'task_list', description: 'List all session todos.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },

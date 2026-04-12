@@ -147,7 +147,10 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(active).toBe(false);
   });
 
-  it('legacy 无 setPlanMode → planMode 为 undefined', () => {
+  it('legacy 无 setPlanMode → 返回 no-op planMode controller', () => {
+    // Batch B1 (P0-6.3) 把 plan-mode 工具改成 native ToolModule 后，
+    // shadowAdapter 在 legacy ctx 没有 isPlanMode/setPlanMode 时也会提供
+    // 一个 no-op controller，让 CLI/测试场景下 native 工具能正常跑通。
     const legacy = {
       workingDirectory: '/tmp',
       requestPermission: async () => true,
@@ -156,7 +159,10 @@ describe('protocolAdapter — buildProtocolContext', () => {
       workingDirectory: '/tmp',
       legacyCtx: legacy,
     });
-    expect(ctx.planMode).toBeUndefined();
+    expect(ctx.planMode).toBeDefined();
+    expect(ctx.planMode!.isActive()).toBe(false);
+    expect(() => ctx.planMode!.enter('noop')).not.toThrow();
+    expect(() => ctx.planMode!.exit('noop')).not.toThrow();
   });
 
   it('emit 把 AgentEvent 透传到 legacy emitEvent', () => {

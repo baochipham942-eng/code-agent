@@ -9,8 +9,7 @@ export { confirmActionTool } from './confirmAction';
 export { planReadTool } from './planRead';
 export { planUpdateTool } from './planUpdate';
 export { planRecoverRecentWorkTool } from './planRecoverRecentWork';
-export { enterPlanModeTool } from './enterPlanMode';
-export { exitPlanModeTool } from './exitPlanMode';
+// enter_plan_mode / exit_plan_mode 已迁移到 src/main/tools/migrated/planning/
 export { findingsWriteTool } from './findingsWrite';
 
 // Task API (Claude Code 2.x compatible)
@@ -25,4 +24,4 @@ export { listTasks, getIncompleteTasks, clearTasks } from '../../services/planni
 // Unified tools (Phase 2)
 export { TaskManagerTool } from './TaskManagerTool';
 export { PlanTool } from './PlanTool';
-export { PlanModeTool } from './PlanModeTool';
+// PlanModeTool 已迁移到 src/main/tools/migrated/planning/planModeFacade.ts

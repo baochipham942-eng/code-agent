@@ -12,6 +12,7 @@ import type {
   CanUseToolFn,
   CanUseToolResult,
   FileReadCache,
+  PlanModeController,
 } from '../tools';
 import type { AgentEvent } from '../events';
 import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../../tools/types';
@@ -80,13 +81,14 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   const legacyIsPlanMode = legacy?.isPlanMode as (() => boolean) | undefined;
   const legacySetPlanMode = legacy?.setPlanMode as ((active: boolean) => void) | undefined;
-  const planMode = (legacyIsPlanMode || legacySetPlanMode)
-    ? {
-        isActive: () => (legacyIsPlanMode ? legacyIsPlanMode() : false),
-        enter: (_reason?: string) => legacySetPlanMode?.(true),
-        exit: (_reason?: string) => legacySetPlanMode?.(false),
-      }
-    : undefined;
+  // 始终提供一个 controller —— 即便 legacy ctx 没有 setPlanMode/isPlanMode
+  // （CLI exec-tool / 测试 harness 等场景），返回 no-op controller 以便
+  // native plan-mode 工具至少能完成主流程并给模型返回 markdown 输出。
+  const planMode: PlanModeController = {
+    isActive: () => (legacyIsPlanMode ? legacyIsPlanMode() : false),
+    enter: (_reason?: string) => legacySetPlanMode?.(true),
+    exit: (_reason?: string) => legacySetPlanMode?.(false),
+  };
 
   return {
     sessionId: input.sessionId ?? 'protocol-unknown',

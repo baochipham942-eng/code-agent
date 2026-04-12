@@ -903,3 +903,48 @@ useEffect(() => {
 **修复**: 在所有应用分组之上添加独立的「录音记录」卡片，不依赖应用分类
 
 **通用规则**: 新功能的 UI 展示路径不应仅嵌套在已有分类逻辑中。需要独立的展示入口，确保所有场景可见
+
+---
+
+## CLI keytar 段错误 (2026-04-12, 已修)
+
+**症状**: `node dist/cli/index.cjs list-tools` 或 `exec-tool <name>` 直接 SIGSEGV (exit 139)，stdout/stderr 均空
+
+**根因**: ES imports hoisting 经典坑
+- `src/cli/index.ts` 第 7 行 `process.env.CODE_AGENT_CLI_MODE = 'true'`（源码层面在 import 之前）
+- `src/main/services/core/secureStorage.ts` 有守卫 `if (!process.env.CODE_AGENT_CLI_MODE) { require('keytar'); }`
+- 但 esbuild 打包后，整个模块图初始化在主模块 body 之前完成——keytar require 在 bundle line 163，env 赋值在 line 10622
+- keytar 是 electron headers 编译的 native addon，系统 Node.js 加载会 SIGSEGV（非 JS 异常，try-catch 无法捕获）
+
+**修复**: `esbuild.config.ts` 的 CLI target 加 `banner` 字段，注入到 bundle 最顶部：
+
+```ts
+banner: 'process.env.CODE_AGENT_CLI_MODE="true";process.env.DOTENV_CONFIG_QUIET="true";'
+```
+
+banner 比任何 require 都早执行，确保 secureStorage 守卫生效。
+
+**通用规则**: 需要在 CJS bundle 最顶部强制先于 require 执行的代码（env 设置、polyfill 注册等），必须走 esbuild `banner.js` 注入，不能靠源码层面的"放在 import 之上"——ES imports 会被 hoisting 提前。
+
+**验证**:
+```bash
+npm run build:cli
+head -2 dist/cli/index.cjs   # 第 2 行应看到 banner 内容
+node dist/cli/index.cjs list-tools > /dev/null; echo $?   # EXIT=0
+```
+
+---
+
+## P0-5 Shadow Compare 首批工具迁移发现 (2026-04-12)
+
+`TOOL_PROTOCOL_SHADOW=1` 接入 6 个工具（Read/Bash/WebSearch/Glob/Grep/WebFetch）后，shadow diff 暴露出的迁移待办：
+
+1. **输出形态差异（共性）**：所有 POC 工具返回结构化对象（`{files,count}` / `{matches,count}` / `{stdout,exitCode}`），旧工具返回 `\n`-joined 字符串。生产迁移时 POC 需补 `toString()` 包装层或 canonicalizer，确保 LLM 看到的格式一致。
+
+2. **Grep ripgrep 路径**：旧 Grep `findRgBinary()` 包含 5 个候选路径（含 Claude Code vendored rg）。POC 第一版只硬编码 3 个，跑 shadow 立刻 RG_MISSING。POC 改成系统 `grep -rn` fallback 后通过——通用规则：迁移前必须 grep 旧 tool 的所有 fallback 分支。
+
+3. **WebFetch 的 PascalCase / snake_case 接口分裂**：项目同时存在 `webFetch.ts`（name=`web_fetch`，prompt-based）和 `WebFetchUnifiedTool.ts`（name=`WebFetch`，action-based）。CLI `exec-tool WebFetch` 走的是 unified 那个，参数不兼容 prompt-based 调用。SHADOW_TOOL_MAP 同时映射两个名字到 `WebFetchPoc` 是 OK 的，但生产迁移时需要决定 POC 对齐哪一个，或合并这两个 tool。
+
+4. **副作用类工具的 shadow 设计未定**：Write/Edit 直接跑 shadow 会重复改文件。计划用 dry-run 模式（POC Write 只验证 args + 落 staging file，对比内容不写主路径），但需要先和 ctx.fileCache 的语义对齐再实现。
+
+**通用规则**：shadow compare 不要求 outputMatch=true，要求的是 legacy 和 shadow 都有结果落盘——`outputMatch=false` 是预期信号，告诉迁移时 POC 还差什么。把 `data/debug/tool-shadow-diff.jsonl` 当 migration backlog 看。

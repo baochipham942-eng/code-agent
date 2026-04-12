@@ -521,6 +521,108 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./connectors/wrappers')).calendarDeleteEventModule,
   );
 
+  // ── batch 6: multiagent/ wrapper（9 个，验证 ctx.legacyToolRegistry/modelConfig）─
+  const minimalMASchema = (props: Record<string, { type: string }>, required: string[] = []) => ({
+    type: 'object' as const,
+    properties: props,
+    required,
+  });
+
+  registry.register(
+    {
+      name: 'Task',
+      description: 'Spawn a sub-agent to handle a focused task with its own tool loop.',
+      inputSchema: minimalMASchema({ description: { type: 'string' }, prompt: { type: 'string' } }, ['description', 'prompt']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).taskModule,
+  );
+  registry.register(
+    {
+      name: 'teammate',
+      description: 'Send a message to a named teammate agent in the active swarm.',
+      inputSchema: minimalMASchema({ to: { type: 'string' }, message: { type: 'string' } }, ['to', 'message']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).teammateModule,
+  );
+  registry.register(
+    {
+      name: 'spawn_agent',
+      description: 'Spawn a long-running background agent (CLI subprocess).',
+      inputSchema: minimalMASchema({ command: { type: 'string' } }, ['command']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).spawnAgentModule,
+  );
+  registry.register(
+    {
+      name: 'wait_agent',
+      description: 'Wait for a spawned agent to complete and return its output.',
+      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
+      category: 'multiagent',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./multiagent/wrappers')).waitAgentModule,
+  );
+  registry.register(
+    {
+      name: 'close_agent',
+      description: 'Close a spawned agent and clean up its resources.',
+      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).closeAgentModule,
+  );
+  registry.register(
+    {
+      name: 'send_input',
+      description: 'Send input to a running spawned agent.',
+      inputSchema: minimalMASchema({ agent_id: { type: 'string' }, input: { type: 'string' } }, ['agent_id', 'input']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).sendInputModule,
+  );
+  registry.register(
+    {
+      name: 'agent_message',
+      description: 'Send a structured message between agents in a swarm.',
+      inputSchema: minimalMASchema({ to: { type: 'string' }, payload: { type: 'object' } }, ['to', 'payload']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).agentMessageModule,
+  );
+  registry.register(
+    {
+      name: 'workflow_orchestrate',
+      description: 'Run a multi-step workflow across agents (DAG orchestration).',
+      inputSchema: minimalMASchema({ workflow: { type: 'object' } }, ['workflow']),
+      category: 'multiagent',
+      permissionLevel: 'execute',
+    },
+    async () => (await import('./multiagent/wrappers')).workflowOrchestrateModule,
+  );
+  registry.register(
+    {
+      name: 'plan_review',
+      description: 'Review a plan or proposal from another agent before execution.',
+      inputSchema: minimalMASchema({ plan: { type: 'string' } }, ['plan']),
+      category: 'multiagent',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./multiagent/wrappers')).planReviewModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

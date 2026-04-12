@@ -127,6 +127,62 @@ export default tseslint.config(
     },
   },
   {
+    // P0-6 Gate: legacy tool category dirs 只能被 tools/migrated/ 内部 import
+    // 背景：P0-5 完成 protocol registry 100% 迁移后，legacy tool 源文件仅作为
+    // migrated/<category>/wrappers.ts 的委托目标保留。任何非 migrated/ 的代码路径
+    // 都不应直接 import 这些 legacy 实现，必须通过 protocol registry 走。
+    // 详情见 src/main/tools/LEGACY.md。
+    files: ['src/main/**/*.ts'],
+    ignores: [
+      // migrated wrappers 合法引用 legacy 实现
+      'src/main/tools/migrated/**',
+      // legacy tool 目录内部（同 category 或跨 category）允许相互引用
+      'src/main/tools/file/**',
+      'src/main/tools/shell/**',
+      'src/main/tools/search/**',
+      'src/main/tools/skill/**',
+      'src/main/tools/lsp/**',
+      'src/main/tools/planning/**',
+      'src/main/tools/network/**',
+      'src/main/tools/document/**',
+      'src/main/tools/excel/**',
+      'src/main/tools/mcp/**',
+      'src/main/tools/multiagent/**',
+      'src/main/tools/connectors/**',
+      'src/main/tools/vision/**',
+      // legacy 聚合入口（计划在 P0-6.2 删除）
+      'src/main/tools/toolRegistry.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/tools/file/**',
+                '**/tools/shell/**',
+                '**/tools/search/**',
+                '**/tools/skill/**',
+                '**/tools/lsp/**',
+                '**/tools/planning/**',
+                '**/tools/network/**',
+                '**/tools/document/**',
+                '**/tools/excel/**',
+                '**/tools/mcp/**',
+                '**/tools/multiagent/**',
+                '**/tools/connectors/**',
+                '**/tools/vision/**',
+              ],
+              message:
+                '禁止直接 import legacy tool 实现。所有 tool 请通过 protocol registry 访问（src/main/tools/migrated/<category>/ 下的 wrapper），详见 src/main/tools/LEGACY.md',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // protocol 层严禁反向依赖 agent/tools/services/ipc/context
     // 参考 Codex codex-protocol crate 的约束：protocol 只能被别人依赖，不能依赖别人
     // 规则见 src/main/protocol/README.md

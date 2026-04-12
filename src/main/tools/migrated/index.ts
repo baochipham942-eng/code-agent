@@ -397,6 +397,130 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./vision/wrappers')).guiAgentModule,
   );
 
+  // ── batch 5: connectors/ wrapper（11 个 mail/reminders/calendar）─────────
+  const minimalConnSchema = (props: Record<string, { type: string }>) => ({
+    type: 'object' as const,
+    properties: props,
+    required: [] as string[],
+  });
+
+  registry.register(
+    {
+      name: 'mail',
+      description: 'List/search macOS Mail messages.',
+      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./connectors/wrappers')).mailModule,
+  );
+  registry.register(
+    {
+      name: 'mail_send',
+      description: 'Send a mail message via macOS Mail.app.',
+      inputSchema: minimalConnSchema({ to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).mailSendModule,
+  );
+  registry.register(
+    {
+      name: 'mail_draft',
+      description: 'Create a mail draft via macOS Mail.app.',
+      inputSchema: minimalConnSchema({ to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).mailDraftModule,
+  );
+  registry.register(
+    {
+      name: 'reminders',
+      description: 'List macOS Reminders items.',
+      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./connectors/wrappers')).remindersModule,
+  );
+  registry.register(
+    {
+      name: 'reminders_create',
+      description: 'Create a new macOS Reminders item.',
+      inputSchema: minimalConnSchema({ title: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).remindersCreateModule,
+  );
+  registry.register(
+    {
+      name: 'reminders_update',
+      description: 'Update an existing macOS Reminders item.',
+      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).remindersUpdateModule,
+  );
+  registry.register(
+    {
+      name: 'reminders_delete',
+      description: 'Delete a macOS Reminders item.',
+      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).remindersDeleteModule,
+  );
+  registry.register(
+    {
+      name: 'calendar',
+      description: 'List macOS Calendar events.',
+      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./connectors/wrappers')).calendarModule,
+  );
+  registry.register(
+    {
+      name: 'calendar_create_event',
+      description: 'Create a new macOS Calendar event.',
+      inputSchema: minimalConnSchema({ title: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).calendarCreateEventModule,
+  );
+  registry.register(
+    {
+      name: 'calendar_update_event',
+      description: 'Update an existing macOS Calendar event.',
+      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).calendarUpdateEventModule,
+  );
+  registry.register(
+    {
+      name: 'calendar_delete_event',
+      description: 'Delete a macOS Calendar event.',
+      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      category: 'mcp',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./connectors/wrappers')).calendarDeleteEventModule,
+  );
+
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
     {

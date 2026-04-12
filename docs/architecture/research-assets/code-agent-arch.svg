@@ -1,0 +1,284 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" font-family="'SF Pro Display', 'Helvetica Neue', sans-serif">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+      <path d="M0,0 L6,2 L0,4" fill="#475569"/>
+    </marker>
+    <marker id="arrow-heavy" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto">
+      <path d="M0,0 L8,2.5 L0,5" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-cycle" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+      <path d="M0,0 L6,2 L0,4" fill="#f59e0b"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="900" fill="url(#bg)" rx="12"/>
+
+  <!-- Title -->
+  <text x="600" y="40" text-anchor="middle" fill="#f8fafc" font-size="20" font-weight="700">Code Agent — 模块依赖架构图</text>
+  <text x="600" y="60" text-anchor="middle" fill="#64748b" font-size="12">706 modules · 2076 edges · madge scan 2026-04-12</text>
+
+  <!-- Layer labels -->
+  <text x="28" y="110" fill="#475569" font-size="11" font-weight="600" transform="rotate(-90,28,110)" text-anchor="end">INTERFACE</text>
+  <text x="28" y="340" fill="#475569" font-size="11" font-weight="600" transform="rotate(-90,28,340)" text-anchor="end">CORE</text>
+  <text x="28" y="570" fill="#475569" font-size="11" font-weight="600" transform="rotate(-90,28,570)" text-anchor="end">SUPPORT</text>
+  <text x="28" y="770" fill="#475569" font-size="11" font-weight="600" transform="rotate(-90,28,770)" text-anchor="end">INFRA</text>
+
+  <!-- Layer dividers -->
+  <line x1="45" y1="165" x2="1170" y2="165" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <line x1="45" y1="400" x2="1170" y2="400" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <line x1="45" y1="630" x2="1170" y2="630" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- ==================== INTERFACE LAYER ==================== -->
+
+  <!-- ipc -->
+  <rect x="200" y="85" width="140" height="60" rx="10" fill="#7c3aed" opacity="0.85" filter="url(#shadow)"/>
+  <text x="270" y="112" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">ipc</text>
+  <text x="270" y="130" text-anchor="middle" fill="#c4b5fd" font-size="11">40 files</text>
+
+  <!-- app -->
+  <rect x="400" y="85" width="120" height="60" rx="10" fill="#7c3aed" opacity="0.65" filter="url(#shadow)"/>
+  <text x="460" y="112" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">app</text>
+  <text x="460" y="130" text-anchor="middle" fill="#c4b5fd" font-size="11">7 files</text>
+
+  <!-- channels -->
+  <rect x="580" y="85" width="120" height="60" rx="10" fill="#7c3aed" opacity="0.55" filter="url(#shadow)"/>
+  <text x="640" y="112" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">channels</text>
+  <text x="640" y="130" text-anchor="middle" fill="#c4b5fd" font-size="11">9 files</text>
+
+  <!-- desktop -->
+  <rect x="760" y="85" width="120" height="60" rx="10" fill="#7c3aed" opacity="0.55" filter="url(#shadow)"/>
+  <text x="820" y="112" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">desktop</text>
+  <text x="820" y="130" text-anchor="middle" fill="#c4b5fd" font-size="11">4 files</text>
+
+  <!-- ==================== CORE LAYER ==================== -->
+
+  <!-- agent (BIGGEST core node) -->
+  <rect x="120" y="220" width="180" height="75" rx="12" fill="#ef4444" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="120" y="220" width="180" height="75" rx="12" fill="none" stroke="#fca5a5" stroke-width="2"/>
+  <text x="210" y="250" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">agent</text>
+  <text x="210" y="270" text-anchor="middle" fill="#fca5a5" font-size="11">77 files · fan-out: highest</text>
+  <text x="210" y="285" text-anchor="middle" fill="#fca5a5" font-size="10">agentLoop · contextAssembly</text>
+
+  <!-- tools -->
+  <rect x="370" y="220" width="170" height="75" rx="12" fill="#06b6d4" opacity="0.85" filter="url(#shadow)"/>
+  <rect x="370" y="220" width="170" height="75" rx="12" fill="none" stroke="#67e8f9" stroke-width="2"/>
+  <text x="455" y="250" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">tools</text>
+  <text x="455" y="270" text-anchor="middle" fill="#a5f3fc" font-size="11">173 files · most modules</text>
+  <text x="455" y="285" text-anchor="middle" fill="#a5f3fc" font-size="10">network · planning · multiagent</text>
+
+  <!-- model -->
+  <rect x="610" y="220" width="150" height="75" rx="12" fill="#22c55e" opacity="0.8" filter="url(#shadow)"/>
+  <text x="685" y="250" text-anchor="middle" fill="#fff" font-size="15" font-weight="600">model</text>
+  <text x="685" y="270" text-anchor="middle" fill="#bbf7d0" font-size="11">34 files</text>
+  <text x="685" y="285" text-anchor="middle" fill="#bbf7d0" font-size="10">modelRouter · providers</text>
+
+  <!-- context -->
+  <rect x="830" y="220" width="150" height="75" rx="12" fill="#eab308" opacity="0.8" filter="url(#shadow)"/>
+  <text x="905" y="250" text-anchor="middle" fill="#fff" font-size="15" font-weight="600">context</text>
+  <text x="905" y="270" text-anchor="middle" fill="#fef08a" font-size="11">33 files</text>
+  <text x="905" y="285" text-anchor="middle" fill="#fef08a" font-size="10">tokenEstimator · compression</text>
+
+  <!-- prompts -->
+  <rect x="1040" y="220" width="120" height="65" rx="10" fill="#ec4899" opacity="0.7" filter="url(#shadow)"/>
+  <text x="1100" y="248" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">prompts</text>
+  <text x="1100" y="265" text-anchor="middle" fill="#fbcfe8" font-size="11">31 files</text>
+
+  <!-- evaluation -->
+  <rect x="120" y="330" width="140" height="55" rx="10" fill="#a855f7" opacity="0.7" filter="url(#shadow)"/>
+  <text x="190" y="355" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">evaluation</text>
+  <text x="190" y="373" text-anchor="middle" fill="#e9d5ff" font-size="11">35 files</text>
+
+  <!-- research -->
+  <rect x="320" y="330" width="120" height="55" rx="10" fill="#14b8a6" opacity="0.65" filter="url(#shadow)"/>
+  <text x="380" y="355" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">research</text>
+  <text x="380" y="373" text-anchor="middle" fill="#99f6e4" font-size="11">13 files</text>
+
+  <!-- ==================== SUPPORT LAYER ==================== -->
+
+  <!-- mcp -->
+  <rect x="100" y="440" width="130" height="60" rx="10" fill="#f97316" opacity="0.8" filter="url(#shadow)"/>
+  <text x="165" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">mcp</text>
+  <text x="165" y="485" text-anchor="middle" fill="#fed7aa" font-size="11">11 files</text>
+
+  <!-- planning -->
+  <rect x="280" y="440" width="130" height="60" rx="10" fill="#eab308" opacity="0.65" filter="url(#shadow)"/>
+  <text x="345" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">planning</text>
+  <text x="345" y="485" text-anchor="middle" fill="#fef08a" font-size="11">16 files</text>
+
+  <!-- hooks -->
+  <rect x="460" y="440" width="120" height="60" rx="10" fill="#f97316" opacity="0.6" filter="url(#shadow)"/>
+  <text x="520" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">hooks</text>
+  <text x="520" y="485" text-anchor="middle" fill="#fed7aa" font-size="11">14 files</text>
+
+  <!-- security -->
+  <rect x="630" y="440" width="120" height="60" rx="10" fill="#ef4444" opacity="0.55" filter="url(#shadow)"/>
+  <text x="690" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">security</text>
+  <text x="690" y="485" text-anchor="middle" fill="#fca5a5" font-size="11">10 files</text>
+
+  <!-- connectors -->
+  <rect x="800" y="440" width="130" height="60" rx="10" fill="#06b6d4" opacity="0.55" filter="url(#shadow)"/>
+  <text x="865" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">connectors</text>
+  <text x="865" y="485" text-anchor="middle" fill="#a5f3fc" font-size="11">7 files</text>
+
+  <!-- routing -->
+  <rect x="980" y="440" width="120" height="60" rx="10" fill="#64748b" opacity="0.7" filter="url(#shadow)"/>
+  <text x="1040" y="467" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">routing</text>
+  <text x="1040" y="485" text-anchor="middle" fill="#cbd5e1" font-size="11">3 files</text>
+
+  <!-- scheduler -->
+  <rect x="100" y="530" width="120" height="55" rx="10" fill="#f59e0b" opacity="0.6" filter="url(#shadow)"/>
+  <text x="160" y="555" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">scheduler</text>
+  <text x="160" y="573" text-anchor="middle" fill="#fde68a" font-size="11">4 files</text>
+
+  <!-- session -->
+  <rect x="270" y="530" width="120" height="55" rx="10" fill="#64748b" opacity="0.6" filter="url(#shadow)"/>
+  <text x="330" y="555" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">session</text>
+  <text x="330" y="573" text-anchor="middle" fill="#cbd5e1" font-size="11">6 files</text>
+
+  <!-- lightMemory -->
+  <rect x="440" y="530" width="140" height="55" rx="10" fill="#8b5cf6" opacity="0.55" filter="url(#shadow)"/>
+  <text x="510" y="555" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">lightMemory</text>
+  <text x="510" y="573" text-anchor="middle" fill="#ddd6fe" font-size="11">7 files</text>
+
+  <!-- telemetry -->
+  <rect x="630" y="530" width="120" height="55" rx="10" fill="#64748b" opacity="0.6" filter="url(#shadow)"/>
+  <text x="690" y="555" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">telemetry</text>
+  <text x="690" y="573" text-anchor="middle" fill="#cbd5e1" font-size="11">7 files</text>
+
+  <!-- lsp -->
+  <rect x="800" y="530" width="100" height="55" rx="10" fill="#64748b" opacity="0.5" filter="url(#shadow)"/>
+  <text x="850" y="555" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">lsp</text>
+  <text x="850" y="573" text-anchor="middle" fill="#cbd5e1" font-size="11">2 files</text>
+
+  <!-- ==================== INFRA LAYER ==================== -->
+
+  <!-- services (BIGGEST infra node) -->
+  <rect x="200" y="670" width="220" height="75" rx="12" fill="#3b82f6" opacity="0.9" filter="url(#shadow)"/>
+  <rect x="200" y="670" width="220" height="75" rx="12" fill="none" stroke="#93c5fd" stroke-width="2.5"/>
+  <text x="310" y="698" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">services</text>
+  <text x="310" y="718" text-anchor="middle" fill="#bfdbfe" font-size="12">70 files · fan-in: 408</text>
+  <text x="310" y="733" text-anchor="middle" fill="#bfdbfe" font-size="10">logger(306引用) · database · registry</text>
+
+  <!-- shared -->
+  <rect x="490" y="670" width="180" height="75" rx="12" fill="#84cc16" opacity="0.8" filter="url(#shadow)"/>
+  <rect x="490" y="670" width="180" height="75" rx="12" fill="none" stroke="#bef264" stroke-width="2"/>
+  <text x="580" y="698" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">shared</text>
+  <text x="580" y="718" text-anchor="middle" fill="#d9f99d" font-size="12">33 files · fan-in: 185</text>
+  <text x="580" y="733" text-anchor="middle" fill="#d9f99d" font-size="10">constants · ipc · utils</text>
+
+  <!-- platform -->
+  <rect x="740" y="670" width="150" height="75" rx="12" fill="#64748b" opacity="0.8" filter="url(#shadow)"/>
+  <rect x="740" y="670" width="150" height="75" rx="12" fill="none" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="815" y="698" text-anchor="middle" fill="#fff" font-size="16" font-weight="600">platform</text>
+  <text x="815" y="718" text-anchor="middle" fill="#cbd5e1" font-size="12">9 files · fan-in: 58</text>
+  <text x="815" y="733" text-anchor="middle" fill="#cbd5e1" font-size="10">OS 抽象层</text>
+
+  <!-- config -->
+  <rect x="960" y="670" width="130" height="75" rx="12" fill="#78716c" opacity="0.7" filter="url(#shadow)"/>
+  <text x="1025" y="698" text-anchor="middle" fill="#fff" font-size="15" font-weight="600">config</text>
+  <text x="1025" y="718" text-anchor="middle" fill="#d6d3d1" font-size="12">3 files · fan-in: 40</text>
+  <text x="1025" y="733" text-anchor="middle" fill="#d6d3d1" font-size="10">configPaths</text>
+
+  <!-- ==================== DEPENDENCY EDGES ==================== -->
+  <!-- Heavy edges (≥20 imports) -->
+
+  <!-- agent -> services: 86 -->
+  <path d="M210,295 C210,500 310,500 310,670" fill="none" stroke="#93c5fd" stroke-width="4" opacity="0.5" marker-end="url(#arrow-heavy)"/>
+
+  <!-- tools -> services: 94 -->
+  <path d="M420,295 C370,500 320,550 320,670" fill="none" stroke="#93c5fd" stroke-width="4.5" opacity="0.5" marker-end="url(#arrow-heavy)"/>
+
+  <!-- ipc -> services: 55 -->
+  <path d="M240,145 C240,400 290,550 290,670" fill="none" stroke="#93c5fd" stroke-width="3" opacity="0.4" marker-end="url(#arrow-heavy)"/>
+
+  <!-- ipc -> shared: 38 -->
+  <path d="M310,145 C500,300 560,500 570,670" fill="none" stroke="#bef264" stroke-width="2.5" opacity="0.35" marker-end="url(#arrow)"/>
+
+  <!-- agent -> context: 30 -->
+  <path d="M300,257 L830,257" fill="none" stroke="#fef08a" stroke-width="2" opacity="0.45" marker-end="url(#arrow)"/>
+
+  <!-- tools -> agent: 29 (CYCLE part) -->
+  <path d="M390,280 C350,310 300,310 280,295" fill="none" stroke="#f59e0b" stroke-width="2.5" opacity="0.7" marker-end="url(#arrow-cycle)" stroke-dasharray="6,3"/>
+
+  <!-- agent -> tools: 26 (CYCLE part) -->
+  <path d="M300,240 C340,210 370,210 390,240" fill="none" stroke="#f59e0b" stroke-width="2.5" opacity="0.7" marker-end="url(#arrow-cycle)" stroke-dasharray="6,3"/>
+
+  <!-- model -> shared: 29 -->
+  <path d="M660,295 C620,500 580,550 580,670" fill="none" stroke="#bef264" stroke-width="2" opacity="0.35" marker-end="url(#arrow)"/>
+
+  <!-- agent -> shared: 28 -->
+  <path d="M210,295 C250,500 540,600 570,670" fill="none" stroke="#bef264" stroke-width="2" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- ipc -> platform: 20 -->
+  <path d="M340,130 C600,160 800,400 815,670" fill="none" stroke="#94a3b8" stroke-width="1.5" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- app -> services: 21 -->
+  <path d="M460,145 C460,400 330,550 310,670" fill="none" stroke="#93c5fd" stroke-width="1.5" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- Medium edges (10-19) -->
+
+  <!-- agent -> mcp: 11 -->
+  <path d="M175,295 L165,440" fill="none" stroke="#fed7aa" stroke-width="1.2" opacity="0.4" marker-end="url(#arrow)"/>
+
+  <!-- agent -> planning: 10 -->
+  <path d="M250,295 L330,440" fill="none" stroke="#fef08a" stroke-width="1.2" opacity="0.4" marker-end="url(#arrow)"/>
+
+  <!-- tools -> connectors: 11 -->
+  <path d="M530,295 C600,360 800,380 850,440" fill="none" stroke="#a5f3fc" stroke-width="1.2" opacity="0.4" marker-end="url(#arrow)"/>
+
+  <!-- model -> services: 14 -->
+  <path d="M640,295 C500,500 340,600 320,670" fill="none" stroke="#93c5fd" stroke-width="1.2" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- context -> services: 13 -->
+  <path d="M860,295 C700,500 350,600 320,670" fill="none" stroke="#93c5fd" stroke-width="1.2" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- services -> platform: 12 -->
+  <path d="M420,707 L740,707" fill="none" stroke="#94a3b8" stroke-width="1.2" opacity="0.4" marker-end="url(#arrow)"/>
+
+  <!-- services -> config: 9 -->
+  <path d="M420,710 L960,710" fill="none" stroke="#d6d3d1" stroke-width="1" opacity="0.3" marker-end="url(#arrow)"/>
+
+  <!-- ==================== CIRCULAR DEPENDENCY CALLOUT ==================== -->
+  <rect x="55" y="785" width="500" height="80" rx="8" fill="#451a03" opacity="0.7" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="75" y="808" fill="#f59e0b" font-size="13" font-weight="700">⚠ 4 条循环依赖（集中在并行 Agent 调度）</text>
+  <text x="75" y="828" fill="#fcd34d" font-size="11">agentDefinition → hybrid/agentSwarm → swarm.ipc → parallelCoordinator → subagentExecutor</text>
+  <text x="75" y="848" fill="#fde68a" font-size="10" opacity="0.8">agent ↔ tools 双向调用 (26+29=55 条) 也需关注</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="620" y="785" width="540" height="80" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="640" y="808" fill="#94a3b8" font-size="12" font-weight="600">图例</text>
+
+  <!-- edge legend -->
+  <line x1="640" y1="825" x2="680" y2="825" stroke="#93c5fd" stroke-width="3.5" opacity="0.5"/>
+  <text x="690" y="830" fill="#94a3b8" font-size="10">重度依赖 (≥30)</text>
+
+  <line x1="790" y1="825" x2="830" y2="825" stroke="#bef264" stroke-width="2" opacity="0.4"/>
+  <text x="840" y="830" fill="#94a3b8" font-size="10">中度依赖 (10-29)</text>
+
+  <line x1="960" y1="825" x2="1000" y2="825" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="6,3"/>
+  <text x="1010" y="830" fill="#94a3b8" font-size="10">循环依赖</text>
+
+  <!-- size legend -->
+  <rect x="640" y="840" width="14" height="14" rx="3" fill="#ef4444" opacity="0.7"/>
+  <text x="660" y="852" fill="#94a3b8" font-size="10">Core</text>
+  <rect x="710" y="840" width="14" height="14" rx="3" fill="#3b82f6" opacity="0.7"/>
+  <text x="730" y="852" fill="#94a3b8" font-size="10">Infra</text>
+  <rect x="790" y="840" width="14" height="14" rx="3" fill="#7c3aed" opacity="0.7"/>
+  <text x="810" y="852" fill="#94a3b8" font-size="10">Interface</text>
+  <rect x="890" y="840" width="14" height="14" rx="3" fill="#f97316" opacity="0.7"/>
+  <text x="910" y="852" fill="#94a3b8" font-size="10">Support</text>
+
+  <text x="1000" y="852" fill="#475569" font-size="9">边框粗细 = fan-in 强度</text>
+</svg>

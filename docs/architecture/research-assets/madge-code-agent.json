@@ -1,0 +1,3333 @@
+{
+  "../../packages/eval-harness/src/agents/SwissCheeseAgents.ts": [],
+  "../../packages/eval-harness/src/graders/ForbiddenPatterns.ts": [],
+  "../../packages/eval-harness/src/index.ts": [
+    "../../packages/eval-harness/src/agents/SwissCheeseAgents.ts",
+    "../../packages/eval-harness/src/graders/ForbiddenPatterns.ts",
+    "../../packages/eval-harness/src/runner/AnnotationStore.ts",
+    "../../packages/eval-harness/src/runner/ExperimentRunner.ts"
+  ],
+  "../../packages/eval-harness/src/runner/AnnotationStore.ts": [],
+  "../../packages/eval-harness/src/runner/ExperimentRunner.ts": [
+    "../../packages/eval-harness/src/agents/SwissCheeseAgents.ts",
+    "../../packages/eval-harness/src/graders/ForbiddenPatterns.ts"
+  ],
+  "../cli/electron-mock.ts": [],
+  "../shared/constants/agent.ts": [],
+  "../shared/constants/defaults.ts": [],
+  "../shared/constants/index.ts": [
+    "../shared/constants/agent.ts",
+    "../shared/constants/defaults.ts",
+    "../shared/constants/misc.ts",
+    "../shared/constants/models.ts",
+    "../shared/constants/network.ts",
+    "../shared/constants/pricing.ts",
+    "../shared/constants/providers.ts",
+    "../shared/constants/storage.ts",
+    "../shared/constants/timeouts.ts",
+    "../shared/constants/tools.ts",
+    "../shared/constants/ui.ts"
+  ],
+  "../shared/constants/misc.ts": [],
+  "../shared/constants/models.ts": [
+    "../shared/model-catalog.json"
+  ],
+  "../shared/constants/network.ts": [],
+  "../shared/constants/pricing.ts": [],
+  "../shared/constants/providers.ts": [
+    "../shared/constants/defaults.ts",
+    "../shared/constants/models.ts"
+  ],
+  "../shared/constants/storage.ts": [],
+  "../shared/constants/timeouts.ts": [],
+  "../shared/constants/tools.ts": [],
+  "../shared/constants/ui.ts": [],
+  "../shared/ipc/api.ts": [],
+  "../shared/ipc/channels.ts": [],
+  "../shared/ipc/domains.ts": [],
+  "../shared/ipc/handlers.ts": [
+    "../shared/ipc/channels.ts",
+    "../shared/ipc/legacy-channels.ts"
+  ],
+  "../shared/ipc/index.ts": [
+    "../shared/ipc/api.ts",
+    "../shared/ipc/channels.ts",
+    "../shared/ipc/domains.ts",
+    "../shared/ipc/handlers.ts",
+    "../shared/ipc/legacy-channels.ts",
+    "../shared/ipc/protocol.ts",
+    "../shared/ipc/types.ts"
+  ],
+  "../shared/ipc/legacy-channels.ts": [
+    "../shared/ipc/channels.ts"
+  ],
+  "../shared/ipc/protocol.ts": [],
+  "../shared/ipc/types.ts": [],
+  "../shared/model-catalog.json": [],
+  "../shared/types/agentSkill.ts": [],
+  "../shared/types/agentTypes.ts": [],
+  "../shared/types/contextHealth.ts": [],
+  "../shared/types/error.ts": [],
+  "../shared/types/evaluation.ts": [
+    "../shared/types/evaluationFramework.ts"
+  ],
+  "../shared/types/evaluationFramework.ts": [],
+  "../shared/types/taskDAG.ts": [
+    "../shared/types/taskExecution.ts"
+  ],
+  "../shared/types/taskExecution.ts": [],
+  "../shared/types/workflow.ts": [
+    "../shared/types/workflowTemplates.ts"
+  ],
+  "../shared/types/workflowTemplates.ts": [],
+  "../shared/utils/format.ts": [],
+  "../shared/utils/id.ts": [],
+  "agent/activeAgentContext.ts": [
+    "agent/spawnGuard.ts"
+  ],
+  "agent/agentDefinition.ts": [
+    "../shared/types/agentTypes.ts",
+    "agent/hybrid/index.ts",
+    "agent/subagentContextBuilder.ts"
+  ],
+  "agent/agentLoop.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/antiPattern/cleanXml.ts",
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/hybrid/taskRouter.ts",
+    "agent/loopTypes.ts",
+    "agent/messageHandling/contextBuilder.ts",
+    "agent/messageHandling/converter.ts",
+    "agent/nudgeManager.ts",
+    "agent/runtime/contextAssembly.ts",
+    "agent/runtime/conversationRuntime.ts",
+    "agent/runtime/learningPipeline.ts",
+    "agent/runtime/runFinalizer.ts",
+    "agent/runtime/toolExecutionEngine.ts",
+    "agent/sessionRecovery.ts",
+    "agent/structuredOutput.ts",
+    "agent/todoParser.ts",
+    "agent/toolExecution/circuitBreaker.ts",
+    "agent/toolExecution/parallelStrategy.ts",
+    "context/autoCompressor.ts",
+    "context/compressionPipeline.ts",
+    "context/compressionState.ts",
+    "context/contextHealthService.ts",
+    "context/tokenOptimizer.ts",
+    "hooks/index.ts",
+    "mcp/logCollector.ts",
+    "model/modelRouter.ts",
+    "planning/taskComplexityAnalyzer.ts",
+    "planning/taskOrchestrator.ts",
+    "prompts/builder.ts",
+    "routing/intentClassifier.ts",
+    "security/inputSanitizer.ts",
+    "services/citation/citationService.ts",
+    "services/cloud/featureFlagService.ts",
+    "services/diff/diffTracker.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "telemetry/systemPromptCache.ts",
+    "tools/dataFingerprint.ts",
+    "tools/executionPhase.ts",
+    "tools/fileReadTracker.ts",
+    "tools/planning/taskStore.ts",
+    "tools/search/index.ts"
+  ],
+  "agent/agentOrchestrator.ts": [
+    "../shared/utils/id.ts",
+    "agent/agentLoop.ts",
+    "agent/agentRequirementsAnalyzer.ts",
+    "agent/confirmationGate.ts",
+    "agent/hybrid/taskRouter.ts",
+    "agent/orchestrator/autoAgentRunner.ts",
+    "agent/orchestrator/dagManager.ts",
+    "agent/orchestrator/modelConfigResolver.ts",
+    "agent/orchestrator/researchRunner.ts",
+    "agent/orchestrator/types.ts",
+    "agent/taskList/index.ts",
+    "evaluation/sessionEventService.ts",
+    "lsp/index.ts",
+    "model/modelRouter.ts",
+    "planning/taskComplexityAnalyzer.ts",
+    "prompts/builder.ts",
+    "research/index.ts",
+    "routing/index.ts",
+    "routing/intentClassifier.ts",
+    "scheduler/TaskDAG.ts",
+    "scheduler/dagEventBridge.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "services/skills/index.ts",
+    "session/modelSessionState.ts",
+    "session/sessionStateManager.ts",
+    "telemetry/index.ts",
+    "tools/toolExecutor.ts",
+    "tools/toolRegistry.ts"
+  ],
+  "agent/agentRequirementsAnalyzer.ts": [
+    "agent/autoDelegator.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/agentTask.ts": [],
+  "agent/agentWorktree.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/antiPattern/cleanXml.ts": [],
+  "agent/antiPattern/detector.ts": [
+    "agent/antiPattern/cleanXml.ts",
+    "agent/loopTypes.ts",
+    "mcp/logCollector.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/artifactExtractor.ts": [],
+  "agent/autoAgentCoordinator.ts": [
+    "agent/parallelErrorHandler.ts",
+    "agent/progressAggregator.ts",
+    "agent/resourceLockManager.ts",
+    "agent/subagentExecutor.ts",
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "session/sessionStateManager.ts"
+  ],
+  "agent/autoDelegator.ts": [
+    "agent/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/childContext.ts": [
+    "prompts/builder.ts"
+  ],
+  "agent/confirmationGate.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/coordinatorMode.ts": [
+    "agent/taskDag.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/dynamicAgentFactory.ts": [
+    "agent/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/forkContext.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/goalTracker.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/agentMdLoader.ts": [],
+  "agent/hybrid/agentMdWatcher.ts": [
+    "agent/hybrid/coreAgents.ts"
+  ],
+  "agent/hybrid/agentSwarm.ts": [
+    "../shared/constants/models.ts",
+    "agent/hybrid/resourceLock.ts",
+    "agent/hybrid/swarmCoordinator.ts",
+    "agent/hybrid/taskClaimService.ts",
+    "agent/taskList/index.ts",
+    "agent/teammate/teammateService.ts",
+    "agent/worker/agentWorkerManager.ts",
+    "agent/worker/permissionProxy.ts",
+    "agent/worker/teammateProxy.ts",
+    "agent/worker/workerMonitor.ts",
+    "ipc/swarm.ipc.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/coreAgents.ts": [
+    "../shared/constants/index.ts",
+    "agent/hybrid/agentMdLoader.ts",
+    "config/configPaths.ts"
+  ],
+  "agent/hybrid/crossVerify.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/dynamicFactory.ts": [
+    "agent/hybrid/coreAgents.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/index.ts": [
+    "agent/hybrid/agentMdLoader.ts",
+    "agent/hybrid/agentMdWatcher.ts",
+    "agent/hybrid/agentSwarm.ts",
+    "agent/hybrid/coreAgents.ts",
+    "agent/hybrid/crossVerify.ts",
+    "agent/hybrid/dynamicFactory.ts",
+    "agent/hybrid/taskRouter.ts",
+    "routing/intentClassifier.ts"
+  ],
+  "agent/hybrid/resourceLock.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/swarmCoordinator.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/taskClaimService.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/hybrid/taskRouter.ts": [
+    "../shared/constants/index.ts",
+    "agent/hybrid/coreAgents.ts",
+    "agent/hybrid/crossVerify.ts",
+    "agent/hybrid/dynamicFactory.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/loopDecision.ts": [],
+  "agent/loopTypes.ts": [],
+  "agent/messageHandling/contextBuilder.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/messageHandling/converter.ts": [
+    "agent/loopTypes.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/nudgeManager.ts": [
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/loopTypes.ts",
+    "agent/todoParser.ts",
+    "mcp/logCollector.ts",
+    "services/infra/logger.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "agent/orchestrator/autoAgentRunner.ts": [
+    "agent/agentRequirementsAnalyzer.ts",
+    "agent/autoAgentCoordinator.ts",
+    "agent/dynamicAgentFactory.ts",
+    "scheduler/TaskDAG.ts",
+    "scheduler/dagEventBridge.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/orchestrator/dagManager.ts": [],
+  "agent/orchestrator/modelConfigResolver.ts": [
+    "../shared/constants/index.ts",
+    "model/providerRegistry.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/orchestrator/researchRunner.ts": [
+    "model/modelRouter.ts",
+    "research/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/orchestrator/types.ts": [],
+  "agent/parallelAgentCoordinator.ts": [
+    "../shared/constants/index.ts",
+    "agent/subagentExecutor.ts",
+    "scheduler/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/timeoutController.ts"
+  ],
+  "agent/parallelErrorHandler.ts": [
+    "errors/errorClassifier.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/planApproval.ts": [
+    "agent/teammate/teammateService.ts",
+    "ipc/swarm.ipc.ts",
+    "services/core/permissionPresets.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/progressAggregator.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/resourceLockManager.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/resultAggregator.ts": [],
+  "agent/runtime/contextAssembly.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/activeAgentContext.ts",
+    "agent/antiPattern/cleanXml.ts",
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/loopTypes.ts",
+    "agent/messageHandling/contextBuilder.ts",
+    "agent/messageHandling/converter.ts",
+    "agent/nudgeManager.ts",
+    "agent/sessionRecovery.ts",
+    "agent/todoParser.ts",
+    "agent/toolExecution/circuitBreaker.ts",
+    "agent/toolExecution/parallelStrategy.ts",
+    "config/configPaths.ts",
+    "context/autoCompressor.ts",
+    "context/compactModel.ts",
+    "context/compressionState.ts",
+    "context/contextEventLedger.ts",
+    "context/contextHealthService.ts",
+    "context/contextInterventionHelpers.ts",
+    "context/contextInterventionState.ts",
+    "context/repoMap/index.ts",
+    "context/tokenOptimizer.ts",
+    "hooks/index.ts",
+    "lightMemory/indexLoader.ts",
+    "lightMemory/recentConversations.ts",
+    "lightMemory/sessionMetadata.ts",
+    "mcp/logCollector.ts",
+    "model/modelRouter.ts",
+    "planning/taskOrchestrator.ts",
+    "prompts/builder.ts",
+    "routing/intentClassifier.ts",
+    "security/inputSanitizer.ts",
+    "services/citation/citationService.ts",
+    "services/cloud/featureFlagService.ts",
+    "services/diff/diffTracker.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "telemetry/systemPromptCache.ts",
+    "tools/dataFingerprint.ts",
+    "tools/executionPhase.ts",
+    "tools/fileReadTracker.ts",
+    "tools/planning/taskStore.ts",
+    "tools/search/index.ts"
+  ],
+  "agent/runtime/conversationRuntime.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/antiPattern/cleanXml.ts",
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/loopDecision.ts",
+    "agent/loopTypes.ts",
+    "agent/messageHandling/contextBuilder.ts",
+    "agent/messageHandling/converter.ts",
+    "agent/runtime/messageProcessor.ts",
+    "agent/runtime/streamHandler.ts",
+    "agent/sessionRecovery.ts",
+    "agent/structuredOutput.ts",
+    "agent/todoParser.ts",
+    "agent/toolExecution/circuitBreaker.ts",
+    "agent/toolExecution/parallelStrategy.ts",
+    "context/autoCompressor.ts",
+    "context/contextHealthService.ts",
+    "context/tokenOptimizer.ts",
+    "desktop/desktopActivityPlanningBridge.ts",
+    "desktop/desktopActivityUnderstandingService.ts",
+    "desktop/workspaceActivitySearchService.ts",
+    "hooks/index.ts",
+    "lightMemory/sessionMetadata.ts",
+    "mcp/logCollector.ts",
+    "model/modelRouter.ts",
+    "planning/index.ts",
+    "planning/recoveredWorkOrchestrator.ts",
+    "planning/taskComplexityAnalyzer.ts",
+    "planning/taskOrchestrator.ts",
+    "prompts/builder.ts",
+    "routing/intentClassifier.ts",
+    "security/inputSanitizer.ts",
+    "services/citation/citationService.ts",
+    "services/cloud/featureFlagService.ts",
+    "services/diff/diffTracker.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "telemetry/systemPromptCache.ts",
+    "tools/dataFingerprint.ts",
+    "tools/executionPhase.ts",
+    "tools/fileReadTracker.ts",
+    "tools/planning/taskStore.ts",
+    "utils/seedMemoryInjector.ts"
+  ],
+  "agent/runtime/learningPipeline.ts": [],
+  "agent/runtime/messageProcessor.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/artifactExtractor.ts",
+    "agent/messageHandling/converter.ts",
+    "context/tokenOptimizer.ts",
+    "mcp/logCollector.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "tools/executionPhase.ts"
+  ],
+  "agent/runtime/runFinalizer.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/antiPattern/cleanXml.ts",
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/loopTypes.ts",
+    "agent/messageHandling/contextBuilder.ts",
+    "agent/messageHandling/converter.ts",
+    "agent/sessionRecovery.ts",
+    "agent/todoParser.ts",
+    "agent/toolExecution/circuitBreaker.ts",
+    "agent/toolExecution/parallelStrategy.ts",
+    "context/autoCompressor.ts",
+    "context/contextHealthService.ts",
+    "context/tokenOptimizer.ts",
+    "hooks/index.ts",
+    "lightMemory/recentConversations.ts",
+    "lightMemory/sessionMetadata.ts",
+    "mcp/logCollector.ts",
+    "model/modelRouter.ts",
+    "planning/taskOrchestrator.ts",
+    "prompts/builder.ts",
+    "routing/intentClassifier.ts",
+    "security/inputSanitizer.ts",
+    "services/citation/citationService.ts",
+    "services/cloud/featureFlagService.ts",
+    "services/diff/diffTracker.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "services/promptSuggestions.ts",
+    "telemetry/systemPromptCache.ts",
+    "tools/dataFingerprint.ts",
+    "tools/executionPhase.ts",
+    "tools/fileReadTracker.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "agent/runtime/streamHandler.ts": [
+    "../shared/utils/id.ts",
+    "context/tokenOptimizer.ts",
+    "mcp/logCollector.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/runtime/toolExecutionEngine.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "agent/antiPattern/cleanXml.ts",
+    "agent/antiPattern/detector.ts",
+    "agent/goalTracker.ts",
+    "agent/loopTypes.ts",
+    "agent/messageHandling/contextBuilder.ts",
+    "agent/messageHandling/converter.ts",
+    "agent/nudgeManager.ts",
+    "agent/runtime/toolResultNormalization.ts",
+    "agent/sessionRecovery.ts",
+    "agent/todoParser.ts",
+    "agent/toolExecution/circuitBreaker.ts",
+    "agent/toolExecution/parallelStrategy.ts",
+    "context/autoCompressor.ts",
+    "context/contextHealthService.ts",
+    "context/tokenOptimizer.ts",
+    "hooks/index.ts",
+    "mcp/logCollector.ts",
+    "mcp/mcpClient.ts",
+    "model/modelRouter.ts",
+    "planning/taskOrchestrator.ts",
+    "prompts/builder.ts",
+    "routing/intentClassifier.ts",
+    "security/inputSanitizer.ts",
+    "services/citation/citationService.ts",
+    "services/cloud/featureFlagService.ts",
+    "services/diff/diffTracker.ts",
+    "services/git/fileWatcherService.ts",
+    "services/git/gitStatusService.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "telemetry/systemPromptCache.ts",
+    "tools/dataFingerprint.ts",
+    "tools/executionPhase.ts",
+    "tools/fileReadTracker.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "agent/runtime/toolResultNormalization.ts": [],
+  "agent/sessionRecovery.ts": [
+    "services/core/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/shutdownProtocol.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/spawnGuard.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/structuredOutput.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/subagentCompaction.ts": [
+    "../shared/constants/index.ts",
+    "context/tokenEstimator.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/subagentContextBuilder.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/subagentExecutor.ts": [
+    "../shared/constants/index.ts",
+    "../shared/types/contextHealth.ts",
+    "../shared/utils/id.ts",
+    "agent/agentDefinition.ts",
+    "agent/agentTask.ts",
+    "agent/childContext.ts",
+    "agent/planApproval.ts",
+    "agent/shutdownProtocol.ts",
+    "agent/spawnGuard.ts",
+    "agent/subagentCompaction.ts",
+    "agent/subagentPipeline.ts",
+    "context/contextInterventionHelpers.ts",
+    "context/contextInterventionState.ts",
+    "context/subagentContextStore.ts",
+    "context/tokenEstimator.ts",
+    "model/modelRouter.ts",
+    "services/infra/logger.ts",
+    "utils/imageUtils.ts"
+  ],
+  "agent/subagentPipeline.ts": [
+    "services/core/budgetService.ts",
+    "services/core/permissionPresets.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/swarmLaunchApproval.ts": [
+    "ipc/swarm.ipc.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/taskDag.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/taskDeduplication.ts": [],
+  "agent/taskList/index.ts": [
+    "../shared/utils/id.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/taskList/taskList.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "agent/taskList/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/teammate/index.ts": [
+    "agent/teammate/teammateService.ts",
+    "agent/teammate/types.ts"
+  ],
+  "agent/teammate/teammateService.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/teammate/types.ts": [],
+  "agent/todoParser.ts": [
+    "services/infra/logger.ts"
+  ],
+  "agent/toolExecution/circuitBreaker.ts": [
+    "mcp/logCollector.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/toolExecution/parallelStrategy.ts": [
+    "agent/loopTypes.ts",
+    "services/infra/logger.ts"
+  ],
+  "agent/types.ts": [
+    "../shared/constants/index.ts"
+  ],
+  "agent/worker/agentWorkerManager.ts": [],
+  "agent/worker/permissionProxy.ts": [],
+  "agent/worker/teammateProxy.ts": [],
+  "agent/worker/workerMonitor.ts": [],
+  "app/agentAppService.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "session/modelSessionState.ts"
+  ],
+  "app/bootstrap.ts": [
+    "agent/agentOrchestrator.ts",
+    "app/agentAppService.ts",
+    "app/createAgentRuntime.ts",
+    "app/initBackgroundServices.ts",
+    "app/initCoreServices.ts",
+    "app/restoreSession.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "task/index.ts"
+  ],
+  "app/createAgentRuntime.ts": [
+    "app/window.ts",
+    "channels/channelAgentBridge.ts",
+    "channels/index.ts",
+    "services/infra/logger.ts",
+    "task/index.ts"
+  ],
+  "app/initBackgroundServices.ts": [
+    "../shared/constants/index.ts",
+    "app/window.ts",
+    "cloud/cloudTaskService.ts",
+    "cron/index.ts",
+    "desktop/desktopActivityUnderstandingService.ts",
+    "desktop/workspaceArtifactIndexService.ts",
+    "events/index.ts",
+    "mcp/logBridge.ts",
+    "mcp/mcpClient.ts",
+    "model/modelValidator.ts",
+    "orchestrator/index.ts",
+    "platform/index.ts",
+    "plugins/index.ts",
+    "prompts/soulLoader.ts",
+    "scheduler/index.ts",
+    "services/checkpoint/index.ts",
+    "services/cloud/index.ts",
+    "services/cloud/promptService.ts",
+    "services/cloud/updateService.ts",
+    "services/core/secureStorage.ts",
+    "services/index.ts",
+    "services/infra/browserService.ts",
+    "services/infra/logger.ts",
+    "services/skills/comboRecorder.ts",
+    "services/skills/index.ts",
+    "tools/shell/codexSandbox.ts"
+  ],
+  "app/initCoreServices.ts": [
+    "platform/index.ts",
+    "services/checkpoint/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/shellEnvironment.ts"
+  ],
+  "app/restoreSession.ts": [
+    "../shared/constants/index.ts",
+    "app/window.ts",
+    "planning/index.ts",
+    "planning/recoveredWorkOrchestrator.ts",
+    "platform/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "task/index.ts"
+  ],
+  "app/window.ts": [
+    "context/contextHealthService.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "session/sessionStateManager.ts"
+  ],
+  "channels/api/apiChannel.ts": [
+    "channels/api/captureRoutes.ts",
+    "channels/channelInterface.ts",
+    "services/infra/logger.ts"
+  ],
+  "channels/api/captureRoutes.ts": [
+    "services/captureService.ts",
+    "services/infra/logger.ts"
+  ],
+  "channels/channelAgentBridge.ts": [
+    "../shared/constants/index.ts",
+    "channels/channelManager.ts",
+    "channels/ingressPipeline.ts",
+    "mcp/logCollector.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "task/index.ts"
+  ],
+  "channels/channelInterface.ts": [],
+  "channels/channelManager.ts": [
+    "channels/api/apiChannel.ts",
+    "channels/feishu/feishuChannel.ts",
+    "channels/telegram/telegramChannel.ts",
+    "services/core/secureStorage.ts",
+    "services/infra/logger.ts"
+  ],
+  "channels/feishu/feishuChannel.ts": [
+    "channels/channelInterface.ts",
+    "services/infra/logger.ts"
+  ],
+  "channels/index.ts": [
+    "channels/api/apiChannel.ts",
+    "channels/channelAgentBridge.ts",
+    "channels/channelInterface.ts",
+    "channels/channelManager.ts",
+    "channels/feishu/feishuChannel.ts",
+    "channels/ingressPipeline.ts",
+    "channels/telegram/telegramChannel.ts"
+  ],
+  "channels/ingressPipeline.ts": [
+    "services/infra/logger.ts"
+  ],
+  "channels/telegram/telegramChannel.ts": [
+    "channels/channelInterface.ts",
+    "services/infra/logger.ts"
+  ],
+  "cloud/cloudTaskService.ts": [
+    "../shared/constants/index.ts",
+    "cloud/taskRouter.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "utils/crypto.ts"
+  ],
+  "cloud/taskRouter.ts": [
+    "../shared/constants/index.ts"
+  ],
+  "config/configPaths.ts": [],
+  "config/index.ts": [
+    "config/configPaths.ts"
+  ],
+  "config/rulesLoader.ts": [],
+  "connectors/base.ts": [],
+  "connectors/index.ts": [
+    "connectors/base.ts",
+    "connectors/registry.ts"
+  ],
+  "connectors/native/calendar.ts": [
+    "connectors/native/osascript.ts"
+  ],
+  "connectors/native/mail.ts": [
+    "connectors/native/osascript.ts"
+  ],
+  "connectors/native/osascript.ts": [],
+  "connectors/native/reminders.ts": [
+    "connectors/native/osascript.ts"
+  ],
+  "connectors/registry.ts": [
+    "connectors/native/calendar.ts",
+    "connectors/native/mail.ts",
+    "connectors/native/reminders.ts"
+  ],
+  "context/agentsDiscovery.ts": [
+    "services/infra/logger.ts"
+  ],
+  "context/autoCompressor.ts": [
+    "../shared/types/contextHealth.ts",
+    "context/compactModel.ts",
+    "context/contextHealthService.ts",
+    "context/documentContext/index.ts",
+    "context/tokenEstimator.ts",
+    "context/tokenOptimizer.ts",
+    "services/infra/logger.ts",
+    "tools/dataFingerprint.ts",
+    "tools/fileReadTracker.ts"
+  ],
+  "context/compactModel.ts": [
+    "../shared/constants/index.ts",
+    "model/modelRouter.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/compressionPipeline.ts": [
+    "context/compressionState.ts",
+    "context/contextInterventionHelpers.ts",
+    "context/layers/contextCollapse.ts",
+    "context/layers/microcompact.ts",
+    "context/layers/overflowRecovery.ts",
+    "context/layers/snip.ts",
+    "context/layers/toolResultBudget.ts",
+    "context/projectionEngine.ts",
+    "context/tokenEstimator.ts"
+  ],
+  "context/compressionState.ts": [],
+  "context/compressor.ts": [
+    "context/tokenEstimator.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/contextEventLedger.ts": [
+    "platform/appPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/contextHealthService.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "../shared/types/contextHealth.ts",
+    "context/tokenEstimator.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/contextInterventionHelpers.ts": [],
+  "context/contextInterventionState.ts": [],
+  "context/documentContext/documentContextService.ts": [
+    "context/documentContext/parsers/codeParser.ts",
+    "context/documentContext/parsers/docxParser.ts",
+    "context/documentContext/parsers/excelParser.ts",
+    "context/documentContext/parsers/htmlParser.ts",
+    "context/documentContext/parsers/markdownParser.ts",
+    "context/documentContext/parsers/pdfParser.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/documentContext/index.ts": [
+    "context/documentContext/documentContextService.ts",
+    "context/documentContext/parsedDocumentImpl.ts",
+    "context/documentContext/parsers/codeParser.ts",
+    "context/documentContext/parsers/docxParser.ts",
+    "context/documentContext/parsers/excelParser.ts",
+    "context/documentContext/parsers/markdownParser.ts",
+    "context/documentContext/parsers/pdfParser.ts"
+  ],
+  "context/documentContext/parsedDocumentImpl.ts": [],
+  "context/documentContext/parsers/codeParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/documentContext/parsers/docxParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/documentContext/parsers/excelParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/documentContext/parsers/htmlParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/documentContext/parsers/markdownParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/documentContext/parsers/pdfParser.ts": [
+    "context/documentContext/parsedDocumentImpl.ts"
+  ],
+  "context/layers/contextCollapse.ts": [
+    "context/compressionState.ts",
+    "context/tokenEstimator.ts"
+  ],
+  "context/layers/microcompact.ts": [
+    "context/compressionState.ts",
+    "context/tokenEstimator.ts"
+  ],
+  "context/layers/overflowRecovery.ts": [
+    "context/compressionState.ts"
+  ],
+  "context/layers/snip.ts": [
+    "context/compressionState.ts"
+  ],
+  "context/layers/toolResultBudget.ts": [
+    "context/compressionState.ts",
+    "context/tokenEstimator.ts"
+  ],
+  "context/projectionEngine.ts": [
+    "context/compressionState.ts"
+  ],
+  "context/reminderBudget.ts": [],
+  "context/repoMap/index.ts": [
+    "context/repoMap/repoMapBuilder.ts",
+    "context/repoMap/repoMapCache.ts",
+    "context/repoMap/repoMapRanker.ts"
+  ],
+  "context/repoMap/repoMapBuilder.ts": [
+    "services/infra/logger.ts"
+  ],
+  "context/repoMap/repoMapCache.ts": [
+    "context/repoMap/repoMapBuilder.ts",
+    "context/repoMap/repoMapRanker.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/repoMap/repoMapRanker.ts": [
+    "context/tokenEstimator.ts"
+  ],
+  "context/subagentContextStore.ts": [
+    "context/compressionState.ts",
+    "context/contextEventLedger.ts",
+    "platform/appPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "context/tokenEstimator.ts": [
+    "services/infra/logger.ts"
+  ],
+  "context/tokenOptimizer.ts": [
+    "../shared/constants/index.ts",
+    "context/compressor.ts",
+    "context/tokenEstimator.ts",
+    "services/infra/logger.ts"
+  ],
+  "cron/cronService.ts": [
+    "../shared/constants/index.ts",
+    "channels/channelManager.ts",
+    "cron/heartbeatTaskLoader.ts",
+    "services/core/databaseService.ts",
+    "services/index.ts",
+    "services/serviceRegistry.ts",
+    "task/index.ts"
+  ],
+  "cron/heartbeatService.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/notificationService.ts",
+    "tools/toolRegistry.ts"
+  ],
+  "cron/heartbeatTaskLoader.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "cron/index.ts": [
+    "cron/cronService.ts",
+    "cron/heartbeatService.ts",
+    "cron/heartbeatTaskLoader.ts"
+  ],
+  "desktop/desktopActivityPlanningBridge.ts": [
+    "desktop/desktopActivityUnderstandingService.ts"
+  ],
+  "desktop/desktopActivityUnderstandingService.ts": [
+    "events/eventBus.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "services/nativeDesktopService.ts",
+    "services/serviceRegistry.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "desktop/workspaceActivitySearchService.ts": [
+    "context/tokenOptimizer.ts",
+    "desktop/desktopActivityUnderstandingService.ts",
+    "desktop/workspaceArtifactIndexService.ts"
+  ],
+  "desktop/workspaceArtifactIndexService.ts": [
+    "connectors/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "errors/errorClassifier.ts": [
+    "errors/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "errors/types.ts": [
+    "../shared/types/error.ts"
+  ],
+  "evaluation/EvaluationService.ts": [
+    "../shared/types/evaluation.ts",
+    "config/index.ts",
+    "evaluation/llmChatFactory.ts",
+    "evaluation/metrics/index.ts",
+    "evaluation/sessionEventService.ts",
+    "evaluation/snapshotBuilder.ts",
+    "evaluation/swissCheeseEvaluator.ts",
+    "evaluation/telemetryQueryService.ts",
+    "evaluation/trajectory/attribution/index.ts",
+    "evaluation/trajectory/deviationDetector.ts",
+    "evaluation/trajectory/trajectoryBuilder.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "evaluation/annotationProxy.ts": [
+    "../../packages/eval-harness/src/index.ts"
+  ],
+  "evaluation/codeGrader.ts": [
+    "evaluation/evaluationPrompts.ts"
+  ],
+  "evaluation/conversationDetector.ts": [
+    "evaluation/evaluationPrompts.ts"
+  ],
+  "evaluation/evaluationPrompts.ts": [],
+  "evaluation/experimentAdapter.ts": [],
+  "evaluation/llmChatFactory.ts": [
+    "../shared/constants/providers.ts"
+  ],
+  "evaluation/metrics/codeQuality.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metrics/dialogQuality.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metrics/index.ts": [
+    "evaluation/metrics/codeQuality.ts",
+    "evaluation/metrics/dialogQuality.ts",
+    "evaluation/metrics/performance.ts",
+    "evaluation/metrics/security.ts",
+    "evaluation/metrics/taskCompletion.ts",
+    "evaluation/metrics/toolEfficiency.ts"
+  ],
+  "evaluation/metrics/performance.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metrics/security.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metrics/taskCompletion.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metrics/toolEfficiency.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/metricsConverter.ts": [
+    "../shared/types/evaluation.ts"
+  ],
+  "evaluation/replayService.ts": [
+    "evaluation/telemetryQueryService.ts",
+    "services/infra/logger.ts"
+  ],
+  "evaluation/resultAggregator.ts": [],
+  "evaluation/reviewerExecutor.ts": [
+    "../shared/constants/index.ts",
+    "evaluation/evaluationPrompts.ts",
+    "model/modelRouter.ts",
+    "services/infra/logger.ts"
+  ],
+  "evaluation/sessionAnalyticsService.ts": [
+    "evaluation/sessionEventService.ts",
+    "evaluation/telemetryQueryService.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "evaluation/sessionEventService.ts": [
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "evaluation/snapshotBuilder.ts": [
+    "evaluation/telemetryQueryService.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "evaluation/swissCheeseEvaluator.ts": [
+    "evaluation/codeGrader.ts",
+    "evaluation/conversationDetector.ts",
+    "evaluation/evaluationPrompts.ts",
+    "evaluation/metricsConverter.ts",
+    "evaluation/resultAggregator.ts",
+    "evaluation/reviewerExecutor.ts",
+    "evaluation/transcriptBuilder.ts",
+    "model/modelRouter.ts",
+    "services/infra/logger.ts"
+  ],
+  "evaluation/telemetryQueryService.ts": [
+    "evaluation/llmChatFactory.ts",
+    "evaluation/trajectory/attribution/index.ts",
+    "evaluation/trajectory/deviationDetector.ts",
+    "evaluation/trajectory/trajectoryBuilder.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "telemetry/telemetryCollector.ts"
+  ],
+  "evaluation/trajectory/attribution/failureAttributor.ts": [
+    "evaluation/trajectory/attribution/llmAttributor.ts",
+    "evaluation/trajectory/attribution/regressionMatcher.ts",
+    "evaluation/trajectory/attribution/ruleAttributor.ts"
+  ],
+  "evaluation/trajectory/attribution/index.ts": [
+    "evaluation/trajectory/attribution/failureAttributor.ts",
+    "evaluation/trajectory/attribution/llmAttributor.ts",
+    "evaluation/trajectory/attribution/regressionMatcher.ts",
+    "evaluation/trajectory/attribution/ruleAttributor.ts"
+  ],
+  "evaluation/trajectory/attribution/llmAttributor.ts": [],
+  "evaluation/trajectory/attribution/regressionMatcher.ts": [],
+  "evaluation/trajectory/attribution/ruleAttributor.ts": [],
+  "evaluation/trajectory/deviationDetector.ts": [],
+  "evaluation/trajectory/index.ts": [
+    "evaluation/trajectory/attribution/index.ts",
+    "evaluation/trajectory/deviationDetector.ts",
+    "evaluation/trajectory/insightExtractor.ts",
+    "evaluation/trajectory/trajectoryBuilder.ts",
+    "evaluation/trajectory/trajectoryComparator.ts",
+    "evaluation/trajectory/trajectoryVisualizer.ts"
+  ],
+  "evaluation/trajectory/insightExtractor.ts": [],
+  "evaluation/trajectory/trajectoryBuilder.ts": [],
+  "evaluation/trajectory/trajectoryComparator.ts": [],
+  "evaluation/trajectory/trajectoryVisualizer.ts": [],
+  "evaluation/transcriptBuilder.ts": [],
+  "events/eventBridge.ts": [
+    "events/eventBus.ts",
+    "services/infra/logger.ts"
+  ],
+  "events/eventBus.ts": [
+    "events/internalEventStore.ts",
+    "services/infra/logger.ts"
+  ],
+  "events/index.ts": [
+    "events/eventBridge.ts",
+    "events/eventBus.ts"
+  ],
+  "events/internalEventStore.ts": [],
+  "hooks/agentHook.ts": [],
+  "hooks/builtinHookExecutor.ts": [
+    "hooks/builtins/agentsHooks.ts",
+    "hooks/builtins/contextHooks.ts",
+    "hooks/builtins/memoryHooks.ts",
+    "hooks/templates/hookTemplates.ts",
+    "services/infra/logger.ts"
+  ],
+  "hooks/builtins/agentsHooks.ts": [
+    "context/agentsDiscovery.ts",
+    "services/infra/logger.ts"
+  ],
+  "hooks/builtins/contextHooks.ts": [
+    "services/infra/logger.ts"
+  ],
+  "hooks/builtins/memoryHooks.ts": [
+    "services/infra/logger.ts"
+  ],
+  "hooks/configParser.ts": [
+    "config/configPaths.ts"
+  ],
+  "hooks/events.ts": [],
+  "hooks/hookManager.ts": [
+    "hooks/agentHook.ts",
+    "hooks/builtinHookExecutor.ts",
+    "hooks/configParser.ts",
+    "hooks/httpHookExecutor.ts",
+    "hooks/merger.ts",
+    "hooks/promptHook.ts",
+    "hooks/scriptExecutor.ts",
+    "services/infra/logger.ts"
+  ],
+  "hooks/httpHookExecutor.ts": [
+    "services/infra/logger.ts"
+  ],
+  "hooks/index.ts": [
+    "hooks/agentHook.ts",
+    "hooks/configParser.ts",
+    "hooks/events.ts",
+    "hooks/hookManager.ts",
+    "hooks/merger.ts",
+    "hooks/promptHook.ts",
+    "hooks/scriptExecutor.ts"
+  ],
+  "hooks/merger.ts": [],
+  "hooks/promptHook.ts": [
+    "services/infra/logger.ts"
+  ],
+  "hooks/scriptExecutor.ts": [
+    "../shared/constants/index.ts",
+    "hooks/events.ts",
+    "services/infra/logger.ts"
+  ],
+  "hooks/templates/hookTemplates.ts": [],
+  "index.ts": [
+    "app/bootstrap.ts",
+    "app/window.ts",
+    "channels/index.ts",
+    "ipc/index.ts",
+    "mcp/mcpClient.ts",
+    "permissions/modes.ts",
+    "platform/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "services/wechatWatcher.ts",
+    "task/index.ts"
+  ],
+  "ipc/agent.ipc.ts": [
+    "../shared/ipc/index.ts"
+  ],
+  "ipc/agentRouting.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "routing/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/auth.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/core/secureStorage.ts",
+    "services/index.ts"
+  ],
+  "ipc/background.ipc.ts": [
+    "../shared/ipc/channels.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "session/backgroundTaskManager.ts"
+  ],
+  "ipc/capture.ipc.ts": [
+    "context/documentContext/documentContextService.ts",
+    "platform/index.ts",
+    "services/captureService.ts",
+    "services/infra/logger.ts",
+    "services/wechatWatcher.ts"
+  ],
+  "ipc/channel.ipc.ts": [
+    "../shared/ipc/channels.ts",
+    "channels/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/checkpoint.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/checkpoint/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/cloud.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "cloud/cloudTaskService.ts",
+    "services/cloud/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/context.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "../shared/types/contextHealth.ts",
+    "context/compressionState.ts",
+    "context/contextEventLedger.ts",
+    "context/contextHealthService.ts",
+    "context/contextInterventionHelpers.ts",
+    "context/contextInterventionState.ts",
+    "context/projectionEngine.ts",
+    "context/subagentContextStore.ts",
+    "context/tokenEstimator.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/contextHealth.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "context/autoCompressor.ts",
+    "context/contextHealthService.ts",
+    "context/tokenEstimator.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/cron.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "cron/cronService.ts",
+    "model/modelRouter.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/data.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "services/infra/sessionManager.ts",
+    "services/infra/toolCache.ts"
+  ],
+  "ipc/desktop.ipc.ts": [
+    "services/desktopAudioCapture.ts",
+    "services/desktopVisionAnalyzer.ts",
+    "services/infra/logger.ts",
+    "services/nativeDesktopService.ts"
+  ],
+  "ipc/diff.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/diff/diffTracker.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/doctor.ipc.ts": [
+    "config/configPaths.ts"
+  ],
+  "ipc/evaluation.ipc.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/channels.ts",
+    "../shared/ipc/index.ts",
+    "../shared/types/evaluation.ts",
+    "config/configPaths.ts",
+    "evaluation/EvaluationService.ts",
+    "evaluation/annotationProxy.ts",
+    "evaluation/experimentAdapter.ts",
+    "evaluation/sessionAnalyticsService.ts",
+    "evaluation/snapshotBuilder.ts",
+    "evaluation/swissCheeseEvaluator.ts",
+    "platform/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "testing/agentAdapter.ts",
+    "testing/testCaseLoader.ts",
+    "testing/testRunner.ts"
+  ],
+  "ipc/index.ts": [
+    "agent/taskList/taskList.ipc.ts",
+    "ipc/agent.ipc.ts",
+    "ipc/agentRouting.ipc.ts",
+    "ipc/auth.ipc.ts",
+    "ipc/background.ipc.ts",
+    "ipc/capture.ipc.ts",
+    "ipc/channel.ipc.ts",
+    "ipc/checkpoint.ipc.ts",
+    "ipc/cloud.ipc.ts",
+    "ipc/context.ipc.ts",
+    "ipc/contextHealth.ipc.ts",
+    "ipc/cron.ipc.ts",
+    "ipc/data.ipc.ts",
+    "ipc/desktop.ipc.ts",
+    "ipc/diff.ipc.ts",
+    "ipc/evaluation.ipc.ts",
+    "ipc/lab.ipc.ts",
+    "ipc/lsp.ipc.ts",
+    "ipc/marketplace.ipc.ts",
+    "ipc/mcp.ipc.ts",
+    "ipc/memory.ipc.ts",
+    "ipc/planning.ipc.ts",
+    "ipc/provider.ipc.ts",
+    "ipc/session.ipc.ts",
+    "ipc/sessionStatus.ipc.ts",
+    "ipc/settings.ipc.ts",
+    "ipc/skill.ipc.ts",
+    "ipc/soul.ipc.ts",
+    "ipc/speech.ipc.ts",
+    "ipc/status.ipc.ts",
+    "ipc/suggestions.ipc.ts",
+    "ipc/swarm.ipc.ts",
+    "ipc/sync.ipc.ts",
+    "ipc/task.ipc.ts",
+    "ipc/telemetry.ipc.ts",
+    "ipc/types.ts",
+    "ipc/update.ipc.ts",
+    "ipc/voicePaste.ipc.ts",
+    "ipc/workspace.ipc.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/lab.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/lab/index.ts"
+  ],
+  "ipc/lsp.ipc.ts": [
+    "../shared/ipc/channels.ts",
+    "lsp/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/marketplace.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/infra/logger.ts",
+    "skills/marketplace/index.ts"
+  ],
+  "ipc/mcp.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "mcp/mcpClient.ts"
+  ],
+  "ipc/memory.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "lightMemory/lightMemoryIpc.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/planning.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/provider.ipc.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "ipc/doctor.ipc.ts",
+    "model/providerHealthMonitor.ts"
+  ],
+  "ipc/session.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "session/search.ts"
+  ],
+  "ipc/sessionStatus.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "session/sessionStateManager.ts"
+  ],
+  "ipc/settings.ipc.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "permissions/modes.ts",
+    "platform/index.ts",
+    "services/core/secureStorage.ts"
+  ],
+  "ipc/skill.ipc.ts": [
+    "../shared/ipc/channels.ts",
+    "services/core/configService.ts",
+    "services/infra/logger.ts",
+    "services/skills/comboRecorder.ts",
+    "services/skills/sessionSkillService.ts",
+    "services/skills/skillDiscoveryService.ts",
+    "services/skills/skillRepositories.ts",
+    "services/skills/skillRepositoryService.ts"
+  ],
+  "ipc/soul.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "config/configPaths.ts",
+    "platform/index.ts",
+    "prompts/soulLoader.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/speech.ipc.ts": [
+    "platform/index.ts",
+    "services/core/configService.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/status.ipc.ts": [
+    "../shared/constants/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/suggestions.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/swarm.ipc.ts": [
+    "agent/parallelAgentCoordinator.ts",
+    "agent/planApproval.ts",
+    "agent/spawnGuard.ts",
+    "agent/swarmLaunchApproval.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "session/agentHistoryPersistence.ts"
+  ],
+  "ipc/sync.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/index.ts"
+  ],
+  "ipc/task.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "ipc/telemetry.ipc.ts": [
+    "../shared/ipc/channels.ts",
+    "evaluation/replayService.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "telemetry/systemPromptCache.ts",
+    "telemetry/telemetryCollector.ts",
+    "telemetry/telemetryStorage.ts"
+  ],
+  "ipc/types.ts": [],
+  "ipc/update.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/cloud/updateService.ts"
+  ],
+  "ipc/voicePaste.ipc.ts": [
+    "platform/index.ts",
+    "services/core/configService.ts"
+  ],
+  "ipc/workspace.ipc.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts"
+  ],
+  "lightMemory/index.ts": [
+    "lightMemory/indexLoader.ts",
+    "lightMemory/memoryReadTool.ts",
+    "lightMemory/memoryWriteTool.ts",
+    "lightMemory/recentConversations.ts",
+    "lightMemory/sessionMetadata.ts"
+  ],
+  "lightMemory/indexLoader.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "lightMemory/lightMemoryIpc.ts": [
+    "lightMemory/indexLoader.ts"
+  ],
+  "lightMemory/memoryReadTool.ts": [
+    "lightMemory/indexLoader.ts"
+  ],
+  "lightMemory/memoryWriteTool.ts": [
+    "lightMemory/indexLoader.ts",
+    "services/infra/logger.ts"
+  ],
+  "lightMemory/recentConversations.ts": [
+    "lightMemory/indexLoader.ts",
+    "services/infra/logger.ts"
+  ],
+  "lightMemory/sessionMetadata.ts": [
+    "lightMemory/indexLoader.ts",
+    "services/infra/logger.ts"
+  ],
+  "lsp/index.ts": [
+    "lsp/manager.ts"
+  ],
+  "lsp/manager.ts": [],
+  "mcp/inProcessServer.ts": [
+    "services/infra/logger.ts"
+  ],
+  "mcp/logBridge.ts": [
+    "../shared/constants/index.ts",
+    "mcp/logCollector.ts"
+  ],
+  "mcp/logCollector.ts": [
+    "platform/index.ts"
+  ],
+  "mcp/mcpClient.ts": [
+    "mcp/mcpDefaultServers.ts",
+    "mcp/mcpElicitation.ts",
+    "mcp/mcpToolRegistry.ts",
+    "mcp/mcpTransport.ts",
+    "mcp/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "mcp/mcpDefaultServers.ts": [
+    "mcp/servers/codeIndexServer.ts",
+    "mcp/servers/memoryKVServer.ts",
+    "services/cloud/cloudConfigService.ts",
+    "services/core/configService.ts",
+    "services/infra/logger.ts"
+  ],
+  "mcp/mcpElicitation.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/notificationService.ts"
+  ],
+  "mcp/mcpToolRegistry.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts",
+    "tools/search/index.ts"
+  ],
+  "mcp/mcpTransport.ts": [
+    "../shared/constants/index.ts",
+    "mcp/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "mcp/servers/codeIndexServer.ts": [
+    "mcp/inProcessServer.ts",
+    "services/infra/logger.ts"
+  ],
+  "mcp/servers/memoryKVServer.ts": [
+    "mcp/inProcessServer.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "mcp/types.ts": [],
+  "model/adaptiveRouter.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/inferenceCache.ts": [
+    "services/infra/logger.ts"
+  ],
+  "model/modelRouter.ts": [
+    "../shared/constants/index.ts",
+    "model/adaptiveRouter.ts",
+    "model/inferenceCache.ts",
+    "model/providerHealthMonitor.ts",
+    "model/providerRegistry.ts",
+    "model/providers/claudeProvider.ts",
+    "model/providers/deepseekProvider.ts",
+    "model/providers/geminiProvider.ts",
+    "model/providers/groqProvider.ts",
+    "model/providers/index.ts",
+    "model/providers/localProvider.ts",
+    "model/providers/minimaxProvider.ts",
+    "model/providers/moonshotProvider.ts",
+    "model/providers/openaiProvider.ts",
+    "model/providers/openrouterProvider.ts",
+    "model/providers/perplexityProvider.ts",
+    "model/providers/qwenProvider.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/volcengineProvider.ts",
+    "model/providers/zhipuProvider.ts",
+    "model/types.ts",
+    "platform/windowBridge.ts",
+    "services/core/configService.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/modelValidator.ts": [
+    "../shared/constants/index.ts",
+    "model/providerRegistry.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providerHealthMonitor.ts": [
+    "services/infra/logger.ts"
+  ],
+  "model/providerRegistry.ts": [
+    "../shared/constants/index.ts"
+  ],
+  "model/providers/anthropic.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/baseOpenAIProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providerRegistry.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providers/claudeProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/cloud-proxy.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts",
+    "model/types.ts"
+  ],
+  "model/providers/deepseek.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts"
+  ],
+  "model/providers/deepseekProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providers/gemini.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/geminiProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/groqProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/index.ts": [
+    "model/providers/anthropic.ts",
+    "model/providers/claudeProvider.ts",
+    "model/providers/cloud-proxy.ts",
+    "model/providers/deepseek.ts",
+    "model/providers/deepseekProvider.ts",
+    "model/providers/gemini.ts",
+    "model/providers/geminiProvider.ts",
+    "model/providers/groqProvider.ts",
+    "model/providers/localProvider.ts",
+    "model/providers/minimaxProvider.ts",
+    "model/providers/moonshot.ts",
+    "model/providers/moonshotProvider.ts",
+    "model/providers/openai-compatible.ts",
+    "model/providers/openaiProvider.ts",
+    "model/providers/openrouter.ts",
+    "model/providers/openrouterProvider.ts",
+    "model/providers/perplexityProvider.ts",
+    "model/providers/qwenProvider.ts",
+    "model/providers/shared.ts",
+    "model/providers/zhipu.ts",
+    "model/providers/zhipuProvider.ts"
+  ],
+  "model/providers/localProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/minimaxProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/moonshot.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts"
+  ],
+  "model/providers/moonshotProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/openai-compatible.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts"
+  ],
+  "model/providers/openaiProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providers/openrouter.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts"
+  ],
+  "model/providers/openrouterProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providers/perplexityProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/qwenProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/retryStrategy.ts": [
+    "model/providerHealthMonitor.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/shared.ts": [
+    "../shared/constants/index.ts",
+    "model/types.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/providers/sseStream.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/shared.ts",
+    "model/types.ts"
+  ],
+  "model/providers/volcengineProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts"
+  ],
+  "model/providers/zhipu.ts": [
+    "../shared/constants/index.ts",
+    "model/providers/retryStrategy.ts",
+    "model/providers/shared.ts",
+    "model/providers/sseStream.ts"
+  ],
+  "model/providers/zhipuProvider.ts": [
+    "../shared/constants/index.ts",
+    "model/providerRegistry.ts",
+    "model/providers/baseOpenAIProvider.ts",
+    "model/providers/shared.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/quickModel.ts": [
+    "../shared/constants/index.ts",
+    "model/modelRouter.ts",
+    "services/core/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "model/types.ts": [],
+  "orchestrator/index.ts": [
+    "services/infra/logger.ts"
+  ],
+  "permissions/modes.ts": [
+    "services/infra/logger.ts"
+  ],
+  "planning/errorTracker.ts": [
+    "config/configPaths.ts"
+  ],
+  "planning/findingsManager.ts": [
+    "config/configPaths.ts"
+  ],
+  "planning/hooks/decisionHooks.ts": [
+    "planning/hooks/observerHooks.ts",
+    "planning/matchers.ts"
+  ],
+  "planning/hooks/index.ts": [
+    "planning/hooks/decisionHooks.ts",
+    "planning/hooks/observerHooks.ts",
+    "planning/hooks/types.ts",
+    "planning/matchers.ts"
+  ],
+  "planning/hooks/observerHooks.ts": [
+    "planning/matchers.ts"
+  ],
+  "planning/hooks/types.ts": [],
+  "planning/hooksEngine.ts": [
+    "planning/hooks/decisionHooks.ts",
+    "planning/hooks/observerHooks.ts",
+    "planning/hooks/types.ts"
+  ],
+  "planning/index.ts": [
+    "planning/errorTracker.ts",
+    "planning/findingsManager.ts",
+    "planning/hooks/index.ts",
+    "planning/hooksEngine.ts",
+    "planning/matchers.ts",
+    "planning/planManager.ts",
+    "planning/planningService.ts",
+    "planning/planningStatePublisher.ts",
+    "planning/taskComplexityAnalyzer.ts",
+    "planning/types.ts"
+  ],
+  "planning/matchers.ts": [
+    "planning/hooks/types.ts"
+  ],
+  "planning/planManager.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "planning/planningService.ts": [
+    "config/configPaths.ts",
+    "planning/errorTracker.ts",
+    "planning/findingsManager.ts",
+    "planning/hooksEngine.ts",
+    "planning/planManager.ts"
+  ],
+  "planning/planningStatePublisher.ts": [
+    "app/window.ts",
+    "services/infra/logger.ts"
+  ],
+  "planning/recoveredWorkOrchestrator.ts": [
+    "desktop/desktopActivityPlanningBridge.ts",
+    "desktop/desktopActivityUnderstandingService.ts",
+    "desktop/workspaceActivitySearchService.ts",
+    "services/infra/logger.ts"
+  ],
+  "planning/taskComplexityAnalyzer.ts": [],
+  "planning/taskOrchestrator.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "planning/types.ts": [],
+  "platform/appPaths.ts": [
+    "config/configPaths.ts"
+  ],
+  "platform/globalShortcuts.ts": [],
+  "platform/index.ts": [
+    "platform/appPaths.ts",
+    "platform/globalShortcuts.ts",
+    "platform/ipcRegistry.ts",
+    "platform/miscCompat.ts",
+    "platform/nativeClipboard.ts",
+    "platform/nativeShell.ts",
+    "platform/notifications.ts",
+    "platform/windowBridge.ts"
+  ],
+  "platform/ipcRegistry.ts": [],
+  "platform/miscCompat.ts": [],
+  "platform/nativeClipboard.ts": [],
+  "platform/nativeShell.ts": [],
+  "platform/notifications.ts": [],
+  "platform/windowBridge.ts": [],
+  "plugins/index.ts": [
+    "plugins/pluginLoader.ts",
+    "plugins/pluginRegistry.ts",
+    "plugins/pluginStorage.ts",
+    "plugins/types.ts"
+  ],
+  "plugins/pluginLoader.ts": [
+    "platform/index.ts",
+    "plugins/pluginValidator.ts"
+  ],
+  "plugins/pluginRegistry.ts": [
+    "plugins/pluginLoader.ts",
+    "plugins/pluginStorage.ts",
+    "services/infra/logger.ts",
+    "tools/toolRegistry.ts"
+  ],
+  "plugins/pluginStorage.ts": [
+    "services/index.ts"
+  ],
+  "plugins/pluginValidator.ts": [],
+  "plugins/types.ts": [],
+  "prompts/agentModes.ts": [
+    "prompts/systemReminders.ts"
+  ],
+  "prompts/base/gen8.ts": [
+    "prompts/base/orchestrator.ts"
+  ],
+  "prompts/base/index.ts": [
+    "prompts/base/gen8.ts"
+  ],
+  "prompts/base/orchestrator.ts": [],
+  "prompts/builder.ts": [
+    "config/configPaths.ts",
+    "config/rulesLoader.ts",
+    "prompts/agentModes.ts",
+    "prompts/base/index.ts",
+    "prompts/cacheBreakDetection.ts",
+    "prompts/dynamicReminders.ts",
+    "prompts/generativeUI.ts",
+    "prompts/identity.ts",
+    "prompts/overlayEngine.ts",
+    "prompts/profiles.ts",
+    "prompts/soulLoader.ts",
+    "prompts/systemReminders.ts",
+    "prompts/tools/index.ts"
+  ],
+  "prompts/cacheBreakDetection.ts": [],
+  "prompts/contextAwareReminders.ts": [],
+  "prompts/dynamicReminders.ts": [
+    "context/reminderBudget.ts",
+    "prompts/contextAwareReminders.ts",
+    "prompts/fewShotExamples.ts",
+    "prompts/reminderDeduplicator.ts",
+    "prompts/reminderRegistry.ts",
+    "prompts/systemReminders.ts"
+  ],
+  "prompts/fewShotExamples.ts": [],
+  "prompts/generativeUI.ts": [],
+  "prompts/identity.ts": [],
+  "prompts/overlayEngine.ts": [],
+  "prompts/profiles.ts": [],
+  "prompts/reminderDeduplicator.ts": [],
+  "prompts/reminderRegistry.ts": [
+    "prompts/reminders/index.ts"
+  ],
+  "prompts/reminders/codebaseHealth.ts": [],
+  "prompts/reminders/contentGeneration.ts": [],
+  "prompts/reminders/index.ts": [
+    "prompts/reminders/codebaseHealth.ts",
+    "prompts/reminders/contentGeneration.ts",
+    "prompts/reminders/modes.ts",
+    "prompts/reminders/quality.ts",
+    "prompts/reminders/security.ts",
+    "prompts/reminders/taskRouting.ts",
+    "prompts/reminders/toolUsage.ts",
+    "prompts/reminders/types.ts"
+  ],
+  "prompts/reminders/modes.ts": [],
+  "prompts/reminders/quality.ts": [],
+  "prompts/reminders/security.ts": [],
+  "prompts/reminders/taskRouting.ts": [],
+  "prompts/reminders/toolUsage.ts": [],
+  "prompts/reminders/types.ts": [],
+  "prompts/soulLoader.ts": [
+    "config/configPaths.ts",
+    "prompts/identity.ts",
+    "services/infra/logger.ts"
+  ],
+  "prompts/systemReminders.ts": [],
+  "prompts/tools/bash.ts": [],
+  "prompts/tools/edit.ts": [],
+  "prompts/tools/excel.ts": [],
+  "prompts/tools/index.ts": [
+    "prompts/tools/bash.ts",
+    "prompts/tools/edit.ts",
+    "prompts/tools/excel.ts",
+    "prompts/tools/task.ts"
+  ],
+  "prompts/tools/task.ts": [],
+  "research/adaptiveConfig.ts": [
+    "services/infra/logger.ts"
+  ],
+  "research/dataSourceRouter.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/deepResearchMode.ts": [
+    "research/reportGenerator.ts",
+    "research/researchExecutor.ts",
+    "research/researchPlanner.ts",
+    "research/urlCompressor.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/index.ts": [
+    "research/adaptiveConfig.ts",
+    "research/dataSourceRouter.ts",
+    "research/deepResearchMode.ts",
+    "research/progressiveLoop.ts",
+    "research/reportGenerator.ts",
+    "research/researchExecutor.ts",
+    "research/researchPlanner.ts",
+    "research/resultAggregator.ts",
+    "research/searchFallback.ts",
+    "research/semanticResearchOrchestrator.ts",
+    "research/types.ts",
+    "research/urlCompressor.ts",
+    "routing/intentClassifier.ts"
+  ],
+  "research/progressiveLoop.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/reportGenerator.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/researchExecutor.ts": [
+    "../shared/constants/index.ts",
+    "research/urlCompressor.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/researchPlanner.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/resultAggregator.ts": [
+    "services/infra/logger.ts"
+  ],
+  "research/searchFallback.ts": [
+    "research/dataSourceRouter.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/semanticResearchOrchestrator.ts": [
+    "research/adaptiveConfig.ts",
+    "research/dataSourceRouter.ts",
+    "research/progressiveLoop.ts",
+    "research/reportGenerator.ts",
+    "routing/intentClassifier.ts",
+    "services/infra/logger.ts"
+  ],
+  "research/types.ts": [],
+  "research/urlCompressor.ts": [],
+  "routing/index.ts": [
+    "routing/intentClassifier.ts",
+    "routing/routingService.ts"
+  ],
+  "routing/intentClassifier.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "routing/routingService.ts": [
+    "config/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "scheduler/DAGScheduler.ts": [
+    "../shared/constants/index.ts",
+    "../shared/types/taskDAG.ts",
+    "agent/agentDefinition.ts",
+    "agent/subagentExecutor.ts",
+    "scheduler/TaskDAG.ts",
+    "services/infra/logger.ts"
+  ],
+  "scheduler/TaskDAG.ts": [
+    "../shared/types/taskDAG.ts",
+    "services/infra/logger.ts"
+  ],
+  "scheduler/dagEventBridge.ts": [
+    "../shared/ipc/channels.ts",
+    "platform/index.ts",
+    "scheduler/DAGScheduler.ts",
+    "scheduler/TaskDAG.ts",
+    "services/infra/logger.ts"
+  ],
+  "scheduler/index.ts": [
+    "../shared/types/taskDAG.ts",
+    "scheduler/DAGScheduler.ts",
+    "scheduler/TaskDAG.ts",
+    "scheduler/dagEventBridge.ts"
+  ],
+  "security/auditLogger.ts": [
+    "config/configPaths.ts",
+    "platform/index.ts",
+    "security/sensitiveDetector.ts",
+    "services/infra/logger.ts"
+  ],
+  "security/commandSafety.ts": [
+    "services/infra/logger.ts"
+  ],
+  "security/decisionHistory.ts": [],
+  "security/decisionTraceBuilder.ts": [],
+  "security/execPolicy.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "security/index.ts": [
+    "security/auditLogger.ts",
+    "security/commandSafety.ts",
+    "security/decisionHistory.ts",
+    "security/execPolicy.ts",
+    "security/inputSanitizer.ts",
+    "security/logMasker.ts",
+    "security/sensitiveDetector.ts"
+  ],
+  "security/inputSanitizer.ts": [
+    "security/patterns/injectionPatterns.ts",
+    "security/sensitiveDetector.ts",
+    "services/infra/logger.ts"
+  ],
+  "security/logMasker.ts": [
+    "security/sensitiveDetector.ts",
+    "services/infra/logger.ts"
+  ],
+  "security/patterns/injectionPatterns.ts": [],
+  "security/sensitiveDetector.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/auth/authService.ts": [
+    "platform/index.ts",
+    "services/core/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/supabaseService.ts"
+  ],
+  "services/auth/index.ts": [
+    "services/auth/authService.ts",
+    "services/auth/tokenManager.ts"
+  ],
+  "services/auth/tokenManager.ts": [
+    "../shared/constants/index.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/captureService.ts": [
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/checkpoint/fileCheckpointService.ts": [
+    "services/core/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/checkpoint/index.ts": [
+    "services/checkpoint/fileCheckpointService.ts"
+  ],
+  "services/citation/citationExtractor.ts": [],
+  "services/citation/citationService.ts": [
+    "services/citation/citationExtractor.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/cloud/builtinConfig.ts": [],
+  "services/cloud/cloudConfigService.ts": [
+    "../shared/constants/index.ts",
+    "services/cloud/builtinConfig.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/cloud/featureFlagService.ts": [
+    "services/cloud/cloudConfigService.ts"
+  ],
+  "services/cloud/index.ts": [
+    "services/cloud/builtinConfig.ts",
+    "services/cloud/cloudConfigService.ts",
+    "services/cloud/featureFlagService.ts"
+  ],
+  "services/cloud/promptService.ts": [
+    "../shared/constants/index.ts",
+    "prompts/builder.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/cloud/updateService.ts": [
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/core/budgetService.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/core/configService.ts": [
+    "../shared/constants/index.ts",
+    "platform/index.ts",
+    "services/core/secureStorage.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/core/databaseService.ts": [
+    "platform/index.ts",
+    "services/core/repositories/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/core/index.ts": [
+    "services/core/budgetService.ts",
+    "services/core/configService.ts",
+    "services/core/databaseService.ts",
+    "services/core/permissionPresets.ts",
+    "services/core/secureStorage.ts"
+  ],
+  "services/core/permissionPresets.ts": [],
+  "services/core/repositories/CaptureRepository.ts": [],
+  "services/core/repositories/ConfigRepository.ts": [],
+  "services/core/repositories/ExperimentRepository.ts": [],
+  "services/core/repositories/MemoryRepository.ts": [
+    "../shared/constants/index.ts"
+  ],
+  "services/core/repositories/SessionRepository.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/core/repositories/index.ts": [
+    "services/core/repositories/CaptureRepository.ts",
+    "services/core/repositories/ConfigRepository.ts",
+    "services/core/repositories/ExperimentRepository.ts",
+    "services/core/repositories/MemoryRepository.ts",
+    "services/core/repositories/SessionRepository.ts"
+  ],
+  "services/core/secureStorage.ts": [
+    "config/configPaths.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/desktopAudioCapture.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "services/nativeDesktopService.ts"
+  ],
+  "services/desktopVisionAnalyzer.ts": [
+    "services/infra/logger.ts",
+    "services/nativeDesktopService.ts"
+  ],
+  "services/diff/diffTracker.ts": [
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/git/fileWatcherService.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/git/gitStatusService.ts": [
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/github/prLinkService.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/index.ts": [
+    "services/auth/index.ts",
+    "services/checkpoint/index.ts",
+    "services/cloud/index.ts",
+    "services/core/index.ts",
+    "services/infra/index.ts",
+    "services/lab/index.ts",
+    "services/nativeDesktopService.ts",
+    "services/sync/index.ts"
+  ],
+  "services/infra/browserService.ts": [
+    "mcp/logCollector.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/diskSpace.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/infra/evolutionPersistence.ts": [
+    "services/auth/authService.ts",
+    "services/core/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/supabaseService.ts"
+  ],
+  "services/infra/fileLogger.ts": [
+    "config/configPaths.ts",
+    "platform/index.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/gracefulShutdown.ts": [
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/index.ts": [
+    "services/infra/browserService.ts",
+    "services/infra/diskSpace.ts",
+    "services/infra/evolutionPersistence.ts",
+    "services/infra/fileLogger.ts",
+    "services/infra/gracefulShutdown.ts",
+    "services/infra/langfuseService.ts",
+    "services/infra/notificationService.ts",
+    "services/infra/sessionManager.ts",
+    "services/infra/supabaseService.ts",
+    "services/infra/timeoutController.ts",
+    "services/infra/toolCache.ts"
+  ],
+  "services/infra/langfuseService.ts": [
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/logger.ts": [],
+  "services/infra/notificationService.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/sessionManager.ts": [
+    "../shared/ipc/index.ts",
+    "model/quickModel.ts",
+    "platform/index.ts",
+    "services/auth/authService.ts",
+    "services/core/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/supabaseService.ts",
+    "services/infra/toolCache.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/infra/shellEnvironment.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/infra/supabaseService.ts": [
+    "services/core/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/infra/timeoutController.ts": [],
+  "services/infra/toolCache.ts": [
+    "services/core/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/lab/LabService.ts": [
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/lab/index.ts": [
+    "services/lab/LabService.ts"
+  ],
+  "services/nativeDesktopService.ts": [
+    "config/configPaths.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/promptSuggestions.ts": [
+    "model/quickModel.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/serviceRegistry.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/skills/builtinSkills.ts": [],
+  "services/skills/comboRecorder.ts": [
+    "config/configPaths.ts",
+    "events/eventBus.ts",
+    "services/infra/logger.ts"
+  ],
+  "services/skills/gitDownloader.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/skills/index.ts": [
+    "services/skills/builtinSkills.ts",
+    "services/skills/gitDownloader.ts",
+    "services/skills/sessionSkillService.ts",
+    "services/skills/skillBridge.ts",
+    "services/skills/skillDiscoveryService.ts",
+    "services/skills/skillLoader.ts",
+    "services/skills/skillParser.ts",
+    "services/skills/skillRenderer.ts",
+    "services/skills/skillRepositories.ts",
+    "services/skills/skillRepositoryService.ts",
+    "services/skills/skillWatcher.ts"
+  ],
+  "services/skills/sessionSkillService.ts": [
+    "services/infra/logger.ts",
+    "services/skills/skillDiscoveryService.ts",
+    "services/skills/skillRepositories.ts"
+  ],
+  "services/skills/skillBridge.ts": [],
+  "services/skills/skillDiscoveryService.ts": [
+    "config/index.ts",
+    "services/cloud/index.ts",
+    "services/infra/logger.ts",
+    "services/skills/builtinSkills.ts",
+    "services/skills/skillBridge.ts",
+    "services/skills/skillParser.ts",
+    "tools/search/index.ts"
+  ],
+  "services/skills/skillLoader.ts": [
+    "services/infra/logger.ts"
+  ],
+  "services/skills/skillParser.ts": [
+    "../shared/types/agentSkill.ts"
+  ],
+  "services/skills/skillRenderer.ts": [],
+  "services/skills/skillRepositories.ts": [],
+  "services/skills/skillRepositoryService.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts",
+    "services/skills/gitDownloader.ts",
+    "services/skills/skillParser.ts",
+    "services/skills/skillRepositories.ts"
+  ],
+  "services/skills/skillUsageTracker.ts": [
+    "config/configPaths.ts"
+  ],
+  "services/skills/skillWatcher.ts": [
+    "config/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts",
+    "services/skills/skillDiscoveryService.ts"
+  ],
+  "services/sync/cloudStorageService.ts": [
+    "services/core/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/sync/index.ts": [
+    "services/sync/cloudStorageService.ts",
+    "services/sync/syncService.ts"
+  ],
+  "services/sync/syncService.ts": [
+    "../shared/constants/index.ts",
+    "services/auth/index.ts",
+    "services/core/index.ts",
+    "services/infra/index.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "services/wechatWatcher.ts": [
+    "context/documentContext/documentContextService.ts",
+    "services/captureService.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts"
+  ],
+  "session/agentHistoryPersistence.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "session/backgroundTaskManager.ts": [
+    "platform/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "session/localCache.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts"
+  ],
+  "session/modelSessionState.ts": [
+    "services/infra/logger.ts"
+  ],
+  "session/search.ts": [
+    "services/infra/logger.ts",
+    "session/localCache.ts"
+  ],
+  "session/sessionStateManager.ts": [
+    "../shared/ipc/index.ts",
+    "../shared/types/contextHealth.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "skills/marketplace/index.ts": [
+    "skills/marketplace/installService.ts",
+    "skills/marketplace/marketplaceService.ts",
+    "skills/marketplace/types.ts"
+  ],
+  "skills/marketplace/installService.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "services/skills/skillDiscoveryService.ts",
+    "skills/marketplace/marketplaceService.ts"
+  ],
+  "skills/marketplace/marketplaceService.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "skills/marketplace/types.ts"
+  ],
+  "skills/marketplace/types.ts": [],
+  "task/Semaphore.ts": [
+    "services/infra/logger.ts"
+  ],
+  "task/TaskManager.ts": [
+    "../shared/ipc/channels.ts",
+    "agent/agentOrchestrator.ts",
+    "platform/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "task/Semaphore.ts"
+  ],
+  "task/index.ts": [
+    "task/Semaphore.ts",
+    "task/TaskManager.ts"
+  ],
+  "telemetry/index.ts": [
+    "telemetry/intentClassifier.ts",
+    "telemetry/telemetryAdapter.ts",
+    "telemetry/telemetryCollector.ts",
+    "telemetry/telemetryService.ts",
+    "telemetry/telemetryStorage.ts"
+  ],
+  "telemetry/intentClassifier.ts": [],
+  "telemetry/systemPromptCache.ts": [
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "telemetry/telemetryAdapter.ts": [
+    "telemetry/telemetryService.ts"
+  ],
+  "telemetry/telemetryCollector.ts": [
+    "../shared/constants/index.ts",
+    "../shared/utils/id.ts",
+    "services/infra/logger.ts",
+    "services/serviceRegistry.ts",
+    "telemetry/intentClassifier.ts",
+    "telemetry/systemPromptCache.ts",
+    "telemetry/telemetryStorage.ts"
+  ],
+  "telemetry/telemetryService.ts": [
+    "services/infra/logger.ts"
+  ],
+  "telemetry/telemetryStorage.ts": [
+    "../shared/constants/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts"
+  ],
+  "testing/agentAdapter.ts": [
+    "../cli/electron-mock.ts",
+    "../shared/constants/index.ts",
+    "agent/agentLoop.ts",
+    "prompts/builder.ts",
+    "services/infra/logger.ts",
+    "tools/toolExecutor.ts",
+    "tools/toolRegistry.ts"
+  ],
+  "testing/assertionEngine.ts": [],
+  "testing/evalCritic/assertionAnalyzer.ts": [],
+  "testing/evalCritic/coverageDetector.ts": [],
+  "testing/evalCritic/historyTracker.ts": [],
+  "testing/evalCritic/index.ts": [
+    "testing/evalCritic/assertionAnalyzer.ts",
+    "testing/evalCritic/coverageDetector.ts",
+    "testing/evalCritic/historyTracker.ts"
+  ],
+  "testing/testCaseLoader.ts": [],
+  "testing/testRunner.ts": [
+    "config/index.ts",
+    "evaluation/experimentAdapter.ts",
+    "evaluation/trajectory/index.ts",
+    "services/core/databaseService.ts",
+    "services/infra/logger.ts",
+    "testing/assertionEngine.ts",
+    "testing/evalCritic/index.ts",
+    "testing/testCaseLoader.ts"
+  ],
+  "tools/connectors/calendar.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/calendarCreateEvent.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/calendarDeleteEvent.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/calendarUpdateEvent.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/index.ts": [
+    "tools/connectors/calendar.ts",
+    "tools/connectors/calendarCreateEvent.ts",
+    "tools/connectors/calendarDeleteEvent.ts",
+    "tools/connectors/calendarUpdateEvent.ts",
+    "tools/connectors/mail.ts",
+    "tools/connectors/mailDraft.ts",
+    "tools/connectors/mailSend.ts",
+    "tools/connectors/reminders.ts",
+    "tools/connectors/remindersCreate.ts",
+    "tools/connectors/remindersDelete.ts",
+    "tools/connectors/remindersUpdate.ts"
+  ],
+  "tools/connectors/mail.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/mailDraft.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/mailSend.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/reminders.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/remindersCreate.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/remindersDelete.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/connectors/remindersUpdate.ts": [
+    "connectors/index.ts"
+  ],
+  "tools/dataFingerprint.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/document/docEditTool.ts": [
+    "tools/document/docxEdit.ts",
+    "tools/excel/excelEdit.ts"
+  ],
+  "tools/document/docxEdit.ts": [
+    "tools/document/docxTrackChanges.ts",
+    "tools/document/snapshotManager.ts"
+  ],
+  "tools/document/docxTrackChanges.ts": [],
+  "tools/document/snapshotManager.ts": [],
+  "tools/excel/excelAutomate.ts": [
+    "tools/excel/excelEdit.ts",
+    "tools/network/excelGenerate.ts",
+    "tools/network/readXlsx.ts",
+    "tools/network/xlwingsExecute.ts",
+    "tools/utils/pythonBridge.ts"
+  ],
+  "tools/excel/excelEdit.ts": [
+    "tools/document/snapshotManager.ts"
+  ],
+  "tools/excel/index.ts": [
+    "tools/excel/excelAutomate.ts",
+    "tools/excel/excelEdit.ts"
+  ],
+  "tools/executionPhase.ts": [],
+  "tools/file/edit.ts": [
+    "agent/resourceLockManager.ts",
+    "tools/file/pathUtils.ts",
+    "tools/fileReadTracker.ts",
+    "tools/lsp/diagnosticsHelper.ts",
+    "tools/utils/atomicWrite.ts",
+    "tools/utils/externalModificationDetector.ts",
+    "tools/utils/quoteNormalizer.ts"
+  ],
+  "tools/file/glob.ts": [
+    "tools/file/pathUtils.ts"
+  ],
+  "tools/file/index.ts": [
+    "tools/file/edit.ts",
+    "tools/file/glob.ts",
+    "tools/file/listDirectory.ts",
+    "tools/file/notebookEdit.ts",
+    "tools/file/pathUtils.ts",
+    "tools/file/read.ts",
+    "tools/file/readClipboard.ts",
+    "tools/file/write.ts"
+  ],
+  "tools/file/listDirectory.ts": [
+    "tools/file/pathUtils.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/file/notebookEdit.ts": [
+    "tools/file/pathUtils.ts"
+  ],
+  "tools/file/pathUtils.ts": [],
+  "tools/file/read.ts": [
+    "services/infra/logger.ts",
+    "tools/dataFingerprint.ts",
+    "tools/file/pathUtils.ts",
+    "tools/fileReadTracker.ts"
+  ],
+  "tools/file/readClipboard.ts": [
+    "platform/index.ts"
+  ],
+  "tools/file/write.ts": [
+    "agent/resourceLockManager.ts",
+    "services/infra/logger.ts",
+    "tools/file/pathUtils.ts",
+    "tools/lsp/diagnosticsHelper.ts",
+    "tools/utils/atomicWrite.ts"
+  ],
+  "tools/fileReadTracker.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/lsp/diagnostics.ts": [
+    "lsp/index.ts"
+  ],
+  "tools/lsp/diagnosticsHelper.ts": [
+    "events/index.ts",
+    "lsp/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/lsp/index.ts": [
+    "tools/lsp/diagnostics.ts",
+    "tools/lsp/lsp.ts"
+  ],
+  "tools/lsp/lsp.ts": [
+    "lsp/index.ts"
+  ],
+  "tools/mcp/MCPUnifiedTool.ts": [
+    "tools/mcp/mcpAddServer.ts",
+    "tools/mcp/mcpTool.ts"
+  ],
+  "tools/mcp/mcpAddServer.ts": [
+    "config/index.ts",
+    "mcp/mcpClient.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/mcp/mcpTool.ts": [
+    "mcp/mcpClient.ts"
+  ],
+  "tools/middleware/fileCheckpointMiddleware.ts": [
+    "services/checkpoint/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/multiagent/agentMessage.ts": [
+    "agent/spawnGuard.ts",
+    "tools/multiagent/spawnAgent.ts"
+  ],
+  "tools/multiagent/closeAgent.ts": [
+    "agent/spawnGuard.ts"
+  ],
+  "tools/multiagent/index.ts": [
+    "tools/multiagent/agentMessage.ts",
+    "tools/multiagent/closeAgent.ts",
+    "tools/multiagent/planReview.ts",
+    "tools/multiagent/sendInput.ts",
+    "tools/multiagent/spawnAgent.ts",
+    "tools/multiagent/task.ts",
+    "tools/multiagent/teammate.ts",
+    "tools/multiagent/waitAgent.ts",
+    "tools/multiagent/workflowOrchestrate.ts"
+  ],
+  "tools/multiagent/planReview.ts": [
+    "agent/planApproval.ts"
+  ],
+  "tools/multiagent/sendInput.ts": [
+    "agent/spawnGuard.ts"
+  ],
+  "tools/multiagent/spawnAgent.ts": [
+    "agent/agentDefinition.ts",
+    "agent/agentWorktree.ts",
+    "agent/coordinatorMode.ts",
+    "agent/forkContext.ts",
+    "agent/hybrid/coreAgents.ts",
+    "agent/parallelAgentCoordinator.ts",
+    "agent/resultAggregator.ts",
+    "agent/spawnGuard.ts",
+    "agent/subagentContextBuilder.ts",
+    "agent/subagentExecutor.ts",
+    "agent/swarmLaunchApproval.ts",
+    "agent/taskDag.ts",
+    "ipc/swarm.ipc.ts"
+  ],
+  "tools/multiagent/task.ts": [
+    "agent/agentDefinition.ts",
+    "agent/subagentContextBuilder.ts",
+    "agent/subagentExecutor.ts",
+    "agent/taskDeduplication.ts"
+  ],
+  "tools/multiagent/teammate.ts": [
+    "agent/teammate/index.ts"
+  ],
+  "tools/multiagent/waitAgent.ts": [
+    "agent/spawnGuard.ts"
+  ],
+  "tools/multiagent/workflowOrchestrate.ts": [
+    "../shared/types/workflow.ts",
+    "agent/agentDefinition.ts",
+    "agent/subagentExecutor.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/ReadDocumentTool.ts": [
+    "tools/network/readDocx.ts",
+    "tools/network/readPdf.ts",
+    "tools/network/readXlsx.ts"
+  ],
+  "tools/network/WebFetchUnifiedTool.ts": [
+    "tools/network/httpRequest.ts",
+    "tools/network/webFetch.ts"
+  ],
+  "tools/network/academicSearch.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/network/chartGenerate.ts": [
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/docxGenerate.ts": [
+    "tools/network/utils.ts"
+  ],
+  "tools/network/excelGenerate.ts": [
+    "tools/network/utils.ts"
+  ],
+  "tools/network/fetchDocument.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/githubPr.ts": [
+    "../shared/constants/index.ts",
+    "services/github/prLinkService.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/htmlUtils.ts": [],
+  "tools/network/httpRequest.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/imageAnalyze.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/imageAnnotate.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/imageGenerate.ts": [
+    "../shared/constants/index.ts",
+    "services/auth/authService.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/imageProcess.ts": [
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/index.ts": [
+    "tools/network/ReadDocumentTool.ts",
+    "tools/network/WebFetchUnifiedTool.ts",
+    "tools/network/academicSearch.ts",
+    "tools/network/chartGenerate.ts",
+    "tools/network/docxGenerate.ts",
+    "tools/network/excelGenerate.ts",
+    "tools/network/githubPr.ts",
+    "tools/network/httpRequest.ts",
+    "tools/network/imageAnalyze.ts",
+    "tools/network/imageAnnotate.ts",
+    "tools/network/imageGenerate.ts",
+    "tools/network/imageProcess.ts",
+    "tools/network/jira.ts",
+    "tools/network/localSpeechToText.ts",
+    "tools/network/mermaidExport.ts",
+    "tools/network/pdfAutomate.ts",
+    "tools/network/pdfCompress.ts",
+    "tools/network/pdfGenerate.ts",
+    "tools/network/ppt/editTool.ts",
+    "tools/network/ppt/index.ts",
+    "tools/network/qrcodeGenerate.ts",
+    "tools/network/readDocx.ts",
+    "tools/network/readPdf.ts",
+    "tools/network/readXlsx.ts",
+    "tools/network/screenshotPage.ts",
+    "tools/network/speechToText.ts",
+    "tools/network/textToSpeech.ts",
+    "tools/network/twitterFetch.ts",
+    "tools/network/videoGenerate.ts",
+    "tools/network/webFetch.ts",
+    "tools/network/webSearch.ts",
+    "tools/network/xlwingsExecute.ts",
+    "tools/network/youtubeTranscript.ts"
+  ],
+  "tools/network/jira.ts": [
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/localSpeechToText.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/network/mermaidExport.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/pdfAutomate.ts": [
+    "tools/network/pdfCompress.ts",
+    "tools/network/pdfGenerate.ts",
+    "tools/network/readPdf.ts",
+    "tools/utils/pythonBridge.ts"
+  ],
+  "tools/network/pdfCompress.ts": [
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/pdfGenerate.ts": [
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/ppt/assetGenerator.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/charts.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/colorUtils.ts": [],
+  "tools/network/ppt/constants.ts": [],
+  "tools/network/ppt/dataAnalyzer.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/dataSourceAdapter.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/densityControl.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/designExecutor.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/designMode.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/designExecutor.ts",
+    "tools/network/ppt/designPrompt.ts",
+    "tools/network/ppt/designScaffold.ts",
+    "tools/network/ppt/visualReview.ts"
+  ],
+  "tools/network/ppt/designPrompt.ts": [
+    "tools/network/ppt/colorUtils.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/designScaffold.ts": [
+    "tools/network/ppt/colorUtils.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/editTool.ts": [
+    "tools/document/snapshotManager.ts",
+    "tools/network/ppt/styleExtractor.ts"
+  ],
+  "tools/network/ppt/illustrationAgent.ts": [
+    "config/configPaths.ts",
+    "services/auth/authService.ts",
+    "services/infra/logger.ts",
+    "tools/network/imageGenerate.ts"
+  ],
+  "tools/network/ppt/index.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts",
+    "tools/network/ppt/assetGenerator.ts",
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/dataAnalyzer.ts",
+    "tools/network/ppt/dataSourceAdapter.ts",
+    "tools/network/ppt/densityControl.ts",
+    "tools/network/ppt/designMode.ts",
+    "tools/network/ppt/illustrationAgent.ts",
+    "tools/network/ppt/layouts.ts",
+    "tools/network/ppt/narrativeValidator.ts",
+    "tools/network/ppt/parser.ts",
+    "tools/network/ppt/preview.ts",
+    "tools/network/ppt/researchAgent.ts",
+    "tools/network/ppt/slideContentAgent.ts",
+    "tools/network/ppt/slideMasters.ts",
+    "tools/network/ppt/slideSchemas.ts",
+    "tools/network/ppt/templateEngine.ts",
+    "tools/network/ppt/themes.ts",
+    "tools/network/ppt/visualReview.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/ppt/layoutTemplates.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/layouts.ts": [
+    "tools/network/ppt/charts.ts",
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/layoutTemplates.ts",
+    "tools/network/ppt/slideMasters.ts",
+    "tools/network/ppt/themes.ts",
+    "tools/network/ppt/typography.ts"
+  ],
+  "tools/network/ppt/masterDecorations.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/narrativeValidator.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/parser.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/preview.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/researchAgent.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/slideContentAgent.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/slideSchemas.ts"
+  ],
+  "tools/network/ppt/slideMasters.ts": [
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/masterDecorations.ts",
+    "tools/network/ppt/themes.ts"
+  ],
+  "tools/network/ppt/slideSchemas.ts": [],
+  "tools/network/ppt/styleExtractor.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/templateEngine.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/themes.ts": [],
+  "tools/network/ppt/types.ts": [],
+  "tools/network/ppt/typography.ts": [
+    "tools/network/ppt/constants.ts"
+  ],
+  "tools/network/ppt/visualReview.ts": [
+    "services/infra/logger.ts",
+    "tools/network/ppt/constants.ts",
+    "tools/network/ppt/types.ts"
+  ],
+  "tools/network/qrcodeGenerate.ts": [
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/readDocx.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/network/readPdf.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/readXlsx.ts": [
+    "services/infra/logger.ts",
+    "tools/dataFingerprint.ts"
+  ],
+  "tools/network/screenshotPage.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "tools/network/utils.ts"
+  ],
+  "tools/network/search/contentExtractor.ts": [
+    "model/quickModel.ts",
+    "services/infra/logger.ts",
+    "tools/network/fetchDocument.ts",
+    "tools/network/htmlUtils.ts",
+    "tools/network/search/searchUtils.ts"
+  ],
+  "tools/network/search/index.ts": [
+    "tools/network/search/contentExtractor.ts",
+    "tools/network/search/searchOrchestrator.ts",
+    "tools/network/search/searchStrategies.ts",
+    "tools/network/search/searchUtils.ts"
+  ],
+  "tools/network/search/searchOrchestrator.ts": [
+    "services/infra/logger.ts",
+    "tools/network/search/searchUtils.ts"
+  ],
+  "tools/network/search/searchStrategies.ts": [
+    "tools/network/search/searchUtils.ts"
+  ],
+  "tools/network/search/searchUtils.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/speechToText.ts": [
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/textToSpeech.ts": [
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/twitterFetch.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/network/utils.ts": [],
+  "tools/network/videoGenerate.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/network/webFetch.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts",
+    "tools/network/fetchDocument.ts",
+    "tools/network/htmlUtils.ts"
+  ],
+  "tools/network/webSearch.ts": [
+    "model/quickModel.ts",
+    "services/core/configService.ts",
+    "services/infra/logger.ts",
+    "tools/network/search/contentExtractor.ts",
+    "tools/network/search/index.ts",
+    "tools/network/search/searchOrchestrator.ts",
+    "tools/network/search/searchStrategies.ts",
+    "tools/network/search/searchUtils.ts"
+  ],
+  "tools/network/xlwingsExecute.ts": [
+    "services/infra/logger.ts",
+    "tools/utils/pythonBridge.ts"
+  ],
+  "tools/network/youtubeTranscript.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/permissionClassifier.ts": [
+    "security/decisionTraceBuilder.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/planning/PlanModeTool.ts": [
+    "tools/planning/enterPlanMode.ts",
+    "tools/planning/exitPlanMode.ts"
+  ],
+  "tools/planning/PlanTool.ts": [
+    "tools/planning/planRead.ts",
+    "tools/planning/planRecoverRecentWork.ts",
+    "tools/planning/planUpdate.ts"
+  ],
+  "tools/planning/TaskManagerTool.ts": [
+    "tools/planning/taskCreate.ts",
+    "tools/planning/taskGet.ts",
+    "tools/planning/taskList.ts",
+    "tools/planning/taskUpdate.ts"
+  ],
+  "tools/planning/askUserQuestion.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/notificationService.ts"
+  ],
+  "tools/planning/confirmAction.ts": [
+    "../shared/constants/index.ts",
+    "../shared/ipc/index.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/planning/enterPlanMode.ts": [],
+  "tools/planning/exitPlanMode.ts": [],
+  "tools/planning/findingsWrite.ts": [],
+  "tools/planning/index.ts": [
+    "tools/planning/PlanModeTool.ts",
+    "tools/planning/PlanTool.ts",
+    "tools/planning/TaskManagerTool.ts",
+    "tools/planning/askUserQuestion.ts",
+    "tools/planning/confirmAction.ts",
+    "tools/planning/enterPlanMode.ts",
+    "tools/planning/exitPlanMode.ts",
+    "tools/planning/findingsWrite.ts",
+    "tools/planning/planRead.ts",
+    "tools/planning/planRecoverRecentWork.ts",
+    "tools/planning/planUpdate.ts",
+    "tools/planning/task.ts",
+    "tools/planning/taskCreate.ts",
+    "tools/planning/taskGet.ts",
+    "tools/planning/taskList.ts",
+    "tools/planning/taskStore.ts",
+    "tools/planning/taskUpdate.ts"
+  ],
+  "tools/planning/planRead.ts": [],
+  "tools/planning/planRecoverRecentWork.ts": [
+    "planning/index.ts",
+    "planning/recoveredWorkOrchestrator.ts"
+  ],
+  "tools/planning/planUpdate.ts": [
+    "desktop/desktopActivityUnderstandingService.ts",
+    "desktop/workspaceActivitySearchService.ts",
+    "planning/recoveredWorkOrchestrator.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "tools/planning/task.ts": [
+    "agent/subagentExecutor.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/planning/taskCreate.ts": [
+    "tools/planning/taskStore.ts"
+  ],
+  "tools/planning/taskGet.ts": [
+    "tools/planning/taskStore.ts"
+  ],
+  "tools/planning/taskList.ts": [
+    "tools/planning/taskStore.ts"
+  ],
+  "tools/planning/taskStore.ts": [],
+  "tools/planning/taskUpdate.ts": [
+    "desktop/desktopActivityUnderstandingService.ts",
+    "tools/planning/taskStore.ts"
+  ],
+  "tools/search/deferredTools.ts": [],
+  "tools/search/index.ts": [
+    "tools/search/deferredTools.ts",
+    "tools/search/toolSearch.ts",
+    "tools/search/toolSearchService.ts"
+  ],
+  "tools/search/toolSearch.ts": [
+    "services/infra/logger.ts",
+    "tools/search/toolSearchService.ts"
+  ],
+  "tools/search/toolSearchService.ts": [
+    "services/infra/logger.ts",
+    "tools/search/deferredTools.ts"
+  ],
+  "tools/shell/ProcessTool.ts": [
+    "tools/shell/killShell.ts",
+    "tools/shell/process.ts",
+    "tools/shell/taskOutput.ts"
+  ],
+  "tools/shell/backgroundTasks.ts": [
+    "config/configPaths.ts"
+  ],
+  "tools/shell/bash.ts": [
+    "../shared/constants/index.ts",
+    "security/commandSafety.ts",
+    "services/infra/shellEnvironment.ts",
+    "tools/dataFingerprint.ts",
+    "tools/shell/backgroundTasks.ts",
+    "tools/shell/codexSandbox.ts",
+    "tools/shell/dynamicDescription.ts",
+    "tools/shell/ptyExecutor.ts",
+    "utils/sanitizeEnv.ts",
+    "utils/truncate.ts"
+  ],
+  "tools/shell/codexSandbox.ts": [
+    "../shared/constants/index.ts",
+    "mcp/mcpClient.ts",
+    "platform/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/shell/dynamicDescription.ts": [
+    "../shared/constants/index.ts",
+    "model/modelRouter.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/shell/gitCommit.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/shell/gitDiff.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/shell/gitWorktree.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/shell/grep.ts": [
+    "../shared/constants/index.ts"
+  ],
+  "tools/shell/index.ts": [
+    "tools/shell/ProcessTool.ts",
+    "tools/shell/bash.ts",
+    "tools/shell/gitCommit.ts",
+    "tools/shell/gitDiff.ts",
+    "tools/shell/gitWorktree.ts",
+    "tools/shell/grep.ts",
+    "tools/shell/killShell.ts",
+    "tools/shell/process.ts",
+    "tools/shell/taskOutput.ts"
+  ],
+  "tools/shell/killShell.ts": [
+    "tools/shell/backgroundTasks.ts"
+  ],
+  "tools/shell/process.ts": [
+    "../shared/utils/format.ts",
+    "tools/shell/backgroundTasks.ts",
+    "tools/shell/ptyExecutor.ts"
+  ],
+  "tools/shell/ptyExecutor.ts": [
+    "config/configPaths.ts"
+  ],
+  "tools/shell/taskOutput.ts": [
+    "tools/shell/backgroundTasks.ts"
+  ],
+  "tools/skill/index.ts": [
+    "tools/skill/skillCreateTool.ts",
+    "tools/skill/skillMetaTool.ts"
+  ],
+  "tools/skill/skillCreateTool.ts": [
+    "config/configPaths.ts",
+    "services/infra/logger.ts",
+    "services/skills/index.ts"
+  ],
+  "tools/skill/skillMetaTool.ts": [
+    "agent/subagentExecutor.ts",
+    "services/infra/logger.ts",
+    "services/skills/index.ts",
+    "services/skills/skillLoader.ts",
+    "services/skills/skillRenderer.ts",
+    "services/skills/skillUsageTracker.ts"
+  ],
+  "tools/toolExecutor.ts": [
+    "agent/confirmationGate.ts",
+    "security/decisionHistory.ts",
+    "security/decisionTraceBuilder.ts",
+    "security/index.ts",
+    "services/infra/logger.ts",
+    "services/infra/toolCache.ts",
+    "tools/middleware/fileCheckpointMiddleware.ts",
+    "tools/permissionClassifier.ts"
+  ],
+  "tools/toolRegistry.ts": [
+    "lightMemory/index.ts",
+    "services/cloud/index.ts",
+    "tools/connectors/index.ts",
+    "tools/document/docEditTool.ts",
+    "tools/excel/index.ts",
+    "tools/file/index.ts",
+    "tools/lsp/index.ts",
+    "tools/mcp/MCPUnifiedTool.ts",
+    "tools/multiagent/index.ts",
+    "tools/network/ReadDocumentTool.ts",
+    "tools/network/WebFetchUnifiedTool.ts",
+    "tools/network/index.ts",
+    "tools/planning/PlanModeTool.ts",
+    "tools/planning/PlanTool.ts",
+    "tools/planning/TaskManagerTool.ts",
+    "tools/planning/index.ts",
+    "tools/search/index.ts",
+    "tools/shell/ProcessTool.ts",
+    "tools/shell/index.ts",
+    "tools/skill/index.ts",
+    "tools/vision/BrowserTool.ts",
+    "tools/vision/ComputerTool.ts",
+    "tools/vision/index.ts"
+  ],
+  "tools/utils/atomicWrite.ts": [
+    "services/infra/logger.ts"
+  ],
+  "tools/utils/externalModificationDetector.ts": [
+    "services/infra/logger.ts",
+    "tools/fileReadTracker.ts"
+  ],
+  "tools/utils/pythonBridge.ts": [
+    "platform/index.ts"
+  ],
+  "tools/utils/quoteNormalizer.ts": [],
+  "tools/vision/BrowserTool.ts": [
+    "tools/vision/browserAction.ts",
+    "tools/vision/browserNavigate.ts"
+  ],
+  "tools/vision/ComputerTool.ts": [
+    "tools/vision/computerUse.ts",
+    "tools/vision/screenshot.ts"
+  ],
+  "tools/vision/browserAction.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/browserService.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/vision/browserNavigate.ts": [],
+  "tools/vision/computerUse.ts": [
+    "services/cloud/featureFlagService.ts",
+    "services/infra/browserService.ts"
+  ],
+  "tools/vision/guiAgent.ts": [
+    "../shared/constants/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "tools/vision/index.ts": [
+    "tools/vision/BrowserTool.ts",
+    "tools/vision/ComputerTool.ts",
+    "tools/vision/browserAction.ts",
+    "tools/vision/browserNavigate.ts",
+    "tools/vision/computerUse.ts",
+    "tools/vision/guiAgent.ts",
+    "tools/vision/screenshot.ts"
+  ],
+  "tools/vision/screenshot.ts": [
+    "../shared/constants/index.ts",
+    "services/index.ts",
+    "services/infra/logger.ts"
+  ],
+  "utils/crypto.ts": [],
+  "utils/imageUtils.ts": [
+    "services/infra/logger.ts"
+  ],
+  "utils/sanitizeEnv.ts": [],
+  "utils/sanitizeMemoryContent.ts": [],
+  "utils/seedMemoryInjector.ts": [
+    "services/index.ts",
+    "services/infra/logger.ts",
+    "utils/sanitizeMemoryContent.ts"
+  ],
+  "utils/truncate.ts": []
+}

@@ -57,6 +57,7 @@ import {
   buildRuntimeModeBlock,
 } from '../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../lightMemory/indexLoader';
+import { getRepoMap } from '../../context/repoMap';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { buildSessionMetadataBlock } from '../../lightMemory/sessionMetadata';
 import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
@@ -629,6 +630,22 @@ export class ContextAssembly {
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
       systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+    }
+
+    // 注入 Repo Map（代码结构索引，借鉴 Aider）
+    if (this.ctx.workingDirectory && !this.ctx.isSimpleTaskMode) {
+      try {
+        const repoMapResult = await getRepoMap({
+          rootDir: this.ctx.workingDirectory,
+          tokenBudget: 1500,
+        });
+        if (repoMapResult.text) {
+          systemPrompt += `\n\n<repo_map>\n${repoMapResult.text}\n</repo_map>`;
+          logger.debug(`[ContextAssembly] RepoMap injected: ${repoMapResult.fileCount} files, ${repoMapResult.symbolCount} symbols, ~${repoMapResult.estimatedTokens} tokens`);
+        }
+      } catch (err) {
+        logger.debug(`[ContextAssembly] RepoMap skipped: ${err instanceof Error ? err.message : 'unknown'}`);
+      }
     }
 
     // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）

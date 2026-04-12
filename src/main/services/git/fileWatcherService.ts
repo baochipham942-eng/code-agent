@@ -23,11 +23,8 @@ const IGNORED_PATTERNS = [
   '**/pnpm-lock.yaml',
 ];
 
-export interface FileChangeEvent {
-  type: 'add' | 'change' | 'unlink';
-  path: string;
-  timestamp: number;
-}
+import type { FileChangeEvent } from '../../protocol/types/git';
+export type { FileChangeEvent };
 
 type FileChangeListener = (event: FileChangeEvent) => void;
 

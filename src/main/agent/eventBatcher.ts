@@ -1,28 +1,16 @@
 // ============================================================================
 // Event Batcher - 高频 IPC 事件批处理器
 // 将多个事件合并为一次 IPC 调用，减少渲染进程压力
+//
+// 事件分类（BATCHABLE / IMMEDIATE）已迁至 src/main/protocol/events.ts，
+// 本文件专注于批处理调度策略。下一阶段（P0-5+）整个 batcher 应纳入 protocol 层的
+// Event Bus，成为 Submission/Event 模式的实现之一。
 // ============================================================================
 
-import type { AgentEvent } from '../../shared/types';
-
-// 可批处理的高频事件类型
-const BATCHABLE_EVENTS = new Set([
-  'stream_chunk',
-  'stream_tool_call_delta',
-]);
-
-// 需要立即发送的关键事件（不参与批处理）
-const IMMEDIATE_EVENTS = new Set([
-  'message',
-  'error',
-  'permission_request',
-  'agent_complete',
-  'turn_start',
-  'turn_end',
-  'tool_call_start',
-  'tool_call_end',
-  'budget_exceeded',
-]);
+import {
+  IMMEDIATE_EVENT_TYPES,
+  type AgentEvent,
+} from '../protocol/events';
 
 export interface EventBatcherConfig {
   /** 批处理间隔（毫秒），默认 16ms（约 60fps） */
@@ -66,7 +54,7 @@ export class EventBatcher {
     if (this.isDestroyed) return;
 
     // 关键事件立即发送（先刷新现有批次）
-    if (IMMEDIATE_EVENTS.has(event.type)) {
+    if (IMMEDIATE_EVENT_TYPES.has(event.type)) {
       this.flush();
       this.onFlush([event]);
       return;

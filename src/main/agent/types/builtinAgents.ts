@@ -3,7 +3,7 @@
 // 基于 ARCHITECTURE_EVOLUTION_PLAN.md 的 Agent 分层架构
 // ============================================================================
 
-import type { PermissionPreset } from '../../services/core/permissionPresets';
+import type { PermissionPreset } from '@shared/contract';
 
 /**
  * Agent 并行能力类型

@@ -42,7 +42,7 @@ function launchRequest(id: string): SwarmLaunchRequest {
     dependencyCount: 0,
     writeAgentCount: 0,
     tasks: [
-      { id: 't1', title: 'task 1', role: 'worker', dependencies: [], writeAccess: false },
+      { id: 't1', role: 'worker', task: 'task 1', tools: [], writeAccess: false },
     ],
   };
 }

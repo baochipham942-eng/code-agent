@@ -13,8 +13,19 @@
 import { createLogger } from '../services/infra/logger';
 import { isDangerousCommand } from '../services/core/permissionPresets';
 import { getTeammateService } from './teammate/teammateService';
-import { getSwarmEventEmitter } from '../ipc/swarm.ipc';
+import { getEventBus } from '../protocol/events/bus';
+import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { ToolExecutionRequest } from './subagentPipeline';
+
+/**
+ * ADR-008 Phase 3: 通过 EventBus 发布 plan review 事件
+ * 替代原 `import { getSwarmEventEmitter } from '../ipc/swarm.ipc'`，断开 Cycle 2 的反向边。
+ * swarm.ipc 的 bridge 订阅器（ensureSwarmBusBridge）会把事件投递给渲染进程 + CLI listeners。
+ */
+function publishSwarmEvent(event: SwarmEvent): void {
+  const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
+  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+}
 
 const logger = createLogger('PlanApprovalGate');
 
@@ -211,7 +222,19 @@ export class PlanApprovalGate {
             params.coordinatorId,
             `[Plan ID: ${planId}]\n${reviewContent}`,
           );
-          getSwarmEventEmitter().planReview(params.agentId, planId, reviewContent);
+          publishSwarmEvent({
+            type: 'swarm:agent:plan_review',
+            timestamp: Date.now(),
+            data: {
+              agentId: params.agentId,
+              plan: {
+                id: planId,
+                agentId: params.agentId,
+                content: reviewContent,
+                status: 'pending',
+              },
+            },
+          });
         } catch (err) {
           logger.warn('Failed to send plan review via TeammateService', err);
         }

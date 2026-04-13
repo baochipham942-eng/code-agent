@@ -17,30 +17,8 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
-
-const schema: ToolSchema = {
-  name: 'read_clipboard',
-  description: `Read the contents of the system clipboard.
-
-Supports text and image content. Returns base64 PNG for images.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      format: {
-        type: 'string',
-        enum: ['text', 'image', 'auto'],
-        description: 'Format to read (default: auto)',
-      },
-    },
-    required: [],
-  },
-  category: 'fs',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+import { readClipboardSchema as schema } from './readClipboard.schema';
 
 const MAX_TEXT_LEN = 50000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

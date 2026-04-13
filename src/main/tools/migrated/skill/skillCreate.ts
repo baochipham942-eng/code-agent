@@ -12,20 +12,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { skillCreateTool } from '../../skill/skillCreateTool';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
-
-const schema: ToolSchema = {
-  name: 'SkillCreate',
-  description: skillCreateTool.description,
-  inputSchema: skillCreateTool.inputSchema,
-  category: 'skill',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+import { skillCreateSchema as schema } from './skillCreate.schema';
 
 class SkillCreateHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

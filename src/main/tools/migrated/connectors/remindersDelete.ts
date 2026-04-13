@@ -9,38 +9,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-
-const schema: ToolSchema = {
-  name: 'reminders_delete',
-  description: `Delete an existing reminder from macOS Reminders.
-
-Required parameters:
-- list
-- reminder_id
-
-Use this only when the user explicitly wants to remove a real local reminder.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      list: {
-        type: 'string',
-        description: 'Target reminder list name.',
-      },
-      reminder_id: {
-        type: 'string',
-        description: 'Stable reminder id.',
-      },
-    },
-    required: ['list', 'reminder_id'],
-  },
-  category: 'mcp',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+import { remindersDeleteSchema as schema } from './remindersDelete.schema';
 
 async function executeRemindersDelete(
   args: Record<string, unknown>,

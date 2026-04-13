@@ -11,64 +11,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-
-const schema: ToolSchema = {
-  name: 'mail_send',
-  description: `Send a real email via local macOS Mail.
-
-Required parameters:
-- subject
-- to
-
-Optional parameters:
-- content
-- cc
-- bcc
-- attachments
-
-Use this only when the user explicitly wants to send an email now.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      subject: {
-        type: 'string',
-        description: 'Email subject.',
-      },
-      to: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Primary recipient email addresses.',
-      },
-      cc: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional CC recipient email addresses.',
-      },
-      bcc: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional BCC recipient email addresses.',
-      },
-      content: {
-        type: 'string',
-        description: 'Email body content.',
-      },
-      attachments: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional attachment file paths.',
-      },
-    },
-    required: ['subject', 'to'],
-  },
-  category: 'mcp',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+import { mailSendSchema as schema } from './mailSend.schema';
 
 async function executeMailSend(
   args: Record<string, unknown>,

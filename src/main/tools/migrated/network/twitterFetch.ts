@@ -11,9 +11,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { TWITTER_API_ENDPOINTS } from '../../../../shared/constants';
+import { twitterFetchSchema as schema } from './twitterFetch.schema';
 
 const { FXTWITTER: FXTWITTER_API, VXTWITTER: VXTWITTER_API, NITTER_INSTANCES } = TWITTER_API_ENDPOINTS;
 
@@ -28,38 +28,6 @@ interface TweetData {
   replies?: number;
   media?: string[];
 }
-
-const schema: ToolSchema = {
-  name: 'twitter_fetch',
-  description: `获取 Twitter/X 推文内容。
-
-使用公开 API 获取推文文本、作者、互动数据等。
-
-**使用示例：**
-\`\`\`
-twitter_fetch { "url": "https://twitter.com/elonmusk/status/1234567890" }
-twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
-\`\`\`
-
-**注意**：
-- 支持 twitter.com 和 x.com 链接
-- 部分推文可能因隐私设置无法获取
-- 图片/视频链接会一并返回`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      url: {
-        type: 'string',
-        description: 'Twitter/X 推文 URL',
-      },
-    },
-    required: ['url'],
-  },
-  category: 'network',
-  permissionLevel: 'network',
-  readOnly: true,
-  allowInPlanMode: true,
-};
 
 function extractTweetInfo(url: string): { username: string; tweetId: string } | null {
   const patterns = [

@@ -9,38 +9,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-
-const schema: ToolSchema = {
-  name: 'calendar_delete_event',
-  description: `Delete an existing event from macOS Calendar.
-
-Required parameters:
-- calendar
-- event_uid
-
-Use this only when the user explicitly wants to remove a real local calendar event.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      calendar: {
-        type: 'string',
-        description: 'Target calendar name.',
-      },
-      event_uid: {
-        type: 'string',
-        description: 'Stable Calendar event uid.',
-      },
-    },
-    required: ['calendar', 'event_uid'],
-  },
-  category: 'mcp',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 
 async function executeCalendarDeleteEvent(
   args: Record<string, unknown>,

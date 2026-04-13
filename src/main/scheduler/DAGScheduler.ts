@@ -21,13 +21,6 @@ import { TaskDAG } from './TaskDAG';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../protocol/dispatch/toolResolver';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
-import {
-  getPredefinedAgent,
-  getAgentPrompt,
-  getAgentTools,
-  getAgentMaxIterations,
-  getAgentPermissionPreset,
-} from '../agent/agentDefinition';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -47,6 +40,26 @@ export type TaskExecutor = (
   task: DAGTask,
   context: TaskExecutionContext
 ) => Promise<TaskOutput>;
+
+/**
+ * Agent 任务解析器（ADR-008 Phase 4）
+ *
+ * DAGScheduler 原本直接 import agent/agentDefinition 取 prompt/tools/maxIterations，
+ * 形成 DAGScheduler → agentDefinition → hybrid/... 的循环依赖。
+ * 改为构造时注入 resolver，将 agentDefinition 的 import 所有权移出 scheduler 层。
+ *
+ * initBackgroundServices 在启动期调 getDAGScheduler().setAgentResolver({ resolve })
+ * 注入实现。未注入时执行 agent 任务抛错（由上层报告清晰错误）。
+ */
+export interface AgentTaskResolver {
+  resolve(role: string): AgentTaskResolution | undefined;
+}
+
+export interface AgentTaskResolution {
+  systemPrompt: string;
+  tools: string[];
+  maxIterations: number;
+}
 
 /**
  * 调度器配置
@@ -144,6 +157,9 @@ export class DAGScheduler extends EventEmitter {
   // DAG 初始化回调（由 dagEventBridge 注入，避免循环依赖）
   private onDAGInit?: (dag: TaskDAG) => void;
 
+  // Agent 任务解析器（由 initBackgroundServices 注入，ADR-008 Phase 4 避免循环依赖）
+  private agentResolver?: AgentTaskResolver;
+
   constructor(config: Partial<DAGSchedulerConfig> = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -161,6 +177,15 @@ export class DAGScheduler extends EventEmitter {
    */
   setOnDAGInit(callback: (dag: TaskDAG) => void): void {
     this.onDAGInit = callback;
+  }
+
+  /**
+   * 注入 Agent 任务解析器（ADR-008 Phase 4）
+   * initBackgroundServices 启动时调用，把 agentDefinition 的 prompt/tools/maxIterations
+   * 查询函数包装成 resolver 传入，避免 scheduler → agentDefinition 的循环依赖。
+   */
+  setAgentResolver(resolver: AgentTaskResolver): void {
+    this.agentResolver = resolver;
   }
 
   /**
@@ -409,10 +434,14 @@ export class DAGScheduler extends EventEmitter {
     const config = task.config as AgentTaskConfig;
     const schedContext = this.context!;
 
-    // 解析 Agent 配置
-    const agentConfig = getPredefinedAgent(config.role);
-
-    if (!agentConfig) {
+    // 解析 Agent 配置（ADR-008 Phase 4：从注入的 resolver 查询）
+    if (!this.agentResolver) {
+      throw new Error(
+        'DAGScheduler.agentResolver not configured. Call setAgentResolver() at app init before executing agent tasks.'
+      );
+    }
+    const resolved = this.agentResolver.resolve(config.role);
+    if (!resolved) {
       throw new Error(`Unknown agent role: ${config.role}`);
     }
 
@@ -434,9 +463,9 @@ export class DAGScheduler extends EventEmitter {
       enhancedPrompt,
       {
         name: task.name,
-        systemPrompt: config.systemPrompt || getAgentPrompt(agentConfig),
-        availableTools: config.tools || getAgentTools(agentConfig),
-        maxIterations: config.maxIterations || getAgentMaxIterations(agentConfig),
+        systemPrompt: config.systemPrompt || resolved.systemPrompt,
+        availableTools: config.tools || resolved.tools,
+        maxIterations: config.maxIterations || resolved.maxIterations,
       },
       {
         modelConfig: schedContext.modelConfig,

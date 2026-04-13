@@ -22,7 +22,13 @@ import { initDesktopActivityUnderstandingService } from '../desktop/desktopActiv
 import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem } from '../plugins';
-import { initDAGEventBridge } from '../scheduler';
+import { initDAGEventBridge, getDAGScheduler } from '../scheduler';
+import {
+  getPredefinedAgent,
+  getAgentPrompt,
+  getAgentTools,
+  getAgentMaxIterations,
+} from '../agent/agentDefinition';
 import { initCronService, getCronService, initHeartbeatService, getHeartbeatService, HeartbeatTaskLoader } from '../cron';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
@@ -499,6 +505,25 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     logger.info('DAG event bridge initialized');
   } catch (error) {
     logger.warn('DAG event bridge initialization failed (non-blocking)', { error: String(error) });
+  }
+
+  // 注入 DAGScheduler 的 Agent 任务解析器（ADR-008 Phase 4 消除循环依赖）
+  // scheduler 层不再直接 import agentDefinition，agent 配置通过 resolver 注入
+  try {
+    getDAGScheduler().setAgentResolver({
+      resolve(role: string) {
+        const cfg = getPredefinedAgent(role);
+        if (!cfg) return undefined;
+        return {
+          systemPrompt: getAgentPrompt(cfg),
+          tools: getAgentTools(cfg),
+          maxIterations: getAgentMaxIterations(cfg),
+        };
+      },
+    });
+    logger.info('DAGScheduler agent resolver installed');
+  } catch (error) {
+    logger.warn('DAGScheduler agent resolver installation failed (non-blocking)', { error: String(error) });
   }
 
   // Initialize Cron Service

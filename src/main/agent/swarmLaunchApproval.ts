@@ -163,17 +163,41 @@ export class SwarmLaunchApprovalGate {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
-    const timeoutFeedback = 'Auto-approved after timeout';
-    const approved = this.approve(requestId, timeoutFeedback);
+    // Timeout: fail-closed 按 writeAgentCount 分档
+    // - 存在 write agent → auto-reject（避免无人职守时并发写冲突）
+    // - 全只读 → auto-approve（保活低风险探查场景）
+    const pending = this.requests.get(requestId);
+    if (!pending) {
+      throw new Error(`Launch request not found at timeout: ${requestId}`);
+    }
+    const hasWriteAgent = pending.writeAgentCount > 0;
+
+    if (hasWriteAgent) {
+      const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, writeAgentCount=${pending.writeAgentCount}). Write-capable swarm launches require explicit approval.`;
+      const rejected = this.reject(requestId, rejectFeedback);
+      const request = this.getRequest(requestId);
+      if (!rejected || !request) {
+        throw new Error(`Failed to auto-reject launch request: ${requestId}`);
+      }
+      logger.warn(`Swarm launch auto-rejected on timeout: ${requestId} (writeAgentCount=${pending.writeAgentCount})`);
+      return {
+        approved: false,
+        feedback: rejectFeedback,
+        autoApproved: true,
+        request,
+      };
+    }
+
+    const approveFeedback = `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only swarm)`;
+    const approved = this.approve(requestId, approveFeedback);
     const request = this.getRequest(requestId);
     if (!approved || !request) {
       throw new Error(`Failed to auto-approve launch request: ${requestId}`);
     }
-
-    logger.warn(`Swarm launch approval timed out: ${requestId}`);
+    logger.warn(`Swarm launch auto-approved on timeout (read-only): ${requestId}`);
     return {
       approved: true,
-      feedback: timeoutFeedback,
+      feedback: approveFeedback,
       autoApproved: true,
       request,
     };

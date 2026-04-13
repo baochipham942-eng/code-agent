@@ -269,18 +269,20 @@ export class PlanApprovalGate {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // Timeout: auto-approve with warning
-    logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-approving`);
+    // Timeout: fail-closed auto-reject（medium/high risk 不应在无人职守时放行）
     const plan = this.pendingPlans.get(planId);
+    const riskLevel = plan?.risk.level ?? 'unknown';
+    const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, risk: ${riskLevel}). Coordinator did not respond; destructive plans require explicit approval.`;
+    logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-rejecting (risk: ${riskLevel})`);
     if (plan) {
-      plan.status = 'approved';
-      plan.feedback = 'Auto-approved after timeout';
+      plan.status = 'rejected';
+      plan.feedback = rejectFeedback;
       plan.resolvedAt = Date.now();
     }
 
     return {
-      approved: true,
-      feedback: 'Auto-approved after timeout',
+      approved: false,
+      feedback: rejectFeedback,
       autoApproved: true,
     };
   }

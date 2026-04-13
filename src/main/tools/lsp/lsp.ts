@@ -16,6 +16,7 @@ import * as fs from 'fs/promises';
 import { pathToFileURL } from 'url';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getLSPManager } from '../../lsp';
+import { LSP_DESCRIPTION, LSP_INPUT_SCHEMA } from '../migrated/lsp/lsp.schema';
 
 // ============================================================================
 // Types
@@ -46,63 +47,12 @@ interface NormalizedLocation {
 
 export const lspTool: Tool = {
   name: 'lsp',
-  description: `Interact with Language Server Protocol (LSP) servers for code intelligence.
-
-Supported operations:
-- goToDefinition: Find where a symbol is defined
-- findReferences: Find all references to a symbol
-- hover: Get hover information (documentation, type info) for a symbol
-- documentSymbol: Get all symbols (functions, classes, variables) in a document
-- workspaceSymbol: Search for symbols across the entire workspace
-- goToImplementation: Find implementations of an interface or abstract method
-- prepareCallHierarchy: Get call hierarchy item at a position
-- incomingCalls: Find all functions/methods that call the function at a position
-- outgoingCalls: Find all functions/methods called by the function at a position
-
-All operations require:
-- filePath: The file to operate on (absolute path)
-- line: The line number (1-based, as shown in editors)
-- character: The character offset (1-based, as shown in editors)
-
-Note: LSP servers must be configured and running for the file type.
-Supported: TypeScript (.ts, .tsx, .js, .jsx), Python (.py)`,
+  description: LSP_DESCRIPTION,
 
   requiresPermission: false,
   permissionLevel: 'read',
 
-  inputSchema: {
-    type: 'object',
-    properties: {
-      operation: {
-        type: 'string',
-        enum: [
-          'goToDefinition',
-          'findReferences',
-          'hover',
-          'documentSymbol',
-          'workspaceSymbol',
-          'goToImplementation',
-          'prepareCallHierarchy',
-          'incomingCalls',
-          'outgoingCalls',
-        ],
-        description: 'The LSP operation to perform',
-      },
-      file_path: {
-        type: 'string',
-        description: 'The absolute path to the file',
-      },
-      line: {
-        type: 'number',
-        description: 'The line number (1-based, as shown in editors)',
-      },
-      character: {
-        type: 'number',
-        description: 'The character offset (1-based, as shown in editors)',
-      },
-    },
-    required: ['operation', 'file_path', 'line', 'character'],
-  },
+  inputSchema: LSP_INPUT_SCHEMA,
 
   async execute(
     params: Record<string, unknown>,

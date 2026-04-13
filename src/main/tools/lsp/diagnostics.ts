@@ -6,40 +6,19 @@ import { pathToFileURL } from 'url';
 import * as path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getLSPManager, type LSPDiagnostic } from '../../lsp';
+import {
+  DIAGNOSTICS_DESCRIPTION,
+  DIAGNOSTICS_INPUT_SCHEMA,
+} from '../migrated/lsp/diagnostics.schema';
 
 export const diagnosticsTool: Tool = {
   name: 'diagnostics',
-  description: `Query LSP diagnostics (errors/warnings) for a file or the entire project.
-
-Use this tool to:
-- Check for compilation errors after edits
-- Get all project-wide errors and warnings
-- Verify code correctness before committing
-
-Parameters:
-- file_path (optional): Specific file to check. If omitted, returns all project diagnostics.
-- severity_filter: Filter by severity - 'error', 'warning', or 'all' (default: 'all')
-
-Note: Requires LSP servers to be running for the relevant file types.`,
+  description: DIAGNOSTICS_DESCRIPTION,
 
   requiresPermission: false,
   permissionLevel: 'read',
 
-  inputSchema: {
-    type: 'object',
-    properties: {
-      file_path: {
-        type: 'string',
-        description: 'Optional file path to check. If omitted, returns all project diagnostics.',
-      },
-      severity_filter: {
-        type: 'string',
-        enum: ['error', 'warning', 'all'],
-        description: 'Filter diagnostics by severity. Default: all',
-      },
-    },
-    required: [],
-  },
+  inputSchema: DIAGNOSTICS_INPUT_SCHEMA,
 
   async execute(
     params: Record<string, unknown>,

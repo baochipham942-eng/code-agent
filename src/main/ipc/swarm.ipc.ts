@@ -6,18 +6,11 @@ import { BrowserWindow, ipcMain } from '../platform';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { AgentApplicationService } from '../../shared/contract/appService';
-import { getPlanApprovalGate } from '../agent/planApproval';
-import { getParallelAgentCoordinator } from '../agent/parallelAgentCoordinator';
-import { getSpawnGuard } from '../agent/spawnGuard';
-import { getSwarmLaunchApprovalGate } from '../agent/swarmLaunchApproval';
+import { getSwarmServices } from '../agent/swarmServices';
 import {
   getSwarmEventEmitter,
   SwarmEventEmitter,
 } from '../agent/swarmEventPublisher';
-import {
-  persistAgentRun,
-  getRecentAgentHistory,
-} from '../session/agentHistoryPersistence';
 import { createLogger } from '../services/infra/logger';
 import { getEventBus } from '../protocol/events/bus';
 
@@ -97,13 +90,12 @@ export function registerSwarmHandlers(
 ): void {
   // 幂等安装 EventBus bridge（模块加载时已装一次，此处兜底）
   ensureSwarmBusBridge();
-  const { getTeammateService } = require('../agent/teammate/teammateService');
 
   // 用户发送消息给 Agent
   ipcMain.handle('swarm:send-user-message', async (_, payload: { agentId: string; message: string }) => {
     try {
-      const service = getTeammateService();
-      service.onUserMessage(payload.agentId, payload.message);
+      const services = getSwarmServices();
+      services.teammateService.onUserMessage(payload.agentId, payload.message);
       getSwarmEventEmitter().userMessage(payload.agentId, payload.message);
     } catch (error) {
       logger.error('swarm:send-user-message failed', { error: String(error) });
@@ -113,11 +105,11 @@ export function registerSwarmHandlers(
   // 获取 Agent 消息历史
   ipcMain.handle('swarm:get-agent-messages', async (_, agentId: string) => {
     try {
-      const service = getTeammateService();
-      const history = service.getHistory(200);
+      const services = getSwarmServices();
+      const history = services.teammateService.getHistory(200);
       return history
-        .filter((m: any) => m.from === agentId || m.to === agentId || m.to === 'all')
-        .map((m: any) => ({
+        .filter((m: { from: string; to: string }) => m.from === agentId || m.to === agentId || m.to === 'all')
+        .map((m: { from: string; to: string; content: string; timestamp: number }) => ({
           from: m.from,
           to: m.to,
           content: m.content,
@@ -153,8 +145,7 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:approve-launch', async (_, payload: { requestId: string; feedback?: string }) => {
     try {
-      const gate = getSwarmLaunchApprovalGate();
-      return gate.approve(payload.requestId, payload.feedback);
+      return getSwarmServices().launchApproval.approve(payload.requestId, payload.feedback);
     } catch (error) {
       logger.error('swarm:approve-launch failed', { error: String(error) });
       return false;
@@ -163,8 +154,7 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:reject-launch', async (_, payload: { requestId: string; feedback: string }) => {
     try {
-      const gate = getSwarmLaunchApprovalGate();
-      return gate.reject(payload.requestId, payload.feedback);
+      return getSwarmServices().launchApproval.reject(payload.requestId, payload.feedback);
     } catch (error) {
       logger.error('swarm:reject-launch failed', { error: String(error) });
       return false;
@@ -173,9 +163,10 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
     try {
-      const guard = getSpawnGuard();
-      const coordinator = getParallelAgentCoordinator();
-      const cancelled = guard.cancel(payload.agentId) || coordinator.abortTask(payload.agentId);
+      const services = getSwarmServices();
+      const cancelled =
+        services.spawnGuard.cancel(payload.agentId) ||
+        services.parallelCoordinator.abortTask(payload.agentId);
 
       if (cancelled) {
         getSwarmEventEmitter().agentUpdated(payload.agentId, {
@@ -194,7 +185,7 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:retry-agent', async (_, payload: { agentId: string }) => {
     try {
-      const coordinator = getParallelAgentCoordinator();
+      const coordinator = getSwarmServices().parallelCoordinator;
       const task = coordinator.getTaskDefinition(payload.agentId);
       if (!task) return false;
 
@@ -229,16 +220,15 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:approve-plan', async (_, payload: { planId: string; feedback?: string }) => {
     try {
-      const gate = getPlanApprovalGate();
-      const plan = gate.getPlan(payload.planId);
+      const services = getSwarmServices();
+      const plan = services.planApproval.getPlan(payload.planId);
       if (!plan) return false;
 
-      const approved = gate.approve(payload.planId, payload.feedback);
+      const approved = services.planApproval.approve(payload.planId, payload.feedback);
       if (!approved) return false;
 
       try {
-        const service = getTeammateService();
-        service.approvePlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+        services.teammateService.approvePlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
       } catch {
         // Ignore teammate sync failure; gate state is the source of truth.
       }
@@ -253,16 +243,15 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:reject-plan', async (_, payload: { planId: string; feedback: string }) => {
     try {
-      const gate = getPlanApprovalGate();
-      const plan = gate.getPlan(payload.planId);
+      const services = getSwarmServices();
+      const plan = services.planApproval.getPlan(payload.planId);
       if (!plan) return false;
 
-      const rejected = gate.reject(payload.planId, payload.feedback);
+      const rejected = services.planApproval.reject(payload.planId, payload.feedback);
       if (!rejected) return false;
 
       try {
-        const service = getTeammateService();
-        service.rejectPlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
+        services.teammateService.rejectPlan(plan.coordinatorId, plan.agentId, payload.planId, payload.feedback);
       } catch {
         // Ignore teammate sync failure; gate state is the source of truth.
       }
@@ -278,7 +267,7 @@ export function registerSwarmHandlers(
   // Agent 历史持久化
   ipcMain.handle('swarm:persist-agent-run', async (_, payload: { sessionId: string; run: CompletedAgentRun }) => {
     try {
-      await persistAgentRun(payload.sessionId, payload.run);
+      await getSwarmServices().agentHistory.persistAgentRun(payload.sessionId, payload.run);
       return true;
     } catch (error) {
       logger.error('swarm:persist-agent-run failed', { error: String(error) });
@@ -289,7 +278,7 @@ export function registerSwarmHandlers(
   // 获取最近完成的 agent runs
   ipcMain.handle('swarm:get-agent-history', async (_, payload?: { limit?: number }) => {
     try {
-      return getRecentAgentHistory(payload?.limit);
+      return await getSwarmServices().agentHistory.getRecentAgentHistory(payload?.limit);
     } catch (error) {
       logger.error('swarm:get-agent-history failed', { error: String(error) });
       return [];

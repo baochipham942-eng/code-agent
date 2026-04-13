@@ -56,12 +56,6 @@ export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyTool
     modifiedFiles: ctx.subagent?.modifiedFiles as LegacyToolContext['modifiedFiles'],
     todos: ctx.subagent?.todos as LegacyToolContext['todos'],
     currentAttachments: ctx.subagent?.attachments as LegacyToolContext['currentAttachments'],
-    // setPlanMode/isPlanMode 桥回 legacy 函数对
-    setPlanMode: ctx.planMode ? (active: boolean) => {
-      if (active) ctx.planMode!.enter();
-      else ctx.planMode!.exit();
-    } : undefined,
-    isPlanMode: ctx.planMode ? () => ctx.planMode!.isActive() : undefined,
     // 跨工具调度 resolver — 由 shadowAdapter 在 protocol ctx 构造时注入
     resolver: ctx.resolver,
   } as LegacyToolContext;

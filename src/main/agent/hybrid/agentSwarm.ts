@@ -22,7 +22,7 @@
 import { createLogger } from '../../services/infra/logger';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
-import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
+import { getSwarmEventEmitter, type SwarmEventEmitter } from '../swarmEventPublisher';
 import { getTeammateService } from '../teammate/teammateService';
 import { getTaskListManager } from '../taskList';
 import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentWorkerManager';

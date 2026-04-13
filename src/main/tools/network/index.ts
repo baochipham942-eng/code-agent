@@ -4,7 +4,8 @@
 
 export { webFetchTool } from './webFetch';
 export { webSearchTool } from './webSearch';
-export { readPdfTool } from './readPdf';
+// read_pdf / read_docx / read_xlsx / ReadDocument 已迁移为 native ToolModule
+// （见 migrated/network/{readPdf,readDocx,readXlsx,readDocument}.ts）
 // Deprecated: skillTool moved to skill/skillMetaTool.ts
 // export { skillTool } from './skill';
 export { pptGenerateTool } from './ppt';
@@ -16,8 +17,6 @@ export { docxGenerateTool } from './docxGenerate';
 export { excelGenerateTool } from './excelGenerate';
 // chart_generate / qrcode_generate 已迁移为 native ToolModule
 // （见 migrated/network/chartGenerate.ts / qrcodeGenerate.ts）
-export { readDocxTool } from './readDocx';
-export { readXlsxTool } from './readXlsx';
 export { jiraTool } from './jira';
 export { githubPrTool } from './githubPr';
 export { youtubeTranscriptTool } from './youtubeTranscript';
@@ -28,7 +27,7 @@ export { imageProcessTool } from './imageProcess';
 export { pdfCompressTool } from './pdfCompress';
 export { screenshotPageTool } from './screenshotPage';
 export { academicSearchTool } from './academicSearch';
-export { httpRequestTool } from './httpRequest';
+// http_request 已迁移为 native ToolModule（见 migrated/network/httpRequest.ts）
 export { speechToTextTool } from './speechToText';
 export { localSpeechToTextTool } from './localSpeechToText';
 export { textToSpeechTool } from './textToSpeech';
@@ -38,4 +37,3 @@ export { PdfAutomateTool } from './pdfAutomate';
 
 // Unified tools (Phase 2)
 export { WebFetchUnifiedTool } from './WebFetchUnifiedTool';
-export { ReadDocumentTool } from './ReadDocumentTool';

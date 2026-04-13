@@ -937,18 +937,169 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).webFetchUnifiedModule, true);
   REGISTER_NET('WebSearch', 'Search the web via Perplexity/Exa/Tavily.', 'network',
     async () => (await import('./network/wrappers')).webSearchModule, true);
-  REGISTER_NET('http_request', 'Generic HTTP request (GET/POST/PUT/DELETE).', 'network',
-    async () => (await import('./network/wrappers')).httpRequestModule, false);
+  // http_request → native ToolModule（真实 schema 内联，不走 netSchema 占位）
+  registry.register(
+    {
+      name: 'http_request',
+      description: `Make HTTP requests to external APIs.
 
-  // Document reading (4)
-  REGISTER_NET('ReadDocument', 'Unified document reader facade (PDF/DOCX/XLSX).', 'read',
-    async () => (await import('./network/wrappers')).readDocumentModule, true);
-  REGISTER_NET('read_docx', 'Read text content from a .docx file.', 'read',
-    async () => (await import('./network/wrappers')).readDocxModule, true);
-  REGISTER_NET('read_pdf', 'Read text content from a .pdf file.', 'read',
-    async () => (await import('./network/wrappers')).readPdfModule, true);
-  REGISTER_NET('read_xlsx', 'Read tabular data from a .xlsx file.', 'read',
-    async () => (await import('./network/wrappers')).readXlsxModule, true);
+Supports all common HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS.
+
+Security restrictions:
+- Internal/private networks are blocked (SSRF protection)
+- Cloud metadata services are blocked
+- Maximum response size: 10MB
+- Maximum timeout: 5 minutes`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Target URL (http:// or https://)' },
+          method: {
+            type: 'string',
+            description: 'HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS (default: GET)',
+          },
+          headers: {
+            type: 'object',
+            description: 'Request headers as key-value pairs',
+            additionalProperties: true,
+          },
+          body: { type: 'string', description: 'Request body (for POST/PUT/PATCH)' },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in milliseconds (default: 30000, max: 300000)',
+          },
+        },
+        required: ['url'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./network/httpRequest')).httpRequestModule,
+  );
+
+  // Document reading (4) — all native
+  registry.register(
+    {
+      name: 'ReadDocument',
+      description: `Read document files (PDF, Word, Excel) with automatic format detection from file extension.
+
+Supported formats:
+- .pdf: Uses vision model (Gemini 2.0) for AI-powered PDF analysis
+- .docx / .doc: Reads Word documents with text/markdown/html output
+- .xlsx / .xls: Reads Excel spreadsheets with table/json/csv output and data quality analysis`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: {
+            type: 'string',
+            description: 'Path to the document file (.pdf, .docx, .doc, .xlsx, .xls)',
+          },
+          prompt: {
+            type: 'string',
+            description: '[PDF] Specific question or instruction for analyzing the PDF',
+          },
+          format: {
+            type: 'string',
+            description:
+              '[Word] text|markdown|html (default: text); [Excel] table|json|csv (default: table)',
+          },
+          sheet: {
+            type: 'string',
+            description: '[Excel] Worksheet name or index (default: first sheet)',
+          },
+          max_rows: {
+            type: 'number',
+            description: '[Excel] Maximum rows to read (default: 1000)',
+          },
+        },
+        required: ['file_path'],
+      },
+      category: 'network',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/readDocument')).readDocumentModule,
+  );
+  registry.register(
+    {
+      name: 'read_docx',
+      description: `读取 Word 文档（.docx）的内容。支持 text / markdown / html 三种输出格式。`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Word 文档路径' },
+          format: {
+            type: 'string',
+            enum: ['text', 'markdown', 'html'],
+            description: '输出格式（默认: text）',
+          },
+        },
+        required: ['file_path'],
+      },
+      category: 'network',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/readDocx')).readDocxModule,
+  );
+  registry.register(
+    {
+      name: 'read_pdf',
+      description: `Read PDF files using vision model (Gemini 2.0). Best for text-based PDFs, scanned documents, PDF forms, diagrams and charts.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Absolute path to the PDF file' },
+          prompt: {
+            type: 'string',
+            description: 'Specific question or instruction for analyzing the PDF',
+          },
+        },
+        required: ['file_path'],
+      },
+      category: 'network',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/readPdf')).readPdfModule,
+  );
+  registry.register(
+    {
+      name: 'read_xlsx',
+      description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
+
+This is the ONLY correct way to read Excel files. Do NOT use Read for .xlsx/.xls — it will return garbled binary content.
+
+Output formats: table (default, markdown), json, csv.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Excel 文件路径' },
+          sheet: {
+            type: 'string',
+            description: '工作表名称或索引（默认: 第一个工作表）',
+          },
+          format: {
+            type: 'string',
+            enum: ['table', 'json', 'csv'],
+            description: '输出格式（默认: table）',
+          },
+          max_rows: { type: 'number', description: '最大读取行数（默认: 1000）' },
+        },
+        required: ['file_path'],
+      },
+      category: 'network',
+      permissionLevel: 'read',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/readXlsx')).readXlsxModule,
+  );
 
   // Document generation (6)
   REGISTER_NET('docx_generate', 'Generate a .docx document.', 'write',

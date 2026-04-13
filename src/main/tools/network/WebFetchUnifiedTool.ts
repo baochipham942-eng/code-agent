@@ -5,7 +5,40 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { webFetchTool } from './webFetch';
-import { httpRequestTool } from './httpRequest';
+import { executeHttpRequest } from '../migrated/network/httpRequest';
+import type {
+  ToolContext as ProtocolToolContext,
+  ToolResult as ProtocolToolResult,
+} from '../../protocol/tools';
+
+// http_request 已迁移为 native ToolModule。WebFetchUnifiedTool 仍是 legacy Tool，
+// 需要最小 shim 桥接新签名。
+async function invokeHttpRequestNative(
+  params: Record<string, unknown>,
+  legacyCtx: ToolContext,
+): Promise<ToolExecutionResult> {
+  const protocolCtx: ProtocolToolContext = {
+    sessionId: 'webfetch-unified-delegate',
+    workingDir: legacyCtx.workingDirectory,
+    abortSignal: new AbortController().signal,
+    logger: {
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    },
+    emit: () => {},
+  };
+  const result: ProtocolToolResult<string> = await executeHttpRequest(
+    params,
+    protocolCtx,
+    async () => ({ allow: true }),
+  );
+  if (result.ok) {
+    return { success: true, output: result.output, metadata: result.meta };
+  }
+  return { success: false, error: result.error, metadata: result.meta };
+}
 
 export const WebFetchUnifiedTool: Tool = {
   name: 'WebFetch',
@@ -86,7 +119,7 @@ Examples:
         return webFetchTool.execute(params, context);
 
       case 'request':
-        return httpRequestTool.execute(params, context);
+        return invokeHttpRequestNative(params, context);
 
       default:
         return {

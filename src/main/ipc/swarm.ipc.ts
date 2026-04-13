@@ -7,18 +7,9 @@ import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import { getSwarmServices } from '../agent/swarmServices';
-import {
-  getSwarmEventEmitter,
-  SwarmEventEmitter,
-} from '../agent/swarmEventPublisher';
+import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
 import { createLogger } from '../services/infra/logger';
 import { getEventBus } from '../protocol/events/bus';
-
-// Re-export SwarmEventEmitter API for legacy importers (ADR-008 Phase 5)
-// spawnAgent.ts 等仍通过 '../ipc/swarm.ipc' 取 getSwarmEventEmitter，
-// 此处 re-export 保证 import 路径兼容，同时不闭合循环
-// （swarmEventPublisher 只依赖 protocol/events/bus）
-export { getSwarmEventEmitter, SwarmEventEmitter };
 
 const logger = createLogger('SwarmIPC');
 

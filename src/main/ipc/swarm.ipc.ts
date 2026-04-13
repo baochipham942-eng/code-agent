@@ -50,7 +50,8 @@ export function addSwarmEventListener(listener: SwarmEventListener): () => void 
 
 /**
  * 将 SwarmEvent 投递到渲染进程 + CLI listeners
- * emitSwarmEvent（legacy 直发）和 EventBus bridge 订阅器共用本函数
+ * EventBus bridge 订阅器收到事件后调用本函数做实际分发。
+ * 业务模块通过 getEventBus().publish('swarm', ...) 发布，不直接调本函数。
  */
 function deliverSwarmEvent(event: SwarmEvent): void {
   const windows = BrowserWindow.getAllWindows();

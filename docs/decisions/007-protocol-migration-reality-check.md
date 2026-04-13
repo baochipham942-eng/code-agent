@@ -16,7 +16,7 @@ targets for the second migration pass:
 | tools fan-in        | 531                   | ≤ 400       | −131    |
 | protocol/* fan-in   | ~5                    | ≥ 80        | +75     |
 | EventBus consumers  | 4                     | ≥ 20        | +16     |
-| circular deps (main)| 4                     | 4           | ±0      |
+| circular deps (main)| 4                     | 4 → 0 (ADR-008) | -4 |
 
 After executing phases A (EventBus merge), +1 (hook-type sinkdown),
 and B (services repository-type sinkdown), the `services fan-in 618 → 450`
@@ -151,6 +151,9 @@ anything go badly sideways?") but not as a goal.
 - Circular deps: baseline 4, goal still 4 — all inside `agent/hybrid/*` +
   `ipc/swarm.ipc.ts` + `agent/subagentExecutor.ts`. They need an Actor-model
   refactor, not more protocol/.
+  **Update (2026-04-13): Resolved by [ADR-008](./008-swarm-actor-refactor.md)** —
+  all 4 swarm cycles eliminated via EventBus pub/sub + bridge subscriber
+  pattern. `madge --circular src/main/` now reports 0.
 
 ### Retracted sub-goal: "tools/modules cross-subdir 75 → 60"
 

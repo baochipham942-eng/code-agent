@@ -1,9 +1,19 @@
-// NOTE: Used by spawnAgent.ts for explicit parallel execution.
-// Planned for merge into AutoAgentCoordinator (Sprint 2).
 // ============================================================================
-// ParallelAgentCoordinator - True parallel agent execution and coordination
-// Enhancement 3: Multi-Agent Parallelism
-// Refactored: Now supports Task DAG scheduler for advanced dependency handling
+// ParallelAgentCoordinator - DAG-based explicit parallel agent execution
+// ============================================================================
+//
+// 职责边界（ADR-009 固化）：
+// - 服务 **显式任务** 入口：LLM 调用 spawn_agent tool、swarm.ipc 的 UI swarm
+// - 输入形态：AgentTask[]（带 dependsOn/tools/priority 的 DAG 节点）
+// - 核心能力：TaskDAG + DAGScheduler 做真正的依赖图调度，SharedContext
+//   （L2 共享读写），EventEmitter 事件流
+// - 不包含：动态 agent 生成、checkpoint 持久化、L0-L3 通信层级
+//
+// 与 AutoAgentCoordinator 的关系：
+// - 两者 **零调用交集**，服务完全不同的入口路径
+// - 不会合并：输入形态差别大（DynamicAgentDefinition vs AgentTask），
+//   核心能力互不覆盖（Auto 无 DAG，Parallel 无 checkpoint），强合需引 adapter
+//
 // ============================================================================
 
 import { EventEmitter } from 'events';

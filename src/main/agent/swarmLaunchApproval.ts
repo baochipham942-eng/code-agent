@@ -5,10 +5,21 @@
 import { BrowserWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import type {
+  SwarmEvent,
   SwarmLaunchRequest,
   SwarmLaunchTaskPreview,
 } from '../../shared/contract/swarm';
-import { emitSwarmEvent } from '../ipc/swarm.ipc';
+import { getEventBus } from '../protocol/events/bus';
+
+/**
+ * ADR-008 Phase 2: 通过 EventBus 发布 swarm launch 事件
+ * 替代原 `import { emitSwarmEvent } from '../ipc/swarm.ipc'`，断开 Cycle 4 的反向边。
+ * swarm.ipc 的 bridge 订阅器（ensureSwarmBusBridge）会把事件投递给渲染进程 + CLI listeners。
+ */
+function publishSwarmEvent(event: SwarmEvent): void {
+  const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
+  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+}
 
 const logger = createLogger('SwarmLaunchApprovalGate');
 
@@ -48,7 +59,7 @@ export class SwarmLaunchApprovalGate {
     }
 
     this.requests.set(request.id, request);
-    emitSwarmEvent({
+    publishSwarmEvent({
       type: 'swarm:launch:requested',
       timestamp: request.requestedAt,
       data: { launchRequest: request },
@@ -65,7 +76,7 @@ export class SwarmLaunchApprovalGate {
     request.status = 'approved';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
-    emitSwarmEvent({
+    publishSwarmEvent({
       type: 'swarm:launch:approved',
       timestamp: request.resolvedAt,
       data: { launchRequest: { ...request } },
@@ -81,7 +92,7 @@ export class SwarmLaunchApprovalGate {
     request.status = 'rejected';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
-    emitSwarmEvent({
+    publishSwarmEvent({
       type: 'swarm:launch:rejected',
       timestamp: request.resolvedAt,
       data: { launchRequest: { ...request } },

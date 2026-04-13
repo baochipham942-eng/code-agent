@@ -44,33 +44,55 @@ export function addSwarmEventListener(listener: SwarmEventListener): () => void 
 }
 
 /**
- * 向渲染进程推送 Swarm 事件
- *
- * ADR-008 Phase 1: 双写过渡 — 同时走 legacy IPC/CLI 通道和新 EventBus 通道。
- * Phase 2-5 逐步让业务模块改订阅 EventBus；Phase 6 删除 legacy 路径。
+ * 将 SwarmEvent 投递到渲染进程 + CLI listeners
+ * emitSwarmEvent（legacy 直发）和 EventBus bridge 订阅器共用本函数
  */
-export function emitSwarmEvent(event: SwarmEvent): void {
-  // Electron 模式：IPC 推送到渲染进程
+function deliverSwarmEvent(event: SwarmEvent): void {
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
     if (!win.isDestroyed()) {
       win.webContents.send('swarm:event', event);
     }
   }
-
-  // 回调通知（CLI 模式）
   for (const listener of swarmEventListeners) {
     try { listener(event); } catch { /* 防止监听器错误影响事件流 */ }
   }
-
-  // ADR-008 Phase 1: EventBus 双写
-  // Channel 命名：去掉 'swarm:' 前缀避免 'swarm:swarm:...' 双重命名
-  // 例如 'swarm:launch:requested' → EventBus channel 'swarm:launch:requested'
-  try {
-    const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-    getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
-  } catch { /* EventBus 发布失败不得影响 legacy 事件流 */ }
 }
+
+/**
+ * 向渲染进程推送 Swarm 事件（legacy 直发路径）
+ *
+ * ADR-008: 业务模块逐步迁到 EventBus publish → bridge 订阅器（见下方
+ * ensureSwarmBusBridge）。尚未迁移的调用方（SwarmEventEmitter / 旧代码）
+ * 继续走本函数的直发路径。两条路径互不重叠，每个事件恰好投递一次。
+ * Phase 5/6 SwarmEventEmitter 也迁完后，本函数可删除。
+ */
+export function emitSwarmEvent(event: SwarmEvent): void {
+  deliverSwarmEvent(event);
+}
+
+/**
+ * ADR-008: EventBus 'swarm' domain → BrowserWindow + CLI listeners 桥接
+ *
+ * 业务模块（Phase 2 起：swarmLaunchApproval；Phase 3+：planApproval / agentSwarm）
+ * 通过 getEventBus().publish('swarm', ...) 发布事件，由本桥接器统一投递给渲染进程。
+ * 订阅 domain 级别（pattern='swarm'）一次即覆盖所有 swarm:* channel。
+ *
+ * 幂等：多次调用只订阅一次（模块加载 + registerSwarmHandlers 都会触发，
+ * 保证即使 swarm.ipc 在 handler 注册前被其它模块引用也能先装好桥）。
+ */
+let swarmBusBridgeInstalled = false;
+function ensureSwarmBusBridge(): void {
+  if (swarmBusBridgeInstalled) return;
+  swarmBusBridgeInstalled = true;
+  getEventBus().subscribe<SwarmEvent>('swarm', (evt) => {
+    deliverSwarmEvent(evt.data);
+  });
+  logger.debug('Swarm EventBus bridge installed');
+}
+
+// 模块加载时立即安装桥接器，确保早期发布的事件也能到达渲染进程
+ensureSwarmBusBridge();
 
 /**
  * Swarm 事件发射器
@@ -395,6 +417,8 @@ export function getSwarmEventEmitter(): SwarmEventEmitter {
 export function registerSwarmHandlers(
   getAppService: () => AgentApplicationService | null
 ): void {
+  // 幂等安装 EventBus bridge（模块加载时已装一次，此处兜底）
+  ensureSwarmBusBridge();
   const { getTeammateService } = require('../agent/teammate/teammateService');
 
   // 用户发送消息给 Agent

@@ -1205,17 +1205,188 @@ Output formats: table (default, markdown), json, csv.`,
   REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
     async () => (await import('./network/wrappers')).screenshotPageModule, true);
 
-  // External integrations (5)
-  REGISTER_NET('jira', 'Jira integration (search/create/update/comment).', 'network',
-    async () => (await import('./network/wrappers')).jiraModule, false);
-  REGISTER_NET('github_pr', 'GitHub PR management (create/view/list/comment/review/merge).', 'network',
-    async () => (await import('./network/wrappers')).githubPrModule, false);
-  REGISTER_NET('twitter_fetch', 'Fetch tweets / threads / user timelines.', 'network',
-    async () => (await import('./network/wrappers')).twitterFetchModule, true);
-  REGISTER_NET('youtube_transcript', 'Fetch transcript of a YouTube video.', 'network',
-    async () => (await import('./network/wrappers')).youtubeTranscriptModule, true);
-  REGISTER_NET('academic_search', 'Search academic papers (arxiv/openalex/semanticscholar).', 'network',
-    async () => (await import('./network/wrappers')).academicSearchModule, true);
+  // External integrations (5) — all native ToolModule with real schemas
+  registry.register(
+    {
+      name: 'jira',
+      description: 'Jira 问题管理：查询、获取、创建 Issue。需配置 JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['query', 'create', 'get'],
+            description: '操作类型',
+          },
+          jql: { type: 'string', description: 'JQL 查询语句（action=query）' },
+          project: { type: 'string', description: '项目 Key（如 PROJ）' },
+          status: { type: 'string', description: 'Issue 状态筛选' },
+          assignee: { type: 'string', description: '指派人筛选' },
+          max_results: { type: 'number', description: '最大返回数量（默认 20）' },
+          issue_key: { type: 'string', description: 'Issue Key（action=get）' },
+          summary: { type: 'string', description: 'Issue 标题（action=create）' },
+          description: { type: 'string', description: 'Issue 描述（action=create）' },
+          issue_type: {
+            type: 'string',
+            description: 'Issue 类型：Bug/Task/Story/Epic（默认 Task）',
+          },
+          priority: {
+            type: 'string',
+            description: '优先级：Highest/High/Medium/Low/Lowest',
+          },
+          labels: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '标签列表',
+          },
+        },
+        required: ['action'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./network/jira')).jiraModule,
+  );
+  registry.register(
+    {
+      name: 'github_pr',
+      description:
+        'GitHub Pull Request 管理工具。通过 gh CLI 创建/查看/列出/评论/审查/合并 PR。需先 gh auth login。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['create', 'view', 'list', 'comment', 'review', 'merge'],
+            description: '操作类型',
+          },
+          title: { type: 'string', description: 'PR 标题（action=create）' },
+          body: {
+            type: 'string',
+            description: 'PR 描述或评论内容（action=create/comment/review）',
+          },
+          base: { type: 'string', description: '目标分支（action=create, 默认自动检测 main/master）' },
+          draft: { type: 'boolean', description: '是否创建为 Draft PR（action=create）' },
+          labels: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '标签列表（action=create）',
+          },
+          pr: {
+            type: 'string',
+            description: 'PR 编号或 URL（action=view/comment/review/merge）',
+          },
+          state: {
+            type: 'string',
+            enum: ['open', 'closed', 'merged', 'all'],
+            description: 'PR 状态筛选（action=list, 默认 open）',
+          },
+          author: { type: 'string', description: '作者筛选（action=list）' },
+          label: { type: 'string', description: '标签筛选（action=list）' },
+          limit: { type: 'number', description: '最大返回数量（action=list, 默认 10）' },
+          event: {
+            type: 'string',
+            enum: ['approve', 'request-changes', 'comment'],
+            description: 'Review 类型（action=review, 默认 comment）',
+          },
+          method: {
+            type: 'string',
+            enum: ['merge', 'squash', 'rebase'],
+            description: '合并方式（action=merge, 默认 merge）',
+          },
+          delete_branch: {
+            type: 'boolean',
+            description: '合并后是否删除远程分支（action=merge）',
+          },
+        },
+        required: ['action'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: false,
+      allowInPlanMode: false,
+    },
+    async () => (await import('./network/githubPr')).githubPrModule,
+  );
+  registry.register(
+    {
+      name: 'twitter_fetch',
+      description: '获取 Twitter/X 推文内容。支持 twitter.com 和 x.com 链接，通过 FxTwitter/VxTwitter/Nitter 多路降级。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Twitter/X 推文 URL' },
+        },
+        required: ['url'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/twitterFetch')).twitterFetchModule,
+  );
+  registry.register(
+    {
+      name: 'youtube_transcript',
+      description:
+        '获取 YouTube 视频的字幕/文字稿。支持标准/短链/embed/shorts URL 以及直接 Video ID。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'YouTube 视频 URL 或 Video ID' },
+          language: { type: 'string', description: '字幕语言代码（默认 en）' },
+          text_only: {
+            type: 'boolean',
+            description: '仅返回纯文本（不含时间戳，默认 false）',
+          },
+        },
+        required: ['url'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/youtubeTranscript')).youtubeTranscriptModule,
+  );
+  registry.register(
+    {
+      name: 'academic_search',
+      description:
+        '搜索学术论文和研究文献。并行查询 arXiv + Semantic Scholar，支持年份过滤和排序。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '搜索关键词或论文主题' },
+          limit: {
+            type: 'number',
+            description: '返回结果数量（默认 10，最大 30）',
+          },
+          source: {
+            type: 'string',
+            enum: ['arxiv', 'all'],
+            description: '数据源: arxiv（仅 arXiv）或 all（多源，默认）',
+          },
+          sort_by: {
+            type: 'string',
+            enum: ['relevance', 'date'],
+            description: '排序方式: relevance（默认）或 date',
+          },
+          year_from: { type: 'number', description: '起始年份（可选）' },
+          year_to: { type: 'number', description: '结束年份（可选）' },
+        },
+        required: ['query'],
+      },
+      category: 'network',
+      permissionLevel: 'network',
+      readOnly: true,
+      allowInPlanMode: true,
+    },
+    async () => (await import('./network/academicSearch')).academicSearchModule,
+  );
 
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(

@@ -17,16 +17,13 @@ export { docxGenerateTool } from './docxGenerate';
 export { excelGenerateTool } from './excelGenerate';
 // chart_generate / qrcode_generate 已迁移为 native ToolModule
 // （见 migrated/network/chartGenerate.ts / qrcodeGenerate.ts）
-export { jiraTool } from './jira';
-export { githubPrTool } from './githubPr';
-export { youtubeTranscriptTool } from './youtubeTranscript';
-export { twitterFetchTool } from './twitterFetch';
+// jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已迁移为 native ToolModule
+// （见 migrated/network/{jira,githubPr,twitterFetch,youtubeTranscript,academicSearch}.ts）
 // mermaid_export 已迁移为 native ToolModule（见 migrated/network/mermaidExport.ts）
 export { pdfGenerateTool } from './pdfGenerate';
 export { imageProcessTool } from './imageProcess';
 export { pdfCompressTool } from './pdfCompress';
 export { screenshotPageTool } from './screenshotPage';
-export { academicSearchTool } from './academicSearch';
 // http_request 已迁移为 native ToolModule（见 migrated/network/httpRequest.ts）
 export { speechToTextTool } from './speechToText';
 export { localSpeechToTextTool } from './localSpeechToText';

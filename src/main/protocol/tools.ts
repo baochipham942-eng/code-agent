@@ -262,3 +262,56 @@ export interface ToolFilterOptions {
   /** 按名称黑名单过滤（对应 CC filterToolsByDenyRules）*/
   deny?: ReadonlySet<string>;
 }
+
+// ----------------------------------------------------------------------------
+// Tool behavior / data shapes
+// P0-5 phase C: sink these "data shape" types out of tools/ so consumers
+// (agent/runtime/*, context/*) import contracts from protocol — even though
+// the runtime implementations necessarily stay in tools/ because they hold
+// module-scoped singletons.
+// ----------------------------------------------------------------------------
+
+/**
+ * Execution phase classification for a tool call.
+ * Used by agent telemetry + plan-mode gating.
+ *
+ * - `explore`: read-only, information gathering
+ * - `edit`: modifies files
+ * - `execute`: runs commands or spawns subagents
+ * - `other`: planning, memory, MCP, etc.
+ */
+export type ExecutionPhase = 'explore' | 'edit' | 'execute' | 'other';
+
+/**
+ * Structured data fingerprint for xlsx/csv/etc.
+ * Anchors tool output so later turns can't hallucinate row counts or columns.
+ * Runtime store lives in tools/dataFingerprint.ts.
+ */
+export interface DataFingerprint {
+  filePath: string;
+  readTime: number;
+  sheetName?: string;
+  rowCount: number;
+  columnNames: string[];
+  /** 列名 → 首行值 */
+  sampleValues: Record<string, string>;
+  numericRanges?: Record<string, { min: number; max: number }>;
+  /** 低基数列（≤20 unique）→ 唯一值列表 */
+  categoricalValues?: Record<string, string[]>;
+  /** 列名 → 空值计数 */
+  nullCounts?: Record<string, number>;
+  /** 完全重复的行数 */
+  duplicateRowCount?: number;
+}
+
+/**
+ * Lightweight tool fact extracted from bash/web_fetch/etc. outputs.
+ * Injected into compaction recovery as ground truth.
+ */
+export interface ToolFact {
+  /** 工具名或文件路径 */
+  source: string;
+  readTime: number;
+  /** 关键事实文本（每条 < 100 字） */
+  facts: string[];
+}

@@ -9,31 +9,12 @@
 
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
+import type { DataFingerprint, ToolFact } from '../protocol/tools';
+
+// Re-export authoritative types from protocol/tools for backward compatibility.
+export type { DataFingerprint, ToolFact };
 
 const logger = createLogger('DataFingerprint');
-
-// --- 结构化数据指纹（xlsx/csv） ---
-
-export interface DataFingerprint {
-  filePath: string;
-  readTime: number;
-  sheetName?: string;
-  rowCount: number;
-  columnNames: string[];
-  sampleValues: Record<string, string>;   // 列名 → 首行值
-  numericRanges?: Record<string, { min: number; max: number }>;
-  categoricalValues?: Record<string, string[]>;  // 低基数列（≤20 unique）→ 唯一值列表
-  nullCounts?: Record<string, number>;           // 列名 → 空值计数
-  duplicateRowCount?: number;                    // 完全重复的行数
-}
-
-// --- 轻量工具事实（bash/web_fetch 等） ---
-
-export interface ToolFact {
-  source: string;     // 工具名或文件路径
-  readTime: number;
-  facts: string[];    // 关键事实文本（每条 < 100 字）
-}
 
 // --- 事实提取工具函数 ---
 

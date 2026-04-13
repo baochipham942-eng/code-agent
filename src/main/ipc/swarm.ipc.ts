@@ -20,6 +20,7 @@ import {
   getRecentAgentHistory,
 } from '../session/agentHistoryPersistence';
 import { createLogger } from '../services/infra/logger';
+import { getEventBus } from '../protocol/events/bus';
 
 const logger = createLogger('SwarmIPC');
 
@@ -44,6 +45,9 @@ export function addSwarmEventListener(listener: SwarmEventListener): () => void 
 
 /**
  * 向渲染进程推送 Swarm 事件
+ *
+ * ADR-008 Phase 1: 双写过渡 — 同时走 legacy IPC/CLI 通道和新 EventBus 通道。
+ * Phase 2-5 逐步让业务模块改订阅 EventBus；Phase 6 删除 legacy 路径。
  */
 export function emitSwarmEvent(event: SwarmEvent): void {
   // Electron 模式：IPC 推送到渲染进程
@@ -58,6 +62,14 @@ export function emitSwarmEvent(event: SwarmEvent): void {
   for (const listener of swarmEventListeners) {
     try { listener(event); } catch { /* 防止监听器错误影响事件流 */ }
   }
+
+  // ADR-008 Phase 1: EventBus 双写
+  // Channel 命名：去掉 'swarm:' 前缀避免 'swarm:swarm:...' 双重命名
+  // 例如 'swarm:launch:requested' → EventBus channel 'swarm:launch:requested'
+  try {
+    const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
+    getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+  } catch { /* EventBus 发布失败不得影响 legacy 事件流 */ }
 }
 
 /**

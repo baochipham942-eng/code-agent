@@ -68,6 +68,8 @@ export class PlanApprovalGate {
   private planCounter = 0;
   /** Serial queue to prevent concurrent approval conflicts */
   private approvalQueue: Promise<void> = Promise.resolve();
+  /** Resolvers for in-flight waitForApproval promises (event-driven wake-up) */
+  private pendingResolvers: Map<string, (result: PlanApprovalResult) => void> = new Map();
   /** Default timeout for coordinator response (30 seconds) */
   private approvalTimeoutMs: number;
 
@@ -154,6 +156,13 @@ export class PlanApprovalGate {
     plan.feedback = feedback;
     plan.resolvedAt = Date.now();
     logger.info(`Plan approved: ${planId} for ${plan.agentName}`);
+
+    // Event-driven wake-up: resolve the pending waitForApproval immediately
+    const resolver = this.pendingResolvers.get(planId);
+    if (resolver) {
+      this.pendingResolvers.delete(planId);
+      resolver({ approved: true, feedback, autoApproved: false });
+    }
     return true;
   }
 
@@ -168,6 +177,12 @@ export class PlanApprovalGate {
     plan.feedback = reason;
     plan.resolvedAt = Date.now();
     logger.info(`Plan rejected: ${planId} for ${plan.agentName} — ${reason}`);
+
+    const resolver = this.pendingResolvers.get(planId);
+    if (resolver) {
+      this.pendingResolvers.delete(planId);
+      resolver({ approved: false, feedback: reason, autoApproved: false });
+    }
     return true;
   }
 
@@ -248,43 +263,33 @@ export class PlanApprovalGate {
     });
   }
 
-  private async waitForApproval(planId: string): Promise<PlanApprovalResult> {
-    const startTime = Date.now();
-    const pollInterval = 500; // Check every 500ms
+  private waitForApproval(planId: string): Promise<PlanApprovalResult> {
+    return new Promise<PlanApprovalResult>((resolve) => {
+      this.pendingResolvers.set(planId, resolve);
 
-    while (Date.now() - startTime < this.approvalTimeoutMs) {
-      const plan = this.pendingPlans.get(planId);
-      if (!plan) {
-        return { approved: false, feedback: 'Plan not found', autoApproved: false };
-      }
+      // Fail-closed timeout：超时后若 resolver 仍未触发，则 auto-reject
+      // medium/high risk 不应在无人值守时放行
+      setTimeout(() => {
+        if (!this.pendingResolvers.has(planId)) return;
+        this.pendingResolvers.delete(planId);
 
-      if (plan.status === 'approved') {
-        return { approved: true, feedback: plan.feedback, autoApproved: false };
-      }
+        const plan = this.pendingPlans.get(planId);
+        const riskLevel = plan?.risk.level ?? 'unknown';
+        const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, risk: ${riskLevel}). Coordinator did not respond; destructive plans require explicit approval.`;
+        logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-rejecting (risk: ${riskLevel})`);
+        if (plan && plan.status === 'pending') {
+          plan.status = 'rejected';
+          plan.feedback = rejectFeedback;
+          plan.resolvedAt = Date.now();
+        }
 
-      if (plan.status === 'rejected') {
-        return { approved: false, feedback: plan.feedback, autoApproved: false };
-      }
-
-      await new Promise(r => setTimeout(r, pollInterval));
-    }
-
-    // Timeout: fail-closed auto-reject（medium/high risk 不应在无人职守时放行）
-    const plan = this.pendingPlans.get(planId);
-    const riskLevel = plan?.risk.level ?? 'unknown';
-    const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, risk: ${riskLevel}). Coordinator did not respond; destructive plans require explicit approval.`;
-    logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-rejecting (risk: ${riskLevel})`);
-    if (plan) {
-      plan.status = 'rejected';
-      plan.feedback = rejectFeedback;
-      plan.resolvedAt = Date.now();
-    }
-
-    return {
-      approved: false,
-      feedback: rejectFeedback,
-      autoApproved: true,
-    };
+        resolve({
+          approved: false,
+          feedback: rejectFeedback,
+          autoApproved: true,
+        });
+      }, this.approvalTimeoutMs);
+    });
   }
 }
 

@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { AgentEvent } from '@shared/contract';
+import type { SwarmEventType } from '@shared/contract/swarm';
 
 export type { AgentEvent };
 
@@ -97,5 +98,47 @@ export function isInterruptEvent(type: AgentEventType): boolean {
     type === 'interrupt_start' ||
     type === 'interrupt_acknowledged' ||
     type === 'interrupt_complete'
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Swarm 事件分类（ADR-008 Phase 1）
+// ----------------------------------------------------------------------------
+// Swarm 事件类型复用 shared/contract/swarm.ts 的 SwarmEventType，
+// EventBus 以 domain='swarm' 发布；type 为去掉 'swarm:' 前缀后的短名称
+// （避免 channel 变成 'swarm:swarm:launch:requested'）。
+// Phase 1 仅提供分类守卫，Phase 2/3 的 Actor 订阅方使用这些守卫做路由。
+// ----------------------------------------------------------------------------
+
+export type { SwarmEventType };
+
+/** 是否为 swarm launch 审批相关事件（Cycle 4 订阅点） */
+export function isSwarmLaunchEvent(type: SwarmEventType): boolean {
+  return (
+    type === 'swarm:launch:requested' ||
+    type === 'swarm:launch:approved' ||
+    type === 'swarm:launch:rejected'
+  );
+}
+
+/** 是否为 plan 审批相关事件（Cycle 2 订阅点） */
+export function isSwarmPlanEvent(type: SwarmEventType): boolean {
+  return (
+    type === 'swarm:agent:plan_review' ||
+    type === 'swarm:agent:plan_approved' ||
+    type === 'swarm:agent:plan_rejected'
+  );
+}
+
+/** 是否为 swarm agent 生命周期事件（Cycle 1 订阅点） */
+export function isSwarmAgentLifecycleEvent(type: SwarmEventType): boolean {
+  return (
+    type === 'swarm:started' ||
+    type === 'swarm:agent:added' ||
+    type === 'swarm:agent:updated' ||
+    type === 'swarm:agent:completed' ||
+    type === 'swarm:agent:failed' ||
+    type === 'swarm:completed' ||
+    type === 'swarm:cancelled'
   );
 }

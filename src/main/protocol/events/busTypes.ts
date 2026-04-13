@@ -11,7 +11,8 @@ export type EventDomain =
   | 'memory'
   | 'lsp'
   | 'system'
-  | 'ui';
+  | 'ui'
+  | 'swarm';
 
 export interface BusEvent<T = unknown> {
   domain: EventDomain;

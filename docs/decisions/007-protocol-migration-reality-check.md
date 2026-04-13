@@ -145,14 +145,96 @@ anything go badly sideways?") but not as a goal.
 **Better indicators for P0-5 follow-ups:**
 - `protocol/` directly imported from outside protocol/ *at the value level*:
   baseline 9, goal 20+ (forces new runtime boundaries through protocol).
-- `tools/modules/` cross-subdir imports: baseline 75, goal ≤ 60
-  (targets the glue-layer coupling specifically).
 - Dynamic `require()` calls to cross-module runtime:
-  baseline 4 (agentOrchestrator already fixed, still 3 others).
-  Each one is a hidden dep that madge can't see.
+  baseline 35 total / ~19 intentional. Each one is a hidden dep that
+  madge can't see. (See "P0-6 dynamic require pass" below.)
 - Circular deps: baseline 4, goal still 4 — all inside `agent/hybrid/*` +
   `ipc/swarm.ipc.ts` + `agent/subagentExecutor.ts`. They need an Actor-model
   refactor, not more protocol/.
+
+### Retracted sub-goal: "tools/modules cross-subdir 75 → 60"
+
+The original version of this ADR proposed targeting `tools/modules/`
+cross-subdir imports as the next thing after protocol/. That number was
+based on flat "which subdir imports which subdir" counting and didn't
+distinguish the two very different things buried inside it:
+
+```
+tools/modules/<X>/ → tools/<X>/   (wrapper delegating to its own
+                                    category's legacy impl, **by design**
+                                    per P0-6 Gate)
+tools/modules/<X>/ → tools/<Y>/   (cross-category, potentially debt)
+```
+
+Breaking it down with the category match requirement:
+
+```
+tools/modules/<X> → tools/<X>    69 edges  ( same-category, intentional )
+tools/modules/<X> → tools/<Y>    12 edges  ( cross-category               )
+                                 --
+                                 81 edges total
+```
+
+The 69 same-category edges **are the whole point of the modules/ layer**:
+every `modules/<cat>/wrappers.ts` delegates to the legacy impl in
+`tools/<cat>/`. Removing them would remove the wrappers themselves.
+
+Of the 12 cross-category edges, every one is a utility dependency:
+
+```
+modules/file     → tools/utils/   4  (atomicWrite, safeRename, etc.)
+modules/file     → tools/root/    3  (fileReadTracker, executionPhase)
+modules/file     → tools/lsp/     2  (diagnosticsHelper for post-edit check)
+modules/document → tools/excel/   1
+modules/network  → tools/root/    1  (dataFingerprint)
+modules/shell    → tools/root/    1  (backgroundTasks helper)
+```
+
+These are all legitimate "my wrapper needs the shared util in tools/root
+or tools/utils". There is no hidden glue-layer to untangle — it was a
+statistical artifact of collapsing both classes of edge into one metric.
+
+**Retraction:** don't target `75 → 60`. The real count is 12 and there
+is no action to take on them.
+
+## P0-6 dynamic require pass (appended 2026-04-13 after ADR landed)
+
+First pass eliminated 12 of ~35 `require()` call sites in src/main:
+
+- `agentOrchestrator.ts` ×3 — comboRecorder singleton (now static import)
+- `configService.ts` — getCloudApiUrl (`shared/constants` is a leaf)
+- `logger.ts` — getLogDir (`platform/appPaths` is a leaf)
+- `telemetryCollector.ts` ×2 — telemetryStorage was **dead duplication**
+  (the same function was already statically imported at the top of the
+  file; the require was copy-paste noise, not a cycle-break)
+- `contextBuilder.ts` — appPaths for runtime-mode block
+- `agentAdapter.ts` — platform availability probe
+- `crossVerify.ts` ×2 — mcpClient. A comment claimed "lazy to avoid
+  circular dep", but mcpClient has no back-edge to agent/. It was a
+  stale comment carried over from an older file layout.
+- `taskRouter.ts` — **dead code**: `require('../profiling/agentProfiler')`
+  pointed to a module that has never existed in this repo. The try
+  block always fell through. Removed the block entirely.
+
+Retained as intentional cycle-breaks or CJS interop:
+
+- `logger.ts:283` ↔ `serviceRegistry.ts:122` — real 2-cycle: logger
+  registers itself into ServiceRegistry; ServiceRegistry needs logger
+  to log. Breaking this cleanly requires inverting the init path
+  (have app bootstrap pull the logger into the registry from outside),
+  which is a separate piece of work.
+- `taskRouter.ts:404 → app/bootstrap` — reverse-direction read (agent
+  layer reaching up to read app-level settings). Forward-wiring would
+  require a context parameter plumbed through taskRouter's callers.
+  Out of scope for this pass.
+- `swarm.ipc.ts:386 → teammateService` — on the swarm cycle already
+  blocked on the Actor-model refactor.
+- 16 CJS-interop / optional-dep requires: better-sqlite3, keytar,
+  jszip, pptxgenjs, exceljs, node-fetch, onnxruntime-node, etc.
+  These are legitimate and will stay.
+
+Verification: circular deps 4/4, typecheck pass, no value-graph changes
+in madge.
 
 ## Decision
 

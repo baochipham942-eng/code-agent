@@ -397,13 +397,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./vision/wrappers')).guiAgentModule,
   );
 
-  // ── batch 5: connectors/ wrapper（11 个 mail/reminders/calendar）─────────
-  const minimalConnSchema = (props: Record<string, { type: string }>) => ({
-    type: 'object' as const,
-    properties: props,
-    required: [] as string[],
-  });
-
+  // ── connectors（mail / reminders / calendar）— 全部 native ─────────────
   registry.register(
     {
       name: 'mail',
@@ -560,44 +554,86 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     {
       name: 'calendar',
-      description: 'List macOS Calendar events.',
-      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      description: 'Read macOS Calendar data via a native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['get_status', 'list_calendars', 'list_events'],
+            description: 'Calendar action to perform.',
+          },
+          calendar: { type: 'string', description: 'Optional calendar name for list_events.' },
+          from_ms: { type: 'number', description: 'Optional inclusive start timestamp in Unix milliseconds.' },
+          to_ms: { type: 'number', description: 'Optional inclusive end timestamp in Unix milliseconds.' },
+          limit: { type: 'number', description: 'Maximum number of events to return. Default: 20.' },
+        },
+        required: ['action'],
+      },
       category: 'mcp',
       permissionLevel: 'read',
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./connectors/wrappers')).calendarModule,
+    async () => (await import('./connectors/calendar')).calendarModule,
   );
   registry.register(
     {
       name: 'calendar_create_event',
-      description: 'Create a new macOS Calendar event.',
-      inputSchema: minimalConnSchema({ title: { type: 'string' } }),
+      description: 'Create a new event in macOS Calendar via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          calendar: { type: 'string', description: 'Target calendar name.' },
+          title: { type: 'string', description: 'Event title.' },
+          start_ms: { type: 'number', description: 'Event start time in Unix milliseconds.' },
+          end_ms: { type: 'number', description: 'Event end time in Unix milliseconds. Defaults to start + 30 minutes.' },
+          location: { type: 'string', description: 'Optional event location.' },
+        },
+        required: ['calendar', 'title', 'start_ms'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).calendarCreateEventModule,
+    async () => (await import('./connectors/calendarCreateEvent')).calendarCreateEventModule,
   );
   registry.register(
     {
       name: 'calendar_update_event',
-      description: 'Update an existing macOS Calendar event.',
-      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      description: 'Update an existing event in macOS Calendar via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          calendar: { type: 'string', description: 'Target calendar name.' },
+          event_uid: { type: 'string', description: 'Stable Calendar event uid.' },
+          title: { type: 'string', description: 'Optional updated title.' },
+          start_ms: { type: 'number', description: 'Optional updated start time in Unix milliseconds.' },
+          end_ms: { type: 'number', description: 'Optional updated end time in Unix milliseconds.' },
+          location: { type: 'string', description: 'Optional updated location. Pass an empty string to clear it.' },
+        },
+        required: ['calendar', 'event_uid'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).calendarUpdateEventModule,
+    async () => (await import('./connectors/calendarUpdateEvent')).calendarUpdateEventModule,
   );
   registry.register(
     {
       name: 'calendar_delete_event',
-      description: 'Delete a macOS Calendar event.',
-      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      description: 'Delete an existing event from macOS Calendar.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          calendar: { type: 'string', description: 'Target calendar name.' },
+          event_uid: { type: 'string', description: 'Stable Calendar event uid.' },
+        },
+        required: ['calendar', 'event_uid'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).calendarDeleteEventModule,
+    async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
   );
 
   // ── batch 6: multiagent/ wrapper（9 个，验证 ctx.legacyToolRegistry/modelConfig）─

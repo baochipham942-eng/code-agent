@@ -8,316 +8,154 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
-import type { ToolSchema } from '../../protocol/tools';
+
+// ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
+// .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
+// 工具实现仍在 registry.register 的 lazy loader 内按需 import，避免拉重依赖。
+
+// file/
+import { listDirectorySchema } from './file/listDirectory.schema';
+import { multiEditSchema } from './file/multiEdit.schema';
+import { notebookEditSchema } from './file/notebookEdit.schema';
+import { readClipboardSchema } from './file/readClipboard.schema';
+import { readSchema } from './file/read.schema';
+import { writeSchema } from './file/write.schema';
+import { globSchema } from './file/glob.schema';
+
+// shell/
+import { killShellSchema } from './shell/killShell.schema';
+import { taskOutputSchema } from './shell/taskOutput.schema';
+import { gitDiffSchema } from './shell/gitDiff.schema';
+import { gitCommitSchema } from './shell/gitCommit.schema';
+import { gitWorktreeSchema } from './shell/gitWorktree.schema';
+import { processSchema } from './shell/process.schema';
+import { bashSchema } from './shell/bash.schema';
+import { grepSchema } from './shell/grep.schema';
+
+// search/
+import { toolSearchSchema } from './search/toolSearch.schema';
+
+// skill/
+import { skillCreateSchema } from './skill/skillCreate.schema';
+import { skillSchema } from './skill/skill.schema';
+
+// lsp/
+import { diagnosticsSchema } from './lsp/diagnostics.schema';
+import { lspSchema } from './lsp/lsp.schema';
+
+// connectors/
+import { mailSchema } from './connectors/mail.schema';
+import { mailSendSchema } from './connectors/mailSend.schema';
+import { mailDraftSchema } from './connectors/mailDraft.schema';
+import { remindersSchema } from './connectors/reminders.schema';
+import { remindersCreateSchema } from './connectors/remindersCreate.schema';
+import { remindersUpdateSchema } from './connectors/remindersUpdate.schema';
+import { remindersDeleteSchema } from './connectors/remindersDelete.schema';
+import { calendarSchema } from './connectors/calendar.schema';
+import { calendarCreateEventSchema } from './connectors/calendarCreateEvent.schema';
+import { calendarUpdateEventSchema } from './connectors/calendarUpdateEvent.schema';
+import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.schema';
+
+// document/
+import { docEditSchema } from './document/docEdit.schema';
+
+// network/
+import { httpRequestSchema } from './network/httpRequest.schema';
+import { readDocumentSchema } from './network/readDocument.schema';
+import { readDocxSchema } from './network/readDocx.schema';
+import { readPdfSchema } from './network/readPdf.schema';
+import { readXlsxSchema } from './network/readXlsx.schema';
+import { chartGenerateSchema } from './network/chartGenerate.schema';
+import { mermaidExportSchema } from './network/mermaidExport.schema';
+import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
+import { jiraSchema } from './network/jira.schema';
+import { githubPrSchema } from './network/githubPr.schema';
+import { twitterFetchSchema } from './network/twitterFetch.schema';
+import { youtubeTranscriptSchema } from './network/youtubeTranscript.schema';
+import { academicSearchSchema } from './network/academicSearch.schema';
+
+// lightMemory/
+import { memoryReadSchema } from './lightMemory/memoryRead.schema';
+import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
+
+// planning/
+import { planModeFacadeSchema } from './planning/planModeFacade.schema';
+import { enterPlanModeSchema } from './planning/enterPlanMode.schema';
+import { exitPlanModeSchema } from './planning/exitPlanMode.schema';
 
 export function registerMigratedTools(registry: ToolRegistry): void {
   // ── file/ batch 1 ─────────────────────────────────────────────────────
   registry.register(
-    {
-      name: 'ListDirectory',
-      description: 'List directory contents as a tree structure.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          path: { type: 'string' },
-          recursive: { type: 'boolean' },
-          max_depth: { type: 'number' },
-        },
-        required: [],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    listDirectorySchema,
     async () => (await import('./file/listDirectory')).listDirectoryModule,
   );
 
   // multiEdit registers as 'Edit' (legacy 同名)
   registry.register(
-    {
-      name: 'Edit',
-      description: 'Apply multiple text replacements to a file in one operation.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string' },
-          edits: { type: 'array' },
-          force: { type: 'boolean' },
-        },
-        required: ['file_path', 'edits'],
-      } as ToolSchema['inputSchema'],
-      category: 'fs',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    multiEditSchema,
     async () => (await import('./file/multiEdit')).editModule,
   );
 
   registry.register(
-    {
-      name: 'notebook_edit',
-      description: 'Edit Jupyter Notebook cells (replace/insert/delete).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          notebook_path: { type: 'string' },
-          cell_id: { type: 'string' },
-          new_source: { type: 'string' },
-          cell_type: { type: 'string' },
-          edit_mode: { type: 'string' },
-        },
-        required: ['notebook_path', 'new_source'],
-      },
-      category: 'fs',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    notebookEditSchema,
     async () => (await import('./file/notebookEdit')).notebookEditModule,
   );
 
   registry.register(
-    {
-      name: 'read_clipboard',
-      description: 'Read the contents of the system clipboard.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          format: { type: 'string', enum: ['text', 'image', 'auto'] },
-        },
-        required: [],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readClipboardSchema,
     async () => (await import('./file/readClipboard')).readClipboardModule,
   );
 
   // ── shell/ batch 2a ───────────────────────────────────────────────────
   registry.register(
-    {
-      name: 'kill_shell',
-      description: 'Kill a running background bash shell by its task_id.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          task_id: { type: 'string' },
-        },
-        required: ['task_id'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    killShellSchema,
     async () => (await import('./shell/killShell')).killShellModule,
   );
 
   registry.register(
-    {
-      name: 'task_output',
-      description: 'Get output from a running or completed background task.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          task_id: { type: 'string' },
-          block: { type: 'boolean' },
-          timeout: { type: 'number' },
-        },
-        required: [],
-      },
-      category: 'shell',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    taskOutputSchema,
     async () => (await import('./shell/taskOutput')).taskOutputModule,
   );
 
   // ── shell/ batch 2c: git 三件套 ───────────────────────────────────────
   registry.register(
-    {
-      name: 'git_diff',
-      description: 'Git 差异分析: diff (未暂存) | diff_staged | diff_branch | show.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['diff', 'diff_staged', 'diff_branch', 'show'] },
-          files: { type: 'array', items: { type: 'string' } },
-          stat_only: { type: 'boolean' },
-          base: { type: 'string' },
-          head: { type: 'string' },
-          commit: { type: 'string' },
-        },
-        required: ['action'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    gitDiffSchema,
     async () => (await import('./shell/gitDiff')).gitDiffModule,
   );
 
   registry.register(
-    {
-      name: 'git_commit',
-      description: 'Git 提交管理: status | add | commit | push | log.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['status', 'add', 'commit', 'push', 'log'] },
-          files: { type: 'array', items: { type: 'string' } },
-          all: { type: 'boolean' },
-          message: { type: 'string' },
-          amend: { type: 'boolean' },
-          remote: { type: 'string' },
-          branch: { type: 'string' },
-          set_upstream: { type: 'boolean' },
-          limit: { type: 'number' },
-          oneline: { type: 'boolean' },
-        },
-        required: ['action'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    gitCommitSchema,
     async () => (await import('./shell/gitCommit')).gitCommitModule,
   );
 
   registry.register(
-    {
-      name: 'git_worktree',
-      description: 'Git 工作树管理: list | add | remove | prune.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['list', 'add', 'remove', 'prune'] },
-          path: { type: 'string' },
-          branch: { type: 'string' },
-          new_branch: { type: 'string' },
-          base: { type: 'string' },
-          force: { type: 'boolean' },
-        },
-        required: ['action'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    gitWorktreeSchema,
     async () => (await import('./shell/gitWorktree')).gitWorktreeModule,
   );
 
   // ── batch 3: search/skill/lsp wrapper 模式 ────────────────────────────
   registry.register(
-    {
-      name: 'ToolSearch',
-      description: 'Search for or select deferred tools to make them available.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string' },
-          max_results: { type: 'number' },
-        },
-        required: ['query'],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    toolSearchSchema,
     async () => (await import('./search/toolSearch')).toolSearchModule,
   );
 
   registry.register(
-    {
-      name: 'SkillCreate',
-      description: '创建新的可复用 skill。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          description: { type: 'string' },
-          content: { type: 'string' },
-          scope: { type: 'string' },
-          allowedTools: { type: 'string' },
-        },
-        required: ['name', 'description', 'content'],
-      },
-      category: 'skill',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    skillCreateSchema,
     async () => (await import('./skill/skillCreate')).skillCreateModule,
   );
 
   registry.register(
-    {
-      name: 'Skill',
-      description: '执行已注册的 skill',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          command: { type: 'string' },
-          args: { type: 'string' },
-        },
-        required: ['command'],
-      },
-      category: 'skill',
-      permissionLevel: 'read',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    skillSchema,
     async () => (await import('./skill/skill')).skillModule,
   );
 
   registry.register(
-    {
-      name: 'diagnostics',
-      description: 'Query LSP diagnostics for a file or the entire project.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string' },
-          severity_filter: { type: 'string', enum: ['error', 'warning', 'all'] },
-        },
-        required: [],
-      },
-      category: 'lsp',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    diagnosticsSchema,
     async () => (await import('./lsp/diagnostics')).diagnosticsModule,
   );
 
   registry.register(
-    {
-      name: 'lsp',
-      description: 'LSP code intelligence operations (goToDefinition, findReferences, hover, ...).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          operation: { type: 'string' },
-          file_path: { type: 'string' },
-          line: { type: 'number' },
-          character: { type: 'number' },
-        },
-        required: ['operation', 'file_path', 'line', 'character'],
-      },
-      category: 'lsp',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    lspSchema,
     async () => (await import('./lsp/lsp')).lspModule,
   );
 
@@ -399,240 +237,47 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // ── connectors（mail / reminders / calendar）— 全部 native ─────────────
   registry.register(
-    {
-      name: 'mail',
-      description: 'Read local macOS Mail data via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message'],
-            description: 'Mail action to perform.',
-          },
-          account: { type: 'string', description: 'Optional account name.' },
-          mailbox: { type: 'string', description: 'Mailbox name for list_messages/read_message.' },
-          query: { type: 'string', description: 'Optional subject/sender filter.' },
-          limit: { type: 'number', description: 'Max messages to return. Default: 10.' },
-          scan_limit: { type: 'number', description: 'Max messages to scan before filter.' },
-          message_id: { type: 'number', description: 'Message id for read_message.' },
-        },
-        required: ['action'],
-      },
-      category: 'mcp',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    mailSchema,
     async () => (await import('./connectors/mail')).mailModule,
   );
   registry.register(
-    {
-      name: 'mail_send',
-      description: 'Send a real email via local macOS Mail.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          subject: { type: 'string', description: 'Email subject.' },
-          to: { type: 'array', items: { type: 'string' }, description: 'Primary recipients.' },
-          cc: { type: 'array', items: { type: 'string' }, description: 'CC recipients.' },
-          bcc: { type: 'array', items: { type: 'string' }, description: 'BCC recipients.' },
-          content: { type: 'string', description: 'Email body content.' },
-          attachments: { type: 'array', items: { type: 'string' }, description: 'Attachment file paths.' },
-        },
-        required: ['subject', 'to'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    mailSendSchema,
     async () => (await import('./connectors/mailSend')).mailSendModule,
   );
   registry.register(
-    {
-      name: 'mail_draft',
-      description: 'Create a draft in local macOS Mail via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          subject: { type: 'string', description: 'Draft subject.' },
-          to: { type: 'array', items: { type: 'string' }, description: 'Primary recipients.' },
-          cc: { type: 'array', items: { type: 'string' }, description: 'CC recipients.' },
-          bcc: { type: 'array', items: { type: 'string' }, description: 'BCC recipients.' },
-          content: { type: 'string', description: 'Draft body content.' },
-          attachments: { type: 'array', items: { type: 'string' }, description: 'Attachment file paths.' },
-        },
-        required: ['subject', 'to'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    mailDraftSchema,
     async () => (await import('./connectors/mailDraft')).mailDraftModule,
   );
   registry.register(
-    {
-      name: 'reminders',
-      description: 'Read macOS Reminders data via a native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['get_status', 'list_lists', 'list_reminders'],
-            description: 'Reminders action to perform.',
-          },
-          list: { type: 'string', description: 'Optional reminder list name for list_reminders.' },
-          include_completed: { type: 'boolean', description: 'Whether to include completed reminders.' },
-          limit: { type: 'number', description: 'Maximum number of reminders to return. Default: 20.' },
-        },
-        required: ['action'],
-      },
-      category: 'mcp',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    remindersSchema,
     async () => (await import('./connectors/reminders')).remindersModule,
   );
   registry.register(
-    {
-      name: 'reminders_create',
-      description: 'Create a new reminder in macOS Reminders via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          list: { type: 'string', description: 'Target reminder list name.' },
-          title: { type: 'string', description: 'Reminder title.' },
-          notes: { type: 'string', description: 'Optional reminder notes/body.' },
-          remind_at_ms: { type: 'number', description: 'Optional reminder time in Unix milliseconds.' },
-        },
-        required: ['list', 'title'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    remindersCreateSchema,
     async () => (await import('./connectors/remindersCreate')).remindersCreateModule,
   );
   registry.register(
-    {
-      name: 'reminders_update',
-      description: 'Update an existing reminder in macOS Reminders via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          list: { type: 'string', description: 'Target reminder list name.' },
-          reminder_id: { type: 'string', description: 'Stable reminder id.' },
-          title: { type: 'string', description: 'Optional updated reminder title.' },
-          notes: { type: 'string', description: 'Optional updated notes. Pass an empty string to clear it.' },
-          remind_at_ms: { type: 'number', description: 'Optional updated reminder time in Unix milliseconds.' },
-          clear_remind_at: { type: 'boolean', description: 'Set true to clear an existing reminder time.' },
-          completed: { type: 'boolean', description: 'Set true to mark complete, false to reopen.' },
-        },
-        required: ['list', 'reminder_id'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    remindersUpdateSchema,
     async () => (await import('./connectors/remindersUpdate')).remindersUpdateModule,
   );
   registry.register(
-    {
-      name: 'reminders_delete',
-      description: 'Delete an existing reminder from macOS Reminders.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          list: { type: 'string', description: 'Target reminder list name.' },
-          reminder_id: { type: 'string', description: 'Stable reminder id.' },
-        },
-        required: ['list', 'reminder_id'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    remindersDeleteSchema,
     async () => (await import('./connectors/remindersDelete')).remindersDeleteModule,
   );
   registry.register(
-    {
-      name: 'calendar',
-      description: 'Read macOS Calendar data via a native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['get_status', 'list_calendars', 'list_events'],
-            description: 'Calendar action to perform.',
-          },
-          calendar: { type: 'string', description: 'Optional calendar name for list_events.' },
-          from_ms: { type: 'number', description: 'Optional inclusive start timestamp in Unix milliseconds.' },
-          to_ms: { type: 'number', description: 'Optional inclusive end timestamp in Unix milliseconds.' },
-          limit: { type: 'number', description: 'Maximum number of events to return. Default: 20.' },
-        },
-        required: ['action'],
-      },
-      category: 'mcp',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    calendarSchema,
     async () => (await import('./connectors/calendar')).calendarModule,
   );
   registry.register(
-    {
-      name: 'calendar_create_event',
-      description: 'Create a new event in macOS Calendar via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          calendar: { type: 'string', description: 'Target calendar name.' },
-          title: { type: 'string', description: 'Event title.' },
-          start_ms: { type: 'number', description: 'Event start time in Unix milliseconds.' },
-          end_ms: { type: 'number', description: 'Event end time in Unix milliseconds. Defaults to start + 30 minutes.' },
-          location: { type: 'string', description: 'Optional event location.' },
-        },
-        required: ['calendar', 'title', 'start_ms'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    calendarCreateEventSchema,
     async () => (await import('./connectors/calendarCreateEvent')).calendarCreateEventModule,
   );
   registry.register(
-    {
-      name: 'calendar_update_event',
-      description: 'Update an existing event in macOS Calendar via the native connector.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          calendar: { type: 'string', description: 'Target calendar name.' },
-          event_uid: { type: 'string', description: 'Stable Calendar event uid.' },
-          title: { type: 'string', description: 'Optional updated title.' },
-          start_ms: { type: 'number', description: 'Optional updated start time in Unix milliseconds.' },
-          end_ms: { type: 'number', description: 'Optional updated end time in Unix milliseconds.' },
-          location: { type: 'string', description: 'Optional updated location. Pass an empty string to clear it.' },
-        },
-        required: ['calendar', 'event_uid'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    calendarUpdateEventSchema,
     async () => (await import('./connectors/calendarUpdateEvent')).calendarUpdateEventModule,
   );
   registry.register(
-    {
-      name: 'calendar_delete_event',
-      description: 'Delete an existing event from macOS Calendar.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          calendar: { type: 'string', description: 'Target calendar name.' },
-          event_uid: { type: 'string', description: 'Stable Calendar event uid.' },
-        },
-        required: ['calendar', 'event_uid'],
-      },
-      category: 'mcp',
-      permissionLevel: 'write',
-    },
+    calendarDeleteEventSchema,
     async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
   );
 
@@ -771,21 +416,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // document (1)
   registry.register(
-    {
-      name: 'DocEdit',
-      description: 'Unified document editing tool — atomic incremental edits on .xlsx/.pptx/.docx. Auto-detects format from extension and snapshots before editing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Path to the document (.xlsx/.pptx/.docx)' },
-          operations: { type: 'array', description: 'Array of edit operations (format-specific)' },
-          dry_run: { type: 'boolean', description: 'Preview changes without applying' },
-        },
-        required: ['file_path', 'operations'],
-      },
-      category: 'document',
-      permissionLevel: 'write',
-    },
+    docEditSchema,
     async () => (await import('./document/docEdit')).docEditModule,
   );
 
@@ -817,55 +448,15 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/wrappers')).planModule,
   );
   registry.register(
-    {
-      name: 'PlanMode',
-      description: 'Plan mode toggle facade (enter/exit).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['enter', 'exit'] },
-          reason: { type: 'string' },
-          plan: { type: 'string' },
-        },
-        required: ['action'],
-      },
-      category: 'planning',
-      permissionLevel: 'write',
-      allowInPlanMode: true,
-    },
+    planModeFacadeSchema,
     async () => (await import('./planning/planModeFacade')).planModeFacadeModule,
   );
   registry.register(
-    {
-      name: 'enter_plan_mode',
-      description: 'Enter plan mode (read-only tools allowed).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          reason: { type: 'string' },
-        },
-      },
-      category: 'planning',
-      permissionLevel: 'write',
-      allowInPlanMode: true,
-    },
+    enterPlanModeSchema,
     async () => (await import('./planning/enterPlanMode')).enterPlanModeModule,
   );
   registry.register(
-    {
-      name: 'exit_plan_mode',
-      description: 'Exit plan mode and resume normal execution.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          plan: { type: 'string' },
-        },
-        required: ['plan'],
-      },
-      category: 'planning',
-      permissionLevel: 'write',
-      allowInPlanMode: true,
-    },
+    exitPlanModeSchema,
     async () => (await import('./planning/exitPlanMode')).exitPlanModeModule,
   );
   registry.register(
@@ -937,167 +528,27 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).webFetchUnifiedModule, true);
   REGISTER_NET('WebSearch', 'Search the web via Perplexity/Exa/Tavily.', 'network',
     async () => (await import('./network/wrappers')).webSearchModule, true);
-  // http_request → native ToolModule（真实 schema 内联，不走 netSchema 占位）
+  // http_request → native ToolModule
   registry.register(
-    {
-      name: 'http_request',
-      description: `Make HTTP requests to external APIs.
-
-Supports all common HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS.
-
-Security restrictions:
-- Internal/private networks are blocked (SSRF protection)
-- Cloud metadata services are blocked
-- Maximum response size: 10MB
-- Maximum timeout: 5 minutes`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'Target URL (http:// or https://)' },
-          method: {
-            type: 'string',
-            description: 'HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS (default: GET)',
-          },
-          headers: {
-            type: 'object',
-            description: 'Request headers as key-value pairs',
-            additionalProperties: true,
-          },
-          body: { type: 'string', description: 'Request body (for POST/PUT/PATCH)' },
-          timeout: {
-            type: 'number',
-            description: 'Timeout in milliseconds (default: 30000, max: 300000)',
-          },
-        },
-        required: ['url'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    httpRequestSchema,
     async () => (await import('./network/httpRequest')).httpRequestModule,
   );
 
   // Document reading (4) — all native
   registry.register(
-    {
-      name: 'ReadDocument',
-      description: `Read document files (PDF, Word, Excel) with automatic format detection from file extension.
-
-Supported formats:
-- .pdf: Uses vision model (Gemini 2.0) for AI-powered PDF analysis
-- .docx / .doc: Reads Word documents with text/markdown/html output
-- .xlsx / .xls: Reads Excel spreadsheets with table/json/csv output and data quality analysis`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: {
-            type: 'string',
-            description: 'Path to the document file (.pdf, .docx, .doc, .xlsx, .xls)',
-          },
-          prompt: {
-            type: 'string',
-            description: '[PDF] Specific question or instruction for analyzing the PDF',
-          },
-          format: {
-            type: 'string',
-            description:
-              '[Word] text|markdown|html (default: text); [Excel] table|json|csv (default: table)',
-          },
-          sheet: {
-            type: 'string',
-            description: '[Excel] Worksheet name or index (default: first sheet)',
-          },
-          max_rows: {
-            type: 'number',
-            description: '[Excel] Maximum rows to read (default: 1000)',
-          },
-        },
-        required: ['file_path'],
-      },
-      category: 'network',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readDocumentSchema,
     async () => (await import('./network/readDocument')).readDocumentModule,
   );
   registry.register(
-    {
-      name: 'read_docx',
-      description: `读取 Word 文档（.docx）的内容。支持 text / markdown / html 三种输出格式。`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Word 文档路径' },
-          format: {
-            type: 'string',
-            enum: ['text', 'markdown', 'html'],
-            description: '输出格式（默认: text）',
-          },
-        },
-        required: ['file_path'],
-      },
-      category: 'network',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readDocxSchema,
     async () => (await import('./network/readDocx')).readDocxModule,
   );
   registry.register(
-    {
-      name: 'read_pdf',
-      description: `Read PDF files using vision model (Gemini 2.0). Best for text-based PDFs, scanned documents, PDF forms, diagrams and charts.`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Absolute path to the PDF file' },
-          prompt: {
-            type: 'string',
-            description: 'Specific question or instruction for analyzing the PDF',
-          },
-        },
-        required: ['file_path'],
-      },
-      category: 'network',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readPdfSchema,
     async () => (await import('./network/readPdf')).readPdfModule,
   );
   registry.register(
-    {
-      name: 'read_xlsx',
-      description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
-
-This is the ONLY correct way to read Excel files. Do NOT use Read for .xlsx/.xls — it will return garbled binary content.
-
-Output formats: table (default, markdown), json, csv.`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Excel 文件路径' },
-          sheet: {
-            type: 'string',
-            description: '工作表名称或索引（默认: 第一个工作表）',
-          },
-          format: {
-            type: 'string',
-            enum: ['table', 'json', 'csv'],
-            description: '输出格式（默认: table）',
-          },
-          max_rows: { type: 'number', description: '最大读取行数（默认: 1000）' },
-        },
-        required: ['file_path'],
-      },
-      category: 'network',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readXlsxSchema,
     async () => (await import('./network/readXlsx')).readXlsxModule,
   );
 
@@ -1135,71 +586,15 @@ Output formats: table (default, markdown), json, csv.`,
 
   // Visual helpers (4) — chart/mermaid/qrcode 已迁移为 native，带完整 schema
   registry.register(
-    {
-      name: 'chart_generate',
-      description: 'Generate a data chart image (bar/line/pie/doughnut/radar/polarArea/scatter) via QuickChart API.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea', 'scatter'],
-            description: '图表类型',
-          },
-          title: { type: 'string', description: '图表标题' },
-          labels: { type: 'array', items: { type: 'string' }, description: 'X 轴标签或分类名称' },
-          datasets: { type: 'array', description: '数据系列数组 (label/data/backgroundColor/borderColor)' },
-          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 chart-{ts}.png）' },
-          width: { type: 'number', description: '图表宽度（默认 800）' },
-          height: { type: 'number', description: '图表高度（默认 600）' },
-        },
-        required: ['type', 'labels', 'datasets'],
-      },
-      category: 'network',
-      permissionLevel: 'write',
-    },
+    chartGenerateSchema,
     async () => (await import('./network/chartGenerate')).chartGenerateModule,
   );
   registry.register(
-    {
-      name: 'mermaid_export',
-      description: 'Export a Mermaid diagram code to PNG or SVG via mermaid.ink.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          code: { type: 'string', description: 'Mermaid 图表代码' },
-          format: { type: 'string', enum: ['png', 'svg'], description: '输出格式（默认 png）' },
-          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 mermaid-{ts}.{format}）' },
-          theme: { type: 'string', enum: ['default', 'dark', 'forest', 'neutral'], description: '主题（默认 default）' },
-          background: { type: 'string', description: '背景颜色（默认 transparent）' },
-          scale: { type: 'number', description: '缩放比例（默认 2，仅 PNG 有效）' },
-        },
-        required: ['code'],
-      },
-      category: 'network',
-      permissionLevel: 'write',
-    },
+    mermaidExportSchema,
     async () => (await import('./network/mermaidExport')).mermaidExportModule,
   );
   registry.register(
-    {
-      name: 'qrcode_generate',
-      description: 'Generate a QR code PNG image (URL / text / WiFi / tel / mailto / vCard).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          content: { type: 'string', description: '二维码内容（URL、文本、vCard 等）' },
-          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 qrcode-{ts}.png）' },
-          size: { type: 'number', description: '二维码尺寸（默认 300）' },
-          color: { type: 'string', description: '二维码颜色（默认 #000000）' },
-          background: { type: 'string', description: '背景颜色（默认 #ffffff）' },
-          margin: { type: 'number', description: '边距（默认 4）' },
-        },
-        required: ['content'],
-      },
-      category: 'network',
-      permissionLevel: 'write',
-    },
+    qrcodeGenerateSchema,
     async () => (await import('./network/qrcodeGenerate')).qrcodeGenerateModule,
   );
   REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
@@ -1207,212 +602,29 @@ Output formats: table (default, markdown), json, csv.`,
 
   // External integrations (5) — all native ToolModule with real schemas
   registry.register(
-    {
-      name: 'jira',
-      description: 'Jira 问题管理：查询、获取、创建 Issue。需配置 JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['query', 'create', 'get'],
-            description: '操作类型',
-          },
-          jql: { type: 'string', description: 'JQL 查询语句（action=query）' },
-          project: { type: 'string', description: '项目 Key（如 PROJ）' },
-          status: { type: 'string', description: 'Issue 状态筛选' },
-          assignee: { type: 'string', description: '指派人筛选' },
-          max_results: { type: 'number', description: '最大返回数量（默认 20）' },
-          issue_key: { type: 'string', description: 'Issue Key（action=get）' },
-          summary: { type: 'string', description: 'Issue 标题（action=create）' },
-          description: { type: 'string', description: 'Issue 描述（action=create）' },
-          issue_type: {
-            type: 'string',
-            description: 'Issue 类型：Bug/Task/Story/Epic（默认 Task）',
-          },
-          priority: {
-            type: 'string',
-            description: '优先级：Highest/High/Medium/Low/Lowest',
-          },
-          labels: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '标签列表',
-          },
-        },
-        required: ['action'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    jiraSchema,
     async () => (await import('./network/jira')).jiraModule,
   );
   registry.register(
-    {
-      name: 'github_pr',
-      description:
-        'GitHub Pull Request 管理工具。通过 gh CLI 创建/查看/列出/评论/审查/合并 PR。需先 gh auth login。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['create', 'view', 'list', 'comment', 'review', 'merge'],
-            description: '操作类型',
-          },
-          title: { type: 'string', description: 'PR 标题（action=create）' },
-          body: {
-            type: 'string',
-            description: 'PR 描述或评论内容（action=create/comment/review）',
-          },
-          base: { type: 'string', description: '目标分支（action=create, 默认自动检测 main/master）' },
-          draft: { type: 'boolean', description: '是否创建为 Draft PR（action=create）' },
-          labels: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '标签列表（action=create）',
-          },
-          pr: {
-            type: 'string',
-            description: 'PR 编号或 URL（action=view/comment/review/merge）',
-          },
-          state: {
-            type: 'string',
-            enum: ['open', 'closed', 'merged', 'all'],
-            description: 'PR 状态筛选（action=list, 默认 open）',
-          },
-          author: { type: 'string', description: '作者筛选（action=list）' },
-          label: { type: 'string', description: '标签筛选（action=list）' },
-          limit: { type: 'number', description: '最大返回数量（action=list, 默认 10）' },
-          event: {
-            type: 'string',
-            enum: ['approve', 'request-changes', 'comment'],
-            description: 'Review 类型（action=review, 默认 comment）',
-          },
-          method: {
-            type: 'string',
-            enum: ['merge', 'squash', 'rebase'],
-            description: '合并方式（action=merge, 默认 merge）',
-          },
-          delete_branch: {
-            type: 'boolean',
-            description: '合并后是否删除远程分支（action=merge）',
-          },
-        },
-        required: ['action'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    githubPrSchema,
     async () => (await import('./network/githubPr')).githubPrModule,
   );
   registry.register(
-    {
-      name: 'twitter_fetch',
-      description: '获取 Twitter/X 推文内容。支持 twitter.com 和 x.com 链接，通过 FxTwitter/VxTwitter/Nitter 多路降级。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'Twitter/X 推文 URL' },
-        },
-        required: ['url'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    twitterFetchSchema,
     async () => (await import('./network/twitterFetch')).twitterFetchModule,
   );
   registry.register(
-    {
-      name: 'youtube_transcript',
-      description:
-        '获取 YouTube 视频的字幕/文字稿。支持标准/短链/embed/shorts URL 以及直接 Video ID。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'YouTube 视频 URL 或 Video ID' },
-          language: { type: 'string', description: '字幕语言代码（默认 en）' },
-          text_only: {
-            type: 'boolean',
-            description: '仅返回纯文本（不含时间戳，默认 false）',
-          },
-        },
-        required: ['url'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    youtubeTranscriptSchema,
     async () => (await import('./network/youtubeTranscript')).youtubeTranscriptModule,
   );
   registry.register(
-    {
-      name: 'academic_search',
-      description:
-        '搜索学术论文和研究文献。并行查询 arXiv + Semantic Scholar，支持年份过滤和排序。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '搜索关键词或论文主题' },
-          limit: {
-            type: 'number',
-            description: '返回结果数量（默认 10，最大 30）',
-          },
-          source: {
-            type: 'string',
-            enum: ['arxiv', 'all'],
-            description: '数据源: arxiv（仅 arXiv）或 all（多源，默认）',
-          },
-          sort_by: {
-            type: 'string',
-            enum: ['relevance', 'date'],
-            description: '排序方式: relevance（默认）或 date',
-          },
-          year_from: { type: 'number', description: '起始年份（可选）' },
-          year_to: { type: 'number', description: '结束年份（可选）' },
-        },
-        required: ['query'],
-      },
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    academicSearchSchema,
     async () => (await import('./network/academicSearch')).academicSearchModule,
   );
 
   // ── shell/ batch 2b: Process facade（合并 6 个 process_* 子工具）─────────
   registry.register(
-    {
-      name: 'Process',
-      description: 'Unified process management: list/poll/log/write/submit/kill/output background tasks and PTY sessions.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['list', 'poll', 'log', 'write', 'submit', 'kill', 'output'] },
-          filter: { type: 'string', enum: ['all', 'running', 'completed', 'failed', 'pty', 'background'] },
-          session_id: { type: 'string' },
-          task_id: { type: 'string' },
-          block: { type: 'boolean' },
-          timeout: { type: 'number' },
-          tail: { type: 'number' },
-          data: { type: 'string' },
-          input: { type: 'string' },
-        },
-        required: ['action'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    processSchema,
     async () => (await import('./shell/process')).processModule,
   );
 
@@ -1423,200 +635,35 @@ Output formats: table (default, markdown), json, csv.`,
 
   // file (3): Read / Write / Glob (P0-6.3 Batch 1 — native ToolModule)
   registry.register(
-    {
-      name: 'Read',
-      description:
-        'Reads a file from the local filesystem. Supports offset/limit for line ranges.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: {
-            type: 'string',
-            description: 'Absolute path to the file. Supports ~ for home directory.',
-          },
-          offset: {
-            type: 'number',
-            description: 'Line number to start reading from (1-indexed). Default: 1.',
-          },
-          limit: {
-            type: 'number',
-            description: 'Maximum number of lines to read. Default: 2000.',
-          },
-        },
-        required: ['file_path'],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    readSchema,
     async () => (await import('./file/read')).readModule,
   );
   registry.register(
-    {
-      name: 'Write',
-      description:
-        'Writes a file to the local filesystem. Overwrites existing files; creates parent directories.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file_path: {
-            type: 'string',
-            description: 'Absolute path where the file will be created or overwritten.',
-          },
-          content: {
-            type: 'string',
-            description: 'The complete file content to write (replaces entire file).',
-          },
-        },
-        required: ['file_path', 'content'],
-      },
-      category: 'fs',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    writeSchema,
     async () => (await import('./file/write')).writeModule,
   );
   registry.register(
-    {
-      name: 'Glob',
-      description:
-        'Fast file pattern matching. Use to find files by name pattern (e.g. "**/*.ts").',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          pattern: {
-            type: 'string',
-            description: 'Glob pattern (e.g. "**/*.ts", "src/**/*.tsx").',
-          },
-          path: {
-            type: 'string',
-            description: 'Directory to search in. Default: working directory.',
-          },
-        },
-        required: ['pattern'],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    globSchema,
     async () => (await import('./file/glob')).globModule,
   );
 
   // shell (2): Bash / Grep
   registry.register(
-    {
-      name: 'Bash',
-      description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. Working directory persists between calls.
-
-IMPORTANT: Avoid using this tool to run \`find\`, \`grep\`, \`cat\`, \`head\`, \`tail\`, \`sed\`, \`awk\`, or \`echo\` commands. Instead, use the appropriate dedicated tool as this will be much faster and more reliable:
-- File search: Use Glob (NOT find or ls)
-- Content search: Use Grep (NOT grep or rg)
-- Read files: Use Read (NOT cat/head/tail/sed -n/awk/python3 file reads)
-- Edit files: Use Edit (NOT sed/awk)
-- Write files: Use Write (NOT echo >/cat <<EOF)
-
-Reserve Bash exclusively for: running scripts, git commands, installing packages, compilation, and other system operations that genuinely require shell execution. If you are unsure, default to the dedicated tool.
-
-Git: NEVER --force push or --no-verify unless explicitly requested.`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'The command to execute' },
-          timeout: { type: 'number', description: 'Timeout in milliseconds (default: 120000, max: 600000)' },
-          working_directory: { type: 'string', description: 'Working directory for the command' },
-          run_in_background: { type: 'boolean', description: 'Run command in background and return immediately with task_id' },
-          pty: { type: 'boolean', description: 'Use PTY (pseudo-terminal) for interactive commands like vim, ssh, etc.' },
-          cols: { type: 'number', description: 'Terminal columns for PTY mode (default: 80)' },
-          rows: { type: 'number', description: 'Terminal rows for PTY mode (default: 24)' },
-          wait_for_completion: { type: 'boolean', description: 'For PTY mode: wait for command to complete before returning (default: false)' },
-          description: { type: 'string', description: 'Short description of what this command does (for logging)' },
-        },
-        required: ['command'],
-      },
-      category: 'shell',
-      permissionLevel: 'execute',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
+    bashSchema,
     async () => (await import('./shell/bash')).bashModule,
   );
   registry.register(
-    {
-      name: 'Grep',
-      description:
-        'Searches file contents using regex patterns. Use this instead of Bash grep or rg. ' +
-        'Supports regex syntax, file type filtering, glob patterns, and context lines. ' +
-        'Use context params (before_context/after_context/context) to see surrounding lines. ' +
-        'Use head_limit + offset for pagination by match group.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string' },
-          path: { type: 'string' },
-          include: { type: 'string' },
-          case_insensitive: { type: 'boolean' },
-          type: { type: 'string' },
-          before_context: { type: 'number' },
-          after_context: { type: 'number' },
-          context: { type: 'number' },
-          head_limit: { type: 'number' },
-          offset: { type: 'number' },
-        },
-        required: ['pattern'],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    grepSchema,
     async () => (await import('./shell/grep')).grepModule,
   );
 
   // lightMemory (2): MemoryRead / MemoryWrite (P0-6.3 Batch 3 — native ToolModule)
   registry.register(
-    {
-      name: 'MemoryRead',
-      description:
-        'Read a memory detail file from the persistent file-based memory system.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          filename: { type: 'string' },
-        },
-        required: ['filename'],
-      },
-      category: 'fs',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
+    memoryReadSchema,
     async () => (await import('./lightMemory/memoryRead')).memoryReadModule,
   );
   registry.register(
-    {
-      name: 'MemoryWrite',
-      description:
-        'Write, update, or delete a memory file; auto-maintains INDEX.md.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['write', 'delete'] },
-          filename: { type: 'string' },
-          name: { type: 'string' },
-          description: { type: 'string' },
-          type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
-          content: { type: 'string' },
-        },
-        required: ['action', 'filename'],
-      },
-      category: 'fs',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: true,
-    },
+    memoryWriteSchema,
     async () => (await import('./lightMemory/memoryWrite')).memoryWriteModule,
   );
 

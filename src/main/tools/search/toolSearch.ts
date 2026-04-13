@@ -5,6 +5,10 @@
 import type { Tool, ToolExecutionResult, ToolContext } from '../types';
 import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { createLogger } from '../../services/infra/logger';
+import {
+  TOOL_SEARCH_DESCRIPTION,
+  TOOL_SEARCH_INPUT_SCHEMA,
+} from '../migrated/search/toolSearch.schema';
 
 const logger = createLogger('tool_search');
 
@@ -21,22 +25,9 @@ const logger = createLogger('tool_search');
  */
 export const toolSearchTool: Tool = {
   name: 'ToolSearch',
-  description: `Searches for or selects deferred tools to make them available. Use keyword search to discover tools or 'select:toolName' for direct selection. You MUST use this to load deferred tools before calling them.`,
+  description: TOOL_SEARCH_DESCRIPTION,
 
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: '搜索查询。支持关键字、"select:工具名" 或 "+必须词 关键字"',
-      },
-      max_results: {
-        type: 'number',
-        description: '最大返回结果数（默认 5，最大 10）',
-      },
-    },
-    required: ['query'],
-  },
+  inputSchema: TOOL_SEARCH_INPUT_SCHEMA,
 
   requiresPermission: false,
   permissionLevel: 'read',

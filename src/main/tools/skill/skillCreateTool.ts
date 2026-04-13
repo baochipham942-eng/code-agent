@@ -11,6 +11,10 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSkillsDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
+import {
+  SKILL_CREATE_DESCRIPTION,
+  SKILL_CREATE_INPUT_SCHEMA,
+} from '../migrated/skill/skillCreate.schema';
 
 const logger = createLogger('SkillCreateTool');
 
@@ -60,37 +64,11 @@ function buildSkillMd(params: {
 
 export const skillCreateTool: Tool = {
   name: 'SkillCreate',
-  description:
-    '创建新的可复用 skill。完成复杂多步任务后，如果工作流可复用，调用此工具创建 SKILL.md。用户会在创建前确认。',
+  description: SKILL_CREATE_DESCRIPTION,
   requiresPermission: true,
   permissionLevel: 'write',
   tags: ['evolution'],
-  inputSchema: {
-    type: 'object',
-    properties: {
-      name: {
-        type: 'string',
-        description: 'Skill 名称（小写字母+数字+连字符，如 "deploy-vercel"）',
-      },
-      description: {
-        type: 'string',
-        description: 'Skill 用途描述（说明做什么、何时触发，≤1024 字符）',
-      },
-      content: {
-        type: 'string',
-        description: 'SKILL.md 的 markdown body（不含 frontmatter）',
-      },
-      scope: {
-        type: 'string',
-        description: '保存范围："user"（用户级，默认）或 "project"（项目级）',
-      },
-      allowedTools: {
-        type: 'string',
-        description: '允许使用的工具列表，空格分隔（可选）',
-      },
-    },
-    required: ['name', 'description', 'content'],
-  },
+  inputSchema: SKILL_CREATE_INPUT_SCHEMA,
 
   async execute(
     params: Record<string, unknown>,

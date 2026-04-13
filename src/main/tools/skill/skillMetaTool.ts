@@ -15,6 +15,10 @@ import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
+import {
+  SKILL_DESCRIPTION,
+  SKILL_INPUT_SCHEMA,
+} from '../migrated/skill/skill.schema';
 
 const logger = createLogger('SkillMetaTool');
 
@@ -190,24 +194,11 @@ async function handleForkExecution(
  */
 export const skillMetaTool: Tool = {
   name: 'Skill',
-  description: '执行已注册的 skill',
+  description: SKILL_DESCRIPTION,
   dynamicDescription: buildSkillDescription,
   requiresPermission: false,
   permissionLevel: 'read',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      command: {
-        type: 'string',
-        description: 'The skill name to execute (e.g., "commit", "code-review")',
-      },
-      args: {
-        type: 'string',
-        description: 'Optional arguments or context for the skill',
-      },
-    },
-    required: ['command'],
-  },
+  inputSchema: SKILL_INPUT_SCHEMA,
 
   async execute(
     params: Record<string, unknown>,

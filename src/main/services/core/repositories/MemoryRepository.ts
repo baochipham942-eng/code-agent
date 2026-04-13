@@ -4,43 +4,16 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
+import type {
+  MemoryRecord,
+  RelationQueryOptions,
+  EntityRelation,
+} from '../../../protocol/types';
+
+export type { MemoryRecord, RelationQueryOptions, EntityRelation };
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
-
-export interface MemoryRecord {
-  id: string;
-  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity' | 'workspace_activity';
-  category: string;
-  content: string;
-  summary?: string;
-  source: 'auto_learned' | 'user_defined' | 'session_extracted';
-  projectPath?: string;
-  sessionId?: string;
-  confidence: number;
-  metadata: Record<string, unknown>;
-  accessCount: number;
-  createdAt: number;
-  updatedAt: number;
-  lastAccessedAt?: number;
-}
-
-export interface RelationQueryOptions {
-  /** Half-life in days for confidence decay (default: MEMORY.RELATION_DECAY_DAYS) */
-  decayDays?: number;
-  /** Minimum confidence threshold after decay (default: MEMORY.RELATION_MIN_CONFIDENCE) */
-  minConfidence?: number;
-}
-
-export interface EntityRelation {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  relationType: string;
-  confidence: number;
-  evidence: string;
-  createdAt: number;
-}
 
 export class MemoryRepository {
   constructor(private db: BetterSqlite3.Database) {}

@@ -20,7 +20,7 @@ import type {
 import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
-import type { MemoryRecord } from '../services/core/repositories';
+import type { MemoryRecord } from '../protocol/types';
 import { getEventBus } from '../protocol/events';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';

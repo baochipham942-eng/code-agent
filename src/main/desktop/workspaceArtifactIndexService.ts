@@ -7,7 +7,7 @@ import { getServiceRegistry } from '../services/serviceRegistry';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services';
 import { getConnectorRegistry } from '../connectors';
-import type { MemoryRecord } from '../services/core/repositories';
+import type { MemoryRecord } from '../protocol/types';
 
 const logger = createLogger('WorkspaceArtifactIndexService');
 

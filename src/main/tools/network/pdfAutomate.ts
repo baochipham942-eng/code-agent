@@ -10,40 +10,8 @@ import * as path from 'path';
 import { pdfGenerateTool } from './pdfGenerate';
 import { pdfCompressTool } from './pdfCompress';
 import { executeReadPdf } from '../migrated/network/readPdf';
-import type {
-  ToolContext as ProtocolToolContext,
-  ToolResult as ProtocolToolResult,
-} from '../../protocol/tools';
+import { invokeNativeFromLegacy } from '../migrated/_helpers/invokeNativeFromLegacy';
 import { executePythonScript } from '../utils/pythonBridge';
-
-// read_pdf 已迁移为 native ToolModule（ProtocolToolContext 签名）。
-// PdfAutomate 仍是 legacy Tool，需要一个最小 shim 桥接。
-async function invokeReadPdfNative(
-  params: Record<string, unknown>,
-  legacyCtx: ToolContext,
-): Promise<ToolExecutionResult> {
-  const protocolCtx: ProtocolToolContext = {
-    sessionId: 'pdf-automate-delegate',
-    workingDir: legacyCtx.workingDirectory,
-    abortSignal: new AbortController().signal,
-    logger: {
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    },
-    emit: () => {},
-  };
-  const result: ProtocolToolResult<string> = await executeReadPdf(
-    params,
-    protocolCtx,
-    async () => ({ allow: true }),
-  );
-  if (result.ok) {
-    return { success: true, output: result.output, metadata: result.meta };
-  }
-  return { success: false, error: result.error, metadata: result.meta };
-}
 
 type PdfAction = 'generate' | 'compress' | 'read' | 'merge' | 'split' | 'extract_tables' | 'convert_to_docx';
 
@@ -165,9 +133,11 @@ Parameters:
         if (!params.file_path) {
           return { success: false, error: 'action "read" requires file_path parameter' };
         }
-        return invokeReadPdfNative(
+        return invokeNativeFromLegacy(
+          executeReadPdf,
           { file_path: params.file_path, prompt: params.prompt },
           context,
+          'pdf-automate-delegate',
         );
 
       case 'merge': {

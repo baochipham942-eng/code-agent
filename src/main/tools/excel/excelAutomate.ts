@@ -9,50 +9,10 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as path from 'path';
 import { excelGenerateTool } from '../network/excelGenerate';
 import { executeReadXlsx } from '../migrated/network/readXlsx';
-import type {
-  ToolContext as ProtocolToolContext,
-  ToolResult as ProtocolToolResult,
-} from '../../protocol/tools';
+import { invokeNativeFromLegacy } from '../migrated/_helpers/invokeNativeFromLegacy';
 import { xlwingsExecuteTool } from '../network/xlwingsExecute';
 import { executeExcelEdit } from './excelEdit';
 import { executePythonScript } from '../utils/pythonBridge';
-
-// read_xlsx 已迁移为 native ToolModule（ProtocolToolContext 签名）。
-// ExcelAutomate 仍是 legacy Tool，需要一个最小 shim 桥接。
-async function invokeReadXlsxNative(
-  params: Record<string, unknown>,
-  legacyCtx: ToolContext,
-): Promise<ToolExecutionResult> {
-  const protocolCtx: ProtocolToolContext = {
-    sessionId: 'excel-automate-delegate',
-    workingDir: legacyCtx.workingDirectory,
-    abortSignal: new AbortController().signal,
-    logger: {
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    },
-    emit: () => {},
-  };
-  const result: ProtocolToolResult<string> = await executeReadXlsx(
-    params,
-    protocolCtx,
-    async () => ({ allow: true }),
-  );
-  if (result.ok) {
-    return {
-      success: true,
-      output: result.output,
-      metadata: result.meta,
-    };
-  }
-  return {
-    success: false,
-    error: result.error,
-    metadata: result.meta,
-  };
-}
 
 type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range' | 'validate_formulas';
 
@@ -256,9 +216,11 @@ Parameters:
         if (!params.file_path) {
           return { success: false, error: 'action "read" requires file_path parameter' };
         }
-        return invokeReadXlsxNative(
+        return invokeNativeFromLegacy(
+          executeReadXlsx,
           { file_path: params.file_path, sheet: params.sheet, format: params.format, max_rows: params.max_rows },
           context,
+          'excel-automate-delegate',
         );
       }
 
@@ -328,9 +290,11 @@ Parameters:
           return xlResult;
         }
         // Fallback: use read_xlsx to get sheet names (reads first sheet but returns sheet list in metadata)
-        const readResult = await invokeReadXlsxNative(
+        const readResult = await invokeNativeFromLegacy(
+          executeReadXlsx,
           { file_path: params.file_path, max_rows: 1 },
           context,
+          'excel-automate-delegate',
         );
         if (readResult.success && readResult.metadata?.availableSheets) {
           const sheets = readResult.metadata.availableSheets as string[];

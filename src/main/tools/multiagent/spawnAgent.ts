@@ -28,7 +28,7 @@ import {
   SubagentContextBuilder,
   getAgentContextLevel,
 } from '../../agent/subagentContextBuilder';
-import { getSwarmEventEmitter } from '../../ipc/swarm.ipc';
+import { getSwarmEventEmitter } from '../../agent/swarmEventPublisher';
 import { getSpawnGuard } from '../../agent/spawnGuard';
 import { getSwarmLaunchApprovalGate } from '../../agent/swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../../agent/agentWorktree';

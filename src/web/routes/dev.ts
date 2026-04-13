@@ -11,6 +11,8 @@ import { generatePermissionRequestId } from '../../shared/utils/id';
 import { sseClients, broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
+import { getEventBus } from '../../main/protocol/events/bus';
+import type { SwarmEvent } from '../../shared/contract/swarm';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -453,6 +455,30 @@ export function createDevRouter(deps: DevRouterDeps): Router {
         error: message,
       });
     }
+  });
+
+  // ── POST /api/dev/emit-swarm-event (E2E test hook) ──────────────────
+  // 仅 CODE_AGENT_E2E=1 启用。Playwright e2e 用它从外部注入 SwarmEvent,
+  // 走完整生产路径: EventBus publish → swarm.ipc bridge → deliverSwarmEvent
+  // → BrowserWindow.webContents.send → broadcastToRenderer → SSE
+  // → EventSource → httpTransport → swarmStore → DOM。
+  router.post('/dev/emit-swarm-event', (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+
+    const event = req.body as SwarmEvent | undefined;
+    if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
+      res.status(400).json({ error: 'Body must be a SwarmEvent with a string type' });
+      return;
+    }
+
+    // swarm.ipc 的 bridge 在 webServer.setupAllIpcHandlers 中已装好。
+    // busType 去掉 'swarm:' 前缀避免双重命名（与 swarmEventPublisher.publish 一致）。
+    const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
+    getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
+    res.json({ ok: true });
   });
 
   return router;

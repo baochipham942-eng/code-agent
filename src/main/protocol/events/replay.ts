@@ -1,4 +1,9 @@
-import { InternalEventStore, StoredEvent } from './internalEventStore';
+// ============================================================================
+// EventReplay — 基于 InternalEventStore 的事件回放
+// 原 src/main/events/eventReplay.ts，P0-5 阶段 A 迁入 protocol 层
+// ============================================================================
+
+import { InternalEventStore, StoredEvent } from './internalStore';
 
 export class EventReplay {
   constructor(private store: InternalEventStore) {}

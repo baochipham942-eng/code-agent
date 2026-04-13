@@ -1,5 +1,5 @@
 // ============================================================================
-// Protocol — Event Bus 事件分类层
+// Protocol — Event 分类层
 // 参考 Claude Code Agent SDK ccVersion 2.1.63 的 16 种 hook event 命名 +
 // Codex codex-protocol EventMsg enum 的 SQE/EQE 模式
 // ============================================================================
@@ -7,11 +7,10 @@
 // 设计动机：
 // - AgentEvent discriminated union 定义在 src/shared/contract/agent.ts（跨进程契约）
 // - 但"哪些事件可批、哪些必须立即派发、哪些是生命周期拐点"属于 main 内部策略
-// - 这类分类信息之前散落在 agent/eventBatcher.ts，现统一到 protocol 层
-// - 这样 main 内部任何模块想订阅事件、过滤事件、做指标统计，都从 protocol 里拿分类
+// - 这类分类信息统一到 protocol 层，与 EventBus runtime 同包
+// - main 内部任何模块想订阅事件、过滤事件、做指标统计，都从 protocol 里拿分类
 //
-// 下一阶段（P0-5）：把 hook event 生命周期（Pre/Post/SubagentStart/PreCompact 等）
-// 和 AgentEvent 的运行时流式事件统一到同一个发布订阅 bus，彻底替换 eventBatcher。
+// 原 src/main/protocol/events.ts（P0-5 阶段 A 拆到 events/categories.ts）
 // ============================================================================
 
 import type { AgentEvent } from '@shared/contract';

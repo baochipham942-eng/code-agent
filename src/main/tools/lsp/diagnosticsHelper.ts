@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import { getLSPManager, type LSPDiagnostic } from '../../lsp';
 import { createLogger } from '../../services/infra/logger';
-import { getEventBus } from '../../events';
+import { getEventBus } from '../../protocol/events';
 
 const logger = createLogger('DiagnosticsHelper');
 

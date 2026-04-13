@@ -1,3 +1,8 @@
+// ============================================================================
+// ControlStream — 轻量级同步事件派发流
+// 原 src/main/events/controlStream.ts，P0-5 阶段 A 迁入 protocol 层
+// ============================================================================
+
 export class ControlStream {
   private handlers: Array<(event: unknown) => void> = [];
 

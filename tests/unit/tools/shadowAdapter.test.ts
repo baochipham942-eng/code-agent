@@ -231,6 +231,37 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
     expect(r.allow).toBe(false);
     if (r.allow === false) expect(r.reason).toContain('boom');
   });
+
+  it('reason 以 "dangerous:" 前缀开头 → type 升级为 dangerous_command，前缀被剥离', async () => {
+    let captured: { type?: string; reason?: string } | null = null;
+    const ctx = {
+      workingDirectory: '/tmp',
+      requestPermission: async (req: { type: string; reason: string }) => {
+        captured = req;
+        return true;
+      },
+    } as unknown as LegacyToolContext;
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'github_pr');
+    const r = await canUseTool('github_pr', { action: 'merge', pr: 42 }, 'dangerous:merge PR #42');
+    expect(r.allow).toBe(true);
+    expect(captured!.type).toBe('dangerous_command');
+    expect(captured!.reason).toBe('merge PR #42');
+  });
+
+  it('无 dangerous 前缀的普通 reason → 按 input 形状决定 type，reason 原样透传', async () => {
+    let captured: { type?: string; reason?: string } | null = null;
+    const ctx = {
+      workingDirectory: '/tmp',
+      requestPermission: async (req: { type: string; reason: string }) => {
+        captured = req;
+        return true;
+      },
+    } as unknown as LegacyToolContext;
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'Bash');
+    await canUseTool('Bash', { command: 'ls' }, 'running ls');
+    expect(captured!.type).toBe('command');
+    expect(captured!.reason).toBe('running ls');
+  });
 });
 
 describe('protocolAdapter — executePocToolViaProtocol', () => {

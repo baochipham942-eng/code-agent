@@ -115,25 +115,36 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
 /**
  * 真权限版 canUseTool — 桥接 legacy ToolContext.requestPermission 到 protocol CanUseToolFn。
+ *
+ * `reason` 约定：以 "dangerous:" 前缀开头 → 升级为 `dangerous_command`，触发 UI
+ * 危险命令二次确认流（toolExecutor 把 dangerous_command 映射到 forceConfirm +
+ * dangerLevel='danger'）。协议工具里的危险子操作（例如 github_pr merge）用这个
+ * 前缀显式声明。前缀会从 reason 字符串里剥离后传给 legacy。
  */
 export function buildCanUseToolFromLegacy(
   legacyCtx: LegacyToolContext,
   toolName: string,
 ): CanUseToolFn {
   return async (_name, input, reason): Promise<CanUseToolResult> => {
+    const DANGEROUS_PREFIX = 'dangerous:';
+    const isDangerous = typeof reason === 'string' && reason.startsWith(DANGEROUS_PREFIX);
+    const cleanReason = isDangerous ? reason.slice(DANGEROUS_PREFIX.length).trimStart() : reason;
+
     const type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' =
-      ('file_path' in input || 'path' in input)
-        ? 'file_read'
-        : 'url' in input
-          ? 'network'
-          : 'command';
+      isDangerous
+        ? 'dangerous_command'
+        : ('file_path' in input || 'path' in input)
+          ? 'file_read'
+          : 'url' in input
+            ? 'network'
+            : 'command';
 
     try {
       const allowed = await legacyCtx.requestPermission({
         type,
         tool: toolName,
         details: input,
-        reason: reason ?? `protocol tool ${toolName}`,
+        reason: cleanReason ?? `protocol tool ${toolName}`,
       });
       return allowed
         ? { allow: true }

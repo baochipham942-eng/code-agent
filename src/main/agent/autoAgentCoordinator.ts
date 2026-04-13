@@ -1,5 +1,20 @@
 // ============================================================================
 // Auto Agent Coordinator - 协调自动生成的多 Agent 执行
+// ============================================================================
+//
+// 职责边界（ADR-009 固化）：
+// - 服务 **动态生成** 入口：orchestrator/autoAgentRunner.ts 从需求分析
+//   生成 DynamicAgentDefinition 后自动执行
+// - 输入形态：DynamicAgentDefinition[]（带 canRunParallel/role/systemPrompt
+//   等高层元数据，由 agentRequirementsAnalyzer 从需求推导）
+// - 核心能力：sequential/parallel/hybrid 执行策略、节点级 checkpoint 持久化、
+//   L0-L3 通信层级、progressAggregator、parallelErrorHandler、resourceLockManager
+// - 不包含：DAG 依赖图调度（没有 dependsOn 语义）
+//
+// 与 ParallelAgentCoordinator 的关系：见 parallelAgentCoordinator.ts 顶部
+// 注释和 ADR-009。两者 **零调用交集**，不会合并。
+//
+// ============================================================================
 //
 // ## 通信级别 (Communication Levels)
 //

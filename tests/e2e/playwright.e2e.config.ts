@@ -19,5 +19,10 @@ export default defineConfig({
     port: 8180,
     reuseExistingServer: !process.env.CI,
     timeout: 180000,
+    env: {
+      // Enables /api/dev/emit-swarm-event for swarm-chain.spec.ts.
+      // Benign for other specs — the route 404s unless this flag is set.
+      CODE_AGENT_E2E: '1',
+    },
   },
 });

@@ -256,3 +256,35 @@ in madge.
 - `protocol/events/hookTypes.ts` is now the single place where hook event
   shapes live. Adding a new hook event requires touching this one file plus
   a trigger method on `HookManager`.
+
+## 主线收尾（appended 2026-04-13 after ADR-008 landed）
+
+经过 P0-5 / P0-6 / ADR-008 三轮迭代 + P1-9 / P2-10 / P2-11 现状核实，
+整条架构优化主线全部收尾。对原 `rustling-yawning-snowflake.md` 计划逐项
+对账如下：
+
+| 项目 | 原目标 | 实际落地 |
+|------|--------|----------|
+| P0-5 A/+1/B/C | protocol 层搬迁 + hook types | ✓ 见 05640479 / 11f79daa / 7d158180 / 1dc31e94 |
+| P0-6 require 清理 | 12 处动态 require 改静态 | ✓ 见 bd78f7c7 |
+| P0-6 Phase 1 | 破 logger ↔ serviceRegistry cycle | ✓ 见 4ff479d7 |
+| P1-7 Actor swarm | 原计划"不建议立即做"（2 周）| ✓ 做完，ADR-008 六阶段 |
+| P1-8 tools/ 真拆分 | 531→400 | Retract（本 ADR §3：531 中 503 是内部自引，没有跨层债）|
+| P1-9 Worktree 隔离 | 验证 agentWorktree.ts 接入 | ✓ 已接入 `tools/multiagent/spawnAgent.ts`，13 处消费方 |
+| P2-10 ToolSearch 按需加载 | 规模到再做 | ✓ **已上线**：`services/toolSearch/` 72 工具，3 查询模式（keyword/select/+required），接入 dispatch + system prompt |
+| P2-11 agent-loop 内部拆分 | fan-out 44 降到合理范围 | ✓ **已事实性完成**：`agentLoop.ts` 362 行薄 orchestrator，职责下沉到 `agent/runtime/*` 10 个子模块 5085 行 |
+| 循环依赖 | 4→4（P1 再降）| ✓ **4→0**（ADR-008 超额完成）|
+
+**关于 P2-11 的 fan-out 误判**：原计划把 agentLoop fan-out 44 标为"God
+Module 候选"，现状核实发现那 44 个 import 绝大多数是 `agent/runtime/*`
+子模块拼装 —— 是协调层聚合（good fan-out），不是职责堆积（bad fan-out）。
+agentLoop.ts 本身只剩 362 行，再拆只是把 wiring 搬家不产生结构收益。
+
+**关于 P2-10 的漏看**：`services/toolSearch/` 目录早已存在并运行，原计划
+标 ❌ 是巡检遗漏。三查询模式（`"keyword"` / `"select:tool_name"` /
+`"+required keyword"`）+ CORE_TOOLS/DEFERRED 两档切分 + MCP/skills 两类
+额外延迟源，完整度与 Codex/CC ToolSearch 模式对齐。
+
+**至此没有剩余架构债。** 后续的扩容与新能力（SQE Submission、pull-based
+iterable 等）属于 research summary 里的架构探索，不在本条迁移主线的
+scope 内。

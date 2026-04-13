@@ -486,6 +486,7 @@ async function handleReview(
 async function handleMerge(
   params: GitHubPRParams,
   ctx: ToolContext,
+  canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
   const cwd = ctx.workingDir;
@@ -494,11 +495,23 @@ async function handleMerge(
     return { ok: false, error: '缺少 pr 参数（PR 编号或 URL）', code: 'INVALID_ARGS' };
   }
 
-  // Note: merge is a dangerous operation. Native mode relies on canUseTool() permission gate
-  // (already called by the main execute entry) — the higher-level canUseTool callback is
-  // expected to implement dangerous-command confirmation for github_pr+merge.
-
+  // 合并 PR 是危险操作：在工具开头的通用 canUseTool 之外再触发一次二次确认。
+  // reason 加 `dangerous:` 前缀，shadowAdapter.buildCanUseToolFromLegacy 会把它
+  // 升级为 `dangerous_command`，走 UI 危险命令二次确认流（legacy 时代
+  // context.requestPermission({type:'dangerous_command'}) 的等价实现）。
   const method = params.method || 'merge';
+  const dangerousPermit = await canUseTool(
+    'github_pr',
+    params as unknown as Record<string, unknown>,
+    `dangerous:merge PR #${params.pr} (${method})${params.delete_branch ? ' + delete branch' : ''}`,
+  );
+  if (!dangerousPermit.allow) {
+    return {
+      ok: false,
+      error: `merge denied: ${dangerousPermit.reason}`,
+      code: 'PERMISSION_DENIED',
+    };
+  }
   const argv: string[] = ['gh', 'pr', 'merge', String(params.pr)];
 
   switch (method) {
@@ -585,7 +598,7 @@ export async function executeGithubPr(
         result = await handleReview(p, ctx, onProgress);
         break;
       case 'merge':
-        result = await handleMerge(p, ctx, onProgress);
+        result = await handleMerge(p, ctx, canUseTool, onProgress);
         break;
       default:
         return { ok: false, error: `未知操作: ${p.action}`, code: 'INVALID_ARGS' };

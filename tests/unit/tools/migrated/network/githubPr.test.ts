@@ -362,6 +362,49 @@ describe('githubPrModule (native)', () => {
         expect(result.output).toContain('squash');
       }
     });
+
+    it('calls canUseTool twice (plain gate + dangerous gate) with correct reason prefix', async () => {
+      execResponses.push({ match: 'gh pr merge', result: { stdout: 'merged\n', stderr: '' } });
+      const calls: Array<{ reason?: string }> = [];
+      const captureGate: CanUseToolFn = async (_name, _input, reason) => {
+        calls.push({ reason });
+        return { allow: true };
+      };
+      const result = await run(
+        { action: 'merge', pr: 42, method: 'merge' },
+        makeCtx(),
+        captureGate,
+      );
+      expect(result.ok).toBe(true);
+      expect(calls.length).toBe(2);
+      // 第一次是顶层通用闸门（reason 为空或未指定）
+      expect(calls[0].reason).toBeUndefined();
+      // 第二次是 merge 专用危险闸门，带 dangerous: 前缀让 shadowAdapter 升级成 dangerous_command
+      expect(calls[1].reason).toMatch(/^dangerous:merge PR #42/);
+    });
+
+    it('returns PERMISSION_DENIED when dangerous gate rejects', async () => {
+      execResponses.push({ match: 'gh pr merge', result: { stdout: 'merged\n', stderr: '' } });
+      let callCount = 0;
+      const denyDangerous: CanUseToolFn = async (_name, _input, reason) => {
+        callCount += 1;
+        if (reason && reason.startsWith('dangerous:')) {
+          return { allow: false, reason: 'user declined merge' };
+        }
+        return { allow: true };
+      };
+      const result = await run(
+        { action: 'merge', pr: 42 },
+        makeCtx(),
+        denyDangerous,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('PERMISSION_DENIED');
+        expect(result.error).toContain('user declined merge');
+      }
+      expect(callCount).toBe(2);
+    });
   });
 
   describe('exec error wrapping', () => {

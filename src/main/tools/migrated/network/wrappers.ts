@@ -12,13 +12,11 @@
 import { webFetchTool } from '../../network/webFetch';
 import { WebFetchUnifiedTool } from '../../network/WebFetchUnifiedTool';
 import { webSearchTool } from '../../network/webSearch';
-import { httpRequestTool } from '../../network/httpRequest';
+// http_request 已迁移为 native ToolModule（见 migrated/network/httpRequest.ts）
 
 // Document reading
-import { ReadDocumentTool } from '../../network/ReadDocumentTool';
-import { readDocxTool } from '../../network/readDocx';
-import { readPdfTool } from '../../network/readPdf';
-import { readXlsxTool } from '../../network/readXlsx';
+// ReadDocument / read_docx / read_pdf / read_xlsx 已迁移为 native ToolModule
+// （见 migrated/network/{readDocument,readDocx,readPdf,readXlsx}.ts）
 
 // Document generation
 import { pptGenerateTool } from '../../network/ppt';
@@ -75,17 +73,14 @@ const NET_NETWORK_WRITE = {
   permissionLevel: 'network' as const,
 };
 
-// ── HTTP / Web fetching (4) ─────────────────────────────────────────────
+// ── HTTP / Web fetching (3) ─────────────────────────────────────────────
+// http_request 已迁移为 native ToolModule
 export const webFetchModule = wrapLegacyTool(webFetchTool, NET_NETWORK_READ);
 export const webFetchUnifiedModule = wrapLegacyTool(WebFetchUnifiedTool, NET_NETWORK_READ);
 export const webSearchModule = wrapLegacyTool(webSearchTool, NET_NETWORK_READ);
-export const httpRequestModule = wrapLegacyTool(httpRequestTool, NET_NETWORK_WRITE);
 
-// ── Document reading (4) ────────────────────────────────────────────────
-export const readDocumentModule = wrapLegacyTool(ReadDocumentTool, NET_READ);
-export const readDocxModule = wrapLegacyTool(readDocxTool, NET_READ);
-export const readPdfModule = wrapLegacyTool(readPdfTool, NET_READ);
-export const readXlsxModule = wrapLegacyTool(readXlsxTool, NET_READ);
+// ── Document reading (0) ────────────────────────────────────────────────
+// ReadDocument / read_docx / read_pdf / read_xlsx 已全部迁移为 native
 
 // ── Document generation (8) ─────────────────────────────────────────────
 export const pptGenerateModule = wrapLegacyTool(pptGenerateTool, NET_NETWORK_WRITE);

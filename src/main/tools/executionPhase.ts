@@ -3,17 +3,12 @@
 //
 // Classifies tool calls into behavioral phases to track agent behavior patterns.
 // Inspired by Claude Code's phase tracking (explore / edit / execute / other).
+// The ExecutionPhase type is authoritative in protocol/tools.ts; re-exported
+// here for backward-compatible consumers.
 // ============================================================================
 
-/**
- * Execution phase of a tool call.
- *
- * - `explore`: Read-only tools that gather information
- * - `edit`: Tools that modify files
- * - `execute`: Tools that run commands or spawn subagents
- * - `other`: Everything else (planning, memory, MCP, etc.)
- */
-export type ExecutionPhase = 'explore' | 'edit' | 'execute' | 'other';
+import type { ExecutionPhase } from '../protocol/tools';
+export type { ExecutionPhase };
 
 // ---------------------------------------------------------------------------
 // Classification sets (kept as const sets for O(1) lookup)

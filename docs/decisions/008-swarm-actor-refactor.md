@@ -1,8 +1,17 @@
 # ADR-008: Swarm Actor/SendMessage 重构 — 消除 4 条循环依赖
 
-> 状态: proposed
+> 状态: accepted（Phase 0-6 完成）
 > 日期: 2026-04-13
 > 关联: ADR-007 (protocol-migration-reality-check)
+>
+> **完工状态**：4 条循环全部消除，`madge --circular src/main/` 报 0。
+> 执行历史：Phase 1（脚手架）→ Phase 2（Cycle 4: swarmLaunchApproval）
+> → Phase 3（Cycle 2: planApproval）→ Phase 4（Cycle 3: DAGScheduler resolver 注入）
+> → Phase 5（Cycle 1: SwarmEventEmitter 迁至 `agent/swarmEventPublisher.ts`）
+> → Phase 6（清理 + ADR-007 回指）。
+> 主策略偏离：Phase 1 原计划"双写"因和 bridge 订阅器重复投递，改为"单路分流"
+> — 每个模块独立迁移到 EventBus，`emitSwarmEvent` legacy 函数已在 Phase 5 删除。
+> Smoke 验证：11 个 SwarmEventEmitter 方法通过 EventBus → bridge 链路全部投递成功。
 
 ## 背景
 
@@ -402,4 +411,19 @@ npm run typecheck
 
 ---
 
-**⚠️ 停止点**：本文档完成后暂停，等待用户 review。用户确认后才进入 Phase 1。
+**✅ 执行完成（2026-04-13）**
+
+实际 commit 序列：
+1. `docs(adr-008)`: 本设计文档
+2. `feat(swarm)`: Phase 1 scaffolding — EventDomain 加 'swarm'、类型守卫、SwarmEventEmitter 双写（后被 Phase 2 回退）
+3. `refactor(swarm)`: Phase 2 — swarmLaunchApproval 删 swarm.ipc import，新增 `ensureSwarmBusBridge` 订阅器（循环 4→3）
+4. `refactor(swarm)`: Phase 3 — planApproval 删 swarm.ipc import（循环 3→2）
+5. `refactor(swarm)`: Phase 4 — DAGScheduler setAgentResolver 注入，initBackgroundServices 提供 closure（循环 2→1）
+6. `refactor(swarm)`: Phase 5 — SwarmEventEmitter 迁到 `agent/swarmEventPublisher.ts`；swarm.ipc 从 585 行瘦身到 297 行（循环 1→0）
+7. `chore(swarm)`: Phase 6 — 清理 stale comment、ADR-007 回指、状态改 accepted
+
+**最终架构**：
+- 业务模块（agentSwarm / planApproval / swarmLaunchApproval）→ `getEventBus().publish('swarm', ...)`
+- `swarm.ipc.ts` 只剩：IPC handlers (12 个) + bridge 订阅器 + CLI listener API
+- `swarm.ipc.ts` re-export `getSwarmEventEmitter` 给 spawnAgent 等 legacy importer
+- EventBus `swarm` domain 是唯一的事件传输层

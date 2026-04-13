@@ -1,0 +1,174 @@
+name: Swarm CI (ADR-010 #1)
+
+# ADR-010 #1: Swarm CI 稳定证据
+#
+# 分层策略：
+#   - smoke (<30s):  unit + integration，每个 PR 都跑
+#   - full  (~60s):  smoke + Playwright e2e（含 webServer 构建），merge gate
+#
+# 其他约束：
+#   - flake 重试上限 1 次（vitest --retry=1 / playwright retries=1 via CI env）
+#   - 失败时上传截图 + Playwright trace / html report
+#   - push 到 main 后写回 ci/swarm-health.json（连续通过计数）
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.ts'
+      - 'tests/e2e/playwright.e2e.config.ts'
+      - '.github/workflows/swarm-ci.yml'
+      - 'scripts/ci/**'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: swarm-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Smoke: 每个 PR 必跑，目标 <30s
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Swarm smoke (unit + integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run swarm smoke suite
+        run: npm run test:swarm:smoke -- --retry=1
+
+      - name: Upload smoke failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-smoke-logs-${{ github.run_id }}
+          path: |
+            coverage/
+            **/vitest-report*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
+  # ---------------------------------------------------------------------------
+  full:
+    name: Swarm full (smoke + e2e)
+    needs: smoke
+    # 只在 push 到 main 或显式调度时跑完整套件，
+    # PR 默认只跑 smoke 以控制 CI 成本。
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      status: ${{ steps.result.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        run: npm run test:swarm:smoke -- --retry=1
+
+      - name: Run swarm e2e suite
+        env:
+          CODE_AGENT_E2E: '1'
+          CI: '1'
+        run: npm run test:swarm:e2e
+
+      - name: Record result (success)
+        if: success()
+        id: result
+        run: echo "status=pass" >> "$GITHUB_OUTPUT"
+
+      - name: Record result (failure)
+        if: failure()
+        id: result_fail
+        run: echo "status=fail" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Playwright trace + screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-e2e-trace-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+            tests/e2e/screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Health metric: 仅在 push 到 main 后写回 ci/swarm-health.json
+  # ---------------------------------------------------------------------------
+  health:
+    name: Update swarm health metric
+    needs: full
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install minimal deps for tsx
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Record swarm health
+        run: |
+          STATUS="pass"
+          if [ "${{ needs.full.result }}" != "success" ]; then
+            STATUS="fail"
+          fi
+          npx tsx scripts/ci/record-swarm-health.ts "$STATUS" \
+            --sha=${{ github.sha }} \
+            --run-id=${{ github.run_id }}
+
+      - name: Commit health update
+        run: |
+          if git diff --quiet ci/swarm-health.json; then
+            echo "no change, skipping commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci/swarm-health.json
+          git commit -m "chore(ci): update swarm-health [skip ci]"
+          git push

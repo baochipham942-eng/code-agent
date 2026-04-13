@@ -154,6 +154,9 @@ export const CLOUD_ENDPOINTS = {
   },
 } as const;
 
+/** QuickChart API（chart_generate tool 使用） */
+export const QUICKCHART_API = 'https://quickchart.io/chart';
+
 /** 默认 Supabase URL */
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 

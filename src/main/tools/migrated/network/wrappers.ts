@@ -41,9 +41,8 @@ import { speechToTextTool } from '../../network/speechToText';
 import { localSpeechToTextTool } from '../../network/localSpeechToText';
 
 // Visual / chart helpers
-import { chartGenerateTool } from '../../network/chartGenerate';
-import { mermaidExportTool } from '../../network/mermaidExport';
-import { qrcodeGenerateTool } from '../../network/qrcodeGenerate';
+// chart_generate / mermaid_export / qrcode_generate 已迁移至原生 ToolModule
+// （见 migrated/network/{chartGenerate,mermaidExport,qrcodeGenerate}.ts）
 import { screenshotPageTool } from '../../network/screenshotPage';
 
 // External integrations
@@ -108,10 +107,8 @@ export const textToSpeechModule = wrapLegacyTool(textToSpeechTool, NET_NETWORK_W
 export const speechToTextModule = wrapLegacyTool(speechToTextTool, NET_NETWORK_READ);
 export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET_READ);
 
-// ── Visual helpers (4) ──────────────────────────────────────────────────
-export const chartGenerateModule = wrapLegacyTool(chartGenerateTool, NET_WRITE);
-export const mermaidExportModule = wrapLegacyTool(mermaidExportTool, NET_WRITE);
-export const qrcodeGenerateModule = wrapLegacyTool(qrcodeGenerateTool, NET_WRITE);
+// ── Visual helpers (1) ──────────────────────────────────────────────────
+// chart_generate / mermaid_export / qrcode_generate 已迁移为 native
 export const screenshotPageModule = wrapLegacyTool(screenshotPageTool, NET_NETWORK_READ);
 
 // ── External integrations (5) ───────────────────────────────────────────

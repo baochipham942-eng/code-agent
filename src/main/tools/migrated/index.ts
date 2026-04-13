@@ -771,8 +771,22 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // document (1)
   registry.register(
-    { name: 'DocEdit', description: 'Edit DOCX/RTF documents (insert/replace/delete sections).', inputSchema: minSchema({ file_path: { type: 'string' }, action: { type: 'string' } }), category: 'document', permissionLevel: 'write' },
-    async () => (await import('./document/wrappers')).docEditModule,
+    {
+      name: 'DocEdit',
+      description: 'Unified document editing tool — atomic incremental edits on .xlsx/.pptx/.docx. Auto-detects format from extension and snapshots before editing.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Path to the document (.xlsx/.pptx/.docx)' },
+          operations: { type: 'array', description: 'Array of edit operations (format-specific)' },
+          dry_run: { type: 'boolean', description: 'Preview changes without applying' },
+        },
+        required: ['file_path', 'operations'],
+      },
+      category: 'document',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./document/docEdit')).docEditModule,
   );
 
   // excel (1)
@@ -968,13 +982,75 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   REGISTER_NET('local_speech_to_text', 'Transcribe audio to text via local ASR.', 'read',
     async () => (await import('./network/wrappers')).localSpeechToTextModule, true);
 
-  // Visual helpers (4)
-  REGISTER_NET('chart_generate', 'Generate a chart image (bar/line/pie/scatter).', 'write',
-    async () => (await import('./network/wrappers')).chartGenerateModule, false);
-  REGISTER_NET('mermaid_export', 'Export a Mermaid diagram to SVG/PNG.', 'write',
-    async () => (await import('./network/wrappers')).mermaidExportModule, false);
-  REGISTER_NET('qrcode_generate', 'Generate a QR code image.', 'write',
-    async () => (await import('./network/wrappers')).qrcodeGenerateModule, false);
+  // Visual helpers (4) — chart/mermaid/qrcode 已迁移为 native，带完整 schema
+  registry.register(
+    {
+      name: 'chart_generate',
+      description: 'Generate a data chart image (bar/line/pie/doughnut/radar/polarArea/scatter) via QuickChart API.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea', 'scatter'],
+            description: '图表类型',
+          },
+          title: { type: 'string', description: '图表标题' },
+          labels: { type: 'array', items: { type: 'string' }, description: 'X 轴标签或分类名称' },
+          datasets: { type: 'array', description: '数据系列数组 (label/data/backgroundColor/borderColor)' },
+          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 chart-{ts}.png）' },
+          width: { type: 'number', description: '图表宽度（默认 800）' },
+          height: { type: 'number', description: '图表高度（默认 600）' },
+        },
+        required: ['type', 'labels', 'datasets'],
+      },
+      category: 'network',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./network/chartGenerate')).chartGenerateModule,
+  );
+  registry.register(
+    {
+      name: 'mermaid_export',
+      description: 'Export a Mermaid diagram code to PNG or SVG via mermaid.ink.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          code: { type: 'string', description: 'Mermaid 图表代码' },
+          format: { type: 'string', enum: ['png', 'svg'], description: '输出格式（默认 png）' },
+          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 mermaid-{ts}.{format}）' },
+          theme: { type: 'string', enum: ['default', 'dark', 'forest', 'neutral'], description: '主题（默认 default）' },
+          background: { type: 'string', description: '背景颜色（默认 transparent）' },
+          scale: { type: 'number', description: '缩放比例（默认 2，仅 PNG 有效）' },
+        },
+        required: ['code'],
+      },
+      category: 'network',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./network/mermaidExport')).mermaidExportModule,
+  );
+  registry.register(
+    {
+      name: 'qrcode_generate',
+      description: 'Generate a QR code PNG image (URL / text / WiFi / tel / mailto / vCard).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: '二维码内容（URL、文本、vCard 等）' },
+          output_path: { type: 'string', description: '输出文件路径（默认 工作目录下 qrcode-{ts}.png）' },
+          size: { type: 'number', description: '二维码尺寸（默认 300）' },
+          color: { type: 'string', description: '二维码颜色（默认 #000000）' },
+          background: { type: 'string', description: '背景颜色（默认 #ffffff）' },
+          margin: { type: 'number', description: '边距（默认 4）' },
+        },
+        required: ['content'],
+      },
+      category: 'network',
+      permissionLevel: 'write',
+    },
+    async () => (await import('./network/qrcodeGenerate')).qrcodeGenerateModule,
+  );
   REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
     async () => (await import('./network/wrappers')).screenshotPageModule, true);
 

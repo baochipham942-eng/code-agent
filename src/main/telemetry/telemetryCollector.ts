@@ -508,7 +508,6 @@ export class TelemetryCollector {
     successRate: number;
   }> {
     try {
-      const { getTelemetryStorage } = require('./telemetryStorage');
       const storage = getTelemetryStorage();
       const stats = storage.getToolUsageStats(sessionId);
       return stats.map((s: { name: string; callCount: number; successCount: number; avgDurationMs: number; successRate: number }) => ({
@@ -538,7 +537,6 @@ export class TelemetryCollector {
     };
 
     try {
-      const { getTelemetryStorage } = require('./telemetryStorage');
       const storage = getTelemetryStorage();
       const toolCalls = storage.getToolCallsBySession(sessionId);
 

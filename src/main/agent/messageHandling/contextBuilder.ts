@@ -5,6 +5,7 @@
 import * as os from 'os';
 import { execSync } from 'child_process';
 import { createLogger } from '../../services/infra/logger';
+import { getAppName, getAppVersion, isPackaged } from '../../platform/appPaths';
 
 const logger = createLogger('ContextBuilder');
 
@@ -64,7 +65,6 @@ export function buildRuntimeModeBlock(): string {
   // Self-awareness: app identity and source code location
   let appIdentity = '';
   try {
-    const { getAppName, getAppVersion, isPackaged } = require('../../platform/appPaths');
     const appName = getAppName() || 'Code Agent';
     const appVersion = getAppVersion() || 'unknown';
     const packed = isPackaged();

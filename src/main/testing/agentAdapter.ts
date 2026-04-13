@@ -8,6 +8,7 @@ import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
+import { app } from '../platform';
 
 const logger = createLogger('AgentAdapter');
 
@@ -192,7 +193,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
     // Check if platform module is available (e.g., by CJS entry point)
     try {
-      const { app } = require('../platform');
       if (app?.getName?.()) {
         StandaloneAgentAdapter._electronMockInjected = true;
         return;

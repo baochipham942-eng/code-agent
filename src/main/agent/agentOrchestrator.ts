@@ -37,6 +37,7 @@ import { getTaskListManager, type TaskListManager } from './taskList';
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../protocol/events';
+import { getComboRecorder } from '../services/skills/comboRecorder';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -150,7 +151,6 @@ export class AgentOrchestrator {
 
     // Combo recording: start recording + mark this turn
     try {
-      const { getComboRecorder } = require('../services/skills/comboRecorder');
       const recorder = getComboRecorder();
       if (sessionId) {
         recorder.startRecording(sessionId);
@@ -701,7 +701,6 @@ export class AgentOrchestrator {
       telemetryAdapter,
       onToolExecutionLog: (log) => {
         try {
-          const { getComboRecorder } = require('../services/skills/comboRecorder');
           const recorder = getComboRecorder();
           recorder.enrichLastStep(log.sessionId, log.toolCallId, log.toolName, log.args);
         } catch {
@@ -728,7 +727,6 @@ export class AgentOrchestrator {
       // Check for combo skill suggestion after loop completes
       if (sessionId) {
         try {
-          const { getComboRecorder } = require('../services/skills/comboRecorder');
           const suggestion = getComboRecorder().checkSuggestion(sessionId);
           if (suggestion) {
             getEventBus().publish('agent', 'combo_skill_suggestion', suggestion, { sessionId, bridgeToRenderer: true });

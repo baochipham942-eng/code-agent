@@ -477,44 +477,85 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     {
       name: 'reminders',
-      description: 'List macOS Reminders items.',
-      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      description: 'Read macOS Reminders data via a native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['get_status', 'list_lists', 'list_reminders'],
+            description: 'Reminders action to perform.',
+          },
+          list: { type: 'string', description: 'Optional reminder list name for list_reminders.' },
+          include_completed: { type: 'boolean', description: 'Whether to include completed reminders.' },
+          limit: { type: 'number', description: 'Maximum number of reminders to return. Default: 20.' },
+        },
+        required: ['action'],
+      },
       category: 'mcp',
       permissionLevel: 'read',
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./connectors/wrappers')).remindersModule,
+    async () => (await import('./connectors/reminders')).remindersModule,
   );
   registry.register(
     {
       name: 'reminders_create',
-      description: 'Create a new macOS Reminders item.',
-      inputSchema: minimalConnSchema({ title: { type: 'string' } }),
+      description: 'Create a new reminder in macOS Reminders via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', description: 'Target reminder list name.' },
+          title: { type: 'string', description: 'Reminder title.' },
+          notes: { type: 'string', description: 'Optional reminder notes/body.' },
+          remind_at_ms: { type: 'number', description: 'Optional reminder time in Unix milliseconds.' },
+        },
+        required: ['list', 'title'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).remindersCreateModule,
+    async () => (await import('./connectors/remindersCreate')).remindersCreateModule,
   );
   registry.register(
     {
       name: 'reminders_update',
-      description: 'Update an existing macOS Reminders item.',
-      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      description: 'Update an existing reminder in macOS Reminders via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', description: 'Target reminder list name.' },
+          reminder_id: { type: 'string', description: 'Stable reminder id.' },
+          title: { type: 'string', description: 'Optional updated reminder title.' },
+          notes: { type: 'string', description: 'Optional updated notes. Pass an empty string to clear it.' },
+          remind_at_ms: { type: 'number', description: 'Optional updated reminder time in Unix milliseconds.' },
+          clear_remind_at: { type: 'boolean', description: 'Set true to clear an existing reminder time.' },
+          completed: { type: 'boolean', description: 'Set true to mark complete, false to reopen.' },
+        },
+        required: ['list', 'reminder_id'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).remindersUpdateModule,
+    async () => (await import('./connectors/remindersUpdate')).remindersUpdateModule,
   );
   registry.register(
     {
       name: 'reminders_delete',
-      description: 'Delete a macOS Reminders item.',
-      inputSchema: minimalConnSchema({ id: { type: 'string' } }),
+      description: 'Delete an existing reminder from macOS Reminders.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', description: 'Target reminder list name.' },
+          reminder_id: { type: 'string', description: 'Stable reminder id.' },
+        },
+        required: ['list', 'reminder_id'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).remindersDeleteModule,
+    async () => (await import('./connectors/remindersDelete')).remindersDeleteModule,
   );
   registry.register(
     {

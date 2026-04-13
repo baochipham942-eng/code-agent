@@ -14,11 +14,12 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
+import {
+  ACADEMIC_SEARCH_ENDPOINTS,
+  ACADEMIC_SEARCH_MAX_LIMIT as MAX_LIMIT,
+} from '../../../../shared/constants';
 
-// 文件本地常量（Batch 9 保持内联，避免 shared/constants 膨胀）
-const ARXIV_API = 'https://export.arxiv.org/api/query';
-const SEMANTIC_SCHOLAR_API = 'https://api.semanticscholar.org/graph/v1/paper/search';
-const MAX_LIMIT = 30;
+const { ARXIV: ARXIV_API, SEMANTIC_SCHOLAR: SEMANTIC_SCHOLAR_API } = ACADEMIC_SEARCH_ENDPOINTS;
 
 interface PaperResult {
   title: string;

@@ -13,14 +13,12 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
-import { NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
+import { NETWORK_TOOL_TIMEOUTS, HTTP_MAX_RESPONSE_SIZE } from '../../../../shared/constants';
 
 // ── 安全与限制常量 ─────────────────────────────────────────────────────
 const DEFAULT_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_DEFAULT;
 const MAX_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_MAX;
-// TODO(shared/constants): 把 10MB 限额迁到 NETWORK_TOOL_TIMEOUTS/NETWORK_TOOL_LIMITS，
-// 迁移时扩大到多处消费点（screenshot/imageAnalyze 等）。本批保持字面量避免跨批改动。
-const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_RESPONSE_SIZE = HTTP_MAX_RESPONSE_SIZE;
 
 const VALID_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 

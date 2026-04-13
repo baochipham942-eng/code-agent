@@ -13,11 +13,13 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
+import { YOUTUBE_TRANSCRIPT_ENDPOINTS } from '../../../../shared/constants';
 
-// 文件本地常量（Batch 9 保持内联，避免 shared/constants 膨胀）
-const SUPADATA_API_URL = 'https://api.supadata.ai/v1/youtube/transcript';
-const YT_OEMBED_URL = 'https://www.youtube.com/oembed';
-const FALLBACK_TRANSCRIPT_APIS = ['https://yt.lemnoslife.com/videos'];
+const {
+  SUPADATA: SUPADATA_API_URL,
+  OEMBED: YT_OEMBED_URL,
+  FALLBACK: FALLBACK_TRANSCRIPT_APIS,
+} = YOUTUBE_TRANSCRIPT_ENDPOINTS;
 
 interface TranscriptSegment {
   text: string;

@@ -157,6 +157,35 @@ export const CLOUD_ENDPOINTS = {
 /** QuickChart API（chart_generate tool 使用） */
 export const QUICKCHART_API = 'https://quickchart.io/chart';
 
+/** HTTP 请求响应体大小上限（http_request tool 使用） */
+export const HTTP_MAX_RESPONSE_SIZE = 10 * 1024 * 1024;
+
+/** Twitter/X 抓取端点（twitter_fetch tool 使用） */
+export const TWITTER_API_ENDPOINTS = {
+  FXTWITTER: 'https://api.fxtwitter.com',
+  VXTWITTER: 'https://api.vxtwitter.com',
+  NITTER_INSTANCES: ['nitter.net', 'nitter.it', 'nitter.privacydev.net'] as readonly string[],
+} as const;
+
+/** YouTube 字幕端点（youtube_transcript tool 使用） */
+export const YOUTUBE_TRANSCRIPT_ENDPOINTS = {
+  SUPADATA: 'https://api.supadata.ai/v1/youtube/transcript',
+  OEMBED: 'https://www.youtube.com/oembed',
+  FALLBACK: ['https://yt.lemnoslife.com/videos'] as readonly string[],
+} as const;
+
+/** 学术搜索端点（academic_search tool 使用） */
+export const ACADEMIC_SEARCH_ENDPOINTS = {
+  ARXIV: 'https://export.arxiv.org/api/query',
+  SEMANTIC_SCHOLAR: 'https://api.semanticscholar.org/graph/v1/paper/search',
+} as const;
+
+/** 学术搜索结果上限 */
+export const ACADEMIC_SEARCH_MAX_LIMIT = 30;
+
+/** Jira REST API 版本路径（jira tool 使用） */
+export const JIRA_API_VERSION_PATH = '/rest/api/3';
+
 /** 默认 Supabase URL */
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 

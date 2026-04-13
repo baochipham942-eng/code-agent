@@ -1,5 +1,7 @@
 # Protocol 层迁移计划
 
+> **Status: ✓ Completed 2026-04-13** — 实际落地与最终结论见 `docs/decisions/007-protocol-migration-reality-check.md` 与 `docs/decisions/008-swarm-actor-refactor.md`。循环依赖 4→0，services/tools fan-in 目标参考 ADR-007 的 reality check（原 450/400 目标已 retract）。本文件作为历史规划保留。
+>
 > 生成日期：2026-04-12
 > 来源：对比 Codex（Rust, 1418 文件）、归藏 CodePilot（TS, 603 文件）、Claude Code Agent SDK（ccVersion 2.1.63）后得出的架构改进方案
 > 对比数据位置：`~/Downloads/ai/code-agent-compare/{codex,CodePilot}` + `~/Downloads/ai/claude-code-system-prompts/`

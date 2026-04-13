@@ -81,8 +81,12 @@ export function onRendererPush(listener: (channel: string, data: unknown) => voi
 // BrowserWindow 兼容类 — 渐进迁移用
 // ---------------------------------------------------------------------------
 
+const liveWindows = new Set<BrowserWindow>();
+let nextWindowId = 1;
+
 export class BrowserWindow implements WindowLike {
-  id = 0;
+  id: number;
+  private _destroyed = false;
   webContents: WindowLike['webContents'] = {
     send: (channel: string, ...args: unknown[]) => {
       broadcastToRenderer(channel, args.length === 1 ? args[0] : args);
@@ -92,18 +96,24 @@ export class BrowserWindow implements WindowLike {
     openDevTools: (..._args: unknown[]) => {},
     session: { clearCache: async () => {} },
     getURL: () => '',
-    isDestroyed: () => false,
+    isDestroyed: () => this._destroyed,
     setWindowOpenHandler: (..._args: unknown[]) => {},
   };
 
-  constructor(_options?: Record<string, unknown>) {}
+  constructor(_options?: Record<string, unknown>) {
+    this.id = nextWindowId++;
+    liveWindows.add(this);
+  }
 
   loadURL(..._args: unknown[]) { return Promise.resolve(); }
   loadFile(..._args: unknown[]) { return Promise.resolve(); }
   show() {}
   hide() {}
-  close() {}
-  destroy() {}
+  close() { this.destroy(); }
+  destroy() {
+    this._destroyed = true;
+    liveWindows.delete(this);
+  }
   focus() {}
   blur() {}
   minimize() {}
@@ -112,8 +122,8 @@ export class BrowserWindow implements WindowLike {
   restore() {}
   isMinimized() { return false; }
   isMaximized() { return false; }
-  isVisible() { return false; }
-  isDestroyed() { return true; }
+  isVisible() { return !this._destroyed; }
+  isDestroyed() { return this._destroyed; }
   setTitle(..._args: unknown[]) {}
   getTitle() { return ''; }
   setBounds(..._args: unknown[]) {}
@@ -124,8 +134,16 @@ export class BrowserWindow implements WindowLike {
   once(..._args: unknown[]) { return this; }
   removeListener(..._args: unknown[]) { return this; }
 
-  static getAllWindows(): BrowserWindow[] { return []; }
-  static getFocusedWindow(): BrowserWindow | null { return null; }
+  static getAllWindows(): BrowserWindow[] { return Array.from(liveWindows); }
+  static getFocusedWindow(): BrowserWindow | null {
+    const iter = liveWindows.values().next();
+    return iter.done ? null : iter.value;
+  }
   static fromWebContents(..._args: unknown[]): BrowserWindow | null { return null; }
-  static fromId(..._args: unknown[]): BrowserWindow | null { return null; }
+  static fromId(id: number): BrowserWindow | null {
+    for (const win of liveWindows) {
+      if (win.id === id) return win;
+    }
+    return null;
+  }
 }

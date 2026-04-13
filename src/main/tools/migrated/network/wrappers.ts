@@ -44,11 +44,8 @@ import { localSpeechToTextTool } from '../../network/localSpeechToText';
 import { screenshotPageTool } from '../../network/screenshotPage';
 
 // External integrations
-import { jiraTool } from '../../network/jira';
-import { githubPrTool } from '../../network/githubPr';
-import { twitterFetchTool } from '../../network/twitterFetch';
-import { youtubeTranscriptTool } from '../../network/youtubeTranscript';
-import { academicSearchTool } from '../../network/academicSearch';
+// jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已迁移为 native ToolModule
+// （见 migrated/network/{jira,githubPr,twitterFetch,youtubeTranscript,academicSearch}.ts）
 
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
@@ -106,9 +103,5 @@ export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET
 // chart_generate / mermaid_export / qrcode_generate 已迁移为 native
 export const screenshotPageModule = wrapLegacyTool(screenshotPageTool, NET_NETWORK_READ);
 
-// ── External integrations (5) ───────────────────────────────────────────
-export const jiraModule = wrapLegacyTool(jiraTool, NET_NETWORK_WRITE);
-export const githubPrModule = wrapLegacyTool(githubPrTool, NET_NETWORK_WRITE);
-export const twitterFetchModule = wrapLegacyTool(twitterFetchTool, NET_NETWORK_READ);
-export const youtubeTranscriptModule = wrapLegacyTool(youtubeTranscriptTool, NET_NETWORK_READ);
-export const academicSearchModule = wrapLegacyTool(academicSearchTool, NET_NETWORK_READ);
+// ── External integrations (0) ───────────────────────────────────────────
+// jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已全部迁移为 native

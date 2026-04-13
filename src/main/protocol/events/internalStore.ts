@@ -1,3 +1,8 @@
+// ============================================================================
+// InternalEventStore — 持久化事件存储
+// 原 src/main/events/internalEventStore.ts，P0-5 阶段 A 迁入 protocol 层
+// ============================================================================
+
 import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 

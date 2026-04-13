@@ -1,14 +1,14 @@
 // ============================================================================
 // EventBus - 全局事件总线
-// ============================================================================
 // 轻量级事件总线，基于 EventEmitter
 // 支持 domain:type、domain、* 三级匹配
+// 原 src/main/events/eventBus.ts，P0-5 阶段 A 迁入 protocol 层
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { EventDomain, BusEvent, EventHandler, EventPattern } from './types';
-import { createLogger } from '../services/infra/logger';
-import { getInternalEventStore } from './internalEventStore';
+import type { EventDomain, BusEvent, EventHandler, EventPattern } from './busTypes';
+import { createLogger } from '../../services/infra/logger';
+import { getInternalEventStore } from './internalStore';
 
 const logger = createLogger('EventBus');
 
@@ -17,7 +17,6 @@ class EventBus {
   private _isShutdown = false;
 
   constructor() {
-    // 提高监听器上限，避免 MaxListenersExceededWarning
     this.emitter.setMaxListeners(100);
   }
 
@@ -42,12 +41,10 @@ class EventBus {
       bridgeToRenderer: options?.bridgeToRenderer ?? true,
     };
 
-    // 发射到三个通道
     this.safeEmit(`${domain}:${type}`, event);
     this.safeEmit(domain, event);
     this.safeEmit('*', event);
 
-    // Route persistence-worthy events to InternalEventStore
     const PERSISTENT_DOMAINS = ['tool', 'agent', 'session'];
     if (PERSISTENT_DOMAINS.includes(domain)) {
       try {
@@ -74,9 +71,6 @@ class EventBus {
     };
   }
 
-  /**
-   * 订阅一次性事件
-   */
   once<T = unknown>(pattern: EventPattern, handler: EventHandler<T>): () => void {
     this.emitter.once(pattern, handler);
     return () => {
@@ -84,9 +78,6 @@ class EventBus {
     };
   }
 
-  /**
-   * 关闭事件总线
-   */
   shutdown(): void {
     this._isShutdown = true;
     this.emitter.removeAllListeners();
@@ -105,10 +96,6 @@ class EventBus {
   }
 }
 
-// ============================================================================
-// 全局单例
-// ============================================================================
-
 let globalBus: EventBus | null = null;
 
 export function getEventBus(): EventBus {
@@ -124,3 +111,5 @@ export function shutdownEventBus(): void {
     globalBus = null;
   }
 }
+
+export { EventBus };

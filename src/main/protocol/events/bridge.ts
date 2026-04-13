@@ -1,14 +1,14 @@
 // ============================================================================
 // EventBridge - EventBus → IPC 桥接
-// ============================================================================
 // 订阅 EventBus 的 '*' 通道，过滤后转发到渲染进程
 // 向后兼容现有 IPC channel 名
+// 原 src/main/events/eventBridge.ts，P0-5 阶段 A 迁入 protocol 层
 // ============================================================================
 
-import type { BrowserWindow } from '../platform';
-import type { BusEvent, EventDomain } from './types';
-import { getEventBus } from './eventBus';
-import { createLogger } from '../services/infra/logger';
+import type { BrowserWindow } from '../../platform';
+import type { BusEvent, EventDomain } from './busTypes';
+import { getEventBus } from './bus';
+import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('EventBridge');
 
@@ -34,9 +34,6 @@ export class EventBridge {
     this.getWindow = getWindow;
   }
 
-  /**
-   * 开始桥接
-   */
   start(): EventBridge {
     if (this.unsubscribe) return this;
 
@@ -49,9 +46,6 @@ export class EventBridge {
     return this;
   }
 
-  /**
-   * 停止桥接
-   */
   stop(): void {
     if (this.unsubscribe) {
       this.unsubscribe();
@@ -61,10 +55,7 @@ export class EventBridge {
   }
 
   private forward(event: BusEvent): void {
-    // 过滤 bridgeToRenderer: false
     if (event.bridgeToRenderer === false) return;
-
-    // 过滤 internal domain
     if (INTERNAL_DOMAINS.includes(event.domain)) return;
 
     const window = this.getWindow();
@@ -84,10 +75,6 @@ export class EventBridge {
     }
   }
 }
-
-// ============================================================================
-// 全局单例
-// ============================================================================
 
 let globalBridge: EventBridge | null = null;
 

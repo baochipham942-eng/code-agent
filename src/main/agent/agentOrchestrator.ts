@@ -36,6 +36,7 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
+import { getEventBus } from '../protocol/events';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -730,7 +731,6 @@ export class AgentOrchestrator {
           const { getComboRecorder } = require('../services/skills/comboRecorder');
           const suggestion = getComboRecorder().checkSuggestion(sessionId);
           if (suggestion) {
-            const { getEventBus } = require('../../events/eventBus');
             getEventBus().publish('agent', 'combo_skill_suggestion', suggestion, { sessionId, bridgeToRenderer: true });
           }
         } catch {

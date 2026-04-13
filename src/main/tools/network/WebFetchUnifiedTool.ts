@@ -5,8 +5,8 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { webFetchTool } from './webFetch';
-import { executeHttpRequest } from '../migrated/network/httpRequest';
-import { invokeNativeFromLegacy } from '../migrated/_helpers/invokeNativeFromLegacy';
+import { executeHttpRequest } from '../modules/network/httpRequest';
+import { invokeNativeFromLegacy } from '../modules/_helpers/invokeNativeFromLegacy';
 
 export const WebFetchUnifiedTool: Tool = {
   name: 'WebFetch',

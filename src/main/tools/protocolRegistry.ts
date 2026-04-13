@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { ToolRegistry, registerPocTools } from './registry';
-import { registerMigratedTools } from './migrated';
+import { registerMigratedTools } from './modules';
 import type { ToolSchema, PermissionLevel } from '../protocol/tools';
 
 let singleton: ToolRegistry | null = null;

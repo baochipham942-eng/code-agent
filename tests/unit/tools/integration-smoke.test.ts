@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { grepModule } from '../../../src/main/tools/migrated/shell/grep';
+import { grepModule } from '../../../src/main/tools/modules/shell/grep';
 import { smartHtmlToText } from '../../../src/main/tools/network/htmlUtils';
 import { clearFetchCache } from '../../../src/main/tools/network/fetchDocument';
 import { WEB_FETCH, GREP } from '../../../src/shared/constants';

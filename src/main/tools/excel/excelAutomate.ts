@@ -8,8 +8,8 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as path from 'path';
 import { excelGenerateTool } from '../network/excelGenerate';
-import { executeReadXlsx } from '../migrated/network/readXlsx';
-import { invokeNativeFromLegacy } from '../migrated/_helpers/invokeNativeFromLegacy';
+import { executeReadXlsx } from '../modules/network/readXlsx';
+import { invokeNativeFromLegacy } from '../modules/_helpers/invokeNativeFromLegacy';
 import { xlwingsExecuteTool } from '../network/xlwingsExecute';
 import { executeExcelEdit } from './excelEdit';
 import { executePythonScript } from '../utils/pythonBridge';
@@ -212,7 +212,7 @@ Parameters:
 
     switch (action) {
       case 'read': {
-        // Delegate to native read_xlsx (migrated/network/readXlsx.ts)
+        // Delegate to native read_xlsx (modules/network/readXlsx.ts)
         if (!params.file_path) {
           return { success: false, error: 'action "read" requires file_path parameter' };
         }

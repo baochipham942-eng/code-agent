@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool } from '../tools/types';
-import type { HookEvent } from '../hooks/events';
+import type { HookEvent } from '../protocol/events';
 
 /**
  * Plugin metadata from package.json or plugin.json

@@ -4,7 +4,7 @@
 
 import path from 'path';
 import fs from 'fs/promises';
-import type { SessionContext } from '../hooks/events';
+import type { SessionContext } from '../protocol/events';
 import type { TestRunSummary } from './types';
 import { TestRunner, createDefaultConfig } from './testRunner';
 import { MockAgentAdapter, StandaloneAgentAdapter } from './agentAdapter';

@@ -15,7 +15,7 @@ import type {
   PluginHookContext,
   PluginHookResult,
 } from './types';
-import type { HookEvent } from '../hooks/events';
+import type { HookEvent } from '../protocol/events';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
 import { createLogger } from '../services/infra/logger';

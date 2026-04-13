@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import type { AnyHookContext, HookExecutionResult } from './events';
+import type { AnyHookContext, HookExecutionResult } from '../protocol/events';
 
 const logger = createLogger('HttpHookExecutor');
 

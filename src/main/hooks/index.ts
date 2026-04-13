@@ -3,7 +3,7 @@
 // Based on Claude Code v2.0 hook architecture
 // ============================================================================
 
-// Event types and context
+// Event types and context (re-export from protocol/events)
 export {
   type HookEvent,
   type HookActionResult,
@@ -19,7 +19,7 @@ export {
   HOOK_EVENT_DESCRIPTIONS,
   HOOK_ENV_VARS,
   createHookEnvVars,
-} from './events';
+} from '../protocol/events';
 
 // Configuration parsing
 export {

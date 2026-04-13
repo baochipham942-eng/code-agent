@@ -1,6 +1,7 @@
 // ============================================================================
 // Protocol Events — 统一导出
-// - categories: HOOK_EVENTS 字典、BATCHABLE/IMMEDIATE 分类、AgentEvent 类型白名单
+// - categories: BATCHABLE/IMMEDIATE 分类、AgentEvent 类型白名单、分类谓词
+// - hookTypes:  HookEvent union + 19 种 Context + HookExecutionResult + HOOK_ENV_VARS
 // - busTypes:   EventDomain/BusEvent/EventHandler/EventPattern runtime 类型
 // - bus:        EventBus runtime + getEventBus/shutdownEventBus
 // - bridge:     EventBridge（EventBus → IPC 桥接）
@@ -10,6 +11,7 @@
 // ============================================================================
 
 export * from './categories';
+export * from './hookTypes';
 export * from './busTypes';
 export { EventBus, getEventBus, shutdownEventBus } from './bus';
 export { EventBridge, initEventBridge, getEventBridge } from './bridge';

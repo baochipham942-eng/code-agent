@@ -1,7 +1,6 @@
 // ============================================================================
-// Protocol — Event 分类层
-// 参考 Claude Code Agent SDK ccVersion 2.1.63 的 16 种 hook event 命名 +
-// Codex codex-protocol EventMsg enum 的 SQE/EQE 模式
+// Protocol — AgentEvent 分类层
+// 参考 Codex codex-protocol EventMsg enum 的 SQE/EQE 模式
 // ============================================================================
 //
 // 设计动机：
@@ -10,53 +9,14 @@
 // - 这类分类信息统一到 protocol 层，与 EventBus runtime 同包
 // - main 内部任何模块想订阅事件、过滤事件、做指标统计，都从 protocol 里拿分类
 //
-// 原 src/main/protocol/events.ts（P0-5 阶段 A 拆到 events/categories.ts）
+// Hook event 命名字典（HookEvent 类型）见同目录 hookTypes.ts。
+// 原 protocol/events.ts 的 HOOK_EVENTS 常量与 hooks/events.ts 重复，
+// 已在 P0-5 阶段 +1 统一收敛到 hookTypes.ts。
 // ============================================================================
 
 import type { AgentEvent } from '@shared/contract';
 
 export type { AgentEvent };
-
-// ----------------------------------------------------------------------------
-// Hook Event 名称 — 参考 Claude Code ccVersion 2.1.63 的 16 种事件
-// 作为未来 hook 系统的事件字典，当前仅作为命名字典和占位
-// ----------------------------------------------------------------------------
-
-export const HOOK_EVENTS = {
-  // 工具生命周期
-  PreToolUse: 'PreToolUse',
-  PostToolUse: 'PostToolUse',
-  PostToolUseFailure: 'PostToolUseFailure',
-
-  // 用户交互
-  UserPromptSubmit: 'UserPromptSubmit',
-  Notification: 'Notification',
-
-  // 会话生命周期
-  SessionStart: 'SessionStart',
-  SessionEnd: 'SessionEnd',
-  Stop: 'Stop',
-
-  // Subagent 生命周期
-  SubagentStart: 'SubagentStart',
-  SubagentStop: 'SubagentStop',
-
-  // 上下文压缩
-  PreCompact: 'PreCompact',
-
-  // 权限
-  PermissionRequest: 'PermissionRequest',
-
-  // 配置 / 初始化
-  Setup: 'Setup',
-  ConfigChange: 'ConfigChange',
-
-  // 多 Agent 协作
-  TeammateIdle: 'TeammateIdle',
-  TaskCompleted: 'TaskCompleted',
-} as const;
-
-export type HookEventName = (typeof HOOK_EVENTS)[keyof typeof HOOK_EVENTS];
 
 // ----------------------------------------------------------------------------
 // AgentEvent 类型白名单 — 从 shared/contract/agent.ts 的 discriminated union

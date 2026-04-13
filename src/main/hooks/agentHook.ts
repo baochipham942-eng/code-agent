@@ -3,7 +3,7 @@
 // Execute hooks as AI agent roles with configurable prompts
 // ============================================================================
 
-import type { AnyHookContext } from './events';
+import type { AnyHookContext } from '../protocol/events';
 import type { AICompletionFn } from './promptHook';
 
 export interface AgentHookConfig {

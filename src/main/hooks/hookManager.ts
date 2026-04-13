@@ -20,7 +20,7 @@ import type {
   PermissionDeniedContext,
   PostCompactContext,
   StopFailureContext,
-} from './events';
+} from '../protocol/events';
 import type { HookDefinition } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';

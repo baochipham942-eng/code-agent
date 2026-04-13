@@ -3,8 +3,9 @@
 # Circular Dependency Check
 # 用 madge 扫描 src/main，循环依赖数超过 baseline 即阻断。
 #
-# Baseline: 4 条（2026-04 protocol 层迁移后实测）
-# 当前允许值: MAX_CIRCULAR
+# History:
+#   2026-04-12 baseline: 4 条（protocol 层迁移后实测）
+#   2026-04-13 ADR-008 Swarm Actor 重构完成后降到 0，门槛收紧到 0
 #
 # 本地安装到 git hooks:
 #   echo 'bash scripts/check-circular-deps.sh || exit 1' >> .git/hooks/pre-commit
@@ -12,7 +13,7 @@
 
 set -e
 
-MAX_CIRCULAR=4
+MAX_CIRCULAR=0
 SCAN_ROOT="src/main"
 
 RED='\033[0;31m'

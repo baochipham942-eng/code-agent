@@ -428,33 +428,15 @@ export class TaskRouter {
 
   /**
    * 路由到核心角色
-   * 先查 profiler 推荐，如果有历史表现数据则优先使用
+   *
+   * 历史设计：曾尝试优先查 `agent/profiling/agentProfiler` 的历史表现数据，
+   * 但 profiler 模块从未被实现，那段 try/catch 一直 fall through 到默认
+   * 推荐。P0-6 下一轮清理时直接移除了死代码。
    */
   private routeToCoreAgent(
     analysis: TaskAnalysis,
     _context: RoutingContext
   ): CoreRoutingDecision {
-    // 尝试使用 profiler 推荐
-    try {
-      const { getAgentProfiler } = require('../profiling/agentProfiler');
-      const profiler = getAgentProfiler();
-      const recommendation = profiler.recommendAgent(analysis.taskType);
-      if (recommendation && isCoreAgent(recommendation.agentId)) {
-        logger.info('Using profiler recommendation', {
-          agentId: recommendation.agentId,
-          wilsonScore: recommendation.wilsonScore.toFixed(3),
-          totalExecutions: recommendation.totalExecutions,
-        });
-        return {
-          type: 'core',
-          agent: CORE_AGENTS[recommendation.agentId as CoreAgentId],
-          reason: `Profiler recommended: ${recommendation.agentId} (wilson=${recommendation.wilsonScore.toFixed(3)})`,
-        };
-      }
-    } catch {
-      // Profiler not available, fall through to default
-    }
-
     const agentId = recommendCoreAgent(analysis.taskType);
     const agent = CORE_AGENTS[agentId];
 

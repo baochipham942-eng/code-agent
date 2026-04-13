@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { getUserDataPath } from '../../platform/appPaths';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -32,7 +32,6 @@ const SENSITIVE_KEYS = [
 
 /** 获取日志目录 */
 function getLogDir(): string {
-  const { getUserDataPath } = require('../../platform/appPaths');
   return path.join(getUserDataPath(), 'logs');
 }
 

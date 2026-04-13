@@ -15,6 +15,7 @@
 
 import { createLogger } from '../../services/infra/logger';
 import { CROSS_VERIFY } from '../../../shared/constants';
+import { getMCPClient } from '../../mcp/mcpClient';
 
 const logger = createLogger('CrossVerify');
 
@@ -37,12 +38,9 @@ export interface CrossVerifyResult {
 
 /**
  * 检查 Codex MCP Server 是否可用
- * 懒加载 getMCPClient 避免循环依赖
  */
 export function isCodexAvailable(): boolean {
   try {
-     
-    const { getMCPClient } = require('../../mcp/mcpClient');
     const client = getMCPClient();
     // 使用 isConnected 而非 getTools()，避免跳过 lazy-load 的服务器
     // callTool() 内部会自动触发懒连接

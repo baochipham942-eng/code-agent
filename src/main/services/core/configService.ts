@@ -10,7 +10,12 @@ import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
+import {
+  DEFAULT_PROVIDER,
+  DEFAULT_MODEL,
+  DEFAULT_MODELS,
+  getCloudApiUrl as getCloudApiUrlFromConstants,
+} from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
 
@@ -659,9 +664,7 @@ export class ConfigService {
    * @deprecated 使用 shared/constants 中的 getCloudApiUrl() 代替
    */
   private getCloudApiUrl(): string {
-    // 引用统一常量，避免重复定义
-    const { getCloudApiUrl: getUrl } = require('../../../shared/constants');
-    return this.settings.cloudApi?.url || getUrl();
+    return this.settings.cloudApi?.url || getCloudApiUrlFromConstants();
   }
 
   // 模型路由方法

@@ -53,7 +53,7 @@ export interface SwarmTimelineEvent {
   agentId?: string;
 }
 
-interface SwarmStore extends SwarmExecutionState {
+export interface SwarmStore extends SwarmExecutionState {
   verification?: SwarmVerificationResult;
   aggregation?: SwarmAggregation;
   executionPhase: SwarmExecutionPhase;

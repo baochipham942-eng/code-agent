@@ -6,7 +6,7 @@
 // 2. 测试重置（替代散落的 vi.mock()）
 // ============================================================================
 
-import { createLogger } from './infra/logger';
+import { createLogger, logger as defaultLogger } from './infra/logger';
 
 const logger = createLogger('ServiceRegistry');
 
@@ -113,17 +113,15 @@ class ServiceRegistry {
 }
 
 // 导出单例访问
-// Logger 使用延迟注册以避免循环依赖
-let loggerEnsured = false;
+// Logger 由 registry 在首次调用时主动注册（依赖方向：registry → logger 单向）
+let loggerRegistered = false;
 export function getServiceRegistry(): ServiceRegistry {
-  if (!loggerEnsured) {
-    loggerEnsured = true;
-    try {
-      const { ensureLoggerRegistered } = require('./infra/logger');
-      ensureLoggerRegistered();
-    } catch { /* ignore during early init */ }
+  const registry = ServiceRegistry.getInstance();
+  if (!loggerRegistered) {
+    loggerRegistered = true;
+    registry.register('Logger', defaultLogger);
   }
-  return ServiceRegistry.getInstance();
+  return registry;
 }
 
 /**

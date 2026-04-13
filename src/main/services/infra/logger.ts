@@ -270,15 +270,8 @@ export function createLogger(context: string): Logger {
 
 /**
  * 默认 Logger 实例（无上下文）
+ *
+ * 注：本模块不主动 import ServiceRegistry。logger 的注册由 ServiceRegistry
+ * 在 getServiceRegistry() 首次调用时反向 pull，依赖方向 registry → logger 单向。
  */
 export const logger = new Logger();
-
-// Lazy registration to avoid circular dependency (ServiceRegistry imports logger)
-let loggerRegistered = false;
-export function ensureLoggerRegistered(): void {
-  if (loggerRegistered) return;
-  loggerRegistered = true;
-  // Dynamic import to break circular dependency
-  const { getServiceRegistry } = require('../serviceRegistry');
-  getServiceRegistry().register('Logger', logger);
-}

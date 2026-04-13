@@ -18,6 +18,16 @@ import {
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
+import { registerSwarmServices } from './agent/swarmServices';
+import { getPlanApprovalGate } from './agent/planApproval';
+import { getSwarmLaunchApprovalGate } from './agent/swarmLaunchApproval';
+import { getParallelAgentCoordinator } from './agent/parallelAgentCoordinator';
+import { getSpawnGuard } from './agent/spawnGuard';
+import { getTeammateService } from './agent/teammate/teammateService';
+import {
+  persistAgentRun,
+  getRecentAgentHistory,
+} from './session/agentHistoryPersistence';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -128,7 +138,17 @@ app.whenReady().then(async () => {
       }
     }
 
-    // 2. Setup IPC handlers
+    // 2. Register swarm services 注入业务依赖到注册表，断开 swarm.ipc 的硬耦合
+    registerSwarmServices({
+      planApproval: getPlanApprovalGate(),
+      launchApproval: getSwarmLaunchApprovalGate(),
+      parallelCoordinator: getParallelAgentCoordinator(),
+      spawnGuard: getSpawnGuard(),
+      teammateService: getTeammateService(),
+      agentHistory: { persistAgentRun, getRecentAgentHistory },
+    });
+
+    // 3. Setup IPC handlers
     setupAllIpcHandlers(ipcMain, {
       getMainWindow,
       getAppService: getAppServiceInstance,

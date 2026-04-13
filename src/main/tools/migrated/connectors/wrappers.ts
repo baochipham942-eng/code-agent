@@ -5,9 +5,6 @@
 // 全部委托给 legacy Tool 实现，调用 AppleScript / EventKit 等。
 // ============================================================================
 
-import { mailTool } from '../../connectors/mail';
-import { mailSendTool } from '../../connectors/mailSend';
-import { mailDraftTool } from '../../connectors/mailDraft';
 import { remindersTool } from '../../connectors/reminders';
 import { remindersCreateTool } from '../../connectors/remindersCreate';
 import { remindersUpdateTool } from '../../connectors/remindersUpdate';
@@ -33,9 +30,7 @@ const WRITE = {
 };
 
 // ── mail ────────────────────────────────────────────────────────────────
-export const mailModule = wrapLegacyTool(mailTool, READ); // 列邮件/搜索是 read
-export const mailSendModule = wrapLegacyTool(mailSendTool, WRITE);
-export const mailDraftModule = wrapLegacyTool(mailDraftTool, WRITE);
+// 已迁移到 native：见 ./mail.ts, ./mailSend.ts, ./mailDraft.ts
 
 // ── reminders ───────────────────────────────────────────────────────────
 export const remindersModule = wrapLegacyTool(remindersTool, READ);

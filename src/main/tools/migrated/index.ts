@@ -407,34 +407,72 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     {
       name: 'mail',
-      description: 'List/search macOS Mail messages.',
-      inputSchema: minimalConnSchema({ action: { type: 'string' } }),
+      description: 'Read local macOS Mail data via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message'],
+            description: 'Mail action to perform.',
+          },
+          account: { type: 'string', description: 'Optional account name.' },
+          mailbox: { type: 'string', description: 'Mailbox name for list_messages/read_message.' },
+          query: { type: 'string', description: 'Optional subject/sender filter.' },
+          limit: { type: 'number', description: 'Max messages to return. Default: 10.' },
+          scan_limit: { type: 'number', description: 'Max messages to scan before filter.' },
+          message_id: { type: 'number', description: 'Message id for read_message.' },
+        },
+        required: ['action'],
+      },
       category: 'mcp',
       permissionLevel: 'read',
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./connectors/wrappers')).mailModule,
+    async () => (await import('./connectors/mail')).mailModule,
   );
   registry.register(
     {
       name: 'mail_send',
-      description: 'Send a mail message via macOS Mail.app.',
-      inputSchema: minimalConnSchema({ to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }),
+      description: 'Send a real email via local macOS Mail.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          subject: { type: 'string', description: 'Email subject.' },
+          to: { type: 'array', items: { type: 'string' }, description: 'Primary recipients.' },
+          cc: { type: 'array', items: { type: 'string' }, description: 'CC recipients.' },
+          bcc: { type: 'array', items: { type: 'string' }, description: 'BCC recipients.' },
+          content: { type: 'string', description: 'Email body content.' },
+          attachments: { type: 'array', items: { type: 'string' }, description: 'Attachment file paths.' },
+        },
+        required: ['subject', 'to'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).mailSendModule,
+    async () => (await import('./connectors/mailSend')).mailSendModule,
   );
   registry.register(
     {
       name: 'mail_draft',
-      description: 'Create a mail draft via macOS Mail.app.',
-      inputSchema: minimalConnSchema({ to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }),
+      description: 'Create a draft in local macOS Mail via the native connector.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          subject: { type: 'string', description: 'Draft subject.' },
+          to: { type: 'array', items: { type: 'string' }, description: 'Primary recipients.' },
+          cc: { type: 'array', items: { type: 'string' }, description: 'CC recipients.' },
+          bcc: { type: 'array', items: { type: 'string' }, description: 'BCC recipients.' },
+          content: { type: 'string', description: 'Draft body content.' },
+          attachments: { type: 'array', items: { type: 'string' }, description: 'Attachment file paths.' },
+        },
+        required: ['subject', 'to'],
+      },
       category: 'mcp',
       permissionLevel: 'write',
     },
-    async () => (await import('./connectors/wrappers')).mailDraftModule,
+    async () => (await import('./connectors/mailDraft')).mailDraftModule,
   );
   registry.register(
     {

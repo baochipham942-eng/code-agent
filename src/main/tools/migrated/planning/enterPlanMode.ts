@@ -18,43 +18,11 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
   PlanModeController,
 } from '../../../protocol/tools';
+import { enterPlanModeSchema as schema } from './enterPlanMode.schema';
 
 export const DEFAULT_ENTER_REASON = '复杂任务需要前期规划';
-
-const schema: ToolSchema = {
-  name: 'enter_plan_mode',
-  description: `进入规划模式，用于复杂实现任务的前期设计。
-
-**何时使用：**
-- 新功能实现（不是简单修改）
-- 存在多种有效方案需要选择
-- 需要架构决策
-- 涉及多文件修改（>3 个文件）
-- 需求不明确，需要先探索
-
-**何时跳过：**
-- 单行或少量修改（错别字、简单 bug）
-- 需求明确的单函数添加
-- 用户给出了详细具体的指令
-
-进入后你将专注于探索和设计，完成后使用 exit_plan_mode 提交计划供用户审批。`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      reason: {
-        type: 'string',
-        description: '进入规划模式的原因（可选）',
-      },
-    },
-  },
-  category: 'planning',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: true,
-};
 
 /** 构造进入规划模式的提示文本（和 legacy 完全一致） */
 export function buildEnterPlanModeOutput(reason: string): string {

@@ -14,22 +14,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
-import { skillMetaTool, getSkillToolDescription } from '../../skill/skillMetaTool';
+import { skillMetaTool } from '../../skill/skillMetaTool';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
-
-const schema: ToolSchema = {
-  name: 'Skill',
-  description: skillMetaTool.description,
-  // dynamicDescription: 透传 legacy 的动态描述生成器
-  dynamicDescription: getSkillToolDescription,
-  inputSchema: skillMetaTool.inputSchema,
-  category: 'skill',
-  permissionLevel: 'read',
-  readOnly: false, // skill 可能触发 fork 副作用
-  allowInPlanMode: false,
-};
+import { skillSchema as schema } from './skill.schema';
 
 class SkillHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

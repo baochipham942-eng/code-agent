@@ -12,20 +12,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { toolSearchTool } from '../../search/toolSearch';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
-
-const schema: ToolSchema = {
-  name: 'ToolSearch',
-  description: toolSearchTool.description,
-  inputSchema: toolSearchTool.inputSchema,
-  category: 'fs',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+import { toolSearchSchema as schema } from './toolSearch.schema';
 
 class ToolSearchHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

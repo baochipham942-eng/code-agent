@@ -11,64 +11,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-
-const schema: ToolSchema = {
-  name: 'mail_draft',
-  description: `Create a draft in local macOS Mail via the native connector.
-
-Required parameters:
-- subject
-- to
-
-Optional parameters:
-- content
-- cc
-- bcc
-- attachments
-
-Use this when the user wants a real email draft prepared locally, but not sent yet.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      subject: {
-        type: 'string',
-        description: 'Draft subject.',
-      },
-      to: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Primary recipient email addresses.',
-      },
-      cc: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional CC recipient email addresses.',
-      },
-      bcc: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional BCC recipient email addresses.',
-      },
-      content: {
-        type: 'string',
-        description: 'Draft body content.',
-      },
-      attachments: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional attachment file paths.',
-      },
-    },
-    required: ['subject', 'to'],
-  },
-  category: 'mcp',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
   if (Array.isArray(value)) {

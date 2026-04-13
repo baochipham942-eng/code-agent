@@ -12,20 +12,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { diagnosticsTool } from '../../lsp/diagnostics';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
-
-const schema: ToolSchema = {
-  name: 'diagnostics',
-  description: diagnosticsTool.description,
-  inputSchema: diagnosticsTool.inputSchema,
-  category: 'lsp',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+import { diagnosticsSchema as schema } from './diagnostics.schema';
 
 class DiagnosticsHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

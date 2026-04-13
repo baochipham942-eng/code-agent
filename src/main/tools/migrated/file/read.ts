@@ -27,49 +27,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { fileReadTracker } from '../../fileReadTracker';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
-
-const schema: ToolSchema = {
-  name: 'Read',
-  description:
-    'Reads a file from the local filesystem. Use this instead of Bash cat/head/tail. ' +
-    'Supports offset and limit for large files. Cannot read directories — use ListDirectory or Glob for that.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      file_path: {
-        type: 'string',
-        description:
-          'Absolute path to the file. MUST be a string, not an object. ' +
-          'Examples: "/Users/name/project/src/index.ts", "/home/user/config.json". ' +
-          'Supports ~ for home directory: "~/Documents/file.txt". ' +
-          'Do NOT include parameters like offset or limit in this string.',
-      },
-      offset: {
-        type: 'number',
-        description:
-          'Line number to start reading from. Integer, 1-indexed (first line is 1, not 0). ' +
-          'Default: 1. Example: offset=100 starts reading from line 100. ' +
-          'If offset exceeds total lines, returns empty content.',
-      },
-      limit: {
-        type: 'number',
-        description:
-          'Maximum number of lines to read. Integer, must be positive. ' +
-          'Default: 2000. Example: limit=50 reads up to 50 lines. ' +
-          'Combined with offset: offset=100, limit=50 reads lines 100-149.',
-      },
-    },
-    required: ['file_path'],
-  },
-  category: 'fs',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+import { readSchema as schema } from './read.schema';
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',

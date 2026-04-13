@@ -11,9 +11,9 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { NETWORK_TOOL_TIMEOUTS, HTTP_MAX_RESPONSE_SIZE } from '../../../../shared/constants';
+import { httpRequestSchema as schema } from './httpRequest.schema';
 
 // ── 安全与限制常量 ─────────────────────────────────────────────────────
 const DEFAULT_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_DEFAULT;
@@ -45,62 +45,6 @@ const BLOCKED_HOSTS = [
   'fd00:ec2::254',
   '100.100.100.200', // Alibaba Cloud
 ];
-
-const schema: ToolSchema = {
-  name: 'http_request',
-  description: `Make HTTP requests to external APIs.
-
-Supports all common HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS.
-
-Security restrictions:
-- Internal/private networks are blocked (SSRF protection)
-- Cloud metadata services are blocked
-- Maximum response size: 10MB
-- Maximum timeout: 5 minutes
-
-Parameters:
-- url (required): Target URL (must be http:// or https://)
-- method (optional): HTTP method, default GET
-- headers (optional): Request headers as object
-- body (optional): Request body string (for POST/PUT/PATCH)
-- timeout (optional): Timeout in ms, default 30000, max 300000
-
-Examples:
-- GET: { "url": "https://api.example.com/data" }
-- POST with JSON: { "url": "https://api.example.com/create", "method": "POST", "body": "{\\"name\\": \\"test\\"}", "headers": { "Content-Type": "application/json" } }
-- With auth: { "url": "https://api.example.com/protected", "headers": { "Authorization": "Bearer token" } }`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      url: {
-        type: 'string',
-        description: 'Target URL (http:// or https://)',
-      },
-      method: {
-        type: 'string',
-        description: 'HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS (default: GET)',
-      },
-      headers: {
-        type: 'object',
-        description: 'Request headers as key-value pairs',
-        additionalProperties: true,
-      },
-      body: {
-        type: 'string',
-        description: 'Request body (for POST/PUT/PATCH)',
-      },
-      timeout: {
-        type: 'number',
-        description: 'Timeout in milliseconds (default: 30000, max: 300000)',
-      },
-    },
-    required: ['url'],
-  },
-  category: 'network',
-  permissionLevel: 'network',
-  readOnly: false,
-  allowInPlanMode: false,
-};
 
 function validateUrl(url: string): { valid: boolean; error?: string } {
   try {

@@ -14,20 +14,10 @@ import type {
   CanUseToolFn,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
 import { lspTool } from '../../lsp/lsp';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
-
-const schema: ToolSchema = {
-  name: 'lsp',
-  description: lspTool.description,
-  inputSchema: lspTool.inputSchema,
-  category: 'lsp',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+import { lspSchema as schema } from './lsp.schema';
 
 class LspHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

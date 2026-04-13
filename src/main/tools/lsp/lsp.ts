@@ -16,7 +16,7 @@ import * as fs from 'fs/promises';
 import { pathToFileURL } from 'url';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getLSPManager } from '../../lsp';
-import { LSP_DESCRIPTION, LSP_INPUT_SCHEMA } from '../migrated/lsp/lsp.schema';
+import { LSP_DESCRIPTION, LSP_INPUT_SCHEMA } from '../modules/lsp/lsp.schema';
 
 // ============================================================================
 // Types

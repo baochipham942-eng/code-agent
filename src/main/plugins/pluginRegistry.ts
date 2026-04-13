@@ -4,7 +4,7 @@
 
 import type { Tool } from '../tools/types';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
-import { wrapLegacyTool } from '../tools/migrated/_helpers/legacyAdapter';
+import { wrapLegacyTool } from '../tools/modules/_helpers/legacyAdapter';
 import type { ToolCategory } from '../protocol/tools';
 import type {
   LoadedPlugin,

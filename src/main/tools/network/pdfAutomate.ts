@@ -9,8 +9,8 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as path from 'path';
 import { pdfGenerateTool } from './pdfGenerate';
 import { pdfCompressTool } from './pdfCompress';
-import { executeReadPdf } from '../migrated/network/readPdf';
-import { invokeNativeFromLegacy } from '../migrated/_helpers/invokeNativeFromLegacy';
+import { executeReadPdf } from '../modules/network/readPdf';
+import { invokeNativeFromLegacy } from '../modules/_helpers/invokeNativeFromLegacy';
 import { executePythonScript } from '../utils/pythonBridge';
 
 type PdfAction = 'generate' | 'compress' | 'read' | 'merge' | 'split' | 'extract_tables' | 'convert_to_docx';

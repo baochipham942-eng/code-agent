@@ -127,15 +127,15 @@ export default tseslint.config(
     },
   },
   {
-    // P0-6 Gate: legacy tool category dirs 只能被 tools/migrated/ 内部 import
+    // P0-6 Gate: legacy tool category dirs 只能被 tools/modules/ 内部 import
     // 背景：P0-5 完成 protocol registry 100% 迁移后，legacy tool 源文件仅作为
-    // migrated/<category>/wrappers.ts 的委托目标保留。任何非 migrated/ 的代码路径
+    // modules/<category>/wrappers.ts 的委托目标保留。任何非 modules/ 的代码路径
     // 都不应直接 import 这些 legacy 实现，必须通过 protocol registry 走。
     // 详情见 src/main/tools/LEGACY.md。
     files: ['src/main/**/*.ts'],
     ignores: [
       // migrated wrappers 合法引用 legacy 实现
-      'src/main/tools/migrated/**',
+      'src/main/tools/modules/**',
       // legacy tool 目录内部（同 category 或跨 category）允许相互引用
       'src/main/tools/file/**',
       'src/main/tools/shell/**',
@@ -173,7 +173,7 @@ export default tseslint.config(
                 '**/tools/vision/**',
               ],
               message:
-                '禁止直接 import legacy tool 实现。所有 tool 请通过 protocol registry 访问（src/main/tools/migrated/<category>/ 下的 wrapper），详见 src/main/tools/LEGACY.md',
+                '禁止直接 import legacy tool 实现。所有 tool 请通过 protocol registry 访问（src/main/tools/modules/<category>/ 下的 wrapper），详见 src/main/tools/LEGACY.md',
             },
           ],
         },

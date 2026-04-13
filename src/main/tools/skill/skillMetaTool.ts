@@ -18,7 +18,7 @@ import { createLogger } from '../../services/infra/logger';
 import {
   SKILL_DESCRIPTION,
   SKILL_INPUT_SCHEMA,
-} from '../migrated/skill/skill.schema';
+} from '../modules/skill/skill.schema';
 
 const logger = createLogger('SkillMetaTool');
 

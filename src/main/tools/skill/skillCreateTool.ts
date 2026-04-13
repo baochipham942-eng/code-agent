@@ -14,7 +14,7 @@ import { createLogger } from '../../services/infra/logger';
 import {
   SKILL_CREATE_DESCRIPTION,
   SKILL_CREATE_INPUT_SCHEMA,
-} from '../migrated/skill/skillCreate.schema';
+} from '../modules/skill/skillCreate.schema';
 
 const logger = createLogger('SkillCreateTool');
 

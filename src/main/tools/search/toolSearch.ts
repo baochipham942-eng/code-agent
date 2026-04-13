@@ -8,7 +8,7 @@ import { createLogger } from '../../services/infra/logger';
 import {
   TOOL_SEARCH_DESCRIPTION,
   TOOL_SEARCH_INPUT_SCHEMA,
-} from '../migrated/search/toolSearch.schema';
+} from '../modules/search/toolSearch.schema';
 
 const logger = createLogger('tool_search');
 

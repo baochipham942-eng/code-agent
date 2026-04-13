@@ -9,7 +9,7 @@ import { getLSPManager, type LSPDiagnostic } from '../../lsp';
 import {
   DIAGNOSTICS_DESCRIPTION,
   DIAGNOSTICS_INPUT_SCHEMA,
-} from '../migrated/lsp/diagnostics.schema';
+} from '../modules/lsp/diagnostics.schema';
 
 export const diagnosticsTool: Tool = {
   name: 'diagnostics',

@@ -14,15 +14,15 @@ export { videoGenerateTool } from './videoGenerate';
 export { imageAnalyzeTool } from './imageAnalyze';
 export { docxGenerateTool } from './docxGenerate';
 export { excelGenerateTool } from './excelGenerate';
-export { chartGenerateTool } from './chartGenerate';
-export { qrcodeGenerateTool } from './qrcodeGenerate';
+// chart_generate / qrcode_generate 已迁移为 native ToolModule
+// （见 migrated/network/chartGenerate.ts / qrcodeGenerate.ts）
 export { readDocxTool } from './readDocx';
 export { readXlsxTool } from './readXlsx';
 export { jiraTool } from './jira';
 export { githubPrTool } from './githubPr';
 export { youtubeTranscriptTool } from './youtubeTranscript';
 export { twitterFetchTool } from './twitterFetch';
-export { mermaidExportTool } from './mermaidExport';
+// mermaid_export 已迁移为 native ToolModule（见 migrated/network/mermaidExport.ts）
 export { pdfGenerateTool } from './pdfGenerate';
 export { imageProcessTool } from './imageProcess';
 export { pdfCompressTool } from './pdfCompress';

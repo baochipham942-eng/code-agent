@@ -14,6 +14,7 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
+import { JIRA_API_VERSION_PATH } from '../../../../shared/constants';
 
 interface JiraConfig {
   baseUrl: string;
@@ -147,7 +148,7 @@ async function callJiraApi(
 ): Promise<Response> {
   const auth = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64');
 
-  return fetch(`${config.baseUrl}/rest/api/3${endpoint}`, {
+  return fetch(`${config.baseUrl}${JIRA_API_VERSION_PATH}${endpoint}`, {
     method,
     headers: {
       Authorization: `Basic ${auth}`,

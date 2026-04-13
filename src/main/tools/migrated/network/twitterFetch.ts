@@ -13,11 +13,9 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
+import { TWITTER_API_ENDPOINTS } from '../../../../shared/constants';
 
-// 文件本地常量（Batch 9 保持内联，避免 shared/constants 膨胀）
-const FXTWITTER_API = 'https://api.fxtwitter.com';
-const VXTWITTER_API = 'https://api.vxtwitter.com';
-const NITTER_INSTANCES = ['nitter.net', 'nitter.it', 'nitter.privacydev.net'];
+const { FXTWITTER: FXTWITTER_API, VXTWITTER: VXTWITTER_API, NITTER_INSTANCES } = TWITTER_API_ENDPOINTS;
 
 interface TweetData {
   id: string;

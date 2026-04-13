@@ -1,14 +1,11 @@
 // ============================================================================
-// connectors/ batch — 11 工具的 wrapper 模式实现
+// connectors/ batch — calendar wrapper 模式实现
 //
-// macOS native integrations: mail / reminders / calendar
-// 全部委托给 legacy Tool 实现，调用 AppleScript / EventKit 等。
+// macOS native integrations: calendar
+// 委托给 legacy Tool 实现，调用 EventKit / AppleScript。
+// mail/* 和 reminders/* 已迁到 native（见 ./mail.ts 等）。
 // ============================================================================
 
-import { remindersTool } from '../../connectors/reminders';
-import { remindersCreateTool } from '../../connectors/remindersCreate';
-import { remindersUpdateTool } from '../../connectors/remindersUpdate';
-import { remindersDeleteTool } from '../../connectors/remindersDelete';
 import { calendarTool } from '../../connectors/calendar';
 import { calendarCreateEventTool } from '../../connectors/calendarCreateEvent';
 import { calendarUpdateEventTool } from '../../connectors/calendarUpdateEvent';
@@ -28,15 +25,6 @@ const WRITE = {
   readOnly: false,
   allowInPlanMode: false,
 };
-
-// ── mail ────────────────────────────────────────────────────────────────
-// 已迁移到 native：见 ./mail.ts, ./mailSend.ts, ./mailDraft.ts
-
-// ── reminders ───────────────────────────────────────────────────────────
-export const remindersModule = wrapLegacyTool(remindersTool, READ);
-export const remindersCreateModule = wrapLegacyTool(remindersCreateTool, WRITE);
-export const remindersUpdateModule = wrapLegacyTool(remindersUpdateTool, WRITE);
-export const remindersDeleteModule = wrapLegacyTool(remindersDeleteTool, WRITE);
 
 // ── calendar ────────────────────────────────────────────────────────────
 export const calendarModule = wrapLegacyTool(calendarTool, READ);

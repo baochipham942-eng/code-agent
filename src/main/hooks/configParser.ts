@@ -6,7 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
-import type { HookEvent } from './events';
+import type { HookEvent } from '../protocol/events';
 
 // ----------------------------------------------------------------------------
 // Configuration Types

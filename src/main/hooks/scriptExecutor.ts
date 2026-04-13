@@ -4,8 +4,8 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import type { HookExecutionResult, AnyHookContext, HookActionResult } from './events';
-import { createHookEnvVars } from './events';
+import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
+import { createHookEnvVars } from '../protocol/events';
 import { createLogger } from '../services/infra/logger';
 import { HOOK_TIMEOUTS } from '../../shared/constants';
 

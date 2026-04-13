@@ -8,7 +8,7 @@ import type {
   HookExecutionResult,
   SessionContext,
   CompactContext,
-} from './events';
+} from '../protocol/events';
 import type { HookTemplate } from './templates/hookTemplates';
 import { BUILT_IN_TEMPLATES, getTemplateById } from './templates/hookTemplates';
 import {

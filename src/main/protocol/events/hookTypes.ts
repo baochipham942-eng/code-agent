@@ -1,12 +1,13 @@
 // ============================================================================
-// Hook Events - Define all hook event types
-// Based on Claude Code v2.0 hook system
+// Hook Types — 主进程 Hook 系统的类型层
+// 原 src/main/hooks/events.ts，P0-5 阶段 +1 下沉到 protocol 层
+// 作为 HOOK_EVENTS 字典的权威定义，替换原 categories.ts 中冗余的 HOOK_EVENTS 常量
 // ============================================================================
 
 /**
  * All supported hook event types
  *
- * 15 event types covering the full lifecycle of agent interactions.
+ * 19 event types covering the full lifecycle of agent interactions.
  * Each event is annotated with a stability level:
  *
  * - **stable**: API is frozen; safe for external consumers.
@@ -14,44 +15,32 @@
  * - **planned**: Defined but not yet wired to real triggers.
  * - **internal @deprecated**: Will be removed in a future version.
  */
+// Stability legend (non-JSDoc to avoid @deprecated propagation to HookEvent union):
+//   stable       — API frozen, safe for external consumers
+//   experimental — may change between minor versions
+//   internal     — will be removed; do not use externally
 export type HookEvent =
-  /** @stability stable */
+  // stable
   | 'PreToolUse'
-  /** @stability stable */
   | 'PostToolUse'
-  /** @stability stable */
   | 'PostToolUseFailure'
-  /** @stability stable */
   | 'UserPromptSubmit'
-  /** @stability stable */
   | 'Stop'
-  /** @stability stable */
   | 'PostExecution'
-  /** @stability stable */
   | 'PreCompact'
-  /** @stability stable */
   | 'SessionStart'
-  /** @stability stable */
   | 'SessionEnd'
-  /** @stability stable */
   | 'SubagentStop'
-  /** @stability experimental */
+  // experimental
   | 'SubagentStart'
-  /** @stability experimental */
   | 'PermissionRequest'
-  /** @stability experimental */
   | 'TaskCreated'
-  /** @stability experimental */
   | 'TaskCompleted'
-  /** @stability experimental */
   | 'PermissionDenied'
-  /** @stability experimental */
   | 'PostCompact'
-  /** @stability experimental */
   | 'StopFailure'
-  /** @stability internal @deprecated */
+  // internal (legacy)
   | 'Setup'
-  /** @stability internal @deprecated */
   | 'Notification';
 
 /**

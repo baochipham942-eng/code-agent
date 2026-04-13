@@ -2,7 +2,7 @@
 // Hook Merger - Merge hooks from multiple sources
 // ============================================================================
 
-import type { HookEvent } from './events';
+import type { HookEvent } from '../protocol/events';
 import type { ParsedHookConfig, HookDefinition } from './configParser';
 
 // ----------------------------------------------------------------------------

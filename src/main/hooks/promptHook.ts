@@ -3,7 +3,7 @@
 // Use AI to evaluate hooks with dynamic prompts
 // ============================================================================
 
-import type { HookExecutionResult, AnyHookContext, HookActionResult } from './events';
+import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('PromptHook');

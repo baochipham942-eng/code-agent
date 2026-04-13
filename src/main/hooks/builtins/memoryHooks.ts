@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
-import type { SessionContext, HookExecutionResult } from '../events';
+import type { SessionContext, HookExecutionResult } from '../../protocol/events';
 import type { Message } from '../../../shared/contract';
 
 const logger = createLogger('MemoryHooks');

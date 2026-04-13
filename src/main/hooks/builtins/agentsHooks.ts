@@ -2,7 +2,7 @@
 // AGENTS.md Hooks - 会话开始时注入 AGENTS.md 指令
 // ============================================================================
 
-import type { SessionContext, HookExecutionResult } from '../events';
+import type { SessionContext, HookExecutionResult } from '../../protocol/events';
 import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
 

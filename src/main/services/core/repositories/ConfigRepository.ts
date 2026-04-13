@@ -4,38 +4,16 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import type { ToolResult } from '../../../../shared/contract';
+import type {
+  UserPreference,
+  ProjectKnowledge,
+  ToolExecution,
+} from '../../../protocol/types';
+
+export type { UserPreference, ProjectKnowledge, ToolExecution };
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
-
-export interface UserPreference {
-  key: string;
-  value: string;
-  updatedAt: number;
-}
-
-export interface ProjectKnowledge {
-  id: string;
-  projectPath: string;
-  key: string;
-  value: string;
-  source: 'learned' | 'explicit' | 'inferred';
-  confidence: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ToolExecution {
-  id: string;
-  sessionId: string;
-  messageId: string;
-  toolName: string;
-  arguments: string; // JSON
-  result: string; // JSON
-  success: boolean;
-  duration: number;
-  createdAt: number;
-}
 
 export class ConfigRepository {
   constructor(private db: BetterSqlite3.Database) {}

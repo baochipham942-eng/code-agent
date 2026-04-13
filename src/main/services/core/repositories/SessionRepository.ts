@@ -12,20 +12,14 @@ import type {
   TodoItem,
 } from '../../../../shared/contract';
 import { createLogger } from '../../infra/logger';
+import type { StoredSession, StoredMessage } from '../../../protocol/types';
+
+export type { StoredSession, StoredMessage };
 
 const logger = createLogger('SessionRepository');
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
-
-export interface StoredSession extends Session {
-  messageCount: number;
-  isDeleted?: boolean;
-}
-
-export interface StoredMessage extends Message {
-  sessionId: string;
-}
 
 type SyncOrigin = 'local' | 'remote';
 

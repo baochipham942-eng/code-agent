@@ -5,3 +5,5 @@
 
 export * from './git';
 export * from './github';
+export * from './repositories';
+export * from './repositories';

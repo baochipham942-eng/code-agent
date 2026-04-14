@@ -5,15 +5,15 @@
 // Refactored: Uses unified 4-layer agent types
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
-import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getParallelAgentCoordinator,
   type AgentTask,
-} from '../../agent/parallelAgentCoordinator';
+} from '../parallelAgentCoordinator';
 import {
   getPredefinedAgent,
   listPredefinedAgents,
@@ -22,23 +22,23 @@ import {
   getAgentMaxIterations,
   getAgentPermissionPreset,
   getAgentMaxBudget,
-} from '../../agent/agentDefinition';
-import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../../agent/hybrid/coreAgents';
+} from '../agentDefinition';
+import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
-} from '../../agent/subagentContextBuilder';
-import { getSwarmEventEmitter } from '../../agent/swarmEventPublisher';
-import { getSpawnGuard } from '../../agent/spawnGuard';
-import { getSwarmLaunchApprovalGate } from '../../agent/swarmLaunchApproval';
-import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../../agent/agentWorktree';
-import { aggregateTeamResults } from '../../agent/resultAggregator';
-import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../../agent/forkContext.js';
-import { validateNoCycles, detectCycles } from '../../agent/taskDag.js';
+} from '../subagentContextBuilder';
+import { getSwarmEventEmitter } from '../swarmEventPublisher';
+import { getSpawnGuard } from '../spawnGuard';
+import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
+import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
+import { aggregateTeamResults } from '../resultAggregator';
+import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../forkContext.js';
+import { validateNoCycles, detectCycles } from '../taskDag.js';
 import {
   shouldActivateCoordinator,
   createCoordinatorSession,
-} from '../../agent/coordinatorMode';
+} from '../coordinatorMode';
 
 // Role-based default isolation: coder agents get worktree isolation by default
 const DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {

@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import sharp from 'sharp';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
@@ -227,14 +228,6 @@ async function drawAnnotations(
     strokeWidth?: number;
   } = {}
 ): Promise<void> {
-  // 动态导入 sharp
-  let sharp: typeof import('sharp');
-  try {
-    sharp = (await import('sharp')).default;
-  } catch {
-    throw new Error('sharp 库未安装，无法绘制标注。请运行: npm install sharp');
-  }
-
   const image = sharp(imagePath);
   const metadata = await image.metadata();
   const imgWidth = metadata.width || 800;

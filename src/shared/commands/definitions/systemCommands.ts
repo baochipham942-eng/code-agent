@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { CommandDefinition } from '../types';
+import { getCommandRegistry } from '../commandRegistry';
 
 export const helpCommand: CommandDefinition = {
   id: 'help',
@@ -12,8 +13,6 @@ export const helpCommand: CommandDefinition = {
   surfaces: ['cli', 'gui'],
   aliases: ['h'],
   handler: async (ctx) => {
-    // 动态从 registry 生成帮助文本
-    const { getCommandRegistry } = await import('../commandRegistry');
     const registry = getCommandRegistry();
     const commands = registry.list(ctx.surface);
 

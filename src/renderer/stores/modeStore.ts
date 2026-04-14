@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invokeDomain } from '../services/ipcService';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -68,21 +69,16 @@ export const useModeStore = create<ModeState>()(
       // Set effort level and sync to backend via IPC
       setEffortLevel: (level) => {
         set({ effortLevel: level });
-        // Dynamic import to avoid circular dependency at module load time
-        import('../services/ipcService').then(({ invokeDomain }) => {
-          invokeDomain('domain:agent', 'setEffortLevel', { level }).catch(() => {
-            // Silently ignore if agent not initialized yet — will apply on next message
-          });
+        invokeDomain('domain:agent', 'setEffortLevel', { level }).catch(() => {
+          // Silently ignore if agent not initialized yet — will apply on next message
         });
       },
 
       // Set interaction mode and sync to backend via IPC
       setInteractionMode: (mode) => {
         set({ interactionMode: mode });
-        import('../services/ipcService').then(({ invokeDomain }) => {
-          invokeDomain('domain:agent', 'setInteractionMode', { mode }).catch(() => {
-            // Silently ignore if agent not initialized yet — will apply on next message
-          });
+        invokeDomain('domain:agent', 'setInteractionMode', { mode }).catch(() => {
+          // Silently ignore if agent not initialized yet — will apply on next message
         });
       },
 
@@ -90,10 +86,8 @@ export const useModeStore = create<ModeState>()(
       setIsPaused: (paused) => {
         set({ isPaused: paused });
         const action = paused ? 'pause' : 'resume';
-        import('../services/ipcService').then(({ invokeDomain }) => {
-          invokeDomain('domain:agent', action, {}).catch(() => {
-            // Silently ignore if agent not initialized yet
-          });
+        invokeDomain('domain:agent', action, {}).catch(() => {
+          // Silently ignore if agent not initialized yet
         });
       },
 

@@ -445,7 +445,7 @@ export class RunFinalizer {
     // Fire-and-forget: don't block agent completion
     (async () => {
       try {
-        const { generateContextSuggestions } = await import('../../services/promptSuggestions');
+        const { generateContextSuggestions } = await import('../../services/core/promptSuggestions');
         const suggestions = await generateContextSuggestions(this.ctx.messages);
         if (suggestions.length > 0) {
           this.ctx.onEvent({ type: 'suggestions_update', data: suggestions });

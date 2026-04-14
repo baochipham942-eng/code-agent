@@ -6,9 +6,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { app } from '../platform';
-import { getUserConfigDir } from '../config/configPaths';
-import { createLogger } from './infra/logger';
+import { app } from '../../platform';
+import { getUserConfigDir } from '../../config/configPaths';
+import { createLogger } from '../infra/logger';
 import type {
   AudioSegment,
   DesktopActivityEvent,

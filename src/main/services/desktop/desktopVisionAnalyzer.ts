@@ -6,7 +6,7 @@
 import fs from 'fs';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
-import { createLogger } from './infra/logger';
+import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 
 const logger = createLogger('DesktopVisionAnalyzer');

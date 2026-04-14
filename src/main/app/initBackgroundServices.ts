@@ -17,7 +17,7 @@ import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpCli
 import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
 import { initCloudTaskService } from '../cloud/cloudTaskService';
-import { initUnifiedOrchestrator } from '../orchestrator';
+import { initUnifiedOrchestrator } from '../services/cloud/orchestratorConfig';
 import { initDesktopActivityUnderstandingService } from '../desktop/desktopActivityUnderstandingService';
 import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
 import { logBridge } from '../mcp/logBridge.js';

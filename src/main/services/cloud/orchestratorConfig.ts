@@ -2,7 +2,7 @@
 // Unified Orchestrator - Cloud task execution orchestration
 // ============================================================================
 
-import { createLogger } from '../services/infra/logger';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('Orchestrator');
 

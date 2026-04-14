@@ -12,8 +12,6 @@ import type {
   SwarmLaunchRequest,
 } from '@shared/contract/swarm';
 import type { CompletedAgentRun } from '@shared/contract/agentHistory';
-import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
-import { invoke } from '../services/ipcService';
 
 export type SwarmExecutionPhase =
   | 'idle'
@@ -541,17 +539,16 @@ function buildCompletedRun(
 }
 
 /**
- * 将 CompletedAgentRun 通过 IPC 持久化到 main 进程（fire-and-forget）
+ * ADR-010 #5：renderer 不再触发 agent-history.json 写入。
+ * 持久化逻辑已迁到 main 进程的 SwarmTraceWriter，订阅 EventBus 'swarm'
+ * domain 直接落 SQLite，包含 agent rollup + 完整 timeline，比旧 JSON
+ * 文件覆盖更广。`completedRuns` 仍保留供 UI 实时展示。
+ *
+ * 旧 IPC 通道 SWARM_PERSIST_AGENT_RUN 与 agent-history.json 的读路径
+ * 仍在 main 侧保留以兼容历史数据，但 renderer 不再调用写入端。
  */
-function persistRunViaIPC(run: CompletedAgentRun): void {
-  try {
-    void invoke(IPC_CHANNELS.SWARM_PERSIST_AGENT_RUN, {
-      sessionId: run.sessionId,
-      run,
-    });
-  } catch {
-    // 静默失败 — 持久化为增强功能，不影响核心流程
-  }
+function persistRunViaIPC(_run: CompletedAgentRun): void {
+  // intentionally no-op — see ADR-010 #5
 }
 
 export const useSwarmStore = create<SwarmStore>((set) => ({

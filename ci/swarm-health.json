@@ -1,7 +1,15 @@
 {
   "consecutivePasses": 0,
-  "lastRun": null,
-  "lastStatus": "unknown",
+  "lastRun": "2026-04-14T06:21:00.236Z",
+  "lastStatus": "fail",
   "longestStreak": 0,
-  "history": []
+  "history": [
+    {
+      "timestamp": "2026-04-14T06:21:00.236Z",
+      "status": "fail",
+      "sha": "49a4c6a00275dada695e822de79f626a831a54f7",
+      "runId": "24384178402",
+      "consecutivePasses": 0
+    }
+  ]
 }

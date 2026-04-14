@@ -1,15 +1,25 @@
 // ============================================================================
 // Soul Loader - 文件化人格加载
 // ============================================================================
-// 支持 .code-agent/PROFILE.md（项目级）和 ~/.code-agent/SOUL.md（用户级）
-// 优先级: 项目 PROFILE.md > 用户 SOUL.md > 内置 IDENTITY_PROMPT
+// 组合语义（对标 Hermes 四层记忆的 identity 层）：
+//   - ~/.code-agent/SOUL.md（用户级）替换内置 IDENTITY 核心自我块
+//   - <workingDir>/.code-agent/PROFILE.md（项目级）作为 project extension 追加
+//   - 工程层规则（CONCISENESS / TASK / TOOL / MEMORY）始终保留，不被覆盖
+// 首次运行若都不存在，记录一次提示引导用户运行 `code-agent init-soul`。
 // ============================================================================
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';
-import { IDENTITY_PROMPT } from './identity';
+import {
+  IDENTITY,
+  IDENTITY_PROMPT,
+  CONCISENESS_RULES,
+  TASK_GUIDELINES,
+  TOOL_DISCIPLINE,
+  MEMORY_SYSTEM,
+} from './identity';
 
 const logger = createLogger('SoulLoader');
 
@@ -21,39 +31,64 @@ let cachedSoul: string | null = null;
 let currentWorkingDirectory: string | undefined;
 const watchers: fs.FSWatcher[] = [];
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let hasLoggedFirstTimeHint = false;
 
 // ----------------------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------------------
 
 /**
- * 加载人格定义，按优先级查找
+ * 加载人格定义 — 组合 SOUL.md / PROFILE.md / 内置工程层
  */
 export function loadSoul(workingDirectory?: string): string {
   currentWorkingDirectory = workingDirectory;
 
-  // 1. 项目级 PROFILE.md
+  // 用户级 SOUL.md — 替换 IDENTITY 核心自我块
+  const soulPath = path.join(getUserConfigDir(), 'SOUL.md');
+  const soulContent = readFileIfExists(soulPath);
+
+  // 项目级 PROFILE.md — 作为项目扩展追加
+  let profileContent: string | null = null;
+  let profilePath: string | null = null;
   if (workingDirectory) {
-    const profilePath = path.join(getProjectConfigDir(workingDirectory), 'PROFILE.md');
-    const content = readFileIfExists(profilePath);
-    if (content) {
-      logger.info('Loaded project PROFILE.md', { path: profilePath });
-      cachedSoul = content;
-      return cachedSoul;
-    }
+    profilePath = path.join(getProjectConfigDir(workingDirectory), 'PROFILE.md');
+    profileContent = readFileIfExists(profilePath);
   }
 
-  // 2. 用户级 SOUL.md
-  const soulPath = path.join(getUserConfigDir(), 'SOUL.md');
-  const content = readFileIfExists(soulPath);
-  if (content) {
-    logger.info('Loaded user SOUL.md', { path: soulPath });
-    cachedSoul = content;
+  // 快路径：完全使用内置默认
+  if (!soulContent && !profileContent) {
+    if (!hasLoggedFirstTimeHint) {
+      logger.info(
+        'No SOUL.md / PROFILE.md found — using built-in identity. ' +
+          'Run `code-agent init-soul` to customize Agent identity.',
+      );
+      hasLoggedFirstTimeHint = true;
+    }
+    cachedSoul = IDENTITY_PROMPT;
     return cachedSoul;
   }
 
-  // 3. 内置默认
-  cachedSoul = IDENTITY_PROMPT;
+  // 组合：核心身份（SOUL 或 IDENTITY）+ 工程层 + 可选 PROFILE 扩展
+  const coreIdentity = soulContent ?? IDENTITY;
+  const parts = [
+    coreIdentity,
+    CONCISENESS_RULES,
+    TASK_GUIDELINES,
+    TOOL_DISCIPLINE,
+    MEMORY_SYSTEM,
+  ];
+  if (profileContent) {
+    parts.push(`<project_profile>\n${profileContent}\n</project_profile>`);
+  }
+
+  if (soulContent) {
+    logger.info('Loaded user SOUL.md', { path: soulPath });
+  }
+  if (profileContent && profilePath) {
+    logger.info('Loaded project PROFILE.md', { path: profilePath });
+  }
+
+  cachedSoul = parts.join('\n\n').trim();
   return cachedSoul;
 }
 

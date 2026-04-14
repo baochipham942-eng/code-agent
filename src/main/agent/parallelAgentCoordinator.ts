@@ -170,6 +170,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private modelConfig?: ModelConfig;
   private toolResolver?: ToolResolver;
   private toolContext?: ToolContext;
+  /** Fire-and-forget persist 的串行链，保证 delete/drain 能排干所有 in-flight save */
+  private pendingPersist: Promise<void> = Promise.resolve();
 
   constructor(config: Partial<CoordinatorConfig> = {}) {
     super();
@@ -246,11 +248,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
       ? this.aggregateResults(results)
       : results;
 
-    // 全部成功则清掉 checkpoint（对称 autoAgentCoordinator 的 deleteCheckpoint）
+    // 全部成功则清掉 checkpoint（对称 autoAgentCoordinator 的 deleteCheckpoint），
+    // 失败则排干 in-flight save，保证快照确实落到盘上再返回
     if (errors.length === 0) {
-      void this.deleteCheckpointIfPresent();
+      await this.deleteCheckpointIfPresent();
     } else {
       this.schedulePersist();
+      await this.drainPersist();
     }
 
     this.emit('all:complete', { results: aggregatedResults, errors });
@@ -637,6 +641,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
       throw new Error(`Task is still running: ${taskId}`);
     }
 
+    // 显式重试必须绕过 checkpoint cache-skip，否则上一轮的成功结果会短路
+    this.completedTasks.delete(taskId);
+
     return this.executeTask({ ...task });
   }
 
@@ -744,7 +751,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
     });
 
     // Convert scheduler result to coordinator result format
-    return this.convertSchedulerResult(result);
+    const converted = this.convertSchedulerResult(result);
+    await this.drainPersist();
+    return converted;
   }
 
   /**
@@ -929,15 +938,27 @@ export class ParallelAgentCoordinator extends EventEmitter {
   }
 
   /**
-   * Fire-and-forget 的 persist 封装。在节点完成点调用，不 await，
-   * 失败走 persistCheckpoint 内部的 warn。
+   * Fire-and-forget 的 persist 封装。在节点完成点调用，不 await。
+   *
+   * 串行到 pendingPersist 链上（而不是裸 void），这样 drainPersist 能在
+   * executeParallel 收尾时排干所有 in-flight save，避免 save 与 delete
+   * 竞争导致"全部成功后 checkpoint 仍然存在"。
    */
   private schedulePersist(): void {
     const sessionId = this.toolContext?.sessionId;
     if (!sessionId) {
       return;
     }
-    void this.persistCheckpoint(sessionId);
+    this.pendingPersist = this.pendingPersist
+      .catch(() => undefined)
+      .then(() => this.persistCheckpoint(sessionId));
+  }
+
+  /**
+   * 等排队的 schedulePersist 全部落盘后再继续。
+   */
+  private async drainPersist(): Promise<void> {
+    await this.pendingPersist.catch(() => undefined);
   }
 
   private async deleteCheckpointIfPresent(): Promise<void> {
@@ -945,6 +966,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (!sessionId) {
       return;
     }
+    await this.drainPersist();
     await this.deleteCheckpoint(sessionId);
   }
 }

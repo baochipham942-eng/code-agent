@@ -57,6 +57,15 @@ jobs:
           npm ci --ignore-scripts
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
+      - name: Install better-sqlite3 native binding
+        # --ignore-scripts 跳过了 better-sqlite3 的 install hook (prebuild-install)，
+        # CI 上 Database 初始化会因找不到 .node 文件 fallback 到 in-memory，
+        # 导致 swarm-trace / pending_approvals 持久化路径在 CI 测的不是真实路径。
+        # 用 prebuild-install 从 GitHub release 下 Node 20 ABI (NODE_MODULE_VERSION 115)
+        # 的 linux x64 预编译 binary，跳过 node-gyp 编译链路。
+        working-directory: node_modules/better-sqlite3
+        run: ../.bin/prebuild-install || true
+
       - name: Run swarm smoke suite
         run: npm run test:swarm:smoke -- --retry=1
 
@@ -99,6 +108,12 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
+
+      - name: Install better-sqlite3 native binding
+        # 同 smoke job：用 prebuild-install 拉 linux x64 预编译 binary，
+        # 让 CI 上 Database 真正初始化而不是 fallback in-memory
+        working-directory: node_modules/better-sqlite3
+        run: ../.bin/prebuild-install || true
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

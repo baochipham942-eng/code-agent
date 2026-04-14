@@ -103,7 +103,7 @@ export {
   type CoordinationResult as AutoCoordinationResult,
 } from './autoAgentCoordinator';
 
-// Resource Lock Manager
+// Resource Lock Manager (moved to services/infra; re-export preserved for back-compat)
 export {
   getResourceLockManager,
   ResourceLockManager,
@@ -111,7 +111,7 @@ export {
   type LockAcquisitionResult,
   type ResourceConflict,
   ConflictResolution,
-} from './resourceLockManager';
+} from '../services/infra/resourceLockManager';
 
 // Progress Aggregator
 export {

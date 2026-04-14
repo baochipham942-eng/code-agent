@@ -10,6 +10,7 @@ import type {
   SwarmLaunchTaskPreview,
 } from '../../shared/contract/swarm';
 import { getEventBus } from '../protocol/events/bus';
+import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 
 /**
  * ADR-008 Phase 2: 通过 EventBus 发布 swarm launch 事件
@@ -36,9 +37,76 @@ export class SwarmLaunchApprovalGate {
   /** Resolvers for in-flight waitForDecision promises (event-driven wake-up) */
   private pendingResolvers = new Map<string, (result: SwarmLaunchApprovalResult) => void>();
   private readonly approvalTimeoutMs: number;
+  /**
+   * 持久化仓库（ADR-010 #2）。null 表示 DB 未就绪 / 测试不需要持久化。
+   */
+  private persistRepo: PendingApprovalRepository | null = null;
 
   constructor(options?: { approvalTimeoutMs?: number }) {
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? 120_000;
+  }
+
+  /**
+   * 注入持久化 repo，并 hydrate 上次进程崩溃残留的 launch pending 行。
+   * 残留行被打成 'orphaned' 状态写回内存 Map（不挂 resolver），方便
+   * coordinator / 监控 UI 看到上一进程未决的 launch 请求。
+   */
+  attachPersistence(repo: PendingApprovalRepository, now: number = Date.now()): number {
+    this.persistRepo = repo;
+    let hydrated = 0;
+    try {
+      const orphans = repo.markAllPendingAsOrphaned(now);
+      for (const row of orphans) {
+        if (row.kind !== 'launch') continue;
+        try {
+          const request = JSON.parse(row.payloadJson) as SwarmLaunchRequest;
+          request.status = 'rejected';
+          request.feedback = row.feedback ?? 'Orphaned by process restart';
+          request.resolvedAt = row.resolvedAt ?? now;
+          this.requests.set(request.id, request);
+          hydrated += 1;
+        } catch (err) {
+          logger.warn(`Failed to hydrate orphaned launch ${row.id}`, err);
+        }
+      }
+      if (hydrated > 0) {
+        logger.warn(`Hydrated ${hydrated} orphaned swarm launch approval(s) from previous process`);
+      }
+    } catch (err) {
+      logger.error('attachPersistence: failed to hydrate orphaned launches', err);
+    }
+    return hydrated;
+  }
+
+  private safePersistInsert(request: SwarmLaunchRequest): void {
+    if (!this.persistRepo) return;
+    try {
+      this.persistRepo.insert({
+        id: request.id,
+        kind: 'launch',
+        agentId: null,
+        agentName: null,
+        coordinatorId: null,
+        payload: request,
+        submittedAt: request.requestedAt,
+      });
+    } catch (err) {
+      logger.warn(`PendingApproval insert failed for ${request.id}`, err);
+    }
+  }
+
+  private safePersistResolve(
+    id: string,
+    status: 'approved' | 'rejected',
+    feedback: string | null,
+    resolvedAt: number,
+  ): void {
+    if (!this.persistRepo) return;
+    try {
+      this.persistRepo.resolve({ id, status, feedback, resolvedAt });
+    } catch (err) {
+      logger.warn(`PendingApproval resolve failed for ${id}`, err);
+    }
   }
 
   async requestApproval(params: {
@@ -61,6 +129,7 @@ export class SwarmLaunchApprovalGate {
     }
 
     this.requests.set(request.id, request);
+    this.safePersistInsert(request);
     publishSwarmEvent({
       type: 'swarm:launch:requested',
       timestamp: request.requestedAt,
@@ -78,6 +147,7 @@ export class SwarmLaunchApprovalGate {
     request.status = 'approved';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
+    this.safePersistResolve(requestId, 'approved', feedback ?? null, request.resolvedAt);
     publishSwarmEvent({
       type: 'swarm:launch:approved',
       timestamp: request.resolvedAt,
@@ -106,6 +176,7 @@ export class SwarmLaunchApprovalGate {
     request.status = 'rejected';
     request.feedback = feedback;
     request.resolvedAt = Date.now();
+    this.safePersistResolve(requestId, 'rejected', feedback, request.resolvedAt);
     publishSwarmEvent({
       type: 'swarm:launch:rejected',
       timestamp: request.resolvedAt,
@@ -135,6 +206,7 @@ export class SwarmLaunchApprovalGate {
     if (this.pendingResolvers.size === 0) return 0;
     const feedback = `Cancelled: ${reason}`;
     let cancelled = 0;
+    const now = Date.now();
     const entries = Array.from(this.pendingResolvers.entries());
     this.pendingResolvers.clear();
     for (const [requestId, resolver] of entries) {
@@ -142,8 +214,9 @@ export class SwarmLaunchApprovalGate {
       if (request && request.status === 'pending') {
         request.status = 'rejected';
         request.feedback = feedback;
-        request.resolvedAt = Date.now();
+        request.resolvedAt = now;
       }
+      this.safePersistResolve(requestId, 'rejected', feedback, now);
       try {
         resolver({
           approved: false,

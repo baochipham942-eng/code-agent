@@ -69,6 +69,7 @@ import {
   CaptureRepository,
   ExperimentRepository,
   SwarmTraceRepository,
+  PendingApprovalRepository,
 } from './repositories';
 
 // ----------------------------------------------------------------------------
@@ -91,6 +92,7 @@ export class DatabaseService {
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
   private swarmTraceRepo!: SwarmTraceRepository;
+  private pendingApprovalRepo!: PendingApprovalRepository;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -196,6 +198,7 @@ export class DatabaseService {
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
       this.swarmTraceRepo = new SwarmTraceRepository(this.db);
+      this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -857,6 +860,23 @@ export class DatabaseService {
         FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
       )
     `);
+
+    // pending_approvals - plan/launch gate 待决请求持久化（ADR-010 #2）
+    // 一张表统一两类 gate，kind 列区分；payload_json 用于 hydrate 回填内存 Map
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_approvals (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        agent_id TEXT,
+        agent_name TEXT,
+        coordinator_id TEXT,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        submitted_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        feedback TEXT
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -947,6 +967,10 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_runs_status ON swarm_runs(status)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_agents_run ON swarm_run_agents(run_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_events_run_seq ON swarm_run_events(run_id, seq)`);
+
+    // Pending approvals indexes（ADR-010 #2）
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_kind_status ON pending_approvals(kind, status)`);
   }
 
   // --------------------------------------------------------------------------
@@ -1123,6 +1147,16 @@ export class DatabaseService {
   getSwarmTraceRepo(): SwarmTraceRepository {
     this.ensureDb();
     return this.swarmTraceRepo;
+  }
+
+  // --- PendingApprovalRepository ---
+  /**
+   * 暴露 pending_approvals 仓库给 PlanApprovalGate / SwarmLaunchApprovalGate
+   * 用于 fire-and-forget 写入和启动 hydrate（ADR-010 #2）。
+   */
+  getPendingApprovalRepo(): PendingApprovalRepository {
+    this.ensureDb();
+    return this.pendingApprovalRepo;
   }
 }
 

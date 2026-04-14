@@ -176,6 +176,75 @@ const webModeWindow = new BrowserWindow();
 function registerHandlers(): void {
   let currentSessionId: string | null = null;
 
+  // ADR-010: 注入 swarm 业务依赖到 SwarmServices 注册表（web 模式 wiring）
+  // 此前只有 src/main/index.ts (Tauri 桌面入口) 调用过 registerSwarmServices，
+  // web/e2e 路径下 swarm.ipc.ts 的 handler 触发时会抛 "SwarmServices not registered"
+  // 被 try/catch 兜底返回空数据，导致 SwarmTraceHistory 等功能在 web 模式永远空。
+  try {
+    const { registerSwarmServices } = require('../main/agent/swarmServices');
+    const { getPlanApprovalGate } = require('../main/agent/planApproval');
+    const { getSwarmLaunchApprovalGate } = require('../main/agent/swarmLaunchApproval');
+    const { getParallelAgentCoordinator } = require('../main/agent/parallelAgentCoordinator');
+    const { getSpawnGuard } = require('../main/agent/spawnGuard');
+    const { getTeammateService } = require('../main/agent/teammate/teammateService');
+    const { persistAgentRun, getRecentAgentHistory } = require('../main/session/agentHistoryPersistence');
+    const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter');
+    const { getDatabase } = require('../main/services/core/databaseService');
+
+    let swarmTraceRepo: any = null;
+    let pendingApprovalRepo: any = null;
+    try {
+      const db = getDatabase();
+      if (db.isReady) {
+        swarmTraceRepo = db.getSwarmTraceRepo();
+        pendingApprovalRepo = db.getPendingApprovalRepo();
+      }
+    } catch (err) {
+      logger.warn('Repositories not ready at web bootstrap:', (err as Error).message);
+    }
+
+    const planApprovalGate = getPlanApprovalGate();
+    const launchApprovalGate = getSwarmLaunchApprovalGate();
+
+    if (pendingApprovalRepo) {
+      try {
+        const planOrphans = planApprovalGate.attachPersistence(pendingApprovalRepo);
+        const launchOrphans = launchApprovalGate.attachPersistence(pendingApprovalRepo);
+        if (planOrphans + launchOrphans > 0) {
+          logger.warn(
+            `Orphaned approvals from previous web process: ${planOrphans} plan(s) + ${launchOrphans} launch(es)`,
+          );
+        }
+      } catch (err) {
+        logger.warn('PendingApproval hydration failed (web):', (err as Error).message);
+      }
+    }
+
+    registerSwarmServices({
+      planApproval: planApprovalGate,
+      launchApproval: launchApprovalGate,
+      parallelCoordinator: getParallelAgentCoordinator(),
+      spawnGuard: getSpawnGuard(),
+      teammateService: getTeammateService(),
+      agentHistory: { persistAgentRun, getRecentAgentHistory },
+      swarmTraceRepo,
+    });
+
+    if (swarmTraceRepo) {
+      try {
+        installSwarmTraceWriter(swarmTraceRepo, {
+          getSessionId: () => currentSessionId,
+        });
+      } catch (err) {
+        logger.warn('SwarmTraceWriter install failed (web):', (err as Error).message);
+      }
+    }
+
+    logger.info('SwarmServices registered for web mode');
+  } catch (err) {
+    logger.warn('SwarmServices registration failed (web):', (err as Error).message);
+  }
+
   const deps: IpcDependencies = {
     getMainWindow: () => webModeWindow as any,
     getAppService: () => null, // Web mode uses HTTP API, not AppService

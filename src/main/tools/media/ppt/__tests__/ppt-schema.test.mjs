@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT Schema & Template 测试
-// 运行: npx tsx src/main/tools/network/ppt/__tests__/ppt-schema.test.mjs
+// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-schema.test.mjs
 // ============================================================================
 // 覆盖: slideSchemas 验证、layoutTemplates 预设、StructuredSlide 端到端、
 //       modelCallback fallback、normalizeSlideContent 容错

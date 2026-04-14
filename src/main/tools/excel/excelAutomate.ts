@@ -7,10 +7,10 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as path from 'path';
-import { excelGenerateTool } from '../network/excelGenerate';
+import { excelGenerateTool } from '../document/excelGenerate';
 import { executeReadXlsx } from '../modules/network/readXlsx';
 import { invokeNativeFromLegacy } from '../modules/_helpers/invokeNativeFromLegacy';
-import { xlwingsExecuteTool } from '../network/xlwingsExecute';
+import { xlwingsExecuteTool } from '../document/xlwingsExecute';
 import { executeExcelEdit } from './excelEdit';
 import { executePythonScript } from '../utils/pythonBridge';
 

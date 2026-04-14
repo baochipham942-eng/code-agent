@@ -6,7 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 
 // Excel 样式主题
 type ExcelTheme = 'professional' | 'colorful' | 'minimal' | 'dark' | 'financial';

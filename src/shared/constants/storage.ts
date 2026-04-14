@@ -54,6 +54,16 @@ export const HISTORY = {
   MAX_TOKEN_HISTORY: 1000,
 } as const;
 
+/** 协调器 checkpoint 持久化 */
+export const COORDINATION_CHECKPOINTS = {
+  /** AutoAgentCoordinator checkpoint 目录名（相对 getUserConfigDir()） */
+  AUTO_DIR: 'coordination-checkpoints',
+  /** ParallelAgentCoordinator checkpoint 目录名（相对 getUserConfigDir()） */
+  PARALLEL_DIR: 'parallel-coordination-checkpoints',
+  /** 当前快照 schema 版本，读入时用于向前兼容判断 */
+  SCHEMA_VERSION: 1,
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */

@@ -2,7 +2,7 @@
 // Skill Meta Tool - Agent Skills Standard
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type {
   ParsedSkill,
   SkillMessage,
@@ -10,7 +10,7 @@ import type {
   SkillContextModifier,
 } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
-import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
@@ -18,7 +18,7 @@ import { createLogger } from '../../services/infra/logger';
 import {
   SKILL_DESCRIPTION,
   SKILL_INPUT_SCHEMA,
-} from '../modules/skill/skill.schema';
+} from '../../tools/modules/skill/skill.schema';
 
 const logger = createLogger('SkillMetaTool');
 

@@ -486,10 +486,17 @@ function appendMessage(
     return messages;
   }
 
+  const id = `msg-${event.timestamp}-${event.data.message.from}-${event.data.message.to}`;
+  // 幂等：EventBus 重放同一条消息时按 id 去重，避免 UI 出现两条重复条目。
+  // 见 ADR-010 #6。
+  if (messages.some((m) => m.id === id)) {
+    return messages;
+  }
+
   return [
     ...messages,
     {
-      id: `msg-${event.timestamp}-${event.data.message.from}-${event.data.message.to}`,
+      id,
       from: event.data.message.from,
       to: event.data.message.to,
       content: event.data.message.content,

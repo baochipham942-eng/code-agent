@@ -57,10 +57,11 @@ export default defineConfig({
         return false;
       },
       output: {
-        // 项目不直接 import prismjs（用 react-syntax-highlighter / shiki），
-        // 之前声明 'vendor-prism' 会生成 50 字节空 chunk 触发 "empty chunk" warning。
+        // 注意：声明的 vendor 必须是项目实际有 import 的包，否则会生成空 chunk
+        // 警告 "Generated an empty chunk: xxx"。已踩过 vendor-prism (项目用
+        // react-syntax-highlighter 不直接 import prismjs) 和 vendor-react
+        // (linux/darwin 平台 react 被 inline 进主 bundle 行为不一致) 两个坑。
         manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
           'vendor-zustand': ['zustand'],
           'vendor-markdown': ['react-markdown', 'remark-gfm'],
           'vendor-reactflow': ['@xyflow/react'],

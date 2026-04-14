@@ -231,14 +231,8 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(state.completedRuns).toHaveLength(1);
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // `appendEventLog` 无条件 push timeline entry，没有按 `evt-${timestamp}-${type}`
-  // id 去重。eventLog 会因为 EventBus 重放出现视觉上的重复条目。80 条上限会掩盖
-  // 问题但不根治。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:221-227。
-  it.skip('BUG duplicate: 同一事件重复投递不应在 eventLog 产生两条 timeline 记录', () => {
+  // ADR-010 #6 固定：appendEventLog 按 entry.id 去重（swarmStore.ts:221-231）。
+  it('同一事件重复投递不应在 eventLog 产生两条 timeline 记录', () => {
     const store = useSwarmStore.getState();
     const e = evt('swarm:agent:added', {
       agentState: agent('a1', { status: 'ready' }),

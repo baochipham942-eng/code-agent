@@ -51,12 +51,11 @@ jobs:
 
       - name: Install dependencies
         # npm bug #4828：lockfile 在 macOS 上生成，只记录了 darwin-arm64 的 rollup
-        # native binary，npm ci/install 都不会重新解析 optionalDependencies，
-        # 在 linux runner 上跑 vitest 时找不到 @rollup/rollup-linux-x64-gnu。
-        # 官方错误信息推荐的 workaround：删 lockfile 后 npm install。
+        # native binary。先 npm ci 用 lockfile 装其他依赖，再单独装缺失的 linux
+        # platform binary。--no-save --no-package-lock 确保 lockfile 不被改。
         run: |
-          rm -f package-lock.json
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
+          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Run swarm smoke suite
         run: npm run test:swarm:smoke -- --retry=1
@@ -96,10 +95,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # 同 smoke job：删 lockfile 让 npm 重新解析 optional binaries（npm bug #4828）
+        # 同 smoke job：lockfile 严格 + 单独 patch 缺失的 linux platform binary
         run: |
-          rm -f package-lock.json
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
+          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -158,10 +157,8 @@ jobs:
           cache: 'npm'
 
       - name: Install minimal deps for tsx
-        # 同 smoke/full job：删 lockfile 绕过 npm bug #4828
-        run: |
-          rm -f package-lock.json
-          npm install --ignore-scripts --no-audit --no-fund
+        # health metric job 不需要 rollup native binary，普通 npm ci 即可
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Record swarm health
         run: |

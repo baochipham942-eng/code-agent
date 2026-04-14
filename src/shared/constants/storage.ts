@@ -64,6 +64,18 @@ export const COORDINATION_CHECKPOINTS = {
   SCHEMA_VERSION: 1,
 } as const;
 
+/** Swarm Trace 持久化（ADR-010 #5） */
+export const SWARM_TRACE = {
+  /** 单次 list 默认返回 run 数量上限 */
+  DEFAULT_LIST_LIMIT: 50,
+  /** list 接口允许的最大 run 数量 */
+  MAX_LIST_LIMIT: 200,
+  /** 单个 run 最多保留的 timeline 事件数（避免极端长 run 撑爆表） */
+  MAX_EVENTS_PER_RUN: 2000,
+  /** 单条事件 payload_json 序列化后的字节上限（超过则截断） */
+  MAX_EVENT_PAYLOAD_BYTES: 8 * 1024,
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */

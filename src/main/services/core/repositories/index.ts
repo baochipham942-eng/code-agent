@@ -7,3 +7,10 @@ export { MemoryRepository, type MemoryRecord, type RelationQueryOptions, type En
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';
 export { ExperimentRepository } from './ExperimentRepository';
+export {
+  SwarmTraceRepository,
+  type StartRunInput,
+  type CloseRunInput,
+  type UpsertAgentInput,
+  type AppendEventInput,
+} from './SwarmTraceRepository';

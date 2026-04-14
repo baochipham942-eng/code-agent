@@ -10,7 +10,7 @@ import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { getConfigService } from '../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 
 const logger = createLogger('ScreenshotPage');
 

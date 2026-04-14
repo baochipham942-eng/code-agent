@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT D3 (Content Quality) & D4 (Visual Design) 改进测试
-// 运行: npx tsx src/main/tools/network/ppt/__tests__/ppt-d3d4.test.mjs
+// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-d3d4.test.mjs
 // ============================================================================
 
 import { createRequire } from 'module';

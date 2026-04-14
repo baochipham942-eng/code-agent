@@ -176,7 +176,7 @@ export function registerPocTools(registry: ToolRegistry): void {
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./network/webSearchPoc')).webSearchPocModule,
+    async () => (await import('./web/webSearchPoc')).webSearchPocModule,
   );
 
   // Glob — readOnly fs 查找，最小实现直接用 glob 库
@@ -242,7 +242,7 @@ export function registerPocTools(registry: ToolRegistry): void {
       readOnly: true,
       allowInPlanMode: true,
     },
-    async () => (await import('./network/webFetchPoc')).webFetchPocModule,
+    async () => (await import('./web/webFetchPoc')).webFetchPocModule,
   );
 
   // Write — DRY RUN ONLY，验证副作用类工具如何走 4 参数签名而不实际改文件

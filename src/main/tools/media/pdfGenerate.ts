@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';
 import { createLogger } from '../../services/infra/logger';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 
 const logger = createLogger('PdfGenerate');
 

@@ -29,7 +29,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { atomicWriteFile } from '../../utils/atomicWrite';
-import { getResourceLockManager } from '../../../agent/resourceLockManager';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { writeSchema as schema } from './write.schema';
 

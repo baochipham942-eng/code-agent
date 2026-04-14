@@ -3,8 +3,8 @@
 // Phase 2: Agent lifecycle control
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getSpawnGuard } from '../../agent/spawnGuard';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
+import { getSpawnGuard } from '../spawnGuard';
 
 export const waitAgentTool: Tool = {
   name: 'wait_agent',

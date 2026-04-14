@@ -238,6 +238,34 @@ class SpawnGuard {
   }
 
   /**
+   * Cancel all running agents and release their slots.
+   * ADR-010 #6：swarm 整体取消时调用，保证 spawnGuard 配额立即释放、
+   * 在途 LLM 流的 AbortController 被触发。
+   *
+   * 返回被取消的 agent 数量。
+   */
+  cancelAll(reason: string = 'cancelled'): number {
+    let cancelled = 0;
+    for (const [id, agent] of this.agents) {
+      if (agent.status === 'running') {
+        try {
+          agent.abortController.abort(reason);
+        } catch (err) {
+          logger.warn(`[${id}] Abort controller threw during cancelAll`, err);
+        }
+        agent.status = 'cancelled';
+        agent.completedAt = Date.now();
+        agent.error = agent.error ?? reason;
+        cancelled += 1;
+      }
+    }
+    if (cancelled > 0) {
+      logger.info(`cancelAll: cancelled ${cancelled} running agents (${reason})`);
+    }
+    return cancelled;
+  }
+
+  /**
    * Wait for specific agents to complete, with timeout.
    * Returns a map of agentId → final status.
    */

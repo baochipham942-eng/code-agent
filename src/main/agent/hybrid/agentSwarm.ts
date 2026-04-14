@@ -23,6 +23,9 @@ import { createLogger } from '../../services/infra/logger';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
 import { getSwarmEventEmitter, type SwarmEventEmitter } from '../swarmEventPublisher';
+import { getPlanApprovalGate } from '../planApproval';
+import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
+import { getSpawnGuard } from '../spawnGuard';
 import { getTeammateService } from '../teammate/teammateService';
 import { getTaskListManager } from '../taskList';
 import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentWorkerManager';
@@ -252,10 +255,36 @@ export class AgentSwarm {
 
   /**
    * 取消执行
+   *
+   * ADR-010 #6：确保取消后系统整体一致性：
+   *   1) cancelRemaining 触发每个 running agent 的 AbortController（在途 LLM 流 abort）
+   *   2) PlanApprovalGate.cancelAll 排干 pendingResolvers（高风险 plan 审批）
+   *   3) SwarmLaunchApprovalGate.cancelAll 排干 pendingResolvers（启动 launch 审批）
+   *   4) SpawnGuard.cancelAll 释放 subagent 配额 + 取消底层 AbortController
+   *   5) 派发 swarm:cancelled 事件，renderer 翻转 isRunning
    */
   cancel(): void {
     this.cancelled = true;
     this.cancelRemaining();
+
+    // ADR-010 #6: 排干各 gate 的 pendingResolvers，让 await 中的 submitForApproval /
+    // requestApproval / subagent 执行立即 settle，释放 spawnGuard 配额，避免挂起。
+    try {
+      getPlanApprovalGate().cancelAll('swarm_cancelled');
+    } catch (err) {
+      logger.warn('[AgentSwarm] Failed to drain plan approval gate on cancel', err);
+    }
+    try {
+      getSwarmLaunchApprovalGate().cancelAll('swarm_cancelled');
+    } catch (err) {
+      logger.warn('[AgentSwarm] Failed to drain launch approval gate on cancel', err);
+    }
+    try {
+      getSpawnGuard().cancelAll('swarm_cancelled');
+    } catch (err) {
+      logger.warn('[AgentSwarm] Failed to drain spawnGuard on cancel', err);
+    }
+
     this.eventEmitter.cancelled();
   }
 

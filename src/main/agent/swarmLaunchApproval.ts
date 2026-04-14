@@ -126,6 +126,55 @@ export class SwarmLaunchApprovalGate {
     return true;
   }
 
+  /**
+   * Cancel all pending launch approvals with a common reason.
+   * ADR-010 #6：swarm 取消或进程 shutdown 时排干 pendingResolvers。
+   * 返回被取消的 request 数量。
+   */
+  cancelAll(reason: string): number {
+    if (this.pendingResolvers.size === 0) return 0;
+    const feedback = `Cancelled: ${reason}`;
+    let cancelled = 0;
+    const entries = Array.from(this.pendingResolvers.entries());
+    this.pendingResolvers.clear();
+    for (const [requestId, resolver] of entries) {
+      const request = this.requests.get(requestId);
+      if (request && request.status === 'pending') {
+        request.status = 'rejected';
+        request.feedback = feedback;
+        request.resolvedAt = Date.now();
+      }
+      try {
+        resolver({
+          approved: false,
+          feedback,
+          autoApproved: true,
+          request: request
+            ? { ...request, tasks: request.tasks.map((task) => ({ ...task })) }
+            : {
+                id: requestId,
+                status: 'rejected',
+                requestedAt: 0,
+                summary: '',
+                agentCount: 0,
+                dependencyCount: 0,
+                writeAgentCount: 0,
+                tasks: [],
+              },
+        });
+        cancelled += 1;
+      } catch (err) {
+        logger.warn(`Failed to resolve cancelled launch ${requestId}`, err);
+      }
+    }
+    logger.info(`Cancelled ${cancelled} pending swarm launch approvals (${reason})`);
+    return cancelled;
+  }
+
+  getPendingResolverCount(): number {
+    return this.pendingResolvers.size;
+  }
+
   getRequest(requestId: string): SwarmLaunchRequest | undefined {
     const request = this.requests.get(requestId);
     return request ? { ...request, tasks: request.tasks.map((task) => ({ ...task })) } : undefined;

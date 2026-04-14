@@ -186,6 +186,38 @@ export class PlanApprovalGate {
     return true;
   }
 
+  /**
+   * Cancel all pending plans with a common reason.
+   * ADR-010 #6：swarm 取消或进程 shutdown 时排干 pendingResolvers，
+   * 避免挂起的 submitForApproval promise 永远卡住等待 coordinator 响应。
+   *
+   * 返回被取消的 plan 数量。
+   */
+  cancelAll(reason: string): number {
+    if (this.pendingResolvers.size === 0) return 0;
+    const feedback = `Cancelled: ${reason}`;
+    let cancelled = 0;
+    // 先快照 resolver list 再迭代，防止 resolver 触发 setter 改动原 Map
+    const entries = Array.from(this.pendingResolvers.entries());
+    this.pendingResolvers.clear();
+    for (const [planId, resolver] of entries) {
+      const plan = this.pendingPlans.get(planId);
+      if (plan && plan.status === 'pending') {
+        plan.status = 'rejected';
+        plan.feedback = feedback;
+        plan.resolvedAt = Date.now();
+      }
+      try {
+        resolver({ approved: false, feedback, autoApproved: true });
+        cancelled += 1;
+      } catch (err) {
+        logger.warn(`Failed to resolve cancelled plan ${planId}`, err);
+      }
+    }
+    logger.info(`Cancelled ${cancelled} pending plan approvals (${reason})`);
+    return cancelled;
+  }
+
   // --------------------------------------------------------------------------
   // Query
   // --------------------------------------------------------------------------
@@ -193,6 +225,10 @@ export class PlanApprovalGate {
   getPendingPlans(): PlanSubmission[] {
     return Array.from(this.pendingPlans.values())
       .filter(p => p.status === 'pending');
+  }
+
+  getPendingResolverCount(): number {
+    return this.pendingResolvers.size;
   }
 
   getPlan(planId: string): PlanSubmission | undefined {

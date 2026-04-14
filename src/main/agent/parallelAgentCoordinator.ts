@@ -741,6 +741,27 @@ export class ParallelAgentCoordinator extends EventEmitter {
       throw new Error(`Invalid DAG: ${validation.errors.join(', ')}`);
     }
 
+    // Checkpoint restore: 把已完成节点预喂给 DAG，scheduler 主循环走 getReadyTasks
+    // 自然跳过 terminal 节点。事件转发在 scheduler.execute 内 forwardDAGEvents 之后
+    // 才接管，预喂阶段触发的 task:completed 事件不会外泄
+    for (const task of tasks) {
+      const cached = this.completedTasks.get(task.id);
+      if (!cached?.success) continue;
+      dag.completeTask(task.id, {
+        text: cached.output,
+        toolsUsed: cached.toolsUsed,
+        iterations: cached.iterations,
+      });
+      // completeTask 把 metadata.completedAt 写成 now、duration 留空。
+      // 用 cached 的原始时间戳覆盖回去，让 convertSchedulerResult 还原历史值
+      const dagTask = dag.getTask(task.id);
+      if (dagTask) {
+        dagTask.metadata.startedAt = cached.startTime;
+        dagTask.metadata.completedAt = cached.endTime;
+        dagTask.metadata.duration = cached.duration;
+      }
+    }
+
     // Get scheduler and execute
     const scheduler = getDAGScheduler();
     const result = await scheduler.execute(dag, {
@@ -751,7 +772,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     });
 
     // Convert scheduler result to coordinator result format
-    const converted = this.convertSchedulerResult(result);
+    const converted = await this.convertSchedulerResult(result);
     await this.drainPersist();
     return converted;
   }
@@ -759,7 +780,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   /**
    * Convert DAG scheduler result to coordinator result format
    */
-  private convertSchedulerResult(result: SchedulerResult): ParallelExecutionResult {
+  private async convertSchedulerResult(result: SchedulerResult): Promise<ParallelExecutionResult> {
     const dagTasks = result.dag.getAllTasks();
     const results: AgentTaskResult[] = [];
     const errors: Array<{ taskId: string; error: string }> = [];
@@ -793,7 +814,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // DAG 路径在 scheduler 内部完成后批量 save 一次（scheduler 不直接调 save）
     if (errors.length === 0) {
-      void this.deleteCheckpointIfPresent();
+      await this.deleteCheckpointIfPresent();
     } else {
       this.schedulePersist();
     }

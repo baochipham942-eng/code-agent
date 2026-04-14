@@ -408,10 +408,17 @@ function upsertPlanReview(planReviews: SwarmPlanReview[], event: SwarmEvent): Sw
   if (!event.data.plan || !event.data.agentId) return planReviews;
 
   if (event.type === 'swarm:agent:plan_review') {
+    const planId = event.data.plan.id || `plan-${event.data.agentId}-${event.timestamp}`;
+    // 幂等：已存在同 id 的 review（无论 pending 还是已 resolved）不再 push。
+    // 这同时覆盖两种场景：(a) plan_review 重放；(b) plan_approved 先到落下 fallback
+    // 记录后 plan_review 再到，不再新建 pending。见 ADR-010 #6。
+    if (planReviews.some((review) => review.id === planId)) {
+      return planReviews;
+    }
     return [
       ...planReviews,
       {
-        id: event.data.plan.id || `plan-${event.data.agentId}-${event.timestamp}`,
+        id: planId,
         agentId: event.data.agentId,
         content: event.data.plan.content,
         status: 'pending',
@@ -445,8 +452,14 @@ function upsertPlanReview(planReviews: SwarmPlanReview[], event: SwarmEvent): Sw
     }
 
     if (!resolved) {
+      const fallbackId = event.data.plan.id || `plan-${event.data.agentId}-${event.timestamp}`;
+      // 幂等：终结事件的 fallback push 也要去重。重复投递 plan_approved 时
+      // 第一次已经落下 approved 记录，第二次不应再 push 第二条。见 ADR-010 #6。
+      if (nextReviews.some((review) => review.id === fallbackId)) {
+        return nextReviews;
+      }
       nextReviews.push({
-        id: event.data.plan.id || `plan-${event.data.agentId}-${event.timestamp}`,
+        id: fallbackId,
         agentId: event.data.agentId,
         content: event.data.plan.content,
         status,

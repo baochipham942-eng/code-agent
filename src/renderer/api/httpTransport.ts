@@ -88,6 +88,9 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
   const listeners = new Map<string, Set<EventCallback>>();
   let eventSource: EventSource | null = null;
   let sseRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  // ADR-010 #6: 跟踪 backend 分配的单调 event id；重连时作为 lastEventId 传回，
+  // 让服务端 replay buffer 补发断线窗口内错过的事件。
+  let lastSeenEventId = -1;
 
   /**
    * 初始化 SSE 连接，接收后端推送事件
@@ -96,10 +99,20 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
     if (eventSource && eventSource.readyState !== EventSource.CLOSED) return;
 
     const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
-    const sseUrl = token ? `${baseUrl}/api/events?token=${encodeURIComponent(token)}` : `${baseUrl}/api/events`;
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    if (lastSeenEventId >= 0) params.set('lastEventId', String(lastSeenEventId));
+    const query = params.toString();
+    const sseUrl = query ? `${baseUrl}/api/events?${query}` : `${baseUrl}/api/events`;
     eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
+      // EventSource 从 `id:` 行解析出的 lastEventId 是字符串。broadcastSSE 用单调
+      // 递增的整数写入，这里解析并只在递增时更新，防止乱序事件回退游标。
+      const incomingId = Number.parseInt(event.lastEventId ?? '', 10);
+      if (Number.isFinite(incomingId) && incomingId > lastSeenEventId) {
+        lastSeenEventId = incomingId;
+      }
       try {
         const parsed = JSON.parse(event.data);
         const { channel, args } = parsed;

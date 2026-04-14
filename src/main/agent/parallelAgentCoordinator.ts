@@ -6,17 +6,39 @@
 // - 服务 **显式任务** 入口：LLM 调用 spawn_agent tool、swarm.ipc 的 UI swarm
 // - 输入形态：AgentTask[]（带 dependsOn/tools/priority 的 DAG 节点）
 // - 核心能力：TaskDAG + DAGScheduler 做真正的依赖图调度，SharedContext
-//   （L2 共享读写），EventEmitter 事件流
-// - 不包含：动态 agent 生成、checkpoint 持久化、L0-L3 通信层级
+//   （L2 共享读写），EventEmitter 事件流，节点级 Checkpoint 断点恢复
+// - 不包含：动态 agent 生成、L0-L3 通信层级
 //
 // 与 AutoAgentCoordinator 的关系：
 // - 两者 **零调用交集**，服务完全不同的入口路径
 // - 不会合并：输入形态差别大（DynamicAgentDefinition vs AgentTask），
-//   核心能力互不覆盖（Auto 无 DAG，Parallel 无 checkpoint），强合需引 adapter
+//   核心能力互不覆盖（Auto 无 DAG，Parallel 无 Auto 的动态生成），强合需引 adapter
+// - 在 crash-safe 这条基础能力上对称（ADR-010 item #3）：都有节点级 JSON
+//   checkpoint（目录见 COORDINATION_CHECKPOINTS.{AUTO,PARALLEL}_DIR），
+//   schema 与字段语义不同但概念对齐。对照表见
+//   docs/architecture/coordinator-checkpoint-symmetry.md
 //
+// ============================================================================
+//
+// ## 节点级 Checkpoint（断点恢复）
+//
+// 长程 swarm 执行中，主进程崩溃/kill 会导致已完成节点工作白费。每个节点
+// 完成后持久化结果，重启后 restoreCheckpoint 重建 completedTasks /
+// taskDefinitions / sharedContext，重新提交同一份 tasks 会自动跳过已成功
+// 节点（cache-skip guard 在 executeTask 入口）。
+//
+// - 存储: ~/.code-agent/parallel-coordination-checkpoints/<sessionId>.json
+// - 粒度: Task 节点级（成功与失败都入快照；只有 success 才短路，失败会重跑）
+// - 运行中任务: 不持久化 Promise，重启后凭借"不在 completedTasks"触发重调度
+// - 清理: executeParallel 全部成功后自动删除快照
+// - DAG 路径: executeWithDAG 在 convertSchedulerResult 末尾做一次批量 save，
+//   但 scheduler 是外部执行体，不支持从 completedTasks restore。DAG 路径的
+//   crash-safe 能力是增量的（记录存量、不恢复调度）
 // ============================================================================
 
 import { EventEmitter } from 'events';
+import { promises as fsPromises } from 'fs';
+import * as path from 'path';
 import type { ModelConfig } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
@@ -25,7 +47,8 @@ import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
-import { AGENT_TIMEOUTS } from '../../shared/constants';
+import { AGENT_TIMEOUTS, COORDINATION_CHECKPOINTS } from '../../shared/constants';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('ParallelAgentCoordinator');
 
@@ -92,6 +115,36 @@ export interface CoordinatorConfig {
   taskTimeout: number;
   enableSharedContext: boolean;
   aggregateResults: boolean;
+}
+
+/**
+ * Checkpoint schema for ParallelAgentCoordinator.
+ *
+ * Map 字段序列化为 [key, value] entries 数组，保持与 JSON round-trip 对齐。
+ * 未知字段在 restore 时忽略（向前兼容），不认识的 version 视为 stale 丢弃。
+ */
+interface ParallelCheckpoint {
+  version: number;
+  sessionId: string;
+  createdAt: number;
+  updatedAt: number;
+  taskDefinitions: Array<[string, AgentTask]>;
+  completedTasks: Array<[string, AgentTaskResult]>;
+  runningTaskIds: string[];
+  sharedContext: {
+    findings: Record<string, unknown>;
+    files: Record<string, string>;
+    decisions: Record<string, string>;
+    errors: string[];
+  };
+}
+
+function getParallelCheckpointPath(sessionId: string): string {
+  return path.join(
+    getUserConfigDir(),
+    COORDINATION_CHECKPOINTS.PARALLEL_DIR,
+    `${sessionId}.json`
+  );
 }
 
 const DEFAULT_CONFIG: CoordinatorConfig = {
@@ -193,6 +246,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
       ? this.aggregateResults(results)
       : results;
 
+    // 全部成功则清掉 checkpoint（对称 autoAgentCoordinator 的 deleteCheckpoint）
+    if (errors.length === 0) {
+      void this.deleteCheckpointIfPresent();
+    } else {
+      this.schedulePersist();
+    }
+
     this.emit('all:complete', { results: aggregatedResults, errors });
 
     return {
@@ -263,6 +323,15 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     if (!modelConfig || !toolResolver || !toolContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
+    }
+
+    // Checkpoint hit: 成功节点短路，不重新执行（对称 autoAgentCoordinator）
+    const cached = this.completedTasks.get(task.id);
+    if (cached && cached.success) {
+      logger.info(`Checkpoint hit, skipping parallel task: ${task.id}`);
+      this.emit('task:start', { taskId: task.id, role: task.role });
+      this.emit('task:complete', { taskId: task.id, result: cached });
+      return cached;
     }
 
     const startTime = Date.now();
@@ -341,6 +410,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
       this.abortControllers.delete(task.id);
       this.runningTasks.delete(task.id);
 
+      this.schedulePersist();
+
       return taskResult;
     } catch (error) {
       const endTime = Date.now();
@@ -363,6 +434,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
         duration: endTime - startTime,
       };
       this.completedTasks.set(task.id, failedResult);
+
+      this.schedulePersist();
 
       return failedResult;
     }
@@ -709,6 +782,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
       }
     }
 
+    // DAG 路径在 scheduler 内部完成后批量 save 一次（scheduler 不直接调 save）
+    if (errors.length === 0) {
+      void this.deleteCheckpointIfPresent();
+    } else {
+      this.schedulePersist();
+    }
+
     // Aggregate results
     const aggregatedResults = this.config.aggregateResults
       ? this.aggregateResults(results)
@@ -721,6 +801,151 @@ export class ParallelAgentCoordinator extends EventEmitter {
       parallelism: result.maxParallelism,
       errors,
     };
+  }
+
+  // ============================================================================
+  // Checkpoint 持久化（ADR-010 item #3）
+  // ============================================================================
+
+  /**
+   * 落盘当前 coordinator 状态到 JSON 快照。
+   *
+   * 存储路径: ~/.code-agent/parallel-coordination-checkpoints/<sessionId>.json
+   *
+   * - Map 字段序列化成 entries 数组
+   * - Promise / AbortController / ToolContext 不入快照
+   * - 失败安静 warn（checkpoint 是 best-effort，不能拖累主流程）
+   */
+  async persistCheckpoint(sessionId: string): Promise<void> {
+    if (!sessionId) {
+      return;
+    }
+
+    const filePath = getParallelCheckpointPath(sessionId);
+    const now = Date.now();
+
+    const snapshot: ParallelCheckpoint = {
+      version: COORDINATION_CHECKPOINTS.SCHEMA_VERSION,
+      sessionId,
+      createdAt: now,
+      updatedAt: now,
+      taskDefinitions: Array.from(this.taskDefinitions.entries()),
+      completedTasks: Array.from(this.completedTasks.entries()),
+      runningTaskIds: Array.from(this.runningTasks.keys()),
+      sharedContext: this.exportSharedContext(),
+    };
+
+    try {
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      await fsPromises.writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf-8');
+    } catch (error) {
+      logger.warn('Failed to persist parallel coordinator checkpoint', { error, filePath });
+    }
+  }
+
+  /**
+   * 从 JSON 快照重建 coordinator 状态。
+   *
+   * 重建语义（对齐 spawnGuard.restoreState / ADR-010 #3）：
+   * - completedTasks / taskDefinitions / sharedContext 原样恢复
+   * - runningTaskIds 不进 completedTasks —— 凭借"不存在于 completedTasks"
+   *   触发下一次 executeParallel 的重新调度
+   * - abortControllers 与 runningTasks 在新 coordinator 实例上为空
+   * - version 不匹配 → 视为 stale，返回 false 并忽略快照
+   * - 文件不存在 / JSON 损坏 → 返回 false，不抛
+   */
+  async restoreCheckpoint(sessionId: string): Promise<boolean> {
+    if (!sessionId) {
+      return false;
+    }
+
+    const filePath = getParallelCheckpointPath(sessionId);
+    let raw: string;
+    try {
+      raw = await fsPromises.readFile(filePath, 'utf-8');
+    } catch {
+      return false;
+    }
+
+    let snapshot: ParallelCheckpoint;
+    try {
+      snapshot = JSON.parse(raw) as ParallelCheckpoint;
+    } catch (error) {
+      logger.warn('Parallel checkpoint JSON corrupted, ignoring', { error, filePath });
+      return false;
+    }
+
+    if (snapshot.version !== COORDINATION_CHECKPOINTS.SCHEMA_VERSION) {
+      logger.info('Parallel checkpoint schema version mismatch, ignoring', {
+        expected: COORDINATION_CHECKPOINTS.SCHEMA_VERSION,
+        actual: snapshot.version,
+      });
+      return false;
+    }
+
+    // 恢复 taskDefinitions
+    this.taskDefinitions.clear();
+    for (const [id, task] of snapshot.taskDefinitions ?? []) {
+      this.taskDefinitions.set(id, task);
+    }
+
+    // 恢复 completedTasks（包括失败记录——guard 只短路 success 项）
+    this.completedTasks.clear();
+    for (const [id, result] of snapshot.completedTasks ?? []) {
+      this.completedTasks.set(id, result);
+    }
+
+    // 恢复 sharedContext
+    this.clearSharedContext();
+    if (snapshot.sharedContext) {
+      this.importSharedContext(snapshot.sharedContext);
+    }
+
+    logger.info('Parallel coordinator checkpoint restored', {
+      sessionId,
+      taskDefinitions: this.taskDefinitions.size,
+      completedTasks: this.completedTasks.size,
+      runningAtCrash: snapshot.runningTaskIds?.length ?? 0,
+    });
+
+    return true;
+  }
+
+  /**
+   * 成功收尾后清掉 checkpoint 文件。缺失视为已清理，不告警。
+   */
+  async deleteCheckpoint(sessionId: string): Promise<void> {
+    if (!sessionId) {
+      return;
+    }
+    const filePath = getParallelCheckpointPath(sessionId);
+    try {
+      await fsPromises.unlink(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to delete parallel checkpoint', { error, filePath });
+      }
+    }
+  }
+
+  /**
+   * Fire-and-forget 的 persist 封装。在节点完成点调用，不 await，
+   * 失败走 persistCheckpoint 内部的 warn。
+   */
+  private schedulePersist(): void {
+    const sessionId = this.toolContext?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+    void this.persistCheckpoint(sessionId);
+  }
+
+  private async deleteCheckpointIfPresent(): Promise<void> {
+    const sessionId = this.toolContext?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+    await this.deleteCheckpoint(sessionId);
   }
 }
 

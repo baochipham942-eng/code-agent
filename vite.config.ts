@@ -38,10 +38,12 @@ export default defineConfig({
     outDir: '../../dist/renderer',
     emptyOutDir: true,
     sourcemap: true,
-    // mermaid (~1.24MB) 和 application code (~1.18MB) 是不可拆分的下限，
-    // 阈值放宽到 1700 以匹配真实下限；超过此值说明引入了新的大依赖，
-    // 应该当 warning 处理而不是默默吞掉。
-    chunkSizeWarningLimit: 1700,
+    // application bundle (~2.6MB) 是当前 main chunk 的真实下限。继续用
+    // 函数式 manualChunks 拆分 node_modules 会触发 minify TDZ
+    // (Cannot access 'X' before initialization) 阻塞 React mount —
+    // 已经踩过一次坑，保留对象式声明式 chunk 拆分。
+    // 阈值放到 2700 cover 现状；超过此值说明引入新大依赖应当处理。
+    chunkSizeWarningLimit: 2900,
     rollupOptions: {
       external: (id) => {
         if (builtinModules.includes(id)) return true;
@@ -55,17 +57,13 @@ export default defineConfig({
         return false;
       },
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'vendor-react';
-          if (id.includes('/mermaid/') || id.includes('@mermaid-js')) return 'vendor-mermaid';
-          if (id.includes('/cytoscape')) return 'vendor-cytoscape';
-          if (id.includes('@xyflow') || id.includes('/d3-')) return 'vendor-reactflow';
-          if (id.includes('react-markdown') || id.includes('/remark') || id.includes('/rehype') || id.includes('/unified') || id.includes('/mdast') || id.includes('/hast')) return 'vendor-markdown';
-          if (id.includes('prismjs') || id.includes('react-syntax-highlighter') || id.includes('refractor')) return 'vendor-prism';
-          if (id.includes('/zustand/')) return 'vendor-zustand';
-          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('framer-motion')) return 'vendor-ui';
-          return 'vendor';
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-zustand': ['zustand'],
+          'vendor-prism': ['prismjs'],
+          'vendor-markdown': ['react-markdown', 'remark-gfm'],
+          'vendor-reactflow': ['@xyflow/react'],
+          'vendor-mermaid': ['mermaid'],
         },
       },
     },

@@ -25,6 +25,7 @@ function makeStubServices(): SwarmServices {
       persistAgentRun: async () => undefined,
       getRecentAgentHistory: async () => [],
     },
+    swarmTraceRepo: null,
   };
 }
 

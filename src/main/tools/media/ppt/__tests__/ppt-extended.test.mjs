@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT 生成系统 — 扩展测试（布局精确性 + 边界条件 + 全主题 + 回归）
-// 运行: npx tsx src/main/tools/network/ppt/__tests__/ppt-extended.test.mjs
+// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-extended.test.mjs
 // ============================================================================
 
 import { createRequire } from 'module';

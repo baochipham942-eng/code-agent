@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
 import { createLogger } from '../../services/infra/logger';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 
 const logger = createLogger('ImageProcess');
 

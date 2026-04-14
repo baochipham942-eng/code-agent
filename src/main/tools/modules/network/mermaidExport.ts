@@ -15,7 +15,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { MERMAID_INK_API } from '../../../../shared/constants';
-import { formatFileSize } from '../../network/utils';
+import { formatFileSize } from '../../utils/fileSize';
 import { mermaidExportSchema as schema } from './mermaidExport.schema';
 
 type MermaidFormat = 'png' | 'svg';

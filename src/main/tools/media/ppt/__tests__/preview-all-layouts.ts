@@ -5,9 +5,9 @@
 // 一键生成所有布局类型的 PPTX → 截图 → 打开查看，闭环验证视觉效果。
 //
 // 用法：
-//   npx tsx src/main/tools/network/ppt/__tests__/preview-all-layouts.ts
-//   npx tsx src/main/tools/network/ppt/__tests__/preview-all-layouts.ts --theme neon-green
-//   npx tsx src/main/tools/network/ppt/__tests__/preview-all-layouts.ts --vlm
+//   npx tsx src/main/tools/media/ppt/__tests__/preview-all-layouts.ts
+//   npx tsx src/main/tools/media/ppt/__tests__/preview-all-layouts.ts --theme neon-green
+//   npx tsx src/main/tools/media/ppt/__tests__/preview-all-layouts.ts --vlm
 // ============================================================================
 
 import * as fs from 'fs';

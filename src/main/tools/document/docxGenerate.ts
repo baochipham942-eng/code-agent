@@ -5,7 +5,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 import {
   Document,
   Packer,

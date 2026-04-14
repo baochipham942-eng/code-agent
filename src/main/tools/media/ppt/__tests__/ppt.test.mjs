@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT 生成系统 — 综合测试用例
-// 运行: npx tsx src/main/tools/network/ppt/__tests__/ppt.test.mjs
+// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt.test.mjs
 // ============================================================================
 
 import { createRequire } from 'module';

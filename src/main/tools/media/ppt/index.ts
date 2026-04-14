@@ -20,7 +20,7 @@ import { generateFromTemplate } from './templateEngine';
 import { loadDataSource } from './dataSourceAdapter';
 import { analyzeDataForPresentation } from './dataAnalyzer';
 import { generateSlidePreview } from './preview';
-import { formatFileSize } from '../utils';
+import { formatFileSize } from '../../utils/fileSize';
 import { validateStructuredSlides } from './slideSchemas';
 import type { StructuredSlide } from './slideSchemas';
 import { getLayoutSchemaDescription } from './slideSchemas';

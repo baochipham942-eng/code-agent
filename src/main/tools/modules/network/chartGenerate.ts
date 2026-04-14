@@ -16,7 +16,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { QUICKCHART_API } from '../../../../shared/constants';
-import { formatFileSize } from '../../network/utils';
+import { formatFileSize } from '../../utils/fileSize';
 import { chartGenerateSchema as schema } from './chartGenerate.schema';
 
 type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea' | 'scatter';

@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invokeDomain } from '../services/ipcService';
 
 // 全局权限模式
 export type PermissionMode = 'default' | 'full_access';
@@ -118,11 +119,8 @@ export const usePermissionStore = create<PermissionState>()(
 
       setGlobalMode: (mode: PermissionMode) => {
         set({ globalMode: mode });
-        // Sync to backend via IPC
-        import('../services/ipcService').then(({ invokeDomain }) => {
-          invokeDomain('domain:agent', 'setPermissionMode', { mode }).catch(() => {
-            // Silently ignore if agent not initialized yet
-          });
+        invokeDomain('domain:agent', 'setPermissionMode', { mode }).catch(() => {
+          // Silently ignore if agent not initialized yet
         });
       },
 

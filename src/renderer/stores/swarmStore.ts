@@ -545,10 +545,13 @@ function persistRunViaIPC(run: CompletedAgentRun): void {
   }
 }
 
-export const useSwarmStore = create<SwarmStore>((set, get) => ({
+export const useSwarmStore = create<SwarmStore>((set) => ({
   ...initialState,
 
   handleEvent: (event: SwarmEvent) => {
+    // 跟踪本次事件是否新增了 completedRun；仅当新增时才触发 IPC 持久化，
+    // 避免重放同一个 agent:completed 时调用两次 persist。见 ADR-010 #6。
+    let newlyAddedRun: CompletedAgentRun | null = null;
     set((state) => {
       let nextState: SwarmStateSnapshot = {
         ...state,
@@ -619,13 +622,16 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
             const agents = updateAgentCollection(state.agents, event.data.agentState);
             let { completedRuns } = state;
 
-            // 在 completed/failed 事件时构建 run 记录并追加到本地列表
+            // 在 completed/failed 事件时构建 run 记录并追加到本地列表。
+            // 幂等：如果同 id 的 run 已存在，不再重复 push，也不标记需要 persist。
+            // 见 ADR-010 #6。
             if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
               const mergedAgent = agents.find((a) => a.id === event.data.agentState!.id);
-              if (mergedAgent) {
+              if (mergedAgent && !completedRuns.some((r) => r.id === mergedAgent.id)) {
                 const runStatus = event.type === 'swarm:agent:completed' ? 'completed' : 'failed';
                 const run = buildCompletedRun(mergedAgent, runStatus);
                 completedRuns = [...completedRuns, run].slice(-MAX_COMPLETED_RUNS);
+                newlyAddedRun = run;
               }
             }
 
@@ -689,13 +695,9 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
       };
     });
 
-    // Side effect: 持久化 completed/failed runs（在 set 之后执行）
-    if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
-      const currentState = get();
-      const lastRun = currentState.completedRuns[currentState.completedRuns.length - 1];
-      if (lastRun) {
-        persistRunViaIPC(lastRun);
-      }
+    // Side effect: 只在本次事件真正新增了 completedRun 时才持久化，避免重放重复 IPC。
+    if (newlyAddedRun) {
+      persistRunViaIPC(newlyAddedRun);
     }
   },
 

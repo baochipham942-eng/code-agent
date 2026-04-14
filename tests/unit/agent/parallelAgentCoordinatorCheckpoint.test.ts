@@ -52,12 +52,35 @@ vi.mock('../../../src/main/agent/subagentExecutor', () => ({
 // Mock scheduler —— checkpoint 测试不关心 DAG 路径的内部
 // ---------------------------------------------------------------------------
 
+// hoisted DAG state 暴露给测试断言：记录 prefeed 时 dag.completeTask 的入参
+const dagState = vi.hoisted(() => ({
+  completedCalls: [] as Array<{ id: string; output: unknown }>,
+  taskMetadata: new Map<string, { startedAt?: number; completedAt?: number; duration?: number }>(),
+}));
+
 vi.mock('../../../src/main/scheduler', () => ({
   TaskDAG: class {
+    private addedIds: string[] = [];
     constructor() {}
-    addAgentTask(): void {}
+    addAgentTask(id: string): void {
+      this.addedIds.push(id);
+    }
     validate() { return { valid: true, errors: [] }; }
     getAllTasks() { return []; }
+    completeTask(id: string, output: unknown): void {
+      dagState.completedCalls.push({ id, output });
+      if (!dagState.taskMetadata.has(id)) {
+        dagState.taskMetadata.set(id, {});
+      }
+    }
+    getTask(id: string): { metadata: { startedAt?: number; completedAt?: number; duration?: number } } | undefined {
+      let meta = dagState.taskMetadata.get(id);
+      if (!meta) {
+        meta = {};
+        dagState.taskMetadata.set(id, meta);
+      }
+      return { metadata: meta };
+    }
   },
   getDAGScheduler: () => ({
     execute: async () => ({
@@ -119,6 +142,9 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
     configDirState.dir = await fsPromises.mkdtemp(
       path.join(os.tmpdir(), 'parallel-coord-checkpoint-')
     );
+
+    dagState.completedCalls.length = 0;
+    dagState.taskMetadata.clear();
 
     executorState.executeMock.mockReset();
     executorState.executeMock.mockImplementation(
@@ -463,6 +489,91 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
       await expect(
         coordinator.deleteCheckpoint('session-never-saved')
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // DAG 路径 restore 闭环（ADR-010 #3 收尾）
+  // --------------------------------------------------------------------------
+
+  describe('executeWithDAG restore (ADR-010 #3 收尾)', () => {
+    it('已完成节点在进 scheduler 前被预喂给 DAG，并保留原始时间戳', async () => {
+      // 预埋 t1 已完成的快照
+      const filePath = checkpointPath('session-a');
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      await fsPromises.writeFile(
+        filePath,
+        JSON.stringify({
+          version: COORDINATION_CHECKPOINTS.SCHEMA_VERSION,
+          sessionId: 'session-a',
+          createdAt: 0,
+          updatedAt: 0,
+          taskDefinitions: [['t1', makeTask('t1')], ['t2', makeTask('t2')]],
+          completedTasks: [
+            [
+              't1',
+              {
+                success: true,
+                output: 'restored-dag-t1',
+                iterations: 3,
+                toolsUsed: ['Read', 'Grep'],
+                taskId: 't1',
+                role: 'coder',
+                startTime: 1000,
+                endTime: 1500,
+                duration: 500,
+              } satisfies AgentTaskResult,
+            ],
+            [
+              't2',
+              {
+                // 失败节点不应被预喂
+                success: false,
+                output: '',
+                error: 'prior failure',
+                iterations: 0,
+                toolsUsed: [],
+                taskId: 't2',
+                role: 'coder',
+                startTime: 0,
+                endTime: 0,
+                duration: 0,
+              } satisfies AgentTaskResult,
+            ],
+          ],
+          runningTaskIds: [],
+          sharedContext: { findings: {}, files: {}, decisions: {}, errors: [] },
+        }),
+        'utf-8'
+      );
+
+      const ok = await coordinator.restoreCheckpoint('session-a');
+      expect(ok).toBe(true);
+
+      await coordinator.executeWithDAG([
+        makeTask('t1'),
+        makeTask('t2', { dependsOn: ['t1'] }),
+      ]);
+
+      // 只有成功的 t1 被预喂进 DAG，失败的 t2 留给 scheduler 重跑
+      expect(dagState.completedCalls).toHaveLength(1);
+      expect(dagState.completedCalls[0].id).toBe('t1');
+      expect(dagState.completedCalls[0].output).toEqual({
+        text: 'restored-dag-t1',
+        toolsUsed: ['Read', 'Grep'],
+        iterations: 3,
+      });
+
+      // metadata 用 cached 的原始时间戳覆盖了 completeTask 默认写的 now
+      const t1Meta = dagState.taskMetadata.get('t1');
+      expect(t1Meta?.startedAt).toBe(1000);
+      expect(t1Meta?.completedAt).toBe(1500);
+      expect(t1Meta?.duration).toBe(500);
+    });
+
+    it('completedTasks 为空时不预喂任何节点', async () => {
+      await coordinator.executeWithDAG([makeTask('t1'), makeTask('t2')]);
+      expect(dagState.completedCalls).toHaveLength(0);
     });
   });
 });

@@ -553,19 +553,43 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
           };
           break;
 
-        case 'swarm:started':
-          nextState = {
-            ...state,
-            ...initialState,
-            isRunning: true,
-            startTime: event.timestamp,
-            lastEventAt: event.timestamp,
-            statistics: {
-              ...initialState.statistics,
-              ...(event.data.statistics || {}),
-            },
-          };
+        case 'swarm:started': {
+          // 乱序保护：如果 agent/plan/completedRun 事件因为 EventBus 调度抖动先于
+          // swarm:started 到达，reducer 不能用 initialState 把它们抹掉。仅当当前
+          // state 没有任何活动数据时才做全量 reset（新 run 的首次 started）。
+          // 见 ADR-010 item #6。
+          const hasActivity =
+            state.agents.length > 0
+            || state.completedRuns.length > 0
+            || state.planReviews.length > 0
+            || state.messages.length > 0;
+          if (hasActivity) {
+            nextState = {
+              ...state,
+              isRunning: true,
+              startTime: state.startTime ?? event.timestamp,
+              lastEventAt: event.timestamp,
+              statistics: calculateStatistics(
+                state.agents,
+                state.statistics,
+                event.data.statistics || undefined,
+              ),
+            };
+          } else {
+            nextState = {
+              ...state,
+              ...initialState,
+              isRunning: true,
+              startTime: event.timestamp,
+              lastEventAt: event.timestamp,
+              statistics: {
+                ...initialState.statistics,
+                ...(event.data.statistics || {}),
+              },
+            };
+          }
           break;
+        }
 
         case 'swarm:agent:added':
         case 'swarm:agent:updated':

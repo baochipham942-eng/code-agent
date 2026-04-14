@@ -2,7 +2,7 @@
 // Resource Lock Manager - 资源锁管理，支持多 Agent 并行安全
 // ============================================================================
 
-import { createLogger } from '../services/infra/logger';
+import { createLogger } from './logger';
 
 const logger = createLogger('ResourceLockManager');
 

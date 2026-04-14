@@ -23,7 +23,7 @@ import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { taskUpdateTool } from '../../planning/taskUpdate';
 import { TaskManagerTool } from '../../planning/TaskManagerTool';
 import { findingsWriteTool } from '../../planning/findingsWrite';
-import { taskTool } from '../../planning/task';
+import { exploreTool } from '../../../agent/multiagentTools/explore';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
 const PLAN_READ = {
@@ -68,4 +68,4 @@ export const taskManagerModule = wrapLegacyTool(TaskManagerTool, PLAN_WRITE);
 // ── 用户交互 / 探索 / 确认 ──
 export const askUserQuestionModule = wrapLegacyTool(askUserQuestionTool, PLAN_EXECUTE);
 export const confirmActionModule = wrapLegacyTool(confirmActionTool, PLAN_EXECUTE);
-export const exploreModule = wrapLegacyTool(taskTool, PLAN_EXECUTE); // 'Explore'
+export const exploreModule = wrapLegacyTool(exploreTool, PLAN_EXECUTE); // 'Explore'

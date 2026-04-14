@@ -31,6 +31,7 @@ import {
 import { installSwarmTraceWriter } from './agent/swarmTraceWriter';
 import { getDatabase } from './services/core/databaseService';
 import type { SwarmTraceRepository } from './services/core/repositories/SwarmTraceRepository';
+import type { PendingApprovalRepository } from './services/core/repositories/PendingApprovalRepository';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -143,18 +144,38 @@ app.whenReady().then(async () => {
 
     // 2. Register swarm services 注入业务依赖到注册表，断开 swarm.ipc 的硬耦合
     let swarmTraceRepo: SwarmTraceRepository | null = null;
+    let pendingApprovalRepo: PendingApprovalRepository | null = null;
     try {
       const db = getDatabase();
       if (db.isReady) {
         swarmTraceRepo = db.getSwarmTraceRepo();
+        pendingApprovalRepo = db.getPendingApprovalRepo();
       }
     } catch (err) {
-      logger.warn('SwarmTraceRepo not ready at bootstrap:', err);
+      logger.warn('Repositories not ready at bootstrap:', err);
+    }
+
+    const planApprovalGate = getPlanApprovalGate();
+    const launchApprovalGate = getSwarmLaunchApprovalGate();
+
+    // ADR-010 #2: 注入持久化 + hydrate 上次进程崩溃残留的 pending 审批
+    if (pendingApprovalRepo) {
+      try {
+        const planOrphans = planApprovalGate.attachPersistence(pendingApprovalRepo);
+        const launchOrphans = launchApprovalGate.attachPersistence(pendingApprovalRepo);
+        if (planOrphans + launchOrphans > 0) {
+          logger.warn(
+            `Orphaned approvals from previous process: ${planOrphans} plan(s) + ${launchOrphans} launch(es)`,
+          );
+        }
+      } catch (err) {
+        logger.warn('PendingApproval hydration failed:', err);
+      }
     }
 
     registerSwarmServices({
-      planApproval: getPlanApprovalGate(),
-      launchApproval: getSwarmLaunchApprovalGate(),
+      planApproval: planApprovalGate,
+      launchApproval: launchApprovalGate,
       parallelCoordinator: getParallelAgentCoordinator(),
       spawnGuard: getSpawnGuard(),
       teammateService: getTeammateService(),

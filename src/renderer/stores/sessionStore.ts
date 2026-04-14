@@ -5,6 +5,7 @@ import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import { useSessionUIStore } from './sessionUIStore';
 
 const logger = createLogger('SessionStore');
 
@@ -84,7 +85,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isLoadingOlder: false,
 
     loadSessions: async () => {
-      const { useSessionUIStore } = await import('./sessionUIStore');
       const { filter } = useSessionUIStore.getState();
       set({ isLoading: true, error: null });
       try {
@@ -226,7 +226,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         await invokeSession('archive', { sessionId });
 
-        const { useSessionUIStore } = await import('./sessionUIStore');
         const { filter } = useSessionUIStore.getState();
         const { currentSessionId, sessions } = get();
 
@@ -264,7 +263,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         await invokeSession('unarchive', { sessionId });
 
-        const { useSessionUIStore } = await import('./sessionUIStore');
         const { filter } = useSessionUIStore.getState();
         const { sessions } = get();
 

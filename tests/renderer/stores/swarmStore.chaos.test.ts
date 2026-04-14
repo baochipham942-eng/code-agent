@@ -155,15 +155,8 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(snap2.executionPhase).toBe(snap1.executionPhase);
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // 在 plan_review 已经被翻到 approved 之后，重复投递 plan_approved 事件会走
-  // `upsertPlanReview` 里 for 循环找不到 pending 记录的 fallback 分支，直接 push
-  // 一条新的 approved 记录。同一个 plan.id 最终出现两条 approved。
-  // 这是 plan_approved/rejected 处理路径上的幂等性破损。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:423-457。
-  it.skip('BUG duplicate: plan_review → plan_approved → plan_approved 应保持只有一条 approved', () => {
+  // ADR-010 #6 固定：fallback push 前按 id 去重（swarmStore.ts:447-463）。
+  it('plan_review → plan_approved → plan_approved 应保持只有一条 approved', () => {
     const store = useSwarmStore.getState();
     store.handleEvent(evt('swarm:started', {}, 1));
 
@@ -185,37 +178,8 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(state.planReviews[0].status).toBe('approved');
   });
 
-  it('documented current behavior: plan_approved 重复投递会额外 push 一条 approved（回归基线）', () => {
-    const store = useSwarmStore.getState();
-    store.handleEvent(evt('swarm:started', {}, 1));
-
-    const review = evt('swarm:agent:plan_review', {
-      agentId: 'a1',
-      plan: { id: 'plan-1', agentId: 'a1', content: 'v1' },
-    }, 100);
-    const approve = evt('swarm:agent:plan_approved', {
-      agentId: 'a1',
-      plan: { id: 'plan-1', agentId: 'a1', content: 'v1', feedback: 'ok' },
-    }, 200);
-
-    store.handleEvent(review);
-    store.handleEvent(approve);
-    store.handleEvent(approve);
-
-    // 锚定当前 push-based fallback 行为。生产修复后同步更新。
-    const state = useSwarmStore.getState();
-    expect(state.planReviews).toHaveLength(2);
-    expect(state.planReviews.every((r) => r.status === 'approved')).toBe(true);
-  });
-
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // `upsertPlanReview` 在 'plan_review' 分支无条件 push 同一个 plan 进数组，
-  // 没有按 plan.id 去重。EventBus 重放第二次时会出现两条同 id 的 pending 记录，
-  // 第二条永远不会被后续的 approved/rejected 翻转。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:410-420。
-  it.skip('BUG duplicate: plan_review 重复投递不应产生两条 pending 记录', () => {
+  // ADR-010 #6 固定：plan_review 按 id 去重（swarmStore.ts:410-420）。
+  it('plan_review 重复投递不应产生两条 pending 记录', () => {
     const store = useSwarmStore.getState();
     store.handleEvent(evt('swarm:started', {}, 1));
 
@@ -457,15 +421,9 @@ describe('swarmStore chaos — 乱序事件收敛', () => {
     expect(approved[0].id).toBe('plan-1');
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // 当 plan_approved 先于 plan_review 到达时，`upsertPlanReview` 的 fallback 分支
-  // （见 ts:447-457）会直接把一条 approved 记录 push 进数组。之后到达的 plan_review
-  // 又在 'plan_review' 分支无条件 push 一条 pending 记录。同一个 plan.id 最终会有
-  // 两条记录，且 pending 那条永远不会被翻转——因为终结事件已经消费过了。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:407-421, 447-457。
-  it.skip('BUG ordering: plan_approved 先于 plan_review 到达，最终只应有一条 approved', () => {
+  // ADR-010 #6 固定：plan_review 分支按 id 去重（swarmStore.ts:410-420），
+  // plan_approved fallback 也按 id 去重（swarmStore.ts:447-463）。
+  it('plan_approved 先于 plan_review 到达，最终只应有一条 approved', () => {
     const store = useSwarmStore.getState();
     store.handleEvent(evt('swarm:agent:plan_approved', {
       agentId: 'a1',

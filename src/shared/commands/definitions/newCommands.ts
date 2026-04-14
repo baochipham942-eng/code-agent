@@ -166,7 +166,7 @@ export const pluginsCommand: CommandDefinition = {
   handler: async (ctx, args) => {
     try {
       const { getExtensionOpsService } = await import(
-        '../../../main/services/extensionOpsService'
+        '../../../main/services/plugins/extensionOpsService'
       );
       const svc = getExtensionOpsService();
 

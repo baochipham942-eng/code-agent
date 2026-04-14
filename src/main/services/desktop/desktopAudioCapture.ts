@@ -7,9 +7,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn, execFileSync, type ChildProcess } from 'child_process';
-import { createLogger } from './infra/logger';
+import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
-import { getUserConfigDir } from '../config/configPaths';
+import { getUserConfigDir } from '../../config/configPaths';
 
 const logger = createLogger('DesktopAudioCapture');
 

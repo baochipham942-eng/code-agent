@@ -5,9 +5,9 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/contract';
-import { getNativeDesktopService } from '../services/nativeDesktopService';
-import { startDesktopVisionAnalyzer } from '../services/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktopAudioCapture';
+import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
+import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
 import { createLogger } from '../services/infra/logger';
 
 // 会议应用列表 — 检测到前台是这些 app 时自动启动音频采集

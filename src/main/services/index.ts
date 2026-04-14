@@ -23,5 +23,15 @@ export * from './lab';
 // Checkpoint Services - 检查点服务
 export * from './checkpoint';
 
-// Native desktop services - 原生桌面活动
-export * from './nativeDesktopService';
+// Desktop Services - 原生桌面活动 / 视觉 / 音频
+// 仅 re-export 原本在根部暴露的 nativeDesktopService 部分，
+// 保持与迁移前的顶层 API 兼容；其他 desktop 子模块请按路径直接 import。
+export {
+  NativeDesktopService,
+  getNativeDesktopService,
+} from './desktop/nativeDesktopService';
+
+// NOTE: knowledge / connectors / plugins / learning / core-promptSuggestions
+// 故意不在此处聚合 — 这些模块携带重下游依赖（plugins/tools/model），
+// 透过顶层 barrel 暴露会引发 services ↔ tools/plugins/model 循环依赖。
+// 使用方请 `import ... from '@main/services/<domain>/<file>'` 直接引用。

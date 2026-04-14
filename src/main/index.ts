@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
     // 5. Delayed start WeChat watcher (avoid slowing startup)
     setTimeout(async () => {
       try {
-        const { getWeChatWatcher } = await import('./services/wechatWatcher');
+        const { getWeChatWatcher } = await import('./services/connectors/wechatWatcher');
         await getWeChatWatcher().start();
       } catch (error) {
         logger.warn('WeChat watcher failed to start', error);
@@ -255,7 +255,7 @@ app.on('before-quit', async () => {
 
   // Stop WeChat watcher
   try {
-    const { getWeChatWatcher } = await import('./services/wechatWatcher');
+    const { getWeChatWatcher } = await import('./services/connectors/wechatWatcher');
     await getWeChatWatcher().stop();
     logger.info('WeChat watcher stopped');
   } catch (error) {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createLogger } from '../services/infra/logger';
-import type { PromptSuggestion } from '../services/promptSuggestions';
+import type { PromptSuggestion } from '../services/core/promptSuggestions';
 import {
   getDesktopActivityUnderstandingService,
   type DesktopTaskSyncResult,

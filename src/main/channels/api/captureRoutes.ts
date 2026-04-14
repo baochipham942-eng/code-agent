@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Express, Request, Response } from 'express';
-import { getCaptureService } from '../../services/captureService';
+import { getCaptureService } from '../../services/knowledge/captureService';
 import { createLogger } from '../../services/infra/logger';
 import type { CaptureRequest } from '@shared/contract/capture';
 

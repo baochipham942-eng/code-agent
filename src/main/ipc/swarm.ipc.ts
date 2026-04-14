@@ -10,6 +10,7 @@ import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
 import { createLogger } from '../services/infra/logger';
 import { getEventBus } from '../protocol/events/bus';
+import { SWARM_TRACE } from '../../shared/constants/storage';
 
 const logger = createLogger('SwarmIPC');
 
@@ -273,6 +274,29 @@ export function registerSwarmHandlers(
     } catch (error) {
       logger.error('swarm:get-agent-history failed', { error: String(error) });
       return [];
+    }
+  });
+
+  // ADR-010 #5: Swarm Trace 历史查询
+  ipcMain.handle('swarm:list-trace-runs', async (_, payload?: { limit?: number }) => {
+    try {
+      const repo = getSwarmServices().swarmTraceRepo;
+      if (!repo) return [];
+      return repo.listRuns(payload?.limit ?? SWARM_TRACE.DEFAULT_LIST_LIMIT);
+    } catch (error) {
+      logger.error('swarm:list-trace-runs failed', { error: String(error) });
+      return [];
+    }
+  });
+
+  ipcMain.handle('swarm:get-trace-run-detail', async (_, payload: { runId: string }) => {
+    try {
+      const repo = getSwarmServices().swarmTraceRepo;
+      if (!repo) return null;
+      return repo.getRunDetail(payload.runId);
+    } catch (error) {
+      logger.error('swarm:get-trace-run-detail failed', { error: String(error) });
+      return null;
     }
   });
 }

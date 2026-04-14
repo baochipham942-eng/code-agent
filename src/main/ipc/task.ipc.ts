@@ -36,52 +36,37 @@ export interface TaskIdPayload {
 // ============================================================================
 
 async function handleStartTask(
-  getTaskManager: () => TaskManager | null,
+  taskManager: TaskManager,
   payload: StartTaskPayload
 ): Promise<void> {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   const { sessionId, message, attachments } = payload;
   await taskManager.startTask(sessionId, message, attachments);
 }
 
 async function handleInterruptTask(
-  getTaskManager: () => TaskManager | null,
+  taskManager: TaskManager,
   payload: TaskIdPayload
 ): Promise<void> {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   await taskManager.interruptTask(payload.sessionId);
 }
 
 async function handleCancelTask(
-  getTaskManager: () => TaskManager | null,
+  taskManager: TaskManager,
   payload: TaskIdPayload
 ): Promise<void> {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   await taskManager.cancelTask(payload.sessionId);
 }
 
 function handleGetState(
-  getTaskManager: () => TaskManager | null,
+  taskManager: TaskManager,
   payload: TaskIdPayload
 ): SessionState {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   return taskManager.getSessionState(payload.sessionId);
 }
 
 function handleGetAllStates(
-  getTaskManager: () => TaskManager | null
+  taskManager: TaskManager
 ): Record<string, SessionState> {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   const states = taskManager.getAllStates();
   const result: Record<string, SessionState> = {};
   for (const [key, value] of states) {
@@ -91,30 +76,21 @@ function handleGetAllStates(
 }
 
 function handleGetQueue(
-  getTaskManager: () => TaskManager | null
+  taskManager: TaskManager
 ): string[] {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   return taskManager.getWaitingQueue();
 }
 
 function handleGetStats(
-  getTaskManager: () => TaskManager | null
+  taskManager: TaskManager
 ): TaskStats {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   return taskManager.getStats();
 }
 
 function handleCleanup(
-  getTaskManager: () => TaskManager | null,
+  taskManager: TaskManager,
   payload: TaskIdPayload
 ): void {
-  const taskManager = getTaskManager();
-  if (!taskManager) throw new Error('TaskManager not initialized');
-
   taskManager.cleanup(payload.sessionId);
 }
 
@@ -133,34 +109,62 @@ export function registerTaskHandlers(
   ipcMain.handle(IPC_DOMAINS.TASK, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;
 
+    // Web 模式（webServer.ts 注入 getTaskManager: () => null）或桌面 bootstrap
+    // 尚未完成时，TaskManager 为 null 是预期状态。返回结构化 unavailable 响应，
+    // 且只发 debug 日志，避免把噪音升成 error。getAllStates/getStats 在可选字段
+    // 场景下返回安全默认，让 renderer 侧轮询查询不需要特殊分支。
+    const taskManager = getTaskManager();
+    if (!taskManager) {
+      logger.debug(`Task IPC ${action}: TaskManager unavailable (likely web mode or pre-bootstrap)`);
+      switch (action) {
+        case 'getAllStates':
+          return { success: true, data: {} };
+        case 'getQueue':
+          return { success: true, data: [] };
+        case 'getStats':
+          return {
+            success: true,
+            data: { running: 0, queued: 0, available: 0, maxConcurrent: 0 } as TaskStats,
+          };
+        default:
+          return {
+            success: false,
+            error: {
+              code: 'TASK_MANAGER_UNAVAILABLE',
+              message: 'TaskManager not initialized in this runtime (web mode or pre-bootstrap)',
+            },
+          };
+      }
+    }
+
     try {
       switch (action) {
         case 'start':
-          await handleStartTask(getTaskManager, payload as StartTaskPayload);
+          await handleStartTask(taskManager, payload as StartTaskPayload);
           return { success: true, data: null };
 
         case 'interrupt':
-          await handleInterruptTask(getTaskManager, payload as TaskIdPayload);
+          await handleInterruptTask(taskManager, payload as TaskIdPayload);
           return { success: true, data: null };
 
         case 'cancel':
-          await handleCancelTask(getTaskManager, payload as TaskIdPayload);
+          await handleCancelTask(taskManager, payload as TaskIdPayload);
           return { success: true, data: null };
 
         case 'getState':
-          return { success: true, data: handleGetState(getTaskManager, payload as TaskIdPayload) };
+          return { success: true, data: handleGetState(taskManager, payload as TaskIdPayload) };
 
         case 'getAllStates':
-          return { success: true, data: handleGetAllStates(getTaskManager) };
+          return { success: true, data: handleGetAllStates(taskManager) };
 
         case 'getQueue':
-          return { success: true, data: handleGetQueue(getTaskManager) };
+          return { success: true, data: handleGetQueue(taskManager) };
 
         case 'getStats':
-          return { success: true, data: handleGetStats(getTaskManager) };
+          return { success: true, data: handleGetStats(taskManager) };
 
         case 'cleanup':
-          handleCleanup(getTaskManager, payload as TaskIdPayload);
+          handleCleanup(taskManager, payload as TaskIdPayload);
           return { success: true, data: null };
 
         default:

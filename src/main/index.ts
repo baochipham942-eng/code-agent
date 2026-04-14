@@ -28,6 +28,9 @@ import {
   persistAgentRun,
   getRecentAgentHistory,
 } from './session/agentHistoryPersistence';
+import { installSwarmTraceWriter } from './agent/swarmTraceWriter';
+import { getDatabase } from './services/core/databaseService';
+import type { SwarmTraceRepository } from './services/core/repositories/SwarmTraceRepository';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -139,6 +142,16 @@ app.whenReady().then(async () => {
     }
 
     // 2. Register swarm services 注入业务依赖到注册表，断开 swarm.ipc 的硬耦合
+    let swarmTraceRepo: SwarmTraceRepository | null = null;
+    try {
+      const db = getDatabase();
+      if (db.isReady) {
+        swarmTraceRepo = db.getSwarmTraceRepo();
+      }
+    } catch (err) {
+      logger.warn('SwarmTraceRepo not ready at bootstrap:', err);
+    }
+
     registerSwarmServices({
       planApproval: getPlanApprovalGate(),
       launchApproval: getSwarmLaunchApprovalGate(),
@@ -146,7 +159,20 @@ app.whenReady().then(async () => {
       spawnGuard: getSpawnGuard(),
       teammateService: getTeammateService(),
       agentHistory: { persistAgentRun, getRecentAgentHistory },
+      swarmTraceRepo,
     });
+
+    // 2.5 Install SwarmTraceWriter（ADR-010 #5）
+    // 订阅 EventBus 'swarm' domain，把 swarm 运行/agent/事件流持久化到 SQLite。
+    if (swarmTraceRepo) {
+      try {
+        installSwarmTraceWriter(swarmTraceRepo, {
+          getSessionId: () => getCurrentSessionId() ?? null,
+        });
+      } catch (err) {
+        logger.warn('SwarmTraceWriter install failed:', err);
+      }
+    }
 
     // 3. Setup IPC handlers
     setupAllIpcHandlers(ipcMain, {

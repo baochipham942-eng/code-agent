@@ -10,6 +10,7 @@
 // import 任何 agent/* 或 ipc/*，确保不引入新循环。
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import type {
   SwarmEvent,
   SwarmAgentContextSnapshot,
@@ -19,21 +20,35 @@ import type {
 import { getEventBus } from '../protocol/events/bus';
 
 /**
- * 将 SwarmEvent 发布到 EventBus 'swarm' domain
- * Channel 命名去掉 'swarm:' 前缀避免 'swarm:swarm:...' 双重命名
- */
-function publish(event: SwarmEvent): void {
-  const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
-  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
-}
-
-/**
  * Swarm 事件发射器
  * 封装事件推送逻辑，方便在 AgentSwarm / IPC handler 中使用
+ *
+ * runId 生命周期（ADR-010 #5）：
+ * - `started()` 生成新的 runId 并保存为 currentRunId
+ * - 其余 emit 方法在 publish 前为 event 打戳 currentRunId
+ * - `completed()` / `cancelled()` 在事件 publish 之后清空
+ *
+ * 同一时刻只允许一个 active run（单进程单 swarm，与 ADR-009 假设一致）。
  */
 export class SwarmEventEmitter {
+  private currentRunId: string | null = null;
+
+  /** 当前活跃 run 的 id（外部用于读，不要写） */
+  getCurrentRunId(): string | null {
+    return this.currentRunId;
+  }
+
+  private publish(event: SwarmEvent): void {
+    const stamped: SwarmEvent = {
+      ...event,
+      runId: event.runId ?? this.currentRunId ?? undefined,
+    };
+    const busType = stamped.type.startsWith('swarm:') ? stamped.type.slice(6) : stamped.type;
+    getEventBus().publish('swarm', busType, stamped, { bridgeToRenderer: false });
+  }
+
   launchRequested(request: SwarmLaunchRequest): void {
-    publish({
+    this.publish({
       type: 'swarm:launch:requested',
       timestamp: request.requestedAt,
       data: { launchRequest: request },
@@ -41,7 +56,7 @@ export class SwarmEventEmitter {
   }
 
   launchApproved(request: SwarmLaunchRequest): void {
-    publish({
+    this.publish({
       type: 'swarm:launch:approved',
       timestamp: request.resolvedAt || Date.now(),
       data: { launchRequest: request },
@@ -49,7 +64,7 @@ export class SwarmEventEmitter {
   }
 
   launchRejected(request: SwarmLaunchRequest): void {
-    publish({
+    this.publish({
       type: 'swarm:launch:rejected',
       timestamp: request.resolvedAt || Date.now(),
       data: { launchRequest: request },
@@ -57,7 +72,11 @@ export class SwarmEventEmitter {
   }
 
   started(agentCount: number): void {
-    publish({
+    // 新一次 swarm 执行的入口：开 runId，所有后续事件自动打戳此 runId
+    // 直到 completed/cancelled 清空。重复 started 被视为新 run（旧 run
+    // 若未收尾应由调用方先 cancelled，否则旧 run 会漏掉收尾事件）。
+    this.currentRunId = randomUUID();
+    this.publish({
       type: 'swarm:started',
       timestamp: Date.now(),
       data: {
@@ -76,7 +95,7 @@ export class SwarmEventEmitter {
   }
 
   agentAdded(agent: { id: string; name: string; role: string }): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:added',
       timestamp: Date.now(),
       data: {
@@ -103,7 +122,7 @@ export class SwarmEventEmitter {
     error?: string;
     contextSnapshot?: SwarmAgentContextSnapshot;
   }): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:updated',
       timestamp: Date.now(),
       data: {
@@ -127,7 +146,7 @@ export class SwarmEventEmitter {
   }
 
   agentCompleted(agentId: string, output?: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:completed',
       timestamp: Date.now(),
       data: {
@@ -146,7 +165,7 @@ export class SwarmEventEmitter {
   }
 
   agentFailed(agentId: string, error: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:failed',
       timestamp: Date.now(),
       data: {
@@ -171,7 +190,7 @@ export class SwarmEventEmitter {
     parallelPeak: number;
     totalTime: number;
   }): void {
-    publish({
+    this.publish({
       type: 'swarm:completed',
       timestamp: Date.now(),
       data: {
@@ -188,6 +207,8 @@ export class SwarmEventEmitter {
         },
       },
     });
+    // run 收尾，清空 currentRunId（事件 publish 之后清才能让收尾事件带上 runId）
+    this.currentRunId = null;
   }
 
   completedWithAggregation(statistics: {
@@ -197,7 +218,7 @@ export class SwarmEventEmitter {
     parallelPeak: number;
     totalTime: number;
   }, aggregation: SwarmAggregation): void {
-    publish({
+    this.publish({
       type: 'swarm:completed',
       timestamp: Date.now(),
       data: {
@@ -215,14 +236,16 @@ export class SwarmEventEmitter {
         },
       },
     });
+    this.currentRunId = null;
   }
 
   cancelled(): void {
-    publish({
+    this.publish({
       type: 'swarm:cancelled',
       timestamp: Date.now(),
       data: {},
     });
+    this.currentRunId = null;
   }
 
   // ========================================================================
@@ -230,7 +253,7 @@ export class SwarmEventEmitter {
   // ========================================================================
 
   agentMessage(from: string, to: string, content: string, messageType?: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:message',
       timestamp: Date.now(),
       data: {
@@ -240,7 +263,7 @@ export class SwarmEventEmitter {
   }
 
   planReview(agentId: string, planId: string, planContent: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:plan_review',
       timestamp: Date.now(),
       data: {
@@ -251,7 +274,7 @@ export class SwarmEventEmitter {
   }
 
   planApproved(agentId: string, planId: string, feedback?: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:plan_approved',
       timestamp: Date.now(),
       data: {
@@ -262,7 +285,7 @@ export class SwarmEventEmitter {
   }
 
   planRejected(agentId: string, planId: string, feedback: string): void {
-    publish({
+    this.publish({
       type: 'swarm:agent:plan_rejected',
       timestamp: Date.now(),
       data: {
@@ -273,7 +296,7 @@ export class SwarmEventEmitter {
   }
 
   userMessage(agentId: string, message: string): void {
-    publish({
+    this.publish({
       type: 'swarm:user:message',
       timestamp: Date.now(),
       data: {

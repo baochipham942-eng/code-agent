@@ -68,6 +68,7 @@ import {
   ConfigRepository,
   CaptureRepository,
   ExperimentRepository,
+  SwarmTraceRepository,
 } from './repositories';
 
 // ----------------------------------------------------------------------------
@@ -89,6 +90,7 @@ export class DatabaseService {
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
+  private swarmTraceRepo!: SwarmTraceRepository;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -193,6 +195,7 @@ export class DatabaseService {
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
+      this.swarmTraceRepo = new SwarmTraceRepository(this.db);
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -786,6 +789,74 @@ export class DatabaseService {
         FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
       )
     `);
+
+    // ========================================================================
+    // Swarm Trace 持久化表（ADR-010 #5）
+    // ========================================================================
+
+    // swarm_runs - 一行/swarm 运行
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS swarm_runs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        coordinator TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        total_agents INTEGER NOT NULL DEFAULT 0,
+        completed_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        parallel_peak INTEGER NOT NULL DEFAULT 0,
+        total_tokens_in INTEGER NOT NULL DEFAULT 0,
+        total_tokens_out INTEGER NOT NULL DEFAULT 0,
+        total_tool_calls INTEGER NOT NULL DEFAULT 0,
+        total_cost_usd REAL NOT NULL DEFAULT 0,
+        trigger TEXT NOT NULL DEFAULT 'unknown',
+        error_summary TEXT,
+        aggregation_json TEXT,
+        tags_json TEXT NOT NULL DEFAULT '[]'
+      )
+    `);
+
+    // swarm_run_agents - 每个 agent 的 rollup（以 run_id + agent_id 为复合主键）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS swarm_run_agents (
+        run_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        start_time INTEGER,
+        end_time INTEGER,
+        duration_ms INTEGER,
+        tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        tool_calls INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        error TEXT,
+        failure_category TEXT,
+        files_changed_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY (run_id, agent_id),
+        FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
+      )
+    `);
+
+    // swarm_run_events - run timeline 事件
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS swarm_run_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        timestamp INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        agent_id TEXT,
+        level TEXT NOT NULL DEFAULT 'info',
+        title TEXT NOT NULL DEFAULT '',
+        summary TEXT NOT NULL DEFAULT '',
+        payload_json TEXT,
+        FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -869,6 +940,13 @@ export class DatabaseService {
     // Captures indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_captures_source ON captures(source)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC)`);
+
+    // Swarm trace indexes（ADR-010 #5）
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_runs_started ON swarm_runs(started_at DESC)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_runs_session ON swarm_runs(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_runs_status ON swarm_runs(status)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_agents_run ON swarm_run_agents(run_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_events_run_seq ON swarm_run_events(run_id, seq)`);
   }
 
   // --------------------------------------------------------------------------
@@ -1035,6 +1113,17 @@ export class DatabaseService {
   loadExperiment(id: string): { experiment: { id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }; cases: Array<{ id: string; experiment_id: string; case_id: string; session_id: string | null; status: string; score: number; duration_ms: number | null; data_json: string | null }> } | undefined { this.ensureDb(); return this.experimentRepo.loadExperiment(id); }
   updateExperimentSummary(id: string, summaryJson: string): void { this.ensureDb(); this.experimentRepo.updateExperimentSummary(id, summaryJson); }
   deleteExperiment(id: string): boolean { this.ensureDb(); return this.experimentRepo.deleteExperiment(id); }
+
+  // --- SwarmTraceRepository ---
+  /**
+   * 暴露 swarm trace 仓库给 SwarmTraceWriter / IPC handler 直接使用。
+   * 与 experiment / capture 不同，trace 写入路径调用密度高且字段繁多，
+   * 不再为每个方法包一层薄门面。
+   */
+  getSwarmTraceRepo(): SwarmTraceRepository {
+    this.ensureDb();
+    return this.swarmTraceRepo;
+  }
 }
 
 // ----------------------------------------------------------------------------

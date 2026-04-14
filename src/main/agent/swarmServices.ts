@@ -20,6 +20,7 @@ import type { SwarmLaunchApprovalGate } from './swarmLaunchApproval';
 import type { ParallelAgentCoordinator } from './parallelAgentCoordinator';
 import type { TeammateService } from './teammate/teammateService';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
+import type { SwarmTraceRepository } from '../services/core/repositories/SwarmTraceRepository';
 
 // ============================================================================
 // Structural Interfaces — 只暴露 IPC 实际用到的方法子集
@@ -51,6 +52,11 @@ export interface SwarmServices {
   spawnGuard: SpawnGuardLike;
   teammateService: TeammateService;
   agentHistory: AgentHistoryPort;
+  /**
+   * Swarm Trace 持久化仓库（ADR-010 #5）。
+   * 可选：DB 未初始化时为 null，IPC handler 自行降级返回空结果。
+   */
+  swarmTraceRepo: SwarmTraceRepository | null;
 }
 
 // ============================================================================

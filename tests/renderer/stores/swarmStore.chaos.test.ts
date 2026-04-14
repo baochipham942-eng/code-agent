@@ -379,15 +379,8 @@ describe('swarmStore chaos — 乱序事件收敛', () => {
     expect(state.agents[0].iterations).toBe(2);
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // 在 handleEvent 的 'swarm:started' 分支里，reducer 做了 `...initialState` 展开，
-  // 会清空 agents / completedRuns / planReviews。如果 agent:added 事件因为
-  // EventBus 调度抖动先于 swarm:started 到达（timestamp 上正确，但投递乱序），
-  // 后到的 swarm:started 会把已经加入的 agent 抹掉。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:556-568。
-  it.skip('BUG ordering: agent:added 先到、swarm:started 后到时，agent 不应被清空', () => {
+  // ADR-010 item #6 固定：生产修复见 swarmStore.ts:556-595（hasActivity 守卫）。
+  it('agent:added 先到、swarm:started 后到时，agent 不应被清空', () => {
     const store = useSwarmStore.getState();
     store.handleEvent(evt('swarm:agent:added', {
       agentState: agent('a1', { status: 'running' }),
@@ -402,17 +395,7 @@ describe('swarmStore chaos — 乱序事件收敛', () => {
     const state = useSwarmStore.getState();
     expect(state.agents).toHaveLength(1);
     expect(state.agents[0].id).toBe('a1');
-  });
-
-  it('documented current behavior: 乱序的 swarm:started 会清空已加入的 agents（回归基线）', () => {
-    // 锚定当前"started 无条件 reset"的行为。生产修复后这条测试必须同步更新。
-    const store = useSwarmStore.getState();
-    store.handleEvent(evt('swarm:agent:added', {
-      agentState: agent('a1', { status: 'running' }),
-    }, 100));
-    store.handleEvent(evt('swarm:started', {}, 50));
-
-    expect(useSwarmStore.getState().agents).toHaveLength(0);
+    expect(state.isRunning).toBe(true);
   });
 
   it('swarm:completed 先到、agent:completed 后到 — 最终 agents / statistics 仍合理', () => {

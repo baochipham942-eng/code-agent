@@ -3,8 +3,8 @@
 // Phase 3: Mid-execution communication
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { getSpawnGuard } from '../../agent/spawnGuard';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
+import { getSpawnGuard } from '../spawnGuard';
 
 export const sendInputTool: Tool = {
   name: 'send_input',

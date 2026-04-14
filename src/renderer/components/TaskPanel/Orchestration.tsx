@@ -39,6 +39,7 @@ import ipcService from '../../services/ipcService';
 import SwarmDependencyMap from './SwarmDependencyMap';
 import { ContextInterventionPanel } from './ContextInterventionPanel';
 import { ContextProvenancePanel } from './ContextProvenancePanel';
+import { SwarmTraceHistory } from '../features/swarm/SwarmTraceHistory';
 import type {
   ContextInterventionAction,
   ContextProvenanceListEntry,
@@ -864,14 +865,17 @@ export const Orchestration: React.FC = () => {
 
   if (!isRunning && agents.length === 0 && launchRequests.length === 0 && planReviews.length === 0 && !aggregation) {
     return (
-      <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-        <div className="flex items-center gap-2 text-zinc-300">
-          <GitBranch className="w-4 h-4 text-primary-400" />
-          <span className="text-sm font-medium">编排视图</span>
+      <div className="space-y-3">
+        <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+          <div className="flex items-center gap-2 text-zinc-300">
+            <GitBranch className="w-4 h-4 text-primary-400" />
+            <span className="text-sm font-medium">编排视图</span>
+          </div>
+          <div className="mt-3 text-xs leading-6 text-zinc-500">
+            当前没有活跃的多 agent 编排。触发并行执行后，这里会显示 agent 泳道、审批队列、协作动态和最终汇总。
+          </div>
         </div>
-        <div className="mt-3 text-xs leading-6 text-zinc-500">
-          当前没有活跃的多 agent 编排。触发并行执行后，这里会显示 agent 泳道、审批队列、协作动态和最终汇总。
-        </div>
+        <SwarmTraceHistory />
       </div>
     );
   }
@@ -1502,6 +1506,8 @@ export const Orchestration: React.FC = () => {
           </div>
         </Section>
       )}
+      {/* ADR-010 #5: 历史 swarm runs 回看面板，跟随主视图滚动 */}
+      <SwarmTraceHistory />
     </div>
   );
 };

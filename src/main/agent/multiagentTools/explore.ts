@@ -1,14 +1,19 @@
 // ============================================================================
-// Task Tool - Delegate tasks to specialized subagents
+// Explore Tool - Legacy subagent launcher (hardcoded explore/bash/plan/code-review)
+//
+// Registered under the protocol tool name "Explore" via
+// tools/modules/planning/wrappers.ts -> exploreModule. Historically this file
+// lived at tools/planning/task.ts with the exported symbol `taskTool`; the
+// Task tool proper (dynamic agent definitions) is sdkTaskTool in ./task.ts.
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
-import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import { createLogger } from '../../services/infra/logger';
 
-const logger = createLogger('TaskTool');
+const logger = createLogger('ExploreTool');
 
 // Subagent configurations
 const SUBAGENT_TYPES = {
@@ -81,7 +86,7 @@ Provide specific feedback with file and line references when possible.`,
   },
 };
 
-export const taskTool: Tool = {
+export const exploreTool: Tool = {
   name: 'task',
   description: `Launch a specialized subagent to handle complex, multi-step tasks autonomously.
 

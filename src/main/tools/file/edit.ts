@@ -20,7 +20,7 @@ import {
   containsSmartChars,
 } from '../utils/quoteNormalizer';
 import { atomicWriteFile } from '../utils/atomicWrite';
-import { getResourceLockManager } from '../../agent/resourceLockManager';
+import { getResourceLockManager } from '../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {

@@ -5,6 +5,9 @@
 // SDK-compatible Task tool (simplified interface)
 export { sdkTaskTool } from './task';
 
+// Legacy explore subagent launcher (registered as protocol tool "Explore")
+export { exploreTool } from './explore';
+
 // PascalCase aliases (recommended for new code)
 export { agentSpawnTool } from './spawnAgent';
 export { AgentMessageTool } from './agentMessage';

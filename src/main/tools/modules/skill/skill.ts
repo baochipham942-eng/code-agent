@@ -1,7 +1,7 @@
 // ============================================================================
 // Skill (P0-5 Migrated, wrapper mode)
 //
-// 旧版: src/main/tools/skill/skillMetaTool.ts (registered as 'Skill')
+// 旧版: src/main/agent/skillTools/skillMetaTool.ts (registered as 'Skill')
 // wrapper 委托给 legacy。注意 Skill 的 fork 模式依赖 ctx.toolRegistry / ctx.modelConfig
 // 这两个字段已通过 protocol ctx 的 legacyToolRegistry / modelConfig 透传，
 // adapter 会反向映射回 legacy ctx 字段
@@ -15,7 +15,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { skillMetaTool } from '../../skill/skillMetaTool';
+import { skillMetaTool } from '../../../agent/skillTools/skillMetaTool';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { skillSchema as schema } from './skill.schema';
 

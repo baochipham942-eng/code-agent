@@ -2,5 +2,10 @@
 // Skill Tool - Agent Skills Standard
 // ============================================================================
 
-export { skillMetaTool, getSkillToolDescription } from './skillMetaTool';
+// skillMetaTool moved to agent/skillTools/skillMetaTool.ts
+// Re-export preserved for back-compat with any consumer of tools/skill barrel.
+export {
+  skillMetaTool,
+  getSkillToolDescription,
+} from '../../agent/skillTools/skillMetaTool';
 export { skillCreateTool } from './skillCreateTool';

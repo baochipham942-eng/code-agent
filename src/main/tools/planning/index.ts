@@ -2,7 +2,7 @@
 // Planning Tools - 规划工具
 // ============================================================================
 
-export { taskTool } from './task';
+// taskTool moved to agent/multiagentTools/explore.ts (renamed to exploreTool)
 // todoWriteTool removed — agentLoop auto-parses task lists
 export { askUserQuestionTool } from './askUserQuestion';
 export { confirmActionTool } from './confirmAction';

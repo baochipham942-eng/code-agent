@@ -57,10 +57,11 @@ export default defineConfig({
         return false;
       },
       output: {
+        // 项目不直接 import prismjs（用 react-syntax-highlighter / shiki），
+        // 之前声明 'vendor-prism' 会生成 50 字节空 chunk 触发 "empty chunk" warning。
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-zustand': ['zustand'],
-          'vendor-prism': ['prismjs'],
           'vendor-markdown': ['react-markdown', 'remark-gfm'],
           'vendor-reactflow': ['@xyflow/react'],
           'vendor-mermaid': ['mermaid'],

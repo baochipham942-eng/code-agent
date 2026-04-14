@@ -14,3 +14,8 @@ export {
   type UpsertAgentInput,
   type AppendEventInput,
 } from './SwarmTraceRepository';
+export {
+  PendingApprovalRepository,
+  type InsertPendingApprovalInput,
+  type ResolvePendingApprovalInput,
+} from './PendingApprovalRepository';

@@ -3,9 +3,9 @@
 // Gen 7: Multi-Agent capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import { getSpawnedAgent, listSpawnedAgents } from './spawnAgent';
-import { getSpawnGuard } from '../../agent/spawnGuard';
+import { getSpawnGuard } from '../spawnGuard';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';
 

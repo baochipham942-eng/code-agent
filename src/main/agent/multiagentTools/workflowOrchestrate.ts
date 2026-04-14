@@ -4,7 +4,7 @@
 // Refactored: Uses type-safe workflow types from shared/types
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract';
 import type {
   WorkflowStage,
@@ -18,14 +18,14 @@ import {
   getBuiltInWorkflow,
   listBuiltInWorkflows,
 } from '../../../shared/contract/workflow';
-import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getPredefinedAgent,
   getAgentPrompt,
   getAgentTools,
   type FullAgentConfig,
-} from '../../agent/agentDefinition';
+} from '../agentDefinition';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');

@@ -4,9 +4,9 @@
 // Wraps spawn_agent with simpler, SDK-compatible parameters
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
-import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import {
   getPredefinedAgent,
@@ -20,12 +20,12 @@ import {
   getSubagentModelConfig,
   CORE_AGENT_IDS,
   isCoreAgent,
-} from '../../agent/agentDefinition';
-import { taskDeduplication } from '../../agent/taskDeduplication';
+} from '../agentDefinition';
+import { taskDeduplication } from '../taskDeduplication';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
-} from '../../agent/subagentContextBuilder';
+} from '../subagentContextBuilder';
 
 // ============================================================================
 // P0: 参数验证与结构化输出

@@ -7,15 +7,15 @@
 // P0-5 ctx 扩展字段在生产工具上的真实压力测试。
 // ============================================================================
 
-import { sdkTaskTool } from '../../multiagent/task';
-import { teammateTool } from '../../multiagent/teammate';
-import { spawnAgentTool, agentSpawnTool } from '../../multiagent/spawnAgent';
-import { waitAgentTool } from '../../multiagent/waitAgent';
-import { closeAgentTool } from '../../multiagent/closeAgent';
-import { agentMessageTool } from '../../multiagent/agentMessage';
-import { sendInputTool } from '../../multiagent/sendInput';
-import { workflowOrchestrateTool } from '../../multiagent/workflowOrchestrate';
-import { planReviewTool } from '../../multiagent/planReview';
+import { sdkTaskTool } from '../../../agent/multiagentTools/task';
+import { teammateTool } from '../../../agent/multiagentTools/teammate';
+import { spawnAgentTool, agentSpawnTool } from '../../../agent/multiagentTools/spawnAgent';
+import { waitAgentTool } from '../../../agent/multiagentTools/waitAgent';
+import { closeAgentTool } from '../../../agent/multiagentTools/closeAgent';
+import { agentMessageTool } from '../../../agent/multiagentTools/agentMessage';
+import { sendInputTool } from '../../../agent/multiagentTools/sendInput';
+import { workflowOrchestrateTool } from '../../../agent/multiagentTools/workflowOrchestrate';
+import { planReviewTool } from '../../../agent/multiagentTools/planReview';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
 const MA_EXECUTE = { category: 'multiagent' as const, permissionLevel: 'execute' as const };

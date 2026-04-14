@@ -180,6 +180,12 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
     });
 
     it('节点完成后 fire-and-forget 自动写盘', async () => {
+      // 把"t1 完成时 checkpoint 已落盘"的观察值 capture 到外部变量，主测试体
+      // 在 executeParallel 收尾后再断言。早先版本在 t2 mock 内 expect，会和
+      // executeTask 的 runningTasks.then 孤儿 promise 形成 race，污染 vitest
+      // unhandled rejection。这里改成只采样不断言，避免 fixture 脆弱性
+      let t1CheckpointVisibleWhenT2Started = false;
+
       executorState.executeMock.mockImplementationOnce(async () => ({
         success: true,
         output: 'found issue in file path: /tmp/a.ts',
@@ -188,13 +194,11 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
         cost: 0,
       }));
       executorState.executeMock.mockImplementationOnce(async () => {
-        // 跑第二个任务前已经能读到第一个任务的 checkpoint 副本
         await waitForPersist();
-        const exists = await fsPromises
+        t1CheckpointVisibleWhenT2Started = await fsPromises
           .stat(checkpointPath('session-a'))
           .then(() => true)
           .catch(() => false);
-        expect(exists).toBe(true);
         return {
           success: true,
           output: 'ok:t2',
@@ -208,6 +212,8 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
         makeTask('t1'),
         makeTask('t2', { dependsOn: ['t1'] }),
       ]);
+
+      expect(t1CheckpointVisibleWhenT2Started).toBe(true);
     });
 
     it('多次 save 幂等，后一次覆盖前一次', async () => {

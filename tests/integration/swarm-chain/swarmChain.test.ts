@@ -199,6 +199,7 @@ function setupChain(): ChainHarness {
       getHistory: () => [],
     } as never,
     agentHistory,
+    swarmTraceRepo: null,
   });
 
   // (Re-)populate IPC handler table

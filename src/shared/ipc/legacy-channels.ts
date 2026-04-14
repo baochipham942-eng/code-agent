@@ -303,6 +303,8 @@ export const IPC_CHANNELS = {
   SWARM_REJECT_PLAN: 'swarm:reject-plan',
   SWARM_PERSIST_AGENT_RUN: 'swarm:persist-agent-run',
   SWARM_GET_AGENT_HISTORY: 'swarm:get-agent-history',
+  SWARM_LIST_TRACE_RUNS: 'swarm:list-trace-runs',
+  SWARM_GET_TRACE_RUN_DETAIL: 'swarm:get-trace-run-detail',
 
   // TaskList channels (任务列表可视化)
   TASKLIST_EVENT: 'taskList:event',

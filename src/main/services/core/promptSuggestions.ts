@@ -2,7 +2,7 @@
 // Prompt Suggestions Service - 智能提示建议
 // ============================================================================
 
-import { createLogger } from './infra/logger';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('PromptSuggestions');
 
@@ -32,7 +32,7 @@ export async function generateContextSuggestions(
 
     if (!recentMessages) return [];
 
-    const { quickTask } = await import('../model/quickModel');
+    const { quickTask } = await import('../../model/quickModel');
 
     const prompt = `根据以下对话，生成 2-3 个用户可能的后续提问或指令。要求：
 - 每行一个建议，不要编号

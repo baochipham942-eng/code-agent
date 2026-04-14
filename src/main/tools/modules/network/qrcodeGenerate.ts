@@ -15,7 +15,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { formatFileSize } from '../../network/utils';
+import { formatFileSize } from '../../utils/fileSize';
 import { qrcodeGenerateSchema as schema } from './qrcodeGenerate.schema';
 
 interface QRCodeGenerateParams {

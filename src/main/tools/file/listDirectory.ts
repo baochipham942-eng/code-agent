@@ -6,7 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { resolvePath } from './pathUtils';
-import { formatFileSize } from '../network/utils';
+import { formatFileSize } from '../utils/fileSize';
 
 export const listDirectoryTool: Tool = {
   name: 'ListDirectory',

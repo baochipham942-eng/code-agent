@@ -9,9 +9,9 @@
 // ============================================================================
 
 // HTTP / Web fetching
-import { webFetchTool } from '../../network/webFetch';
-import { WebFetchUnifiedTool } from '../../network/WebFetchUnifiedTool';
-import { webSearchTool } from '../../network/webSearch';
+import { webFetchTool } from '../../web/webFetch';
+import { WebFetchUnifiedTool } from '../../web/WebFetchUnifiedTool';
+import { webSearchTool } from '../../web/webSearch';
 // http_request 已迁移为 native ToolModule（见 modules/network/httpRequest.ts）
 
 // Document reading
@@ -19,29 +19,29 @@ import { webSearchTool } from '../../network/webSearch';
 // （见 modules/network/{readDocument,readDocx,readPdf,readXlsx}.ts）
 
 // Document generation
-import { pptGenerateTool } from '../../network/ppt';
-import { pptEditTool } from '../../network/ppt/editTool';
-import { docxGenerateTool } from '../../network/docxGenerate';
-import { excelGenerateTool } from '../../network/excelGenerate';
-import { pdfGenerateTool } from '../../network/pdfGenerate';
-import { pdfCompressTool } from '../../network/pdfCompress';
-import { PdfAutomateTool } from '../../network/pdfAutomate';
-import { xlwingsExecuteTool } from '../../network/xlwingsExecute';
+import { pptGenerateTool } from '../../media/ppt';
+import { pptEditTool } from '../../media/ppt/editTool';
+import { docxGenerateTool } from '../../document/docxGenerate';
+import { excelGenerateTool } from '../../document/excelGenerate';
+import { pdfGenerateTool } from '../../media/pdfGenerate';
+import { pdfCompressTool } from '../../media/pdfCompress';
+import { PdfAutomateTool } from '../../media/pdfAutomate';
+import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 
 // Media generation / processing
-import { imageGenerateTool } from '../../network/imageGenerate';
-import { imageProcessTool } from '../../network/imageProcess';
-import { imageAnalyzeTool } from '../../network/imageAnalyze';
-import { imageAnnotateTool } from '../../network/imageAnnotate';
-import { videoGenerateTool } from '../../network/videoGenerate';
-import { textToSpeechTool } from '../../network/textToSpeech';
-import { speechToTextTool } from '../../network/speechToText';
-import { localSpeechToTextTool } from '../../network/localSpeechToText';
+import { imageGenerateTool } from '../../media/imageGenerate';
+import { imageProcessTool } from '../../media/imageProcess';
+import { imageAnalyzeTool } from '../../media/imageAnalyze';
+import { imageAnnotateTool } from '../../media/imageAnnotate';
+import { videoGenerateTool } from '../../media/videoGenerate';
+import { textToSpeechTool } from '../../media/textToSpeech';
+import { speechToTextTool } from '../../media/speechToText';
+import { localSpeechToTextTool } from '../../media/localSpeechToText';
 
 // Visual / chart helpers
 // chart_generate / mermaid_export / qrcode_generate 已迁移至原生 ToolModule
 // （见 modules/network/{chartGenerate,mermaidExport,qrcodeGenerate}.ts）
-import { screenshotPageTool } from '../../network/screenshotPage';
+import { screenshotPageTool } from '../../web/screenshotPage';
 
 // External integrations
 // jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已迁移为 native ToolModule

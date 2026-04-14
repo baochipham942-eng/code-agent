@@ -9,7 +9,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../../services/infra/logger';
-import { formatFileSize } from './utils';
+import { formatFileSize } from '../utils/fileSize';
 
 const execFileAsync = promisify(execFile);
 const logger = createLogger('PdfCompress');

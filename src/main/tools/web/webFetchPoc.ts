@@ -2,7 +2,7 @@
 // WebFetch (P0-5 POC version)
 //
 // 最小实现：纯 HTTP GET + 文本截断，不走 AI 提取（不依赖 ctx.modelCallback）
-// 旧版 src/main/tools/network/webFetch.ts 有信任域硬编码、HTML 清洗、AI 提取等
+// 旧版 src/main/tools/web/webFetch.ts 有信任域硬编码、HTML 清洗、AI 提取等
 // 复杂路径，POC 只验证：
 //   1. network 类 tool 的 canUseTool 闸门
 //   2. 无 API key 也能工作（node fetch 原生）

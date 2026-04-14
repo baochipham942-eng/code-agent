@@ -1,6 +1,6 @@
 // ============================================================================
 // PPT D1/D2/D5/D6 测试 — 模板引擎 + 数据驱动 + 人机协作 + 排版
-// 运行: npx tsx src/main/tools/network/ppt/__tests__/ppt-d1d2d5d6.test.mjs
+// 运行: npx tsx src/main/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs
 // ============================================================================
 
 import { createRequire } from 'module';

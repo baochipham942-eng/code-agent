@@ -36,11 +36,27 @@
 
 **不做**：在 CI 里跑所有交互式 swarm 场景（太贵）。
 
-**2026-04-14 install 修复**：workflow 文件早就存在，但 `npm ci` 在所有 job 第一步
-就因为 `ink@6.8.0` 的 `peerOptional @types/react>=19` 报 ERESOLVE（项目用
-@types/react@18），导致 swarm-health.json 一直空。加了项目级 `.npmrc`
-（`legacy-peer-deps=true`）让本地 + CI 行为一致。下一步是观察 swarm-health.json
-开始累积 consecutivePasses。
+**2026-04-14 收尾**：完成。共 7 次 push 修通从 install 到 e2e 的全链路：
+- `.npmrc legacy-peer-deps=true` 修 `ink@6 peerOptional @types/react>=19` 误报
+- `npm ci + 单独装 @rollup/rollup-linux-x64-gnu` 绕过 npm bug #4828
+  （macOS lockfile 不含 linux native binary）
+- `package.json` 显式声明 `dotenv` 依赖（之前靠 `~/node_modules` 环境污染才能 build）
+- `prebuild-install` 拉 better-sqlite3 Node 20 ABI prebuild，让 CI 走真 SQLite
+  路径而非 in-memory fallback
+- `whatwg-url@^14` overrides 消除 punycode DEP0040 噪音
+- `vite.config.ts` 回退 `manualChunks` 函数式（minify TDZ 错），删 vendor-prism
+  / vendor-react 空 chunk
+
+**健康指标实现策略调整**（弃 in-repo 文件）：
+原方案是 CI 写回 `ci/swarm-health.json` 累积 streak。但 `[skip ci]` 写回 commit
+让 `swarm-health.json` 永远比 main HEAD 滞后 1 个 commit，且污染 git history。
+改用模式 A — **不存，按需查**：streak 直接从 GitHub Actions API 派生。
+- 工具：`scripts/ci/swarm-streak.sh`（gh CLI + jq）
+- API 保留 90 天 workflow run history，足够推算 consecutivePasses / longestStreak
+- 零 commit 污染、零 lag，且 API 历史不可手改比 in-repo JSON 更可信
+- 看法：`bash scripts/ci/swarm-streak.sh [N]`（默认查最近 20 个 main run）
+
+**当前状态**：截至 2026-04-14，最近 5 个 main push 全 pass（streak: 5/5）。
 
 ### 2. 审批持久化（80 分版）
 
@@ -165,7 +181,7 @@ renderer 端新增 `SwarmTraceHistory` 历史回看面板（list + detail 两层
 
 | 条目 | 现状 | 目标 | 难度 |
 |------|------|------|------|
-| #1 CI 稳定 | **8/10 ✅ install 已修复** (2026-04-14) | 10/10 | 低 |
+| #1 CI 稳定 | **10/10 ✅ 已完成** (2026-04-14, streak 5/5) | 10/10 | 低 |
 | #2 审批持久化 | **8/10 ✅ 已完成** (2026-04-14) | 8/10 | 中 |
 | #3 Parallel checkpoint | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |
 | #4 Chaos/soak | 3/10 | 8/10 | 中高 |

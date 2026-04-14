@@ -223,11 +223,20 @@ function appendEventLog(
   entry: SwarmTimelineEvent | null,
 ): SwarmTimelineEvent[] {
   if (!entry) return eventLog;
+  // 幂等：按 entry.id 去重，避免 EventBus 重放时 timeline 出现重复条目。
+  // 见 ADR-010 #6。
+  if (eventLog.some((existing) => existing.id === entry.id)) {
+    return eventLog;
+  }
   return [...eventLog, entry].slice(-MAX_EVENT_LOG);
 }
 
 function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): SwarmTimelineEvent | null {
-  const agentId = event.data.agentId;
+  // agent 相关事件大部分通过 agentState 携带 id，而不是 event.data.agentId；
+  // fallback 到 agentState.id 保证 timeline entry id 带上 agent 后缀，避免
+  // appendEventLog 按 id 去重时把 swarm:agent:added-undefined 和
+  // swarm:agent:updated-undefined 当成同一条记录。见 ADR-010 #6。
+  const agentId = event.data.agentId ?? event.data.agentState?.id;
   const agentName = agentId
     ? agents.find((agent) => agent.id === agentId)?.name ?? agentId
     : undefined;

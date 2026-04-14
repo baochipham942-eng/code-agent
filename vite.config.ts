@@ -38,24 +38,34 @@ export default defineConfig({
     outDir: '../../dist/renderer',
     emptyOutDir: true,
     sourcemap: true,
+    // mermaid (~1.24MB) 和 application code (~1.18MB) 是不可拆分的下限，
+    // 阈值放宽到 1700 以匹配真实下限；超过此值说明引入了新的大依赖，
+    // 应该当 warning 处理而不是默默吞掉。
+    chunkSizeWarningLimit: 1700,
     rollupOptions: {
-      external: [
-        ...builtinModules,
-        ...builtinModules.map((m) => `node:${m}`),
-      ],
+      external: (id) => {
+        if (builtinModules.includes(id)) return true;
+        if (id.startsWith('node:')) return true;
+        // main/* 是 CLI/Tauri 主进程代码，renderer 通过 IPC 调用，
+        // 不应被 Vite 打入 renderer bundle。@shared/commands 里的部分
+        // 命令 handler 通过 dynamic import 引用 main/*，但只在 CLI 触发，
+        // renderer 永不执行——把这些路径标 external 避免 ~1MB 的 gpt-tokenizer
+        // / sharp / context 模块全量进 renderer chunks。
+        if (/[\\/]src[\\/]main[\\/]/.test(id)) return true;
+        return false;
+      },
       output: {
-        // 代码分割：将大型依赖拆分为独立 chunk，提升首屏加载速度
-        manualChunks: {
-          // React 核心
-          'vendor-react': ['react', 'react-dom'],
-          // 状态管理
-          'vendor-zustand': ['zustand'],
-          // 代码高亮
-          'vendor-prism': ['prismjs'],
-          // Markdown 渲染
-          'vendor-markdown': ['react-markdown', 'remark-gfm'],
-          // React Flow (DAG 可视化)
-          'vendor-reactflow': ['@xyflow/react'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'vendor-react';
+          if (id.includes('/mermaid/') || id.includes('@mermaid-js')) return 'vendor-mermaid';
+          if (id.includes('/cytoscape')) return 'vendor-cytoscape';
+          if (id.includes('@xyflow') || id.includes('/d3-')) return 'vendor-reactflow';
+          if (id.includes('react-markdown') || id.includes('/remark') || id.includes('/rehype') || id.includes('/unified') || id.includes('/mdast') || id.includes('/hast')) return 'vendor-markdown';
+          if (id.includes('prismjs') || id.includes('react-syntax-highlighter') || id.includes('refractor')) return 'vendor-prism';
+          if (id.includes('/zustand/')) return 'vendor-zustand';
+          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('framer-motion')) return 'vendor-ui';
+          return 'vendor';
         },
       },
     },

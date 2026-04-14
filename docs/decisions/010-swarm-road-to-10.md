@@ -36,6 +36,12 @@
 
 **不做**：在 CI 里跑所有交互式 swarm 场景（太贵）。
 
+**2026-04-14 install 修复**：workflow 文件早就存在，但 `npm ci` 在所有 job 第一步
+就因为 `ink@6.8.0` 的 `peerOptional @types/react>=19` 报 ERESOLVE（项目用
+@types/react@18），导致 swarm-health.json 一直空。加了项目级 `.npmrc`
+（`legacy-peer-deps=true`）让本地 + CI 行为一致。下一步是观察 swarm-health.json
+开始累积 consecutivePasses。
+
 ### 2. 审批持久化（80 分版）
 
 **现状**：`planApproval.pendingResolvers` / `swarmLaunchApproval.pendingResolvers`
@@ -48,6 +54,22 @@
 
 **不做（95 分版）**：跨进程 token 迁移、跨窗口 session 复活。理由：桌面单进程
 应用，崩溃后干净重请求更符合用户直觉，也更便宜。
+
+**2026-04-14 收尾**：已完成。统一的 `pending_approvals` 表（kind 列区分 plan /
+launch）+ `PendingApprovalRepository` + 两个 gate 的 `attachPersistence(repo)`
+分别在 bootstrap 时 hydrate 上次崩溃残留的 pending 行，标 'orphaned' 状态写
+回内存 Map。崩溃前 in-flight 的 promise resolver 已死，所以策略是
+**fail-rejected**：旧 pending 行打成 rejected，coordinator 通过 getPendingPlans
+仍能看到它们存在，但会作为新一轮 plan 重新请求。
+
+写入触发点：
+- enqueueApproval / requestApproval → INSERT pending
+- approve / reject → UPDATE 为对应状态
+- cancelAll → UPDATE 为 rejected（含 cancel reason）
+- 超时 fail-closed 复用 reject/approve 路径自动落表
+
+测试覆盖：13 个 Repository 单测 + 12 个 gate 集成测试（lifecycle / hydrate /
+跨 kind 隔离 / 未 attach 时降级为纯内存）。
 
 ### 3. ParallelAgentCoordinator checkpoint
 
@@ -143,8 +165,8 @@ renderer 端新增 `SwarmTraceHistory` 历史回看面板（list + detail 两层
 
 | 条目 | 现状 | 目标 | 难度 |
 |------|------|------|------|
-| #1 CI 稳定 | 6/10 | 10/10 | 低 |
-| #2 审批持久化 | 5/10 | 8/10 | 中 |
+| #1 CI 稳定 | **8/10 ✅ install 已修复** (2026-04-14) | 10/10 | 低 |
+| #2 审批持久化 | **8/10 ✅ 已完成** (2026-04-14) | 8/10 | 中 |
 | #3 Parallel checkpoint | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |
 | #4 Chaos/soak | 3/10 | 8/10 | 中高 |
 | #5 Trace 持久化 | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |

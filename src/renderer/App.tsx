@@ -143,8 +143,6 @@ export const App: React.FC = () => {
     customHandlers: {
       triggerCompact: async () => {
         try {
-          const { IPC_CHANNELS } = await import('@shared/ipc');
-          const ipcService = (await import('./services/ipcService')).default;
           await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '');
         } catch { /* ignore */ }
       },

@@ -16,6 +16,7 @@ import { getTeammateService } from './teammate/teammateService';
 import { getEventBus } from '../protocol/events/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { ToolExecutionRequest } from './subagentPipeline';
+import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 
 /**
  * ADR-008 Phase 3: 通过 EventBus 发布 plan review 事件
@@ -72,9 +73,77 @@ export class PlanApprovalGate {
   private pendingResolvers: Map<string, (result: PlanApprovalResult) => void> = new Map();
   /** Default timeout for coordinator response (30 seconds) */
   private approvalTimeoutMs: number;
+  /**
+   * 持久化仓库（ADR-010 #2）。null 表示 DB 未就绪 / 测试不需要持久化，
+   * 此时所有写入路径退化为纯内存模式。
+   */
+  private persistRepo: PendingApprovalRepository | null = null;
 
   constructor(options?: { approvalTimeoutMs?: number }) {
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? 30_000;
+  }
+
+  /**
+   * 注入持久化 repo，并 hydrate 上次进程崩溃残留的 pending 行。
+   * 残留行会被打成 'orphaned' 状态写回内存 Map（不挂 resolver），
+   * coordinator 通过 getPendingPlans() 仍能看到它们的存在并显式处理。
+   */
+  attachPersistence(repo: PendingApprovalRepository, now: number = Date.now()): number {
+    this.persistRepo = repo;
+    let hydrated = 0;
+    try {
+      const orphans = repo.markAllPendingAsOrphaned(now);
+      for (const row of orphans) {
+        if (row.kind !== 'plan') continue;
+        try {
+          const submission = JSON.parse(row.payloadJson) as PlanSubmission;
+          submission.status = 'rejected';
+          submission.feedback = row.feedback ?? 'Orphaned by process restart';
+          submission.resolvedAt = row.resolvedAt ?? now;
+          this.pendingPlans.set(submission.id, submission);
+          hydrated += 1;
+        } catch (err) {
+          logger.warn(`Failed to hydrate orphaned plan ${row.id}`, err);
+        }
+      }
+      if (hydrated > 0) {
+        logger.warn(`Hydrated ${hydrated} orphaned plan approval(s) from previous process`);
+      }
+    } catch (err) {
+      logger.error('attachPersistence: failed to hydrate orphaned plans', err);
+    }
+    return hydrated;
+  }
+
+  private safePersistInsert(submission: PlanSubmission): void {
+    if (!this.persistRepo) return;
+    try {
+      this.persistRepo.insert({
+        id: submission.id,
+        kind: 'plan',
+        agentId: submission.agentId,
+        agentName: submission.agentName,
+        coordinatorId: submission.coordinatorId,
+        payload: submission,
+        submittedAt: submission.submittedAt,
+      });
+    } catch (err) {
+      logger.warn(`PendingApproval insert failed for ${submission.id}`, err);
+    }
+  }
+
+  private safePersistResolve(
+    id: string,
+    status: 'approved' | 'rejected',
+    feedback: string | null,
+    resolvedAt: number,
+  ): void {
+    if (!this.persistRepo) return;
+    try {
+      this.persistRepo.resolve({ id, status, feedback, resolvedAt });
+    } catch (err) {
+      logger.warn(`PendingApproval resolve failed for ${id}`, err);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -156,6 +225,7 @@ export class PlanApprovalGate {
     plan.feedback = feedback;
     plan.resolvedAt = Date.now();
     logger.info(`Plan approved: ${planId} for ${plan.agentName}`);
+    this.safePersistResolve(planId, 'approved', feedback ?? null, plan.resolvedAt);
 
     // Event-driven wake-up: resolve the pending waitForApproval immediately
     const resolver = this.pendingResolvers.get(planId);
@@ -177,6 +247,7 @@ export class PlanApprovalGate {
     plan.feedback = reason;
     plan.resolvedAt = Date.now();
     logger.info(`Plan rejected: ${planId} for ${plan.agentName} — ${reason}`);
+    this.safePersistResolve(planId, 'rejected', reason, plan.resolvedAt);
 
     const resolver = this.pendingResolvers.get(planId);
     if (resolver) {
@@ -197,6 +268,7 @@ export class PlanApprovalGate {
     if (this.pendingResolvers.size === 0) return 0;
     const feedback = `Cancelled: ${reason}`;
     let cancelled = 0;
+    const now = Date.now();
     // 先快照 resolver list 再迭代，防止 resolver 触发 setter 改动原 Map
     const entries = Array.from(this.pendingResolvers.entries());
     this.pendingResolvers.clear();
@@ -205,8 +277,9 @@ export class PlanApprovalGate {
       if (plan && plan.status === 'pending') {
         plan.status = 'rejected';
         plan.feedback = feedback;
-        plan.resolvedAt = Date.now();
+        plan.resolvedAt = now;
       }
+      this.safePersistResolve(planId, 'rejected', feedback, now);
       try {
         resolver({ approved: false, feedback, autoApproved: true });
         cancelled += 1;
@@ -263,6 +336,7 @@ export class PlanApprovalGate {
         };
 
         this.pendingPlans.set(planId, submission);
+        this.safePersistInsert(submission);
 
         // Notify coordinator via TeammateService
         try {
@@ -313,11 +387,13 @@ export class PlanApprovalGate {
         const riskLevel = plan?.risk.level ?? 'unknown';
         const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, risk: ${riskLevel}). Coordinator did not respond; destructive plans require explicit approval.`;
         logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-rejecting (risk: ${riskLevel})`);
+        const now = Date.now();
         if (plan && plan.status === 'pending') {
           plan.status = 'rejected';
           plan.feedback = rejectFeedback;
-          plan.resolvedAt = Date.now();
+          plan.resolvedAt = now;
         }
+        this.safePersistResolve(planId, 'rejected', rejectFeedback, now);
 
         resolve({
           approved: false,

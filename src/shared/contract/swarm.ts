@@ -163,10 +163,16 @@ export interface SwarmVerificationResult {
 
 /**
  * Swarm 事件载荷
+ *
+ * runId 用于关联同一次 swarm 执行内的所有事件。由 SwarmEventEmitter 在
+ * `started` 时生成、其余事件统一打戳、`completed`/`cancelled` 时清空。
+ * 对齐 OpenTelemetry / W3C Trace Context 把 trace id 写进消息契约的实践
+ * （ADR-010 #5）。Renderer 端可不依赖此字段，仅 SwarmTraceWriter 需要。
  */
 export interface SwarmEvent {
   type: SwarmEventType;
   timestamp: number;
+  runId?: string;
   data: {
     agentId?: string;
     agentState?: SwarmAgentState;

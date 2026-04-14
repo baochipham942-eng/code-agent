@@ -28,6 +28,8 @@ import {
   persistAgentRun,
   getRecentAgentHistory,
 } from './session/agentHistoryPersistence';
+import { installSwarmTraceWriter } from './agent/swarmTraceWriter';
+import { getDatabase } from './services/core/databaseService';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -147,6 +149,21 @@ app.whenReady().then(async () => {
       teammateService: getTeammateService(),
       agentHistory: { persistAgentRun, getRecentAgentHistory },
     });
+
+    // 2.5 Install SwarmTraceWriter（ADR-010 #5）
+    // 订阅 EventBus 'swarm' domain，把 swarm 运行/agent/事件流持久化到 SQLite。
+    // 数据库尚未初始化时静默跳过，等 background services 完成 DB init 后由
+    // initializeBackgroundServices 内再装一次（幂等）。
+    try {
+      const db = getDatabase();
+      if (db.isReady) {
+        installSwarmTraceWriter(db.getSwarmTraceRepo(), {
+          getSessionId: () => getCurrentSessionId() ?? null,
+        });
+      }
+    } catch (err) {
+      logger.warn('SwarmTraceWriter install deferred:', err);
+    }
 
     // 3. Setup IPC handlers
     setupAllIpcHandlers(ipcMain, {

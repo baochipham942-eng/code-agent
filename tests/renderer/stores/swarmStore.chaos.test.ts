@@ -195,14 +195,8 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(state.planReviews[0].id).toBe('plan-1');
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // `appendMessage` 按 `msg-${timestamp}-${from}-${to}` 生成 id，但它把消息直接
-  // push 进 messages 数组，没有做 id 去重。EventBus 重放同一个 agent:message
-  // 会在 UI 里显示两条重复消息。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:465-487。
-  it.skip('BUG duplicate: agent:message 重复投递不应重复入队', () => {
+  // ADR-010 #6 固定：appendMessage 按 id 去重（swarmStore.ts:479-485）。
+  it('agent:message 重复投递不应重复入队', () => {
     const store = useSwarmStore.getState();
     const msg = evt('swarm:agent:message', {
       message: { from: 'a1', to: 'a2', content: 'hi', messageType: 'coordination' },
@@ -269,19 +263,6 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(countAfterSecond).toBe(1);
   });
 
-  it('documented current behavior: duplicate agent:message 当前会出现两条（用于回归基线）', () => {
-    // 这条测试固化"当前 push 语义"的实际行为，方便未来修复时明确发现基线改变。
-    // 不要把它当成"期望行为"——期望行为在上面的 .skip 里。
-    const store = useSwarmStore.getState();
-    const msg = evt('swarm:agent:message', {
-      message: { from: 'a1', to: 'a2', content: 'hi', messageType: 'coordination' },
-    }, 5000);
-
-    store.handleEvent(msg);
-    store.handleEvent(msg);
-
-    expect(useSwarmStore.getState().messages).toHaveLength(2);
-  });
 });
 
 // ---------------------------------------------------------------------------

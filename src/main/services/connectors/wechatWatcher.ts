@@ -6,9 +6,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { execFile } from 'child_process';
-import { createLogger } from './infra/logger';
+import { createLogger } from '../infra/logger';
 
-import { Disposable, getServiceRegistry } from './serviceRegistry';
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('WeChatWatcher');
 
 // 微信在 macOS 上的文件存储基础路径
@@ -161,7 +161,7 @@ export class WeChatWatcher implements Disposable {
    */
   private async loadProcessedFiles(): Promise<void> {
     try {
-      const { getDatabase } = await import('./core/databaseService');
+      const { getDatabase } = await import('../core/databaseService');
       const db = getDatabase();
       if (!db.getDb()) return;
 
@@ -208,8 +208,8 @@ export class WeChatWatcher implements Disposable {
     this.processedPaths.add(filePath);
 
     try {
-      const { getCaptureService } = await import('./captureService');
-      const { getDocumentContextService } = await import('../context/documentContext/documentContextService');
+      const { getCaptureService } = await import('../knowledge/captureService');
+      const { getDocumentContextService } = await import('../../context/documentContext/documentContextService');
       const service = getCaptureService();
       const docService = getDocumentContextService();
       const basename = path.basename(filePath);

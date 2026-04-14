@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
-import { getCaptureService } from '../services/captureService';
+import { getCaptureService } from '../services/knowledge/captureService';
 import { getDocumentContextService } from '../context/documentContext/documentContextService';
 import { createLogger } from '../services/infra/logger';
 import type { CaptureRequest, CaptureSource } from '@shared/contract/capture';
@@ -165,7 +165,7 @@ export function registerCaptureHandlers(ipcMain: IpcMain): void {
 
         case 'wechatStatus': {
           try {
-            const { getWeChatWatcher } = await import('../services/wechatWatcher');
+            const { getWeChatWatcher } = await import('../services/connectors/wechatWatcher');
             const status = getWeChatWatcher().getStatus();
             return { success: true, data: status } satisfies IPCResponse<unknown>;
           } catch {

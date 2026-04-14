@@ -11,9 +11,9 @@ import type {
   ExtensionType,
   ExtensionStatus,
   ExtensionSource,
-} from '../../shared/contract/extension';
-import type { ValidationResult } from '../plugins/pluginValidator';
-import { createLogger } from './infra/logger';
+} from '../../../shared/contract/extension';
+import type { ValidationResult } from '../../plugins/pluginValidator';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('ExtensionOpsService');
 
@@ -38,7 +38,7 @@ class ExtensionOpsService {
 
     // 1. JS plugins from pluginRegistry
     try {
-      const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+      const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
       const registry = getPluginRegistry();
       for (const plugin of registry.getPlugins()) {
         const info: ExtensionInfo = {
@@ -61,7 +61,7 @@ class ExtensionOpsService {
     // 2. Marketplace skills from installService
     try {
       const { listInstalledPlugins } = await import(
-        '../skills/marketplace/installService'
+        '../../skills/marketplace/installService'
       );
       const installed = await listInstalledPlugins();
       for (const [spec, record] of Object.entries(installed)) {
@@ -86,7 +86,7 @@ class ExtensionOpsService {
 
     // 3. MCP servers from mcpClient
     try {
-      const { getMCPClient } = await import('../mcp/mcpClient');
+      const { getMCPClient } = await import('../../mcp/mcpClient');
       const status = getMCPClient().getStatus();
       for (const name of [...status.connectedServers, ...status.inProcessServers]) {
         const mcpId = `mcp:${name}`;
@@ -128,7 +128,7 @@ class ExtensionOpsService {
 
   async install(spec: string): Promise<void> {
     const { installPlugin } = await import(
-      '../skills/marketplace/installService'
+      '../../skills/marketplace/installService'
     );
     await installPlugin(spec);
     this.typeCache = null; // invalidate
@@ -148,7 +148,7 @@ class ExtensionOpsService {
     }
 
     const { uninstallPlugin } = await import(
-      '../skills/marketplace/installService'
+      '../../skills/marketplace/installService'
     );
     await uninstallPlugin(id);
     this.typeCache = null;
@@ -162,7 +162,7 @@ class ExtensionOpsService {
     const type = await this.resolveType(id);
 
     if (type === 'plugin') {
-      const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+      const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
       const ok = await getPluginRegistry().activatePlugin(id);
       if (!ok) throw new Error(`Failed to activate JS plugin '${id}'`);
       return;
@@ -170,7 +170,7 @@ class ExtensionOpsService {
 
     // marketplace skill
     const { enablePlugin } = await import(
-      '../skills/marketplace/installService'
+      '../../skills/marketplace/installService'
     );
     await enablePlugin(id);
   }
@@ -183,14 +183,14 @@ class ExtensionOpsService {
     const type = await this.resolveType(id);
 
     if (type === 'plugin') {
-      const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+      const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
       const ok = await getPluginRegistry().deactivatePlugin(id);
       if (!ok) throw new Error(`Failed to deactivate JS plugin '${id}'`);
       return;
     }
 
     const { disablePlugin } = await import(
-      '../skills/marketplace/installService'
+      '../../skills/marketplace/installService'
     );
     await disablePlugin(id);
   }
@@ -207,7 +207,7 @@ class ExtensionOpsService {
       const type = await this.resolveType(id);
 
       if (type === 'plugin') {
-        const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+        const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
         const ok = await getPluginRegistry().reloadPlugin(id);
         if (!ok) throw new Error(`Failed to reload JS plugin '${id}'`);
         return;
@@ -215,7 +215,7 @@ class ExtensionOpsService {
 
       // Marketplace skills don't have a per-plugin reload; reload discovery.
       const { getSkillDiscoveryService } = await import(
-        './skills/skillDiscoveryService'
+        '../skills/skillDiscoveryService'
       );
       const svc = getSkillDiscoveryService();
       await svc.reload();
@@ -225,7 +225,7 @@ class ExtensionOpsService {
     // Reload everything
     try {
       const { getSkillDiscoveryService } = await import(
-        './skills/skillDiscoveryService'
+        '../skills/skillDiscoveryService'
       );
       await getSkillDiscoveryService().reload();
     } catch (err) {
@@ -234,7 +234,7 @@ class ExtensionOpsService {
 
     // Reload JS plugins
     try {
-      const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+      const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
       const registry = getPluginRegistry();
       for (const plugin of registry.getPlugins()) {
         await registry.reloadPlugin(plugin.manifest.id).catch((e: unknown) => {
@@ -253,7 +253,7 @@ class ExtensionOpsService {
   // --------------------------------------------------------------------------
 
   async validate(id: string): Promise<ValidationResult> {
-    const { getPluginRegistry } = await import('../plugins/pluginRegistry');
+    const { getPluginRegistry } = await import('../../plugins/pluginRegistry');
     const plugin = getPluginRegistry().getPlugin(id);
 
     if (!plugin) {
@@ -264,7 +264,7 @@ class ExtensionOpsService {
       };
     }
 
-    const { validatePlugin } = await import('../plugins/pluginValidator');
+    const { validatePlugin } = await import('../../plugins/pluginValidator');
     return validatePlugin(plugin.rootPath, plugin.manifest);
   }
 

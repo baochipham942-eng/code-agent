@@ -209,14 +209,9 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
     expect(state.messages).toHaveLength(1);
   });
 
-  // BUG: ADR-010 item #4, production fix deferred to main-line session
-  //
-  // `completedRuns` 在 agent:completed/failed 分支无条件 push 新 run 记录，没有
-  // 按 agentId 去重。同一个 agent 的 completed 事件重放一次，UI 就会看到两条
-  // 相同的完成记录，且 `persistRunViaIPC` 会被调用两次。
-  //
-  // 见 src/renderer/stores/swarmStore.ts:578-586, 649-655。
-  it.skip('BUG duplicate: agent:completed 重复投递不应产生两条 completedRun', () => {
+  // ADR-010 #6 固定：completedRuns 按 agent id 去重，IPC 持久化只发一次
+  // （swarmStore.ts:623-634, 699-701）。
+  it('agent:completed 重复投递不应产生两条 completedRun', () => {
     const store = useSwarmStore.getState();
     store.handleEvent(evt('swarm:started', {}, 1));
 

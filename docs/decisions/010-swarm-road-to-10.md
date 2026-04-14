@@ -93,6 +93,21 @@ ADR-010 #3 范围仅限 Parallel 侧，刻意不动 autoAgentCoordinator。
 价值高得多**——给用户回溯 "上次那个 swarm 为什么失败" 的能力，是产品层面的
 差异化，不是架构层面的炫技。
 
+**2026-04-14 收尾**：已完成。三层 schema 对齐 Langfuse / OpenTelemetry 的
+Trace / Observation / Event 模型（`swarm_runs` / `swarm_run_agents` /
+`swarm_run_events`），SwarmEventEmitter 在 `started()` 处生成 runId 并通过
+`SwarmEvent.runId?: string` 字段统一打戳事件流（对齐 W3C Trace Context 的
+in-message correlation 实践）。SwarmTraceWriter 订阅 EventBus `swarm`
+domain 串行 fire-and-forget 写入仓库，run 收尾时聚合 totals + aggregation
+快照。失败归因仅做启发式 enum 字符串归类，不跑 LLM。
+
+renderer 端新增 `SwarmTraceHistory` 历史回看面板（list + detail 两层），
+挂在 Orchestration tab 的 empty / active 两种状态。renderer 不再触发
+`agent-history.json` 写入；旧 JSON 读路径仍保留以兼容历史数据。
+
+详细字段对照、写入触发点表与查看流程见
+[docs/architecture/swarm-trace-persistence.md](../architecture/swarm-trace-persistence.md)。
+
 ### 6. 取消正确性 + 幂等保证
 
 **现状**：cancel 逻辑在 `swarmChain.test.ts` 覆盖了"谁响应 cancel"的路径选择，
@@ -132,7 +147,7 @@ ADR-010 #3 范围仅限 Parallel 侧，刻意不动 autoAgentCoordinator。
 | #2 审批持久化 | 5/10 | 8/10 | 中 |
 | #3 Parallel checkpoint | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |
 | #4 Chaos/soak | 3/10 | 8/10 | 中高 |
-| #5 Trace 持久化 | 2/10 | 9/10 | 中 |
+| #5 Trace 持久化 | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |
 | #6 Cancel + 幂等 | 5/10 | 9/10 | 中 |
 
 6 条做完对应到 swarm 整体 ~9/10。剩下 1 分留给"真正的不确定性"——某些

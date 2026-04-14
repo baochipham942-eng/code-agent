@@ -60,6 +60,12 @@ parallel / hybrid 策略）。`parallelAgentCoordinator.ts` 作为 LLM 显式调
 **理由**：ADR-009 已经明确两个协调器分家不合并，那它们就应该在"crash-safe"
 这种基础能力上对称。
 
+**2026-04-14 收尾**：已完成。Parallel 一侧补齐了节点级 persist /
+restore / delete + executeParallel 与 executeWithDAG 双路径的 cache-skip
++ DAG restore 预喂闭环。详细字段对照与触发点表见
+[docs/architecture/coordinator-checkpoint-symmetry.md](../architecture/coordinator-checkpoint-symmetry.md)。
+ADR-010 #3 范围仅限 Parallel 侧，刻意不动 autoAgentCoordinator。
+
 ### 4. Chaos / Soak 测试（按优先级）
 
 **现状**：单测 + 集成 + e2e 都测 happy path，没测异常序列。
@@ -124,7 +130,7 @@ parallel / hybrid 策略）。`parallelAgentCoordinator.ts` 作为 LLM 显式调
 |------|------|------|------|
 | #1 CI 稳定 | 6/10 | 10/10 | 低 |
 | #2 审批持久化 | 5/10 | 8/10 | 中 |
-| #3 Parallel checkpoint | 4/10 | 9/10 | 中 |
+| #3 Parallel checkpoint | **9/10 ✅ 已完成** (2026-04-14) | 9/10 | 中 |
 | #4 Chaos/soak | 3/10 | 8/10 | 中高 |
 | #5 Trace 持久化 | 2/10 | 9/10 | 中 |
 | #6 Cancel + 幂等 | 5/10 | 9/10 | 中 |

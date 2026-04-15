@@ -36,6 +36,12 @@ export const MEMORY = {
   EPISODIC_RECALL_MAX_LIMIT: 10,
   /** EpisodicRecall 单条消息片段最大字符数 */
   EPISODIC_SNIPPET_MAX_CHARS: 300,
+  /** Skill injection: 会话启动时最多注入多少条 skill 记忆 */
+  SKILL_MAX_INJECTION_COUNT: 3,
+  /** Skill injection: 所有 skill 拼起来的字符上限（~token 预算，粗估 4 chars/token） */
+  SKILL_MAX_INJECTION_CHARS: 6000,
+  /** Skill injection: 用户查询的最小 token 数（少于此数直接跳过匹配，避免"a" 之类命中所有） */
+  SKILL_MIN_QUERY_TOKENS: 1,
 } as const;
 
 /** 向量存储配置 */

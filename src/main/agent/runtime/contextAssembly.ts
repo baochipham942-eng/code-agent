@@ -64,6 +64,7 @@ import {
   buildRuntimeModeBlock,
 } from '../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../lightMemory/indexLoader';
+import { loadRelevantSkills, buildSkillInjectionBlock } from '../../lightMemory/skillLoader';
 import { getRepoMap } from '../../context/repoMap';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { buildSessionMetadataBlock } from '../../lightMemory/sessionMetadata';
@@ -647,6 +648,31 @@ export class ContextAssembly {
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
       systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+    }
+
+    // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配
+    // 命中 skill_*.md 文件并追加到 dynamic section
+    if (!this.ctx.isSimpleTaskMode) {
+      try {
+        const lastUserMessage = [...this.ctx.messages]
+          .reverse()
+          .find((m: any) => m.role === 'user');
+        const userQueryForSkills = lastUserMessage?.content || '';
+        if (userQueryForSkills) {
+          const skills = await loadRelevantSkills(userQueryForSkills);
+          const skillBlock = buildSkillInjectionBlock(skills);
+          if (skillBlock) {
+            systemPrompt += `\n\n${skillBlock}`;
+            logger.debug(
+              `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
+            );
+          }
+        }
+      } catch (err) {
+        logger.debug(
+          `[ContextAssembly] Skill injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+      }
     }
 
     // 注入 Repo Map（代码结构索引，借鉴 Aider）

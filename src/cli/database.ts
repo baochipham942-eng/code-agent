@@ -205,6 +205,52 @@ export class CLIDatabaseService {
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
+
+    // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，
+    // 使 CLI 与桌面应用共享同一张 FTS 虚拟表（两者都指向 ~/.code-agent/code-agent.db）
+    // CREATE VIRTUAL TABLE IF NOT EXISTS 幂等，谁先跑都行
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts USING fts5(
+        message_id UNINDEXED,
+        session_id UNINDEXED,
+        role UNINDEXED,
+        content,
+        timestamp UNINDEXED,
+        tokenize = 'trigram'
+      )
+    `);
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
+        INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      END
+    `);
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_ad_fts AFTER DELETE ON messages BEGIN
+        DELETE FROM session_messages_fts WHERE message_id = old.id;
+      END
+    `);
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content ON messages BEGIN
+        DELETE FROM session_messages_fts WHERE message_id = old.id;
+        INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      END
+    `);
+
+    // 首次升级后从已有 messages backfill（幂等：只在 FTS 空 + messages 非空时跑）
+    try {
+      const ftsCount = (this.db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as { c: number } | undefined)?.c ?? 0;
+      const msgCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined)?.c ?? 0;
+      if (ftsCount === 0 && msgCount > 0) {
+        this.db.exec(`
+          INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+          SELECT id, session_id, role, COALESCE(content, ''), timestamp FROM messages
+        `);
+      }
+    } catch {
+      // backfill 失败不阻塞 CLI 启动
+    }
   }
 
   private createIndexes(): void {
@@ -446,6 +492,63 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
     }));
+  }
+
+  /**
+   * FTS5 全文搜索历史会话消息（与 Electron SessionRepository.searchSessionMessagesFts 对齐）
+   * - 查询默认包成 phrase literal，避免 `-` / `:` 之类 FTS5 运算符误解释
+   * - sessionId 参数限定搜索作用域
+   */
+  searchSessionMessagesFts(
+    query: string,
+    options: { limit?: number; sessionId?: string } = {},
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    role: string;
+    content: string;
+    timestamp: number;
+  }> {
+    if (!this.db) return [];
+    const trimmed = query.trim();
+    if (trimmed.length < 3) return [];
+
+    const ftsQuery = trimmed.startsWith('"')
+      ? trimmed
+      : '"' + trimmed.replace(/"/g, '""') + '"';
+    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
+    const params: unknown[] = [ftsQuery];
+    let whereSession = '';
+    if (options.sessionId) {
+      whereSession = 'AND session_id = ?';
+      params.push(options.sessionId);
+    }
+    params.push(limit);
+
+    try {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT message_id, session_id, role, content, timestamp
+          FROM session_messages_fts
+          WHERE content MATCH ? ${whereSession}
+          ORDER BY rank, timestamp DESC
+          LIMIT ?
+          `,
+        )
+        .all(...params) as SQLiteRow[];
+
+      return rows.map((row) => ({
+        messageId: String(row.message_id ?? ''),
+        sessionId: String(row.session_id ?? ''),
+        role: String(row.role ?? ''),
+        content: String(row.content ?? ''),
+        timestamp: Number(row.timestamp ?? 0),
+      }));
+    } catch {
+      // FTS 表不存在或查询失败 — 返回空，不阻塞调用方
+      return [];
+    }
   }
 
   // --------------------------------------------------------------------------

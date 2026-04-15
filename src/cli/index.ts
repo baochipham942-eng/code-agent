@@ -15,6 +15,7 @@ import { exportCommand } from './commands/export';
 import { listToolsCommand } from './commands/listTools';
 import { listAgentsCommand } from './commands/listAgents';
 import { execToolCommand } from './commands/execTool';
+import { initSoulCommand } from './commands/initSoul';
 import { version } from '../../package.json';
 
 const program = new Command();
@@ -45,6 +46,7 @@ program.addCommand(exportCommand);
 program.addCommand(listToolsCommand);
 program.addCommand(listAgentsCommand);
 program.addCommand(execToolCommand);
+program.addCommand(initSoulCommand);
 
 // Parse and run
 program.parse();

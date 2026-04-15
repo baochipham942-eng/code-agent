@@ -22,6 +22,14 @@ export const MEMORY = {
   RECORD_DECAY_DAYS: 90,
   /** Minimum memory confidence after decay */
   RECORD_MIN_CONFIDENCE: 0.1,
+  /** Episodic FTS 索引的保留天数（超过此天数的消息触发 prune 可被清理） */
+  EPISODIC_INDEX_RETENTION_DAYS: 90,
+  /** EpisodicRecall 工具默认返回条数 */
+  EPISODIC_RECALL_DEFAULT_LIMIT: 5,
+  /** EpisodicRecall 工具最大返回条数 */
+  EPISODIC_RECALL_MAX_LIMIT: 10,
+  /** EpisodicRecall 单条消息片段最大字符数 */
+  EPISODIC_SNIPPET_MAX_CHARS: 300,
 } as const;
 
 /** 向量存储配置 */

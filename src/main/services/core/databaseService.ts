@@ -199,6 +199,9 @@ export class DatabaseService {
       this.experimentRepo = new ExperimentRepository(this.db);
       this.swarmTraceRepo = new SwarmTraceRepository(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
+
+      // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
+      this.sessionRepo.backfillSessionMessagesFts();
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -877,6 +880,48 @@ export class DatabaseService {
         feedback TEXT
       )
     `);
+
+    // Episodic FTS5 index — full-text search over session messages
+    // 支持 Hermes 四层记忆里的 episodic recall：LLM 通过 EpisodicRecall 工具
+    // 用关键词回查历史会话原文。用 triggers 自动同步 messages 表，应用层无感知。
+    // tokenizer trigram —— 同时支持中英文 3+ 字符的子串匹配，避开 unicode61
+    // 对 CJK 连续字符当一个 token 的限制
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts USING fts5(
+        message_id UNINDEXED,
+        session_id UNINDEXED,
+        role UNINDEXED,
+        content,
+        timestamp UNINDEXED,
+        tokenize = 'trigram'
+      )
+    `);
+
+    // 自动同步 triggers — 任何往 messages 表写的代码路径都会被 catch
+    // AFTER INSERT：新消息追加到 FTS
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
+        INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      END
+    `);
+
+    // AFTER DELETE：级联删除 FTS 行
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_ad_fts AFTER DELETE ON messages BEGIN
+        DELETE FROM session_messages_fts WHERE message_id = old.id;
+      END
+    `);
+
+    // AFTER UPDATE OF content：只在 content 变化时刷新 FTS（tool_calls / tool_results
+    // 更新不触发，避免流式调用时的无效写）
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content ON messages BEGIN
+        DELETE FROM session_messages_fts WHERE message_id = old.id;
+        INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      END
+    `);
   }
 
   private createIndexes(): void {
@@ -1088,6 +1133,7 @@ export class DatabaseService {
   listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }
   archiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.archiveSession(sessionId); }
   unarchiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.unarchiveSession(sessionId); }
+  searchSessionMessagesFts(query: string, options?: { limit?: number; sessionId?: string }): Array<{ messageId: string; sessionId: string; role: string; content: string; timestamp: number }> { this.ensureDb(); return this.sessionRepo.searchSessionMessagesFts(query, options); }
 
   // --- MemoryRepository ---
   createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord { this.ensureDb(); return this.memoryRepo.createMemory(data); }

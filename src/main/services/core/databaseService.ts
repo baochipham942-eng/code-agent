@@ -239,6 +239,20 @@ export class DatabaseService {
         }
       }
     }
+
+    // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列
+    // 背景：2026-04-12 的 refactor (8a68ee85) 把运行时 generationId 概念抹掉了，
+    // 但 sessions 表的 `generation_id TEXT NOT NULL` 没跟着放宽；SessionRepository
+    // 往新 session 里插 null 触发 NOT NULL constraint failed → 桌面端点"新会话"
+    // 无响应。SQLite 3.35+ 支持 DROP COLUMN，幂等 try/catch。
+    try {
+      this.db.exec('ALTER TABLE sessions DROP COLUMN generation_id');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('no such column') && !msg.includes('does not exist')) {
+        logger.warn('[DB] Drop generation_id migration unexpected error:', msg);
+      }
+    }
   }
 
   private migrateTelemetryTurnsTable(): void {
@@ -301,11 +315,12 @@ export class DatabaseService {
     if (!this.db) return;
 
     // Sessions 表
+    // 注：generation_id 列已废弃（2026-04-15）— 不在新 schema 中声明；
+    // 老 DB 的残留列由 migrateSessionsTable 的 DROP COLUMN 清理
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        generation_id TEXT NOT NULL,
         model_provider TEXT NOT NULL,
         model_name TEXT NOT NULL,
         working_directory TEXT,

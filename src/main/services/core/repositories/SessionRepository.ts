@@ -65,14 +65,13 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at, git_branch)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at, git_branch)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
     stmt.run(
       session.id,
       session.title,
-      null, // generation_id column kept for historical compatibility
       session.modelConfig.provider,
       session.modelConfig.model,
       session.workingDirectory || null,
@@ -101,14 +100,13 @@ export class SessionRepository {
     const createdAt = this.normalizeTimestamp(data.createdAt, now);
     const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, is_deleted, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       id,
       data.title,
-      null, // generation_id column kept for historical compatibility
       data.modelConfig.provider,
       data.modelConfig.model,
       data.workingDirectory || null,
@@ -159,7 +157,6 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       UPDATE sessions
       SET title = COALESCE(?, title),
-          generation_id = COALESCE(?, generation_id),
           model_provider = COALESCE(?, model_provider),
           model_name = COALESCE(?, model_name),
           working_directory = COALESCE(?, working_directory),
@@ -178,7 +175,6 @@ export class SessionRepository {
 
     const result = stmt.run(
       updates.title ?? null,
-      null, // generation_id column kept for historical compatibility
       updates.modelConfig?.provider ?? null,
       updates.modelConfig?.model ?? null,
       updates.workingDirectory ?? null,

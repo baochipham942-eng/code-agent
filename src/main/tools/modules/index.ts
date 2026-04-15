@@ -77,6 +77,7 @@ import { academicSearchSchema } from './network/academicSearch.schema';
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
+import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 
 // planning/
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
@@ -657,7 +658,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./shell/grep')).grepModule,
   );
 
-  // lightMemory (2): MemoryRead / MemoryWrite (P0-6.3 Batch 3 — native ToolModule)
+  // lightMemory (3): MemoryRead / MemoryWrite / EpisodicRecall
   registry.register(
     memoryReadSchema,
     async () => (await import('./lightMemory/memoryRead')).memoryReadModule,
@@ -665,6 +666,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     memoryWriteSchema,
     async () => (await import('./lightMemory/memoryWrite')).memoryWriteModule,
+  );
+  registry.register(
+    episodicRecallSchema,
+    async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
   );
 
   // network (2): ppt_generate / ppt_edit

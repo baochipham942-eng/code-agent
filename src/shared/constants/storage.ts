@@ -28,6 +28,14 @@ export const MEMORY = {
   FLUSH_CONFIDENCE: 0.8,
   /** preCompact flush: 查重时查询的 session_extracted 历史条数上限 */
   FLUSH_DEDUP_LOOKBACK: 200,
+  /** Episodic FTS 索引的保留天数（超过此天数的消息触发 prune 可被清理） */
+  EPISODIC_INDEX_RETENTION_DAYS: 90,
+  /** EpisodicRecall 工具默认返回条数 */
+  EPISODIC_RECALL_DEFAULT_LIMIT: 5,
+  /** EpisodicRecall 工具最大返回条数 */
+  EPISODIC_RECALL_MAX_LIMIT: 10,
+  /** EpisodicRecall 单条消息片段最大字符数 */
+  EPISODIC_SNIPPET_MAX_CHARS: 300,
 } as const;
 
 /** 向量存储配置 */

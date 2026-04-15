@@ -351,6 +351,113 @@ export class SessionRepository {
     return rows.reverse().map((row) => this.rowToMessage(row));
   }
 
+  // --------------------------------------------------------------------------
+  // Episodic FTS search (Workstream D)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 用 FTS5 全文检索历史会话消息。
+   *
+   * - 触发器自动同步 messages → session_messages_fts，应用层无感
+   * - 按相关性排序（BM25 rank），最近优先作为 tie-breaker
+   * - sessionId 过滤可选，限定在当前 session 内搜索
+   * - trigram tokenizer 要求查询至少 3 个字符
+   * - 默认把查询包成 phrase literal（双引号），避开 `-` / `:` 等 FTS5 运算符；
+   *   用户若显式以 `"` 开头则原样透传，保留高级 FTS5 语法
+   */
+  searchSessionMessagesFts(
+    query: string,
+    options: {
+      limit?: number;
+      sessionId?: string;
+    } = {},
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    role: string;
+    content: string;
+    timestamp: number;
+  }> {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      return [];
+    }
+
+    const ftsQuery = normalizeFtsQuery(trimmed);
+    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
+    const params: unknown[] = [ftsQuery];
+    let whereSession = '';
+    if (options.sessionId) {
+      whereSession = 'AND session_id = ?';
+      params.push(options.sessionId);
+    }
+    params.push(limit);
+
+    try {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT message_id, session_id, role, content, timestamp
+          FROM session_messages_fts
+          WHERE content MATCH ? ${whereSession}
+          ORDER BY rank, timestamp DESC
+          LIMIT ?
+          `,
+        )
+        .all(...params) as SQLiteRow[];
+
+      return rows.map((row) => ({
+        messageId: String(row.message_id ?? ''),
+        sessionId: String(row.session_id ?? ''),
+        role: String(row.role ?? ''),
+        content: String(row.content ?? ''),
+        timestamp: Number(row.timestamp ?? 0),
+      }));
+    } catch (err) {
+      logger.warn('[EpisodicFts] search failed', { query: trimmed, error: err });
+      return [];
+    }
+  }
+
+  /**
+   * Backfill session_messages_fts from an existing messages table.
+   * 只在 FTS 表为空、且 messages 表非空时执行（典型场景：升级后首次启动）。
+   * 返回 backfill 的行数；幂等且可重复调用。
+   */
+  backfillSessionMessagesFts(): number {
+    try {
+      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as
+        | { c: number }
+        | undefined;
+      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as
+        | { c: number }
+        | undefined;
+      const ftsCount = Number(ftsRow?.c ?? 0);
+      const msgCount = Number(msgRow?.c ?? 0);
+
+      if (ftsCount > 0 || msgCount === 0) {
+        return 0;
+      }
+
+      logger.info(`[EpisodicFts] Backfilling FTS from ${msgCount} messages...`);
+      const result = this.db
+        .prepare(
+          `
+          INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
+          SELECT id, session_id, role, COALESCE(content, ''), timestamp
+          FROM messages
+          `,
+        )
+        .run();
+      const inserted = Number(result.changes ?? 0);
+      logger.info(`[EpisodicFts] Backfill complete: ${inserted} rows`);
+      return inserted;
+    } catch (err) {
+      logger.warn('[EpisodicFts] Backfill failed (non-blocking)', { error: err });
+      return 0;
+    }
+  }
+
   getUnsyncedSessions(limit: number = 1000): StoredSession[] {
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
@@ -542,4 +649,23 @@ export class SessionRepository {
       gitBranch: row.git_branch as string | undefined,
     };
   }
+}
+
+// ----------------------------------------------------------------------------
+// FTS query helper
+// ----------------------------------------------------------------------------
+
+/**
+ * 把用户查询归一化成 FTS5 安全的表达式。
+ *
+ * - 以 `"` 开头表示用户知道自己在写 FTS5 语法（phrase / prefix / operators），
+ *   直接原样透传
+ * - 否则把整个查询包成 phrase literal：双引号包裹 + 内部 `"` 转义为 `""`
+ *   → 避开 `-` `+` `:` 等 FTS5 操作符被误解释
+ */
+function normalizeFtsQuery(raw: string): string {
+  if (raw.startsWith('"')) {
+    return raw;
+  }
+  return '"' + raw.replace(/"/g, '""') + '"';
 }

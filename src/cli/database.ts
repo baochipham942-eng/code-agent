@@ -127,17 +127,25 @@ export class CLIDatabaseService {
         // 列已存在，忽略
       }
     }
+
+    // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列（见 databaseService.ts 同名迁移）
+    try {
+      this.db.exec('ALTER TABLE sessions DROP COLUMN generation_id');
+    } catch {
+      // 列不存在（新装或已迁移），忽略
+    }
   }
 
   private createTables(): void {
     if (!this.db) return;
 
     // Sessions 表
+    // 注：generation_id 列已废弃（2026-04-15）— 老 DB 的残留列由 migrateSessionsTable
+    // 的 DROP COLUMN 清理
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        generation_id TEXT NOT NULL,
         model_provider TEXT NOT NULL,
         model_name TEXT NOT NULL,
         working_directory TEXT,
@@ -298,14 +306,13 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       session.id,
       session.title,
-      'gen8',
       session.modelConfig.provider,
       session.modelConfig.model,
       session.workingDirectory || null,
@@ -359,7 +366,7 @@ export class CLIDatabaseService {
 
     const stmt = this.db.prepare(`
       UPDATE sessions
-      SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
+      SET title = ?, model_provider = ?, model_name = ?,
           working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?,
           pr_link = ?
       WHERE id = ?
@@ -375,7 +382,6 @@ export class CLIDatabaseService {
 
     stmt.run(
       updates.title ?? session.title,
-      'gen8',
       updates.modelConfig?.provider ?? session.modelConfig.provider,
       updates.modelConfig?.model ?? session.modelConfig.model,
       updates.workingDirectory ?? session.workingDirectory,

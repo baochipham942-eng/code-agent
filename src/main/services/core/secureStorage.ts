@@ -75,26 +75,43 @@ interface SecureStorageData {
 }
 
 /**
- * Generate encryption key using Electron safeStorage
- * Falls back to hostname-based key if safeStorage unavailable (e.g., CLI mode)
+ * File-stored encryption key (`~/.code-agent/.secure-key`).
+ *
+ * 2026-04-15 修复：原实现从 hostname+userDataPath 派生 key，看似稳定但 bundled
+ * webServer 下 `app.getPath('userData')` 可能 resolve 不同值，导致 decrypt 失败；
+ * 配合 `clearInvalidConfig: true` 就是每次重装/重启都静默清空 session 的地狱组合。
+ *
+ * 新方案：首次运行随机生成 32 字节，写入用户数据目录的 .secure-key 文件，之后
+ * 永久复用。文件权限 0o600（仅用户可读）。重装 app 不会动用户数据目录 → 彻底稳定。
  */
-function generateEncryptionKey(): string {
-  // Try to use safeStorage for secure key derivation (only in Electron environment)
-  if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-    try {
-      // Use a fixed seed encrypted by OS keychain
-      const seed = 'code-agent-encryption-key-v2';
-      const encrypted = safeStorage.encryptString(seed);
-      // Use first 32 bytes of encrypted data as key
-      return encrypted.toString('hex').slice(0, 32);
-    } catch (e) {
-      logger.warn(' safeStorage encryption failed, using fallback:', e);
+function loadPersistentEncryptionKey(): string {
+  const dataDir = resolveStoreBaseDir();
+  const keyFile = path.join(dataDir, '.secure-key');
+
+  try {
+    if (fs.existsSync(keyFile)) {
+      const existing = fs.readFileSync(keyFile, 'utf-8').trim();
+      if (existing.length >= 32) {
+        return existing;
+      }
     }
+  } catch (err) {
+    logger.warn('Failed to read persistent secure-key file, regenerating', { err });
   }
 
-  // Fallback: hostname-based key (less secure but works in CLI mode)
-  logger.debug(' Using hostname-based encryption key (CLI mode or safeStorage unavailable)');
-  // In CLI mode, app.getPath may not be available
+  // 首次运行（或文件损坏）: 生成新 key 并落盘
+  fs.mkdirSync(dataDir, { recursive: true });
+  const fresh = crypto.randomBytes(32).toString('hex'); // 64 hex chars
+  fs.writeFileSync(keyFile, fresh, { encoding: 'utf-8', mode: 0o600 });
+  logger.info('Generated fresh persistent encryption key', { keyFile });
+  return fresh;
+}
+
+/**
+ * Legacy hostname-based key — 仅用于从旧格式迁移已有的 secure-storage.json。
+ * 新写入永远使用 loadPersistentEncryptionKey()。
+ */
+function deriveLegacyEncryptionKey(): string {
   let userDataPath = '';
   try {
     userDataPath = app?.getPath?.('userData') || '';
@@ -108,7 +125,12 @@ function generateEncryptionKey(): string {
 interface LocalEncryptedStoreOptions {
   name: string;
   encryptionKey: string;
-  clearInvalidConfig?: boolean;
+  /**
+   * Legacy 密钥（可选）。用于从旧的派生 key 平滑迁移：
+   * 如果用新 key decrypt 失败，会回退用 legacy key 再试；成功后用新 key 重写文件。
+   * 永远不会因 decrypt 失败而清空文件。
+   */
+  legacyEncryptionKey?: string;
 }
 
 interface EncryptedStorePayload {
@@ -133,13 +155,15 @@ function resolveStoreBaseDir(): string {
 class LocalEncryptedStore<T extends object> {
   private filePath: string;
   private key: Buffer;
+  private legacyKey: Buffer | null;
   private data: Partial<T>;
-  private clearInvalidConfig: boolean;
 
   constructor(options: LocalEncryptedStoreOptions) {
     this.filePath = path.join(resolveStoreBaseDir(), `${options.name}.json`);
     this.key = crypto.createHash('sha256').update(options.encryptionKey).digest();
-    this.clearInvalidConfig = options.clearInvalidConfig === true;
+    this.legacyKey = options.legacyEncryptionKey
+      ? crypto.createHash('sha256').update(options.legacyEncryptionKey).digest()
+      : null;
     this.data = this.load();
   }
 
@@ -166,17 +190,43 @@ class LocalEncryptedStore<T extends object> {
       return {};
     }
 
+    let raw: string;
     try {
-      const encrypted = fs.readFileSync(this.filePath, 'utf-8').trim();
-      if (!encrypted) return {};
-      const decrypted = this.decrypt(encrypted);
-      return JSON.parse(decrypted) as Partial<T>;
+      raw = fs.readFileSync(this.filePath, 'utf-8').trim();
     } catch (error) {
-      logger.warn('Failed to load secure storage file, falling back to empty store', { error });
-      if (this.clearInvalidConfig) {
-        this.data = {};
-        this.save();
+      logger.warn('Failed to read secure storage file', { error });
+      return {};
+    }
+    if (!raw) return {};
+
+    // 优先用新 key
+    try {
+      const decrypted = this.decryptWith(raw, this.key);
+      return JSON.parse(decrypted) as Partial<T>;
+    } catch (primaryErr) {
+      // Fallback: 从旧派生 key 迁移
+      if (this.legacyKey) {
+        try {
+          const decrypted = this.decryptWith(raw, this.legacyKey);
+          const parsed = JSON.parse(decrypted) as Partial<T>;
+          logger.info('Decrypted secure storage with legacy key, re-encrypting with new key');
+          // 立即用新 key 重写，下次就走主路径
+          this.data = parsed;
+          this.save();
+          return parsed;
+        } catch (legacyErr) {
+          logger.warn('Both new and legacy keys failed to decrypt secure storage — file will NOT be wiped', {
+            primaryErr: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
+            legacyErr: legacyErr instanceof Error ? legacyErr.message : String(legacyErr),
+          });
+        }
+      } else {
+        logger.warn('Failed to decrypt secure storage and no legacy key available — file will NOT be wiped', {
+          error: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
+        });
       }
+      // 关键：decrypt 失败时返回空 Partial，但绝不覆盖磁盘上的文件
+      // 这样下次启动还能再试一次，用户数据不会静默丢失
       return {};
     }
   }
@@ -202,11 +252,11 @@ class LocalEncryptedStore<T extends object> {
     return JSON.stringify(payload);
   }
 
-  private decrypt(value: string): string {
+  private decryptWith(value: string, key: Buffer): string {
     const payload = JSON.parse(value) as EncryptedStorePayload;
     const decipher = crypto.createDecipheriv(
       'aes-256-gcm',
-      this.key,
+      key,
       Buffer.from(payload.iv, 'base64')
     );
     decipher.setAuthTag(Buffer.from(payload.tag, 'base64'));
@@ -225,12 +275,14 @@ class SecureStorageService {
   private encryptionKey: string;
 
   constructor() {
-    this.encryptionKey = generateEncryptionKey();
+    // 新方案：从 ~/.code-agent/.secure-key 读取持久化 key（首次运行自动生成）
+    this.encryptionKey = loadPersistentEncryptionKey();
 
     this.store = new LocalEncryptedStore<SecureStorageData>({
       name: 'secure-storage',
       encryptionKey: this.encryptionKey,
-      clearInvalidConfig: true,
+      // legacyKey：用旧的 hostname 派生方案，把历史加密文件平滑迁移到新 key
+      legacyEncryptionKey: deriveLegacyEncryptionKey(),
     });
   }
 

@@ -3,9 +3,12 @@
 // PreCompact: 压缩上下文前保留关键信息
 // ============================================================================
 
+import * as crypto from 'crypto';
 import { createLogger } from '../../services/infra/logger';
 import type { CompactContext, HookExecutionResult } from '../../protocol/events';
 import type { Message } from '../../../shared/contract';
+import { getDatabase, type MemoryRecord } from '../../services';
+import { MEMORY } from '../../../shared/constants';
 
 const logger = createLogger('ContextHooks');
 
@@ -80,7 +83,12 @@ export async function preCompactContextHook(
     // 根据策略调整保留内容
     const filteredPreserved = filterByStrategy(preserved, strategy, compressionRatio);
 
-    // 生成保留信息摘要
+    // 持久化到 SQLite memories 表 — 保证跨会话可查
+    // Hermes "memory flush before compaction" 机制：压缩只应该影响 token 预算，
+    // 不应该让关键约束和决策随上下文一起消失。
+    const flushStats = flushToMemoryRepository(filteredPreserved, context);
+
+    // 生成保留信息摘要（内联注入到压缩后的上下文）
     const preservationSummary = generatePreservationSummary(filteredPreserved);
 
     if (preservationSummary) {
@@ -88,6 +96,8 @@ export async function preCompactContextHook(
         decisions: filteredPreserved.decisions.length,
         codeChanges: filteredPreserved.codeChanges.length,
         requirements: filteredPreserved.userRequirements.length,
+        flushWritten: flushStats.written,
+        flushSkipped: flushStats.skipped,
       });
 
       return {
@@ -398,4 +408,151 @@ function generatePreservationSummary(preserved: PreservedContext): string | null
   }
 
   return `---\n**上下文保留摘要**（压缩前提取）:\n\n${parts.join('\n\n')}\n---`;
+}
+
+// ----------------------------------------------------------------------------
+// Memory Flush (Hermes 式 flush-before-compaction)
+// ----------------------------------------------------------------------------
+
+interface FlushStats {
+  written: number;
+  skipped: number;
+}
+
+interface FlushItem {
+  /** MemoryRecord.type */
+  type: MemoryRecord['type'];
+  /** MemoryRecord.category（决定 seedMemoryInjector 的渲染 label） */
+  category: string;
+  /** 完整内容 */
+  content: string;
+  /** 短摘要（供 seed 注入使用） */
+  summary: string;
+}
+
+/**
+ * 把 preserved context 里值得跨会话保留的信息持久化到 SQLite memories 表。
+ *
+ * 这是 Hermes "flush-before-compaction" 的实现点 — 压缩前先固化关键约束 /
+ * 决策，避免用户只在聊天里说过的要求（例如"先确认再动邮件"）被压没。
+ *
+ * 幂等：基于 content hash 查重，避免同一个约束反复写入。
+ * 限流：单次最多写入 MEMORY.FLUSH_MAX_PER_COMPACT 条。
+ * 健壮：任何失败只记 warn，不抛错阻塞压缩流程。
+ */
+function flushToMemoryRepository(
+  preserved: PreservedContext,
+  context: CompactContext,
+): FlushStats {
+  const stats: FlushStats = { written: 0, skipped: 0 };
+
+  try {
+    const db = getDatabase();
+    // DB 尚未就绪（CLI 启动早期、测试环境等）直接跳过
+    if (!db?.isReady) {
+      return stats;
+    }
+
+    // 构造待写入条目
+    const items: FlushItem[] = [];
+
+    // 只 flush high importance decisions（对冲"决策噪音"）
+    for (const decision of preserved.decisions) {
+      if (decision.importance !== 'high') continue;
+      items.push({
+        type: 'project_knowledge',
+        category: 'flush_decision',
+        content: decision.description,
+        summary: decision.description.slice(0, 120),
+      });
+    }
+
+    // 所有 userRequirements 都 flush — 用户明确提出的约束最不应该丢
+    // filterByStrategy 已经按策略截过数量
+    for (const requirement of preserved.userRequirements) {
+      items.push({
+        type: 'project_knowledge',
+        category: 'user_requirement',
+        content: requirement,
+        summary: requirement.slice(0, 120),
+      });
+    }
+
+    if (items.length === 0) {
+      return stats;
+    }
+
+    // 查重：拉最近 FLUSH_DEDUP_LOOKBACK 条 session_extracted 记忆的 hash
+    const existing = db.listMemories({
+      source: 'session_extracted',
+      projectPath: context.workingDirectory,
+      limit: MEMORY.FLUSH_DEDUP_LOOKBACK,
+      orderBy: 'updated_at',
+      orderDir: 'DESC',
+    });
+
+    const existingHashes = new Set<string>();
+    for (const mem of existing) {
+      const metaHash = (mem.metadata as { flushHash?: string })?.flushHash;
+      if (typeof metaHash === 'string' && metaHash.length > 0) {
+        existingHashes.add(metaHash);
+      }
+    }
+
+    // 写入（受 FLUSH_MAX_PER_COMPACT 约束）
+    for (const item of items) {
+      if (stats.written >= MEMORY.FLUSH_MAX_PER_COMPACT) {
+        break;
+      }
+      const hash = hashContent(item.content);
+      if (existingHashes.has(hash)) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      db.createMemory({
+        type: item.type,
+        category: item.category,
+        content: item.content,
+        summary: item.summary,
+        source: 'session_extracted',
+        projectPath: context.workingDirectory,
+        sessionId: context.sessionId,
+        confidence: MEMORY.FLUSH_CONFIDENCE,
+        metadata: {
+          flushHash: hash,
+          flushEvent: 'preCompact',
+          flushAt: context.timestamp,
+          tokenCount: context.tokenCount,
+          targetTokenCount: context.targetTokenCount,
+        },
+      });
+      existingHashes.add(hash);
+      stats.written += 1;
+    }
+
+    if (stats.written > 0) {
+      logger.info('Pre-compact memory flush', {
+        written: stats.written,
+        skipped: stats.skipped,
+        projectPath: context.workingDirectory,
+        sessionId: context.sessionId,
+      });
+    }
+  } catch (error) {
+    logger.warn('Pre-compact memory flush failed (non-blocking)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return stats;
+}
+
+/**
+ * 计算内容的短 hash（16 字符十六进制），用于幂等查重。
+ * 同时对 whitespace 做归一化，避免因空格差异误判为不同。
+ */
+function hashContent(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, ' ');
+  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 }

@@ -206,6 +206,28 @@ export class CLIDatabaseService {
       )
     `);
 
+    // Memories 表 — 与 Electron DatabaseService 的 schema 保持一致。
+    // Workstream A 的 preCompact flush 通过 createMemory 写入这张表，CLI 模式
+    // 和桌面模式共享同一张表（都指向 ~/.code-agent/code-agent.db）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT,
+        source TEXT NOT NULL,
+        project_path TEXT,
+        session_id TEXT,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        metadata TEXT DEFAULT '{}',
+        access_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_accessed_at INTEGER
+      )
+    `);
+
     // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，
     // 使 CLI 与桌面应用共享同一张 FTS 虚拟表（两者都指向 ~/.code-agent/code-agent.db）
     // CREATE VIRTUAL TABLE IF NOT EXISTS 幂等，谁先跑都行
@@ -491,6 +513,133 @@ export class CLIDatabaseService {
       timestamp: row.timestamp as number,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
+    }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Memories (Workstream A — preCompact flush target)
+  // --------------------------------------------------------------------------
+
+  createMemory(data: {
+    type: string;
+    category: string;
+    content: string;
+    summary?: string;
+    source: string;
+    projectPath?: string;
+    sessionId?: string;
+    confidence: number;
+    metadata?: Record<string, unknown>;
+  }): { id: string; createdAt: number; updatedAt: number } {
+    if (!this.db) throw new Error('Database not initialized');
+    const id = `mem_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const now = Date.now();
+
+    this.db
+      .prepare(
+        `
+        INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, access_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        `,
+      )
+      .run(
+        id,
+        data.type,
+        data.category,
+        data.content,
+        data.summary ?? null,
+        data.source,
+        data.projectPath ?? null,
+        data.sessionId ?? null,
+        data.confidence,
+        JSON.stringify(data.metadata ?? {}),
+        now,
+        now,
+      );
+
+    return { id, createdAt: now, updatedAt: now };
+  }
+
+  listMemories(options: {
+    type?: string;
+    category?: string;
+    source?: string;
+    projectPath?: string;
+    sessionId?: string;
+    limit?: number;
+    offset?: number;
+    orderBy?: string;
+    orderDir?: 'ASC' | 'DESC';
+  } = {}): Array<{
+    id: string;
+    type: string;
+    category: string;
+    content: string;
+    summary: string | null;
+    source: string;
+    projectPath: string | null;
+    sessionId: string | null;
+    confidence: number;
+    metadata: Record<string, unknown>;
+    accessCount: number;
+    createdAt: number;
+    updatedAt: number;
+  }> {
+    if (!this.db) return [];
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (options.type) {
+      conditions.push('type = ?');
+      params.push(options.type);
+    }
+    if (options.category) {
+      conditions.push('category = ?');
+      params.push(options.category);
+    }
+    if (options.source) {
+      conditions.push('source = ?');
+      params.push(options.source);
+    }
+    if (options.projectPath) {
+      conditions.push('project_path = ?');
+      params.push(options.projectPath);
+    }
+    if (options.sessionId) {
+      conditions.push('session_id = ?');
+      params.push(options.sessionId);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const orderBy = ['created_at', 'updated_at', 'confidence', 'access_count'].includes(
+      options.orderBy ?? '',
+    )
+      ? options.orderBy
+      : 'created_at';
+    const orderDir = options.orderDir === 'ASC' ? 'ASC' : 'DESC';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM memories ${where} ORDER BY ${orderBy} ${orderDir} LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset) as SQLiteRow[];
+
+    return rows.map((row) => ({
+      id: String(row.id),
+      type: String(row.type),
+      category: String(row.category),
+      content: String(row.content),
+      summary: row.summary == null ? null : String(row.summary),
+      source: String(row.source),
+      projectPath: row.project_path == null ? null : String(row.project_path),
+      sessionId: row.session_id == null ? null : String(row.session_id),
+      confidence: Number(row.confidence ?? 1),
+      metadata: row.metadata ? JSON.parse(String(row.metadata)) : {},
+      accessCount: Number(row.access_count ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+      updatedAt: Number(row.updated_at ?? 0),
     }));
   }
 

@@ -10,6 +10,52 @@ import type { Message } from '../../../shared/contract';
 import { getDatabase, type MemoryRecord } from '../../services';
 import { MEMORY } from '../../../shared/constants';
 
+// ----------------------------------------------------------------------------
+// DB bridge — CLI 模式走 CLIDatabaseService，主进程走 Electron DatabaseService
+// ----------------------------------------------------------------------------
+// 两者都指向 ~/.code-agent/code-agent.db，memories 表 schema 一致。
+// 用 duck-typed 接口避免 main → cli 的反向静态依赖。
+interface FlushableDatabase {
+  createMemory(data: {
+    type: string;
+    category: string;
+    content: string;
+    summary?: string;
+    source: string;
+    projectPath?: string;
+    sessionId?: string;
+    confidence: number;
+    metadata?: Record<string, unknown>;
+  }): unknown;
+  listMemories(options: {
+    source?: string;
+    projectPath?: string;
+    limit?: number;
+    orderBy?: string;
+    orderDir?: 'ASC' | 'DESC';
+  }): Array<{ metadata: Record<string, unknown> }>;
+}
+
+function getFlushableDatabase(): FlushableDatabase | null {
+  if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const cliDbMod = require('../../../cli/database') as {
+        getCLIDatabase?: () => { isInitialized: boolean } & FlushableDatabase;
+      };
+      const cliDb = cliDbMod.getCLIDatabase?.();
+      if (cliDb?.isInitialized) {
+        return cliDb;
+      }
+    } catch {
+      // CLI bundle 不可用时 fall through
+    }
+    return null;
+  }
+  const db = getDatabase();
+  return db?.isReady ? (db as unknown as FlushableDatabase) : null;
+}
+
 const logger = createLogger('ContextHooks');
 
 // ----------------------------------------------------------------------------
@@ -447,9 +493,9 @@ function flushToMemoryRepository(
   const stats: FlushStats = { written: 0, skipped: 0 };
 
   try {
-    const db = getDatabase();
-    // DB 尚未就绪（CLI 启动早期、测试环境等）直接跳过
-    if (!db?.isReady) {
+    const db = getFlushableDatabase();
+    // DB 尚未就绪（早期启动、测试环境等）直接跳过
+    if (!db) {
       return stats;
     }
 

@@ -22,6 +22,12 @@ export const MEMORY = {
   RECORD_DECAY_DAYS: 90,
   /** Minimum memory confidence after decay */
   RECORD_MIN_CONFIDENCE: 0.1,
+  /** preCompact flush: 单次压缩最多写入 memories 表的条数（防炸记忆库） */
+  FLUSH_MAX_PER_COMPACT: 5,
+  /** preCompact flush: 写入 memories 表的默认 confidence */
+  FLUSH_CONFIDENCE: 0.8,
+  /** preCompact flush: 查重时查询的 session_extracted 历史条数上限 */
+  FLUSH_DEDUP_LOOKBACK: 200,
 } as const;
 
 /** 向量存储配置 */

@@ -48,6 +48,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   conversation: 'Context',
   tool_usage: 'Tool',
   desktop_activity: 'Desktop',
+  // preCompact flush 写入的两类记忆（见 contextHooks.flushToMemoryRepository）
+  user_requirement: 'Requirement',
+  flush_decision: 'Decision',
 };
 
 // ----------------------------------------------------------------------------

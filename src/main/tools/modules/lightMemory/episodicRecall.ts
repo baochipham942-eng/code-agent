@@ -4,8 +4,10 @@
 // Workstream D of Hermes 四层记忆对标。LLM 在当前任务里遇到"感觉之前做过"
 // 的情境时，用这个工具回查历史消息，而不是依赖压缩后的摘要。
 //
-// 底层：session_messages_fts (FTS5 virtual table, tokenize=unicode61)
+// 底层：session_messages_fts (FTS5 virtual table, tokenize=trigram)
 // 同步：databaseService 的 triggers 自动维护，应用代码无感
+// 双模式：Electron 主进程用 DatabaseService；CLI 模式用 CLIDatabaseService。
+//        两者都指向同一个 ~/.code-agent/code-agent.db，schema 也对齐。
 // ============================================================================
 
 import type {
@@ -19,6 +21,50 @@ import type {
 import { episodicRecallSchema } from './episodicRecall.schema';
 import { getDatabase } from '../../../services';
 import { MEMORY } from '../../../../shared/constants';
+
+/**
+ * duck-typed 最小接口 — 两个 DB 服务都实现 searchSessionMessagesFts
+ */
+interface SearchableDatabase {
+  searchSessionMessagesFts(
+    query: string,
+    options: { limit?: number; sessionId?: string },
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    role: string;
+    content: string;
+    timestamp: number;
+  }>;
+}
+
+/**
+ * 运行时选 DB 源：CLI 模式走 CLIDatabaseService，主进程走 Electron DatabaseService
+ */
+function getSearchableDatabase(): SearchableDatabase | null {
+  if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+    try {
+      // 动态 require 避免 main → cli 的反向静态依赖
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const cliDbMod = require('../../../../cli/database') as {
+        getCLIDatabase?: () => {
+          isInitialized: boolean;
+          searchSessionMessagesFts: SearchableDatabase['searchSessionMessagesFts'];
+        };
+      };
+      const cliDb = cliDbMod.getCLIDatabase?.();
+      if (cliDb?.isInitialized) {
+        return cliDb;
+      }
+    } catch {
+      // CLI bundle 不可用时 fall through
+    }
+    return null;
+  }
+
+  const db = getDatabase();
+  return db?.isReady ? (db as unknown as SearchableDatabase) : null;
+}
 
 interface EpisodicRecallArgs {
   query?: string;
@@ -99,8 +145,8 @@ class EpisodicRecallHandler
     onProgress?.({ stage: 'starting', detail: `recall ${query.slice(0, 40)}` });
 
     // ---- Query -----------------------------------------------------------
-    const db = getDatabase();
-    if (!db?.isReady) {
+    const db = getSearchableDatabase();
+    if (!db) {
       return {
         ok: false,
         error: 'database not ready',
@@ -108,7 +154,7 @@ class EpisodicRecallHandler
       };
     }
 
-    let rows: ReturnType<typeof db.searchSessionMessagesFts>;
+    let rows: ReturnType<SearchableDatabase['searchSessionMessagesFts']>;
     try {
       rows = db.searchSessionMessagesFts(query, {
         limit,

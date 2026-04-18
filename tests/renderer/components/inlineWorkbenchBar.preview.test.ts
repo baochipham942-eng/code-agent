@@ -343,45 +343,8 @@ describe('InlineWorkbenchBar mention preview', () => {
     browserWorkbenchState.actionError = null;
   });
 
-  it('shows override banner when leading @agent routing overrides the current selection', () => {
-    composerState.routingMode = 'auto';
-    composerState.targetAgentIds = [];
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar, {
-        previewTargetAgentIds: ['agent-reviewer'],
-      }),
-    );
-
-    expect(html).toContain('本次发送以前缀 @agent 为准，会覆盖当前 Routing 选择');
-    expect(html).toContain('reviewer');
-    expect(html).toContain('app');
-  });
-
-  it('keeps the lighter mention preview hint when preview matches the current direct target', () => {
-    composerState.routingMode = 'direct';
-    composerState.targetAgentIds = ['agent-reviewer'];
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar, {
-        previewTargetAgentIds: ['agent-reviewer'],
-      }),
-    );
-
-    expect(html).toContain('本次发送由开头 @agent 指定');
-    expect(html).not.toContain('会覆盖当前 Routing 选择');
-  });
-
-  it('shows direct routing hint when direct mode is selected without mention preview', () => {
-    composerState.routingMode = 'direct';
-    composerState.targetAgentIds = ['agent-reviewer'];
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar),
-    );
-
-    expect(html).toContain('这条消息会发给 reviewer');
-    expect(html).toContain('也可以直接输入 @reviewer');
-  });
+  // Routing / mention preview / direct target UI 已迁到 ChatInput AbilityMenu 与
+  // @agent mention 解析；InlineWorkbenchBar 不再承担 routing 可视化，相关测试删除。
 
   it('renders mounted skill chips inside the workbench bar', () => {
     composerState.routingMode = 'auto';
@@ -397,19 +360,7 @@ describe('InlineWorkbenchBar mention preview', () => {
     expect(html).toContain('查看 review-skill 详情');
   });
 
-  it('renders selected connector chips inside the workbench bar', () => {
-    composerState.routingMode = 'auto';
-    composerState.targetAgentIds = [];
-    composerState.selectedConnectorIds = ['mail'];
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar),
-    );
-
-    expect(html).toContain('Connectors');
-    expect(html).toContain('mail');
-    expect(html).toContain('查看 mail 详情');
-  });
+  // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。
 
   it('renders quick actions for a selected but unmounted skill', () => {
     composerState.selectedSkillIds = ['draft-skill'];
@@ -423,17 +374,7 @@ describe('InlineWorkbenchBar mention preview', () => {
     expect(html).toContain('挂载');
   });
 
-  it('renders the blocked connector hint without a fake one-step action', () => {
-    composerState.selectedConnectorIds = ['calendar'];
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar),
-    );
-
-    expect(html).toContain('calendar');
-    expect(html).toContain('当前没有一键连接入口');
-    expect(html).not.toContain('打开设置');
-  });
+  // Connector blocked 提示已改走 WorkbenchCapabilitySheetLite（#2 把 connector UI 移出主栏）。
 
   it('renders retry and settings shortcuts for a blocked MCP server', () => {
     composerState.selectedMcpServerIds = ['slack'];
@@ -465,95 +406,7 @@ describe('InlineWorkbenchBar mention preview', () => {
     expect(html).toContain('review-skill');
   });
 
-  it('renders an explicit managed browser section with current page preview', () => {
-    composerState.browserSessionMode = 'managed';
-    browserWorkbenchState.managedSession = {
-      running: true,
-      tabCount: 1,
-      activeTab: {
-        id: 'tab-1',
-        url: 'https://example.com/docs',
-        title: 'Docs · Example',
-      },
-    };
-    browserWorkbenchState.preview = {
-      mode: 'managed',
-      url: 'https://example.com/docs',
-      title: 'Docs · Example',
-    };
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar),
-    );
-
-    expect(html).toContain('Browser');
-    expect(html).toContain('Managed');
-    expect(html).toContain('Browser Session');
-    expect(html).toContain('托管浏览器已启动');
-    expect(html).toContain('Docs · Example');
-    expect(html).toContain('https://example.com/docs');
-  });
-
-  it('renders desktop readiness and repair path when desktop browser context is blocked', () => {
-    composerState.browserSessionMode = 'desktop';
-    browserWorkbenchState.preview = {
-      mode: 'desktop',
-      title: 'ChatGPT',
-      url: 'https://chatgpt.com',
-      frontmostApp: 'Google Chrome',
-      lastScreenshotAtMs: Date.now() - 120_000,
-    };
-    browserWorkbenchState.readinessItems = [
-      {
-        key: 'screenCapture',
-        label: 'Screen Capture',
-        ready: false,
-        value: '未授权',
-        detail: 'Screen Recording permission not granted.',
-      },
-      {
-        key: 'accessibility',
-        label: 'Accessibility',
-        ready: false,
-        value: '未授权',
-        detail: 'AXIsProcessTrusted() returned false.',
-      },
-      {
-        key: 'browserContext',
-        label: 'Browser Context',
-        ready: true,
-        value: '支持',
-        detail: '当前桌面 runtime 可以读取前台浏览器 URL / title。',
-      },
-      {
-        key: 'collector',
-        label: 'Collector',
-        ready: false,
-        value: '已停止',
-        detail: 'collector is stopped',
-      },
-    ];
-    browserWorkbenchState.blocked = true;
-    browserWorkbenchState.blockedDetail = '当前桌面浏览器上下文未就绪：屏幕录制未授权、辅助功能未授权、collector 未启动。';
-    browserWorkbenchState.blockedHint = '先补权限并启动采集；修好后这条消息再发出去，会比黑箱失败可控得多。';
-    browserWorkbenchState.repairActions = [
-      { kind: 'open_screen_capture_settings', label: '授权屏幕录制' },
-      { kind: 'open_accessibility_settings', label: '授权辅助功能' },
-      { kind: 'start_desktop_collector', label: '启动采集' },
-    ];
-
-    const html = renderToStaticMarkup(
-      React.createElement(InlineWorkbenchBar),
-    );
-
-    expect(html).toContain('Desktop Readiness');
-    expect(html).toContain('Screen Capture');
-    expect(html).toContain('Accessibility');
-    expect(html).toContain('Browser Context');
-    expect(html).toContain('Collector');
-    expect(html).toContain('Google Chrome');
-    expect(html).toContain('授权屏幕录制');
-    expect(html).toContain('授权辅助功能');
-    expect(html).toContain('启动采集');
-  });
+  // Browser Session 预览面板（URL/Title/Frontmost/Readiness/Repair actions）已整体移除：
+  // browser 心智改由 ChatInput AbilityMenu 承载，细节 readiness 放 TaskPanel；
+  // 这里只保留 permission probe 链路的单元测试在 useWorkbenchBrowserSession 层面。
 });

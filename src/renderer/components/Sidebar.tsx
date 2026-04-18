@@ -574,7 +574,7 @@ export const Sidebar: React.FC = () => {
           )}
 
           {!multiSelectMode && !isRenaming && (
-            <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${status.toneClassName}`}>
+            <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
               {status.label}
             </span>
           )}

@@ -103,6 +103,7 @@ async function loadManagedBrowserSession(): Promise<ManagedBrowserSessionState> 
 
 export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   refresh: () => Promise<void>;
+  probePermissions: () => Promise<void>;
   runRepairAction: (action: BrowserWorkbenchRepairAction) => Promise<void>;
 } {
   const mode = useComposerStore((state) => state.browserSessionMode);
@@ -116,37 +117,29 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   const [busyActionKind, setBusyActionKind] = useState<BrowserWorkbenchRepairActionKind | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // 仅拉取 managed browser session，不触达 OS 权限探测。
-  // 让冷启动可以感知已有托管浏览器（renderer restart 场景），同时不会触发
-  // CGPreflightScreenCaptureAccess，避免在用户没打开 browser workbench 时
-  // 被 macOS 记入屏幕录制访问日志。
-  const refreshLight = useCallback(async () => {
-    setManagedSession(await loadManagedBrowserSession());
-  }, []);
-
+  // refresh 不再触达 OS 权限 API —— CGPreflightScreenCaptureAccess 和
+  // AXIsProcessTrusted 是同步阻塞 FFI，会记入 macOS 访问日志并可能卡死主线程。
+  // 权限探测改为 probePermissions()，只在用户显式点击"授权"类按钮时才调。
   const refresh = useCallback(async () => {
     setManagedSession(await loadManagedBrowserSession());
 
     if (!isNativeDesktopAvailable()) {
       setCapabilities(null);
-      setPermissionSnapshot(null);
       setCollectorStatus(null);
       setFrontmostContext(null);
       setLastScreenshotAtMs(null);
       return;
     }
 
-    const [capabilitiesResult, permissionResult, collectorResult, frontmostResult, recentEventsResult] =
+    const [capabilitiesResult, collectorResult, frontmostResult, recentEventsResult] =
       await Promise.allSettled([
         getNativeDesktopCapabilities(),
-        getNativeDesktopPermissionStatus(),
         getNativeDesktopCollectorStatus(),
         getFrontmostDesktopContext(),
         listRecentNativeDesktopEvents(12),
       ]);
 
     setCapabilities(capabilitiesResult.status === 'fulfilled' ? capabilitiesResult.value : null);
-    setPermissionSnapshot(permissionResult.status === 'fulfilled' ? permissionResult.value : null);
     setCollectorStatus(collectorResult.status === 'fulfilled' ? collectorResult.value : null);
     setFrontmostContext(frontmostResult.status === 'fulfilled' ? frontmostResult.value : null);
     setLastScreenshotAtMs(
@@ -156,12 +149,28 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     );
   }, []);
 
+  // Lazy 权限探测 —— 仅在修复动作（open_screen_capture_settings /
+  // open_accessibility_settings）前调，或在用户显式请求时调。
+  const probePermissions = useCallback(async () => {
+    if (!isNativeDesktopAvailable()) {
+      setPermissionSnapshot(null);
+      return;
+    }
+    try {
+      setPermissionSnapshot(await getNativeDesktopPermissionStatus());
+    } catch {
+      setPermissionSnapshot(null);
+    }
+  }, []);
+
   // Mount：只 probe 托管浏览器状态（无 OS 权限调用）
   useEffect(() => {
-    void refreshLight();
-  }, [refreshLight]);
+    void (async () => {
+      setManagedSession(await loadManagedBrowserSession());
+    })();
+  }, []);
 
-  // 用户显式进入 browser workbench（mode !== 'none'）后再做一次完整 refresh
+  // 用户显式进入 browser workbench 后做一次 refresh（仍不触达 OS 权限 API）
   useEffect(() => {
     if (mode !== 'none') {
       void refresh();
@@ -285,14 +294,19 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
 
     const actions: BrowserWorkbenchRepairAction[] = [];
 
-    if (screenCapturePermission?.status === 'denied') {
+    // 当 permission snapshot 未 probe 过（null）或显示 denied/unknown 时都给出授权入口。
+    // 仅 'granted' 和 'unsupported' 时不显示 —— 避免在 granted 后仍出按钮，也避免
+    // 在非 macOS 平台误展示。
+    const screenCaptureStatus = screenCapturePermission?.status;
+    if (screenCaptureStatus !== 'granted' && screenCaptureStatus !== 'unsupported') {
       actions.push({
         kind: 'open_screen_capture_settings',
         label: '授权屏幕录制',
       });
     }
 
-    if (accessibilityPermission?.status === 'denied') {
+    const accessibilityStatus = accessibilityPermission?.status;
+    if (accessibilityStatus !== 'granted' && accessibilityStatus !== 'unsupported') {
       actions.push({
         kind: 'open_accessibility_settings',
         label: '授权辅助功能',
@@ -350,9 +364,11 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
           break;
         case 'open_screen_capture_settings':
           await openNativeDesktopSystemSettings('screenCapture');
+          await probePermissions();
           break;
         case 'open_accessibility_settings':
           await openNativeDesktopSystemSettings('accessibility');
+          await probePermissions();
           break;
         case 'start_desktop_collector':
           await startNativeDesktopCollector({
@@ -377,7 +393,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     } finally {
       setBusyActionKind(null);
     }
-  }, [refresh, setShowDesktopPanel]);
+  }, [probePermissions, refresh, setShowDesktopPanel]);
 
   return {
     mode,
@@ -391,6 +407,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     busyActionKind,
     actionError,
     refresh,
+    probePermissions,
     runRepairAction,
   };
 }

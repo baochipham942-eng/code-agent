@@ -132,9 +132,9 @@ describe('SessionRepository', () => {
       // title not provided → null
       expect(updateResult!.params[0]).toBeNull();
       // provider
-      expect(updateResult!.params[2]).toBe('openai');
+      expect(updateResult!.params[1]).toBe('openai');
       // model
-      expect(updateResult!.params[3]).toBe('gpt-4');
+      expect(updateResult!.params[2]).toBe('gpt-4');
     });
 
     it('should handle partial update with only status', () => {

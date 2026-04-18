@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall, ToolResult } from './tool';
+import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
@@ -79,6 +80,10 @@ export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; toolCallId: string };
 
+export interface MessageMetadata {
+  workbench?: WorkbenchMessageMetadata;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -113,4 +118,6 @@ export interface Message {
   outputTokens?: number;
   // Generative UI Artifacts（生成式 UI 产物追踪）
   artifacts?: Artifact[];
+  // 附加消息元数据（workbench 上下文快照等）
+  metadata?: MessageMetadata;
 }

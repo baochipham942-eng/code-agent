@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ModelConfig } from './model';
+import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './sessionWorkspace';
 
 /**
  * 会话运行状态
@@ -44,10 +45,13 @@ export interface Session {
   workingDirectory?: string;
   createdAt: number;
   updatedAt: number;
+  turnCount?: number;             // 轮次数（user turns）
   // Wave 3 新增字段
   workspace?: string;              // 工作空间标识
   status?: SessionStatus;          // 会话状态
   lastTokenUsage?: TokenUsage;     // 最近一次 Token 使用统计
+  workbenchSnapshot?: SessionWorkbenchSnapshot; // 最小 workbench 解释快照
+  workbenchProvenance?: SessionWorkbenchProvenance; // 本地持久化的最后一次明确 workbench 上下文
   // 归档状态
   isArchived?: boolean;            // 是否已归档
   archivedAt?: number;             // 归档时间

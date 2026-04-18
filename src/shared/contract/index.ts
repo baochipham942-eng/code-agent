@@ -84,6 +84,13 @@ export * from './appService';
 
 // Trace types (Turn-based trace view)
 export * from './trace';
+export * from './turnTimeline';
+export * from './sessionWorkspace';
+export * from './reviewQueue';
+
+// Conversation envelope types (chat-native workbench context)
+export * from './conversationEnvelope';
+export * from './workbenchTools';
 
 // Decision Trace types (Security decision chain transparency)
 export * from './decisionTrace';

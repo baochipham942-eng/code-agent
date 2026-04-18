@@ -42,6 +42,18 @@ export interface DesktopCollectorStatus {
   sqliteDbPath?: string | null;
 }
 
+export interface ManagedBrowserTabSnapshot {
+  id: string;
+  url: string;
+  title: string;
+}
+
+export interface ManagedBrowserSessionState {
+  running: boolean;
+  tabCount: number;
+  activeTab?: ManagedBrowserTabSnapshot | null;
+}
+
 export interface DesktopTimelineQuery {
   from?: number;
   to?: number;

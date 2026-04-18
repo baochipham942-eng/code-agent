@@ -107,6 +107,7 @@ export interface SwarmLaunchTaskPreview {
 
 export interface SwarmLaunchRequest {
   id: string;
+  sessionId?: string;
   status: 'pending' | 'approved' | 'rejected';
   requestedAt: number;
   resolvedAt?: number;
@@ -173,6 +174,7 @@ export interface SwarmEvent {
   type: SwarmEventType;
   timestamp: number;
   runId?: string;
+  sessionId?: string;
   data: {
     agentId?: string;
     agentState?: SwarmAgentState;

@@ -1,7 +1,7 @@
 # Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.2
-> 日期: 2026-04-11
+> 版本: 2.3
+> 日期: 2026-04-18
 > 作者: Lin Chen
 
 ---
@@ -123,7 +123,31 @@
 | L2 Truncate | ≥85% | 截断中间段，保留代码块 | 保留首尾 |
 | L3 AI Summary | ≥80% | 生成语义摘要 | 最大压缩 |
 
-#### 3.1.4 权限安全
+#### 3.1.4 Chat-Native Workbench（主链路交互结构）
+
+把 `workspace / skills / MCP / connectors / routing / browser` 从分散的侧面板收到聊天主链路里。用户不需要先去几个不同的入口设置好，再回来发消息。
+
+| 能力 | 说明 |
+|------|------|
+| `ConversationEnvelope` 消息外壳 | 发送 payload 携带 workspace / routing / capability / browser 上下文；旧 payload 由 `normalizeEnvelope()` 兼容，不回归 |
+| `InlineWorkbenchBar` | 输入框上方的能力栏：workspace chip、routing chip（Auto/Direct/Parallel）、skills/connectors/MCP 选择 |
+| 内联启动卡片 | swarm launch approval 以 `LaunchRequestCard` 方式出现在聊天 turn 内，同一组件与 TaskPanel 复用 |
+| Direct Routing（@agent） | `@agent` mention → 主进程持久化 → fanout；持久化失败 renderer 回滚 optimistic 消息 |
+| Turn 级执行解释 | 每个 turn 内投影 4 类节点：`workbench_snapshot` / `blocked_capabilities` / `routing_evidence` / `artifact_ownership` |
+| Session-Native Workspace | Sidebar `Resume / Reopen Workspace / Export`；历史 session 的 workbench 选择可回灌当前 composer |
+| Unified Trace Identity | Replay / Review Queue / Eval Center / session list 共享同一 `session:<sessionId>` trace identity |
+| 显式 Browser / Desktop 入口 | `browserSessionMode` 区分 `managed / desktop`；blocked 时展示 reason 与 hint |
+
+**核心定位**：Workbench 不改 orchestration 引擎，只改它的产品暴露方式。原有 `TaskPanel / SwarmMonitor` 保留为高级控制面，但不再是默认心智入口。
+
+详细架构见 [docs/architecture/workbench.md](./architecture/workbench.md)，决策背景见 [ADR-011](./decisions/011-chat-native-workbench.md)。
+
+当前产品边界（明确未产品化）：
+- Connector 只展示 blocked reason + hint，**没有一键 connect / retry 闭环**
+- 命名 `preset / recipe` 资产库未做（历史 session 复用已落最小闭环）
+- Failure-to-Capability 多分流（skill / dataset / prompt-policy / capability-health）未做
+
+#### 3.1.5 权限安全
 
 | 功能 | 说明 |
 |------|------|
@@ -364,6 +388,9 @@
 | MCP | Model Context Protocol，模型上下文协议 |
 | Skill | 可移植的 Agent 能力包 |
 | Hook | 事件驱动的自动化触发器 |
+| Workbench | 聊天主链路上统一的能力工作台，收口 workspace/skills/MCP/connectors/routing/browser |
+| ConversationEnvelope | 聊天发送外壳，携带 workspace/routing/capability 等消息级上下文 |
+| Turn Timeline | 一次对话 turn 内的执行解释时间线（workbench 快照 / blocked 能力 / routing 证据 / artifact 归属） |
 
 ### 7.2 参考
 

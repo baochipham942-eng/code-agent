@@ -21,6 +21,7 @@
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、SecureStorage |
 | [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、SpawnGuard、异步通知（历史设计 + 实现指引） |
+| [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline），与 TaskPanel(sidecar) 分工 |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 
 ### 架构决策记录 (ADR)
@@ -33,6 +34,11 @@
 | [004](./decisions/004-unified-plugin-config-structure.md) | 统一插件配置目录结构 | proposed |
 | [005](./decisions/005-eval-engineering.md) | Eval Engineering Key Decisions | accepted |
 | [006](./decisions/006-deferred-tools-consolidation.md) | Deferred Tools 合并精简 (Phase 2) | accepted |
+| [007](./decisions/007-protocol-migration-reality-check.md) | Protocol 迁移现实性复盘 | accepted |
+| [008](./decisions/008-swarm-actor-refactor.md) | Swarm Actor 重构 | accepted |
+| [009](./decisions/009-dual-coordinator-split.md) | 双 Coordinator 拆分 | accepted |
+| [010](./decisions/010-swarm-road-to-10.md) | Swarm Road to 10 | closed |
+| [011](./decisions/011-chat-native-workbench.md) | Chat-Native Workbench 架构 | accepted |
 
 ---
 

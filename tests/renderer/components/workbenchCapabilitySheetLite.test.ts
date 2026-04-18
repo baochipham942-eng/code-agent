@@ -62,7 +62,7 @@ describe('WorkbenchCapabilitySheetLite', () => {
     expect(html).toContain('最近动作: draft 2x');
   });
 
-  it('shows blocked reason without a fake one-step action for an unavailable connector', () => {
+  it('shows retry + openApp quick actions for a disconnected connector', () => {
     const html = renderToStaticMarkup(
       React.createElement(WorkbenchCapabilitySheetLite, {
         isOpen: true,
@@ -97,7 +97,8 @@ describe('WorkbenchCapabilitySheetLite', () => {
     expect(html).toContain('Calendar');
     expect(html).toContain('阻塞原因');
     expect(html).toContain('Connector Calendar 当前未连接，本轮不会调用。');
-    expect(html).toContain('当前没有一键连接入口');
-    expect(html).not.toContain('快速动作');
+    expect(html).toContain('快速动作');
+    expect(html).toContain('重试连接');
+    expect(html).toContain('打开本地应用');
   });
 });

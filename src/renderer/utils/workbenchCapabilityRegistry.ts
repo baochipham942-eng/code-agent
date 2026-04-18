@@ -110,7 +110,7 @@ function buildConnectorBlockedReason(connector: WorkbenchConnectorCapability): W
   return {
     code: 'connector_disconnected',
     detail: `Connector ${connector.label} 当前未连接，本轮不会调用。`,
-    hint: '当前没有一键连接入口，先在本地应用里完成授权/可用性检查，再重新发送。',
+    hint: '先点"重试连接"刷新状态；还不行再"打开本地应用"完成授权/登录，然后重发这条消息。',
     severity: 'warning',
   };
 }

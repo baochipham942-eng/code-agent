@@ -198,6 +198,14 @@ export function useWorkbenchCapabilityQuickActionRunner(): WorkbenchCapabilityQu
           return true;
         },
         refreshMcpStatus: requestMcpStatusReload,
+        retryConnector: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'retry', { connectorId });
+          return true;
+        },
+        openConnectorApp: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'openApp', { connectorId });
+          return true;
+        },
       });
 
       if (!completed) {

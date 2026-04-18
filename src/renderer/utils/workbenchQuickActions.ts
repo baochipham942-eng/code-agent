@@ -11,7 +11,9 @@ export type WorkbenchQuickActionKind =
   | 'mount_skill'
   | 'open_skill_settings'
   | 'retry_mcp'
-  | 'open_mcp_settings';
+  | 'open_mcp_settings'
+  | 'retry_connector'
+  | 'open_connector_app';
 
 export interface WorkbenchQuickAction {
   kind: WorkbenchQuickActionKind;
@@ -38,6 +40,8 @@ export interface WorkbenchQuickActionHandlers {
   openSettingsTab: (tab: SettingsTab) => void;
   reconnectMcpServer: (serverName: string) => Promise<boolean>;
   refreshMcpStatus?: () => void | Promise<void>;
+  retryConnector: (connectorId: string) => Promise<boolean>;
+  openConnectorApp: (connectorId: string) => Promise<boolean>;
 }
 
 function buildSkillQuickActions(
@@ -72,7 +76,18 @@ function buildConnectorQuickActions(
     return [];
   }
 
-  return [];
+  return [
+    {
+      kind: 'retry_connector',
+      label: '重试连接',
+      emphasis: 'primary',
+    },
+    {
+      kind: 'open_connector_app',
+      label: '打开本地应用',
+      emphasis: 'secondary',
+    },
+  ];
 }
 
 function buildMcpQuickActions(
@@ -158,6 +173,16 @@ export function getWorkbenchCapabilityQuickActionFeedback(
         tone: 'info',
         message: '已打开 MCP 设置，修好后重发这条消息。',
       };
+    case 'retry_connector':
+      return {
+        tone: 'info',
+        message: '已重新检测 connector 状态；还不行就先打开本地应用检查授权。',
+      };
+    case 'open_connector_app':
+      return {
+        tone: 'info',
+        message: '已拉起本地应用，完成授权/登录后点"重试连接"再发这条消息。',
+      };
     default:
       return null;
   }
@@ -196,6 +221,16 @@ export async function runWorkbenchCapabilityQuickAction(
     case 'open_mcp_settings':
       handlers.openSettingsTab('mcp');
       return true;
+    case 'retry_connector':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.retryConnector(capability.id);
+    case 'open_connector_app':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.openConnectorApp(capability.id);
     default:
       return false;
   }

@@ -89,7 +89,7 @@ describe('workbenchQuickActions', () => {
     });
 
     expect(skillActions.map((action) => action.kind)).toEqual(['mount_skill']);
-    expect(connectorActions).toEqual([]);
+    expect(connectorActions.map((action) => action.kind)).toEqual(['retry_connector', 'open_connector_app']);
     expect(mcpActions.map((action) => action.kind)).toEqual(['retry_mcp', 'open_mcp_settings']);
   });
 
@@ -149,6 +149,8 @@ describe('workbenchQuickActions', () => {
     const openSettingsTab = vi.fn();
     const reconnectMcpServer = vi.fn().mockResolvedValue(true);
     const refreshMcpStatus = vi.fn();
+    const retryConnector = vi.fn().mockResolvedValue(true);
+    const openConnectorApp = vi.fn().mockResolvedValue(true);
 
     const mounted = await runWorkbenchCapabilityQuickAction({
       kind: 'skill',
@@ -185,6 +187,8 @@ describe('workbenchQuickActions', () => {
       openSettingsTab,
       reconnectMcpServer,
       refreshMcpStatus,
+      retryConnector,
+      openConnectorApp,
     });
 
     const retried = await runWorkbenchCapabilityQuickAction({
@@ -223,13 +227,54 @@ describe('workbenchQuickActions', () => {
       openSettingsTab,
       reconnectMcpServer,
       refreshMcpStatus,
+      retryConnector,
+      openConnectorApp,
+    });
+
+    const connectorRetried = await runWorkbenchCapabilityQuickAction({
+      kind: 'connector',
+      key: 'connector:calendar',
+      id: 'calendar',
+      label: 'Calendar',
+      selected: true,
+      connected: false,
+      detail: 'offline',
+      capabilities: ['list_events'],
+      available: false,
+      blocked: true,
+      visibleInWorkbench: true,
+      health: 'inactive',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'disconnected',
+      },
+      blockedReason: {
+        code: 'connector_disconnected',
+        detail: 'connector disconnected',
+        hint: 'retry',
+        severity: 'warning',
+      },
+    }, {
+      kind: 'retry_connector',
+      label: '重试连接',
+      emphasis: 'primary',
+    }, {
+      mountSkill,
+      openSettingsTab,
+      reconnectMcpServer,
+      refreshMcpStatus,
+      retryConnector,
+      openConnectorApp,
     });
 
     expect(mounted).toBe(true);
     expect(retried).toBe(true);
+    expect(connectorRetried).toBe(true);
     expect(mountSkill).toHaveBeenCalledWith('draft-skill', 'community');
     expect(reconnectMcpServer).toHaveBeenCalledWith('slack');
     expect(refreshMcpStatus).toHaveBeenCalledTimes(1);
+    expect(retryConnector).toHaveBeenCalledWith('calendar');
   });
 
   it('builds post-action feedback for repaired and settings-routed capabilities', () => {

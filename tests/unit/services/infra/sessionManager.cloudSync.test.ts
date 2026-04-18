@@ -11,6 +11,7 @@ const dbMock = {
   getSession: vi.fn((id: string) => dbState.sessions.find((session) => session.id === id) ?? null),
   createSessionWithId: vi.fn(),
   updateSession: vi.fn(),
+  getRecentMessages: vi.fn(() => [] as any[]),
 };
 
 const supabaseLimitMock = vi.fn();

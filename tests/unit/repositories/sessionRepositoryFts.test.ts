@@ -25,7 +25,6 @@ function createSchema(db: BetterSqlite3.Database): void {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
-      generation_id TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
@@ -52,7 +51,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       thinking TEXT,
       effort_level TEXT,
       synced_at INTEGER,
-      content_parts TEXT
+      content_parts TEXT,
+      metadata TEXT
     );
   `);
   db.exec(`
@@ -89,10 +89,10 @@ function insertSession(db: BetterSqlite3.Database, id: string): void {
   const now = Date.now();
   db.prepare(
     `
-    INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
-  ).run(id, `test-${id}`, 'gen8', 'moonshot', 'kimi-k2.5', '/tmp/test', now, now);
+  ).run(id, `test-${id}`, 'moonshot', 'kimi-k2.5', '/tmp/test', now, now);
 }
 
 function makeMessage(id: string, content: string, role: 'user' | 'assistant' = 'user'): Message {

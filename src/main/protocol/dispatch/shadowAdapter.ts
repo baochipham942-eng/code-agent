@@ -110,6 +110,8 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     planningService: legacy?.planningService,
     modelConfig: legacy?.modelConfig,
     resolver: input.resolver ?? (legacy?.resolver as unknown),
+    toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
+    executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
   };
 }
 

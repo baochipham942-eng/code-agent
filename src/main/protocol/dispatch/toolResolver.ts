@@ -19,6 +19,7 @@ import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import { getProtocolRegistry } from '../../tools/protocolRegistry';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
+import { isToolNameAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -66,6 +67,14 @@ class ProtocolToolResolver implements ToolResolver {
     const registry = getProtocolRegistry();
     if (!registry.has(name)) {
       return { success: false, error: `tool not registered: ${name}` };
+    }
+
+    if (!isToolNameAllowedByWorkbenchScope(name, ctx.toolScope)) {
+      return {
+        success: false,
+        error: `tool blocked by current workbench scope: ${name}`,
+        metadata: { code: 'WORKBENCH_SCOPE_DENIED' },
+      };
     }
 
     try {

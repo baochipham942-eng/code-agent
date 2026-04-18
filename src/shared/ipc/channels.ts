@@ -229,6 +229,10 @@ export const EVALUATION_CHANNELS = {
   GET_SNAPSHOT: 'evaluation:get-snapshot',
   BUILD_SNAPSHOT: 'evaluation:build-snapshot',
   GET_CASE_DETAIL: 'evaluation:get-case-detail',
+
+  // Phase 6.2 + minimal 6.3: review queue / failure follow-up sink
+  REVIEW_QUEUE_LIST: 'evaluation:review-queue:list',
+  REVIEW_QUEUE_ENQUEUE: 'evaluation:review-queue:enqueue',
 } as const;
 
 /**

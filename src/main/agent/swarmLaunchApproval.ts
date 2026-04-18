@@ -112,8 +112,9 @@ export class SwarmLaunchApprovalGate {
   async requestApproval(params: {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
+    sessionId?: string;
   }): Promise<SwarmLaunchApprovalResult> {
-    const request = this.createRequest(params.tasks, params.summary);
+    const request = this.createRequest(params.tasks, params.summary, params.sessionId);
 
     if (BrowserWindow.getAllWindows().length === 0) {
       logger.info(`No renderer available, auto-approving launch ${request.id}`);
@@ -132,6 +133,7 @@ export class SwarmLaunchApprovalGate {
     this.safePersistInsert(request);
     publishSwarmEvent({
       type: 'swarm:launch:requested',
+      sessionId: request.sessionId,
       timestamp: request.requestedAt,
       data: { launchRequest: request },
     });
@@ -150,6 +152,7 @@ export class SwarmLaunchApprovalGate {
     this.safePersistResolve(requestId, 'approved', feedback ?? null, request.resolvedAt);
     publishSwarmEvent({
       type: 'swarm:launch:approved',
+      sessionId: request.sessionId,
       timestamp: request.resolvedAt,
       data: { launchRequest: { ...request } },
     });
@@ -179,6 +182,7 @@ export class SwarmLaunchApprovalGate {
     this.safePersistResolve(requestId, 'rejected', feedback, request.resolvedAt);
     publishSwarmEvent({
       type: 'swarm:launch:rejected',
+      sessionId: request.sessionId,
       timestamp: request.resolvedAt,
       data: { launchRequest: { ...request } },
     });
@@ -265,10 +269,12 @@ export class SwarmLaunchApprovalGate {
   private createRequest(
     tasks: SwarmLaunchTaskPreview[],
     summary?: string,
+    sessionId?: string,
   ): SwarmLaunchRequest {
     const requestedAt = Date.now();
     return {
       id: `launch_${++this.counter}_${requestedAt}`,
+      sessionId,
       status: 'pending',
       requestedAt,
       summary: summary || `准备并行启动 ${tasks.length} 个 agent`,

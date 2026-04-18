@@ -3,11 +3,13 @@
 // ============================================================================
 
 import type {
+  AppServiceRunOptions,
   Message,
   MessageAttachment,
   PermissionResponse,
   TodoItem,
 } from '../contract';
+import type { ConversationEnvelopeContext } from '../contract/conversationEnvelope';
 
 import type {
   ObjectiveMetrics,
@@ -19,6 +21,8 @@ export interface AgentMessageRequest {
   content: string;
   sessionId?: string;
   attachments?: MessageAttachment[];
+  options?: AppServiceRunOptions;
+  context?: ConversationEnvelopeContext;
 }
 
 export interface AgentCancelRequest {
@@ -212,6 +216,14 @@ export interface MCPResource {
   description?: string;
   mimeType?: string;
   serverName: string;
+}
+
+export interface ConnectorStatusSummary {
+  id: string;
+  label: string;
+  connected: boolean;
+  detail?: string;
+  capabilities: string[];
 }
 
 export interface CacheStats {

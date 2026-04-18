@@ -3,6 +3,10 @@
 // ============================================================================
 
 import type { AgentEvent, Message, ModelConfig } from '../../../shared/contract';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../../shared/contract/conversationEnvelope';
 import { getAutoAgentCoordinator } from '../autoAgentCoordinator';
 import { getDynamicAgentFactory } from '../dynamicAgentFactory';
 import { getAgentRequirementsAnalyzer } from '../agentRequirementsAnalyzer';
@@ -26,8 +30,13 @@ export interface AutoAgentRunnerDeps {
     content: string,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    sessionId?: string
+    sessionId?: string,
+    executionContent?: string,
+    toolScope?: WorkbenchToolScope,
+    executionIntent?: ConversationExecutionIntent,
   ) => Promise<void>;
+  toolScope?: WorkbenchToolScope;
+  executionIntent?: ConversationExecutionIntent;
 }
 
 /**
@@ -35,6 +44,7 @@ export interface AutoAgentRunnerDeps {
  */
 export async function runAutoAgentMode(
   content: string,
+  executionContent: string,
   requirements: Awaited<ReturnType<ReturnType<typeof getAgentRequirementsAnalyzer>['analyze']>>,
   onEvent: (event: AgentEvent) => void,
   modelConfig: ModelConfig,
@@ -49,14 +59,22 @@ export async function runAutoAgentMode(
   // Create dynamic agents
   const factory = getDynamicAgentFactory();
   const agents = factory.create(requirements, {
-    userMessage: content,
+    userMessage: executionContent,
     workingDirectory: deps.workingDirectory,
     sessionId,
   });
 
   if (agents.length === 0) {
     logger.warn('No auto agents generated, falling back to standard loop');
-    await deps.runStandardAgentLoop(content, onEvent, modelConfig, sessionId);
+    await deps.runStandardAgentLoop(
+      content,
+      onEvent,
+      modelConfig,
+      sessionId,
+      executionContent,
+      deps.toolScope,
+      deps.executionIntent,
+    );
     return;
   }
 
@@ -130,6 +148,8 @@ export async function runAutoAgentMode(
     toolContext: {
       workingDirectory: deps.workingDirectory,
       requestPermission: async () => true,
+      toolScope: deps.toolScope,
+      executionIntent: deps.executionIntent,
     },
     onProgress: (agentId, status, progress) => {
       // Sync DAG task status

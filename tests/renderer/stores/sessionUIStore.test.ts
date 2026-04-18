@@ -42,6 +42,8 @@ describe('sessionUIStore - input history', () => {
     useSessionUIStore.setState({
       pendingDelete: null,
       filter: 'active',
+      searchQuery: '',
+      sessionStatusFilter: 'all',
       inputHistory: [],
       inputHistoryIndex: -1,
       inputHistoryDraft: '',
@@ -210,6 +212,17 @@ describe('sessionUIStore - input history', () => {
         useSessionUIStore.getState().setFilter(filter);
         expect(useSessionUIStore.getState().filter).toBe(filter);
       }
+    });
+  });
+
+  describe('setSessionStatusFilter', () => {
+    it('should default to all', () => {
+      expect(useSessionUIStore.getState().sessionStatusFilter).toBe('all');
+    });
+
+    it('should update the local session status filter', () => {
+      useSessionUIStore.getState().setSessionStatusFilter('background');
+      expect(useSessionUIStore.getState().sessionStatusFilter).toBe('background');
     });
   });
 });

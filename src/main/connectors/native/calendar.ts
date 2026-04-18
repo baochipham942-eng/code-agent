@@ -300,20 +300,16 @@ export const calendarConnector: Connector = {
   label: 'Calendar',
   capabilities: ['get_status', 'list_calendars', 'list_events', 'create_event', 'update_event', 'delete_event'],
   async getStatus(): Promise<ConnectorStatus> {
-    try {
-      const calendars = await listCalendars();
-      return {
-        connected: true,
-        detail: `可访问 ${calendars.length} 个日历`,
-        capabilities: this.capabilities,
-      };
-    } catch (error) {
-      return {
-        connected: false,
-        detail: error instanceof Error ? error.message : String(error),
-        capabilities: this.capabilities,
-      };
-    }
+    // Keep startup status checks side-effect free. Enumerating calendars via
+    // AppleScript will auto-launch Calendar, so the real probe moves to first
+    // use.
+    return {
+      connected: process.platform === 'darwin',
+      detail: process.platform === 'darwin'
+        ? '按需访问本地 Calendar；为避免启动时拉起 Calendar，日历探测改为首轮使用时执行。'
+        : 'Calendar connector 仅在 macOS 可用。',
+      capabilities: this.capabilities,
+    };
   },
   async execute(action: string, payload: Record<string, unknown>): Promise<ConnectorExecutionResult> {
     switch (action) {

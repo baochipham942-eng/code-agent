@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/contract';
+import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
+import { useAppStore } from './appStore';
 
 const logger = createLogger('SessionStore');
 
@@ -22,6 +24,36 @@ let _switchCounter = 0;
 
 export interface SessionWithMeta extends Session {
   messageCount: number;
+  turnCount: number;
+}
+
+function normalizeSession(session: Session & {
+  messageCount?: number;
+  turnCount?: number;
+}): SessionWithMeta {
+  return {
+    ...session,
+    title: session.title || '未命名会话',
+    updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : (Number.isFinite(session.createdAt) ? session.createdAt : Date.now()),
+    createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
+    messageCount: session.messageCount || 0,
+    turnCount: session.turnCount || 0,
+    workbenchSnapshot: session.workbenchSnapshot || deriveSessionWorkbenchSnapshot([], {
+      workingDirectory: session.workingDirectory ?? null,
+    }),
+  };
+}
+
+function deriveCurrentSessionMeta(session: SessionWithMeta, messages: Message[]): SessionWithMeta {
+  const nextTurnCount = messages.filter((message) => message.role === 'user').length;
+  return {
+    ...session,
+    messageCount: Math.max(session.messageCount, messages.length),
+    turnCount: Math.max(session.turnCount, nextTurnCount),
+    workbenchSnapshot: deriveSessionWorkbenchSnapshot(messages, {
+      workingDirectory: session.workingDirectory ?? null,
+    }),
+  };
 }
 
 export type SessionFilter = 'active' | 'archived' | 'all';
@@ -91,13 +123,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const includeArchived = filter === 'archived' || filter === 'all';
         const sessions = await invokeSession<Session[]>('list', { includeArchived });
 
-        let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
-          ...s,
-          title: s.title || '未命名会话',
-          updatedAt: Number.isFinite(s.updatedAt) ? s.updatedAt : (Number.isFinite(s.createdAt) ? s.createdAt : Date.now()),
-          createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
-          messageCount: s.messageCount || 0,
-        }));
+        let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((session) =>
+          normalizeSession(session as Session & { messageCount?: number; turnCount?: number })
+        );
 
         if (filter === 'active') {
           sessionsWithMeta = sessionsWithMeta.filter(s => !s.isArchived);
@@ -120,10 +148,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         const session = await invokeSession<Session | null>('create', { title });
         if (session) {
-          const newSessionWithMeta: SessionWithMeta = {
+          const newSessionWithMeta: SessionWithMeta = normalizeSession({
             ...session,
             messageCount: 0,
-          };
+            turnCount: 0,
+          });
           set((state) => ({
             sessions: [newSessionWithMeta, ...state.sessions],
             currentSessionId: session.id,
@@ -162,11 +191,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }
 
         if (session) {
+          const normalizedSession = normalizeSession({
+            ...session,
+            messageCount: (session as SessionWithMeta).messageCount || session.messages?.length || 0,
+            turnCount: session.turnCount || session.messages?.filter((message) => message.role === 'user').length || 0,
+          });
           const newUnreadIds = new Set(unreadSessionIds);
           newUnreadIds.delete(sessionId);
 
           const loadedMessages = session.messages || [];
           const totalCount = (session as any).messageCount ?? loadedMessages.length;
+          useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
           set({
             currentSessionId: sessionId,
             messages: loadedMessages,
@@ -175,10 +210,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             unreadSessionIds: newUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
+            sessions: get().sessions.map((item) =>
+              item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
+            ),
           });
         } else {
           // 后端返回 null/undefined — 仍然切换到该会话（显示空状态）
           logger.warn('switchSession: backend returned null session', { sessionId });
+          useAppStore.getState().setWorkingDirectory(null);
           set({
             currentSessionId: sessionId,
             messages: [],
@@ -294,10 +333,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       const { currentSessionId, sessions } = get();
       if (currentSessionId) {
+        const nextMessages = [...get().messages];
         set({
           sessions: sessions.map((s) =>
             s.id === currentSessionId
-              ? { ...s, messageCount: s.messageCount + 1, updatedAt: Date.now() }
+              ? deriveCurrentSessionMeta({
+                  ...s,
+                  messageCount: s.messageCount + 1,
+                  turnCount: message.role === 'user' ? s.turnCount + 1 : s.turnCount,
+                  updatedAt: Date.now(),
+                }, nextMessages)
               : s
           ),
         });
@@ -310,10 +355,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           msg.id === id ? { ...msg, ...updates } : msg
         ),
       }));
+
+      const { currentSessionId, sessions, messages } = get();
+      if (!currentSessionId) {
+        return;
+      }
+
+      set({
+        sessions: sessions.map((session) =>
+          session.id === currentSessionId ? deriveCurrentSessionMeta(session, messages) : session
+        ),
+      });
     },
 
     setMessages: (messages: Message[]) => {
-      set({ messages });
+      const { currentSessionId, sessions } = get();
+      set({
+        messages,
+        sessions: currentSessionId
+          ? sessions.map((session) =>
+              session.id === currentSessionId ? deriveCurrentSessionMeta(session, messages) : session
+            )
+          : sessions,
+      });
     },
 
     setTodos: (todos: TodoItem[]) => {
@@ -359,7 +423,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     updateSessionTitle: (sessionId: string, title: string) => {
       set((state) => ({
         sessions: state.sessions.map((s) =>
-          s.id === sessionId ? { ...s, title, updatedAt: Date.now() } : s
+          s.id === sessionId ? normalizeSession({ ...s, title, updatedAt: Date.now() }) : s
         ),
       }));
     },
@@ -519,8 +583,16 @@ export async function initializeSessionStore(): Promise<void> {
 
   ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
     const { sessionId, updates } = event;
-    if (updates.title) {
-      useSessionStore.getState().updateSessionTitle(sessionId, updates.title);
+    useSessionStore.setState((state) => ({
+      sessions: state.sessions.map((session) => (
+        session.id === sessionId
+          ? normalizeSession({ ...session, ...updates })
+          : session
+      )),
+    }));
+
+    if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {
+      useAppStore.getState().setWorkingDirectory(updates.workingDirectory ?? null);
     }
   });
 

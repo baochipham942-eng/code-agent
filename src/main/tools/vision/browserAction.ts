@@ -11,6 +11,12 @@ import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 import * as fs from 'fs';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import {
+  appendBrowserWorkbenchNote,
+  buildBrowserWorkbenchBlockedResult,
+  ensureManagedBrowserSessionForWorkbench,
+  evaluateBrowserWorkbenchPolicy,
+} from './browserWorkbenchIntent';
 
 const logger = createLogger('BrowserAction');
 
@@ -141,6 +147,23 @@ type BrowserActionType =
   | 'fill_form'
   | 'get_logs';
 
+const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
+  'navigate',
+  'back',
+  'forward',
+  'reload',
+  'click',
+  'click_text',
+  'type',
+  'press_key',
+  'scroll',
+  'screenshot',
+  'get_content',
+  'get_elements',
+  'wait',
+  'fill_form',
+]);
+
 export const browserActionTool: Tool = {
   name: 'browser_action',
   description: `Control a browser for web automation and testing.
@@ -254,7 +277,7 @@ Examples:
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext
   ): Promise<ToolExecutionResult> {
     const action = params.action as BrowserActionType;
     const url = params.url as string | undefined;
@@ -274,8 +297,28 @@ Examples:
 3. 关键的文字信息
 4. 当前的页面状态`;
 
+    const workbenchPolicy = evaluateBrowserWorkbenchPolicy({
+      toolName: 'browser_action',
+      action,
+      executionIntent: context.executionIntent,
+    });
+    if (workbenchPolicy.decision === 'block') {
+      return buildBrowserWorkbenchBlockedResult(workbenchPolicy, {
+        toolName: 'browser_action',
+        action,
+      });
+    }
+
+    const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
+    if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({
+        ...(action === 'navigate' ? { url } : {}),
+      }));
+    }
+
     try {
-      switch (action) {
+      const rawResult = await (async (): Promise<ToolExecutionResult> => {
+        switch (action) {
         // Browser lifecycle
         case 'launch':
           await browserService.launch();
@@ -481,7 +524,9 @@ Examples:
 
         default:
           return { success: false, error: `Unknown action: ${action}` };
-      }
+        }
+      })();
+      return appendBrowserWorkbenchNote(rawResult, workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
@@ -491,22 +536,22 @@ Examples:
 
       // Provide helpful error messages
       if (errorMessage.includes('No active tab')) {
-        return {
+        return appendBrowserWorkbenchNote({
           success: false,
           error: `${errorMessage}. Use "launch" then "new_tab" first.\n\n--- Recent Logs ---\n${recentLogs}`,
-        };
+        }, workbenchNotes);
       }
       if (errorMessage.includes('Timeout')) {
-        return {
+        return appendBrowserWorkbenchNote({
           success: false,
           error: `Timeout: ${errorMessage}. Try increasing timeout or check if element exists.\n\n--- Recent Logs ---\n${recentLogs}`,
-        };
+        }, workbenchNotes);
       }
 
-      return {
+      return appendBrowserWorkbenchNote({
         success: false,
         error: `${errorMessage}\n\n--- Recent Logs ---\n${recentLogs}`,
-      };
+      }, workbenchNotes);
     }
   },
 };

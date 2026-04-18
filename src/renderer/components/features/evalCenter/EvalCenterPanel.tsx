@@ -26,7 +26,11 @@ const NAV_ITEMS: Array<{ key: NavItem; icon: string; label: string }> = [
 ];
 
 export const EvalCenterPanel: React.FC = () => {
-  const { showEvalCenter, setShowEvalCenter } = useAppStore();
+  const {
+    showEvalCenter,
+    setShowEvalCenter,
+    evalCenterSessionId,
+  } = useAppStore();
   const [activeNav, setActiveNav] = useState<NavItem>('sessions');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
@@ -39,6 +43,20 @@ export const EvalCenterPanel: React.FC = () => {
   const handleBackToSessions = () => {
     setSelectedSessionId(null);
   };
+
+  React.useEffect(() => {
+    if (!showEvalCenter) {
+      return;
+    }
+
+    if (evalCenterSessionId) {
+      setActiveNav('sessions');
+      setSelectedSessionId(evalCenterSessionId);
+      return;
+    }
+
+    setSelectedSessionId(null);
+  }, [showEvalCenter, evalCenterSessionId]);
 
   if (!showEvalCenter) return null;
 

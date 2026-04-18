@@ -18,6 +18,8 @@ if [ -d "$BUNDLE_DIR/macos/$APP_NAME.app" ]; then
   rm -rf "/Applications/$APP_NAME.app"
   cp -R "$BUNDLE_DIR/macos/$APP_NAME.app" "/Applications/$APP_NAME.app"
   echo "Installed to /Applications/$APP_NAME.app"
+  # 强制 Spotlight 重新索引，避免 Launchpad/Spotlight/Raycast 搜不到
+  mdimport "/Applications/$APP_NAME.app" 2>/dev/null || true
 else
   echo "Error: $BUNDLE_DIR/macos/$APP_NAME.app not found"
   exit 1

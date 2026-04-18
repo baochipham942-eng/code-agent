@@ -28,13 +28,15 @@ function evt<T extends SwarmEvent['type']>(
   type: T,
   data: SwarmEvent['data'],
   timestamp = Date.now(),
+  sessionId?: string,
 ): SwarmEvent {
-  return { type, timestamp, data } as SwarmEvent;
+  return { type, timestamp, data, sessionId } as SwarmEvent;
 }
 
 function launchRequest(id: string): SwarmLaunchRequest {
   return {
     id,
+    sessionId: 'session-1',
     status: 'pending',
     summary: 'test swarm',
     requestedAt: 1000,
@@ -66,6 +68,17 @@ describe('swarmStore', () => {
       expect(state.lastEventAt).toBe(1000);
       expect(state.eventLog).toHaveLength(1);
       expect(state.eventLog[0].tone).toBe('warning');
+    });
+
+    it('preserves sessionId on launch requests and timeline events', () => {
+      const store = useSwarmStore.getState();
+      const req = launchRequest('req-session');
+
+      store.handleEvent(evt('swarm:launch:requested', { launchRequest: req }, 1000, 'session-1'));
+
+      const state = useSwarmStore.getState();
+      expect(state.launchRequests[0]?.sessionId).toBe('session-1');
+      expect(state.eventLog[0]?.sessionId).toBe('session-1');
     });
 
     it('launch:rejected 在新 requested 前会被旧记录覆盖（reset 语义）', () => {

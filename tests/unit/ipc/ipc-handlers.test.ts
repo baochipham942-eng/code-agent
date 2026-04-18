@@ -182,7 +182,48 @@ describe('IPC Handlers', () => {
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
 
       expect(response.success).toBe(true);
-      expect(mockAppService.sendMessage).toHaveBeenCalledWith('test message', undefined, undefined, undefined);
+      expect(mockAppService.sendMessage).toHaveBeenCalledWith({ content: 'test message' });
+    });
+
+    it('normalizes rich envelope payload for send', async () => {
+      const mockAppService = {
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      };
+      registerAgentHandlers(ipc.mock, () => mockAppService as any);
+
+      const request: IPCRequest = {
+        action: 'send',
+        payload: {
+          content: 'test message',
+          sessionId: 'session-1',
+          attachments: [{ id: 'att-1', type: 'file', category: 'text', name: 'a.txt', size: 1, mimeType: 'text/plain' }],
+          options: { researchMode: true },
+          context: {
+            workingDirectory: '/tmp/work',
+            routing: {
+              mode: 'direct',
+              targetAgentIds: ['agent-1'],
+            },
+          },
+        },
+      };
+
+      const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
+
+      expect(response.success).toBe(true);
+      expect(mockAppService.sendMessage).toHaveBeenCalledWith({
+        content: 'test message',
+        sessionId: 'session-1',
+        attachments: [{ id: 'att-1', type: 'file', category: 'text', name: 'a.txt', size: 1, mimeType: 'text/plain' }],
+        options: { researchMode: true },
+        context: {
+          workingDirectory: '/tmp/work',
+          routing: {
+            mode: 'direct',
+            targetAgentIds: ['agent-1'],
+          },
+        },
+      });
     });
   });
 

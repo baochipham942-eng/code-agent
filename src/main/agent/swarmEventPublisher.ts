@@ -32,6 +32,7 @@ import { getEventBus } from '../protocol/events/bus';
  */
 export class SwarmEventEmitter {
   private currentRunId: string | null = null;
+  private currentSessionId: string | null = null;
 
   /** 当前活跃 run 的 id（外部用于读，不要写） */
   getCurrentRunId(): string | null {
@@ -42,6 +43,7 @@ export class SwarmEventEmitter {
     const stamped: SwarmEvent = {
       ...event,
       runId: event.runId ?? this.currentRunId ?? undefined,
+      sessionId: event.sessionId ?? this.currentSessionId ?? undefined,
     };
     const busType = stamped.type.startsWith('swarm:') ? stamped.type.slice(6) : stamped.type;
     getEventBus().publish('swarm', busType, stamped, { bridgeToRenderer: false });
@@ -50,6 +52,7 @@ export class SwarmEventEmitter {
   launchRequested(request: SwarmLaunchRequest): void {
     this.publish({
       type: 'swarm:launch:requested',
+      sessionId: request.sessionId,
       timestamp: request.requestedAt,
       data: { launchRequest: request },
     });
@@ -58,6 +61,7 @@ export class SwarmEventEmitter {
   launchApproved(request: SwarmLaunchRequest): void {
     this.publish({
       type: 'swarm:launch:approved',
+      sessionId: request.sessionId,
       timestamp: request.resolvedAt || Date.now(),
       data: { launchRequest: request },
     });
@@ -66,16 +70,18 @@ export class SwarmEventEmitter {
   launchRejected(request: SwarmLaunchRequest): void {
     this.publish({
       type: 'swarm:launch:rejected',
+      sessionId: request.sessionId,
       timestamp: request.resolvedAt || Date.now(),
       data: { launchRequest: request },
     });
   }
 
-  started(agentCount: number): void {
+  started(agentCount: number, sessionId?: string): void {
     // 新一次 swarm 执行的入口：开 runId，所有后续事件自动打戳此 runId
     // 直到 completed/cancelled 清空。重复 started 被视为新 run（旧 run
     // 若未收尾应由调用方先 cancelled，否则旧 run 会漏掉收尾事件）。
     this.currentRunId = randomUUID();
+    this.currentSessionId = sessionId ?? null;
     this.publish({
       type: 'swarm:started',
       timestamp: Date.now(),
@@ -209,6 +215,7 @@ export class SwarmEventEmitter {
     });
     // run 收尾，清空 currentRunId（事件 publish 之后清才能让收尾事件带上 runId）
     this.currentRunId = null;
+    this.currentSessionId = null;
   }
 
   completedWithAggregation(statistics: {
@@ -237,6 +244,7 @@ export class SwarmEventEmitter {
       },
     });
     this.currentRunId = null;
+    this.currentSessionId = null;
   }
 
   cancelled(): void {
@@ -246,6 +254,7 @@ export class SwarmEventEmitter {
       data: {},
     });
     this.currentRunId = null;
+    this.currentSessionId = null;
   }
 
   // ========================================================================

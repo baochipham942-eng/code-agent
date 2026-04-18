@@ -20,6 +20,7 @@ import { registerWorkspaceHandlers } from './workspace.ipc';
 import { registerSettingsHandlers } from './settings.ipc';
 import { registerUpdateHandlers } from './update.ipc';
 import { registerMcpHandlers } from './mcp.ipc';
+import { registerConnectorHandlers } from './connector.ipc';
 import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
@@ -103,6 +104,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // MCP handlers
   registerMcpHandlers(ipcMain);
+
+  // Connector handlers
+  registerConnectorHandlers(ipcMain, getMainWindow);
 
   // Memory handlers
   registerMemoryHandlers(ipcMain);

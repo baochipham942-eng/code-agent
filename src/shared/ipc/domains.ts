@@ -20,6 +20,7 @@ export const IPC_DOMAINS = {
   SETTINGS: 'domain:settings',
   UPDATE: 'domain:update',
   MCP: 'domain:mcp',
+  CONNECTOR: 'domain:connector',
   MEMORY: 'domain:memory',
   PLANNING: 'domain:planning',
   WINDOW: 'domain:window',

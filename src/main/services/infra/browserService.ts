@@ -12,6 +12,7 @@ import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
+import type { ManagedBrowserSessionState } from '../../../shared/contract/desktop';
 
 // Lazy-load playwright to avoid hard dependency at module load time
 // (e.g., when bundled for test runner where playwright is not installed)
@@ -237,6 +238,29 @@ class BrowserService implements Disposable {
       url: tab.url,
       title: tab.title,
     }));
+  }
+
+  getSessionState(): ManagedBrowserSessionState {
+    const activeTab = this.getActiveTab();
+    return {
+      running: this.isRunning(),
+      tabCount: this.tabs.size,
+      activeTab: activeTab
+        ? {
+          id: activeTab.id,
+          url: activeTab.url,
+          title: activeTab.title,
+        }
+        : null,
+    };
+  }
+
+  async ensureSession(url: string = 'about:blank'): Promise<ManagedBrowserSessionState> {
+    await this.ensureBrowser();
+    if (!this.getActiveTab()) {
+      await this.newTab(url);
+    }
+    return this.getSessionState();
   }
 
   // --------------------------------------------------------------------------

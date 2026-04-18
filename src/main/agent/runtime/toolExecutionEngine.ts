@@ -453,6 +453,8 @@ export class ToolExecutionEngine {
           modelCallback: this.createModelCallback(),
           // Hook 系统：传递给工具上下文（subagent/permission 事件触发）
           hookManager: this.ctx.hookManager,
+          toolScope: this.ctx.toolScope,
+          executionIntent: this.ctx.executionIntent,
         }
       );
       clearInterval(progressInterval);

@@ -6,6 +6,12 @@
 
 import { create } from 'zustand';
 import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
+import type {
+  EnqueueReviewItemInput,
+  ReviewQueueItem,
+  UnifiedTraceIdentity,
+} from '@shared/contract/reviewQueue';
+import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import ipcService from '../services/ipcService';
 
 interface SessionInfo {
@@ -50,6 +56,23 @@ interface ReplaySummary {
     severity: string;
     suggestedFix?: string;
   }>;
+  failureAttribution?: {
+    rootCause?: {
+      stepIndex: number;
+      category: string;
+      summary: string;
+      evidence: number[];
+      confidence: number;
+    };
+    causalChain: Array<{
+      stepIndex: number;
+      role: string;
+      note: string;
+    }>;
+    relatedRegressionCases: string[];
+    llmUsed: boolean;
+    durationMs: number;
+  };
 }
 
 interface ReplayBlock {
@@ -78,6 +101,7 @@ interface ReplayTurn {
 
 interface StructuredReplay {
   sessionId: string;
+  traceIdentity: UnifiedTraceIdentity;
   turns: ReplayTurn[];
   summary: ReplaySummary;
 }
@@ -112,11 +136,16 @@ interface EvalCenterStore {
   sessionListLoading: boolean;
   filterStatus: 'all' | 'recording' | 'completed' | 'error';
   sortBy: 'time' | 'turns' | 'cost';
+  reviewQueue: ReviewQueueItem[];
+  reviewQueueLoading: boolean;
 
   // Actions
   loadSession: (sessionId: string) => Promise<void>;
   loadReplay: (sessionId: string) => Promise<void>;
   loadSessionList: () => Promise<void>;
+  loadReviewQueue: () => Promise<void>;
+  enqueueReviewItem: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem | null>;
+  enqueueFailureFollowup: (sessionId: string, sessionTitle?: string) => Promise<ReviewQueueItem | null>;
   setFilterStatus: (status: 'all' | 'recording' | 'completed' | 'error') => void;
   setSortBy: (sort: 'time' | 'turns' | 'cost') => void;
   reset: () => void;
@@ -136,6 +165,8 @@ const initialState = {
   sessionListLoading: false,
   filterStatus: 'all' as const,
   sortBy: 'time' as const,
+  reviewQueue: [] as ReviewQueueItem[],
+  reviewQueueLoading: false,
 };
 
 export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
@@ -145,7 +176,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const analysis = await ipcService.invoke(
-        'evaluation:get-session-analysis' as const,
+        EVALUATION_CHANNELS.GET_SESSION_ANALYSIS,
         sessionId
       );
       if (analysis) {
@@ -195,6 +226,53 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
       }
     } catch {
       set({ sessionListLoading: false });
+    }
+  },
+
+  loadReviewQueue: async () => {
+    set({ reviewQueueLoading: true });
+    try {
+      const items = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_LIST);
+      set({ reviewQueue: items || [], reviewQueueLoading: false });
+    } catch {
+      set({ reviewQueueLoading: false });
+    }
+  },
+
+  enqueueReviewItem: async (payload) => {
+    try {
+      const item = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE, payload);
+      if (item) {
+        set((state) => {
+          const next = state.reviewQueue.filter((existing) => existing.id !== item.id);
+          next.unshift(item);
+          return { reviewQueue: next };
+        });
+      }
+      return item || null;
+    } catch {
+      return null;
+    }
+  },
+
+  enqueueFailureFollowup: async (sessionId, sessionTitle) => {
+    try {
+      const item = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE, {
+        sessionId,
+        sessionTitle,
+        reason: 'failure_followup',
+        source: 'replay_failure',
+      } satisfies EnqueueReviewItemInput);
+      if (item) {
+        set((state) => {
+          const next = state.reviewQueue.filter((existing) => existing.id !== item.id);
+          next.unshift(item);
+          return { reviewQueue: next };
+        });
+      }
+      return item || null;
+    } catch {
+      return null;
     }
   },
 

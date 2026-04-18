@@ -7,17 +7,35 @@
 
 import type {
   AgentApplicationService,
-  AppServiceRunOptions,
   CreateSessionConfig,
+  AppServiceRunOptions,
   SwitchModelParams,
   ModelOverride,
+  SessionMarkdownExport,
 } from '../../shared/contract/appService';
-import type { PermissionResponse, Session, Message, ModelProvider } from '../../shared/contract';
+import type {
+  Message,
+  MessageMetadata,
+  ModelProvider,
+  PermissionResponse,
+  Session,
+} from '../../shared/contract';
 import type { TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { getModelSessionState } from '../session/modelSessionState';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import type {
+  ConversationEnvelope,
+  ConversationEnvelopeContext,
+  WorkbenchMessageMetadata,
+} from '../../shared/contract/conversationEnvelope';
+import { withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import {
+  exportSessionToMarkdown,
+  suggestExportFilename,
+} from '../session/exportMarkdown';
+import type { CachedMessage, CachedSession } from '../session/localCache';
 
 export class AgentAppServiceImpl implements AgentApplicationService {
   constructor(
@@ -41,12 +59,113 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return orchestrator;
   }
 
+  private toWorkbenchMetadata(context?: ConversationEnvelopeContext): WorkbenchMessageMetadata | undefined {
+    if (!context) return undefined;
+
+    const metadata: WorkbenchMessageMetadata = {};
+
+    if (context.workingDirectory !== undefined) {
+      metadata.workingDirectory = context.workingDirectory;
+    }
+    if (context.routing) {
+      metadata.routingMode = context.routing.mode;
+      if (context.routing.targetAgentIds?.length) {
+        metadata.targetAgentIds = [...context.routing.targetAgentIds];
+      }
+    }
+    if (context.selectedSkillIds?.length) {
+      metadata.selectedSkillIds = [...context.selectedSkillIds];
+    }
+    if (context.selectedConnectorIds?.length) {
+      metadata.selectedConnectorIds = [...context.selectedConnectorIds];
+    }
+    if (context.selectedMcpServerIds?.length) {
+      metadata.selectedMcpServerIds = [...context.selectedMcpServerIds];
+    }
+    if (context.executionIntent) {
+      metadata.executionIntent = {
+        ...context.executionIntent,
+      };
+    }
+
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
+  }
+
+  private getMessageMetadata(envelope: ConversationEnvelope): MessageMetadata | undefined {
+    const workbench = this.toWorkbenchMetadata(envelope.context);
+    return workbench ? { workbench } : undefined;
+  }
+
+  private async syncSessionWorkingDirectory(sessionId: string | null, workingDirectory?: string | null): Promise<void> {
+    const nextWorkingDirectory = workingDirectory?.trim();
+    if (!sessionId || !nextWorkingDirectory) {
+      return;
+    }
+
+    const sessionManager = getSessionManager();
+    const session = await sessionManager.getSession(sessionId, 1);
+    if (session?.workingDirectory === nextWorkingDirectory) {
+      return;
+    }
+
+    await sessionManager.updateSession(sessionId, {
+      workingDirectory: nextWorkingDirectory,
+      updatedAt: Date.now(),
+    });
+  }
+
+  private toCachedMessage(message: Message): CachedMessage {
+    const metadata = message.metadata
+      ? ({ ...message.metadata } as Record<string, unknown>)
+      : undefined;
+
+    return {
+      id: message.id,
+      role: message.role === 'user' || message.role === 'system' ? message.role : 'assistant',
+      content: message.content,
+      timestamp: message.timestamp,
+      tokens: (message.inputTokens || 0) + (message.outputTokens || 0) || undefined,
+      metadata,
+    };
+  }
+
+  private toCachedSession(session: SessionWithMessages): CachedSession {
+    return {
+      sessionId: session.id,
+      messages: session.messages.map((message) => this.toCachedMessage(message)),
+      startedAt: session.createdAt,
+      lastActivityAt: session.updatedAt,
+      totalTokens: session.messages.reduce(
+        (sum, message) => sum + (message.inputTokens || 0) + (message.outputTokens || 0),
+        0,
+      ),
+      metadata: {
+        title: session.title,
+        workingDirectory: session.workingDirectory,
+      },
+    };
+  }
+
   // === Agent Operations ===
 
-  async sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions, sessionId?: string): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow(sessionId);
+  async sendMessage(envelope: ConversationEnvelope): Promise<void> {
+    const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
+    const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
+    if (envelope.context?.workingDirectory) {
+      orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
+    }
+    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    const options = withWorkbenchTurnSystemContext(
+      envelope.options as AppServiceRunOptions | undefined,
+      envelope.context,
+    );
     // Cast to concrete AgentRunOptions — AppServiceRunOptions is a superset via index signature
-    await orchestrator.sendMessage(content, attachments, options as any);
+    await orchestrator.sendMessage(
+      envelope.content,
+      envelope.attachments,
+      options as any,
+      this.getMessageMetadata(envelope),
+    );
   }
 
   async cancel(sessionId?: string): Promise<void> {
@@ -59,9 +178,23 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     orchestrator.handlePermissionResponse(requestId, response);
   }
 
-  async interruptAndContinue(content: string, attachments?: unknown[], sessionId?: string): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow(sessionId);
-    await orchestrator.interruptAndContinue(content, attachments);
+  async interruptAndContinue(envelope: ConversationEnvelope): Promise<void> {
+    const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
+    const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
+    if (envelope.context?.workingDirectory) {
+      orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
+    }
+    await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+    const options = withWorkbenchTurnSystemContext(
+      envelope.options as AppServiceRunOptions | undefined,
+      envelope.context,
+    );
+    await orchestrator.interruptAndContinue(
+      envelope.content,
+      envelope.attachments,
+      options as any,
+      this.getMessageMetadata(envelope),
+    );
   }
 
   // === Workspace ===
@@ -192,6 +325,30 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async exportSession(sessionId: string): Promise<unknown> {
     return getSessionManager().exportSession(sessionId);
+  }
+
+  async exportSessionMarkdown(sessionId: string): Promise<SessionMarkdownExport> {
+    const session = await getSessionManager().exportSession(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    const cachedSession = this.toCachedSession(session);
+    const result = exportSessionToMarkdown(cachedSession, {
+      title: session.title || undefined,
+      includeMetadata: true,
+      includeTimestamps: true,
+    });
+
+    if (!result.success || !result.markdown) {
+      throw new Error(result.error || 'Failed to export markdown');
+    }
+
+    return {
+      markdown: result.markdown,
+      suggestedFileName: suggestExportFilename(cachedSession),
+      stats: result.stats,
+    };
   }
 
   async importSession(data: unknown): Promise<string> {

@@ -146,6 +146,8 @@ export class AgentLoop {
       userId: config.userId,
       persistMessage: config.persistMessage,
       onToolExecutionLog: config.onToolExecutionLog,
+      toolScope: config.toolScope,
+      executionIntent: config.executionIntent,
 
       // Services
       circuitBreaker: new CircuitBreaker(),

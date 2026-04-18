@@ -5,6 +5,7 @@
 import React, { useState, useMemo } from 'react';
 import { FileText, FolderOpen, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
+import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -18,6 +19,7 @@ interface FileInfo {
 
 export const WorkingFolder: React.FC = () => {
   const { workingDirectory, setWorkingDirectory } = useAppStore();
+  const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const { messages } = useSessionStore();
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
@@ -131,13 +133,20 @@ export const WorkingFolder: React.FC = () => {
         <div className="space-y-1 mt-3">
           {/* Workspace path or select button */}
           {workingDirectory ? (
-            <div
-              className="text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
-              title={workingDirectory}
-              onClick={isWebMode() ? undefined : () => handleOpenInFinder(workingDirectory)}
-            >
-              {workingDirectory.split('/').slice(-3).join('/')}
-            </div>
+            <>
+              <div
+                className="text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
+                title={workingDirectory}
+                onClick={isWebMode() ? undefined : () => handleOpenInFinder(workingDirectory)}
+              >
+                {workingDirectory.split('/').slice(-3).join('/')}
+              </div>
+              {composerWorkingDirectory && composerWorkingDirectory !== workingDirectory && (
+                <div className="mb-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-cyan-300">
+                  下一条消息将使用：{composerWorkingDirectory}
+                </div>
+              )}
+            </>
           ) : (
             isWebMode() ? (
               <WebDirInput onSubmit={(p) => handleSelectDirectory(p)} placeholder={t.taskPanel.inputDirPlaceholder} confirmLabel={t.taskPanel.confirm} />

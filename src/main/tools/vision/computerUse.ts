@@ -8,6 +8,12 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { browserService } from '../../services/infra/browserService.js';
+import {
+  appendBrowserWorkbenchNote,
+  buildBrowserWorkbenchBlockedResult,
+  ensureManagedBrowserSessionForWorkbench,
+  evaluateBrowserWorkbenchPolicy,
+} from './browserWorkbenchIntent';
 
 const execAsync = promisify(exec);
 
@@ -158,7 +164,7 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext
   ): Promise<ToolExecutionResult> {
     // Feature Flag: 检查 Computer Use 是否启用
     if (!isComputerUseEnabled()) {
@@ -169,31 +175,48 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
     }
 
     const action = params as unknown as ComputerAction;
+    const workbenchPolicy = evaluateBrowserWorkbenchPolicy({
+      toolName: 'computer_use',
+      action: action.action,
+      executionIntent: context.executionIntent,
+    });
+    if (workbenchPolicy.decision === 'block') {
+      return buildBrowserWorkbenchBlockedResult(workbenchPolicy, {
+        toolName: 'computer_use',
+        action: action.action,
+      });
+    }
+
+    const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
+    if (workbenchPolicy.preferManagedBrowser && isSmartAction(action.action)) {
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench());
+    }
 
     try {
+      let result: ToolExecutionResult;
+
       // Smart actions use Playwright (browser must be running)
       if (isSmartAction(action.action)) {
-        return await executeSmartAction(action);
-      }
-
-      // Basic actions use platform-specific implementations
-      if (process.platform === 'darwin') {
-        return await executeMacOSAction(action);
+        result = await executeSmartAction(action);
+      } else if (process.platform === 'darwin') {
+        result = await executeMacOSAction(action);
       } else if (process.platform === 'linux') {
-        return await executeLinuxAction(action);
+        result = await executeLinuxAction(action);
       } else if (process.platform === 'win32') {
-        return await executeWindowsAction(action);
+        result = await executeWindowsAction(action);
       } else {
-        return {
+        result = {
           success: false,
           error: `Unsupported platform: ${process.platform}`,
         };
       }
+
+      return appendBrowserWorkbenchNote(result, workbenchNotes);
     } catch (error) {
-      return {
+      return appendBrowserWorkbenchNote({
         success: false,
         error: `Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
+      }, workbenchNotes);
     }
   },
 };

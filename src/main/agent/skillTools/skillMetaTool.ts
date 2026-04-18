@@ -15,6 +15,7 @@ import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
+import { isSkillCommandAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
 import {
   SKILL_DESCRIPTION,
   SKILL_INPUT_SCHEMA,
@@ -233,6 +234,17 @@ export const skillMetaTool: Tool = {
       return {
         success: false,
         error: `Unknown skill: ${command}. Available skills: ${available || 'none'}`,
+      };
+    }
+
+    if (!isSkillCommandAllowedByWorkbenchScope(command, context.toolScope)) {
+      return {
+        success: false,
+        error: `Skill "${command}" is blocked by the current workbench scope.`,
+        metadata: {
+          code: 'WORKBENCH_SCOPE_DENIED',
+          blockedSkill: command,
+        },
       };
     }
 

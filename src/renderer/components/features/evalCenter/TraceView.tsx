@@ -13,15 +13,36 @@ interface Props {
 }
 
 export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
-  const { replayData, replayLoading, objective, loadReplay } = useEvalCenterStore();
+  const {
+    replayData,
+    replayLoading,
+    objective,
+    reviewQueue,
+    sessionInfo,
+    loadReplay,
+    loadReviewQueue,
+    enqueueFailureFollowup,
+  } = useEvalCenterStore();
   const [activeTurn, setActiveTurn] = useState(0);
   const turnRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     if (sessionId) {
       loadReplay(sessionId);
+      void loadReviewQueue();
     }
-  }, [sessionId, loadReplay]);
+  }, [sessionId, loadReplay, loadReviewQueue]);
+
+  const queuedReviewItem = reviewQueue.find((item) => item.sessionId === sessionId) || null;
+  const failureFollowupState = queuedReviewItem?.reason === 'failure_followup'
+    ? 'queued'
+    : queuedReviewItem
+      ? 'upgrade'
+      : 'available';
+
+  const handleEnqueueFailureFollowup = useCallback(async () => {
+    await enqueueFailureFollowup(sessionId, sessionInfo?.title);
+  }, [enqueueFailureFollowup, sessionId, sessionInfo?.title]);
 
   const scrollToTurn = useCallback((turnIdx: number) => {
     setActiveTurn(turnIdx);
@@ -164,7 +185,12 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
 
       {/* Right: Analytics Sidebar + Enhanced Info Panels */}
       <div className="w-[220px] shrink-0 border-l border-zinc-800 overflow-y-auto">
-        <ReplayAnalyticsSidebar summary={replayData.summary} objective={objective} />
+        <ReplayAnalyticsSidebar
+          summary={replayData.summary}
+          objective={objective}
+          failureFollowupState={failureFollowupState}
+          onEnqueueFailureFollowup={handleEnqueueFailureFollowup}
+        />
 
         {/* Per-turn Token Distribution */}
         <div className="border-t border-zinc-800 p-3">

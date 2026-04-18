@@ -5,6 +5,10 @@
 import type {
   ToolDefinition,
 } from '../../shared/contract';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../shared/contract/conversationEnvelope';
 
 export interface Tool extends ToolDefinition {
   execute: (
@@ -88,6 +92,10 @@ export interface ToolContext {
    * `(ctx.resolver as import('../protocol/dispatch/toolResolver').ToolResolver).execute(...)`
    */
   resolver?: unknown;
+  /** 当前 turn 的显式工具作用域 */
+  toolScope?: WorkbenchToolScope;
+  /** 当前 turn 的结构化执行意图 */
+  executionIntent?: ConversationExecutionIntent;
 }
 
 export interface PermissionRequestData {
@@ -111,4 +119,3 @@ export interface ToolExecutionResult {
   fromCache?: boolean; // Indicates if result was from cache
   metadata?: Record<string, unknown>; // Additional metadata for UI/workflow
 }
-

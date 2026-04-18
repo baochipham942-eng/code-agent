@@ -8,6 +8,7 @@ import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/contract'
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
+import { browserService } from '../services/infra/browserService';
 import { createLogger } from '../services/infra/logger';
 
 // 会议应用列表 — 检测到前台是这些 app 时自动启动音频采集
@@ -41,6 +42,16 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
 
         case 'getCurrentContext':
           return { success: true, data: service.getCurrentContext() } satisfies IPCResponse<unknown>;
+
+        case 'getManagedBrowserSession':
+          return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
+
+        case 'ensureManagedBrowserSession':
+          return { success: true, data: await browserService.ensureSession() } satisfies IPCResponse<unknown>;
+
+        case 'closeManagedBrowserSession':
+          await browserService.close();
+          return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
 
         case 'listRecent': {
           const payload = request.payload as { limit?: number } | undefined;

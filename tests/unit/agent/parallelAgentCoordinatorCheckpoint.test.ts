@@ -130,9 +130,18 @@ function checkpointPath(sessionId: string): string {
 }
 
 async function waitForPersist(): Promise<void> {
-  // schedulePersist 是 fire-and-forget，等 microtask 队列排空再检查文件
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  // schedulePersist 是 fire-and-forget，需要 mkdir + writeFile 两个 libuv 往返。
+  // 轮询 checkpoint 目录直到出现任意 *.json，最多等 1s；比固定 setImmediate 次数稳。
+  const parallelDir = path.join(
+    configDirState.dir,
+    COORDINATION_CHECKPOINTS.PARALLEL_DIR
+  );
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    const files = await fsPromises.readdir(parallelDir).catch(() => [] as string[]);
+    if (files.some((f) => f.endsWith('.json'))) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
@@ -448,8 +457,9 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
 
   describe('cleanup after success', () => {
     it('executeParallel 全部成功后自动删除 checkpoint 文件', async () => {
+      // executeParallel 内部 await deleteCheckpointIfPresent → 已含 drainPersist，
+      // 返回时持久化链已排空，直接 stat 即可
       await coordinator.executeParallel([makeTask('t1'), makeTask('t2')]);
-      await waitForPersist();
 
       const exists = await fsPromises
         .stat(checkpointPath('session-a'))
@@ -475,8 +485,9 @@ describe('ParallelAgentCoordinator Checkpoint (ADR-010 #3)', () => {
         cost: 0,
       }));
 
+      // 失败路径：executeParallel 内部 schedulePersist + await drainPersist，
+      // 返回时文件已落盘，无需再等
       await coordinator.executeParallel([makeTask('t1'), makeTask('t2')]);
-      await waitForPersist();
 
       const exists = await fsPromises
         .stat(checkpointPath('session-a'))

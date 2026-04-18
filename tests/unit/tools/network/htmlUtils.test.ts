@@ -8,7 +8,7 @@ import {
   smartTruncate,
   buildExtractionPrompt,
   fallbackHtmlToText,
-} from '../../../../src/main/tools/network/htmlUtils';
+} from '../../../../src/main/tools/web/htmlUtils';
 
 describe('HTML Utilities', () => {
   // --------------------------------------------------------------------------

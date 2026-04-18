@@ -17,7 +17,7 @@ import {
   mergeSearchResults,
   deduplicateResults,
   normalizeTitleForDedup,
-} from '../../../../src/main/tools/network/webSearch';
+} from '../../../../src/main/tools/web/webSearch';
 
 // ============================================================================
 // formatAge

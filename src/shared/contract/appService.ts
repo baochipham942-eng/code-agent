@@ -9,12 +9,19 @@ import type { PermissionResponse } from './permission';
 import type { Session } from './session';
 import type { Message } from './message';
 import type { ModelProvider } from './model';
+import type {
+  ConversationEnvelope,
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from './conversationEnvelope';
 
 /**
  * Agent 运行选项（与 AgentRunOptions 对齐，但不引入 research 模块依赖）
  */
 export interface AppServiceRunOptions {
   researchMode?: boolean;
+  toolScope?: WorkbenchToolScope;
+  executionIntent?: ConversationExecutionIntent;
   [key: string]: unknown;
 }
 
@@ -46,6 +53,17 @@ export interface ModelOverride {
   maxTokens?: number;
 }
 
+export interface SessionMarkdownExport {
+  markdown: string;
+  suggestedFileName: string;
+  stats?: {
+    messageCount: number;
+    characterCount: number;
+    codeBlockCount: number;
+    toolExecutionCount: number;
+  };
+}
+
 /**
  * AgentApplicationService — IPC handler 的唯一业务依赖
  *
@@ -56,10 +74,10 @@ export interface ModelOverride {
  */
 export interface AgentApplicationService {
   // === Agent Operations ===
-  sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions, sessionId?: string): Promise<void>;
+  sendMessage(envelope: ConversationEnvelope): Promise<void>;
   cancel(sessionId?: string): Promise<void>;
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void;
-  interruptAndContinue(content: string, attachments?: unknown[], sessionId?: string): Promise<void>;
+  interruptAndContinue(envelope: ConversationEnvelope): Promise<void>;
 
   // === Workspace ===
   getWorkingDirectory(): string | undefined;
@@ -77,6 +95,7 @@ export interface AgentApplicationService {
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   exportSession(sessionId: string): Promise<unknown>;
+  exportSessionMarkdown(sessionId: string): Promise<SessionMarkdownExport>;
   importSession(data: unknown): Promise<string>;
 
   // === Session State ===

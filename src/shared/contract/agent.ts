@@ -179,6 +179,15 @@ export type AgentEvent =
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'task_update'; data: TaskUpdateEventData }
   | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
+  | { type: 'routing_resolved'; data: {
+      mode: 'auto';
+      agentId: string;
+      agentName: string;
+      reason: string;
+      score: number;
+      fallbackToDefault?: boolean;
+      timestamp?: number;
+    } }
   | { type: 'agent_complete'; data: null }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }

@@ -188,6 +188,8 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
         const prompt = typeof arg === 'string' ? arg : (arg as { content: string }).content;
         const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
+        const options = typeof arg === 'object' && arg !== null ? (arg as { options?: unknown }).options : undefined;
+        const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -195,6 +197,8 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
             prompt,
             ...(sessionId ? { sessionId } : {}),
             ...(attachments?.length ? { attachments } : {}),
+            ...(options ? { options } : {}),
+            ...(context ? { context } : {}),
           }),
         });
 

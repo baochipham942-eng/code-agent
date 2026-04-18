@@ -85,10 +85,18 @@ const executorState = vi.hoisted(() => ({
   executeMock: vi.fn(),
 }));
 
+const sessionManagerState = vi.hoisted(() => ({
+  addMessageToSession: vi.fn(),
+}));
+
 vi.mock('../../../src/main/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
+}));
+
+vi.mock('../../../src/main/services', () => ({
+  getSessionManager: () => sessionManagerState,
 }));
 
 // scheduler — full DAG scheduler isn't part of this scope

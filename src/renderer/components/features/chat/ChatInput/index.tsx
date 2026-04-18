@@ -4,9 +4,10 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Image, FileText, Pause, Play, SlashSquare } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
+import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
@@ -18,18 +19,32 @@ import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
+import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { useComposerStore } from '../../../../stores/composerStore';
+import { useSwarmStore } from '../../../../stores/swarmStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
+import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
+import {
+  applyAgentMentionSuggestion,
+  buildDirectRoutingPlaceholder,
+  getLeadingAgentMentionAutocomplete,
+  getPreferredAgentMentionToken,
+  isLeadingAgentMentionInput,
+  parseLeadingAgentMentions,
+  syncLeadingAgentMentions,
+} from './agentMentionRouting';
+import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
 
 export interface ChatInputProps {
-  onSend: (message: string, attachments?: MessageAttachment[]) => void;
+  onSend: (envelope: ConversationEnvelope) => void;
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
@@ -79,6 +94,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
+  const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
+  const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
     suggestedName: string;
@@ -89,6 +106,68 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } | null>(null);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
+  const browserSession = useWorkbenchBrowserSession();
+  const buildContext = useComposerStore((state) => state.buildContext);
+  const routingMode = useComposerStore((state) => state.routingMode);
+  const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
+  const swarmAgents = useSwarmStore((state) => state.agents);
+  const mentionPreview = useMemo(
+    () => parseLeadingAgentMentions(value, swarmAgents),
+    [swarmAgents, value],
+  );
+  const agentMentionAutocomplete = useMemo(
+    () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
+    [swarmAgents, value],
+  );
+  const isAgentMentionAutocompleteOpen = Boolean(
+    agentMentionAutocomplete
+    && agentMentionAutocomplete.matches.length > 0
+    && dismissedAgentAutocompleteValue !== value,
+  );
+  const selectedDirectAgents = useMemo(
+    () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
+    [swarmAgents, targetAgentIds],
+  );
+  const inputPlaceholder = useMemo(() => {
+    if (routingMode === 'direct') {
+      return buildDirectRoutingPlaceholder(selectedDirectAgents, swarmAgents);
+    }
+    return undefined;
+  }, [routingMode, selectedDirectAgents, swarmAgents]);
+
+  const buildEnvelope = useCallback((rawContent: string, nextAttachments?: MessageAttachment[]): ConversationEnvelope => {
+    const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
+    const content = parsedMentions ? parsedMentions.content : rawContent.trim();
+    const baseContext = buildContext();
+    const nextContext = parsedMentions
+      ? {
+          ...baseContext,
+          routing: {
+            mode: 'direct' as const,
+            targetAgentIds: parsedMentions.targetAgentIds,
+          },
+        }
+      : baseContext;
+    const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
+    const context = browserSessionMode
+      ? {
+          ...nextContext,
+          executionIntent: {
+            ...nextContext.executionIntent,
+            browserSessionSnapshot: buildBrowserSessionIntentSnapshot({
+              mode: browserSessionMode,
+              browserSession,
+            }),
+          },
+        }
+      : nextContext;
+
+    return {
+      content,
+      attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
+      context,
+    };
+  }, [browserSession, buildContext, swarmAgents]);
 
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
@@ -118,7 +197,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
       if (text?.trim()) {
-        onSend(text.trim());
+        onSend(buildEnvelope(text));
       }
     };
     const handleAdd = (e: Event) => {
@@ -131,7 +210,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleRun = (e: Event) => {
       const cmd = (e as CustomEvent<string>).detail;
       if (cmd?.trim()) {
-        onSend(`Execute this shell command and show the output: \`${cmd.trim()}\``);
+        onSend(buildEnvelope(`Execute this shell command and show the output: \`${cmd.trim()}\``));
       }
     };
     window.addEventListener('iact:send', handleSend);
@@ -142,7 +221,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       window.removeEventListener('iact:add', handleAdd);
       window.removeEventListener('iact:run', handleRun);
     };
-  }, [onSend]);
+  }, [buildEnvelope, onSend]);
 
   // Clear suggestions when user starts typing
   useEffect(() => {
@@ -150,6 +229,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setSuggestions([]);
     }
   }, [value]);
+
+  useEffect(() => {
+    setSelectedAgentMentionIndex(0);
+    if (dismissedAgentAutocompleteValue && dismissedAgentAutocompleteValue !== value) {
+      setDismissedAgentAutocompleteValue(null);
+    }
+  }, [agentMentionAutocomplete?.query, agentMentionAutocomplete?.matches.length, dismissedAgentAutocompleteValue, value]);
 
   // Handle suggestion selection
   const handleSuggestionSelect = useCallback((text: string) => {
@@ -171,9 +257,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     } else {
       setShowSlashPopover(false);
     }
+    if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
+      dismissAutocomplete();
+      return;
+    }
     // Check for @ pattern at cursor position (approximate: end of string)
     searchFiles(newValue, newValue.length);
-  }, [searchFiles]);
+  }, [dismissAutocomplete, searchFiles, swarmAgents]);
 
   // Handle @ file selection
   const handleFileSelect_autocomplete = useCallback((filePath: string) => {
@@ -183,6 +273,64 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     dismissAutocomplete();
     inputAreaRef.current?.focus();
   }, [value, atQuery, dismissAutocomplete]);
+
+  const handleAgentMentionSelect = useCallback((agentId: string) => {
+    const agent = swarmAgents.find((item) => item.id === agentId);
+    if (!agent) return;
+    setValue((prev) => applyAgentMentionSuggestion(prev, agent));
+    setDismissedAgentAutocompleteValue(null);
+    inputAreaRef.current?.focus();
+  }, [swarmAgents]);
+
+  const handleDirectTargetIdsChange = useCallback((nextTargetAgentIds: string[]) => {
+    const nextAgents = swarmAgents.filter((agent) => nextTargetAgentIds.includes(agent.id));
+    setValue((prev) => syncLeadingAgentMentions(prev, nextAgents, swarmAgents));
+    setDismissedAgentAutocompleteValue(null);
+    inputAreaRef.current?.focus();
+  }, [swarmAgents]);
+
+  const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isAgentMentionAutocompleteOpen || !agentMentionAutocomplete) {
+      return false;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedAgentMentionIndex((prev) => (prev + 1) % agentMentionAutocomplete.matches.length);
+      return true;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedAgentMentionIndex((prev) => (
+        prev === 0 ? agentMentionAutocomplete.matches.length - 1 : prev - 1
+      ));
+      return true;
+    }
+
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+      const selected = agentMentionAutocomplete.matches[selectedAgentMentionIndex];
+      if (selected) {
+        e.preventDefault();
+        handleAgentMentionSelect(selected.id);
+        return true;
+      }
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setDismissedAgentAutocompleteValue(value);
+      return true;
+    }
+
+    return false;
+  }, [
+    agentMentionAutocomplete,
+    handleAgentMentionSelect,
+    isAgentMentionAutocompleteOpen,
+    selectedAgentMentionIndex,
+    value,
+  ]);
 
   // 历史命令功能
   const {
@@ -198,25 +346,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
+    const nextEnvelope = buildEnvelope(trimmedValue, attachments);
     // 允许在 isProcessing 时提交以触发中断功能
-    const canSubmit = (trimmedValue || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
+    const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       // 添加到输入历史
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
       }
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
-      if (trimmedValue.startsWith('!')) {
-        const shellCmd = trimmedValue.slice(1).trim();
+      if (nextEnvelope.content.startsWith('!')) {
+        const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
           // Send as a bash execution request to the agent
-          onSend(`Execute this shell command and show the output: \`${shellCmd}\``);
+          onSend({
+            content: `Execute this shell command and show the output: \`${shellCmd}\``,
+            context: nextEnvelope.context,
+          });
         }
       } else {
-        onSend(
-          trimmedValue,
-          attachments.length > 0 ? attachments : undefined
-        );
+        onSend(nextEnvelope);
       }
       setValue('');
       setAttachments([]);
@@ -340,6 +489,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+        <InlineWorkbenchBar
+          previewTargetAgentIds={mentionPreview?.targetAgentIds}
+          onDirectTargetIdsChange={handleDirectTargetIdsChange}
+        />
+
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button
@@ -405,7 +559,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             }}
           />
           {/* @ File autocomplete dropdown */}
-          {isAutocompleteOpen && fileMatches.length > 0 && (
+          {isAgentMentionAutocompleteOpen && agentMentionAutocomplete && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[240px] overflow-y-auto">
+              {agentMentionAutocomplete.matches.map((agent, index) => {
+                const agentRole = (agent as { role?: string }).role;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => handleAgentMentionSelect(agent.id)}
+                    className={`w-full px-3 py-2 text-left transition-colors ${
+                      index === selectedAgentMentionIndex
+                        ? 'bg-zinc-700'
+                        : 'hover:bg-zinc-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-zinc-200">@{getPreferredAgentMentionToken(agent)}</span>
+                      <span className="text-xs text-zinc-500 truncate">{agent.name}</span>
+                      {agentRole ? (
+                        <span className="ml-auto text-[11px] text-zinc-600 truncate">{agentRole}</span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {(!isAgentMentionAutocompleteOpen && isAutocompleteOpen && fileMatches.length > 0) && (
             <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
               {fileMatches.map((f, i) => (
                 <button
@@ -430,9 +611,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
+            placeholder={inputPlaceholder}
             onHistoryPrev={getPreviousInput}
             onHistoryNext={getNextInput}
             onHistoryReset={resetInputHistoryIndex}
+            onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">

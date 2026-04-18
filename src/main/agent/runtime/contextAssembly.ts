@@ -40,6 +40,7 @@ import {
   getAllToolDefinitions,
   getDeferredToolsSummary,
 } from '../../protocol/dispatch/toolDefinitions';
+import { filterToolDefinitionsByWorkbenchScope } from '../../tools/workbenchToolScope';
 
 // Import refactored modules
 import type {
@@ -228,6 +229,8 @@ export class ContextAssembly {
       tools = [...tools, ...pocDefs];
       logger.debug(`Tools (POC exposed): +${pocDefs.length} = ${tools.length} total`);
     }
+
+    tools = filterToolDefinitionsByWorkbenchScope(tools, this.ctx.toolScope);
 
     let modelMessages = await this.buildModelMessages();
     logger.debug('[AgentLoop] Model messages count:', modelMessages.length);

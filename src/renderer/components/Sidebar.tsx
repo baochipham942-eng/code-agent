@@ -7,7 +7,9 @@ import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '.
 import { useSelectionStore } from '../stores/selectionStore';
 import { useSessionUIStore, type SessionFilter } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
+import { useComposerStore } from '../stores/composerStore';
 import { useAuthStore } from '../stores/authStore';
+import { useTaskStore } from '../stores/taskStore';
 import {
   MessageSquare,
   Plus,
@@ -30,9 +32,10 @@ import {
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
-import { groupSessions, type DateGroup } from '../utils/dateGrouping';
+import { groupSessions } from '../utils/dateGrouping';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import ipcService from '../services/ipcService';
+import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
 
 const logger = createLogger('Sidebar');
 
@@ -63,8 +66,48 @@ function getRelativeTime(timestamp: number, compact = false): string {
   return `${Math.floor(days / 30)}月前`;
 }
 
+function getReusableWorkbenchDirectory(session: SessionWithMeta): string | null {
+  const candidates = [
+    session.workbenchProvenance?.workingDirectory,
+    session.workingDirectory,
+  ];
+
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return null;
+}
+
+function canReuseSessionWorkbench(session: SessionWithMeta): boolean {
+  const hasWorkspace = Boolean(getReusableWorkbenchDirectory(session));
+  const hasRouting =
+    (session.workbenchProvenance?.routingMode === 'direct' &&
+      (session.workbenchProvenance?.targetAgentIds?.length ?? 0) > 0) ||
+    Boolean(
+      (session.workbenchProvenance?.routingMode &&
+        session.workbenchProvenance.routingMode !== 'direct') ||
+      (session.workbenchSnapshot?.routingMode && session.workbenchSnapshot.routingMode !== 'direct'),
+    );
+  const hasBrowserSession = Boolean(session.workbenchProvenance?.executionIntent?.browserSessionMode);
+  const hasCapabilities = Boolean(
+    session.workbenchProvenance?.selectedSkillIds?.length ||
+      session.workbenchProvenance?.selectedConnectorIds?.length ||
+      session.workbenchProvenance?.selectedMcpServerIds?.length ||
+      session.workbenchSnapshot?.skillIds?.length ||
+      session.workbenchSnapshot?.connectorIds?.length ||
+      session.workbenchSnapshot?.mcpServerIds?.length,
+  );
+
+  return hasWorkspace || hasRouting || hasBrowserSession || hasCapabilities;
+}
+
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings } = useAppStore();
+  const { clearPlanningState, setShowSettings, setShowEvalCenter, setWorkingDirectory } = useAppStore();
+  const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const {
     sessions,
     currentSessionId,
@@ -74,8 +117,8 @@ export const Sidebar: React.FC = () => {
     archiveSession,
     unarchiveSession,
     unreadSessionIds,
-    runningSessionIds,
     sessionRuntimes,
+    backgroundTasks,
     renameSession,
   } = useSessionStore();
 
@@ -95,16 +138,20 @@ export const Sidebar: React.FC = () => {
     setFilter,
     searchQuery,
     setSearchQuery,
+    sessionStatusFilter,
+    setSessionStatusFilter,
     softDelete,
     undoDelete,
     pendingDelete,
   } = useSessionUIStore();
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
+  const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // 右键菜单状态
@@ -147,14 +194,35 @@ export const Sidebar: React.FC = () => {
     }
   }, [renamingId]);
 
-  // Filter sessions by search query
+  const backgroundTaskMap = useMemo(
+    () => new Map(backgroundTasks.map((task) => [task.sessionId, task])),
+    [backgroundTasks],
+  );
+
+  // Apply local search + minimal session-native status filter
   const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) return sessions;
-    const q = searchQuery.toLowerCase();
-    return sessions.filter((s) =>
-      (s.title || '').toLowerCase().includes(q)
-    );
-  }, [sessions, searchQuery]);
+    const q = searchQuery.trim().toLowerCase();
+    return sessions.filter((session) => {
+      const status = getSessionStatusPresentation({
+        backgroundTask: backgroundTaskMap.get(session.id),
+        runtime: sessionRuntimes.get(session.id),
+        taskState: sessionStates[session.id],
+      });
+      if (sessionStatusFilter === 'background' && status.kind !== 'background') {
+        return false;
+      }
+
+      if (!q) {
+        return true;
+      }
+
+      return buildSessionSearchText({
+        session,
+        snapshot: session.workbenchSnapshot,
+        status,
+      }).includes(q);
+    });
+  }, [backgroundTaskMap, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
 
   // Group sessions by project (workingDirectory), then by date within each project
   const projectGroupedSessions = useMemo(() => {
@@ -197,8 +265,17 @@ export const Sidebar: React.FC = () => {
   }, [filteredSessions, pinnedSessionIds]);
 
   const handleNewChat = async () => {
-    await createSession('新对话');
-    clearPlanningState();
+    if (isCreatingSession) {
+      return;
+    }
+
+    setIsCreatingSession(true);
+    try {
+      await createSession('新对话');
+      clearPlanningState();
+    } finally {
+      setIsCreatingSession(false);
+    }
   };
 
   const handleSelectSession = async (sessionId: string) => {
@@ -230,6 +307,8 @@ export const Sidebar: React.FC = () => {
   const getContextMenuItems = useCallback((session: SessionWithMeta): ContextMenuItem[] => {
     const isPinned = pinnedSessionIds.has(session.id);
     const isArchived = !!session.isArchived;
+    const reusableWorkbenchDirectory = getReusableWorkbenchDirectory(session);
+    const reusableWorkbench = canReuseSessionWorkbench(session);
 
     return [
       {
@@ -263,7 +342,79 @@ export const Sidebar: React.FC = () => {
         danger: true,
       },
       {
-        label: '导出',
+        label: '加入 Review',
+        icon: '📋',
+        onClick: async () => {
+          try {
+            await ipcService.invoke(IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE, {
+              sessionId: session.id,
+              sessionTitle: session.title,
+              reason: 'manual_review',
+              source: 'session_list',
+            });
+          } catch (error) {
+            logger.error('Failed to enqueue session review', error);
+          }
+        },
+      },
+      {
+        label: '打开 Replay',
+        icon: '👁️',
+        onClick: () => {
+          setShowEvalCenter(true, undefined, session.id);
+        },
+      },
+      {
+        label: '在当前会话复用工作台',
+        icon: '🧰',
+        disabled: !reusableWorkbench,
+        onClick: async () => {
+          try {
+            if (reusableWorkbenchDirectory) {
+              const response = await window.domainAPI?.invoke<string | null>(
+                IPC_DOMAINS.WORKSPACE,
+                'setCurrent',
+                { dir: reusableWorkbenchDirectory },
+              );
+              if (response && !response.success) {
+                throw new Error(response.error?.message || 'Failed to sync workbench directory');
+              }
+              setWorkingDirectory(response?.data || reusableWorkbenchDirectory);
+            }
+
+            applySessionWorkbenchPreset(session);
+          } catch (error) {
+            logger.error('Failed to reuse session workbench preset', error);
+          }
+        },
+      },
+      {
+        label: '导出 Markdown',
+        icon: '📝',
+        onClick: async () => {
+          try {
+            const response = await window.domainAPI?.invoke<{ markdown: string; suggestedFileName: string }>(
+              IPC_DOMAINS.SESSION,
+              'exportMarkdown',
+              { sessionId: session.id },
+            );
+            if (!response?.success || !response.data?.markdown) {
+              throw new Error(response?.error?.message || 'Failed to export markdown');
+            }
+            const blob = new Blob([response.data.markdown], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = response.data.suggestedFileName || `session-${session.id}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch (error) {
+            logger.error('Failed to export session markdown', error);
+          }
+        },
+      },
+      {
+        label: '导出 JSON',
         icon: '📤',
         onClick: async () => {
           try {
@@ -289,7 +440,16 @@ export const Sidebar: React.FC = () => {
         },
       },
     ];
-  }, [pinnedSessionIds, togglePin, archiveSession, unarchiveSession, softDelete]);
+  }, [
+    applySessionWorkbenchPreset,
+    archiveSession,
+    pinnedSessionIds,
+    setShowEvalCenter,
+    setWorkingDirectory,
+    softDelete,
+    togglePin,
+    unarchiveSession,
+  ]);
 
   // 双击开始重命名
   const handleDoubleClick = useCallback((e: React.MouseEvent, session: SessionWithMeta) => {
@@ -334,6 +494,8 @@ export const Sidebar: React.FC = () => {
   };
 
   const hasAnySessions = sessions.length > 0;
+  const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
+  const isBackgroundOnly = sessionStatusFilter === 'background';
 
   // 渲染单个会话项
   const renderSessionItem = (session: SessionWithMeta) => {
@@ -342,9 +504,19 @@ export const Sidebar: React.FC = () => {
     const isChecked = selectedSessionIds.has(session.id);
     const isPinned = pinnedSessionIds.has(session.id);
     const isRenaming = renamingId === session.id;
-    const isRunning = runningSessionIds.has(session.id);
     const sessionRuntime = sessionRuntimes.get(session.id);
-    const isSessionPaused = sessionRuntime?.status === 'paused';
+    const backgroundTask = backgroundTaskMap.get(session.id);
+    const status = getSessionStatusPresentation({
+      backgroundTask,
+      runtime: sessionRuntime,
+      taskState: sessionStates[session.id],
+    });
+    const latestActivityAt = Math.max(
+      session.updatedAt || 0,
+      sessionRuntime?.lastActivityAt || 0,
+      backgroundTask?.backgroundedAt || 0,
+    );
+    const snapshotSummary = session.workbenchSnapshot?.summary || '纯对话';
 
     return (
       <div
@@ -374,14 +546,6 @@ export const Sidebar: React.FC = () => {
 
         {/* Line 1: status indicators + title */}
         <div className="flex items-center gap-2">
-          {/* 运行状态指示：暂停（黄色）或运行中（绿色） */}
-          {isSessionPaused && !multiSelectMode && (
-            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="已暂停" />
-          )}
-          {isRunning && !isSessionPaused && !multiSelectMode && (
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-          )}
-
           {/* 置顶图标 */}
           {isPinned && !multiSelectMode && (
             <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />
@@ -408,25 +572,38 @@ export const Sidebar: React.FC = () => {
               {session.title || '未命名会话'}
             </span>
           )}
+
+          {!multiSelectMode && !isRenaming && (
+            <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${status.toneClassName}`}>
+              {status.label}
+            </span>
+          )}
         </div>
 
-        {/* Line 2: subtitle (message count) + compact time */}
+        {/* Line 2: turn count + recent activity */}
         {!isRenaming && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-[11px] text-zinc-600 truncate flex-1">
-              {session.messageCount > 0 ? `${session.messageCount} 条消息` : ''}
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-600">
+            <span className="truncate flex-1">
+              {session.turnCount > 0 ? `${session.turnCount} 轮` : '0 轮'}
             </span>
             <span className="text-[10px] text-zinc-600 shrink-0">
-              {getRelativeTime(session.updatedAt, true)}
+              {getRelativeTime(latestActivityAt, true)}
             </span>
           </div>
         )}
 
-        {/* Line 3: meta badges — only show for selected item */}
+        {/* Line 3: workbench snapshot */}
+        {!isRenaming && (
+          <div className="mt-0.5 truncate text-[11px] text-zinc-500">
+            {snapshotSummary}
+          </div>
+        )}
+
+        {/* Line 4: selected session extras */}
         {isSelected && !isRenaming && (
           <div className="flex items-center gap-1.5 mt-0.5">
-            {session.messageCount > 0 && (
-              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1">{session.messageCount} 条</span>
+            {session.turnCount > 0 && (
+              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1">{session.turnCount} 轮</span>
             )}
             {session.modelConfig?.model && (
               <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1 truncate">
@@ -466,11 +643,11 @@ export const Sidebar: React.FC = () => {
         {/* New Chat */}
         <button
           onClick={handleNewChat}
-          disabled={isLoading}
+          disabled={isCreatingSession}
           className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
-            {isLoading ? (
+            {isCreatingSession ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Plus className="w-3.5 h-3.5 stroke-[2]" />
@@ -480,6 +657,17 @@ export const Sidebar: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2 window-no-drag">
+          <button
+            onClick={() => setSessionStatusFilter(isBackgroundOnly ? 'all' : 'background')}
+            className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+              isBackgroundOnly
+                ? 'border-sky-500/40 bg-sky-500/10 text-sky-200'
+                : 'border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
+            }`}
+            title={isBackgroundOnly ? '显示全部会话' : '仅看后台中的会话'}
+          >
+            后台中
+          </button>
           <button
             onClick={cycleFilter}
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -527,12 +715,14 @@ export const Sidebar: React.FC = () => {
             <p className="text-sm text-zinc-400 mb-1">暂无对话</p>
             <p className="text-xs text-zinc-500">开始新的对话</p>
           </div>
-        ) : filteredSessions.length === 0 && searchQuery ? (
+        ) : filteredSessions.length === 0 && hasSearchFilters ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
             <Search className="w-6 h-6 text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-500">未找到匹配的会话</p>
+            <p className="text-sm text-zinc-500">
+              {isBackgroundOnly && !searchQuery ? '当前没有后台中的会话' : '未找到匹配的会话'}
+            </p>
           </div>
-        ) : searchQuery ? (
+        ) : hasSearchFilters ? (
           /* When searching, show flat date-grouped list */
           <div className="py-2">
             {groupedSessions.map(({ group, label, sessions: groupSessions }) => (

@@ -15,6 +15,8 @@ async function deleteSession(id: string): Promise<void> {
 
 export type { SessionFilter };
 
+export type SessionStatusFilter = 'all' | 'background';
+
 export interface PendingDelete {
   ids: string[];
   timer: ReturnType<typeof setTimeout> | null;
@@ -24,6 +26,7 @@ interface SessionUIState {
   pendingDelete: PendingDelete | null;
   filter: SessionFilter;
   searchQuery: string;
+  sessionStatusFilter: SessionStatusFilter;
   inputHistory: string[];
   inputHistoryIndex: number;
   inputHistoryDraft: string;
@@ -32,6 +35,7 @@ interface SessionUIState {
 interface SessionUIActions {
   setFilter: (filter: SessionFilter) => void;
   setSearchQuery: (query: string) => void;
+  setSessionStatusFilter: (filter: SessionStatusFilter) => void;
   softDelete: (ids: string[]) => void;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
@@ -47,6 +51,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   pendingDelete: null,
   filter: 'active' as SessionFilter,
   searchQuery: '',
+  sessionStatusFilter: 'all',
   inputHistory: [],
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
@@ -58,6 +63,10 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
   setSearchQuery: (query: string) => {
     set({ searchQuery: query });
+  },
+
+  setSessionStatusFilter: (sessionStatusFilter: SessionStatusFilter) => {
+    set({ sessionStatusFilter });
   },
 
   softDelete: (ids: string[]) => {

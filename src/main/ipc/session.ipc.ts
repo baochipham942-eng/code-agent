@@ -55,6 +55,9 @@ export function registerSessionHandlers(
         case 'export':
           data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
           break;
+        case 'exportMarkdown':
+          data = await requireAppService().exportSessionMarkdown((payload as { sessionId: string }).sessionId);
+          break;
         case 'import':
           data = await requireAppService().importSession((payload as { data: unknown }).data);
           break;

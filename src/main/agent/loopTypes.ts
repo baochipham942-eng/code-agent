@@ -10,6 +10,10 @@ import type {
   ToolResult,
   AgentEvent,
 } from '../../shared/contract';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../shared/contract/conversationEnvelope';
 import type { TelemetryAdapter } from '../../shared/contract/telemetry';
 import type { StructuredOutputConfig } from './structuredOutput';
 import type { ToolExecutor } from '../tools/toolExecutor';
@@ -50,6 +54,10 @@ export interface AgentLoopConfig {
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
+  /** 当前 turn 的显式工具作用域 */
+  toolScope?: WorkbenchToolScope;
+  /** 当前 turn 的结构化执行意图 */
+  executionIntent?: ConversationExecutionIntent;
 }
 
 /**
@@ -157,6 +165,7 @@ export interface ToolExecutionContext {
   sessionId: string;
   preApprovedTools: Set<string>;
   currentAttachments: MessageAttachment[];
+  executionIntent?: ConversationExecutionIntent;
 }
 
 /**

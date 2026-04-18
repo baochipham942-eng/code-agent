@@ -43,6 +43,7 @@ export interface SwarmConversationMessage {
 
 export interface SwarmTimelineEvent {
   id: string;
+  sessionId?: string;
   type: SwarmEvent['type'];
   timestamp: number;
   title: string;
@@ -243,6 +244,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:launch:requested':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '等待启动确认',
@@ -252,6 +254,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:launch:approved':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '启动已确认',
@@ -261,6 +264,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:launch:rejected':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '启动已取消',
@@ -270,6 +274,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:started':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排开始',
@@ -279,6 +284,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:added':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 已加入`,
@@ -289,6 +295,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:updated':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} ${event.data.agentState?.status ?? 'updated'}`,
@@ -299,6 +306,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:completed':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 已完成`,
@@ -309,6 +317,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:failed':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 失败`,
@@ -319,6 +328,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_review':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 请求审批`,
@@ -329,6 +339,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_approved':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 审批通过`,
@@ -339,6 +350,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_rejected':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 审批驳回`,
@@ -350,6 +362,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:user:message':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId ?? 'msg'}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: event.type === 'swarm:user:message' ? '用户介入' : 'Agent 协作消息',
@@ -360,6 +373,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:completed':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排完成',
@@ -369,6 +383,7 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:cancelled':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
+        sessionId: event.sessionId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排已取消',

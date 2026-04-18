@@ -59,6 +59,8 @@ export interface InputAreaProps {
   onHistoryNext?: () => string | null;
   /** 重置历史浏览状态 */
   onHistoryReset?: () => void;
+  /** 输入框内联补全按键拦截；返回 true 表示已消费 */
+  onAutocompleteKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
 }
 
 export interface InputAreaRef {
@@ -89,6 +91,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       onHistoryPrev,
       onHistoryNext,
       onHistoryReset,
+      onAutocompleteKeyDown,
     },
     ref
   ) => {
@@ -113,6 +116,10 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
 
     // 处理键盘事件
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (onAutocompleteKeyDown?.(e)) {
+        return;
+      }
+
       // Submit on Enter (without Shift)
       // 三重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度) + keyCode 229 (IME 标准信号)
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isComposingRef.current && e.nativeEvent.keyCode !== 229) {

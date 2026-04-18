@@ -8,6 +8,12 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { browserNavigateTool } from './browserNavigate';
 import { browserActionTool } from './browserAction';
+import { browserService } from '../../services/infra/browserService.js';
+import {
+  appendBrowserWorkbenchNote,
+  buildBrowserWorkbenchBlockedResult,
+  evaluateBrowserWorkbenchPolicy,
+} from './browserWorkbenchIntent';
 
 // Actions from browserActionTool (kept as-is since they don't conflict)
 const BROWSER_ACTION_ACTIONS = [
@@ -16,6 +22,48 @@ const BROWSER_ACTION_ACTIONS = [
   'click', 'click_text', 'type', 'press_key', 'scroll',
   'screenshot', 'get_content', 'get_elements', 'wait', 'fill_form', 'get_logs',
 ] as const;
+
+function remapBrowserToolActionForManagedSession(
+  params: Record<string, unknown>,
+): { params?: Record<string, unknown>; error?: string } {
+  const action = params.action as string;
+
+  switch (action) {
+    case 'open':
+      return { params: { ...params, action: 'navigate' } };
+    case 'nav_back':
+      return { params: { ...params, action: 'back' } };
+    case 'nav_forward':
+      return { params: { ...params, action: 'forward' } };
+    case 'refresh':
+      return { params: { ...params, action: 'reload' } };
+    case 'close_window':
+      return { params: { ...params, action: 'close' } };
+    case 'newTab':
+      return { params: { ...params, action: 'new_tab' } };
+    case 'switchTab': {
+      const explicitTabId = typeof params.tabId === 'string' ? params.tabId : undefined;
+      if (explicitTabId) {
+        return { params: { ...params, action: 'switch_tab', tabId: explicitTabId } };
+      }
+
+      const tabIndex = typeof params.tabIndex === 'number' ? params.tabIndex : undefined;
+      if (tabIndex === undefined) {
+        return { error: 'tabIndex or tabId required for switchTab when using Managed browser session' };
+      }
+
+      const tabs = browserService.listTabs();
+      const tab = tabs[tabIndex];
+      if (!tab) {
+        return { error: `Managed browser tab index out of range: ${tabIndex}` };
+      }
+
+      return { params: { ...params, action: 'switch_tab', tabId: tab.id } };
+    }
+    default:
+      return { params };
+  }
+}
 
 export const BrowserTool: Tool = {
   name: 'Browser',
@@ -145,6 +193,17 @@ browser opener actions. For full Playwright-based browser automation, use the br
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const action = params.action as string;
+    const workbenchPolicy = evaluateBrowserWorkbenchPolicy({
+      toolName: 'Browser',
+      action,
+      executionIntent: context.executionIntent,
+    });
+    if (workbenchPolicy.decision === 'block') {
+      return buildBrowserWorkbenchBlockedResult(workbenchPolicy, {
+        toolName: 'Browser',
+        action,
+      });
+    }
 
     // --- OS-level browser_navigate actions ---
     // Remap unified action names back to browser_navigate's original action names
@@ -159,6 +218,19 @@ browser opener actions. For full Playwright-based browser automation, use the br
     };
 
     if (action in navigateActionMap) {
+      if (workbenchPolicy.preferManagedBrowser) {
+        const remapped = remapBrowserToolActionForManagedSession(params);
+        if (remapped.error) {
+          return appendBrowserWorkbenchNote({
+            success: false,
+            error: remapped.error,
+          }, [workbenchPolicy.note]);
+        }
+
+        const managedResult = await browserActionTool.execute(remapped.params || params, context);
+        return appendBrowserWorkbenchNote(managedResult, [workbenchPolicy.note]);
+      }
+
       const remappedParams = {
         ...params,
         action: navigateActionMap[action],

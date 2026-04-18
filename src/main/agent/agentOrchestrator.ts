@@ -6,6 +6,7 @@ import type {
   AgentEvent,
   Message,
   MessageAttachment,
+  MessageMetadata,
   PermissionRequest,
   PermissionResponse,
   ModelConfig,
@@ -132,7 +133,8 @@ export class AgentOrchestrator {
   async sendMessage(
     content: string,
     attachments?: unknown[],
-    options?: AgentRunOptions
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
   ): Promise<void> {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
@@ -144,6 +146,7 @@ export class AgentOrchestrator {
       content,
       timestamp: Date.now(),
       attachments: attachments as MessageAttachment[] | undefined,
+      metadata: messageMetadata,
     };
 
     this.addMessage(userMessage);
@@ -210,31 +213,31 @@ export class AgentOrchestrator {
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
+      await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
     } else if (mode === 'normal') {
       const analysis = analyzeTask(content);
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
-        await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
+        await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
       } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);
           if (intent === 'research') {
             logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
-            await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
+            await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
           } else {
-            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
+            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
           }
         } catch (error) {
           logger.warn('LLM intent classification failed, falling back to normal mode', { error: String(error) });
-          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
+          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
         }
       } else {
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
       }
     } else {
-      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
+      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
     }
   }
 
@@ -267,15 +270,18 @@ export class AgentOrchestrator {
 
   async interruptAndContinue(
     newMessage: string,
-    attachments?: unknown[]
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
   ): Promise<void> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
+    const effectiveMessage = this.applyTurnSystemContext(newMessage, options);
 
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
-      this.pendingSteerMessages.push(newMessage);
+      this.pendingSteerMessages.push(effectiveMessage);
       return;
     }
 
@@ -288,7 +294,7 @@ export class AgentOrchestrator {
     } as AgentEvent & { sessionId?: string });
 
     if (this.agentLoop) {
-      this.agentLoop.steer(newMessage);
+      this.agentLoop.steer(effectiveMessage);
 
       while (this.pendingSteerMessages.length > 0) {
         const queued = this.pendingSteerMessages.shift()!;
@@ -324,7 +330,7 @@ export class AgentOrchestrator {
     this.isInterrupting = false;
 
     const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0)];
-    await this.sendMessage(allMessages[allMessages.length - 1], attachments);
+    await this.sendMessage(allMessages[allMessages.length - 1], attachments, options, messageMetadata);
   }
 
   isProcessing(): boolean {
@@ -528,11 +534,11 @@ export class AgentOrchestrator {
   /** Delegates to extracted runDeepResearch */
   private async runDeepResearchMode(
     topic: string,
-    reportStyle: import('../research/types').ReportStyle | undefined,
+    options: AgentRunOptions | undefined,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig
   ): Promise<void> {
-    await runDeepResearch(topic, reportStyle, onEvent, modelConfig, {
+    await runDeepResearch(this.applyTurnSystemContext(topic, options), options?.reportStyle, onEvent, modelConfig, {
       toolExecutor: this.toolExecutor,
       generateId: () => this.generateId(),
       addMessage: (msg) => this.addMessage(msg),
@@ -543,7 +549,8 @@ export class AgentOrchestrator {
     content: string,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    sessionId?: string
+    sessionId?: string,
+    options?: AgentRunOptions,
   ): Promise<void> {
     const sessionStateManager = getSessionStateManager();
     if (sessionId) {
@@ -559,6 +566,7 @@ export class AgentOrchestrator {
     try {
       const requirementsAnalyzer = getAgentRequirementsAnalyzer();
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
+      const executionContent = this.applyTurnSystemContext(content, options);
 
       if (this.delegateMode && !requirements.needsAutoAgent) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
@@ -572,17 +580,28 @@ export class AgentOrchestrator {
       }
 
       if (requirements.needsAutoAgent) {
-        await runAutoAgentMode(content, requirements, onEvent, modelConfig, {
+        await runAutoAgentMode(content, executionContent, requirements, onEvent, modelConfig, {
           workingDirectory: this.workingDirectory,
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
           generateId: () => this.generateId(),
           addMessage: (msg) => this.addMessage(msg),
           sendDAGStatusEvent: (dagId, agentId, status) => this.syncAutoAgentDAGStatus(dagId, agentId, status),
-          runStandardAgentLoop: (c, e, m, s) => this.runStandardAgentLoop(c, e, m, s),
+          runStandardAgentLoop: (c, e, m, s, executionPrompt, toolScope, executionIntent) =>
+            this.runStandardAgentLoop(c, e, m, s, executionPrompt, toolScope, executionIntent),
+          toolScope: options?.toolScope,
+          executionIntent: options?.executionIntent,
         }, sessionId);
       } else {
-        await this.runStandardAgentLoop(content, onEvent, modelConfig, sessionId);
+        await this.runStandardAgentLoop(
+          content,
+          onEvent,
+          modelConfig,
+          sessionId,
+          executionContent,
+          options?.toolScope,
+          options?.executionIntent,
+        );
       }
     } catch (error) {
       logger.error('========== Normal mode EXCEPTION ==========');
@@ -626,8 +645,12 @@ export class AgentOrchestrator {
     content: string,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    sessionId?: string
+    sessionId?: string,
+    executionContent?: string,
+    toolScope?: AgentRunOptions['toolScope'],
+    executionIntent?: AgentRunOptions['executionIntent'],
   ): Promise<void> {
+    const effectiveContent = executionContent ?? content;
     const dagId = `conv-${sessionId || Date.now()}`;
     const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
     dag.addAgentTask('main', {
@@ -677,9 +700,35 @@ export class AgentOrchestrator {
       }
 
       onEvent({
+        type: 'routing_resolved',
+        data: {
+          mode: 'auto',
+          agentId: routingResolution.agent.id,
+          agentName: routingResolution.agent.name,
+          reason: routingResolution.reason,
+          score: routingResolution.score,
+          fallbackToDefault: false,
+          timestamp: Date.now(),
+        },
+      });
+
+      onEvent({
         type: 'notification',
         data: {
           message: `使用 Agent: ${routingResolution.agent.name}`,
+        },
+      });
+    } else {
+      onEvent({
+        type: 'routing_resolved',
+        data: {
+          mode: 'auto',
+          agentId: 'default',
+          agentName: 'default',
+          reason: 'No specialized agent matched; continue with the default conversation loop.',
+          score: 0,
+          fallbackToDefault: true,
+          timestamp: Date.now(),
         },
       });
     }
@@ -698,6 +747,8 @@ export class AgentOrchestrator {
       sessionId,
       workingDirectory: this.workingDirectory,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
+      toolScope,
+      executionIntent,
       telemetryAdapter,
       onToolExecutionLog: (log) => {
         try {
@@ -721,7 +772,7 @@ export class AgentOrchestrator {
 
     try {
       logger.info('========== Starting agent loop ==========');
-      await this.agentLoop.run(content);
+      await this.agentLoop.run(effectiveContent);
       logger.info('========== Agent loop completed normally ==========');
 
       // Check for combo skill suggestion after loop completes
@@ -741,6 +792,18 @@ export class AgentOrchestrator {
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
     }
+  }
+
+  private applyTurnSystemContext(
+    content: string,
+    options?: AgentRunOptions,
+  ): string {
+    const turnSystemContext = options?.turnSystemContext?.filter((item) => item.trim().length > 0) || [];
+    if (turnSystemContext.length === 0) {
+      return content;
+    }
+
+    return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
   }
 
   private async resolveAgentRouting(

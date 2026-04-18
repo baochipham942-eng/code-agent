@@ -114,7 +114,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 }
 
 export function isNativeDesktopAvailable(): boolean {
-  return !!window.__TAURI_INTERNALS__;
+  return typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 }
 
 export async function getNativeDesktopCapabilities(): Promise<NativeDesktopCapabilities> {

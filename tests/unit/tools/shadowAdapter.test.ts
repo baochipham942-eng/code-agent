@@ -19,6 +19,7 @@ import {
   buildCanUseToolFromLegacy,
   executePocToolViaProtocol,
 } from '../../../src/main/protocol/dispatch/shadowAdapter';
+import { buildLegacyCtxFromProtocol } from '../../../src/main/tools/modules/_helpers/legacyAdapter';
 import type { ToolContext as LegacyToolContext } from '../../../src/main/tools/types';
 
 // ----------------------------------------------------------------------------
@@ -93,6 +94,10 @@ describe('protocolAdapter — buildProtocolContext', () => {
       agentName: 'Researcher',
       agentRole: 'analyst',
       sessionId: 'sess_xyz',
+      toolScope: {
+        allowedSkillIds: ['review-skill'],
+        allowedMcpServerIds: ['github'],
+      },
       modifiedFiles,
       messages: [{ role: 'user', content: 'hi' }],
       todos: [{ id: '1', content: 'do x', status: 'pending' }],
@@ -113,6 +118,10 @@ describe('protocolAdapter — buildProtocolContext', () => {
 
     expect(ctx.modelCallback).toBe(fakeModelCallback);
     expect(ctx.currentToolCallId).toBe('call_123');
+    expect(ctx.toolScope).toEqual({
+      allowedSkillIds: ['review-skill'],
+      allowedMcpServerIds: ['github'],
+    });
 
     expect(ctx.subagent).toBeDefined();
     expect(ctx.subagent?.agentId).toBe('agent_a');
@@ -122,6 +131,27 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(ctx.subagent?.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(ctx.subagent?.todos).toHaveLength(1);
     expect(ctx.subagent?.attachments).toHaveLength(1);
+  });
+
+  it('protocol ctx -> legacy ctx keeps toolScope for wrapper tools', () => {
+    const ctx = buildProtocolContext({
+      sessionId: 'sess_scope',
+      workingDirectory: '/tmp',
+      legacyCtx: {
+        workingDirectory: '/tmp',
+        requestPermission: async () => true,
+        toolScope: {
+          allowedSkillIds: ['review-skill'],
+          allowedMcpServerIds: ['github'],
+        },
+      } as unknown as LegacyToolContext,
+    });
+
+    const legacy = buildLegacyCtxFromProtocol(ctx);
+    expect(legacy.toolScope).toEqual({
+      allowedSkillIds: ['review-skill'],
+      allowedMcpServerIds: ['github'],
+    });
   });
 
   it('planMode 从 legacy setPlanMode/isPlanMode 桥接', () => {

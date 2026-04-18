@@ -109,6 +109,10 @@ import type {
 import type {
   EvaluationResult,
 } from '../contract/evaluation';
+import type {
+  EnqueueReviewItemInput,
+  ReviewQueueItem,
+} from '../contract/reviewQueue';
 
 import type {
   SessionRuntimeSummary,
@@ -133,6 +137,7 @@ import type {
   MCPStatus,
   MCPTool,
   MCPResource,
+  ConnectorStatusSummary,
   CacheStats,
   DataStats,
   SessionAnalysisResult,
@@ -417,6 +422,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_GET_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_BUILD_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_GET_CASE_DETAIL]: (experimentId: string, caseId: string) => Promise<unknown>;
+  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: () => Promise<ReviewQueueItem[]>;
+  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE]: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;
@@ -431,7 +438,14 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 
   // Swarm (Agent Teams)
-  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string }) => Promise<void>;
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: {
+    agentId: string;
+    message: string;
+    sessionId?: string;
+    messageId?: string;
+    timestamp?: number;
+    metadata?: Message['metadata'];
+  }) => Promise<{ delivered: boolean; persisted: boolean }>;
   [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
@@ -553,6 +567,13 @@ export interface MCPEvent {
   data?: { server: string; error?: string }[];
 }
 
+export type ConnectorEventType = 'status_changed';
+
+export interface ConnectorEvent {
+  type: ConnectorEventType;
+  data: ConnectorStatusSummary[];
+}
+
 export interface ToolCreateRequestEvent {
   id: string;
   name: string;
@@ -589,6 +610,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
   [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;
+  [IPC_CHANNELS.CONNECTOR_EVENT]: (event: ConnectorEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;

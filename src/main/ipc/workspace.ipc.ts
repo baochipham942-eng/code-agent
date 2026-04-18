@@ -37,6 +37,23 @@ async function handleGetCurrent(getAppService: () => AgentApplicationService | n
   return getAppService()?.getWorkingDirectory() ?? null;
 }
 
+async function handleSetCurrent(
+  payload: { dir: string | null | undefined },
+  getAppService: () => AgentApplicationService | null,
+): Promise<string | null> {
+  const nextDir = payload.dir?.trim();
+  if (!nextDir) {
+    return null;
+  }
+
+  const appService = getAppService();
+  if (appService) {
+    appService.setWorkingDirectory(nextDir);
+  }
+
+  return nextDir;
+}
+
 async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]> {
   const fs = await import('fs/promises');
   const pathModule = await import('path');
@@ -147,6 +164,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'getCurrent':
           data = await handleGetCurrent(getAppService);
+          break;
+        case 'setCurrent':
+          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService);
           break;
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });

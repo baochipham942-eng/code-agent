@@ -17,6 +17,7 @@ import type { Session, Message } from '@shared/contract';
 
 export interface StoredSession extends Session {
   messageCount: number;
+  turnCount?: number;
   isDeleted?: boolean;
 }
 

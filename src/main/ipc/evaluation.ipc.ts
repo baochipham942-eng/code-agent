@@ -14,9 +14,11 @@ import { getSwissCheeseEvaluator, type ScoringConfigEntry } from '../evaluation/
 import { AnnotationProxy } from '../evaluation/annotationProxy';
 import type { EvaluationExportFormat } from '../../shared/contract/evaluation';
 import { scoreToGrade } from '../../shared/contract/evaluation';
+import type { EnqueueReviewItemInput } from '../../shared/contract/reviewQueue';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
+import { getReviewQueueService } from '../evaluation/reviewQueueService';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -83,6 +85,7 @@ function classifyFailureStage(failureReason: string, status: string): FailureSta
  */
 export function registerEvaluationHandlers(): void {
   const service = EvaluationService.getInstance();
+  const reviewQueueService = getReviewQueueService();
 
   // 执行评测
   ipcMain.handle(
@@ -254,6 +257,21 @@ export function registerEvaluationHandlers(): void {
         transcriptMetrics: result.transcriptMetrics,
       };
     }
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.REVIEW_QUEUE_LIST,
+    async () => {
+      return reviewQueueService.listItems();
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE,
+    async (_event, payload: EnqueueReviewItemInput) => {
+      logger.info(`Enqueue session review: ${payload.sessionId}`);
+      return reviewQueueService.enqueueSession(payload);
+    },
   );
 
   // @deprecated — Use LIST_EXPERIMENTS + LOAD_EXPERIMENT instead. Kept for backward compatibility.

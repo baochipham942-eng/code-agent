@@ -223,6 +223,7 @@ export class DatabaseService {
     const migrations = [
       { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
       { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
+      { column: 'workbench_provenance', sql: 'ALTER TABLE sessions ADD COLUMN workbench_provenance TEXT' },
       { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
       { column: 'is_deleted', sql: 'ALTER TABLE sessions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0' },
       { column: 'synced_at', sql: 'ALTER TABLE sessions ADD COLUMN synced_at INTEGER' },
@@ -326,6 +327,7 @@ export class DatabaseService {
         working_directory TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
+        workbench_provenance TEXT,
         is_deleted INTEGER NOT NULL DEFAULT 0,
         synced_at INTEGER
       )
@@ -342,6 +344,7 @@ export class DatabaseService {
         tool_calls TEXT,
         tool_results TEXT,
         attachments TEXT,
+        metadata TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
@@ -387,6 +390,15 @@ export class DatabaseService {
     // Messages 表: 添加 content_parts 列（text/tool_call 交错顺序）
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN content_parts TEXT`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column') && !msg.includes('already exists')) {

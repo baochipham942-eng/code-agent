@@ -65,8 +65,8 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at, git_branch)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, workbench_provenance, status, last_token_usage, is_deleted, synced_at, git_branch)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
     stmt.run(
@@ -78,6 +78,7 @@ export class SessionRepository {
       session.createdAt,
       session.updatedAt,
       session.workspace || null,
+      session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null,
       session.status || 'idle',
       session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
       session.gitBranch || null
@@ -119,7 +120,9 @@ export class SessionRepository {
 
   getSession(sessionId: string, options?: { includeDeleted?: boolean }): StoredSession | null {
     const stmt = this.db.prepare(`
-      SELECT s.*, COUNT(m.id) as message_count
+      SELECT s.*,
+             COUNT(m.id) as message_count,
+             COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
       WHERE s.id = ? AND (? = 1 OR s.is_deleted = 0)
@@ -139,7 +142,9 @@ export class SessionRepository {
     }
     const whereClause = `WHERE ${filters.join(' AND ')}`;
     const stmt = this.db.prepare(`
-      SELECT s.*, COUNT(m.id) as message_count
+      SELECT s.*,
+             COUNT(m.id) as message_count,
+             COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
       ${whereClause}
@@ -162,6 +167,7 @@ export class SessionRepository {
           working_directory = COALESCE(?, working_directory),
           updated_at = COALESCE(?, updated_at),
           workspace = COALESCE(?, workspace),
+          workbench_provenance = COALESCE(?, workbench_provenance),
           status = COALESCE(?, status),
           last_token_usage = COALESCE(?, last_token_usage),
           is_deleted = COALESCE(?, is_deleted),
@@ -172,6 +178,9 @@ export class SessionRepository {
     const lastTokenUsage = updates.lastTokenUsage !== undefined
       ? JSON.stringify(updates.lastTokenUsage)
       : null; // null means keep existing via COALESCE
+    const workbenchProvenance = updates.workbenchProvenance !== undefined
+      ? JSON.stringify(updates.workbenchProvenance)
+      : null;
 
     const result = stmt.run(
       updates.title ?? null,
@@ -180,6 +189,7 @@ export class SessionRepository {
       updates.workingDirectory ?? null,
       updates.updatedAt ?? Date.now(),
       updates.workspace !== undefined ? updates.workspace : null,
+      workbenchProvenance,
       updates.status ?? null,
       lastTokenUsage,
       options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null,
@@ -230,8 +240,8 @@ export class SessionRepository {
 
   addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -260,7 +270,8 @@ export class SessionRepository {
       thinkingContent,
       message.effortLevel || null,
       this.resolveSyncedAt(options),
-      message.contentParts ? JSON.stringify(message.contentParts) : null
+      message.contentParts ? JSON.stringify(message.contentParts) : null,
+      message.metadata ? JSON.stringify(message.metadata) : null,
     );
 
     if (!options?.skipTimestampUpdate) {
@@ -283,6 +294,10 @@ export class SessionRepository {
     if (updates.toolResults !== undefined) {
       setClauses.push('tool_results = ?');
       values.push(JSON.stringify(updates.toolResults));
+    }
+    if (updates.metadata !== undefined) {
+      setClauses.push('metadata = ?');
+      values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
     }
 
     if (setClauses.length === 0) return;
@@ -456,7 +471,9 @@ export class SessionRepository {
 
   getUnsyncedSessions(limit: number = 1000): StoredSession[] {
     const stmt = this.db.prepare(`
-      SELECT s.*, COUNT(m.id) as message_count
+      SELECT s.*,
+             COUNT(m.id) as message_count,
+             COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
       WHERE s.synced_at IS NULL
@@ -512,6 +529,7 @@ export class SessionRepository {
       thinking: (row.thinking as string) || undefined,
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: row.content_parts ? JSON.parse(row.content_parts as string) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
     };
   }
 
@@ -582,7 +600,9 @@ export class SessionRepository {
 
   listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
     const rows = this.db.prepare(`
-      SELECT s.*, (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count
+      SELECT s.*,
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count,
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user') as turn_count
       FROM sessions s
       WHERE s.status = 'archived' AND s.is_deleted = 0
       ORDER BY s.updated_at DESC
@@ -622,6 +642,15 @@ export class SessionRepository {
       }
     }
 
+    let workbenchProvenance: Session['workbenchProvenance'] | undefined;
+    if (row.workbench_provenance) {
+      try {
+        workbenchProvenance = JSON.parse(row.workbench_provenance as string) as Session['workbenchProvenance'];
+      } catch (err: unknown) {
+        logger.warn('[DB] Failed to parse workbench_provenance JSON:', err instanceof Error ? err.message : String(err));
+      }
+    }
+
     const isArchived = row.status === 'archived';
     const isDeleted = Boolean(row.is_deleted);
 
@@ -636,7 +665,9 @@ export class SessionRepository {
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
       messageCount: (row.message_count as number) || 0,
+      turnCount: (row.turn_count as number) || 0,
       workspace: row.workspace as string | undefined,
+      workbenchProvenance,
       status: (row.status as SessionStatus) || 'idle',
       lastTokenUsage,
       isArchived,

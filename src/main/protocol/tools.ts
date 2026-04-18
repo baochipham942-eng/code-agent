@@ -16,6 +16,10 @@
 // ============================================================================
 
 import type { JSONSchema } from '@shared/contract';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '@shared/contract/conversationEnvelope';
 import type { AgentEvent } from './events';
 
 // ----------------------------------------------------------------------------
@@ -142,6 +146,10 @@ export interface ToolContext {
    * 的反向静态引用闭环。
    */
   readonly resolver?: unknown;
+  /** 当前 turn 的显式工具作用域 */
+  readonly toolScope?: WorkbenchToolScope;
+  /** 当前 turn 的结构化执行意图 */
+  readonly executionIntent?: ConversationExecutionIntent;
 }
 
 // ----------------------------------------------------------------------------

@@ -58,6 +58,8 @@ export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyTool
     currentAttachments: ctx.subagent?.attachments as LegacyToolContext['currentAttachments'],
     // 跨工具调度 resolver — 由 shadowAdapter 在 protocol ctx 构造时注入
     resolver: ctx.resolver,
+    toolScope: ctx.toolScope,
+    executionIntent: ctx.executionIntent,
   } as LegacyToolContext;
 }
 

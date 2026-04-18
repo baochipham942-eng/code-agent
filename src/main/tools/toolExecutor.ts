@@ -25,6 +25,10 @@ import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../protocol/dispatch/toolResolver';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../shared/contract/conversationEnvelope';
 
 const logger = createLogger('ToolExecutor');
 
@@ -84,6 +88,10 @@ export interface ExecuteOptions {
   modelCallback?: (prompt: string) => Promise<string>;
   // Hook 系统：传递给工具上下文（subagent/permission 事件触发）
   hookManager?: HookManager;
+  // 当前 turn 的显式工具作用域
+  toolScope?: WorkbenchToolScope;
+  // 当前 turn 的结构化执行意图
+  executionIntent?: ConversationExecutionIntent;
 }
 
 // ----------------------------------------------------------------------------
@@ -206,6 +214,8 @@ export class ToolExecutor {
       modelCallback: options.modelCallback,
       // Hook 系统（subagent/permission 事件触发）
       hookManager: options.hookManager,
+      toolScope: options.toolScope,
+      executionIntent: options.executionIntent,
     };
 
     // Security: Pre-execution validation for bash commands

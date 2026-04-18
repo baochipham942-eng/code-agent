@@ -4,6 +4,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { getTelemetryQueryService } from './telemetryQueryService';
+import type { UnifiedTraceIdentity } from '../../shared/contract/reviewQueue';
 
 const logger = createLogger('ReplayService');
 
@@ -46,6 +47,7 @@ export interface ReplayTurn {
 
 export interface StructuredReplay {
   sessionId: string;
+  traceIdentity: UnifiedTraceIdentity;
   turns: ReplayTurn[];
   summary: {
     totalTurns: number;

@@ -7,6 +7,10 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
 /**
  * CLI 全局选项
  */
+import type { MessageAttachment } from '../shared/contract';
+import type { AppServiceRunOptions } from '../shared/contract/appService';
+import type { ConversationEnvelopeContext } from '../shared/contract/conversationEnvelope';
+
 export interface CLIGlobalOptions {
   project: string;
   json: boolean;
@@ -76,6 +80,10 @@ export interface APIRunRequest {
   generation?: string;
   model?: string;
   provider?: string;
+  sessionId?: string;
+  attachments?: MessageAttachment[];
+  options?: AppServiceRunOptions;
+  context?: ConversationEnvelopeContext;
 }
 
 /**

@@ -4,7 +4,7 @@
   "version": "0.16.61",
   "identifier": "com.linchen.code-agent",
   "build": {
-    "beforeDevCommand": "npm run build:web && node dist/web/webServer.cjs &",
+    "beforeDevCommand": "npm run build:renderer && npm run build:web && node dist/web/webServer.cjs &",
     "devUrl": "http://localhost:8180",
     "frontendDist": "../dist/renderer"
   },

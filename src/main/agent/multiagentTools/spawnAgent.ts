@@ -702,6 +702,7 @@ async function executeParallelAgents(
 
   const launchGate = getSwarmLaunchApprovalGate();
   const launchApproval = await launchGate.requestApproval({
+    sessionId: context.sessionId,
     summary: `准备并行启动 ${tasks.length} 个 agent`,
     tasks: tasks.map((task) => ({
       id: task.id,
@@ -748,7 +749,7 @@ async function executeParallelAgents(
   }
 
   // Emit swarm:started
-  emitter.started(tasks.length);
+  emitter.started(tasks.length, context.sessionId);
   for (const task of tasks) {
     emitter.agentAdded({ id: task.id, name: task.role, role: task.role });
   }

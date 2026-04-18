@@ -6,9 +6,11 @@ import { BrowserWindow, ipcMain } from '../platform';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import type { Message } from '../../shared/contract';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
 import { createLogger } from '../services/infra/logger';
+import { getSessionManager } from '../services';
 import { getEventBus } from '../protocol/events/bus';
 import { SWARM_TRACE } from '../../shared/constants/storage';
 
@@ -20,6 +22,34 @@ const logger = createLogger('SwarmIPC');
 
 type SwarmEventListener = (event: SwarmEvent) => void;
 const swarmEventListeners: SwarmEventListener[] = [];
+
+interface SwarmSendUserMessagePayload {
+  agentId: string;
+  message: string;
+  sessionId?: string;
+  messageId?: string;
+  timestamp?: number;
+  metadata?: Message['metadata'];
+}
+
+function buildPersistedUserMessage(payload: SwarmSendUserMessagePayload): Message | null {
+  if (!payload.sessionId) {
+    return null;
+  }
+
+  return {
+    id: payload.messageId || `swarm-user-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+    role: 'user',
+    content: payload.message,
+    timestamp: payload.timestamp ?? Date.now(),
+    metadata: payload.metadata,
+  };
+}
+
+function isDuplicateMessageInsert(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('UNIQUE constraint failed: messages.id');
+}
 
 /**
  * 注册 Swarm 事件监听器（CLI 模式下将事件路由到终端输出）
@@ -84,13 +114,36 @@ export function registerSwarmHandlers(
   ensureSwarmBusBridge();
 
   // 用户发送消息给 Agent
-  ipcMain.handle('swarm:send-user-message', async (_, payload: { agentId: string; message: string }) => {
+  ipcMain.handle('swarm:send-user-message', async (_, payload: SwarmSendUserMessagePayload) => {
     try {
+      let persisted = false;
+      const sessionMessage = buildPersistedUserMessage(payload);
+      if (payload.sessionId && sessionMessage) {
+        try {
+          await getSessionManager().addMessageToSession(payload.sessionId, sessionMessage);
+          persisted = true;
+        } catch (error) {
+          if (isDuplicateMessageInsert(error)) {
+            persisted = true;
+          } else {
+            throw error;
+          }
+        }
+      }
+
       const services = getSwarmServices();
       services.teammateService.onUserMessage(payload.agentId, payload.message);
       getSwarmEventEmitter().userMessage(payload.agentId, payload.message);
+      return {
+        delivered: true,
+        persisted,
+      };
     } catch (error) {
       logger.error('swarm:send-user-message failed', { error: String(error) });
+      return {
+        delivered: false,
+        persisted: false,
+      };
     }
   });
 

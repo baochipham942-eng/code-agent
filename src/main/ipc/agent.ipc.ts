@@ -7,12 +7,14 @@ import {
   IPC_CHANNELS,
   IPC_DOMAINS,
   type AgentCancelRequest,
+  type AgentMessageRequest,
   type AgentPermissionResponseRequest,
   type IPCRequest,
   type IPCResponse
 } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/contract';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
+import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -23,15 +25,32 @@ interface SendMessagePayload {
   sessionId?: string;
   attachments?: unknown[];
   options?: AppServiceRunOptions;
+  context?: ConversationEnvelope['context'];
+}
+
+function normalizeEnvelope(
+  payload: string | AgentMessageRequest | SendMessagePayload | ConversationEnvelope
+): ConversationEnvelope {
+  if (typeof payload === 'string') {
+    return { content: payload };
+  }
+
+  return {
+    content: payload.content,
+    ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+    ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
+    ...(payload.options ? { options: payload.options } : {}),
+    ...(payload.context ? { context: payload.context } : {}),
+  };
 }
 
 async function handleSendMessage(
   getAppService: () => AgentApplicationService | null,
-  payload: SendMessagePayload
+  payload: string | AgentMessageRequest | SendMessagePayload | ConversationEnvelope
 ): Promise<void> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  await appService.sendMessage(payload.content, payload.attachments, payload.options, payload.sessionId);
+  await appService.sendMessage(normalizeEnvelope(payload));
 }
 
 async function handleCancel(
@@ -56,15 +75,17 @@ interface InterruptPayload {
   content: string;
   sessionId?: string;
   attachments?: unknown[];
+  options?: AppServiceRunOptions;
+  context?: ConversationEnvelope['context'];
 }
 
 async function handleInterrupt(
   getAppService: () => AgentApplicationService | null,
-  payload: InterruptPayload
+  payload: string | AgentMessageRequest | InterruptPayload | ConversationEnvelope
 ): Promise<void> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  await appService.interruptAndContinue(payload.content, payload.attachments, payload.sessionId);
+  await appService.interruptAndContinue(normalizeEnvelope(payload));
 }
 
 // ----------------------------------------------------------------------------
@@ -85,7 +106,7 @@ export function registerAgentHandlers(
     try {
       switch (action) {
         case 'send':
-          await handleSendMessage(getAppService, payload as SendMessagePayload);
+          await handleSendMessage(getAppService, payload as string | SendMessagePayload | ConversationEnvelope);
           return { success: true, data: null };
         case 'cancel':
           await handleCancel(getAppService, payload as AgentCancelRequest | undefined);
@@ -94,7 +115,7 @@ export function registerAgentHandlers(
           await handlePermissionResponse(getAppService, payload as AgentPermissionResponseRequest);
           return { success: true, data: null };
         case 'interrupt':
-          await handleInterrupt(getAppService, payload as InterruptPayload);
+          await handleInterrupt(getAppService, payload as string | InterruptPayload | ConversationEnvelope);
           return { success: true, data: null };
         case 'setEffortLevel': {
           const appService = getAppService();
@@ -140,9 +161,6 @@ export function registerAgentHandlers(
   ipcMain.handle(
     IPC_CHANNELS.AGENT_SEND_MESSAGE,
     async (_, payload: string | SendMessagePayload) => {
-      if (typeof payload === 'string') {
-        return handleSendMessage(getAppService, { content: payload });
-      }
       return handleSendMessage(getAppService, payload);
     }
   );

@@ -116,3 +116,58 @@ test('dev route 拒绝格式非法的 body', async ({ page, request }) => {
   });
   expect(response.status()).toBe(400);
 });
+
+test('pending launch request 会以内联卡片出现在聊天区', async ({ page, request }) => {
+  const ssePromise = page.waitForResponse(
+    (resp) => resp.url().includes('/api/events'),
+    { timeout: 20_000 },
+  );
+
+  await page.goto('/');
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await ssePromise;
+
+  const token = await getAuthToken(page);
+
+  const launchRequestId = `e2e-launch-${Date.now()}`;
+  await emitSwarmEvent(request, token, {
+    type: 'swarm:launch:requested',
+    timestamp: Date.now(),
+    data: {
+      launchRequest: {
+        id: launchRequestId,
+        status: 'pending',
+        requestedAt: Date.now(),
+        summary: '等待启动审批',
+        agentCount: 2,
+        dependencyCount: 1,
+        writeAgentCount: 1,
+        tasks: [
+          {
+            id: 'task-a',
+            role: 'scout',
+            task: '先扫描仓库结构',
+            dependsOn: [],
+            tools: ['Read', 'Glob'],
+            writeAccess: false,
+          },
+          {
+            id: 'task-b',
+            role: 'editor',
+            task: '根据扫描结果修改文件',
+            dependsOn: ['task-a'],
+            tools: ['Read', 'Edit'],
+            writeAccess: true,
+          },
+        ],
+      },
+    },
+  });
+
+  const chatLog = page.getByRole('log', { name: '对话消息' });
+  await expect(chatLog).toBeVisible({ timeout: 10_000 });
+  await expect(chatLog).toContainText('并行编排启动确认');
+  await expect(chatLog).toContainText('等待启动审批');
+  await expect(chatLog).toContainText('开始执行');
+  await expect(chatLog).toContainText('取消编排');
+});

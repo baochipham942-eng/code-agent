@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React from 'react';
+import { ClipboardList } from 'lucide-react';
 
 // 状态颜色映射（借鉴 AGENT_COLORS 风格）
 const STATUS_STYLES: Record<string, { icon: string; text: string; badge: string; border: string }> = {
@@ -49,6 +50,8 @@ interface SessionListItemProps {
     status: string;
   };
   onClick: (sessionId: string) => void;
+  isQueued?: boolean;
+  onQueueReview?: (sessionId: string, sessionTitle: string) => void;
 }
 
 const formatTime = (ts: number): string =>
@@ -65,23 +68,56 @@ const formatTokens = (tokens: number): string => {
   return `${tokens}`;
 };
 
-export const SessionListItem: React.FC<SessionListItemProps> = ({ session, onClick }) => {
+export const SessionListItem: React.FC<SessionListItemProps> = ({
+  session,
+  onClick,
+  isQueued = false,
+  onQueueReview,
+}) => {
   const st = STATUS_STYLES[session.status] || STATUS_STYLES.completed;
   const providerColor = PROVIDER_COLORS[session.modelProvider?.toLowerCase()] || PROVIDER_COLORS.default;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onClick(session.id)}
-      className={`w-full text-left bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border ${st.border} hover:bg-white/[0.04] hover:border-white/[0.08] transition-all group`}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick(session.id);
+        }
+      }}
+      className={`w-full cursor-pointer text-left bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border ${st.border} hover:bg-white/[0.04] hover:border-white/[0.08] transition-all group`}
     >
       {/* Top row: title + status badge */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-xs text-zinc-200 truncate max-w-[420px] font-medium leading-relaxed group-hover:text-zinc-200 transition">
           {session.title}
         </span>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${st.badge}`}>
-          {st.icon} {st.text}
-        </span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {onQueueReview && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onQueueReview(session.id, session.title);
+              }}
+              disabled={isQueued}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition ${
+                isQueued
+                  ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+              }`}
+            >
+              <ClipboardList className="h-3 w-3" />
+              {isQueued ? '已在 Review' : '加入 Review'}
+            </button>
+          )}
+          <span className={`text-[10px] px-2 py-0.5 rounded-full ${st.badge}`}>
+            {st.icon} {st.text}
+          </span>
+        </div>
       </div>
 
       {/* Model info row */}
@@ -113,6 +149,6 @@ export const SessionListItem: React.FC<SessionListItemProps> = ({ session, onCli
           </span>
         )}
       </div>
-    </button>
+    </div>
   );
 };

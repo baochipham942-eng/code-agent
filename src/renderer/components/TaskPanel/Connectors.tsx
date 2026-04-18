@@ -2,146 +2,70 @@
 // Connectors - Display MCP server connections with details
 // ============================================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2, Sparkles, Wrench, Settings } from 'lucide-react';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
+import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
+import { useWorkbenchCapabilityRegistry } from '../../hooks/useWorkbenchCapabilityRegistry';
+import { useWorkbenchCapabilityQuickActionRunner } from '../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useAppStore } from '../../stores/appStore';
-import { useSessionStore } from '../../stores/sessionStore';
-import ipcService from '../../services/ipcService';
-
-async function getMcpStatus() {
-  const response = await window.domainAPI?.invoke<any>(IPC_DOMAINS.MCP, 'getStatus');
-  if (!response?.success) {
-    throw new Error(response?.error?.message || 'Failed to get MCP status');
-  }
-  return response.data;
-}
-
-interface McpServer {
-  name: string;
-  status: 'connected' | 'disconnected' | 'connecting' | 'error';
-  toolCount?: number;
-}
-
-interface ToolCallSummary {
-  name: string;
-  count: number;
-  lastUsed: number;
-  isMcp: boolean;
-  isSkill: boolean;
-  serverName?: string;
-}
+import { WorkbenchCapabilityDetailButton, WorkbenchHistoryRow, WorkbenchPill, WorkbenchSectionLabel } from './WorkbenchPrimitives';
+import { WorkbenchCapabilitySheetLite } from '../workbench/WorkbenchCapabilitySheetLite';
+import {
+  getWorkbenchCapabilityStatusPresentation,
+  getWorkbenchCapabilityTitle,
+  formatWorkbenchHistoryActionSummary,
+} from '../../utils/workbenchPresentation';
+import {
+  findWorkbenchCapabilityHistoryItem,
+  resolveWorkbenchCapabilityFromSources,
+  type WorkbenchCapabilityTarget,
+} from '../../utils/workbenchCapabilitySheet';
 
 export const Connectors: React.FC = () => {
   const { t } = useI18n();
   const { openSettingsTab } = useAppStore();
-  const messages = useSessionStore((state) => state.messages);
-  const [servers, setServers] = useState<McpServer[]>([]);
+  const { connectors, mcpServers } = useWorkbenchCapabilityRegistry();
+  const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
+  const {
+    history,
+    connectorHistory,
+    mcpHistory,
+    skillHistory,
+  } = useWorkbenchInsights();
   const [expanded, setExpanded] = useState(true);
+  const [expandedConnectors, setExpandedConnectors] = useState<Set<string>>(new Set());
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [showToolHistory, setShowToolHistory] = useState(true);
+  const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
+  const hasAnyConnectorStatus = connectors.length > 0 || mcpServers.length > 0;
+  const registryItems = useMemo(() => [...connectors, ...mcpServers], [connectors, mcpServers]);
+  const activeSheetCapability = useMemo(
+    () => resolveWorkbenchCapabilityFromSources({
+      target: activeSheetTarget,
+      primaryItems: registryItems,
+    }),
+    [activeSheetTarget, registryItems],
+  );
+  const activeSheetHistory = useMemo(
+    () => activeSheetTarget ? findWorkbenchCapabilityHistoryItem(history, activeSheetTarget) : null,
+    [activeSheetTarget, history],
+  );
 
-  // 从 messages 中提取会话工具调用历史
-  const toolCallHistory = useMemo(() => {
-    const toolMap = new Map<string, ToolCallSummary>();
-
-    messages.forEach((msg) => {
-      if (msg.toolCalls) {
-        msg.toolCalls.forEach((tc) => {
-          const name = tc.name;
-          // 判断是否是 MCP 工具（以 mcp__ 开头或包含服务器名称）
-          const isMcp = name.startsWith('mcp__') || name.startsWith('mcp_');
-          // 判断是否是 Skill
-          const nameLower = name.toLowerCase();
-          const isSkill = nameLower === 'skill' || nameLower.startsWith('skill_');
-          // 提取 MCP 服务器名称（如 mcp__github__xxx -> github）
-          let serverName: string | undefined;
-          if (name.startsWith('mcp__')) {
-            const parts = name.split('__');
-            if (parts.length >= 2) {
-              serverName = parts[1];
-            }
-          }
-
-          const existing = toolMap.get(name);
-          if (existing) {
-            existing.count++;
-            existing.lastUsed = Math.max(existing.lastUsed, msg.timestamp);
-          } else {
-            toolMap.set(name, {
-              name,
-              count: 1,
-              lastUsed: msg.timestamp,
-              isMcp,
-              isSkill,
-              serverName,
-            });
-          }
-        });
-      }
-    });
-
-    // 按最近使用排序
-    return Array.from(toolMap.values()).sort((a, b) => b.lastUsed - a.lastUsed);
-  }, [messages]);
-
-  // 分离 MCP 工具和 Skill
-  const mcpTools = toolCallHistory.filter((t) => t.isMcp);
-  const skillTools = toolCallHistory.filter((t) => t.isSkill);
-
-  // Fetch MCP server status
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const status = await getMcpStatus();
-        if (status?.connectedServers) {
-          setServers(status.connectedServers.map((server: any) => {
-            // Handle both string[] and object[] formats
-            if (typeof server === 'string') {
-              // Try to get tool count from serverDetails if available
-              const details = status.serverDetails?.[server];
-              return {
-                name: server,
-                status: 'connected' as const,
-                toolCount: details?.toolCount ?? details?.tools?.length,
-              };
-            }
-            return {
-              name: server.name,
-              status: server.status || 'connected',
-              toolCount: server.toolCount ?? server.tools?.length,
-            };
-          }));
-        }
-      } catch (error) {
-        // Silently fail - MCP might not be available
-      }
-    };
-
-    fetchStatus();
-
-    // Listen for MCP events
-    const unsubscribe = ipcService.on(
-      IPC_CHANNELS.MCP_EVENT,
-      () => {
-        fetchStatus();
-      }
-    );
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, []);
-
-  const getStatusIcon = (status: McpServer['status']) => {
+  const getStatusIcon = (
+    status: 'connected' | 'disconnected' | 'connecting' | 'error' | 'lazy' | 'not_applicable',
+  ) => {
     switch (status) {
       case 'connected':
         return <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />;
       case 'connecting':
         return <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />;
+      case 'lazy':
+        return <div className="w-3.5 h-3.5 rounded-full bg-sky-500/80" />;
       case 'error':
         return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
+      case 'disconnected':
+        return <div className="w-3.5 h-3.5 rounded-full bg-zinc-600" />;
       default:
         return <div className="w-3.5 h-3.5 rounded-full bg-zinc-600" />;
     }
@@ -159,93 +83,200 @@ export const Connectors: React.FC = () => {
     });
   };
 
+  const toggleConnectorExpand = (connectorId: string) => {
+    setExpandedConnectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(connectorId)) {
+        next.delete(connectorId);
+      } else {
+        next.add(connectorId);
+      }
+      return next;
+    });
+  };
+
+  const openCapabilitySheet = useCallback((target: WorkbenchCapabilityTarget) => {
+    setActiveSheetTarget(target);
+  }, []);
+
   return (
-    <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center w-full"
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Plug className="w-4 h-4 text-primary-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-            {t.taskPanel.connectors}
-          </span>
-        </div>
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-        )}
-      </button>
+    <>
+      <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center w-full"
+        >
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Plug className="w-4 h-4 text-primary-400 flex-shrink-0" />
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              {t.taskPanel.connectors}
+            </span>
+          </div>
+          {expanded ? (
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          )}
+        </button>
 
-      {expanded && (
-        <div className="space-y-2 mt-3">
-          {servers.length > 0 ? (
-            servers.map((server) => {
-              const isServerExpanded = expandedServers.has(server.name);
-
-              return (
-                <div key={server.name} className="rounded overflow-hidden">
-                  <button
-                    onClick={() => toggleServerExpand(server.name)}
-                    className="w-full flex items-center gap-2 py-1 px-2 bg-zinc-800 rounded hover:bg-zinc-800 transition-colors"
-                  >
-                    {getStatusIcon(server.status)}
-                    <span className="flex-1 text-sm text-zinc-400 truncate">{server.name}</span>
-                    {server.toolCount !== undefined && server.toolCount > 0 && (
-                      <span className="text-xs text-zinc-500">
-                        {server.toolCount} {t.taskPanel.tools}
-                      </span>
-                    )}
-                    {isServerExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                    )}
-                  </button>
-
-                  {/* Expanded server details */}
-                  {isServerExpanded && (
-                    <div className="px-2 py-2 bg-zinc-900 text-xs space-y-1">
-                      <div className="flex justify-between text-zinc-400">
-                        <span>{t.taskPanel.status}:</span>
-                        <span className={
-                          server.status === 'connected' ? 'text-green-400' :
-                          server.status === 'error' ? 'text-red-400' :
-                          'text-amber-400'
-                        }>
-                          {server.status}
-                        </span>
+        {expanded && (
+          <div className="space-y-2 mt-3">
+            {connectors.length > 0 && (
+              <div className="space-y-1.5">
+                <WorkbenchSectionLabel icon={<Plug className="w-3 h-3 text-sky-400" />} label="Local" />
+                {connectors.map((connector) => {
+                  const isExpanded = expandedConnectors.has(connector.id);
+                  const connectorStatus = getWorkbenchCapabilityStatusPresentation(connector, { locale: 'en' });
+                  return (
+                    <div key={connector.id} className="rounded overflow-hidden">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleConnectorExpand(connector.id)}
+                          className="flex-1 flex items-center gap-2 py-1 px-2 bg-zinc-800 rounded hover:bg-zinc-800 transition-colors"
+                          title={getWorkbenchCapabilityTitle(connector, { locale: 'zh' })}
+                        >
+                          {getStatusIcon(connector.lifecycle.connectionState)}
+                          <span className="flex-1 text-sm text-zinc-400 truncate">{connector.label}</span>
+                          <span className={`text-xs ${connectorStatus.colorClass}`}>{connectorStatus.label}</span>
+                          {isExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          )}
+                        </button>
+                        <WorkbenchCapabilityDetailButton
+                          label={connector.label}
+                          onClick={() => openCapabilitySheet({
+                            kind: connector.kind,
+                            id: connector.id,
+                          })}
+                        />
                       </div>
-                      {server.toolCount !== undefined && (
-                        <div className="flex justify-between text-zinc-400">
-                          <span>{t.taskPanel.toolCount}:</span>
-                          <span>{server.toolCount}</span>
+
+                      {isExpanded && (
+                        <div className="px-2 py-2 bg-zinc-900 text-xs space-y-1">
+                          <div className="flex justify-between text-zinc-400">
+                            <span>{t.taskPanel.status}:</span>
+                            <span className={connectorStatus.colorClass}>
+                              {connectorStatus.label}
+                            </span>
+                          </div>
+                          {connector.detail && (
+                            <div className="text-zinc-500 leading-relaxed">
+                              {connector.detail}
+                            </div>
+                          )}
+                          {connector.capabilities.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {connector.capabilities.slice(0, 4).map((capability) => (
+                                <WorkbenchPill
+                                  key={capability}
+                                  tone="neutral"
+                                  className="bg-white/[0.03] text-zinc-500"
+                                >
+                                  {capability}
+                                </WorkbenchPill>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })
-          ) : (
-            <div className="text-xs text-zinc-500 py-1">{t.taskPanel.noConnectors}</div>
-          )}
+                  );
+                })}
+              </div>
+            )}
 
-          {/* View all link */}
-          <button
-            onClick={() => openSettingsTab('mcp')}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors pt-1"
-          >
-            <Settings className="w-3 h-3" />
-            <span>{t.taskPanel.viewAllConnectors}</span>
-          </button>
-        </div>
-      )}
+            {mcpServers.length > 0 && (
+              <div className="space-y-1.5">
+                <WorkbenchSectionLabel icon={<Plug className="w-3 h-3 text-blue-400" />} label="MCP" />
+                {mcpServers.map((server) => {
+                  const isServerExpanded = expandedServers.has(server.id);
+                  const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: 'en' });
 
-      {/* Session Tool Call History */}
-      {(mcpTools.length > 0 || skillTools.length > 0) && (
-        <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                  return (
+                    <div key={server.id} className="rounded overflow-hidden">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleServerExpand(server.id)}
+                          className="flex-1 flex items-center gap-2 py-1 px-2 bg-zinc-800 rounded hover:bg-zinc-800 transition-colors"
+                          title={getWorkbenchCapabilityTitle(server, { locale: 'zh' })}
+                        >
+                          {getStatusIcon(server.lifecycle.connectionState)}
+                          <span className="flex-1 text-sm text-zinc-400 truncate">{server.label}</span>
+                          {server.toolCount !== undefined && server.toolCount > 0 && (
+                            <span className="text-xs text-zinc-500">
+                              {server.toolCount} {t.taskPanel.tools}
+                            </span>
+                          )}
+                          {isServerExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          )}
+                        </button>
+                        <WorkbenchCapabilityDetailButton
+                          label={server.label}
+                          onClick={() => openCapabilitySheet({
+                            kind: server.kind,
+                            id: server.id,
+                          })}
+                        />
+                      </div>
+
+                      {isServerExpanded && (
+                        <div className="px-2 py-2 bg-zinc-900 text-xs space-y-1">
+                          <div className="flex justify-between text-zinc-400">
+                            <span>{t.taskPanel.status}:</span>
+                            <span className={serverStatus.colorClass}>
+                              {serverStatus.label}
+                            </span>
+                          </div>
+                          {server.toolCount !== undefined && (
+                            <div className="flex justify-between text-zinc-400">
+                              <span>{t.taskPanel.toolCount}:</span>
+                              <span>{server.toolCount}</span>
+                            </div>
+                          )}
+                          {server.resourceCount !== undefined && (
+                            <div className="flex justify-between text-zinc-400">
+                              <span>resources:</span>
+                              <span>{server.resourceCount}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-zinc-400">
+                            <span>transport:</span>
+                            <span>{server.transport}</span>
+                          </div>
+                          {server.error && (
+                            <div className="text-zinc-500 leading-relaxed">
+                              {server.error}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!hasAnyConnectorStatus && (
+              <div className="text-xs text-zinc-500 py-1">{t.taskPanel.noConnectors}</div>
+            )}
+
+            <button
+              onClick={() => openSettingsTab('mcp')}
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors pt-1"
+            >
+              <Settings className="w-3 h-3" />
+              <span>{t.taskPanel.viewAllConnectors}</span>
+            </button>
+          </div>
+        )}
+
+        {(connectorHistory.length > 0 || mcpHistory.length > 0 || skillHistory.length > 0) && (
+          <div className="mt-3 pt-3 border-t border-white/[0.04]">
           <button
             onClick={() => setShowToolHistory(!showToolHistory)}
             className="flex items-center w-full mb-2"
@@ -256,7 +287,7 @@ export const Connectors: React.FC = () => {
                 {t.taskPanel.sessionCalls}
               </span>
               <span className="text-[10px] text-zinc-600">
-                ({mcpTools.length + skillTools.length})
+                ({connectorHistory.length + mcpHistory.length + skillHistory.length})
               </span>
             </div>
             {showToolHistory ? (
@@ -268,61 +299,72 @@ export const Connectors: React.FC = () => {
 
           {showToolHistory && (
             <div className="space-y-2">
-              {/* MCP Tools */}
-              {mcpTools.length > 0 && (
+              {/* Connector Tools */}
+              {connectorHistory.length > 0 && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 px-1">
-                    <Plug className="w-3 h-3 text-blue-400" />
-                    <span className="text-[10px] text-zinc-500 uppercase">MCP</span>
-                  </div>
-                  {mcpTools.slice(0, 5).map((tool) => (
-                    <div
-                      key={tool.name}
-                      className="flex items-center gap-2 py-1 px-2 rounded bg-zinc-800 text-xs"
-                    >
-                      {tool.serverName && (
-                        <span className="text-zinc-600 flex-shrink-0">{tool.serverName}</span>
-                      )}
-                      <span className="flex-1 text-zinc-400 truncate">
-                        {tool.serverName
-                          ? tool.name.replace(`mcp__${tool.serverName}__`, '').replace(`mcp_${tool.serverName}_`, '')
-                          : tool.name.replace('mcp__', '').replace('mcp_', '')}
-                      </span>
-                      <span className="text-zinc-600">{tool.count}x</span>
-                    </div>
+                  <WorkbenchSectionLabel icon={<Plug className="w-3 h-3 text-sky-400" />} label="Connectors" />
+                  {connectorHistory.slice(0, 5).map((item) => (
+                    <WorkbenchHistoryRow
+                      key={`${item.kind}-${item.id}`}
+                      item={item}
+                      summary={formatWorkbenchHistoryActionSummary(item.topActions)}
+                    />
                   ))}
-                  {mcpTools.length > 5 && (
+                  {connectorHistory.length > 5 && (
                     <div className="text-[10px] text-zinc-600 px-2">
-                      +{mcpTools.length - 5} {t.taskPanel.more}
+                      +{connectorHistory.length - 5} {t.taskPanel.more}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MCP Tools */}
+              {mcpHistory.length > 0 && (
+                <div className="space-y-1.5">
+                  <WorkbenchSectionLabel icon={<Plug className="w-3 h-3 text-blue-400" />} label="MCP" />
+                  {mcpHistory.slice(0, 5).map((item) => (
+                    <WorkbenchHistoryRow
+                      key={`${item.kind}-${item.id}`}
+                      item={item}
+                      summary={formatWorkbenchHistoryActionSummary(item.topActions)}
+                    />
+                  ))}
+                  {mcpHistory.length > 5 && (
+                    <div className="text-[10px] text-zinc-600 px-2">
+                      +{mcpHistory.length - 5} {t.taskPanel.more}
                     </div>
                   )}
                 </div>
               )}
 
               {/* Skills */}
-              {skillTools.length > 0 && (
+              {skillHistory.length > 0 && (
                 <div className="space-y-1">
-                  <div className="flex items-center gap-1.5 px-1">
-                    <Sparkles className="w-3 h-3 text-purple-400" />
-                    <span className="text-[10px] text-zinc-500 uppercase">Skills</span>
-                  </div>
-                  {skillTools.slice(0, 5).map((tool) => (
-                    <div
-                      key={tool.name}
-                      className="flex items-center gap-2 py-1 px-2 rounded bg-zinc-800 text-xs"
-                    >
-                      <span className="flex-1 text-zinc-400 truncate">
-                        {tool.name.replace('skill_', '')}
-                      </span>
-                      <span className="text-zinc-600">{tool.count}x</span>
-                    </div>
+                  <WorkbenchSectionLabel icon={<Sparkles className="w-3 h-3 text-purple-400" />} label="Skills" />
+                  {skillHistory.slice(0, 5).map((item) => (
+                    <WorkbenchHistoryRow
+                      key={`${item.kind}-${item.id}`}
+                      item={item}
+                    />
                   ))}
                 </div>
               )}
             </div>
           )}
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </div>
+
+      <WorkbenchCapabilitySheetLite
+        isOpen={Boolean(activeSheetCapability)}
+        capability={activeSheetCapability}
+        historyItem={activeSheetHistory}
+        runningActionKey={runningActionKey}
+        actionError={activeSheetCapability ? actionErrors[activeSheetCapability.key] : null}
+        completedAction={activeSheetCapability ? completedActions[activeSheetCapability.key] : null}
+        onQuickAction={runQuickAction}
+        onClose={() => setActiveSheetTarget(null)}
+      />
+    </>
   );
 };

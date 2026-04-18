@@ -23,6 +23,10 @@ import type { AutoContextCompressor } from '../../context/autoCompressor';
 import type { CompressionState } from '../../context/compressionState';
 import type { CompressionPipeline } from '../../context/compressionPipeline';
 import type { TelemetryAdapter } from '../../../shared/contract/telemetry';
+import type {
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../../../shared/contract/conversationEnvelope';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -44,6 +48,8 @@ export interface RuntimeContext {
   userId?: string;
   persistMessage?: (message: Message) => Promise<void>;
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
+  toolScope?: WorkbenchToolScope;
+  executionIntent?: ConversationExecutionIntent;
 
   // --- Services / modules ---
   circuitBreaker: CircuitBreaker;

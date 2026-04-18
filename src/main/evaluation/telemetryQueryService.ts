@@ -1,7 +1,9 @@
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import { classifyError } from '../telemetry/telemetryCollector';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
+import type { Message } from '../../shared/contract';
 import type { SessionSnapshot, TurnSnapshot, QualitySignals as EvaluationQualitySignals } from './types';
 
 const logger = createLogger('TelemetryQueryService');
@@ -355,10 +357,126 @@ class TelemetryQueryService {
     return 'Other';
   }
 
+  private toTranscriptReplayBlock(message: Message): {
+    type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
+    content: string;
+    timestamp: number;
+  } {
+    return {
+      type: message.role === 'user' ? 'user' : 'text',
+      content: message.content,
+      timestamp: message.timestamp,
+    };
+  }
+
+  private buildTranscriptReplay(sessionId: string) {
+    const database = getDatabase();
+    const session = database.getSession(sessionId, { includeDeleted: true });
+    if (!session) {
+      return null;
+    }
+
+    const messages = database
+      .getMessages(sessionId)
+      .slice()
+      .sort((left, right) => left.timestamp - right.timestamp);
+
+    if (messages.length === 0) {
+      return null;
+    }
+
+    const toolDistribution = {
+      Read: 0,
+      Edit: 0,
+      Write: 0,
+      Bash: 0,
+      Search: 0,
+      Web: 0,
+      Agent: 0,
+      Skill: 0,
+      Other: 0,
+    };
+
+    const turns: Array<{
+      turnNumber: number;
+      blocks: Array<{
+        type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
+        content: string;
+        timestamp: number;
+      }>;
+      inputTokens: number;
+      outputTokens: number;
+      durationMs: number;
+      startTime: number;
+    }> = [];
+
+    let currentTurn:
+      | {
+          turnNumber: number;
+          blocks: Array<{
+            type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
+            content: string;
+            timestamp: number;
+          }>;
+          inputTokens: number;
+          outputTokens: number;
+          startTime: number;
+        }
+      | null = null;
+
+    const finalizeCurrentTurn = () => {
+      if (!currentTurn) {
+        return;
+      }
+      const endTimestamp = currentTurn.blocks[currentTurn.blocks.length - 1]?.timestamp ?? currentTurn.startTime;
+      turns.push({
+        ...currentTurn,
+        durationMs: Math.max(0, endTimestamp - currentTurn.startTime),
+      });
+      currentTurn = null;
+    };
+
+    messages.forEach((message) => {
+      const block = this.toTranscriptReplayBlock(message);
+      if (message.role === 'user' || !currentTurn) {
+        finalizeCurrentTurn();
+        currentTurn = {
+          turnNumber: turns.length + 1,
+          blocks: [block],
+          inputTokens: message.inputTokens || 0,
+          outputTokens: message.outputTokens || 0,
+          startTime: message.timestamp,
+        };
+        return;
+      }
+
+      currentTurn.blocks.push(block);
+      currentTurn.inputTokens += message.inputTokens || 0;
+      currentTurn.outputTokens += message.outputTokens || 0;
+    });
+
+    finalizeCurrentTurn();
+
+    return {
+      sessionId,
+      traceIdentity: buildSessionTraceIdentity(sessionId),
+      turns,
+      summary: {
+        totalTurns: turns.length,
+        toolDistribution,
+        thinkingRatio: 0,
+        selfRepairChains: 0,
+        totalDurationMs: turns.reduce((sum, turn) => sum + turn.durationMs, 0),
+      },
+    };
+  }
+
   async getStructuredReplay(sessionId: string) {
     try {
       const data = this.loadTelemetryRows(sessionId);
-      if (!data) return null;
+      if (!data) {
+        return this.buildTranscriptReplay(sessionId);
+      }
 
       const toolDistribution = {
         Read: 0,
@@ -564,6 +682,7 @@ class TelemetryQueryService {
 
       return {
         sessionId,
+        traceIdentity: buildSessionTraceIdentity(sessionId),
         turns,
         summary: {
           totalTurns: turns.length,

@@ -15,6 +15,10 @@ import type {
   ModelConfig,
   TodoItem,
 } from '../../../shared/contract';
+import {
+  deriveSessionWorkbenchSnapshot,
+  toSessionWorkbenchProvenance,
+} from '../../../shared/contract/sessionWorkspace';
 import { createLogger } from './logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
@@ -28,6 +32,7 @@ export interface SessionWithMessages extends Session {
   messages: Message[];
   todos: TodoItem[];
   messageCount: number;
+  turnCount?: number;
 }
 
 export interface SessionCreateOptions {
@@ -56,6 +61,32 @@ export class SessionManager implements Disposable {
   private static readonly MAX_CACHE_SIZE = 50;
   private currentSessionId: string | null = null;
   private sessionCache: Map<string, SessionWithMessages> = new Map();
+
+  private buildWorkbenchSnapshot(session: Pick<Session, 'workingDirectory' | 'workbenchProvenance'>, messages: Message[]) {
+    return deriveSessionWorkbenchSnapshot(messages, {
+      workingDirectory: session.workingDirectory ?? null,
+      provenance: session.workbenchProvenance,
+    });
+  }
+
+  private updateCachedWorkbenchState(session: SessionWithMessages): void {
+    session.turnCount = session.messages.filter((message) => message.role === 'user').length;
+    session.workbenchSnapshot = this.buildWorkbenchSnapshot(session, session.messages);
+  }
+
+  private maybePersistWorkbenchProvenance(sessionId: string, message: Message): Session['workbenchProvenance'] | undefined {
+    const provenance = toSessionWorkbenchProvenance(message.metadata?.workbench, message.timestamp);
+    if (!provenance) {
+      return undefined;
+    }
+
+    const db = getDatabase();
+    db.updateSession(sessionId, {
+      workbenchProvenance: provenance,
+      updatedAt: message.timestamp || Date.now(),
+    });
+    return provenance;
+  }
 
   // --------------------------------------------------------------------------
   // Session CRUD
@@ -99,6 +130,8 @@ export class SessionManager implements Disposable {
       messages: [],
       todos: [],
       messageCount: 0,
+      turnCount: 0,
+      workbenchSnapshot: this.buildWorkbenchSnapshot(session, []),
     } as SessionWithMessages);
 
     // 记录审计日志
@@ -148,6 +181,7 @@ export class SessionManager implements Disposable {
       ...storedSession,
       messages,
       todos,
+      workbenchSnapshot: this.buildWorkbenchSnapshot(storedSession, messages),
     };
 
     // 缓存（LRU: 超过上限时淘汰最早的条目）
@@ -235,7 +269,20 @@ export class SessionManager implements Disposable {
       logger.error('Failed to sync session list from cloud', err);
     });
 
-    return sessions;
+    return sessions.map((session) => {
+      const cached = this.sessionCache.get(session.id);
+      const recentMessages = cached?.messages.length
+        ? cached.messages.slice(-12)
+        : db.getRecentMessages(session.id, 12);
+
+      return {
+        ...session,
+        workbenchSnapshot: this.buildWorkbenchSnapshot(
+          cached || session,
+          recentMessages,
+        ),
+      };
+    });
   }
 
   /**
@@ -271,6 +318,7 @@ export class SessionManager implements Disposable {
       if (!cloudSessions || cloudSessions.length === 0) return;
 
       const db = getDatabase();
+      let didMutate = false;
 
       // 定义云端会话结构
       interface CloudSession {
@@ -315,6 +363,7 @@ export class SessionManager implements Disposable {
           }, {
             syncOrigin: 'remote',
           });
+          didMutate = true;
         } else if (cloudSession.updated_at > localSession.updatedAt) {
           // 云端更新，更新本地元数据（保留云端原始时间戳）
           db.updateSession(cloudSession.id, {
@@ -331,11 +380,16 @@ export class SessionManager implements Disposable {
           });
           // 清除缓存，避免返回过期数据
           this.sessionCache.delete(cloudSession.id);
+          didMutate = true;
         }
       }
 
-      // 通知前端刷新会话列表
-      this.notifySessionListUpdated();
+      // 只有云端同步真的改动了本地会话元数据，才通知前端刷新列表。
+      // 否则 renderer 的 loadSessions -> syncSessionListFromCloud -> list-updated
+      // 会形成自激循环，把侧边栏“新会话”按钮一直打进 loading 态。
+      if (didMutate) {
+        this.notifySessionListUpdated();
+      }
     } catch (err) {
       logger.error('syncSessionListFromCloud error', err as Error);
     }
@@ -515,6 +569,7 @@ export class SessionManager implements Disposable {
   async addMessageToSession(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase();
     db.addMessage(sessionId, message);
+    const provenance = this.maybePersistWorkbenchProvenance(sessionId, message);
 
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {
@@ -522,6 +577,10 @@ export class SessionManager implements Disposable {
       cached.messages.push(message);
       cached.messageCount++;
       cached.updatedAt = Date.now();
+      if (provenance) {
+        cached.workbenchProvenance = provenance;
+      }
+      this.updateCachedWorkbenchState(cached);
     }
   }
 
@@ -538,6 +597,11 @@ export class SessionManager implements Disposable {
       const msgIndex = cached.messages.findIndex((m) => m.id === messageId);
       if (msgIndex !== -1) {
         cached.messages[msgIndex] = { ...cached.messages[msgIndex], ...updates };
+        const provenance = this.maybePersistWorkbenchProvenance(this.currentSessionId, cached.messages[msgIndex]);
+        if (provenance) {
+          cached.workbenchProvenance = provenance;
+        }
+        this.updateCachedWorkbenchState(cached);
       }
     }
   }

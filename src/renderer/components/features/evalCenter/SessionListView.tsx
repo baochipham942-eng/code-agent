@@ -3,6 +3,8 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Eye } from 'lucide-react';
+import { getReviewQueueReasonLabel } from '@shared/contract/reviewQueue';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { SessionListItem } from './SessionListItem';
 
@@ -17,6 +19,10 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
     filterStatus,
     sortBy,
     loadSessionList,
+    reviewQueue,
+    reviewQueueLoading,
+    loadReviewQueue,
+    enqueueReviewItem,
     setFilterStatus,
     setSortBy,
   } = useEvalCenterStore();
@@ -25,7 +31,22 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
   useEffect(() => {
     loadSessionList();
-  }, [loadSessionList]);
+    loadReviewQueue();
+  }, [loadSessionList, loadReviewQueue]);
+
+  const queuedSessionIds = useMemo(
+    () => new Set(reviewQueue.map((item) => item.sessionId)),
+    [reviewQueue],
+  );
+
+  const handleQueueReview = async (sessionId: string, sessionTitle: string) => {
+    await enqueueReviewItem({
+      sessionId,
+      sessionTitle,
+      reason: 'manual_review',
+      source: 'session_list',
+    });
+  };
 
   const filtered = useMemo(() => {
     let list = [...sessionList];
@@ -156,6 +177,58 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                   })}
                 </div>
               </div>
+
+              <div className="pt-2 border-t border-white/[0.04]">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    Review Queue
+                  </span>
+                  <span className="text-[10px] text-zinc-600">
+                    {reviewQueue.length}
+                  </span>
+                </div>
+                <div className="mt-1 text-[10px] text-zinc-600">
+                  当前支持手动加入，也支持从 Replay 的 Failure Follow-up 入口回流。
+                </div>
+
+                {reviewQueueLoading ? (
+                  <div className="mt-2 text-[11px] text-zinc-600">
+                    加载 review queue...
+                  </div>
+                ) : reviewQueue.length === 0 ? (
+                  <div className="mt-2 text-[11px] text-zinc-600">
+                    还没有待 review 的会话
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    {reviewQueue.slice(0, 5).map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectSession(item.sessionId);
+                        }}
+                        className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] font-medium text-zinc-300">
+                            {item.sessionTitle}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
+                            <Eye className="h-3 w-3" />
+                            Replay
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-zinc-600">
+                          <span>{getReviewQueueReasonLabel(item.reason)}</span>
+                          <span>·</span>
+                          <span className="font-mono">{item.trace.traceId.replace('session:', '')}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -192,6 +265,8 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
             key={session.id}
             session={session}
             onClick={onSelectSession}
+            isQueued={queuedSessionIds.has(session.id)}
+            onQueueReview={handleQueueReview}
           />
         ))}
 

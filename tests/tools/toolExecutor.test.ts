@@ -16,12 +16,19 @@ vi.mock('../../src/main/services', () => ({
 
 // Mock logger
 vi.mock('../../src/main/services/infra/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
   })),
+  LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
 }));
 
 // Mock permission classifier — 强制走"ask"路径，让 mockRequestPermission 生效

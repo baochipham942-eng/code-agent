@@ -23,7 +23,7 @@ import {
   HOOK_EVENT_DESCRIPTIONS,
   HOOK_ENV_VARS,
   createHookEnvVars,
-} from '../../../src/main/hooks/events';
+} from '../../../src/main/hooks';
 
 describe('Hook Events', () => {
   // --------------------------------------------------------------------------

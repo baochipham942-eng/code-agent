@@ -4,8 +4,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { grepModule } from '../../../src/main/tools/modules/shell/grep';
-import { smartHtmlToText } from '../../../src/main/tools/network/htmlUtils';
-import { clearFetchCache } from '../../../src/main/tools/network/fetchDocument';
+import { smartHtmlToText } from '../../../src/main/tools/web/htmlUtils';
+import { clearFetchCache } from '../../../src/main/tools/web/fetchDocument';
 import { WEB_FETCH, GREP } from '../../../src/shared/constants';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../src/main/protocol/tools';
 
@@ -75,7 +75,7 @@ describe('Grep Tool — execFile + pagination', () => {
   it('should support type filter', async () => {
     const result = await runGrep({
       pattern: 'fetchDocument',
-      path: 'src/main/tools/network',
+      path: 'src/main/tools/web',
       type: 'ts',
     });
     expect(result.ok).toBe(true);

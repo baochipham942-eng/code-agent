@@ -116,6 +116,14 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   const [busyActionKind, setBusyActionKind] = useState<BrowserWorkbenchRepairActionKind | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // 仅拉取 managed browser session，不触达 OS 权限探测。
+  // 让冷启动可以感知已有托管浏览器（renderer restart 场景），同时不会触发
+  // CGPreflightScreenCaptureAccess，避免在用户没打开 browser workbench 时
+  // 被 macOS 记入屏幕录制访问日志。
+  const refreshLight = useCallback(async () => {
+    setManagedSession(await loadManagedBrowserSession());
+  }, []);
+
   const refresh = useCallback(async () => {
     setManagedSession(await loadManagedBrowserSession());
 
@@ -148,9 +156,17 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     );
   }, []);
 
+  // Mount：只 probe 托管浏览器状态（无 OS 权限调用）
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshLight();
+  }, [refreshLight]);
+
+  // 用户显式进入 browser workbench（mode !== 'none'）后再做一次完整 refresh
+  useEffect(() => {
+    if (mode !== 'none') {
+      void refresh();
+    }
+  }, [mode, refresh]);
 
   useEffect(() => {
     if (mode === 'none' && !managedSession.running && !collectorStatus?.running) {

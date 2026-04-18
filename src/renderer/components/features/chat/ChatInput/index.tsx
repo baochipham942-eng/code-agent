@@ -15,6 +15,7 @@ import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { AbilityMenu } from './AbilityMenu';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
@@ -644,6 +645,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 className="hidden"
               />
             </label>
+
+            {/* 能力 popover — Routing + Browser */}
+            <AbilityMenu disabled={disabled && !isProcessing} />
 
             {/* 弹性空白 */}
             <div className="flex-1" />

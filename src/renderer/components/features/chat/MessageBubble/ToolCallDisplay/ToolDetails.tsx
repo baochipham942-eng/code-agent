@@ -17,6 +17,7 @@ import type { ToolCall } from '@shared/contract';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
+import { isPreviewable } from '../../../../../utils/previewable';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
 // ============================================================================
@@ -67,9 +68,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
   const videoResult = extractVideoResult(toolCall);
   const generatedFileResult = extractGeneratedFile(toolCall);
 
-  const isHtmlFile =
-    createdFilePath?.toLowerCase().endsWith('.html') ||
-    createdFilePath?.toLowerCase().endsWith('.htm');
+  const canPreviewCreated = isPreviewable(createdFilePath);
 
   return (
     <div className="mt-1 space-y-1.5 text-xs">
@@ -159,7 +158,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
           {generatedFileResult && result.success && (
             <FileResultDisplay
               filePath={generatedFileResult.filePath}
-              isHtml={false}
+              canPreview={false}
               onPreview={() => {}}
             />
           )}
@@ -168,7 +167,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
           {createdFilePath && result.success && (
             <FileResultDisplay
               filePath={createdFilePath}
-              isHtml={isHtmlFile || false}
+              canPreview={canPreviewCreated}
               onPreview={() => openPreview(createdFilePath)}
             />
           )}
@@ -463,13 +462,13 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
 
 interface FileResultDisplayProps {
   filePath: string;
-  isHtml: boolean;
+  canPreview: boolean;
   onPreview: () => void;
 }
 
 function FileResultDisplay({
   filePath,
-  isHtml,
+  canPreview,
   onPreview,
 }: FileResultDisplayProps) {
   const fileName = filePath.split('/').pop() || filePath;
@@ -525,7 +524,7 @@ function FileResultDisplay({
         <div className="text-xs text-gray-500 truncate">{filePath}</div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        {isHtml && (
+        {canPreview && (
           <button
             onClick={onPreview}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs"

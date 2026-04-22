@@ -22,7 +22,7 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
-import { IPC_CHANNELS } from '../../../../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../../../shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
 import type {
@@ -198,7 +198,7 @@ export const RealModePanel: React.FC = () => {
         addLog('info', `已选择项目目录: ${manualPath.trim()}`);
         return;
       }
-      const selectedPath = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
+      const selectedPath = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
       if (selectedPath) {
         setProjectPath(selectedPath);
         setProjectUIStatus('downloaded');

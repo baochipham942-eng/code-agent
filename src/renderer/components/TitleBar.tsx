@@ -7,7 +7,7 @@ import { useComposerStore } from '../stores/composerStore';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3, Sparkles } from 'lucide-react';
 import { isWebMode } from '../utils/platform';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { IconButton } from './primitives';
 // 奶酪图标组件
@@ -64,7 +64,7 @@ export const TitleBar: React.FC = () => {
       if (isWebMode()) {
         selectedPath = window.prompt('输入工作目录路径', effectiveWorkingDirectory || '')?.trim() || null;
       } else {
-        selectedPath = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
+        selectedPath = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
       }
       if (selectedPath) {
         setComposerWorkingDirectory(selectedPath);

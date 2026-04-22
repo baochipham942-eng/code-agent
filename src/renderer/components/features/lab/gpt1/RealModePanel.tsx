@@ -22,8 +22,8 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
-import { IPC_CHANNELS, IPC_DOMAINS } from '../../../../../shared/ipc';
-import { isWebMode } from '../../../../utils/platform';
+import { IPC_CHANNELS } from '../../../../../shared/ipc';
+import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
 import type {
   PythonEnvStatus,
@@ -198,11 +198,14 @@ export const RealModePanel: React.FC = () => {
         addLog('info', `已选择项目目录: ${manualPath.trim()}`);
         return;
       }
-      const selectedPath = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
-      if (selectedPath) {
-        setProjectPath(selectedPath);
-        setProjectUIStatus('downloaded');
-        addLog('info', `已选择项目目录: ${selectedPath}`);
+      if (isTauriMode()) {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const result = await open({ directory: true, multiple: false, title: '选择项目目录' });
+        if (typeof result === 'string') {
+          setProjectPath(result);
+          setProjectUIStatus('downloaded');
+          addLog('info', `已选择项目目录: ${result}`);
+        }
       }
     } catch (error) {
       addLog('error', `选择目录失败: ${error instanceof Error ? error.message : String(error)}`);

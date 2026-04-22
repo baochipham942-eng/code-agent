@@ -6,9 +6,7 @@ import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3, Sparkles } from 'lucide-react';
-import { isWebMode } from '../utils/platform';
-import { IPC_DOMAINS } from '@shared/ipc';
-import ipcService from '../services/ipcService';
+import { isWebMode, isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
 // 奶酪图标组件
 const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -63,8 +61,10 @@ export const TitleBar: React.FC = () => {
       let selectedPath: string | null = null;
       if (isWebMode()) {
         selectedPath = window.prompt('输入工作目录路径', effectiveWorkingDirectory || '')?.trim() || null;
-      } else {
-        selectedPath = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      } else if (isTauriMode()) {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const result = await open({ directory: true, multiple: false, title: '选择工作目录' });
+        selectedPath = typeof result === 'string' ? result : null;
       }
       if (selectedPath) {
         setComposerWorkingDirectory(selectedPath);

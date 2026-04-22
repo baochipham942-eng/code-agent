@@ -38,7 +38,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Zap, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -127,7 +127,6 @@ export const App: React.FC = () => {
     setShowDAGPanel,
   } = useAppStore();
 
-  const [showTaskListPanel, setShowTaskListPanel] = useState(false);
 
   // Theme Hook - 初始化主题系统
   useTheme();
@@ -372,26 +371,6 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [setShowTaskPanel, setTaskPanelTab]);
-
-  // Local task list panel toggle button (Standard+ mode)
-  const TaskListToggle: React.FC = () => {
-    if (!isStandard) return null;
-
-    return (
-      <button
-        onClick={() => setShowTaskListPanel(!showTaskListPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showTaskListPanel
-            ? 'bg-yellow-500/20 text-yellow-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="多任务面板"
-      >
-        <Zap className="w-3.5 h-3.5" />
-        <span>任务</span>
-      </button>
-    );
-  };
 
   // Skills panel toggle button (Standard+ mode)
   const SkillsToggle: React.FC = () => {

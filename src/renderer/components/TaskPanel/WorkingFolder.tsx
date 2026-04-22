@@ -8,7 +8,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { isWebMode } from '../../utils/platform';
 import ipcService from '../../services/ipcService';
 
@@ -92,7 +92,7 @@ export const WorkingFolder: React.FC = () => {
         }
         return;
       }
-      const result = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
+      const result = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
       if (result) {
         setWorkingDirectory(result);
       }

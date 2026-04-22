@@ -183,7 +183,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
   }, [error, clearError]);
 
   return (
-    <div className="w-72 border-l border-zinc-700 bg-zinc-900 flex flex-col">
+    <div className="w-full h-full bg-zinc-900 flex flex-col">
       {/* Actions row (title + close moved into workbench tab bar) */}
       <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-700">
         <div className="flex items-center gap-1">

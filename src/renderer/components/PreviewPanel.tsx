@@ -11,7 +11,6 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
-import { PreviewTabs } from './PreviewTabs';
 
 const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -185,11 +184,10 @@ export const PreviewPanel: React.FC = () => {
 
   return (
     <div
-      className={`flex flex-col bg-zinc-900 border-l border-zinc-700 transition-all duration-300 ${
-        isMaximized ? 'fixed inset-0 z-50' : 'w-[500px]'
+      className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
+        isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
       }`}
     >
-      <PreviewTabs />
       {/* Actions row (filename + dirty indicator + close moved into workbench tab bar) */}
       <div className="flex items-center justify-end px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-1">

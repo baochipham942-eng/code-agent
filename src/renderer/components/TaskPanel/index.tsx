@@ -39,7 +39,7 @@ export const TaskPanel: React.FC = () => {
   ];
 
   return (
-    <div className="w-full h-full border-l border-white/[0.06] bg-zinc-900 flex flex-col overflow-hidden">
+    <div className="w-full h-full bg-zinc-900 flex flex-col overflow-hidden">
       <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
           {selectedAgent && (

@@ -5,7 +5,7 @@ import React, { useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3 } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3, Sparkles } from 'lucide-react';
 import { isWebMode } from '../utils/platform';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -36,6 +36,8 @@ export const TitleBar: React.FC = () => {
     setShowCronCenter,
     showFileExplorer,
     setShowFileExplorer,
+    showSkillsPanel,
+    setShowSkillsPanel,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
   } = useAppStore();
@@ -45,7 +47,7 @@ export const TitleBar: React.FC = () => {
   const effectiveWorkingDirectory = composerWorkingDirectory ?? workingDirectory;
   // 获取当前会话 ID
   // DAG 面板权限检查
-  const { dagPanelEnabled } = useDisclosure();
+  const { dagPanelEnabled, isStandard } = useDisclosure();
   // Get workspace name from path
   const getWorkspaceName = (path: string | null): string => {
     if (!path) return '';
@@ -159,6 +161,18 @@ export const TitleBar: React.FC = () => {
           windowNoDrag
           className={showFileExplorer ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
         />
+        {/* Skills Panel Toggle (Standard+ mode) */}
+        {isStandard && (
+          <IconButton
+            icon={<Sparkles className="w-4 h-4" />}
+            aria-label={showSkillsPanel ? '隐藏 Skills 面板' : '显示 Skills 面板'}
+            onClick={() => setShowSkillsPanel(!showSkillsPanel)}
+            variant="ghost"
+            size="md"
+            windowNoDrag
+            className={showSkillsPanel ? 'text-purple-400' : 'text-purple-400/70 hover:text-purple-400'}
+          />
+        )}
         {/* Task Panel Toggle */}
         <IconButton
           icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}

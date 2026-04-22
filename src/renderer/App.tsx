@@ -38,7 +38,6 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Sparkles } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -371,26 +370,6 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [setShowTaskPanel, setTaskPanelTab]);
-
-  // Skills panel toggle button (Standard+ mode)
-  const SkillsToggle: React.FC = () => {
-    if (!isStandard) return null;
-
-    return (
-      <button
-        onClick={() => setShowSkillsPanel(!showSkillsPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showSkillsPanel
-            ? 'bg-purple-500/20 text-purple-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="Skills 面板"
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-        <span>Skills</span>
-      </button>
-    );
-  };
 
   return (
     <ErrorBoundary>

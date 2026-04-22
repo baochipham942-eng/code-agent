@@ -29,7 +29,6 @@ import { CapturePanel } from './components/features/capture';
 import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
-import { isTauriMode } from './utils/platform';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';

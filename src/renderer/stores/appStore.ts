@@ -53,6 +53,15 @@ export const MAX_PREVIEW_TABS = 8;
 let _previewTabTick = 0;
 const nextPreviewTabTick = () => ++_previewTabTick;
 
+// Unified right-workbench tab identity.
+// Preview tabs embed their file path after the 'preview:' prefix.
+export type WorkbenchTabId = 'task' | 'skills' | `preview:${string}`;
+
+const PREVIEW_PREFIX = 'preview:';
+const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
+  id.startsWith(PREVIEW_PREFIX);
+const previewPathOf = (id: `preview:${string}`): string => id.slice(PREVIEW_PREFIX.length);
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -106,6 +115,12 @@ interface AppState {
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
   showPreviewPanel: boolean;
+
+  // Unified right workbench — tab order & active view across Task/Skills/Preview.
+  // Legacy show*Panel fields above are kept in sync but will be removed after
+  // all callers migrate to openWorkbenchTab/closeWorkbenchTab.
+  workbenchTabs: WorkbenchTabId[];
+  activeWorkbenchTab: WorkbenchTabId | null;
 
   // Permission Request State
   pendingPermissionRequest: PermissionRequest | null;
@@ -168,6 +183,11 @@ interface AppState {
   closePreview: () => void;
   closePreviewTab: (id: string) => void;
   setActivePreviewTab: (id: string) => void;
+
+  // Unified workbench actions.
+  openWorkbenchTab: (id: WorkbenchTabId) => void;
+  closeWorkbenchTab: (id: WorkbenchTabId) => void;
+  setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
   updatePreviewTabMode: (id: string, mode: 'preview' | 'edit') => void;
   markPreviewTabLoaded: (id: string, savedContent: string) => void;
@@ -252,6 +272,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   activePreviewTabId: null,
   showPreviewPanel: false,
 
+  // Initial workbench — Task pinned and active by default (matches showTaskPanel: true).
+  workbenchTabs: ['task'],
+  activeWorkbenchTab: 'task',
+
   // Initial Permission Request State
   pendingPermissionRequest: null,
   pendingPermissionSessionId: null,
@@ -277,11 +301,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab }),
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
-  setShowTaskPanel: (show) => set({ showTaskPanel: show }),
+  setShowTaskPanel: (show) => {
+    set({ showTaskPanel: show });
+    if (show) get().openWorkbenchTab('task');
+    else get().closeWorkbenchTab('task');
+  },
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),
   setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
-  setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
+  setShowSkillsPanel: (show) => {
+    set({ showSkillsPanel: show });
+    if (show) get().openWorkbenchTab('skills');
+    else get().closeWorkbenchTab('skills');
+  },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
@@ -339,6 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (wd) resolved = `${wd}/${filePath}`;
     }
     set((state) => {
+      const newWorkbenchId: WorkbenchTabId = `preview:${resolved}`;
       const existing = state.previewTabs.find((t) => t.path === resolved);
       if (existing) {
         return {
@@ -348,6 +381,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           previewTabs: state.previewTabs.map((t) =>
             t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
           ),
+          workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
+            ? state.workbenchTabs
+            : [...state.workbenchTabs, newWorkbenchId],
+          activeWorkbenchTab: newWorkbenchId,
         };
       }
       const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -362,41 +399,90 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       // LRU eviction when at capacity
       let carried = state.previewTabs;
+      let workbenchCarried = state.workbenchTabs;
       if (carried.length >= MAX_PREVIEW_TABS) {
         const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
         carried = carried.filter((t) => t.id !== oldest.id);
+        const evictedWorkbenchId: WorkbenchTabId = `preview:${oldest.path}`;
+        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
       }
       return {
         ...state,
         previewTabs: [...carried, tab],
         activePreviewTabId: id,
         showPreviewPanel: true,
+        workbenchTabs: [...workbenchCarried, newWorkbenchId],
+        activeWorkbenchTab: newWorkbenchId,
       };
     });
   },
-  closePreview: () => set({ previewTabs: [], activePreviewTabId: null, showPreviewPanel: false }),
+  closePreview: () => set((state) => ({
+    previewTabs: [],
+    activePreviewTabId: null,
+    showPreviewPanel: false,
+    workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchId(w)),
+    activeWorkbenchTab: isPreviewWorkbenchId(state.activeWorkbenchTab ?? 'task')
+      ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchId(w)) ?? null)
+      : state.activeWorkbenchTab,
+  })),
   closePreviewTab: (id) => {
     set((state) => {
+      const closing = state.previewTabs.find((t) => t.id === id);
+      const closingWorkbenchId: WorkbenchTabId | null = closing
+        ? `preview:${closing.path}`
+        : null;
       const nextTabs = state.previewTabs.filter((t) => t.id !== id);
+      const nextWorkbench = closingWorkbenchId
+        ? state.workbenchTabs.filter((w) => w !== closingWorkbenchId)
+        : state.workbenchTabs;
+
       if (nextTabs.length === 0) {
-        return { ...state, previewTabs: nextTabs, activePreviewTabId: null, showPreviewPanel: false };
+        // No previews left. Fall active back to a pinned tab if one survives.
+        const fallback = nextWorkbench[0] ?? null;
+        const nextActiveWorkbench =
+          state.activeWorkbenchTab === closingWorkbenchId
+            ? fallback
+            : state.activeWorkbenchTab;
+        return {
+          ...state,
+          previewTabs: nextTabs,
+          activePreviewTabId: null,
+          showPreviewPanel: false,
+          workbenchTabs: nextWorkbench,
+          activeWorkbenchTab: nextActiveWorkbench,
+        };
       }
+
       let nextActiveId = state.activePreviewTabId;
+      let nextActiveWorkbench: WorkbenchTabId | null = state.activeWorkbenchTab;
       if (state.activePreviewTabId === id) {
-        // Pick the most-recently-activated remaining tab
-        nextActiveId = nextTabs.reduce((a, b) => (a.lastActivatedAt >= b.lastActivatedAt ? a : b)).id;
+        const survivor = nextTabs.reduce((a, b) =>
+          a.lastActivatedAt >= b.lastActivatedAt ? a : b,
+        );
+        nextActiveId = survivor.id;
+        nextActiveWorkbench = `preview:${survivor.path}`;
       }
-      return { ...state, previewTabs: nextTabs, activePreviewTabId: nextActiveId };
+      return {
+        ...state,
+        previewTabs: nextTabs,
+        activePreviewTabId: nextActiveId,
+        workbenchTabs: nextWorkbench,
+        activeWorkbenchTab: nextActiveWorkbench,
+      };
     });
   },
   setActivePreviewTab: (id) => {
-    set((state) => ({
-      ...state,
-      activePreviewTabId: id,
-      previewTabs: state.previewTabs.map((t) =>
-        t.id === id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
-      ),
-    }));
+    set((state) => {
+      const target = state.previewTabs.find((t) => t.id === id);
+      return {
+        ...state,
+        activePreviewTabId: id,
+        previewTabs: state.previewTabs.map((t) =>
+          t.id === id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
+        ),
+        activeWorkbenchTab: target ? (`preview:${target.path}` as WorkbenchTabId) : state.activeWorkbenchTab,
+      };
+    });
   },
   updatePreviewTabContent: (id, content) => {
     set((state) => ({
@@ -426,6 +512,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
   },
+
+  openWorkbenchTab: (id) => {
+    set((state) => {
+      if (state.workbenchTabs.includes(id)) {
+        return { ...state, activeWorkbenchTab: id };
+      }
+      return {
+        ...state,
+        workbenchTabs: [...state.workbenchTabs, id],
+        activeWorkbenchTab: id,
+      };
+    });
+  },
+  closeWorkbenchTab: (id) => {
+    set((state) => {
+      const nextTabs = state.workbenchTabs.filter((t) => t !== id);
+      let nextActive: WorkbenchTabId | null = state.activeWorkbenchTab;
+      if (state.activeWorkbenchTab === id) {
+        if (nextTabs.length === 0) {
+          nextActive = null;
+        } else {
+          // Prefer the most-recently-activated preview among remaining; else first pinned.
+          const remainingPreviews = nextTabs.filter(isPreviewWorkbenchId);
+          if (remainingPreviews.length > 0) {
+            const byPath = new Map(state.previewTabs.map((pt) => [pt.path, pt]));
+            const survivor = remainingPreviews
+              .map((wid) => byPath.get(previewPathOf(wid)))
+              .filter((t): t is PreviewTab => !!t)
+              .reduce<PreviewTab | null>(
+                (best, t) => (!best || t.lastActivatedAt > best.lastActivatedAt ? t : best),
+                null,
+              );
+            nextActive = survivor ? (`preview:${survivor.path}` as WorkbenchTabId) : nextTabs[0];
+          } else {
+            nextActive = nextTabs[0];
+          }
+        }
+      }
+      return { ...state, workbenchTabs: nextTabs, activeWorkbenchTab: nextActive };
+    });
+  },
+  setActiveWorkbenchTab: (id) => set({ activeWorkbenchTab: id }),
 
   setPendingPermissionRequest: (request, sessionId = null) =>
     set({

@@ -38,7 +38,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Cloud, Zap, Sparkles } from 'lucide-react';
+import { Zap, Sparkles } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -119,7 +119,7 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal } = useAuthStore();
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
-  const { isStandard, isAdvanced, dagPanelEnabled } = useDisclosure();
+  const { isStandard, dagPanelEnabled } = useDisclosure();
 
   // Panel toggle states from appStore（用户偏好层：show* 表示用户手动开关）
   const {
@@ -127,8 +127,6 @@ export const App: React.FC = () => {
     setShowDAGPanel,
   } = useAppStore();
 
-  // Cloud task panel state
-  const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
   const [showTaskListPanel, setShowTaskListPanel] = useState(false);
 
   // Theme Hook - 初始化主题系统
@@ -374,26 +372,6 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [setShowTaskPanel, setTaskPanelTab]);
-
-  // Cloud task panel toggle button (Advanced mode)
-  const CloudTaskToggle: React.FC = () => {
-    if (!isAdvanced) return null;
-
-    return (
-      <button
-        onClick={() => setShowCloudTaskPanel(!showCloudTaskPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showCloudTaskPanel
-            ? 'bg-sky-500/20 text-sky-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="云端任务"
-      >
-        <Cloud className="w-3.5 h-3.5" />
-        <span>云端任务</span>
-      </button>
-    );
-  };
 
   // Local task list panel toggle button (Standard+ mode)
   const TaskListToggle: React.FC = () => {

@@ -4,7 +4,6 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FileText, ExternalLink, Folder } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -12,8 +11,6 @@ import { ToolHeader } from './ToolHeader';
 import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
-import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
-import { isPreviewable } from '../../../../../utils/previewable';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -150,9 +147,9 @@ export function ToolCallDisplay({
       >
         <StatusIndicator status={status} />
         <ToolHeader toolCall={toolCall} status={status} />
-        {/* Inline file badge for Write tool */}
+        {/* Inline file name for Write tool — plain clickable text opens preview */}
         {!expanded && status === 'success' && toolCall.name === 'Write' && (
-          <span className="ml-auto"><QuickFileActions filePath={extractWriteFilePath(toolCall)} inline /></span>
+          <span className="ml-auto"><InlineWriteFileName filePath={extractWriteFilePath(toolCall)} /></span>
         )}
       </div>
 
@@ -242,121 +239,34 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
   );
 }
 
-// Quick file actions component - inline mode for main row, block mode for standalone
-function QuickFileActions({ filePath, inline = false }: { filePath: string | null; inline?: boolean }) {
+// Plain clickable file name for the collapsed Write tool row. Click opens
+// the file in the right-side workbench preview panel.
+function InlineWriteFileName({ filePath }: { filePath: string | null }) {
+  const openPreview = useAppStore((state) => state.openPreview);
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
   if (!filePath) return null;
 
   const fileName = filePath.split('/').pop() || filePath;
-  const canPreview = isPreviewable(filePath);
-  const openPreview = useAppStore((state) => state.openPreview);
-  const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const resolvedPath = filePath.startsWith('/')
+    ? filePath
+    : workingDirectory
+      ? `${workingDirectory}/${filePath}`
+      : filePath;
 
-  // Resolve relative paths against workingDirectory
-  const resolvedPath = filePath.startsWith('/') ? filePath : (workingDirectory ? `${workingDirectory}/${filePath}` : filePath);
-
-  const handleOpenFile = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isWebMode()) {
-      await copyPathToClipboard(resolvedPath);
-      return;
-    }
-    try {
-      await window.domainAPI?.invoke('workspace', 'openPath', { filePath: resolvedPath });
-    } catch (error) {
-      console.error('Failed to open file:', error);
-    }
-  };
-
-  const handleShowInFolder = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isWebMode()) {
-      await copyPathToClipboard(resolvedPath);
-      return;
-    }
-    try {
-      await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath: resolvedPath });
-    } catch (error) {
-      console.error('Failed to show in folder:', error);
-    }
-  };
-
-  const handlePreview = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    openPreview(resolvedPath);
-  };
-
-  // Inline mode: compact badge + actions in the main tool row
-  if (inline) {
-    return (
-      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
-          <FileText className="w-3 h-3" />
-          <span className="truncate max-w-[150px]" title={filePath}>{fileName}</span>
-        </div>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
-          {canPreview && (
-            <button
-              onClick={handlePreview}
-              className="p-0.5 rounded hover:bg-gray-700/50 text-blue-400 hover:text-blue-300 transition-colors"
-              title="预览"
-            >
-              <ExternalLink className="w-3 h-3" />
-            </button>
-          )}
-          <button
-            onClick={handleOpenFile}
-            className="p-0.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
-            title="打开文件"
-          >
-            <ExternalLink className="w-3 h-3" />
-          </button>
-          <button
-            onClick={handleShowInFolder}
-            className="p-0.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
-            title="在 Finder 中显示"
-          >
-            <Folder className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Block mode (legacy)
   return (
-    <div className="ml-6 mt-1 flex items-center gap-2">
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
-        <FileText className="w-3 h-3" />
-        <span className="truncate max-w-[200px]" title={filePath}>{fileName}</span>
-      </div>
-      <div className="flex items-center gap-1">
-        {canPreview && (
-          <button
-            onClick={handlePreview}
-            className="p-1 rounded hover:bg-gray-700/50 text-blue-400 hover:text-blue-300 transition-colors"
-            title="预览"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
-        )}
-        <button
-          onClick={handleOpenFile}
-          className="p-1 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
-          title="打开文件"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleShowInFolder}
-          className="p-1 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 transition-colors"
-          title="在 Finder 中显示"
-        >
-          <Folder className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        openPreview(resolvedPath);
+      }}
+      className="text-xs text-zinc-400 hover:text-emerald-400 truncate max-w-[280px] transition-colors"
+      title={filePath}
+    >
+      {fileName}
+    </button>
   );
 }
+
 
 // ============================================================================
 // Compact Version for Cowork Mode (kept for backward compatibility)

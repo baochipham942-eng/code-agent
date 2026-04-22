@@ -14,7 +14,6 @@ describe('appStore preview tabs', () => {
     expect(state.previewTabs).toHaveLength(1);
     expect(state.previewTabs[0].path).toBe('/tmp/a.md');
     expect(state.activePreviewTabId).toBe(state.previewTabs[0].id);
-    expect(state.showPreviewPanel).toBe(true);
     expect(state.previewTabs[0].isLoaded).toBe(false);
   });
 
@@ -80,7 +79,6 @@ describe('appStore preview tabs', () => {
     const state = useAppStore.getState();
     expect(state.previewTabs).toHaveLength(0);
     expect(state.activePreviewTabId).toBeNull();
-    expect(state.showPreviewPanel).toBe(false);
   });
 
   it('markPreviewTabLoaded populates content and savedContent together', () => {

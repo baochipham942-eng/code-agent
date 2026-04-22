@@ -251,8 +251,9 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     showDAGPanel,
     setShowWorkspace,
     showWorkspace,
-    showTaskPanel,
-    setShowTaskPanel,
+    workbenchTabs,
+    openWorkbenchTab,
+    closeWorkbenchTab,
     pendingPermissionRequest,
     setPendingPermissionRequest,
     isProcessing,
@@ -409,7 +410,11 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           // Cmd/Ctrl+J: 切换 StatusRail（右侧状态面板）
           event.preventDefault();
           logger.info('Shortcut: Toggle StatusRail');
-          setShowTaskPanel(!showTaskPanel);
+          if (workbenchTabs.includes('task')) {
+            closeWorkbenchTab('task');
+          } else {
+            openWorkbenchTab('task');
+          }
           break;
 
         case '[':
@@ -460,8 +465,9 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       showDAGPanel,
       setShowWorkspace,
       showWorkspace,
-      showTaskPanel,
-      setShowTaskPanel,
+      workbenchTabs,
+      openWorkbenchTab,
+      closeWorkbenchTab,
       pendingPermissionRequest,
       setPendingPermissionRequest,
       isProcessing,

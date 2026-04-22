@@ -67,11 +67,9 @@ interface AppState {
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   showWorkspace: boolean;
-  showTaskPanel: boolean;
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
   selectedSwarmAgentId: string | null;
-  showSkillsPanel: boolean;
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
   showCronCenter: boolean;
@@ -111,14 +109,11 @@ interface AppState {
   evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
   evalCenterSessionId: string | null;
 
-  // HTML Preview State (multi-tab)
+  // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
-  showPreviewPanel: boolean;
 
   // Unified right workbench — tab order & active view across Task/Skills/Preview.
-  // Legacy show*Panel fields above are kept in sync but will be removed after
-  // all callers migrate to openWorkbenchTab/closeWorkbenchTab.
   workbenchTabs: WorkbenchTabId[];
   activeWorkbenchTab: WorkbenchTabId | null;
 
@@ -151,11 +146,9 @@ interface AppState {
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   setShowWorkspace: (show: boolean) => void;
-  setShowTaskPanel: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
   setShowAgentTeamPanel: (show: boolean) => void;
   setSelectedSwarmAgentId: (agentId: string | null) => void;
-  setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
@@ -178,7 +171,6 @@ interface AppState {
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
-  setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   closePreview: () => void;
   closePreviewTab: (id: string) => void;
@@ -225,11 +217,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   showSettings: false,
   settingsInitialTab: null,
   showWorkspace: false,
-  showTaskPanel: true, // Task panel shown by default
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
   selectedSwarmAgentId: null,
-  showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showCronCenter: false,
@@ -267,12 +257,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   evalCenterTab: 'analysis' as const,
   evalCenterSessionId: null,
 
-  // Initial HTML Preview State
+  // Initial file preview registry
   previewTabs: [],
   activePreviewTabId: null,
-  showPreviewPanel: false,
 
-  // Initial workbench — Task pinned and active by default (matches showTaskPanel: true).
+  // Initial workbench — Task pinned and active by default.
   workbenchTabs: ['task'],
   activeWorkbenchTab: 'task',
 
@@ -301,19 +290,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab }),
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
-  setShowTaskPanel: (show) => {
-    set({ showTaskPanel: show });
-    if (show) get().openWorkbenchTab('task');
-    else get().closeWorkbenchTab('task');
-  },
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),
   setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
-  setShowSkillsPanel: (show) => {
-    set({ showSkillsPanel: show });
-    if (show) get().openWorkbenchTab('skills');
-    else get().closeWorkbenchTab('skills');
-  },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
@@ -362,7 +341,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     ...(!show ? { evalCenterSessionId: null } : {}),
   }),
 
-  setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),
   openPreview: (filePath) => {
     // Resolve relative paths against workingDirectory
     let resolved = filePath;
@@ -377,7 +355,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
           ...state,
           activePreviewTabId: existing.id,
-          showPreviewPanel: true,
           previewTabs: state.previewTabs.map((t) =>
             t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
           ),
@@ -410,7 +387,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...state,
         previewTabs: [...carried, tab],
         activePreviewTabId: id,
-        showPreviewPanel: true,
         workbenchTabs: [...workbenchCarried, newWorkbenchId],
         activeWorkbenchTab: newWorkbenchId,
       };
@@ -419,7 +395,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   closePreview: () => set((state) => ({
     previewTabs: [],
     activePreviewTabId: null,
-    showPreviewPanel: false,
     workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchId(w)),
     activeWorkbenchTab: isPreviewWorkbenchId(state.activeWorkbenchTab ?? 'task')
       ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchId(w)) ?? null)
@@ -447,7 +422,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...state,
           previewTabs: nextTabs,
           activePreviewTabId: null,
-          showPreviewPanel: false,
           workbenchTabs: nextWorkbench,
           activeWorkbenchTab: nextActiveWorkbench,
         };

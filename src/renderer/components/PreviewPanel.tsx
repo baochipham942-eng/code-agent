@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save } from 'lucide-react';
+import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -179,6 +179,20 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
+  const handleRevealInFolder = async () => {
+    if (!previewFilePath) return;
+    try {
+      if (isWebMode()) {
+        await copyPathToClipboard(previewFilePath);
+        return;
+      }
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(previewFilePath);
+    } catch (err) {
+      logger.error('Failed to reveal in folder', err);
+    }
+  };
+
   if (!activeTab) return null;
 
   return (
@@ -231,9 +245,16 @@ export const PreviewPanel: React.FC = () => {
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
           <button
+            onClick={handleRevealInFolder}
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="在 Finder 中显示"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+          <button
             onClick={handleOpenInBrowser}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="在浏览器中打开"
+            title="用默认程序打开"
           >
             <ExternalLink className="w-4 h-4" />
           </button>

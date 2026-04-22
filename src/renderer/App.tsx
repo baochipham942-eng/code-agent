@@ -38,7 +38,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
+import { Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -120,12 +120,9 @@ export const App: React.FC = () => {
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, isAdvanced, dagPanelEnabled } = useDisclosure();
-  const isObservabilityAvailable = isAdvanced; // 追踪面板在 Advanced+ 模式可用
 
   // Panel toggle states from appStore（用户偏好层：show* 表示用户手动开关）
   const {
-    showPlanningPanel,
-    setShowPlanningPanel,
     showDAGPanel,
     setShowDAGPanel,
   } = useAppStore();
@@ -377,26 +374,6 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [setShowTaskPanel, setTaskPanelTab]);
-
-  // Observability panel toggle button (Advanced+ mode)
-  const ObservabilityToggle: React.FC = () => {
-    if (!isObservabilityAvailable) return null;
-
-    return (
-      <button
-        onClick={() => setShowPlanningPanel(!showPlanningPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showPlanningPanel
-            ? 'bg-indigo-500/20 text-indigo-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="执行追踪面板"
-      >
-        <Activity className="w-3.5 h-3.5" />
-        <span>追踪</span>
-      </button>
-    );
-  };
 
   // DAG 可视化面板切换按钮 (Advanced+ mode)
   const DAGToggle: React.FC = () => {

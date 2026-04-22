@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Default capabilities for Code Agent",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:8180/*"]
+  },
   "permissions": [
     "core:default",
     "updater:default",

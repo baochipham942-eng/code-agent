@@ -29,6 +29,9 @@ const CODE_LANGUAGE_BY_EXT: Record<string, 'json' | 'yaml' | 'typescript' | 'jav
   js:   'javascript',
   jsx:  'javascript',
 };
+// Media types render via a data: URL built from the binary fetched over IPC.
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
+const PDF_EXTS = new Set(['pdf']);
 
 function getExtension(filePath: string | null | undefined): string {
   if (!filePath) return '';
@@ -75,7 +78,10 @@ export const PreviewPanel: React.FC = () => {
   const isCsv = csvDelimiter !== undefined;
   const codeLanguage = CODE_LANGUAGE_BY_EXT[ext];
   const isCode = codeLanguage !== undefined;
-  const isDirty = content !== savedContent;
+  const isImage = IMAGE_EXTS.has(ext);
+  const isPdf = PDF_EXTS.has(ext);
+  const isBinary = isImage || isPdf;
+  const isDirty = !isBinary && content !== savedContent;
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
@@ -89,9 +95,21 @@ export const PreviewPanel: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const fetched = await invokeWorkspace<string>('readFile', { filePath });
-      // readFile returns '' for empty files — that's valid content, not an error.
-      markPreviewTabLoaded(tabId, fetched ?? '');
+      const tabExt = getExtension(filePath);
+      const isBinaryTab = IMAGE_EXTS.has(tabExt) || PDF_EXTS.has(tabExt);
+      if (isBinaryTab) {
+        // Media: fetch as base64 + mime, store the data: URL as content. It
+        // never diverges from savedContent (read-only), so isDirty stays false.
+        const binary = await invokeWorkspace<{ base64: string; mimeType: string }>(
+          'readBinary', { filePath },
+        );
+        const dataUrl = `data:${binary.mimeType};base64,${binary.base64}`;
+        markPreviewTabLoaded(tabId, dataUrl);
+      } else {
+        const fetched = await invokeWorkspace<string>('readFile', { filePath });
+        // readFile returns '' for empty files — that's valid content, not an error.
+        markPreviewTabLoaded(tabId, fetched ?? '');
+      }
     } catch (err) {
       logger.error('Failed to load file', err);
       setError(err instanceof Error ? err.message : '加载文件失败');
@@ -250,9 +268,9 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode}
+            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown || isCsv || isCode ? '长图仅支持 HTML 预览' : '导出长图'}
+            title={isMarkdown || isCsv || isCode || isBinary ? '长图仅支持 HTML 预览' : '导出长图'}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -308,6 +326,20 @@ export const PreviewPanel: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : isImage ? (
+          <div className="flex items-center justify-center h-full overflow-auto bg-zinc-950 p-4">
+            <img
+              src={content}
+              alt={previewFilePath ?? 'image preview'}
+              className="max-w-full max-h-full object-contain"
+            />
+          </div>
+        ) : isPdf ? (
+          <embed
+            src={content}
+            type="application/pdf"
+            className="w-full h-full"
+          />
         ) : isCode && codeLanguage ? (
           <Suspense
             fallback={

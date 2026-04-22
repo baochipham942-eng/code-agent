@@ -75,6 +75,33 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
   return fs.readFile(payload.filePath, 'utf-8');
 }
 
+// Map extensions to IANA mime types for PreviewPanel image/pdf rendering.
+// Only covers what PREVIEWABLE_EXTENSIONS advertises for media; anything
+// else defaults to application/octet-stream.
+const BINARY_MIME_BY_EXT: Record<string, string> = {
+  jpg:  'image/jpeg',
+  jpeg: 'image/jpeg',
+  png:  'image/png',
+  gif:  'image/gif',
+  webp: 'image/webp',
+  svg:  'image/svg+xml',
+  pdf:  'application/pdf',
+};
+
+async function handleReadBinary(
+  payload: { filePath: string },
+): Promise<{ base64: string; mimeType: string; size: number }> {
+  const fs = await import('fs/promises');
+  const buffer = await fs.readFile(payload.filePath);
+  const dot = payload.filePath.lastIndexOf('.');
+  const ext = dot >= 0 ? payload.filePath.slice(dot + 1).toLowerCase() : '';
+  return {
+    base64: buffer.toString('base64'),
+    mimeType: BINARY_MIME_BY_EXT[ext] || 'application/octet-stream',
+    size: buffer.byteLength,
+  };
+}
+
 export async function handleWriteFile(
   payload: { filePath: string; content: string }
 ): Promise<{ path: string; size: number; modifiedAt: number }> {
@@ -219,6 +246,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'readFile':
           data = await handleReadFile(payload as { filePath: string });
+          break;
+        case 'readBinary':
+          data = await handleReadBinary(payload as { filePath: string });
           break;
         case 'writeFile':
           data = await handleWriteFile(payload as { filePath: string; content: string });

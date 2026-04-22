@@ -29,6 +29,7 @@ interface ExplorerState {
 
   // Actions
   addTab: (rootPath: string, label: string) => void;
+  openOrFocusTab: (rootPath: string, label: string) => void;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   setDirContents: (path: string, contents: FileInfo[]) => void;
@@ -59,6 +60,23 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
       tabs: [...state.tabs, { id, rootPath, label }],
       activeTabId: id,
     }));
+  },
+
+  openOrFocusTab: (rootPath, label) => {
+    set((state) => {
+      const existing = state.tabs.find((t) => t.rootPath === rootPath);
+      if (existing) {
+        return state.activeTabId === existing.id
+          ? state
+          : { ...state, activeTabId: existing.id };
+      }
+      const id = `tab-${++tabCounter}`;
+      return {
+        ...state,
+        tabs: [...state.tabs, { id, rootPath, label }],
+        activeTabId: id,
+      };
+    });
   },
 
   closeTab: (id) => {

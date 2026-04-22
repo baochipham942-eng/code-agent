@@ -7,6 +7,7 @@ import {
   FolderOpen, FolderClosed, File, X, Plus, RefreshCw,
   ChevronRight, ChevronDown, Send, FileText, Image, Code2,
   FileSpreadsheet, Presentation, Film, Music, Archive,
+  FilePlus, FolderPlus,
 } from 'lucide-react';
 import { useExplorerStore } from '../../../stores/explorerStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -25,6 +26,36 @@ async function listFiles(dirPath: string): Promise<FileInfo[]> {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+}
+
+function joinPath(parent: string, name: string): string {
+  if (parent.endsWith('/')) return `${parent}${name}`;
+  return `${parent}/${name}`;
+}
+
+function isInvalidName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  if (trimmed === '.' || trimmed === '..') return true;
+  if (/[/\\]/.test(trimmed)) return true;
+  return false;
+}
+
+async function createFsEntry(
+  parentPath: string,
+  name: string,
+  kind: 'file' | 'folder'
+): Promise<{ ok: true; info: FileInfo } | { ok: false; message: string }> {
+  const fullPath = joinPath(parentPath, name.trim());
+  const action = kind === 'file' ? 'createFile' : 'createFolder';
+  const payload = kind === 'file' ? { filePath: fullPath } : { dirPath: fullPath };
+  const response = await window.domainAPI?.invoke<FileInfo>(
+    IPC_DOMAINS.WORKSPACE, action, payload
+  );
+  if (!response?.success || !response.data) {
+    return { ok: false, message: response?.error?.message ?? '创建失败' };
+  }
+  return { ok: true, info: response.data };
 }
 
 function getFileIcon(name: string, isDir: boolean) {
@@ -63,6 +94,89 @@ const HIDDEN_NAMES = new Set([
   '.next', '.cache', '__pycache__', '.turbo',
 ]);
 
+// ── CreateInputRow ──
+
+const CreateInputRow: React.FC<{
+  parentPath: string;
+  kind: 'file' | 'folder';
+  depth: number;
+  onDone: (created: FileInfo | null) => void;
+}> = ({ parentPath, kind, depth, onDone }) => {
+  const [name, setName] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const paddingLeft = 8 + depth * 16;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const submit = useCallback(async () => {
+    if (submitting) return;
+    if (isInvalidName(name)) {
+      setError('名称不能为空、"."、".."，或包含 / \\');
+      return;
+    }
+    setSubmitting(true);
+    const result = await createFsEntry(parentPath, name, kind);
+    if (!result.ok) {
+      setError(result.message);
+      setSubmitting(false);
+      return;
+    }
+    onDone(result.info);
+  }, [submitting, name, parentPath, kind, onDone]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void submit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onDone(null);
+    }
+  }, [submit, onDone]);
+
+  const icon = kind === 'file'
+    ? <File className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+    : <FolderClosed className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />;
+
+  return (
+    <div
+      className="flex items-center gap-1 py-0.5 pr-2"
+      style={{ paddingLeft }}
+    >
+      <span className="w-4 h-4 flex-shrink-0" />
+      {icon}
+      <input
+        ref={inputRef}
+        className={`flex-1 bg-zinc-800 rounded px-1 py-0.5 text-xs text-zinc-100 focus:outline-none ${
+          error ? 'border border-red-500/60' : 'border border-primary-500/40 focus:border-primary-500'
+        }`}
+        value={name}
+        onChange={(e) => { setName(e.target.value); setError(null); }}
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          // If user blurred without typing anything, cancel. Otherwise keep the input open
+          // so they can fix the name after an error.
+          if (!name.trim() && !error) onDone(null);
+        }}
+        placeholder={kind === 'file' ? '文件名' : '文件夹名'}
+        disabled={submitting}
+      />
+      {error && (
+        <span
+          className="text-[10px] text-red-400 flex-shrink-0 cursor-help"
+          title={error}
+        >
+          !
+        </span>
+      )}
+    </div>
+  );
+};
+
 // ── FileTreeNode ──
 
 const FileTreeNode: React.FC<{
@@ -70,8 +184,8 @@ const FileTreeNode: React.FC<{
   depth: number;
 }> = ({ file, depth }) => {
   const {
-    expandedPaths, loadingPaths, dirContents, selectedPaths,
-    toggleExpanded, setDirContents, setLoading,
+    expandedPaths, loadingPaths, dirContents, selectedPaths, pendingCreate,
+    toggleExpanded, setDirContents, setLoading, setExpanded, startCreate, cancelCreate,
   } = useExplorerStore();
 
   const isExpanded = expandedPaths.has(file.path);
@@ -120,6 +234,28 @@ const FileTreeNode: React.FC<{
       detail: `${prefix}: ${file.path}`
     }));
   }, [file.path, file.isDirectory]);
+
+  const handleCreateClick = useCallback(async (
+    e: React.MouseEvent, kind: 'file' | 'folder'
+  ) => {
+    e.stopPropagation();
+    if (!file.isDirectory) return;
+
+    // Ensure folder is expanded and children loaded before the input appears.
+    if (!children) {
+      setLoading(file.path, true);
+      const contents = await listFiles(file.path);
+      setDirContents(file.path, contents);
+      setLoading(file.path, false);
+    }
+    setExpanded(file.path, true);
+    startCreate(file.path, kind);
+  }, [file.isDirectory, file.path, children, setDirContents, setLoading, setExpanded, startCreate]);
+
+  const refreshParent = useCallback(async () => {
+    const contents = await listFiles(file.path);
+    setDirContents(file.path, contents);
+  }, [file.path, setDirContents]);
 
   if (HIDDEN_NAMES.has(file.name)) return null;
 
@@ -173,6 +309,26 @@ const FileTreeNode: React.FC<{
           </span>
         )}
 
+        {/* New File / New Folder buttons (folders only, on hover) */}
+        {file.isDirectory && (
+          <>
+            <button
+              onClick={(e) => handleCreateClick(e, 'file')}
+              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-600 flex-shrink-0"
+              title="新建文件"
+            >
+              <FilePlus className="w-2.5 h-2.5 text-zinc-400" />
+            </button>
+            <button
+              onClick={(e) => handleCreateClick(e, 'folder')}
+              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-600 flex-shrink-0"
+              title="新建文件夹"
+            >
+              <FolderPlus className="w-2.5 h-2.5 text-zinc-400" />
+            </button>
+          </>
+        )}
+
         {/* Send to chat button (on hover) */}
         <button
           onClick={handleSendToChat}
@@ -182,6 +338,19 @@ const FileTreeNode: React.FC<{
           <Send className="w-2.5 h-2.5 text-zinc-400" />
         </button>
       </div>
+
+      {/* Inline create input (when this folder is the pending create target) */}
+      {file.isDirectory && isExpanded && pendingCreate?.parentPath === file.path && (
+        <CreateInputRow
+          parentPath={file.path}
+          kind={pendingCreate.kind}
+          depth={depth + 1}
+          onDone={(info) => {
+            cancelCreate();
+            if (info) void refreshParent();
+          }}
+        />
+      )}
 
       {/* Children */}
       {file.isDirectory && isExpanded && children && (
@@ -261,7 +430,10 @@ interface FileExplorerPanelProps {
 }
 
 export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose }) => {
-  const { tabs, activeTabId, dirContents, addTab, setDirContents, setLoading } = useExplorerStore();
+  const {
+    tabs, activeTabId, dirContents, pendingCreate,
+    addTab, setDirContents, setLoading, startCreate, cancelCreate,
+  } = useExplorerStore();
   const workingDirectory = useAppStore((s) => s.workingDirectory);
   const initRef = useRef(false);
 
@@ -310,6 +482,22 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
           文件
         </h3>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => activeTab && startCreate(activeTab.rootPath, 'file')}
+            disabled={!activeTab}
+            className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+            title="新建文件"
+          >
+            <FilePlus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => activeTab && startCreate(activeTab.rootPath, 'folder')}
+            disabled={!activeTab}
+            className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+            title="新建文件夹"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={handleRefresh}
             className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
@@ -362,11 +550,24 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
             空目录
           </div>
         ) : (
-          rootFiles
-            .filter(f => !HIDDEN_NAMES.has(f.name))
-            .map((file) => (
-              <FileTreeNode key={file.path} file={file} depth={0} />
-            ))
+          <>
+            {activeTab && pendingCreate?.parentPath === activeTab.rootPath && (
+              <CreateInputRow
+                parentPath={activeTab.rootPath}
+                kind={pendingCreate.kind}
+                depth={0}
+                onDone={(info) => {
+                  cancelCreate();
+                  if (info) void handleRefresh();
+                }}
+              />
+            )}
+            {rootFiles
+              .filter(f => !HIDDEN_NAMES.has(f.name))
+              .map((file) => (
+                <FileTreeNode key={file.path} file={file} depth={0} />
+              ))}
+          </>
         )}
       </div>
     </div>

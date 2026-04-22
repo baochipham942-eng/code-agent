@@ -24,6 +24,9 @@ interface ExplorerState {
   // Selection for drag
   selectedPaths: string[];
 
+  // Inline create under a folder path (or tab root). null = not active.
+  pendingCreate: { parentPath: string; kind: 'file' | 'folder' } | null;
+
   // Actions
   addTab: (rootPath: string, label: string) => void;
   closeTab: (id: string) => void;
@@ -34,6 +37,8 @@ interface ExplorerState {
   setLoading: (path: string, loading: boolean) => void;
   toggleSelection: (path: string) => void;
   clearSelection: () => void;
+  startCreate: (parentPath: string, kind: 'file' | 'folder') => void;
+  cancelCreate: () => void;
   reset: () => void;
 }
 
@@ -46,6 +51,7 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
   expandedPaths: new Set<string>(),
   loadingPaths: new Set<string>(),
   selectedPaths: [],
+  pendingCreate: null,
 
   addTab: (rootPath, label) => {
     const id = `tab-${++tabCounter}`;
@@ -110,6 +116,9 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
 
   clearSelection: () => set({ selectedPaths: [] }),
 
+  startCreate: (parentPath, kind) => set({ pendingCreate: { parentPath, kind } }),
+  cancelCreate: () => set({ pendingCreate: null }),
+
   reset: () => set({
     tabs: [],
     activeTabId: '',
@@ -117,5 +126,6 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
     expandedPaths: new Set(),
     loadingPaths: new Set(),
     selectedPaths: [],
+    pendingCreate: null,
   }),
 }));

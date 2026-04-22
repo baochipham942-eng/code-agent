@@ -75,6 +75,39 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
   return fs.readFile(payload.filePath, 'utf-8');
 }
 
+export async function handleCreateFile(
+  payload: { filePath: string; content?: string }
+): Promise<FileInfo> {
+  const fs = await import('fs/promises');
+  const pathModule = await import('path');
+
+  // 'wx' flag: fail if path exists. Prevents accidental overwrite.
+  await fs.writeFile(payload.filePath, payload.content ?? '', { flag: 'wx' });
+  const stat = await fs.stat(payload.filePath);
+  return {
+    name: pathModule.basename(payload.filePath),
+    path: payload.filePath,
+    isDirectory: false,
+    size: stat.size,
+    modifiedAt: stat.mtimeMs,
+  };
+}
+
+export async function handleCreateFolder(payload: { dirPath: string }): Promise<FileInfo> {
+  const fs = await import('fs/promises');
+  const pathModule = await import('path');
+
+  // Non-recursive: fail if exists. User clicked "New Folder", a merge would surprise them.
+  await fs.mkdir(payload.dirPath);
+  const stat = await fs.stat(payload.dirPath);
+  return {
+    name: pathModule.basename(payload.dirPath),
+    path: payload.dirPath,
+    isDirectory: true,
+    modifiedAt: stat.mtimeMs,
+  };
+}
+
 async function handleOpenPath(
   payload: { filePath: string },
   getAppService: () => AgentApplicationService | null
@@ -173,6 +206,12 @@ export function registerWorkspaceHandlers(
           break;
         case 'readFile':
           data = await handleReadFile(payload as { filePath: string });
+          break;
+        case 'createFile':
+          data = await handleCreateFile(payload as { filePath: string; content?: string });
+          break;
+        case 'createFolder':
+          data = await handleCreateFolder(payload as { dirPath: string });
           break;
         case 'openPath':
           data = await handleOpenPath(payload as { filePath: string }, getAppService);

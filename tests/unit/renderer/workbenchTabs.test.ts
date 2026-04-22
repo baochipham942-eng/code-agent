@@ -8,8 +8,6 @@ describe('appStore workbench tabs', () => {
     useAppStore.setState({
       workbenchTabs: ['task'],
       activeWorkbenchTab: 'task',
-      showTaskPanel: true,
-      showSkillsPanel: false,
     });
   });
 
@@ -172,18 +170,4 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/a.md');
   });
 
-  it('legacy setShowTaskPanel(false) closes the task workbench tab', () => {
-    useAppStore.getState().setShowTaskPanel(false);
-
-    const state = useAppStore.getState();
-    expect(state.workbenchTabs).not.toContain('task');
-  });
-
-  it('legacy setShowSkillsPanel(true) opens the skills workbench tab and activates it', () => {
-    useAppStore.getState().setShowSkillsPanel(true);
-
-    const state = useAppStore.getState();
-    expect(state.workbenchTabs).toContain('skills');
-    expect(state.activeWorkbenchTab).toBe('skills');
-  });
 });

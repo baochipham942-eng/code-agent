@@ -78,7 +78,6 @@ function useWindowWidth(): number {
 export const App: React.FC = () => {
   const {
     showSettings,
-    setShowTaskPanel,
     setTaskPanelTab,
     showCronCenter,
     showFileExplorer,
@@ -92,7 +91,7 @@ export const App: React.FC = () => {
     setLanguage,
     workbenchTabs,
     activeWorkbenchTab,
-    closeWorkbenchTab,
+    openWorkbenchTab,
   } = useAppStore();
 
   // 响应式：窗口宽度 < 1180 时隐藏右侧面板
@@ -361,7 +360,7 @@ export const App: React.FC = () => {
       IPC_CHANNELS.SWARM_EVENT,
       (event) => {
         if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
-          setShowTaskPanel(true);
+          openWorkbenchTab('task');
           setTaskPanelTab('orchestration');
         }
         useSwarmStore.getState().handleEvent(event);
@@ -371,7 +370,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [setShowTaskPanel, setTaskPanelTab]);
+  }, [openWorkbenchTab, setTaskPanelTab]);
 
   return (
     <ErrorBoundary>
@@ -423,9 +422,7 @@ export const App: React.FC = () => {
                         <WorkbenchTabs />
                         <div className="flex-1 min-h-0 overflow-hidden">
                           {activeWorkbenchTab === 'task' && <TaskPanel />}
-                          {activeWorkbenchTab === 'skills' && (
-                            <SkillsPanel onClose={() => closeWorkbenchTab('skills')} />
-                          )}
+                          {activeWorkbenchTab === 'skills' && <SkillsPanel />}
                           {isPreviewActive && <PreviewPanel />}
                         </div>
                       </div>

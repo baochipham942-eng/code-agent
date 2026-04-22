@@ -37,7 +37,6 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
 export const PreviewPanel: React.FC = () => {
   const previewTabs = useAppStore((s) => s.previewTabs);
   const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
-  const showPreviewPanel = useAppStore((s) => s.showPreviewPanel);
   const updatePreviewTabContent = useAppStore((s) => s.updatePreviewTabContent);
   const updatePreviewTabMode = useAppStore((s) => s.updatePreviewTabMode);
   const markPreviewTabLoaded = useAppStore((s) => s.markPreviewTabLoaded);
@@ -68,11 +67,11 @@ export const PreviewPanel: React.FC = () => {
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
-    if (!activeTab || !showPreviewPanel) return;
+    if (!activeTab) return;
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab?.id, activeTab?.isLoaded, showPreviewPanel]);
+  }, [activeTab?.id, activeTab?.isLoaded]);
 
   const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
@@ -180,7 +179,7 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  if (!showPreviewPanel || !activeTab) return null;
+  if (!activeTab) return null;
 
   return (
     <div

@@ -23,9 +23,6 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 // Props
 // ----------------------------------------------------------------------------
 
-interface SkillsPanelProps {
-  onClose: () => void;
-}
 
 // ----------------------------------------------------------------------------
 // Sub Components
@@ -96,9 +93,9 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
 // Main Component
 // ----------------------------------------------------------------------------
 
-export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
+export const SkillsPanel: React.FC = () => {
   const { currentSessionId } = useSessionStore();
-  const { setShowSettings } = useAppStore();
+  const { setShowSettings, closeWorkbenchTab } = useAppStore();
   const {
     mountedSkills,
     availableSkills,
@@ -171,7 +168,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
   // 打开设置
   const handleOpenSettings = () => {
     setShowSettings(true);
-    onClose();
+    closeWorkbenchTab('skills');
   };
 
   // 清除错误

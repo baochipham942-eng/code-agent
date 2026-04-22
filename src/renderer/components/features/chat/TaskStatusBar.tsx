@@ -60,7 +60,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
   const { sessionStates, stats, refreshStates, refreshStats, initialized } = useTaskStore();
   const { sessions, currentSessionId, switchSession } = useSessionStore();
   const {
-    setShowTaskPanel,
+    openWorkbenchTab,
     setTaskPanelTab,
     setShowAgentTeamPanel,
     selectedSwarmAgentId,
@@ -138,7 +138,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
   };
 
   const openOrchestrationPanel = () => {
-    setShowTaskPanel(true);
+    openWorkbenchTab('task');
     setTaskPanelTab('orchestration');
   };
 

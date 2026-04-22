@@ -12,13 +12,23 @@ import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 
-const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
+const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
 
 const logger = createLogger('PreviewPanel');
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
 const CSV_EXTS: Record<string, ',' | '\t'> = { csv: ',', tsv: '\t' };
+// Code files render in edit-only mode (no rendered form exists) via CodeEditor.
+const CODE_LANGUAGE_BY_EXT: Record<string, 'json' | 'yaml' | 'typescript' | 'javascript'> = {
+  json: 'json',
+  yaml: 'yaml',
+  yml:  'yaml',
+  ts:   'typescript',
+  tsx:  'typescript',
+  js:   'javascript',
+  jsx:  'javascript',
+};
 
 function getExtension(filePath: string | null | undefined): string {
   if (!filePath) return '';
@@ -63,6 +73,8 @@ export const PreviewPanel: React.FC = () => {
   const isMarkdown = MARKDOWN_EXTS.has(ext);
   const csvDelimiter = CSV_EXTS[ext];
   const isCsv = csvDelimiter !== undefined;
+  const codeLanguage = CODE_LANGUAGE_BY_EXT[ext];
+  const isCode = codeLanguage !== undefined;
   const isDirty = content !== savedContent;
 
   // Load content when the active tab changes and hasn't been loaded yet.
@@ -205,29 +217,29 @@ export const PreviewPanel: React.FC = () => {
       <div className="flex items-center justify-end px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-1">
           {isMarkdown && (
-            <>
-              <button
-                onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
-                className={`p-1.5 rounded transition-colors ${
-                  mode === 'edit'
-                    ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
-                    : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
-                }`}
-                title={mode === 'edit' ? '切到预览' : '切到编辑'}
-              >
-                {mode === 'edit'
-                  ? <Eye className="w-4 h-4" />
-                  : <Pencil className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!isDirty || isSaving}
-                className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title={isDirty ? '保存 (Cmd+S)' : '已保存'}
-              >
-                <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
-              </button>
-            </>
+            <button
+              onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
+              className={`p-1.5 rounded transition-colors ${
+                mode === 'edit'
+                  ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
+                  : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
+              }`}
+              title={mode === 'edit' ? '切到预览' : '切到编辑'}
+            >
+              {mode === 'edit'
+                ? <Eye className="w-4 h-4" />
+                : <Pencil className="w-4 h-4" />}
+            </button>
+          )}
+          {(isMarkdown || isCode) && (
+            <button
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isDirty ? '保存 (Cmd+S)' : '已保存'}
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
+            </button>
           )}
           <button
             onClick={handleRefresh}
@@ -238,9 +250,9 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv}
+            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown || isCsv ? '长图仅支持 HTML 预览' : '导出长图'}
+            title={isMarkdown || isCsv || isCode ? '长图仅支持 HTML 预览' : '导出长图'}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -296,6 +308,21 @@ export const PreviewPanel: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : isCode && codeLanguage ? (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                加载编辑器...
+              </div>
+            }
+          >
+            <CodeEditor
+              value={content}
+              onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
+              onSave={handleSave}
+              language={codeLanguage}
+            />
+          </Suspense>
         ) : isMarkdown && mode === 'edit' ? (
           <Suspense
             fallback={
@@ -304,10 +331,11 @@ export const PreviewPanel: React.FC = () => {
               </div>
             }
           >
-            <MarkdownEditor
+            <CodeEditor
               value={content}
-              onChange={(next) => updatePreviewTabContent(activeTab.id, next)}
+              onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
+              language="markdown"
             />
           </Suspense>
         ) : isMarkdown ? (

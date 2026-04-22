@@ -8,13 +8,11 @@
 // what the panel actually renders.
 //
 // Keep in sync with PreviewPanel's supported renderers:
-//   - markdown: md / mdx / markdown
-//   - table:    csv / tsv
-//   - html:     html / htm
+//   - markdown: md / mdx / markdown                        (preview + edit)
+//   - table:    csv / tsv                                   (parsed table view)
+//   - html:     html / htm                                  (srcDoc iframe)
+//   - code:     ts / tsx / js / jsx / json / yaml / yml    (CodeMirror, edit-only)
 //   - text fallthrough (iframe srcDoc): txt
-//
-// ts/tsx/jsx/json/yaml are intentionally excluded until Phase 3.3 adds a
-// proper CodeMirror-backed editor for them.
 // ============================================================================
 
 export const PREVIEWABLE_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -22,6 +20,7 @@ export const PREVIEWABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   'csv', 'tsv',
   'html', 'htm',
   'txt',
+  'ts', 'tsx', 'js', 'jsx', 'json', 'yaml', 'yml',
 ]);
 
 export function getFileExtension(filePath: string): string {

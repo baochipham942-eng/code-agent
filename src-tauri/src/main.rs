@@ -365,6 +365,15 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
 
 fn main() {
     let app = tauri::Builder::default()
+        // single-instance 必须在其他 plugin 之前注册：后启动的进程会直接退出，
+        // 并把 argv/cwd 传给已运行的实例，由 callback 聚焦已有窗口。
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::default())

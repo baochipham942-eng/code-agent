@@ -2,8 +2,8 @@
 // PreviewPanel - Right side panel for HTML/Web preview
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
-import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Copy } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
@@ -25,6 +25,8 @@ export const PreviewPanel: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Load HTML content when file path changes
   useEffect(() => {
@@ -56,6 +58,65 @@ export const PreviewPanel: React.FC = () => {
 
   const handleRefresh = () => {
     loadHtmlContent();
+  };
+
+  const handleExportLongScreenshot = async () => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    // srcDoc iframe 与主文档同源，parent 可访问 contentDocument
+    const doc = iframe.contentDocument;
+    const target = doc?.documentElement;
+    if (!doc || !target) {
+      setError('无法访问预览文档（可能是跨域限制）');
+      return;
+    }
+
+    setIsExporting(true);
+    setError(null);
+    try {
+      // 懒加载 html2canvas（~45KB gzipped）
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(target, {
+        // scrollHeight 让整页（包括视口外）都被渲染
+        width: target.scrollWidth,
+        height: target.scrollHeight,
+        windowWidth: target.scrollWidth,
+        windowHeight: target.scrollHeight,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: null,
+      });
+
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          setError('生成截图失败');
+          setIsExporting(false);
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const fileName = (previewFilePath?.split('/').pop() || 'preview').replace(/\.[^.]+$/, '');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fileName}-long-screenshot.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setIsExporting(false);
+      }, 'image/png');
+    } catch (err) {
+      logger.error('Long screenshot export failed', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      // CORS tainted canvas 会抛 SecurityError
+      if (msg.includes('tainted') || msg.includes('SecurityError')) {
+        setError('存在跨域外链资源，无法生成截图。请本地化资源后重试。');
+      } else {
+        setError(`导出截图失败：${msg}`);
+      }
+      setIsExporting(false);
+    }
   };
 
   const handleOpenInBrowser = async () => {
@@ -98,6 +159,14 @@ export const PreviewPanel: React.FC = () => {
             title="刷新"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={handleExportLongScreenshot}
+            disabled={isExporting || isLoading || !!error}
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="导出长图"
+          >
+            <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={handleOpenInBrowser}
@@ -153,6 +222,7 @@ export const PreviewPanel: React.FC = () => {
           </div>
         ) : (
           <iframe
+            ref={iframeRef}
             srcDoc={htmlContent}
             className="w-full h-full border-0"
             title="HTML Preview"

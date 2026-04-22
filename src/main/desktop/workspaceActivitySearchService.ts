@@ -597,7 +597,9 @@ export async function buildWorkspaceActivityContextBlock(
     sinceHours: options.sinceHours || 24,
     limit: options.limit || 5,
     refreshDesktop: options.refreshDesktop !== false,
-    refreshArtifacts: options.refreshArtifacts !== false,
+    // 上下文注入路径默认不刷新 office artifacts（会触发 AppleScript 拉起 Mail/Calendar/Reminders）。
+    // 只有调用方显式传 refreshArtifacts=true 时才刷新；显式工具（recover_recent_work 等）走别的入口。
+    refreshArtifacts: options.refreshArtifacts === true,
     minScore: options.minScore || 0.52,
     sources: options.sources,
     account: options.account,

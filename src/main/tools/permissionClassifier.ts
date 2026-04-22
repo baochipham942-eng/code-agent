@@ -10,6 +10,7 @@
 // 3. Result caching — 避免重复分类相同工具调用模式
 
 import { createLogger } from '../services/infra/logger';
+import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
@@ -111,6 +112,60 @@ const WRITE_TOOLS = new Set([
   'Edit',
 ]);
 
+const HOME_DIR = os.homedir();
+const CLAUDE_MEMORY_DIR = path.join(HOME_DIR, '.claude', 'context', 'memory');
+const CLAUDE_PROJECTS_DIR = path.join(HOME_DIR, '.claude', 'projects');
+const CODEX_MEMORIES_DIR = path.join(HOME_DIR, '.codex', 'memories');
+
+function expandLeadingTilde(rawPath: string): string {
+  if (rawPath === '~') return HOME_DIR;
+  if (rawPath.startsWith('~/')) return path.join(HOME_DIR, rawPath.slice(2));
+  return rawPath;
+}
+
+function stripInlineReadParams(rawPath: string): string {
+  const trimmed = rawPath.trim();
+
+  const linesMatch = trimmed.match(/^(.+?)\s+lines?\s+\d+(?:-\d+)?$/i);
+  if (linesMatch) {
+    return linesMatch[1].trim();
+  }
+
+  const offsetLimitMatch = trimmed.match(/^(.+?)\s+(?:offset|limit)\b.*$/i);
+  if (offsetLimitMatch) {
+    return offsetLimitMatch[1].trim();
+  }
+
+  return trimmed;
+}
+
+function resolveCandidatePath(rawPath: string, workingDirectory: string): string {
+  const sanitized = stripInlineReadParams(rawPath);
+  const expanded = expandLeadingTilde(sanitized);
+  return path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(workingDirectory, expanded);
+}
+
+function isSensitiveMemoryPath(resolvedPath: string): boolean {
+  if (resolvedPath === CLAUDE_MEMORY_DIR || resolvedPath.startsWith(`${CLAUDE_MEMORY_DIR}${path.sep}`)) {
+    return true;
+  }
+
+  if (resolvedPath === CODEX_MEMORIES_DIR || resolvedPath.startsWith(`${CODEX_MEMORIES_DIR}${path.sep}`)) {
+    return true;
+  }
+
+  if (
+    (resolvedPath === CLAUDE_PROJECTS_DIR || resolvedPath.startsWith(`${CLAUDE_PROJECTS_DIR}${path.sep}`)) &&
+    resolvedPath.includes(`${path.sep}memory${path.sep}`)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 // ----------------------------------------------------------------------------
 // PermissionClassifier
 // ----------------------------------------------------------------------------
@@ -194,6 +249,11 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number
   ): ClassificationResult | null {
+    const sensitiveRead = this.classifySensitiveMemoryRead(toolName, args, context, startTime);
+    if (sensitiveRead) {
+      return sensitiveRead;
+    }
+
     // R1: 只读工具 → approve (no traceStep on allow)
     if (READ_ONLY_TOOLS.has(toolName)) {
       return {
@@ -247,6 +307,40 @@ export class PermissionClassifier {
     }
 
     // 规则无法判断
+    return null;
+  }
+
+  private classifySensitiveMemoryRead(
+    toolName: string,
+    args: Record<string, unknown>,
+    context: ClassificationContext,
+    startTime: number
+  ): ClassificationResult | null {
+    if (!READ_ONLY_TOOLS.has(toolName) && context.permissionLevel !== 'read') {
+      return null;
+    }
+
+    const candidates = Object.entries(args)
+      .filter(([key, value]) => {
+        if (typeof value !== 'string' || !value.trim()) return false;
+        return key.includes('path') || key === 'pattern';
+      })
+      .map(([, value]) => value as string);
+
+    for (const candidate of candidates) {
+      const resolved = resolveCandidatePath(candidate, context.workingDirectory);
+      if (!isSensitiveMemoryPath(resolved)) continue;
+
+      const reason = `读取私人记忆目录需要用户确认: ${resolved}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 0.98,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'R0: sensitive_memory_read', 'ask', reason, startTime),
+      };
+    }
+
     return null;
   }
 

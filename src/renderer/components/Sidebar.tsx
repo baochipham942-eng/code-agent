@@ -207,6 +207,7 @@ export const Sidebar: React.FC = () => {
         backgroundTask: backgroundTaskMap.get(session.id),
         runtime: sessionRuntimes.get(session.id),
         taskState: sessionStates[session.id],
+        messageCount: session.messageCount,
       });
       if (sessionStatusFilter === 'background' && status.kind !== 'background') {
         return false;
@@ -510,6 +511,7 @@ export const Sidebar: React.FC = () => {
       backgroundTask,
       runtime: sessionRuntime,
       taskState: sessionStates[session.id],
+      messageCount: session.messageCount,
     });
     const latestActivityAt = Math.max(
       session.updatedAt || 0,

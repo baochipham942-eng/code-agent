@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createHookManager } from '../../../src/main/hooks';
 
 // --------------------------------------------------------------------------
 // Mocks — must be declared before imports
@@ -731,8 +732,12 @@ describe('ConversationRuntime', () => {
     it('should create hook manager when enableHooks is true', async () => {
       ctx.enableHooks = true;
       ctx.hookManager = undefined;
+      ctx.workingDirectory = '/tmp/comate-zulu-demo';
       await runtime.initializeUserHooks();
       expect(ctx.userHooksInitialized).toBe(true);
+      expect(createHookManager).toHaveBeenCalledWith(
+        expect.objectContaining({ workingDirectory: '/tmp/comate-zulu-demo' })
+      );
     });
 
     it('should initialize existing hook manager', async () => {

@@ -4,7 +4,7 @@ import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
 
-export type SessionStatusKind = 'background' | 'live' | 'paused' | 'error' | 'done';
+export type SessionStatusKind = 'background' | 'live' | 'paused' | 'error' | 'done' | 'idle';
 
 export interface SessionStatusPresentation {
   kind: SessionStatusKind;
@@ -16,8 +16,9 @@ export function getSessionStatusPresentation(args: {
   backgroundTask?: BackgroundTaskInfo;
   runtime?: SessionRuntimeSummary;
   taskState?: TaskSessionState | null;
+  messageCount?: number;
 }): SessionStatusPresentation {
-  const { backgroundTask, runtime, taskState } = args;
+  const { backgroundTask, runtime, taskState, messageCount } = args;
 
   if (backgroundTask?.status === 'failed' || taskState?.status === 'error') {
     return {
@@ -48,6 +49,17 @@ export function getSessionStatusPresentation(args: {
       kind: 'live',
       label: '进行中',
       toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20',
+    };
+  }
+
+  // 新会话（无消息、无 runtime 记录）显示"就绪"，不要错误地显示为"已完成"
+  const hasNeverRun = !runtime && !taskState && !backgroundTask;
+  const isEmpty = typeof messageCount === 'number' && messageCount === 0;
+  if (hasNeverRun || isEmpty) {
+    return {
+      kind: 'idle',
+      label: '就绪',
+      toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40',
     };
   }
 

@@ -11,23 +11,9 @@ import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatu
 import { browserService } from '../services/infra/browserService';
 import { createLogger } from '../services/infra/logger';
 
-// 会议应用列表 — 检测到前台是这些 app 时自动启动音频采集
-const MEETING_APPS = new Set([
-  'zoom.us', 'Zoom', 'zoom',
-  '飞书', 'Lark', 'Feishu',
-  '钉钉', 'DingTalk',
-  '腾讯会议', 'Tencent Meeting', 'WeMeet',
-  '企业微信', 'WeChat Work', 'WeCom',
-  'Microsoft Teams', 'Teams',
-  'Slack',
-  'Google Meet',
-  'Webex', 'Cisco Webex Meetings',
-  'Discord',
-  'FaceTime',
-]);
-let meetingAudioActive = false;
-let manualAudioActive = false; // 手动录制模式 — 不受会议 app 检测影响
-let meetingCheckTimer: ReturnType<typeof setInterval> | null = null;
+// 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
+// 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
+let manualAudioActive = false;
 
 const logger = createLogger('DesktopIPC');
 
@@ -79,7 +65,7 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
         }
 
         case 'startAudioCapture': {
-          if (manualAudioActive || meetingAudioActive) {
+          if (manualAudioActive) {
             return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
           }
           manualAudioActive = true;
@@ -107,7 +93,6 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
 
         case 'stopAudioCapture': {
           manualAudioActive = false;
-          meetingAudioActive = false;
           stopDesktopAudioCapture();
           return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
         }
@@ -134,30 +119,6 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
 
   // 启动后台视觉分析器（自动分析有截图但无 analyzeText 的事件）
   startDesktopVisionAnalyzer();
-
-  // 会议 app 检测 — 只在检测到会议应用时启动音频采集
-  meetingCheckTimer = setInterval(() => {
-    try {
-      const ctx = service.getCurrentContext();
-      const appName = ctx?.appName || '';
-      const isMeeting = MEETING_APPS.has(appName);
-
-      if (isMeeting && !meetingAudioActive && !manualAudioActive) {
-        logger.info('[音频采集] 检测到会议应用，启动系统音频采集', { app: appName });
-        meetingAudioActive = true;
-        startDesktopAudioCapture(undefined, 'system-audio').catch((err) => {
-          logger.warn('[音频采集] 启动失败', { error: err instanceof Error ? err.message : String(err) });
-          meetingAudioActive = false;
-        });
-      } else if (!isMeeting && meetingAudioActive && !manualAudioActive) {
-        logger.info('[音频采集] 会议应用已退出，停止音频采集', { app: appName });
-        stopDesktopAudioCapture();
-        meetingAudioActive = false;
-      }
-    } catch {
-      // 忽略检查错误
-    }
-  }, 10_000); // 每 10 秒检查一次前台 app
 
   logger.info('Desktop handlers registered');
 }

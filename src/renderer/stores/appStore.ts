@@ -45,6 +45,14 @@ export interface PreviewTab {
   isLoaded: boolean;    // whether readFile has populated savedContent yet
 }
 
+// Max open preview tabs. When exceeded, the least-recently-activated tab is evicted.
+export const MAX_PREVIEW_TABS = 8;
+
+// Monotonic tick for tab lastActivatedAt — avoids Date.now() collisions
+// when several activations fire in the same millisecond.
+let _previewTabTick = 0;
+const nextPreviewTabTick = () => ++_previewTabTick;
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -338,7 +346,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activePreviewTabId: existing.id,
           showPreviewPanel: true,
           previewTabs: state.previewTabs.map((t) =>
-            t.id === existing.id ? { ...t, lastActivatedAt: Date.now() } : t,
+            t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
           ),
         };
       }
@@ -349,12 +357,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         content: '',
         savedContent: '',
         mode: 'preview',
-        lastActivatedAt: Date.now(),
+        lastActivatedAt: nextPreviewTabTick(),
         isLoaded: false,
       };
+      // LRU eviction when at capacity
+      let carried = state.previewTabs;
+      if (carried.length >= MAX_PREVIEW_TABS) {
+        const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
+        carried = carried.filter((t) => t.id !== oldest.id);
+      }
       return {
         ...state,
-        previewTabs: [...state.previewTabs, tab],
+        previewTabs: [...carried, tab],
         activePreviewTabId: id,
         showPreviewPanel: true,
       };
@@ -380,7 +394,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...state,
       activePreviewTabId: id,
       previewTabs: state.previewTabs.map((t) =>
-        t.id === id ? { ...t, lastActivatedAt: Date.now() } : t,
+        t.id === id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
       ),
     }));
   },

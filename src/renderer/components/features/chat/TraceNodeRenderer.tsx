@@ -11,6 +11,7 @@ import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/t
 import { MessageContent } from './MessageBubble/MessageContent';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
+import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
 import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
@@ -621,25 +622,49 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ ti
   const items = timeline.artifactOwnership || [];
   if (items.length === 0) return null;
 
+  const fileItems = items.filter((i) => i.kind === 'file');
+  const nonFileItems = items.filter((i) => i.kind !== 'file');
+  const hasOnlyFiles = fileItems.length > 0 && nonFileItems.length === 0;
+
+  // 纯文件：FileArtifactCard 自身已带卡片样式，外层不再套 border，避免"卡中卡"。
+  // 混合/纯非文件：保留 tone 容器，维持原来的视觉层级。
+  const header = (
+    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
+      <FileText className="h-3.5 w-3.5 text-emerald-300" />
+      <span>本轮输出</span>
+    </div>
+  );
+
+  if (hasOnlyFiles) {
+    return (
+      <div>
+        {header}
+        <FileArtifactCard items={fileItems} />
+      </div>
+    );
+  }
+
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-300">
-        <FileText className="h-3.5 w-3.5 text-emerald-300" />
-        <span>本轮输出</span>
-      </div>
-      <div className="space-y-1.5">
-        {items.map((item, index) => (
-          <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
-            <WorkbenchPill tone={item.kind === 'artifact' ? 'info' : 'neutral'}>
-              {item.kind === 'artifact' ? 'Artifact' : item.kind === 'link' ? 'Link' : item.kind === 'note' ? 'Note' : 'File'}
-            </WorkbenchPill>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs text-zinc-100">{item.label}</div>
-              <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+      {header}
+
+      {fileItems.length > 0 && <FileArtifactCard items={fileItems} />}
+
+      {nonFileItems.length > 0 && (
+        <div className={`space-y-1.5 ${fileItems.length > 0 ? 'mt-1.5' : ''}`}>
+          {nonFileItems.map((item, index) => (
+            <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
+              <WorkbenchPill tone={item.kind === 'artifact' ? 'info' : 'neutral'}>
+                {item.kind === 'artifact' ? 'Artifact' : item.kind === 'link' ? 'Link' : 'Note'}
+              </WorkbenchPill>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs text-zinc-100">{item.label}</div>
+                <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

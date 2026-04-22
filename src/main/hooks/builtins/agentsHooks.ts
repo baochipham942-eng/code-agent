@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { SessionContext, HookExecutionResult } from '../../protocol/events';
+import path from 'path';
 import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
 
@@ -26,12 +27,27 @@ export async function sessionStartAgentsInjectHook(
   const startTime = Date.now();
 
   try {
+    const workingDirectory = path.resolve(context.workingDirectory || '');
+    const rootDirectory = path.parse(workingDirectory).root;
+
+    // Guardrail: if the hook is accidentally rooted at "/" we would sweep
+    // unrelated projects and personal instruction files into the session.
+    if (!workingDirectory || workingDirectory === rootDirectory) {
+      logger.warn('Skipping AGENTS.md injection for unsafe working directory', {
+        workingDirectory: context.workingDirectory,
+      });
+      return {
+        action: 'continue',
+        duration: Date.now() - startTime,
+      };
+    }
+
     // 使用缓存的发现服务
-    const result = await discoverAgentFilesCached(context.workingDirectory);
+    const result = await discoverAgentFilesCached(workingDirectory);
 
     if (result.files.length === 0) {
       logger.debug('No AGENTS.md files found', {
-        workingDirectory: context.workingDirectory,
+        workingDirectory,
       });
       return {
         action: 'continue',
@@ -45,8 +61,8 @@ export async function sessionStartAgentsInjectHook(
     // 按优先级排序：根目录的文件优先，AGENTS.md 优先于 CLAUDE.md
     const sortedFiles = [...result.files].sort((a, b) => {
       // 根目录优先
-      const aIsRoot = a.directory === context.workingDirectory;
-      const bIsRoot = b.directory === context.workingDirectory;
+      const aIsRoot = a.directory === '.';
+      const bIsRoot = b.directory === '.';
       if (aIsRoot !== bIsRoot) return aIsRoot ? -1 : 1;
 
       // AGENTS.md 优先于 CLAUDE.md
@@ -66,7 +82,7 @@ export async function sessionStartAgentsInjectHook(
       if (depth > maxDepth) return false;
 
       // 检查是否是父目录
-      const isParent = !file.absolutePath.startsWith(context.workingDirectory);
+      const isParent = !file.absolutePath.startsWith(workingDirectory);
       if (isParent && !includeParents) return false;
 
       return true;

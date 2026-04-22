@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { app, BrowserWindow } from '../platform';
+import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,
@@ -46,6 +47,22 @@ const EVENT_CHANNELS = {
 
 const logger = createLogger('Bootstrap:Background');
 
+function getDesktopBootstrapWorkingDirectory(): string {
+  const configured = process.env.CODE_AGENT_WORKING_DIR?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const cwd = process.cwd();
+  const cwdRoot = cwd ? path.parse(cwd).root : '';
+
+  if (app.isPackaged || !cwd || cwd === cwdRoot) {
+    return app.getPath('home');
+  }
+
+  return cwd;
+}
+
 /**
  * Initialize cloud config, skills discovery, MCP, and codex detection.
  * These are chained because skills and MCP depend on CloudConfig.
@@ -74,8 +91,9 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 
   // Initialize SkillDiscoveryService AFTER CloudConfig and SkillRepositoryService are ready
   try {
+    const workingDir = getDesktopBootstrapWorkingDirectory();
     const skillDiscovery = getSkillDiscoveryService();
-    await skillDiscovery.initialize(process.cwd());
+    await skillDiscovery.initialize(workingDir);
     const stats = skillDiscovery.getStats();
     logger.info('SkillDiscovery initialized', {
       total: stats.total,
@@ -86,7 +104,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
     });
 
     // Initialize SkillWatcher for hot-reload
-    initSkillWatcher(process.cwd())
+    initSkillWatcher(workingDir)
       .then((watcher) => {
         watcher.on('reloaded', (reloadStats) => {
           logger.info('Skills hot-reloaded', { total: reloadStats.total });
@@ -545,7 +563,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   // Initialize HeartbeatTaskLoader
   initCronService()
     .then(async () => {
-      const workingDir = app.isPackaged ? process.cwd() : process.env.CODE_AGENT_WORKING_DIR || process.cwd();
+      const workingDir = getDesktopBootstrapWorkingDirectory();
       const heartbeatLoader = new HeartbeatTaskLoader({ workingDirectory: workingDir, cronService: getCronService() });
       await heartbeatLoader.loadFromFile();
       heartbeatLoader.watchFile();
@@ -581,7 +599,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
 
   // Load soul/profile personality
   try {
-    const workingDir = app.isPackaged ? process.cwd() : process.env.CODE_AGENT_WORKING_DIR || process.cwd();
+    const workingDir = getDesktopBootstrapWorkingDirectory();
     loadSoul(workingDir);
     watchSoulFiles(workingDir);
     logger.info('Soul/Profile loader initialized');

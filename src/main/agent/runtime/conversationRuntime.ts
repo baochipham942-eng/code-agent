@@ -156,8 +156,9 @@ export class ConversationRuntime {
     if (this.ctx.userHooksInitialized) return;
 
     if (!this.ctx.hookManager && this.ctx.enableHooks) {
+      const hookWorkingDirectory = this.ctx.workingDirectory?.trim() || process.cwd();
       this.ctx.hookManager = createHookManager({
-        workingDirectory: process.cwd(),
+        workingDirectory: hookWorkingDirectory,
       });
     }
 

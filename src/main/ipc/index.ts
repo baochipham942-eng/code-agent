@@ -2,7 +2,7 @@
 // IPC Module - 统一注册所有 IPC handlers
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from '../platform';
+import { app, type IpcMain, type BrowserWindow } from '../platform';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
@@ -192,7 +192,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Suggestions handlers (智能提示)
   registerSuggestionsHandlers(() => {
     const appService = getAppService();
-    return appService?.getWorkingDirectory() || process.cwd();
+    return appService?.getWorkingDirectory() || app.getPath('home');
   });
 
   // VoicePaste handlers (全局语音粘贴 Cmd+`)

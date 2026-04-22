@@ -210,6 +210,7 @@ export const ChatView: React.FC = () => {
     backgroundTask: currentBackgroundTask,
     runtime: currentSessionRuntime,
     taskState: currentSessionState,
+    messageCount: currentSession?.messageCount,
   });
 
   // Auto-reset isPaused when processing finishes

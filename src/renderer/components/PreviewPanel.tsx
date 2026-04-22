@@ -2,14 +2,27 @@
 // PreviewPanel - Right side panel for HTML/Web preview
 // ============================================================================
 
-import React, { useEffect, useRef, useState } from 'react';
-import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera } from 'lucide-react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 
+const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
+
 const logger = createLogger('PreviewPanel');
+
+const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
+
+function getExtension(filePath: string | null | undefined): string {
+  if (!filePath) return '';
+  const idx = filePath.lastIndexOf('.');
+  return idx < 0 ? '' : filePath.slice(idx + 1).toLowerCase();
+}
 
 async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.WORKSPACE, action, payload);
@@ -22,13 +35,21 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
 export const PreviewPanel: React.FC = () => {
   const { previewFilePath, showPreviewPanel, closePreview } = useAppStore();
   const [htmlContent, setHtmlContent] = useState<string>('');
+  const [editedContent, setEditedContent] = useState<string>('');
+  const [savedContent, setSavedContent] = useState<string>('');
+  const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+  const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Load HTML content when file path changes
+  const ext = getExtension(previewFilePath);
+  const isMarkdown = MARKDOWN_EXTS.has(ext);
+  const isDirty = editedContent !== savedContent;
+
+  // Load content when file path changes; reset edit state.
   useEffect(() => {
     if (previewFilePath && showPreviewPanel) {
       loadHtmlContent();
@@ -43,11 +64,12 @@ export const PreviewPanel: React.FC = () => {
 
     try {
       const content = await invokeWorkspace<string>('readFile', { filePath: previewFilePath });
-      if (content) {
-        setHtmlContent(content);
-      } else {
-        setError('无法读取文件内容');
-      }
+      // readFile returns '' for empty files — that's valid content, not an error.
+      const text = content ?? '';
+      setHtmlContent(text);
+      setEditedContent(text);
+      setSavedContent(text);
+      setMode('preview');
     } catch (err) {
       logger.error('Failed to load HTML', err);
       setError(err instanceof Error ? err.message : '加载文件失败');
@@ -58,6 +80,22 @@ export const PreviewPanel: React.FC = () => {
 
   const handleRefresh = () => {
     loadHtmlContent();
+  };
+
+  const handleSave = async () => {
+    if (!previewFilePath || !isDirty || isSaving) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      await invokeWorkspace('writeFile', { filePath: previewFilePath, content: editedContent });
+      setSavedContent(editedContent);
+      setHtmlContent(editedContent);
+    } catch (err) {
+      logger.error('Failed to save file', err);
+      setError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExportLongScreenshot = async () => {
@@ -149,10 +187,38 @@ export const PreviewPanel: React.FC = () => {
           <div className="w-3 h-3 rounded-full bg-green-500" />
           <span className="text-sm font-medium text-zinc-200 truncate max-w-[200px]">
             {fileName}
+            {isMarkdown && isDirty && (
+              <span className="ml-1 text-amber-400" title="未保存">•</span>
+            )}
           </span>
         </div>
 
         <div className="flex items-center gap-1">
+          {isMarkdown && (
+            <>
+              <button
+                onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
+                className={`p-1.5 rounded transition-colors ${
+                  mode === 'edit'
+                    ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
+                    : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
+                }`}
+                title={mode === 'edit' ? '切到预览' : '切到编辑'}
+              >
+                {mode === 'edit'
+                  ? <Eye className="w-4 h-4" />
+                  : <Pencil className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!isDirty || isSaving}
+                className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={isDirty ? '保存 (Cmd+S)' : '已保存'}
+              >
+                <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
+              </button>
+            </>
+          )}
           <button
             onClick={handleRefresh}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -162,9 +228,9 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error}
+            disabled={isExporting || isLoading || !!error || isMarkdown}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="导出长图"
+            title={isMarkdown ? '长图仅支持 HTML 预览' : '导出长图'}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -197,7 +263,7 @@ export const PreviewPanel: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden bg-white">
+      <div className={`flex-1 overflow-hidden ${isMarkdown ? 'bg-zinc-900' : 'bg-white'}`}>
         {isLoading ? (
           <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">
@@ -219,6 +285,28 @@ export const PreviewPanel: React.FC = () => {
                 重试
               </button>
             </div>
+          </div>
+        ) : isMarkdown && mode === 'edit' ? (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                加载编辑器...
+              </div>
+            }
+          >
+            <MarkdownEditor
+              value={editedContent}
+              onChange={setEditedContent}
+              onSave={handleSave}
+            />
+          </Suspense>
+        ) : isMarkdown ? (
+          <div className="h-full overflow-y-auto px-6 py-4">
+            <article className="prose prose-invert prose-sm max-w-none prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800">
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                {editedContent}
+              </ReactMarkdown>
+            </article>
           </div>
         ) : (
           <iframe

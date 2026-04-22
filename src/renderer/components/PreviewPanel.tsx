@@ -39,7 +39,6 @@ export const PreviewPanel: React.FC = () => {
   const previewTabs = useAppStore((s) => s.previewTabs);
   const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
   const showPreviewPanel = useAppStore((s) => s.showPreviewPanel);
-  const closePreview = useAppStore((s) => s.closePreview);
   const updatePreviewTabContent = useAppStore((s) => s.updatePreviewTabContent);
   const updatePreviewTabMode = useAppStore((s) => s.updatePreviewTabMode);
   const markPreviewTabLoaded = useAppStore((s) => s.markPreviewTabLoaded);
@@ -184,8 +183,6 @@ export const PreviewPanel: React.FC = () => {
 
   if (!showPreviewPanel || !activeTab) return null;
 
-  const fileName = previewFilePath?.split('/').pop() || '预览';
-
   return (
     <div
       className={`flex flex-col bg-zinc-900 border-l border-zinc-700 transition-all duration-300 ${
@@ -193,18 +190,8 @@ export const PreviewPanel: React.FC = () => {
       }`}
     >
       <PreviewTabs />
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-sm font-medium text-zinc-200 truncate max-w-[200px]">
-            {fileName}
-            {isMarkdown && isDirty && (
-              <span className="ml-1 text-amber-400" title="未保存">•</span>
-            )}
-          </span>
-        </div>
-
+      {/* Actions row (filename + dirty indicator + close moved into workbench tab bar) */}
+      <div className="flex items-center justify-end px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-1">
           {isMarkdown && (
             <>
@@ -263,13 +250,6 @@ export const PreviewPanel: React.FC = () => {
             ) : (
               <Maximize2 className="w-4 h-4" />
             )}
-          </button>
-          <button
-            onClick={closePreview}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="关闭"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       </div>

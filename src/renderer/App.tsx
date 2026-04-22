@@ -38,7 +38,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
+import { Cloud, Zap, Sparkles } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -374,27 +374,6 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [setShowTaskPanel, setTaskPanelTab]);
-
-  // DAG 可视化面板切换按钮 (Advanced+ mode)
-  const DAGToggle: React.FC = () => {
-    if (!dagPanelEnabled) return null;
-
-    return (
-      <button
-        onClick={() => setShowDAGPanel(!showDAGPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showDAGPanel
-            ? 'bg-blue-500/20 text-blue-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="任务执行图"
-      >
-        <GitBranch className="w-3.5 h-3.5" />
-        <span>DAG</span>
-      </button>
-    );
-  };
-
 
   // Cloud task panel toggle button (Advanced mode)
   const CloudTaskToggle: React.FC = () => {

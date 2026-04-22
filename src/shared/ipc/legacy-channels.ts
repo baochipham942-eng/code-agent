@@ -60,9 +60,6 @@ export const IPC_CHANNELS = {
   WORKSPACE_READ_FILE: 'workspace:read-file',
   WORKSPACE_GET_CURRENT: 'workspace:get-current',
 
-  // Shell channels
-  SHELL_OPEN_PATH: 'shell:open-path',
-
   // Settings channels
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',

@@ -13,6 +13,7 @@ import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
+import { isPreviewable } from '../../../../../utils/previewable';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -246,7 +247,7 @@ function QuickFileActions({ filePath, inline = false }: { filePath: string | nul
   if (!filePath) return null;
 
   const fileName = filePath.split('/').pop() || filePath;
-  const isHtml = filePath.toLowerCase().endsWith('.html') || filePath.toLowerCase().endsWith('.htm');
+  const canPreview = isPreviewable(filePath);
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
 
@@ -293,7 +294,7 @@ function QuickFileActions({ filePath, inline = false }: { filePath: string | nul
           <span className="truncate max-w-[150px]" title={filePath}>{fileName}</span>
         </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
-          {isHtml && (
+          {canPreview && (
             <button
               onClick={handlePreview}
               className="p-0.5 rounded hover:bg-gray-700/50 text-blue-400 hover:text-blue-300 transition-colors"
@@ -329,7 +330,7 @@ function QuickFileActions({ filePath, inline = false }: { filePath: string | nul
         <span className="truncate max-w-[200px]" title={filePath}>{fileName}</span>
       </div>
       <div className="flex items-center gap-1">
-        {isHtml && (
+        {canPreview && (
           <button
             onClick={handlePreview}
             className="p-1 rounded hover:bg-gray-700/50 text-blue-400 hover:text-blue-300 transition-colors"

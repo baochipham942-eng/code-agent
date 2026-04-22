@@ -5,9 +5,7 @@
 
 import React from 'react';
 import type { Citation } from '@shared/contract/citation';
-import { IPC_CHANNELS } from '@shared/ipc';
-import { isWebMode, copyPathToClipboard } from '../../utils/platform';
-import ipcService from '../../services/ipcService';
+import { isWebMode, isTauriMode, copyPathToClipboard } from '../../utils/platform';
 
 interface CitationListProps {
   citations: Citation[];
@@ -58,7 +56,7 @@ const TYPE_STYLES: Record<string, { bg: string; text: string; icon: string }> = 
 function CitationChip({ citation, onClick }: CitationChipProps) {
   const style = TYPE_STYLES[citation.type] || TYPE_STYLES.file;
 
-  const handleClick = () => {
+  const handleClick = async () => {
     if (onClick) {
       onClick(citation);
       return;
@@ -69,8 +67,13 @@ function CitationChip({ citation, onClick }: CitationChipProps) {
         void copyPathToClipboard(citation.source);
         return;
       }
-      if (ipcService.isAvailable()) {
-        ipcService.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, citation.source);
+      if (isTauriMode()) {
+        try {
+          const { openPath } = await import('@tauri-apps/plugin-opener');
+          await openPath(citation.source);
+        } catch (error) {
+          console.error('Failed to open path:', error);
+        }
       }
     }
     // URL 类型在浏览器打开

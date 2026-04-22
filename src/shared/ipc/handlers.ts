@@ -197,9 +197,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.WORKSPACE_READ_FILE]: (path: string) => Promise<string>;
   [IPC_CHANNELS.WORKSPACE_GET_CURRENT]: () => Promise<string | null>;
 
-  // Shell
-  [IPC_CHANNELS.SHELL_OPEN_PATH]: (path: string) => Promise<string>;
-
   // Settings
   [IPC_CHANNELS.SETTINGS_GET]: () => Promise<AppSettings>;
   [IPC_CHANNELS.SETTINGS_SET]: (settings: Partial<AppSettings>) => Promise<void>;

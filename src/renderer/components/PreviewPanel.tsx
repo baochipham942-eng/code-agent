@@ -13,10 +13,12 @@ import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 
 const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
+const CsvTable = lazy(() => import('./CsvTable'));
 
 const logger = createLogger('PreviewPanel');
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
+const CSV_EXTS: Record<string, ',' | '\t'> = { csv: ',', tsv: '\t' };
 
 function getExtension(filePath: string | null | undefined): string {
   if (!filePath) return '';
@@ -47,6 +49,8 @@ export const PreviewPanel: React.FC = () => {
 
   const ext = getExtension(previewFilePath);
   const isMarkdown = MARKDOWN_EXTS.has(ext);
+  const csvDelimiter = CSV_EXTS[ext];
+  const isCsv = csvDelimiter !== undefined;
   const isDirty = editedContent !== savedContent;
 
   // Load content when file path changes; reset edit state.
@@ -228,9 +232,9 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error || isMarkdown}
+            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown ? '长图仅支持 HTML 预览' : '导出长图'}
+            title={isMarkdown || isCsv ? '长图仅支持 HTML 预览' : '导出长图'}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -263,7 +267,7 @@ export const PreviewPanel: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className={`flex-1 overflow-hidden ${isMarkdown ? 'bg-zinc-900' : 'bg-white'}`}>
+      <div className={`flex-1 overflow-hidden ${isMarkdown || isCsv ? 'bg-zinc-900' : 'bg-white'}`}>
         {isLoading ? (
           <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">
@@ -308,6 +312,16 @@ export const PreviewPanel: React.FC = () => {
               </ReactMarkdown>
             </article>
           </div>
+        ) : isCsv && csvDelimiter ? (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                加载表格...
+              </div>
+            }
+          >
+            <CsvTable content={editedContent} delimiter={csvDelimiter} />
+          </Suspense>
         ) : (
           <iframe
             ref={iframeRef}

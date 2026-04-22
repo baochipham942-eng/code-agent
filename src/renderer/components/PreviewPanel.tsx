@@ -11,6 +11,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
+import { PreviewTabs } from './PreviewTabs';
 
 const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -191,6 +192,7 @@ export const PreviewPanel: React.FC = () => {
         isMaximized ? 'fixed inset-0 z-50' : 'w-[500px]'
       }`}
     >
+      <PreviewTabs />
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-2">

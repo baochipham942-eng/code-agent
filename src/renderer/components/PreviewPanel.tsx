@@ -2,7 +2,7 @@
 // PreviewPanel - Right side panel for HTML/Web preview
 // ============================================================================
 
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -35,11 +35,20 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
 }
 
 export const PreviewPanel: React.FC = () => {
-  const { previewFilePath, showPreviewPanel, closePreview } = useAppStore();
-  const [htmlContent, setHtmlContent] = useState<string>('');
-  const [editedContent, setEditedContent] = useState<string>('');
-  const [savedContent, setSavedContent] = useState<string>('');
-  const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+  const previewTabs = useAppStore((s) => s.previewTabs);
+  const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
+  const showPreviewPanel = useAppStore((s) => s.showPreviewPanel);
+  const closePreview = useAppStore((s) => s.closePreview);
+  const updatePreviewTabContent = useAppStore((s) => s.updatePreviewTabContent);
+  const updatePreviewTabMode = useAppStore((s) => s.updatePreviewTabMode);
+  const markPreviewTabLoaded = useAppStore((s) => s.markPreviewTabLoaded);
+  const markPreviewTabSaved = useAppStore((s) => s.markPreviewTabSaved);
+
+  const activeTab = useMemo(
+    () => previewTabs.find((t) => t.id === activePreviewTabId) ?? null,
+    [previewTabs, activePreviewTabId],
+  );
+
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,35 +56,34 @@ export const PreviewPanel: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  const previewFilePath = activeTab?.path ?? null;
+  const content = activeTab?.content ?? '';
+  const savedContent = activeTab?.savedContent ?? '';
+  const mode = activeTab?.mode ?? 'preview';
+
   const ext = getExtension(previewFilePath);
   const isMarkdown = MARKDOWN_EXTS.has(ext);
   const csvDelimiter = CSV_EXTS[ext];
   const isCsv = csvDelimiter !== undefined;
-  const isDirty = editedContent !== savedContent;
+  const isDirty = content !== savedContent;
 
-  // Load content when file path changes; reset edit state.
+  // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
-    if (previewFilePath && showPreviewPanel) {
-      loadHtmlContent();
-    }
-  }, [previewFilePath, showPreviewPanel]);
+    if (!activeTab || !showPreviewPanel) return;
+    if (activeTab.isLoaded) return;
+    void loadContent(activeTab.id, activeTab.path);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.id, activeTab?.isLoaded, showPreviewPanel]);
 
-  const loadHtmlContent = async () => {
-    if (!previewFilePath) return;
-
+  const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
     setError(null);
-
     try {
-      const content = await invokeWorkspace<string>('readFile', { filePath: previewFilePath });
+      const fetched = await invokeWorkspace<string>('readFile', { filePath });
       // readFile returns '' for empty files — that's valid content, not an error.
-      const text = content ?? '';
-      setHtmlContent(text);
-      setEditedContent(text);
-      setSavedContent(text);
-      setMode('preview');
+      markPreviewTabLoaded(tabId, fetched ?? '');
     } catch (err) {
-      logger.error('Failed to load HTML', err);
+      logger.error('Failed to load file', err);
       setError(err instanceof Error ? err.message : '加载文件失败');
     } finally {
       setIsLoading(false);
@@ -83,17 +91,16 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    loadHtmlContent();
+    if (activeTab) void loadContent(activeTab.id, activeTab.path);
   };
 
   const handleSave = async () => {
-    if (!previewFilePath || !isDirty || isSaving) return;
+    if (!activeTab || !isDirty || isSaving) return;
     setIsSaving(true);
     setError(null);
     try {
-      await invokeWorkspace('writeFile', { filePath: previewFilePath, content: editedContent });
-      setSavedContent(editedContent);
-      setHtmlContent(editedContent);
+      await invokeWorkspace('writeFile', { filePath: activeTab.path, content: activeTab.content });
+      markPreviewTabSaved(activeTab.id);
     } catch (err) {
       logger.error('Failed to save file', err);
       setError(err instanceof Error ? err.message : '保存失败');
@@ -162,20 +169,19 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleOpenInBrowser = async () => {
-    if (previewFilePath) {
-      try {
-        if (isWebMode()) {
-          await copyPathToClipboard(previewFilePath);
-          return;
-        }
-        await invokeWorkspace('openPath', { filePath: previewFilePath });
-      } catch (err) {
-        logger.error('Failed to open in browser', err);
+    if (!previewFilePath) return;
+    try {
+      if (isWebMode()) {
+        await copyPathToClipboard(previewFilePath);
+        return;
       }
+      await invokeWorkspace('openPath', { filePath: previewFilePath });
+    } catch (err) {
+      logger.error('Failed to open in browser', err);
     }
   };
 
-  if (!showPreviewPanel) return null;
+  if (!showPreviewPanel || !activeTab) return null;
 
   const fileName = previewFilePath?.split('/').pop() || '预览';
 
@@ -201,7 +207,7 @@ export const PreviewPanel: React.FC = () => {
           {isMarkdown && (
             <>
               <button
-                onClick={() => setMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
+                onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
                 className={`p-1.5 rounded transition-colors ${
                   mode === 'edit'
                     ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
@@ -299,8 +305,8 @@ export const PreviewPanel: React.FC = () => {
             }
           >
             <MarkdownEditor
-              value={editedContent}
-              onChange={setEditedContent}
+              value={content}
+              onChange={(next) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
             />
           </Suspense>
@@ -308,7 +314,7 @@ export const PreviewPanel: React.FC = () => {
           <div className="h-full overflow-y-auto px-6 py-4">
             <article className="prose prose-invert prose-sm max-w-none prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                {editedContent}
+                {content}
               </ReactMarkdown>
             </article>
           </div>
@@ -320,12 +326,12 @@ export const PreviewPanel: React.FC = () => {
               </div>
             }
           >
-            <CsvTable content={editedContent} delimiter={csvDelimiter} />
+            <CsvTable content={content} delimiter={csvDelimiter} />
           </Suspense>
         ) : (
           <iframe
             ref={iframeRef}
-            srcDoc={htmlContent}
+            srcDoc={content}
             className="w-full h-full border-0"
             title="HTML Preview"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"

@@ -34,6 +34,17 @@ type CloudUIStrings = {
 export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'products' | 'about';
 export type TaskPanelTab = 'monitor' | 'overview' | 'orchestration';
 
+// Preview tab — one per opened file
+export interface PreviewTab {
+  id: string;
+  path: string;
+  content: string;      // editor buffer (may differ from saved)
+  savedContent: string; // last-known on-disk content
+  mode: 'preview' | 'edit';
+  lastActivatedAt: number;
+  isLoaded: boolean;    // whether readFile has populated savedContent yet
+}
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -83,8 +94,9 @@ interface AppState {
   evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
   evalCenterSessionId: string | null;
 
-  // HTML Preview State
-  previewFilePath: string | null;
+  // HTML Preview State (multi-tab)
+  previewTabs: PreviewTab[];
+  activePreviewTabId: string | null;
   showPreviewPanel: boolean;
 
   // Permission Request State
@@ -143,10 +155,15 @@ interface AppState {
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
-  setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   closePreview: () => void;
+  closePreviewTab: (id: string) => void;
+  setActivePreviewTab: (id: string) => void;
+  updatePreviewTabContent: (id: string, content: string) => void;
+  updatePreviewTabMode: (id: string, mode: 'preview' | 'edit') => void;
+  markPreviewTabLoaded: (id: string, savedContent: string) => void;
+  markPreviewTabSaved: (id: string) => void;
   setPendingPermissionRequest: (request: PermissionRequest | null, sessionId?: string | null) => void;
   enqueuePermissionRequest: (
     sessionId: string,
@@ -223,7 +240,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   evalCenterSessionId: null,
 
   // Initial HTML Preview State
-  previewFilePath: null,
+  previewTabs: [],
+  activePreviewTabId: null,
   showPreviewPanel: false,
 
   // Initial Permission Request State
@@ -304,7 +322,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     ...(!show ? { evalCenterSessionId: null } : {}),
   }),
 
-  setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),
   openPreview: (filePath) => {
     // Resolve relative paths against workingDirectory
@@ -313,9 +330,88 @@ export const useAppStore = create<AppState>((set, get) => ({
       const wd = get().workingDirectory;
       if (wd) resolved = `${wd}/${filePath}`;
     }
-    set({ previewFilePath: resolved, showPreviewPanel: true });
+    set((state) => {
+      const existing = state.previewTabs.find((t) => t.path === resolved);
+      if (existing) {
+        return {
+          ...state,
+          activePreviewTabId: existing.id,
+          showPreviewPanel: true,
+          previewTabs: state.previewTabs.map((t) =>
+            t.id === existing.id ? { ...t, lastActivatedAt: Date.now() } : t,
+          ),
+        };
+      }
+      const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tab: PreviewTab = {
+        id,
+        path: resolved,
+        content: '',
+        savedContent: '',
+        mode: 'preview',
+        lastActivatedAt: Date.now(),
+        isLoaded: false,
+      };
+      return {
+        ...state,
+        previewTabs: [...state.previewTabs, tab],
+        activePreviewTabId: id,
+        showPreviewPanel: true,
+      };
+    });
   },
-  closePreview: () => set({ previewFilePath: null, showPreviewPanel: false }),
+  closePreview: () => set({ previewTabs: [], activePreviewTabId: null, showPreviewPanel: false }),
+  closePreviewTab: (id) => {
+    set((state) => {
+      const nextTabs = state.previewTabs.filter((t) => t.id !== id);
+      if (nextTabs.length === 0) {
+        return { ...state, previewTabs: nextTabs, activePreviewTabId: null, showPreviewPanel: false };
+      }
+      let nextActiveId = state.activePreviewTabId;
+      if (state.activePreviewTabId === id) {
+        // Pick the most-recently-activated remaining tab
+        nextActiveId = nextTabs.reduce((a, b) => (a.lastActivatedAt >= b.lastActivatedAt ? a : b)).id;
+      }
+      return { ...state, previewTabs: nextTabs, activePreviewTabId: nextActiveId };
+    });
+  },
+  setActivePreviewTab: (id) => {
+    set((state) => ({
+      ...state,
+      activePreviewTabId: id,
+      previewTabs: state.previewTabs.map((t) =>
+        t.id === id ? { ...t, lastActivatedAt: Date.now() } : t,
+      ),
+    }));
+  },
+  updatePreviewTabContent: (id, content) => {
+    set((state) => ({
+      ...state,
+      previewTabs: state.previewTabs.map((t) => (t.id === id ? { ...t, content } : t)),
+    }));
+  },
+  updatePreviewTabMode: (id, mode) => {
+    set((state) => ({
+      ...state,
+      previewTabs: state.previewTabs.map((t) => (t.id === id ? { ...t, mode } : t)),
+    }));
+  },
+  markPreviewTabLoaded: (id, savedContent) => {
+    set((state) => ({
+      ...state,
+      previewTabs: state.previewTabs.map((t) =>
+        t.id === id ? { ...t, content: savedContent, savedContent, isLoaded: true } : t,
+      ),
+    }));
+  },
+  markPreviewTabSaved: (id) => {
+    set((state) => ({
+      ...state,
+      previewTabs: state.previewTabs.map((t) =>
+        t.id === id ? { ...t, savedContent: t.content } : t,
+      ),
+    }));
+  },
 
   setPendingPermissionRequest: (request, sessionId = null) =>
     set({

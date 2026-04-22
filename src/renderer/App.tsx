@@ -39,7 +39,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { Activity, Cloud, Zap, Sparkles, GitBranch, FolderOpen } from 'lucide-react';
+import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -476,26 +476,6 @@ export const App: React.FC = () => {
       >
         <Sparkles className="w-3.5 h-3.5" />
         <span>Skills</span>
-      </button>
-    );
-  };
-
-  // File Explorer toggle button
-  const FileExplorerToggle: React.FC = () => {
-    if (!isStandard) return null;
-
-    return (
-      <button
-        onClick={() => setShowFileExplorer(!showFileExplorer)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showFileExplorer
-            ? 'bg-amber-500/20 text-amber-300'
-            : 'text-zinc-500 hover:bg-zinc-700'
-        }`}
-        title="文件浏览器"
-      >
-        <FolderOpen className="w-3.5 h-3.5" />
-        <span>文件</span>
       </button>
     );
   };

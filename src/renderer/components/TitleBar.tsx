@@ -5,7 +5,7 @@ import React, { useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, GitBranch, FlaskConical, Monitor, Clock3 } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3 } from 'lucide-react';
 import { isWebMode } from '../utils/platform';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -34,6 +34,8 @@ export const TitleBar: React.FC = () => {
     setShowDesktopPanel,
     showCronCenter,
     setShowCronCenter,
+    showFileExplorer,
+    setShowFileExplorer,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
   } = useAppStore();
@@ -146,6 +148,16 @@ export const TitleBar: React.FC = () => {
           size="md"
           windowNoDrag
           className={showDesktopPanel ? 'text-cyan-400' : ''}
+        />
+        {/* File Explorer Toggle */}
+        <IconButton
+          icon={<FolderTree className="w-4 h-4" />}
+          aria-label={showFileExplorer ? '隐藏文件浏览器' : '显示文件浏览器'}
+          onClick={() => setShowFileExplorer(!showFileExplorer)}
+          variant="ghost"
+          size="md"
+          windowNoDrag
+          className={showFileExplorer ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
         />
         {/* Task Panel Toggle */}
         <IconButton

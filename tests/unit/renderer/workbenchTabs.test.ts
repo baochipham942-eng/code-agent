@@ -70,7 +70,7 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBe('task');
   });
 
-  it('closeWorkbenchTab on active preview prefers the most-recent remaining preview', () => {
+  it('closeWorkbenchTab on a preview also evicts the backing previewTab and promotes the next recent preview', () => {
     const { openPreview, setActivePreviewTab, closeWorkbenchTab } = useAppStore.getState();
     openPreview('/tmp/a.md');
     openPreview('/tmp/b.md');
@@ -79,11 +79,9 @@ describe('appStore workbench tabs', () => {
     const aId = previewTabs[0].id;
     const bId = previewTabs[1].id;
     const cId = previewTabs[2].id;
-    // Make 'b' the most-recently-activated among {a, b}.
     setActivePreviewTab(aId);
     setActivePreviewTab(bId);
     setActivePreviewTab(cId);
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/c.md');
 
     closeWorkbenchTab('preview:/tmp/c.md');
 
@@ -91,8 +89,10 @@ describe('appStore workbench tabs', () => {
     expect(state.workbenchTabs).toContain('preview:/tmp/b.md');
     expect(state.workbenchTabs).not.toContain('preview:/tmp/c.md');
     expect(state.activeWorkbenchTab).toBe('preview:/tmp/b.md');
-    // previewTabs unaffected — workbench tab close does not delete the preview entry.
-    expect(state.previewTabs.map((t) => t.id)).toEqual([aId, bId, cId]);
+    // Closing a preview's workbench tab is a "close file" — the previewTab is evicted.
+    expect(state.previewTabs.map((t) => t.id)).toEqual([aId, bId]);
+    // activePreviewTabId follows suit so PreviewPanel renders the survivor.
+    expect(state.activePreviewTabId).toBe(bId);
   });
 
   it('openPreview appends a preview:<path> entry to workbenchTabs and activates it', () => {

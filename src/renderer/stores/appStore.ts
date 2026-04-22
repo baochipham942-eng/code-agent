@@ -500,6 +500,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   closeWorkbenchTab: (id) => {
+    // A preview workbench tab is a view onto a file-backed PreviewTab. Closing
+    // it should also evict that PreviewTab so content/dirty state does not
+    // linger invisibly; delegate to closePreviewTab, which already handles the
+    // workbench mirror + activePreviewTabId fallback.
+    if (isPreviewWorkbenchId(id)) {
+      const path = previewPathOf(id);
+      const match = get().previewTabs.find((t) => t.path === path);
+      if (match) {
+        get().closePreviewTab(match.id);
+        return;
+      }
+      // No backing previewTab (shouldn't normally happen); fall through to
+      // the generic workbench cleanup so we at least remove the stale entry.
+    }
     set((state) => {
       const nextTabs = state.workbenchTabs.filter((t) => t !== id);
       let nextActive: WorkbenchTabId | null = state.activeWorkbenchTab;

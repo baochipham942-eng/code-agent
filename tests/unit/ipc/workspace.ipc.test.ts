@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleCreateFile, handleCreateFolder } from '../../../src/main/ipc/workspace.ipc';
+import { handleCreateFile, handleCreateFolder, handleWriteFile } from '../../../src/main/ipc/workspace.ipc';
 
 describe('workspace.ipc create handlers', () => {
   let workDir: string;
@@ -64,6 +64,26 @@ describe('workspace.ipc create handlers', () => {
     it('rejects when the parent directory does not exist', async () => {
       const dirPath = join(workDir, 'missing', 'child');
       await expect(handleCreateFolder({ dirPath })).rejects.toThrow();
+    });
+  });
+
+  describe('handleWriteFile', () => {
+    it('writes content to a new file and returns metadata', async () => {
+      const filePath = join(workDir, 'new.md');
+      const content = '# hello\n';
+      const result = await handleWriteFile({ filePath, content });
+      expect(result.path).toBe(filePath);
+      expect(result.size).toBe(Buffer.byteLength(content, 'utf-8'));
+      expect(typeof result.modifiedAt).toBe('number');
+      expect(await readFile(filePath, 'utf-8')).toBe(content);
+    });
+
+    it('overwrites existing content', async () => {
+      const filePath = join(workDir, 'existing.md');
+      await handleCreateFile({ filePath, content: 'old' });
+      const result = await handleWriteFile({ filePath, content: 'new' });
+      expect(result.size).toBe(3);
+      expect(await readFile(filePath, 'utf-8')).toBe('new');
     });
   });
 });

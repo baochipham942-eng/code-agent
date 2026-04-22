@@ -75,6 +75,19 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
   return fs.readFile(payload.filePath, 'utf-8');
 }
 
+export async function handleWriteFile(
+  payload: { filePath: string; content: string }
+): Promise<{ path: string; size: number; modifiedAt: number }> {
+  const fs = await import('fs/promises');
+  await fs.writeFile(payload.filePath, payload.content, 'utf-8');
+  const stat = await fs.stat(payload.filePath);
+  return {
+    path: payload.filePath,
+    size: stat.size,
+    modifiedAt: stat.mtimeMs,
+  };
+}
+
 export async function handleCreateFile(
   payload: { filePath: string; content?: string }
 ): Promise<FileInfo> {
@@ -206,6 +219,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'readFile':
           data = await handleReadFile(payload as { filePath: string });
+          break;
+        case 'writeFile':
+          data = await handleWriteFile(payload as { filePath: string; content: string });
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });

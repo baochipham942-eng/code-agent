@@ -367,7 +367,7 @@ const FileTreeNode: React.FC<{
 // ── TabBar ──
 
 const TabBar: React.FC = () => {
-  const { tabs, activeTabId, setActiveTab, closeTab, addTab } = useExplorerStore();
+  const { tabs, activeTabId, setActiveTab, closeTab, openOrFocusTab } = useExplorerStore();
   const workingDirectory = useAppStore((s) => s.workingDirectory);
 
   const handleAddTab = useCallback(async () => {
@@ -379,16 +379,16 @@ const TabBar: React.FC = () => {
       if (response?.success && response.data) {
         const dirPath = response.data;
         const label = dirPath.split('/').pop() || dirPath;
-        addTab(dirPath, label);
+        openOrFocusTab(dirPath, label);
       }
     } catch {
       // Fallback: use working directory
       if (workingDirectory) {
         const label = workingDirectory.split('/').pop() || 'Root';
-        addTab(workingDirectory, label);
+        openOrFocusTab(workingDirectory, label);
       }
     }
-  }, [addTab, workingDirectory]);
+  }, [openOrFocusTab, workingDirectory]);
 
   return (
     <div className="flex items-center gap-0.5 px-1 overflow-x-auto scrollbar-none">
@@ -432,18 +432,16 @@ interface FileExplorerPanelProps {
 export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose }) => {
   const {
     tabs, activeTabId, dirContents, pendingCreate,
-    addTab, setDirContents, setLoading, startCreate, cancelCreate,
+    openOrFocusTab, setDirContents, setLoading, startCreate, cancelCreate,
   } = useExplorerStore();
   const workingDirectory = useAppStore((s) => s.workingDirectory);
-  const initRef = useRef(false);
 
-  // Auto-add working directory tab on first mount
+  // Sync active tab with session workingDirectory: open it or focus if already open.
   useEffect(() => {
-    if (initRef.current || tabs.length > 0 || !workingDirectory) return;
-    initRef.current = true;
+    if (!workingDirectory) return;
     const label = workingDirectory.split('/').pop() || 'Project';
-    addTab(workingDirectory, label);
-  }, [workingDirectory, tabs.length, addTab]);
+    openOrFocusTab(workingDirectory, label);
+  }, [workingDirectory, openOrFocusTab]);
 
   // Load root directory contents when active tab changes
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -532,7 +530,7 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
               onClick={() => {
                 if (workingDirectory) {
                   const label = workingDirectory.split('/').pop() || 'Project';
-                  addTab(workingDirectory, label);
+                  openOrFocusTab(workingDirectory, label);
                 }
               }}
               className="text-xs text-primary-400 hover:text-primary-300"

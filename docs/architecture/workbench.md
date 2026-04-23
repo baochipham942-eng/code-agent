@@ -196,6 +196,21 @@ messages + metadata.workbench
 2. TaskPanel 复用聊天 turn timeline 时，只复用 DTO 和纯 builder，不复用聊天 React 组件。
 3. 任何 `auto routing` 证据必须经 main process 的结构化 `routing_resolved` 事件，不允许 renderer 解析 notification 文案。
 
+### 4.1 右侧 sidecar 物理整合（v0.16.60-65）
+
+**职责分工不变，物理宿主统一**：TaskPanel / SkillsPanel / FileExplorerPanel / PreviewPanel 共享同一右侧面板宿主，由 `WorkbenchTabs` 顶栏切换，不再各自独立抢宽度。
+
+| 层 | 位置 | 说明 |
+|----|------|------|
+| Store | `src/renderer/stores/appStore.ts` | `activeWorkbenchTab: 'task' \| 'skills' \| 'files' \| null` + `previewTabs: PreviewTab[]`（独立 LRU 注册表，`MAX_PREVIEW_TABS = 8`） |
+| Action | `appStore.openWorkbenchTab(id)` / `closeWorkbenchTab(id)` | 单一入口；legacy `show*Panel` 已迁移完成并移除 |
+| 顶栏 | `src/renderer/components/WorkbenchTabs.tsx` | tab bar，X 关闭后切到幸存 tab |
+| 宿主 | `src/renderer/App.tsx` | 按 `activeWorkbenchTab` 条件渲染 Task/Skills/Files，`isPreviewActive` 并行渲染 Preview |
+
+**解读**：这一轮不改 ADR-011 定义的主链路语义，只解决 sidecar 的信息架构问题——此前 Task/Skills/Preview/Files 各有独立 toggle（CloudTaskToggle / TaskListToggle / DAGToggle / ObservabilityToggle），多开时互相挤压、心智成本高。整合后右侧只有一个面板位，用户选哪个 tab 它就渲染哪个。
+
+**死代码清理**：与此同步移除 `CloudTaskToggle` / `TaskListToggle` / `DAGToggle` / `ObservabilityToggle` 及 orphan state；TitleBar 只保留 File / Skills / Task 三个 toggle 入口。
+
 ## 5. 落点地图（看 workbench 从哪里入）
 
 ### 5.1 Contract 层

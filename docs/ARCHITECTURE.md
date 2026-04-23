@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.2 (对应 v0.16.60)
-> 日期: 2026-04-11
+> 版本: 9.3 (对应 v0.16.65)
+> 日期: 2026-04-23
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -49,6 +49,7 @@
 | 层级 | 技术选型 |
 |------|----------|
 | 桌面框架 | Tauri 2.x (Rust) |
+| Tauri 插件 | `plugin-updater` (自动更新) + `plugin-opener` (Finder reveal/open) + `plugin-dialog` (原生文件选择器) |
 | 前端框架 | React 18 + TypeScript 5.6 |
 | 状态管理 | Zustand 5 |
 | 样式 | Tailwind CSS 3.4 |
@@ -57,6 +58,7 @@
 | 云端存储 | Supabase + pgvector |
 | AI 模型 | Kimi K2.5 (主要), 智谱/DeepSeek/OpenAI/火山引擎 (备用), Local/Ollama (本地) |
 | 本地桥接 | packages/bridge (localhost:9527) |
+| 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
 ### 目录结构
 
@@ -175,6 +177,25 @@ code-agent/
 | 聊天显示 | 工具自动分组 + Thinking 摘要 + 消息编辑/重试 + Artifact 追踪 |
 | 设置导航 | 设置搜索 + 会话搜索/项目分组 + MCP 添加 UI + 权限模式切换 |
 | 安全 | postMessage 校验 + CSP + prompt injection 防护 + 图表路径统一 |
+
+### v0.16.60-65 Workbench 面板整合 + Preview 扩能 (2026-04-18 ~ 2026-04-23)
+
+40+ commits，围绕**右侧工作面板统一**和 **Preview 多模态能力**展开，消除 legacy 多面板抢宽度问题。
+
+| 模块 | 新增能力 | 关键文件 |
+|------|---------|---------|
+| 统一 tab 模型 | `openWorkbenchTab` / `closeWorkbenchTab` 单一 action 替代 legacy `show*Panel`；Task/Skills/Files 单例 tab，Preview 多 tab | `src/renderer/stores/appStore.ts` |
+| WorkbenchTabs 顶栏 | 右侧面板头部 tab bar，X 关闭后自动切到幸存 tab，tab 顺序稳定 | `src/renderer/components/WorkbenchTabs.tsx` |
+| Preview 多格式 | 代码编辑器（ts/tsx/js/jsx/json/yaml/yml，CodeMirror 6）+ Markdown 编辑（md/csv/tsv/txt）+ CSV/TSV 表格 + 图片/PDF base64 | `src/renderer/components/PreviewPanel.tsx` |
+| Preview LRU | `MAX_PREVIEW_TABS = 8` 上限，超出按最近未使用淘汰 | `appStore.ts` |
+| File Explorer 同步 | 切换 session 时自动跟随 `workingDirectory`，内联新建 File/Folder，`openOrFocusTab` action | `src/renderer/components/features/explorer/FileExplorerPanel.tsx` + `stores/explorerStore.ts` |
+| Tauri plugin-opener | Finder reveal / 外部打开路径经 Rust 插件，渲染进程通过 `@tauri-apps/plugin-opener` 调用 | `src-tauri/Cargo.toml` + `package.json` |
+| Tauri plugin-dialog | 原生目录选择器替代 renderer 自绘弹窗；`workspace:selectDirectory` IPC 经 domain API 路由 | `src/renderer/services/workspaceService.ts` |
+| Sidebar workspace grouping | Codex-style 按 workingDirectory 分组 + 折叠状态持久化 | `src/renderer/components/Sidebar.tsx` |
+| 死代码清理 | CloudTaskToggle / TaskListToggle / DAGToggle / ObservabilityToggle 及其 orphan state 全部移除；TitleBar 只保留 File/Skills/Task 三个 toggle | `src/renderer/components/TitleBar.tsx` + `App.tsx` |
+| 稳定性护栏 | 恢复 session 不再卡"就绪"（sessionPresentation 修复）；Write tool row 文件名可点击 + Reveal | `src/main/session/sessionPresentation.ts` |
+
+**架构要点**：ADR-011 定义的 Chat-Native Workbench 不变（聊天主链路仍是默认心智入口），本轮改动是在其上对**右侧 sidecar** 做物理整合。TaskPanel / SkillsPanel / PreviewPanel / FileExplorerPanel 共享同一宿主和同一 store action，职责分工不变。
 
 ---
 

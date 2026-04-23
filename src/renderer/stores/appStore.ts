@@ -32,7 +32,7 @@ type CloudUIStrings = {
 
 // 设置页 Tab 类型
 export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'products' | 'about';
-export type TaskPanelTab = 'monitor' | 'overview' | 'orchestration';
+export type TaskPanelTab = 'monitor' | 'orchestration';
 
 // Preview tab — one per opened file
 export interface PreviewTab {

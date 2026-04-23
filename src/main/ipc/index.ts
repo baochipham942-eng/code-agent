@@ -106,7 +106,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerMcpHandlers(ipcMain);
 
   // Connector handlers
-  registerConnectorHandlers(ipcMain, getMainWindow);
+  registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);
 
   // Memory handlers
   registerMemoryHandlers(ipcMain);

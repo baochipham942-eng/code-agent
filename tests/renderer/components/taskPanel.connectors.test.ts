@@ -27,6 +27,35 @@ const quickActionRunnerState = {
   runQuickAction: vi.fn(),
 };
 
+const workbenchInsightsState = {
+  references: [] as unknown[],
+  history: [] as unknown[],
+  connectorHistory: [
+    {
+      kind: 'connector',
+      id: 'mail',
+      label: 'Mail',
+      count: 2,
+      lastUsed: 200,
+      topActions: [
+        { label: 'send', count: 1 },
+        { label: 'draft', count: 1 },
+      ],
+    },
+  ],
+  mcpHistory: [] as unknown[],
+  skillHistory: [
+    {
+      kind: 'skill',
+      id: 'review-skill',
+      label: 'review-skill',
+      count: 1,
+      lastUsed: 100,
+      topActions: [{ label: 'review-skill', count: 1 }],
+    },
+  ],
+};
+
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({
     t: {
@@ -44,33 +73,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   }),
 }));
 
-vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilities', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/renderer/hooks/useWorkbenchCapabilities')>();
-  return {
-    ...actual,
-    useWorkbenchCapabilities: () => ({
-      skills: [],
-      connectors: connectorStatuses.map((connector) => ({
-        kind: 'connector',
-        ...connector,
-        selected: false,
-      })),
-      mcpServers: [
-        {
-          kind: 'mcp',
-          id: 'github',
-          label: 'github',
-          selected: false,
-          status: 'connected',
-          enabled: true,
-          transport: 'stdio',
-          toolCount: 12,
-          resourceCount: 3,
-        },
-      ],
-    }),
-  };
-});
+vi.mock('../../../src/renderer/hooks/useWorkbenchInsights', () => ({
+  useWorkbenchInsights: () => workbenchInsightsState,
+}));
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
   useWorkbenchCapabilityRegistry: () => ({
@@ -136,60 +141,25 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner', (
   useWorkbenchCapabilityQuickActionRunner: () => quickActionRunnerState,
 }));
 
-import { Connectors } from '../../../src/renderer/components/TaskPanel/Connectors';
+import { ConnectorsCard } from '../../../src/renderer/components/TaskPanel/ConnectorsCard';
 
-describe('TaskPanel Connectors', () => {
+describe('TaskPanel ConnectorsCard', () => {
   beforeEach(() => {
-    sessionState.messages = [
-      {
-        timestamp: 100,
-        toolCalls: [
-          {
-            id: '1',
-            name: 'mail_send',
-            arguments: {},
-          },
-          {
-            id: '2',
-            name: 'mcp__github__search_code',
-            arguments: {},
-          },
-          {
-            id: '3',
-            name: 'skill',
-            arguments: { command: 'review-skill' },
-          },
-        ],
-      },
-      {
-        timestamp: 200,
-        toolCalls: [
-          {
-            id: '4',
-            name: 'mail_draft',
-            arguments: {},
-          },
-        ],
-      },
-    ];
+    sessionState.messages = [];
   });
 
-  it('renders shared capability status and unified workbench history', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(Connectors),
-    );
+  it('renders activated connectors, mcp servers and session call history', () => {
+    const html = renderToStaticMarkup(React.createElement(ConnectorsCard));
 
+    expect(html).toContain('CONNECTORS');
     expect(html).toContain('Local');
     expect(html).toContain('Mail');
     expect(html).toContain('connected');
     expect(html).toContain('MCP');
     expect(html).toContain('github');
     expect(html).toContain('本次调用');
-    expect(html).toContain('Connectors');
     expect(html).toContain('send');
     expect(html).toContain('draft');
     expect(html).toContain('review-skill');
-    expect(html).toContain('查看 Mail 详情');
-    expect(html).toContain('查看 github 详情');
   });
 });

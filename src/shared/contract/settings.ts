@@ -91,6 +91,10 @@ export interface AppSettings {
       enabled: boolean;
     }>;
   };
+  // 原生连接器（macOS Calendar/Mail/Reminders）— 默认全关，按需激活
+  connectors?: {
+    enabledNative: string[];
+  };
   // Session 配置
   session?: {
     autoRestore: boolean;

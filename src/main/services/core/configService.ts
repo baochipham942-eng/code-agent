@@ -186,6 +186,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     displayWidth: 1920,
     displayHeight: 1080,
   },
+  // 原生连接器默认全关
+  connectors: {
+    enabledNative: [],
+  },
 };
 
 export class ConfigService {

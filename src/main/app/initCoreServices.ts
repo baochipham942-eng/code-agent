@@ -8,6 +8,7 @@ import { createLogger } from '../services/infra/logger';
 import { loadShellEnvironment } from '../services/infra/shellEnvironment';
 import { ConfigService, initDatabase } from '../services';
 import { initFileCheckpointService } from '../services/checkpoint';
+import { replayNativeConnectors } from '../connectors';
 
 const logger = createLogger('Bootstrap:Core');
 
@@ -52,6 +53,10 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   // 初始化文件检查点服务
   initFileCheckpointService();
   logger.info('File checkpoint service initialized');
+
+  // 按用户设置 replay 原生连接器注册（默认全空）
+  const enabledConnectors = replayNativeConnectors(configService);
+  logger.info('Native connectors configured', { enabled: enabledConnectors });
 
   // NOTE: Supabase 延迟到 initializeBackgroundServices() 中初始化
   // authService.initialize() 支持 Supabase 未就绪时从本地缓存读取用户

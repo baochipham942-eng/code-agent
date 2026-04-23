@@ -9,7 +9,7 @@ import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { isWebMode } from '../../utils/platform';
+import { isWebMode, isTauriMode } from '../../utils/platform';
 import ipcService from '../../services/ipcService';
 
 interface FileInfo {
@@ -92,9 +92,12 @@ export const WorkingFolder: React.FC = () => {
         }
         return;
       }
-      const result = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
-      if (result) {
-        setWorkingDirectory(result);
+      if (isTauriMode()) {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const result = await open({ directory: true, multiple: false, title: '选择工作目录' });
+        if (typeof result === 'string') {
+          setWorkingDirectory(result);
+        }
       }
     } catch (error) {
       console.error('Failed to select directory:', error);

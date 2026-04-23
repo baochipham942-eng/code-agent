@@ -1,7 +1,7 @@
 # Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.3
-> 日期: 2026-04-18
+> 版本: 2.4
+> 日期: 2026-04-23
 > 作者: Lin Chen
 
 ---
@@ -147,7 +147,42 @@
 - 命名 `preset / recipe` 资产库未做（历史 session 复用已落最小闭环）
 - Failure-to-Capability 多分流（skill / dataset / prompt-policy / capability-health）未做
 
-#### 3.1.5 权限安全
+#### 3.1.5 右侧工作面板（v0.16.60-65）
+
+Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作面板，用 `WorkbenchTabs` 顶栏切换，避免多面板同时展开抢宽度。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| 统一 tab 模型 | ✅ | `appStore.openWorkbenchTab(id)` 单一 action，弃用 legacy `show*Panel`；Task/Skills/Files 单例 tab，Preview 支持多 tab |
+| WorkbenchTabs 顶栏 | ✅ | 面板头部 tab bar，显示当前 tab + 关闭按钮，X 关闭后自动切到幸存 tab |
+| Preview 多 tab + LRU | ✅ | 最多同时保留 8 个 Preview tab（`MAX_PREVIEW_TABS`），超出自动 LRU 淘汰 |
+| Preview 代码编辑器 | ✅ | ts/tsx/js/jsx/json/yaml/yml 用 CodeMirror 6 呈现 |
+| Preview Markdown 编辑 | ✅ | md/csv/tsv/txt 可切到编辑模式（CodeMirror 6 + 语法高亮） |
+| Preview CSV/TSV | ✅ | 表格视图，支持列宽自适应 |
+| Preview 图片 / PDF | ✅ | base64 data URL 内嵌渲染，无需外部文件服务 |
+| Preview 面板整合 | ✅ | Task/Skills/Preview header 去掉重复标题和关闭按钮，由顶栏统一管理 |
+
+**死代码清理**：CloudTaskToggle / TaskListToggle / DAGToggle / ObservabilityToggle 及其 orphan state 全部移除，TitleBar 只保留 File Explorer / Skills / Task 三个入口。
+
+#### 3.1.6 文件资源管理器（v0.16.60-65）
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| 同步 session 工作目录 | ✅ | 切换 session 时 Explorer 自动跟随 `workingDirectory`，不需要手动 reload |
+| 内联新建 | ✅ | 文件树内直接新建 File / Folder，不弹独立对话框 |
+| `openOrFocusTab` action | ✅ | 点击文件名调用统一 store action 打开或聚焦已有 Preview tab |
+| TitleBar 入口 | ✅ | 顶栏 File Explorer toggle 按钮 |
+| 原生文件选择器 | ✅ | `workspace:selectDirectory` 经 `@tauri-apps/plugin-dialog` 调起系统原生选择器，Web 模式 domain API fallback |
+| 原生 reveal / open | ✅ | Write tool row 文件名可点击 + Preview `Reveal` 按钮，经 `@tauri-apps/plugin-opener` 调起 Finder |
+
+#### 3.1.7 Sidebar（v0.16.64）
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| Codex-style workspace grouping | ✅ | Session 按 workingDirectory 分组，每组一个可折叠 header |
+| 折叠状态持久化 | ✅ | 折叠偏好写入 `appStore`，跨会话保持 |
+
+#### 3.1.8 权限安全
 
 | 功能 | 说明 |
 |------|------|

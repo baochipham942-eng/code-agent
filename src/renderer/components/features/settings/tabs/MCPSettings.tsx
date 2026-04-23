@@ -28,6 +28,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
+import { NativeConnectorsSection } from '../sections';
 import ipcService from '../../../../services/ipcService';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
@@ -227,6 +228,9 @@ export const MCPSettings: React.FC = () => {
 
       {/* Local Bridge Service */}
       <LocalBridgeSection />
+
+      {/* Native Connectors */}
+      <NativeConnectorsSection />
 
       {/* Header */}
       <div>

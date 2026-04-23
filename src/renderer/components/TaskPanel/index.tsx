@@ -1,11 +1,13 @@
 // ============================================================================
-// TaskPanel - Right-side panel with three tabs: 状态 | 概览 | 编排
+// TaskPanel - Right-side panel
+// ----------------------------------------------------------------------------
+// 主视图：状态（TaskMonitor，包含连接器卡片）
+// 可选视图：编排（仅在 swarm 有数据时出现）
 // ============================================================================
 
 import React, { useEffect } from 'react';
 import { TaskMonitor } from './TaskMonitor';
 import { Orchestration } from './Orchestration';
-import { Connectors } from './Connectors';
 import { Users } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore, type TaskPanelTab } from '../../stores/appStore';
@@ -32,11 +34,18 @@ export const TaskPanel: React.FC = () => {
     }
   }, [hasPendingLaunch, isRunning, setTaskPanelTab, taskPanelTab]);
 
+  // 编排 tab 消失时，回落到状态 tab，避免停留在不可见 tab 上
+  useEffect(() => {
+    if (!hasOrchestrationData && taskPanelTab === 'orchestration') {
+      setTaskPanelTab('monitor');
+    }
+  }, [hasOrchestrationData, setTaskPanelTab, taskPanelTab]);
+
   const tabs: Array<{ key: TaskPanelTab; label: string; visible: boolean }> = [
     { key: 'monitor', label: t.taskPanel.tabStatus, visible: true },
-    { key: 'overview', label: t.taskPanel.tabOverview, visible: true },
     { key: 'orchestration', label: t.taskPanel.tabOrchestration, visible: hasOrchestrationData },
   ];
+  const visibleTabs = tabs.filter((tab) => tab.visible);
 
   return (
     <div className="w-full h-full bg-zinc-900 flex flex-col overflow-hidden">
@@ -52,43 +61,33 @@ export const TaskPanel: React.FC = () => {
               <span className="max-w-[140px] truncate">{selectedAgent.name}</span>
             </button>
           )}
-          <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
-            {tabs.filter((tab) => tab.visible).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setTaskPanelTab(tab.key)}
-                className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  taskPanelTab === tab.key
-                    ? 'bg-zinc-700 text-zinc-100'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {visibleTabs.length > 1 && (
+            <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+              {visibleTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setTaskPanelTab(tab.key)}
+                  className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                    taskPanelTab === tab.key
+                      ? 'bg-zinc-700 text-zinc-100'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {taskPanelTab === 'orchestration' && hasOrchestrationData ? (
           <Orchestration />
-        ) : taskPanelTab === 'overview' ? (
-          <OverviewTab />
         ) : (
           <TaskMonitor />
         )}
       </div>
-    </div>
-  );
-};
-
-// ── 概览 Tab: Intervention + Provenance + Connectors ──
-
-const OverviewTab: React.FC = () => {
-  return (
-    <div className="space-y-4">
-      <Connectors />
     </div>
   );
 };

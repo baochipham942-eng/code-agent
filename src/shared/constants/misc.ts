@@ -97,3 +97,7 @@ export const PORTS = {
     ? parseInt(process.env.LOG_BRIDGE_PORT, 10)
     : 51820,
 } as const;
+
+/** macOS 原生连接器 id（仅枚举可用值，默认不自动启用）*/
+export const NATIVE_CONNECTOR_IDS = ['calendar', 'mail', 'reminders'] as const;
+export type NativeConnectorId = typeof NATIVE_CONNECTOR_IDS[number];

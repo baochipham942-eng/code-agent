@@ -12,14 +12,23 @@ import {
   type IPCResponse,
   type ConnectorStatusSummary,
   type ConnectorEvent,
+  type NativeConnectorInventoryItem,
 } from '../../shared/ipc';
 import { getConnectorRegistry } from '../connectors';
+import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
+import type { ConfigService } from '../services';
 
 // macOS native connector → host app 映射。Mail/Calendar/Reminders 走 open -a，
 // 其他未来可接入 AppleScript 连接器可在这里扩展。
 const CONNECTOR_NATIVE_APPS: Record<string, string> = {
   mail: 'Mail',
   calendar: 'Calendar',
+  reminders: 'Reminders',
+};
+
+const NATIVE_CONNECTOR_LABELS: Record<NativeConnectorId, string> = {
+  calendar: 'Calendar',
+  mail: 'Mail',
   reminders: 'Reminders',
 };
 
@@ -52,6 +61,62 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;
   }));
+}
+
+function readEnabledNative(getConfigService: () => ConfigService | null): string[] {
+  const configService = getConfigService();
+  if (!configService) return [];
+  return configService.getSettings().connectors?.enabledNative ?? [];
+}
+
+async function persistEnabledNative(
+  getConfigService: () => ConfigService | null,
+  enabled: string[],
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) {
+    throw new Error('Config service not initialized');
+  }
+  await configService.updateSettings({
+    connectors: { enabledNative: enabled },
+  });
+}
+
+function handleListNativeInventory(
+  getConfigService: () => ConfigService | null,
+): NativeConnectorInventoryItem[] {
+  const enabled = new Set(readEnabledNative(getConfigService));
+  return NATIVE_CONNECTOR_IDS.map((id) => ({
+    id,
+    label: NATIVE_CONNECTOR_LABELS[id],
+    enabled: enabled.has(id),
+  }));
+}
+
+async function handleSetNativeEnabled(
+  getConfigService: () => ConfigService | null,
+  payload: { id?: string; enabled?: boolean } | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
+  const id = payload?.id;
+  const enabled = Boolean(payload?.enabled);
+  if (!id || !(NATIVE_CONNECTOR_IDS as readonly string[]).includes(id)) {
+    throw new Error(`Unknown native connector id: ${id}`);
+  }
+
+  const current = new Set(readEnabledNative(getConfigService));
+  if (enabled) {
+    current.add(id);
+  } else {
+    current.delete(id);
+  }
+  const next = Array.from(current);
+  await persistEnabledNative(getConfigService, next);
+  getConnectorRegistry().configure(next);
+
+  lastConnectorStatusSnapshot = '';
+  await broadcast();
+  return handleListStatuses();
 }
 
 async function handleRetryConnector(connectorId: string | undefined): Promise<ConnectorStatusSummary[]> {
@@ -126,8 +191,11 @@ function ensureConnectorStatusWatcher(
 export function registerConnectorHandlers(
   ipcMain: IpcMain,
   getMainWindow: () => BrowserWindow | null,
+  getConfigService: () => ConfigService | null,
 ): void {
   ensureConnectorStatusWatcher(getMainWindow);
+
+  const broadcast = () => pollAndBroadcastConnectorStatuses(getMainWindow);
 
   ipcMain.handle(IPC_DOMAINS.CONNECTOR, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action } = request;
@@ -138,6 +206,16 @@ export function registerConnectorHandlers(
       switch (action) {
         case 'listStatuses':
           data = await handleListStatuses();
+          break;
+        case 'listNativeInventory':
+          data = handleListNativeInventory(getConfigService);
+          break;
+        case 'setNativeEnabled':
+          data = await handleSetNativeEnabled(
+            getConfigService,
+            request.payload as { id?: string; enabled?: boolean } | undefined,
+            broadcast,
+          );
           break;
         case 'retry':
           data = await handleRetryConnector(

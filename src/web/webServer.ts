@@ -121,6 +121,15 @@ async function initializeServices(): Promise<void> {
   await configService.initialize();
   logger.info('ConfigService initialized');
 
+  // 1b. 按用户设置 replay 原生连接器（默认全空）
+  try {
+    const { replayNativeConnectors } = await import('../main/connectors');
+    const enabled = replayNativeConnectors(configService);
+    logger.info('Native connectors configured', { enabled });
+  } catch (error) {
+    logger.warn('Native connectors replay failed:', (error as Error).message);
+  }
+
   // 2. 初始化 Supabase（auth 等服务依赖）
   try {
     const { initSupabase } = await import('../main/services/infra/supabaseService');

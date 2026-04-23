@@ -5,7 +5,7 @@
 // 数据统一来自 useStatusRailModel
 // ============================================================================
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import type {
   BlockedCapabilityReason,
   TurnArtifactOwnershipItem,
@@ -24,11 +24,12 @@ import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
 import {
   Check, Loader2, AlertTriangle,
   FileText, FolderOpen, Wrench, GitBranch,
-  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
+import { Card, CardEmptyState as EmptyState } from './Card';
+import { ConnectorsCard } from './ConnectorsCard';
 import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './WorkbenchPrimitives';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../workbench/WorkbenchCapabilitySheetLite';
@@ -310,6 +311,9 @@ export const TaskMonitor: React.FC = () => {
         )}
       </Card>
 
+      {/* ═══ Card 5: ConnectorsCard ═══ */}
+      <ConnectorsCard />
+
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}
         capability={activeSheetCapability}
@@ -325,73 +329,7 @@ export const TaskMonitor: React.FC = () => {
   );
 };
 
-// ── Card 容器组件 ──
-
-interface CardProps {
-  title: string;
-  count?: string;
-  highlight?: boolean;
-  rightElement?: React.ReactNode;
-  isEmpty?: boolean;
-  emptyLabel?: string;
-  children: React.ReactNode;
-}
-
-function Card({ title, count, highlight, rightElement, isEmpty, emptyLabel, children }: CardProps) {
-  const [expanded, setExpanded] = useState(true);
-
-  // Compact single-line for empty cards
-  if (isEmpty) {
-    return (
-      <div className="bg-white/[0.02] rounded-lg border border-white/[0.04] px-3 py-2 flex items-center justify-between">
-        <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{title}</span>
-        <span className="text-[10px] text-zinc-600">{emptyLabel || '0'}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`bg-white/[0.02] backdrop-blur-sm rounded-lg border ${
-      highlight ? 'border-yellow-500/20' : 'border-white/[0.04]'
-    }`}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center w-full px-3 py-2"
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
-            {title}
-          </span>
-          {count && (
-            <span className="text-[10px] text-zinc-600">{count}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {rightElement && (
-            <div onClick={(e) => e.stopPropagation()}>
-              {rightElement}
-            </div>
-          )}
-          {expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-          )}
-        </div>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-2.5">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 空状态 */
-function EmptyState({ text }: { text: string }) {
-  return <div className="text-xs text-zinc-600 py-1">{text}</div>;
-}
+// ── Card 容器组件已抽到 ./Card ──
 
 function getCapabilityPillTone(
   kind: 'skill' | 'connector' | 'mcp',

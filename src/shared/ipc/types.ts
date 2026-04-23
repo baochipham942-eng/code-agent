@@ -226,6 +226,13 @@ export interface ConnectorStatusSummary {
   capabilities: string[];
 }
 
+/** Settings 页面使用：可启用的原生连接器目录，以及当前是否已启用 */
+export interface NativeConnectorInventoryItem {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
 export interface CacheStats {
   totalEntries: number;
   hitCount: number;

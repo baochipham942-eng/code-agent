@@ -22,8 +22,6 @@ export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
-    showTaskPanel,
-    setShowTaskPanel,
     showDAGPanel,
     setShowDAGPanel,
     setShowLab,
@@ -34,11 +32,14 @@ export const TitleBar: React.FC = () => {
     setShowCronCenter,
     showFileExplorer,
     setShowFileExplorer,
-    showSkillsPanel,
-    setShowSkillsPanel,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
+    workbenchTabs,
+    openWorkbenchTab,
+    closeWorkbenchTab,
   } = useAppStore();
+  const isTaskTabOpen = workbenchTabs.includes('task');
+  const isSkillsTabOpen = workbenchTabs.includes('skills');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
@@ -165,19 +166,19 @@ export const TitleBar: React.FC = () => {
         {isStandard && (
           <IconButton
             icon={<Sparkles className="w-4 h-4" />}
-            aria-label={showSkillsPanel ? '隐藏 Skills 面板' : '显示 Skills 面板'}
-            onClick={() => setShowSkillsPanel(!showSkillsPanel)}
+            aria-label={isSkillsTabOpen ? '隐藏 Skills 面板' : '显示 Skills 面板'}
+            onClick={() => (isSkillsTabOpen ? closeWorkbenchTab('skills') : openWorkbenchTab('skills'))}
             variant="ghost"
             size="md"
             windowNoDrag
-            className={showSkillsPanel ? 'text-purple-400' : 'text-purple-400/70 hover:text-purple-400'}
+            className={isSkillsTabOpen ? 'text-purple-400' : 'text-purple-400/70 hover:text-purple-400'}
           />
         )}
         {/* Task Panel Toggle */}
         <IconButton
-          icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
-          aria-label={showTaskPanel ? 'Hide task panel' : 'Show task panel'}
-          onClick={() => setShowTaskPanel(!showTaskPanel)}
+          icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+          aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}
+          onClick={() => (isTaskTabOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
           variant="ghost"
           size="md"
           windowNoDrag

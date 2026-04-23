@@ -8,9 +8,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
-import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode, isTauriMode } from '../../utils/platform';
-import ipcService from '../../services/ipcService';
 
 interface FileInfo {
   path: string;
@@ -106,8 +104,10 @@ export const WorkingFolder: React.FC = () => {
 
   const handleOpenInFinder = async (filePath: string) => {
     try {
-      // Use showItemInFolder to reveal the file in Finder
-      await ipcService.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, filePath);
+      if (isTauriMode()) {
+        const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+        await revealItemInDir(filePath);
+      }
     } catch (error) {
       console.error('Failed to open in Finder:', error);
     }

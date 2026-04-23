@@ -29,7 +29,6 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { isWebMode } from '../utils/platform';
 
-import { PreviewPanel } from './PreviewPanel';
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { SessionWorkspaceBar } from './features/chat/SessionWorkspaceBar';
@@ -63,7 +62,6 @@ function getCompactRelativeTime(timestamp: number): string {
 }
 
 export const ChatView: React.FC = () => {
-  const { showPreviewPanel } = useAppStore();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setShowEvalCenter = useAppStore((state) => state.setShowEvalCenter);
   const reviewQueue = useEvalCenterStore((state) => state.reviewQueue);
@@ -597,9 +595,6 @@ export const ChatView: React.FC = () => {
           hasPlan={false}
         />
       </div>
-
-      {/* HTML Preview Panel */}
-      {showPreviewPanel && <PreviewPanel />}
 
       {/* Plan is now inline in TurnBasedTraceView */}
 

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save } from 'lucide-react';
+import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -11,15 +11,27 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
-import { PreviewTabs } from './PreviewTabs';
 
-const MarkdownEditor = lazy(() => import('./MarkdownEditor'));
+const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
 
 const logger = createLogger('PreviewPanel');
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
 const CSV_EXTS: Record<string, ',' | '\t'> = { csv: ',', tsv: '\t' };
+// Code files render in edit-only mode (no rendered form exists) via CodeEditor.
+const CODE_LANGUAGE_BY_EXT: Record<string, 'json' | 'yaml' | 'typescript' | 'javascript'> = {
+  json: 'json',
+  yaml: 'yaml',
+  yml:  'yaml',
+  ts:   'typescript',
+  tsx:  'typescript',
+  js:   'javascript',
+  jsx:  'javascript',
+};
+// Media types render via a data: URL built from the binary fetched over IPC.
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
+const PDF_EXTS = new Set(['pdf']);
 
 function getExtension(filePath: string | null | undefined): string {
   if (!filePath) return '';
@@ -38,8 +50,6 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
 export const PreviewPanel: React.FC = () => {
   const previewTabs = useAppStore((s) => s.previewTabs);
   const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
-  const showPreviewPanel = useAppStore((s) => s.showPreviewPanel);
-  const closePreview = useAppStore((s) => s.closePreview);
   const updatePreviewTabContent = useAppStore((s) => s.updatePreviewTabContent);
   const updatePreviewTabMode = useAppStore((s) => s.updatePreviewTabMode);
   const markPreviewTabLoaded = useAppStore((s) => s.markPreviewTabLoaded);
@@ -66,23 +76,40 @@ export const PreviewPanel: React.FC = () => {
   const isMarkdown = MARKDOWN_EXTS.has(ext);
   const csvDelimiter = CSV_EXTS[ext];
   const isCsv = csvDelimiter !== undefined;
-  const isDirty = content !== savedContent;
+  const codeLanguage = CODE_LANGUAGE_BY_EXT[ext];
+  const isCode = codeLanguage !== undefined;
+  const isImage = IMAGE_EXTS.has(ext);
+  const isPdf = PDF_EXTS.has(ext);
+  const isBinary = isImage || isPdf;
+  const isDirty = !isBinary && content !== savedContent;
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
-    if (!activeTab || !showPreviewPanel) return;
+    if (!activeTab) return;
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab?.id, activeTab?.isLoaded, showPreviewPanel]);
+  }, [activeTab?.id, activeTab?.isLoaded]);
 
   const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const fetched = await invokeWorkspace<string>('readFile', { filePath });
-      // readFile returns '' for empty files — that's valid content, not an error.
-      markPreviewTabLoaded(tabId, fetched ?? '');
+      const tabExt = getExtension(filePath);
+      const isBinaryTab = IMAGE_EXTS.has(tabExt) || PDF_EXTS.has(tabExt);
+      if (isBinaryTab) {
+        // Media: fetch as base64 + mime, store the data: URL as content. It
+        // never diverges from savedContent (read-only), so isDirty stays false.
+        const binary = await invokeWorkspace<{ base64: string; mimeType: string }>(
+          'readBinary', { filePath },
+        );
+        const dataUrl = `data:${binary.mimeType};base64,${binary.base64}`;
+        markPreviewTabLoaded(tabId, dataUrl);
+      } else {
+        const fetched = await invokeWorkspace<string>('readFile', { filePath });
+        // readFile returns '' for empty files — that's valid content, not an error.
+        markPreviewTabLoaded(tabId, fetched ?? '');
+      }
     } catch (err) {
       logger.error('Failed to load file', err);
       setError(err instanceof Error ? err.message : '加载文件失败');
@@ -182,54 +209,55 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  if (!showPreviewPanel || !activeTab) return null;
+  const handleRevealInFolder = async () => {
+    if (!previewFilePath) return;
+    try {
+      if (isWebMode()) {
+        await copyPathToClipboard(previewFilePath);
+        return;
+      }
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(previewFilePath);
+    } catch (err) {
+      logger.error('Failed to reveal in folder', err);
+    }
+  };
 
-  const fileName = previewFilePath?.split('/').pop() || '预览';
+  if (!activeTab) return null;
 
   return (
     <div
-      className={`flex flex-col bg-zinc-900 border-l border-zinc-700 transition-all duration-300 ${
-        isMaximized ? 'fixed inset-0 z-50' : 'w-[500px]'
+      className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
+        isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
       }`}
     >
-      <PreviewTabs />
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-sm font-medium text-zinc-200 truncate max-w-[200px]">
-            {fileName}
-            {isMarkdown && isDirty && (
-              <span className="ml-1 text-amber-400" title="未保存">•</span>
-            )}
-          </span>
-        </div>
-
+      {/* Actions row (filename + dirty indicator + close moved into workbench tab bar) */}
+      <div className="flex items-center justify-end px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-1">
           {isMarkdown && (
-            <>
-              <button
-                onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
-                className={`p-1.5 rounded transition-colors ${
-                  mode === 'edit'
-                    ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
-                    : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
-                }`}
-                title={mode === 'edit' ? '切到预览' : '切到编辑'}
-              >
-                {mode === 'edit'
-                  ? <Eye className="w-4 h-4" />
-                  : <Pencil className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!isDirty || isSaving}
-                className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title={isDirty ? '保存 (Cmd+S)' : '已保存'}
-              >
-                <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
-              </button>
-            </>
+            <button
+              onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
+              className={`p-1.5 rounded transition-colors ${
+                mode === 'edit'
+                  ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
+                  : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
+              }`}
+              title={mode === 'edit' ? '切到预览' : '切到编辑'}
+            >
+              {mode === 'edit'
+                ? <Eye className="w-4 h-4" />
+                : <Pencil className="w-4 h-4" />}
+            </button>
+          )}
+          {(isMarkdown || isCode) && (
+            <button
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isDirty ? '保存 (Cmd+S)' : '已保存'}
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
+            </button>
           )}
           <button
             onClick={handleRefresh}
@@ -240,16 +268,23 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv}
+            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown || isCsv ? '长图仅支持 HTML 预览' : '导出长图'}
+            title={isMarkdown || isCsv || isCode || isBinary ? '长图仅支持 HTML 预览' : '导出长图'}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
           <button
+            onClick={handleRevealInFolder}
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="在 Finder 中显示"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+          <button
             onClick={handleOpenInBrowser}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="在浏览器中打开"
+            title="用默认程序打开"
           >
             <ExternalLink className="w-4 h-4" />
           </button>
@@ -263,13 +298,6 @@ export const PreviewPanel: React.FC = () => {
             ) : (
               <Maximize2 className="w-4 h-4" />
             )}
-          </button>
-          <button
-            onClick={closePreview}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="关闭"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -298,6 +326,35 @@ export const PreviewPanel: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : isImage ? (
+          <div className="flex items-center justify-center h-full overflow-auto bg-zinc-950 p-4">
+            <img
+              src={content}
+              alt={previewFilePath ?? 'image preview'}
+              className="max-w-full max-h-full object-contain"
+            />
+          </div>
+        ) : isPdf ? (
+          <embed
+            src={content}
+            type="application/pdf"
+            className="w-full h-full"
+          />
+        ) : isCode && codeLanguage ? (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                加载编辑器...
+              </div>
+            }
+          >
+            <CodeEditor
+              value={content}
+              onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
+              onSave={handleSave}
+              language={codeLanguage}
+            />
+          </Suspense>
         ) : isMarkdown && mode === 'edit' ? (
           <Suspense
             fallback={
@@ -306,10 +363,11 @@ export const PreviewPanel: React.FC = () => {
               </div>
             }
           >
-            <MarkdownEditor
+            <CodeEditor
               value={content}
-              onChange={(next) => updatePreviewTabContent(activeTab.id, next)}
+              onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
+              language="markdown"
             />
           </Suspense>
         ) : isMarkdown ? (

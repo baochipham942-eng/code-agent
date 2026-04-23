@@ -22,6 +22,33 @@ export interface PendingDelete {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+// Persisted fold state for workspace groups in the sidebar.
+// Unset or true = expanded; false = explicitly collapsed by the user.
+const EXPANDED_WORKSPACES_STORAGE_KEY = 'sidebar.expandedWorkspaces';
+
+function loadExpandedWorkspaces(): Record<string, boolean> {
+  try {
+    const raw = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(EXPANDED_WORKSPACES_STORAGE_KEY)
+      : null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistExpandedWorkspaces(next: Record<string, boolean>): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(EXPANDED_WORKSPACES_STORAGE_KEY, JSON.stringify(next));
+    }
+  } catch {
+    // localStorage may be disabled in private modes; fail silently.
+  }
+}
+
 interface SessionUIState {
   pendingDelete: PendingDelete | null;
   filter: SessionFilter;
@@ -30,6 +57,7 @@ interface SessionUIState {
   inputHistory: string[];
   inputHistoryIndex: number;
   inputHistoryDraft: string;
+  expandedWorkspaces: Record<string, boolean>;
 }
 
 interface SessionUIActions {
@@ -43,6 +71,7 @@ interface SessionUIActions {
   getPreviousInput: (currentInput: string) => string | null;
   getNextInput: () => string | null;
   resetInputHistoryIndex: () => void;
+  setWorkspaceExpanded: (key: string, expanded: boolean) => void;
 }
 
 type SessionUIStore = SessionUIState & SessionUIActions;
@@ -55,6 +84,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   inputHistory: [],
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
+  expandedWorkspaces: loadExpandedWorkspaces(),
 
   setFilter: (filter: SessionFilter) => {
     set({ filter });
@@ -197,5 +227,11 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       inputHistoryIndex: -1,
       inputHistoryDraft: '',
     });
+  },
+
+  setWorkspaceExpanded: (key: string, expanded: boolean) => {
+    const next = { ...get().expandedWorkspaces, [key]: expanded };
+    set({ expandedWorkspaces: next });
+    persistExpandedWorkspaces(next);
   },
 }));

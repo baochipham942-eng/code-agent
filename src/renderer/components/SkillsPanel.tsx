@@ -5,13 +5,11 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  X,
   Plus,
   Minus,
   Search,
   Settings,
   RefreshCw,
-  Sparkles,
   Package,
   AlertCircle,
 } from 'lucide-react';
@@ -25,9 +23,6 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 // Props
 // ----------------------------------------------------------------------------
 
-interface SkillsPanelProps {
-  onClose: () => void;
-}
 
 // ----------------------------------------------------------------------------
 // Sub Components
@@ -98,9 +93,9 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
 // Main Component
 // ----------------------------------------------------------------------------
 
-export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
+export const SkillsPanel: React.FC = () => {
   const { currentSessionId } = useSessionStore();
-  const { setShowSettings } = useAppStore();
+  const { setShowSettings, closeWorkbenchTab } = useAppStore();
   const {
     mountedSkills,
     availableSkills,
@@ -173,7 +168,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
   // 打开设置
   const handleOpenSettings = () => {
     setShowSettings(true);
-    onClose();
+    closeWorkbenchTab('skills');
   };
 
   // 清除错误
@@ -185,13 +180,9 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
   }, [error, clearError]);
 
   return (
-    <div className="w-72 border-l border-zinc-700 bg-zinc-900 flex flex-col">
-      {/* 头部 */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
-        <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-purple-400" />
-          Session Skills
-        </h3>
+    <div className="w-full h-full bg-zinc-900 flex flex-col">
+      {/* Actions row (title + close moved into workbench tab bar) */}
+      <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-700">
         <div className="flex items-center gap-1">
           <button
             onClick={handleRefresh}
@@ -202,12 +193,6 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({ onClose }) => {
             <RefreshCw
               className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
             />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       </div>

@@ -10,6 +10,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import type { TodoItem } from '@shared/contract';
 import type { ContextHealthWarningLevel, CompressionStats } from '@shared/contract/contextHealth';
+import { getContextWindow } from '@shared/constants';
 import { computeBucketSummary, extractContextItems, type BucketSummary, type ContextItem } from '../utils/contextBuckets';
 
 // ── 产物提取（复用 TaskMonitor 的逻辑，提取为独立函数）──
@@ -131,6 +132,7 @@ export function useStatusRailModel(): StatusRailModel {
   const selectedSwarmAgentId = useAppStore((s) => s.selectedSwarmAgentId);
   const workingDirectory = useAppStore((s) => s.workingDirectory);
   const cacheStats = useAppStore((s) => s.cacheStats);
+  const currentModel = useAppStore((s) => s.modelConfig?.model);
 
   const todos = useSessionStore((s) => s.todos);
   const messages = useSessionStore((s) => s.messages);
@@ -145,7 +147,7 @@ export function useStatusRailModel(): StatusRailModel {
     if (!contextHealth) {
       return {
         currentTokens: 0,
-        maxTokens: 128000,
+        maxTokens: getContextWindow(currentModel ?? ''),
         usagePercent: 0,
         warningLevel: 'normal' as const,
         buckets,
@@ -160,7 +162,7 @@ export function useStatusRailModel(): StatusRailModel {
       buckets,
       items,
     };
-  }, [contextHealth, messages]);
+  }, [contextHealth, messages, currentModel]);
 
   // Compact
   const compact = useMemo<StatusRailCompactModel>(() => {

@@ -69,10 +69,10 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: MODEL_API_ENDPOINTS.claude,
     models: [
       {
-        id: 'claude-opus-4-6',
-        name: 'Claude Opus 4.6',
+        id: 'claude-opus-4-7',
+        name: 'Claude Opus 4.7',
         capabilities: ['general', 'code', 'vision', 'reasoning'],
-        maxTokens: 32000,
+        maxTokens: 128000,
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,

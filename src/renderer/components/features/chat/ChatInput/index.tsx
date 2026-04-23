@@ -16,6 +16,7 @@ import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { AbilityMenu } from './AbilityMenu';
+import { ContextUsagePill } from '../ContextUsagePill';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
@@ -651,6 +652,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 弹性空白 */}
             <div className="flex-1" />
+
+            {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
+            <ContextUsagePill />
 
             {/* 模型选择器 */}
             <div className="text-xs">

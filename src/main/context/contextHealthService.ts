@@ -4,7 +4,7 @@
 
 import { BrowserWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, DEFAULT_MODEL } from '../../shared/constants';
+import { getContextWindow, DEFAULT_MODEL } from '../../shared/constants';
 import {
   ContextHealthState,
   ContextHealthUpdateEvent,
@@ -61,7 +61,7 @@ export class ContextHealthService {
    * 获取指定模型的上下文限制
    */
   getModelContextLimit(model: string): number {
-    return CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+    return getContextWindow(model);
   }
 
   /**

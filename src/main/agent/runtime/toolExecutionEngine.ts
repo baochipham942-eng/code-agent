@@ -31,7 +31,7 @@ import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
 // Import refactored modules
 import type {

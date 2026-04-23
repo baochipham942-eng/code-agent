@@ -40,7 +40,7 @@ import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -272,7 +272,7 @@ export class ConversationRuntime {
         + this.ctx.messages
           .filter((message) => message.role === 'system')
           .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
-      const contextWindowSize = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+      const contextWindowSize = getContextWindow(this.ctx.modelConfig.model);
       const contextPressure = existingSystemContextTokens / contextWindowSize;
       const workspaceContextMaxTokens =
         contextPressure >= 0.12 ? 120
@@ -541,7 +541,7 @@ export class ConversationRuntime {
             input: this.ctx.totalInputTokens,
             output: this.ctx.totalOutputTokens,
           },
-          maxTokens: CONTEXT_WINDOWS[this.ctx.modelConfig.model] ?? DEFAULT_CONTEXT_WINDOW,
+          maxTokens: getContextWindow(this.ctx.modelConfig.model),
           errorType: null,
           consecutiveErrors: this.ctx.consecutiveErrors,
           budgetRemaining: 1.0, // TODO: wire to budgetService

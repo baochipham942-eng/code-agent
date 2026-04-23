@@ -41,6 +41,8 @@ export interface SwitchModelParams {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** true 表示用户选择"自动"路由（按任务复杂度切换 free/default model）；false 或缺省 = 严格使用指定模型 */
+  adaptive?: boolean;
 }
 
 /**
@@ -51,6 +53,8 @@ export interface ModelOverride {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** true 表示"自动路由"模式，允许 adaptiveRouter 按任务复杂度切 free/default model */
+  adaptive?: boolean;
 }
 
 export interface SessionMarkdownExport {

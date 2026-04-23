@@ -55,7 +55,7 @@ const nextPreviewTabTick = () => ++_previewTabTick;
 
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
-export type WorkbenchTabId = 'task' | 'skills' | `preview:${string}`;
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | `preview:${string}`;
 
 const PREVIEW_PREFIX = 'preview:';
 const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
@@ -296,7 +296,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
-  setShowFileExplorer: (show) => set({ showFileExplorer: show }),
+  setShowFileExplorer: (show) => {
+    const state = get();
+    if (show) state.openWorkbenchTab('files');
+    else state.closeWorkbenchTab('files');
+    set({ showFileExplorer: show });
+  },
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),

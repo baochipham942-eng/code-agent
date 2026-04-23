@@ -5,6 +5,44 @@ import fs from 'fs';
 import { builtinModules } from 'module';
 
 /**
+ * Vite plugin: stub out dynamic imports of `src/main/*` from renderer-side code.
+ *
+ * 背景：shared/commands/definitions/ 里有 `await import('../../main/...')` 这样
+ * 的 CLI-only 动态导入，dev 模式 Vite 的 dep-scan 会静态追到 main/ 里，
+ * 继而撞到 node 内置模块（如 `https`、`fs`），报 "Failed to resolve entry for
+ * package https"。生产 build 已用 rollupOptions.external 屏蔽；dev 模式需要
+ * 这个 stub 保持行为一致。
+ *
+ * Stub 模块在 renderer 里若被意外 await，会抛出清晰错误而不是静默失败。
+ */
+function stubMainInRendererPlugin(): Plugin {
+  const STUB_ID = '\0virtual:main-stub';
+  return {
+    name: 'stub-main-in-renderer',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!importer) return null;
+      // 只拦 renderer 方向能追到的路径：shared/ 或 renderer/ 里的动态 import
+      if (!/[\\/]src[\\/](shared|renderer)[\\/]/.test(importer)) return null;
+      // 匹配相对路径或 alias 形式的 main/* 引用
+      if (/(^|[\\/])main[\\/]/.test(source) && !source.includes('node_modules')) {
+        return STUB_ID;
+      }
+      return null;
+    },
+    load(id) {
+      if (id === STUB_ID) {
+        return `
+          const handler = { get() { throw new Error('[stub] src/main/* 不可在 renderer/web 运行时调用，仅 CLI/Tauri 主进程可用'); } };
+          export default new Proxy({}, handler);
+        `;
+      }
+      return null;
+    },
+  };
+}
+
+/**
  * Vite plugin: inject web server auth token into HTML during dev.
  * The token is written to .dev-token by webServer.ts on startup.
  */
@@ -31,7 +69,7 @@ function devAuthTokenPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), devAuthTokenPlugin()],
+  plugins: [stubMainInRendererPlugin(), react(), devAuthTokenPlugin()],
   root: 'src/renderer',
   base: './',
   build: {

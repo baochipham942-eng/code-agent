@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Message } from '../../../shared/contract';
-import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW } from '../../../shared/constants';
+import { getContextWindow } from '../../../shared/constants';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 
 // ----------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export class TokenManager implements Disposable {
 
   constructor(model: string = 'default', reservedOutputTokens: number = 4096) {
     this.model = model;
-    this.maxContextTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+    this.maxContextTokens = getContextWindow(model);
     this.reservedOutputTokens = reservedOutputTokens;
   }
 
@@ -110,7 +110,7 @@ export class TokenManager implements Disposable {
 
   setModel(model: string): void {
     this.model = model;
-    this.maxContextTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+    this.maxContextTokens = getContextWindow(model);
   }
 
   setReservedOutputTokens(tokens: number): void {

@@ -183,6 +183,21 @@ export class ToolExecutor {
 
     logger.debug('Tool found', { toolName });
 
+    // Required-field guardrail: 在执行前校验 schema 里声明的 required 字段是否都提供了。
+    // 模型经常幻觉工具名并传空参数，护栏把错误往前移到 executor 入口，避免下游 handler 炸。
+    const requiredFields = toolDef.inputSchema?.required ?? [];
+    const missing = requiredFields.filter((field) => {
+      const value = params[field];
+      return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+    });
+    if (missing.length > 0) {
+      logger.warn('Tool call missing required fields', { toolName, missing });
+      return {
+        success: false,
+        error: `工具 "${toolName}" 缺少必填参数: ${missing.join(', ')}。请检查工具 schema 并重新调用。`,
+      };
+    }
+
 
     // 文件检查点：在写入工具执行前保存原文件
     await createFileCheckpointIfNeeded(toolName, params, () => {

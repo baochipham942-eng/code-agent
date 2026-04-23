@@ -33,7 +33,7 @@ import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -181,6 +181,12 @@ export class RunFinalizer {
       langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);
     }
 
+    // 先通知前端关闭 "组织回复中" loading — 核心生成已结束
+    // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI
+    logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
+    logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
+    this.ctx.onEvent({ type: 'agent_complete', data: null });
+
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
 
@@ -232,10 +238,6 @@ export class RunFinalizer {
         },
       });
     }
-
-    logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
-    logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
-    this.ctx.onEvent({ type: 'agent_complete', data: null });
 
     // Async: generate context-aware follow-up suggestions (non-blocking)
     this.generateFollowUpSuggestions();
@@ -341,7 +343,7 @@ export class RunFinalizer {
     try {
       const healthService = getContextHealthService();
       const health = healthService.get(this.ctx.sessionId);
-      const contextWindow = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+      const contextWindow = getContextWindow(this.ctx.modelConfig.model);
       this.ctx.totalIterations = iterations;
       this.ctx.onEvent({
         type: 'task_stats',

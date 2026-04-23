@@ -22,18 +22,14 @@ import { useCurrentTurnRoutingEvidence } from '../../hooks/useCurrentTurnRouting
 import { useWorkbenchCapabilityQuickActionRunner } from '../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
 import {
-  Check, Loader2, Clock, AlertTriangle,
-  FileText, FolderOpen, Shrink, Wrench, GitBranch,
+  Check, Loader2, AlertTriangle,
+  FileText, FolderOpen, Wrench, GitBranch,
   ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
-import { IPC_CHANNELS } from '@shared/ipc';
-import type { CompactResult } from '@shared/contract/contextHealth';
-import ipcService from '../../services/ipcService';
 import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './WorkbenchPrimitives';
-import type { ContextBucket } from '../../utils/contextBuckets';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../workbench/WorkbenchCapabilitySheetLite';
 import { formatWorkbenchHistoryActionSummary } from '../../utils/workbenchPresentation';
@@ -49,16 +45,9 @@ import {
   type WorkbenchCapabilityTarget,
 } from '../../utils/workbenchCapabilitySheet';
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
-  return String(n);
-}
-
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId, messages } = useSessionStore();
   const { workingDirectory } = useAppStore();
-  const sessionTaskProgress = useAppStore((s) => s.sessionTaskProgress);
   const processingSessionIds = useAppStore((s) => s.processingSessionIds);
   const isProcessing = currentSessionId ? processingSessionIds.has(currentSessionId) : false;
   const { references: referencedWorkbenchItems, history: workbenchHistory } = useWorkbenchInsights();
@@ -67,17 +56,11 @@ export const TaskMonitor: React.FC = () => {
   const currentTurnRoutingEvidence = useCurrentTurnRoutingEvidence();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
   const { t } = useI18n();
-  const { toolProgress, toolTimeout } = useToolProgress(currentSessionId);
-  const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
+  const { toolTimeout } = useToolProgress(currentSessionId);
 
   const model = useStatusRailModel();
-  const { context, compact, todos: todoModel, outputs } = model;
+  const { context, todos: todoModel, outputs } = model;
 
-  // ── ContextCard 状态 ──
-  const [selectedBucket, setSelectedBucket] = useState<ContextBucket | 'all'>('all');
-  const [isCompacting, setIsCompacting] = useState(false);
-  const [compactResult, setCompactResult] = useState<CompactResult | null>(null);
-  const [compactError, setCompactError] = useState<string | null>(null);
   const [activeSheetEntry, setActiveSheetEntry] = useState<{
     target: WorkbenchCapabilityTarget;
     blockedReason?: BlockedCapabilityReason | null;
@@ -107,30 +90,7 @@ export const TaskMonitor: React.FC = () => {
     return phases;
   }, [messages, todoModel.total, isProcessing]);
 
-  const handleCompact = useCallback(async () => {
-    if (isCompacting || !compact.canCompact) return;
-    setIsCompacting(true);
-    setCompactResult(null);
-    setCompactError(null);
-    try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '') as CompactResult;
-      if (result.success) {
-        setCompactResult(result);
-      } else {
-        setCompactError('压缩失败');
-      }
-      setTimeout(() => { setCompactResult(null); setCompactError(null); }, 5000);
-    } catch {
-      setCompactError('压缩失败');
-      setTimeout(() => setCompactError(null), 3000);
-    } finally {
-      setIsCompacting(false);
-    }
-  }, [isCompacting, compact.canCompact]);
-
   const folderName = workingDirectory ? workingDirectory.split('/').pop() || workingDirectory : null;
-  const showToolElapsed = toolProgress && toolProgress.elapsedMs >= 5000;
-  const isAgentWorking = taskProgress && taskProgress.phase !== 'completed';
 
   const phaseLabel = (type: PhaseType): string => {
     const map: Record<PhaseType, string> = {
@@ -143,13 +103,6 @@ export const TaskMonitor: React.FC = () => {
     return map[type];
   };
 
-  const buckets: Array<{ key: ContextBucket | 'all'; label: string; count: number }> = [
-    { key: 'all', label: 'All', count: context.buckets.rules + context.buckets.files + context.buckets.web + context.buckets.other },
-    { key: 'rules', label: t.taskPanel.bucketRules, count: context.buckets.rules },
-    { key: 'files', label: t.taskPanel.bucketFiles, count: context.buckets.files },
-    { key: 'web', label: t.taskPanel.bucketWeb, count: context.buckets.web },
-    { key: 'other', label: t.taskPanel.bucketOther, count: context.buckets.other },
-  ];
   const blockedCapabilitiesWithActions = useMemo(() => (
     currentTurnCapabilityScope?.blockedCapabilities
       .map((capability) => ({
@@ -192,24 +145,6 @@ export const TaskMonitor: React.FC = () => {
           <span className="truncate">
             {t.taskPanel.workIn.replace('{folderName}', folderName)}
           </span>
-        </div>
-      )}
-
-      {/* 实时进度指示器 */}
-      {isAgentWorking && (
-        <div role="status" aria-live="polite" className="flex items-center gap-2 py-1 px-2 bg-primary-500/5 rounded-lg">
-          <Loader2 className="w-3.5 h-3.5 text-primary-500 animate-spin flex-shrink-0" />
-          <span className="text-xs text-zinc-300 flex-1 truncate">
-            {taskProgress.step || taskProgress.phase}
-          </span>
-          {showToolElapsed && (
-            <span className={`flex items-center gap-1 text-xs shrink-0 ${
-              toolTimeout ? 'text-amber-400' : 'text-zinc-500'
-            }`}>
-              <Clock className="w-3 h-3" />
-              {formatElapsed(toolProgress!.elapsedMs)}
-            </span>
-          )}
         </div>
       )}
 
@@ -280,138 +215,17 @@ export const TaskMonitor: React.FC = () => {
         )}
       </Card>
 
-      {/* ═══ Card 2: ContextCard ★ 主卡 ═══ */}
+      {/* ═══ Card 2: ContextCard — 仅展示百分比（详情与 Compact 在 ChatInput 的 ContextUsagePill 里） ═══ */}
       <Card
         title={t.taskPanel.sectionContext}
         highlight={context.warningLevel !== 'normal'}
-        rightElement={
-          compact.canCompact ? (
-            <button
-              onClick={handleCompact}
-              disabled={isCompacting}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
-              title="主动压缩上下文"
-            >
-              {isCompacting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Shrink className="w-3 h-3" />
-              )}
-              <span>Compact</span>
-            </button>
-          ) : undefined
-        }
       >
-        {/* 大数字 + 进度条 */}
-        <div className="space-y-2">
-          <div className="flex items-end gap-2">
-            <span className={`text-xl font-bold tabular-nums ${
-              context.warningLevel === 'critical' ? 'text-red-400' :
-              context.warningLevel === 'warning' ? 'text-yellow-400' :
-              'text-emerald-400'
-            }`}>
-              {Math.round(context.usagePercent)}%
-            </span>
-            <span className="text-sm text-zinc-500 pb-1">
-              {formatTokens(context.currentTokens)} / {formatTokens(context.maxTokens)}
-            </span>
-            <span className="text-[10px] text-zinc-600 ml-auto">tokens</span>
-          </div>
-
-          {/* 进度条 */}
-          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-500 rounded-full ${
-                context.warningLevel === 'critical' ? 'bg-red-500' :
-                context.warningLevel === 'warning' ? 'bg-yellow-500' :
-                'bg-emerald-500'
-              }`}
-              style={{ width: `${Math.min(100, context.usagePercent)}%` }}
-            />
-          </div>
-
-          {/* Bucket tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-            <style>{`.bucket-tabs::-webkit-scrollbar { height: 0; }`}</style>
-            {buckets.map((b) => (
-              <button
-                key={b.key}
-                onClick={() => setSelectedBucket(b.key)}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] whitespace-nowrap shrink-0 transition-colors ${
-                  selectedBucket === b.key
-                    ? 'bg-white/10 text-zinc-200'
-                    : 'text-zinc-500 hover:text-zinc-400'
-                }`}
-              >
-                {b.label}
-                {b.count > 0 && (
-                  <span className="text-zinc-400 bg-zinc-700/60 rounded px-1 min-w-[14px] text-center">{b.count}</span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Context items 列表 */}
-          {(() => {
-            const filtered = context.items.filter(
-              (item) => selectedBucket === 'all' || item.bucket === selectedBucket
-            );
-            const shown = filtered.slice(0, 8);
-            const remaining = filtered.length - shown.length;
-            if (shown.length === 0) return null;
-            return (
-              <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                {shown.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 py-0.5" title={item.label}>
-                    <span className="text-[10px] text-zinc-600 w-8 shrink-0 text-right">{item.detail}</span>
-                    <span className="text-xs text-zinc-400 truncate font-mono">{item.label}</span>
-                  </div>
-                ))}
-                {remaining > 0 && (
-                  <div className="text-[10px] text-zinc-600 pl-10">+{remaining} more</div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* 压缩结果反馈 */}
-          {compactResult && (
-            <div className="space-y-1 animate-fade-in">
-              <div className="text-xs text-emerald-400">
-                {compactResult.totalSavedTokens > 0
-                  ? `累计释放 ${formatTokens(compactResult.totalSavedTokens)} tokens`
-                  : `已压缩 ${compactResult.compressionCount} 次`
-                }
-              </div>
-              {compactResult.layersUsed.length > 0 && (
-                <div className="text-[10px] text-zinc-500">
-                  层级: {compactResult.layersUsed.join(' → ')}
-                  {' · '}保留最近 {compactResult.retained.recentTurns} 轮
-                  {compactResult.retained.pinnedItems > 0 && ` · ${compactResult.retained.pinnedItems} 个 pin`}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 压缩错误 */}
-          {compactError && (
-            <div className="text-xs text-red-400 animate-fade-in">{compactError}</div>
-          )}
-
-          {/* 高压提示 */}
-          {context.warningLevel === 'critical' && !compactResult && !compactError && (
-            <div className="text-xs text-red-400 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              上下文接近上限，建议压缩
-            </div>
-          )}
-
-          {/* 压缩历史 */}
-          {compact.compressionCount > 0 && (
-            <div className="text-[10px] text-zinc-600">
-              已压缩 {compact.compressionCount} 次，累计释放 {formatTokens(compact.totalSavedTokens)}
-            </div>
-          )}
+        <div className={`text-2xl font-semibold tabular-nums ${
+          context.warningLevel === 'critical' ? 'text-red-400' :
+          context.warningLevel === 'warning' ? 'text-yellow-400' :
+          'text-emerald-400'
+        }`}>
+          {Math.round(context.usagePercent)}%
         </div>
       </Card>
 

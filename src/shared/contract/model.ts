@@ -63,6 +63,8 @@ export interface ModelConfig {
   };
   // Extended thinking budget (tokens)
   thinkingBudget?: number;
+  /** true 表示允许 adaptiveRouter 按任务复杂度切 free/default model。默认 false，严格用指定 provider/model */
+  adaptive?: boolean;
 }
 
 export interface ProviderConfig {

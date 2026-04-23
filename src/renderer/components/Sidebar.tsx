@@ -5,7 +5,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
-import { useSessionUIStore, type SessionFilter } from '../stores/sessionUIStore';
+import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useAuthStore } from '../stores/authStore';
@@ -137,12 +137,9 @@ export const Sidebar: React.FC = () => {
   } = useSelectionStore();
 
   const {
-    filter,
-    setFilter,
     searchQuery,
     setSearchQuery,
     sessionStatusFilter,
-    setSessionStatusFilter,
     softDelete,
     undoDelete,
     pendingDelete,
@@ -458,21 +455,6 @@ export const Sidebar: React.FC = () => {
     }
   }, [handleRenameSubmit]);
 
-  // 过滤器显示文本
-  const filterLabels: Record<SessionFilter, string> = {
-    active: '进行中',
-    archived: '已归档',
-    all: '全部',
-  };
-
-  // 循环切换过滤器
-  const cycleFilter = () => {
-    const filters: SessionFilter[] = ['active', 'archived'];
-    const currentIndex = filters.indexOf(filter);
-    const nextIndex = (currentIndex + 1) % filters.length;
-    setFilter(filters[nextIndex]);
-  };
-
   const hasAnySessions = sessions.length > 0;
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
   const isBackgroundOnly = sessionStatusFilter === 'background';
@@ -587,11 +569,6 @@ export const Sidebar: React.FC = () => {
             {session.turnCount > 0 && (
               <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1">{session.turnCount} 轮</span>
             )}
-            {session.modelConfig?.model && (
-              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1 truncate">
-                {session.modelConfig.model}
-              </span>
-            )}
           </div>
         )}
 
@@ -637,27 +614,6 @@ export const Sidebar: React.FC = () => {
           </span>
           <span className="text-sm font-normal">新会话</span>
         </button>
-
-        <div className="flex items-center gap-2 window-no-drag">
-          <button
-            onClick={() => setSessionStatusFilter(isBackgroundOnly ? 'all' : 'background')}
-            className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-              isBackgroundOnly
-                ? 'border-sky-500/40 bg-sky-500/10 text-sky-200'
-                : 'border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
-            }`}
-            title={isBackgroundOnly ? '显示全部会话' : '仅看后台中的会话'}
-          >
-            后台中
-          </button>
-          <button
-            onClick={cycleFilter}
-            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            <span>{filterLabels[filter]}</span>
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
 
       {/* Search Box */}

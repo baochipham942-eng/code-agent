@@ -5,7 +5,7 @@ export const PROVIDER_TIMEOUT = 300000;
 export const DEFAULT_PROVIDER = 'claude' as const;
 
 /** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'claude-opus-4-6' as const;
+export const DEFAULT_MODEL = 'claude-opus-4-7' as const;
 
 /** 模型 maxTokens 分层默认值（对标 Claude Code / Aider 行业标准） */
 export const MODEL_MAX_TOKENS = {
@@ -20,72 +20,194 @@ export const MODEL_MAX_TOKENS = {
 } as const;
 
 /**
- * 每个模型的推荐 maxOutputTokens — 基于官方文档 + 行业标准
- *
- * 参考来源:
- * - Aider: https://aider.chat/docs/config/adv-model-settings.html
- * - DeepSeek API: https://api-docs.deepseek.com/api/create-chat-completion (8K limit)
- * - GLM-4.7 Docs: https://docs.z.ai/guides/llm/glm-4.7 (128K output)
- * - Kimi K2.5: https://openrouter.ai/moonshotai/kimi-k2.5 (96K benchmark)
+ * 过时模型 → 当前生产级替换的映射。
+ * 用于 settings 持久化里存的旧 model ID 平滑迁移（不报错、静默升级），
+ * 以及 CONTEXT_WINDOWS / MODEL_MAX_OUTPUT_TOKENS 查表时 fallback。
  */
-export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
-  // Moonshot — Kimi K2.5 支持 96K output，对标 Claude Code Sonnet 默认
-  'kimi-k2.5': 32768,  // Kimi K2.5: 256K context, ~65K max output (OpenRouter data)
-  // DeepSeek — 官方 API 上限 8K
-  'deepseek-chat': 8192,
-  'deepseek-coder': 8192,
-  'deepseek-reasoner': 16384,
-  // 智谱 GLM — 按用途分层
-  'glm-5': 8192,
-  'glm-5-turbo': 8192,
-  'glm-4.7': 8192,
-  'glm-4.7-flash': 4096,    // 免费快速模型，短任务
-  'glm-4v-plus': 2048,      // 视觉
-  'glm-4.6v': 2048,         // 视觉
-  'glm-4.6v-flash': 1024,   // 视觉快速
-  // Anthropic — 参考 Aider 配置
-  'claude-opus-4-6': 32000,
-  'claude-sonnet-4-6': 16384,
-  'claude-haiku-4-5-20251001': 16384,
-  'claude-sonnet-4-20250514': 16384,
-  'claude-sonnet-4-5-20250929': 16384,
-  'claude-3-5-sonnet-20241022': 8192,
-  'claude-3-5-haiku-20241022': 8192,
+export const MODEL_MIGRATIONS: Record<string, string> = {
+  // Anthropic
+  'claude-opus-4-6': 'claude-opus-4-7',
+  'claude-opus-4-5-20251101': 'claude-opus-4-7',
+  'claude-opus-4-1-20250805': 'claude-opus-4-7',
+  'claude-opus-4-20250514': 'claude-opus-4-7',
+  'claude-sonnet-4-5-20250929': 'claude-sonnet-4-6',
+  'claude-sonnet-4-20250514': 'claude-sonnet-4-6',
+  'claude-3-5-sonnet-20241022': 'claude-sonnet-4-6',
+  'claude-3-5-haiku-20241022': 'claude-haiku-4-5-20251001',
   // OpenAI
-  'gpt-4o': 16384,
-  'gpt-4o-mini': 16384,
-  // Groq
-  'llama-3.3-70b-versatile': 8192,
+  'gpt-4o': 'gpt-5.4-mini',
+  'gpt-4o-mini': 'gpt-5.4-mini',
+  'gpt-4.1': 'gpt-5.4',
+  'gpt-4.1-mini': 'gpt-5.4-mini',
+  'o3': 'gpt-5.4',
+  'o4-mini': 'gpt-5.4-mini',
+  // DeepSeek
+  'deepseek-coder': 'deepseek-chat',
+  // 火山豆包 — 1.5 系列 → 1.6 系列
+  'doubao-1.5-pro-256k': 'doubao-seed-1-6',
+  'doubao-1.5-thinking-pro': 'doubao-seed-1-6-thinking',
+  'doubao-seed-1-6-vision-250815': 'doubao-seed-1-6',
 };
 
-/** 根据模型名查找推荐的 maxOutputTokens */
-export function getModelMaxOutputTokens(model: string): number {
-  return MODEL_MAX_OUTPUT_TOKENS[model] || MODEL_MAX_TOKENS.DEFAULT;
+/**
+ * 把模型 ID 规范化到 CONTEXT_WINDOWS / MODEL_MAX_OUTPUT_TOKENS 查表用的 key。
+ * 1. 剥掉 provider 前缀（openrouter 的 `anthropic/claude-opus-4-7`）
+ * 2. 把 dot-style version 转成 dash-style（Anthropic API 规范）
+ * 3. 应用 MODEL_MIGRATIONS 表做旧→新替换（迭代一次，防止循环）
+ */
+export function normalizeModelId(modelId: string): string {
+  if (!modelId) return modelId;
+  let id = modelId.includes('/') ? modelId.split('/').slice(-1)[0] : modelId;
+  // Anthropic 的 API ID 用 dash（claude-opus-4-7），少数入口会写 dot（claude-opus-4.7）
+  if (/^claude-(opus|sonnet|haiku)-\d+\.\d+/.test(id)) {
+    id = id.replace(/^(claude-(?:opus|sonnet|haiku))-(\d+)\.(\d+)/, '$1-$2-$3');
+  }
+  return MODEL_MIGRATIONS[id] ?? id;
 }
 
-/** 模型上下文窗口大小（tokens） — 仅包含 PROVIDER_REGISTRY 中注册的模型 */
-export const CONTEXT_WINDOWS: Record<string, number> = {
-  // DeepSeek
-  'deepseek-chat': 64_000,
-  'deepseek-coder': 64_000,
-  'deepseek-reasoner': 64_000,
+/**
+ * 每个模型的推荐 maxOutputTokens — 基于官方文档。
+ * 参考来源:
+ * - Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models/overview
+ * - OpenAI:    https://developers.openai.com/api/docs/models
+ * - DeepSeek:  https://api-docs.deepseek.com/quick_start/pricing
+ * - 智谱 GLM:  https://docs.bigmodel.cn/cn/guide/start/model-overview
+ * - Moonshot:  https://platform.kimi.com/docs/api/models-overview
+ */
+export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   // Anthropic
-  'claude-opus-4-6': 200_000,
-  'claude-sonnet-4-6': 200_000,
-  'claude-haiku-4-5-20251001': 200_000,
-  'claude-sonnet-4-20250514': 200_000,
-  'claude-3-5-sonnet-20241022': 200_000,
-  'claude-3-5-haiku-20241022': 200_000,
+  'claude-opus-4-7': 128_000,
+  'claude-sonnet-4-6': 64_000,
+  'claude-haiku-4-5-20251001': 64_000,
   // OpenAI
-  'gpt-4o': 128_000,
-  'gpt-4o-mini': 128_000,
-  // Zhipu
-  'glm-5': 200_000,
+  'gpt-5.4': 128_000,
+  'gpt-5.4-mini': 128_000,
+  'gpt-5.4-nano': 128_000,
+  'gpt-5.3-codex': 128_000,
+  'gpt-5.2': 128_000,
+  // Gemini
+  'gemini-3.1-pro-preview': 64_000,
+  'gemini-3-pro-preview': 64_000,
+  'gemini-3-flash-preview': 64_000,
+  'gemini-2.5-pro': 64_000,
+  'gemini-2.5-flash': 64_000,
+  // DeepSeek — 官方 API 上限
+  'deepseek-chat': 8_192,
+  'deepseek-reasoner': 64_000,
+  // 智谱 GLM
+  'glm-5.1': 128_000,
+  'glm-5': 128_000,
   'glm-4.7': 128_000,
   'glm-4.7-flash': 128_000,
-  // Moonshot
-  'kimi-k2.5': 256_000,
+  'glm-4.7-flashx': 128_000,
+  'glm-4.6v': 32_000,
+  'glm-4.6v-flash': 32_000,
+  // Qwen
+  'qwen3.6-plus': 32_768,
+  'qwen3-max': 32_768,
+  'qwen-plus-latest': 32_768,
+  'qwen3-coder': 131_072,
+  'qwen-vl-max': 8_192,
+  // Moonshot Kimi
+  'kimi-k2.6': 32_768,
+  'kimi-k2.5': 32_768,
+  'kimi-k2-turbo-preview': 32_768,
+  'kimi-k2-thinking': 32_768,
+  // MiniMax
+  'MiniMax-M2.7': 131_072,
+  'MiniMax-M2.5': 131_072,
+  // 火山豆包
+  'doubao-seed-1-6': 32_768,
+  'doubao-seed-1-6-thinking': 32_768,
+  'doubao-seed-1-6-flash': 32_768,
+  'doubao-seed-1-6-lite': 32_768,
+  // xAI Grok
+  'grok-4-1-fast-reasoning': 32_768,
+  'grok-4-1-fast-non-reasoning': 32_768,
+  // Perplexity
+  'sonar-pro': 8_192,
+  'sonar': 8_192,
+  'sonar-reasoning-pro': 8_192,
+  'sonar-reasoning': 8_192,
+  'sonar-deep-research': 8_192,
+};
+
+/** 根据模型名查找推荐的 maxOutputTokens（先做规范化） */
+export function getModelMaxOutputTokens(model: string): number {
+  const id = normalizeModelId(model);
+  return MODEL_MAX_OUTPUT_TOKENS[id] || MODEL_MAX_TOKENS.DEFAULT;
+}
+
+/**
+ * 模型上下文窗口大小（tokens） — 覆盖 model-catalog.json 所有在售模型。
+ * 参考来源同 MODEL_MAX_OUTPUT_TOKENS。
+ */
+export const CONTEXT_WINDOWS: Record<string, number> = {
+  // Anthropic — Opus 4.7 / Sonnet 4.6 原生 1M；Haiku 4.5 为 200K
+  'claude-opus-4-7': 1_000_000,
+  'claude-sonnet-4-6': 1_000_000,
+  'claude-haiku-4-5-20251001': 200_000,
+  // OpenAI
+  'gpt-5.4': 1_000_000,
+  'gpt-5.4-mini': 400_000,
+  'gpt-5.4-nano': 400_000,
+  'gpt-5.3-codex': 400_000,
+  'gpt-5.2': 400_000,
+  // Gemini
+  'gemini-3.1-pro-preview': 1_000_000,
+  'gemini-3-pro-preview': 1_000_000,
+  'gemini-3-flash-preview': 1_000_000,
+  'gemini-2.5-pro': 1_000_000,
+  'gemini-2.5-flash': 1_000_000,
+  // DeepSeek
+  'deepseek-chat': 128_000,
+  'deepseek-reasoner': 128_000,
+  // 智谱 GLM
+  'glm-5.1': 200_000,
+  'glm-5': 200_000,
+  'glm-4.7': 200_000,
+  'glm-4.7-flash': 200_000,
+  'glm-4.7-flashx': 200_000,
+  'glm-4.6v': 128_000,
+  'glm-4.6v-flash': 128_000,
+  // Qwen
+  'qwen3.6-plus': 1_000_000,
+  'qwen3-max': 262_144,
+  'qwen-plus-latest': 1_000_000,
+  'qwen3-coder': 262_144,
+  'qwen-vl-max': 32_768,
+  // Moonshot Kimi
+  'kimi-k2.6': 262_144,
+  'kimi-k2.5': 262_144,
+  'kimi-k2-turbo-preview': 262_144,
+  'kimi-k2-thinking': 262_144,
+  // MiniMax
+  'MiniMax-M2.7': 204_800,
+  'MiniMax-M2.5': 204_800,
+  // 火山豆包
+  'doubao-seed-1-6': 256_000,
+  'doubao-seed-1-6-thinking': 256_000,
+  'doubao-seed-1-6-flash': 256_000,
+  'doubao-seed-1-6-lite': 256_000,
+  // xAI Grok
+  'grok-4-1-fast-reasoning': 2_000_000,
+  'grok-4-1-fast-non-reasoning': 2_000_000,
+  // Perplexity
+  'sonar-pro': 200_000,
+  'sonar': 128_000,
+  'sonar-reasoning-pro': 128_000,
+  'sonar-reasoning': 128_000,
+  'sonar-deep-research': 128_000,
 };
 
 /** 默认上下文窗口（未知模型 fallback） */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/**
+ * 查模型的上下文窗口（先规范化，再查表，查不到回落到 DEFAULT_CONTEXT_WINDOW）。
+ * 所有需要根据 model ID 取 context size 的地方都应通过本函数，不要直接读 CONTEXT_WINDOWS。
+ */
+export function getContextWindow(model: string): number {
+  const id = normalizeModelId(model);
+  return CONTEXT_WINDOWS[id] ?? DEFAULT_CONTEXT_WINDOW;
+}

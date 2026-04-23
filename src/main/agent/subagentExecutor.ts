@@ -31,7 +31,7 @@ import {
   type NormalizedImageData,
 } from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
-import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, SUBAGENT_COMPACTION } from '../../shared/constants';
+import { getContextWindow, SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
@@ -238,7 +238,7 @@ function buildContextSnapshot(
   toolsUsed: string[],
   attachments?: Array<{ name?: string }>,
 ): SwarmAgentContextSnapshot {
-  const maxTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+  const maxTokens = getContextWindow(model);
   const normalizedMessages = messages.map((message) => ({
     role: message.role,
     content: flattenMessageContent(message.content),

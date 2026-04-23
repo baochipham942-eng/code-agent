@@ -3,7 +3,8 @@
 // ============================================================================
 // 嵌入 StatusBar，支持对话中途切换模型
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
@@ -12,7 +13,8 @@ import {
   getModelDisplayLabel,
 } from '@shared/constants';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain } from 'lucide-react';
+import { Eye, Wrench, Brain, Sparkles } from 'lucide-react';
+import { useAppStore } from '../../stores/appStore';
 
 interface ModelOption {
   provider: string;
@@ -59,16 +61,19 @@ const MODEL_CAPABILITIES: Record<string, string[]> = {
   'gpt-4o': ['tool', 'vision'],
   'gpt-4o-mini': ['tool', 'vision'],
   // claude
-  'claude-opus-4-6': ['tool', 'vision', 'reasoning'],
-  'claude-sonnet-4-6': ['tool', 'vision'],
+  'claude-opus-4-7': ['tool', 'vision', 'reasoning'],
+  'claude-sonnet-4-6': ['tool', 'vision', 'reasoning'],
   'claude-haiku-4-5-20251001': ['tool', 'vision'],
-  'claude-sonnet-4-20250514': ['tool', 'vision'],
-  'claude-3-5-sonnet-20241022': ['tool', 'vision'],
-  'claude-3-5-haiku-20241022': ['tool', 'vision'],
-  // volcengine
-  'doubao-1.5-pro-256k': ['tool'],
-  'doubao-1.5-thinking-pro': ['reasoning'],
-  'doubao-seed-1.6-vision-250815': ['vision'],
+  // moonshot 新增
+  'kimi-k2.6': ['tool', 'vision', 'reasoning'],
+  // 智谱 新增
+  'glm-5.1': ['tool', 'reasoning'],
+  'glm-4.7-flashx': ['tool'],
+  // volcengine — 1.6 系列
+  'doubao-seed-1-6': ['tool', 'vision'],
+  'doubao-seed-1-6-thinking': ['reasoning', 'vision'],
+  'doubao-seed-1-6-flash': ['tool'],
+  'doubao-seed-1-6-lite': ['tool'],
   // local
   'qwen2.5-coder:7b': ['tool'],
   'qwen3:8b': ['tool'],
@@ -111,11 +116,15 @@ interface ModelSwitcherProps {
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
+  const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const defaultProvider = useAppStore((s) => s.modelConfig.provider);
 
   // 搜索过滤
   const filteredOptions = useMemo(() => {
@@ -155,12 +164,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open]);
 
-  // 点击外部关闭
+  // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     if (open) {
       document.addEventListener('mousedown', handler);
@@ -168,11 +178,34 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open]);
 
+  // 打开时 / 视口变化时，计算菜单 fixed 定位（portal 到 body，脱离父容器 overflow 限制）
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPos(null);
+      return;
+    }
+    const updatePos = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPos({
+        left: rect.left,
+        bottom: window.innerHeight - rect.top + 4,
+      });
+    };
+    updatePos();
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    return () => {
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
+    };
+  }, [open]);
+
   // 加载当前 override
   useEffect(() => {
     if (!sessionId) return;
     window.domainAPI
-      ?.invoke<{ provider: string; model: string } | null>(
+      ?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
         IPC_DOMAINS.SESSION,
         'getModelOverride',
         { sessionId }
@@ -180,6 +213,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .then((res) => {
         if (res?.success && res.data) {
           setOverrideModel(res.data.model);
+          setOverrideAdaptive(!!res.data.adaptive);
         }
       })
       .catch((err: unknown) => toast.error('加载模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误')));
@@ -193,8 +227,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           sessionId,
           provider: option.provider,
           model: option.model,
+          adaptive: false,
         });
         setOverrideModel(option.model);
+        setOverrideAdaptive(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
       }
@@ -202,6 +238,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     },
     [sessionId]
   );
+
+  const handleSelectAuto = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      // 自动模式：provider/model 传当前默认作占位，后端靠 adaptive=true 判断
+      await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
+        sessionId,
+        provider: defaultProvider,
+        model: currentModel,
+        adaptive: true,
+      });
+      setOverrideModel(currentModel);
+      setOverrideAdaptive(true);
+    } catch (err) {
+      toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    }
+    setOpen(false);
+  }, [sessionId, defaultProvider, currentModel]);
 
   const handleClear = useCallback(async () => {
     if (!sessionId) return;
@@ -212,6 +266,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       );
       setOverrideModel(null);
+      setOverrideAdaptive(false);
     } catch (err) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
@@ -220,38 +275,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   const displayModel = overrideModel || currentModel;
   const isOverridden = !!overrideModel;
+  const displayLabel = overrideAdaptive ? '自动' : getModelDisplayLabel(displayModel);
 
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        aria-label="切换模型"
-        aria-expanded={open}
-        className={`
-          font-medium cursor-pointer truncate max-w-[160px]
-          hover:text-purple-300 transition-colors
-          ${isOverridden ? 'text-amber-400' : 'text-purple-400'}
-        `}
-        title={
-          isOverridden
-            ? `已覆盖: ${overrideModel} (原: ${currentModel})`
-            : `当前: ${currentModel}`
-        }
-      >
-        {getModelDisplayLabel(displayModel)}
-        {isOverridden && <span className="text-[9px] ml-0.5">*</span>}
-      </button>
-
-      {/* 下拉菜单 */}
-      {open && (
-        <div
-          className="
-            absolute bottom-full left-0 mb-1
-            w-64 py-1
-            bg-zinc-800 border border-zinc-700 rounded-lg
-            shadow-xl z-50
-          "
-        >
+  const menu = open && menuPos && (
+    <div
+      ref={menuRef}
+      className="
+        w-64 py-1
+        bg-zinc-800 border border-zinc-700 rounded-lg
+        shadow-xl
+      "
+      style={{
+        position: 'fixed',
+        left: menuPos.left,
+        bottom: menuPos.bottom,
+        zIndex: 9999,
+      }}
+    >
           {/* 搜索框 */}
           <div className="px-2 py-1.5">
             <input
@@ -269,6 +309,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             />
           </div>
           <div className="max-h-64 overflow-y-auto">
+            {/* 自动路由选项（固定顶部，不参与搜索过滤） */}
+            {!searchQuery.trim() && (
+              <button
+                onClick={handleSelectAuto}
+                className={`
+                  w-full text-left px-3 py-1.5 text-xs
+                  border-b border-zinc-700/50
+                  hover:bg-zinc-700 transition-colors
+                  ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
+                `}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-primary-400" />
+                  <span className="font-medium">自动</span>
+                  <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
+                </div>
+              </button>
+            )}
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-500 text-center">
                 无匹配模型
@@ -314,19 +372,44 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               ))
             )}
           </div>
-          {isOverridden && (
-            <>
-              <div className="border-t border-zinc-700 my-1" />
-              <button
-                onClick={handleClear}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
-              >
-                恢复默认模型
-              </button>
-            </>
-          )}
-        </div>
+      {isOverridden && (
+        <>
+          <div className="border-t border-zinc-700 my-1" />
+          <button
+            onClick={handleClear}
+            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
+          >
+            恢复默认模型
+          </button>
+        </>
       )}
     </div>
+  );
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={() => setOpen(!open)}
+        aria-label="切换模型"
+        aria-expanded={open}
+        className={`
+          font-medium cursor-pointer truncate max-w-[160px]
+          hover:text-purple-300 transition-colors
+          ${isOverridden ? 'text-amber-400' : 'text-purple-400'}
+        `}
+        title={
+          overrideAdaptive
+            ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
+            : isOverridden
+              ? `已覆盖: ${overrideModel} (原: ${currentModel})`
+              : `当前: ${currentModel}`
+        }
+      >
+        {displayLabel}
+        {isOverridden && <span className="text-[9px] ml-0.5">*</span>}
+      </button>
+      {menu && createPortal(menu, document.body)}
+    </>
   );
 }

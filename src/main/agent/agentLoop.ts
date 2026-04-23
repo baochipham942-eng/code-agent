@@ -29,7 +29,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/contract';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -128,7 +128,7 @@ export class AgentLoop {
   private promptProfile: PromptProfile = 'interactive';
 
   constructor(config: AgentLoopConfig) {
-    const contextWindow = CONTEXT_WINDOWS[config.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+    const contextWindow = getContextWindow(config.modelConfig.model);
     const lightCompressionThreshold = Math.max(8000, Math.round(contextWindow * 0.50));
 
     this.ctx = {

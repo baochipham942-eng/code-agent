@@ -40,6 +40,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useTaskSync } from './hooks/useTaskSync';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -80,7 +81,6 @@ export const App: React.FC = () => {
     showSettings,
     setTaskPanelTab,
     showCronCenter,
-    showFileExplorer,
     setShowFileExplorer,
     showAgentTeamPanel,
     setShowAgentTeamPanel,
@@ -130,6 +130,10 @@ export const App: React.FC = () => {
 
   // Theme Hook - 初始化主题系统
   useTheme();
+
+  // Task state 同步：mount 时拉取后端 sessionStates + 30s 兜底轮询
+  // 防止 dev server 重启 / 网络断开导致前端 isProcessing 卡住不放
+  useTaskSync({ pollInterval: 30_000 });
 
   // 全局快捷键（含 ⌘⇧C compact 触发）
   useKeyboardShortcuts({
@@ -398,15 +402,6 @@ export const App: React.FC = () => {
                 <EvalCenterPanel />
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1" id="main-layout">
-                  {showFileExplorer && (
-                    <Panel defaultSize="20" minSize="15" maxSize="35" id="file-explorer">
-                      <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
-                    </Panel>
-                  )}
-                  {showFileExplorer && (
-                    <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
-                  )}
-
                   <Panel minSize="30" id="chat">
                     <div className="flex flex-col h-full min-w-0 bg-zinc-900">
                       <ChatView />
@@ -417,12 +412,15 @@ export const App: React.FC = () => {
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {showWorkbench && (
-                    <Panel defaultSize="20" minSize="15" maxSize="45" id="right-panel">
+                    <Panel defaultSize="22" minSize="15" maxSize="45" id="right-panel">
                       <div className="flex flex-col h-full bg-zinc-900">
                         <WorkbenchTabs />
                         <div className="flex-1 min-h-0 overflow-hidden">
                           {activeWorkbenchTab === 'task' && <TaskPanel />}
                           {activeWorkbenchTab === 'skills' && <SkillsPanel />}
+                          {activeWorkbenchTab === 'files' && (
+                            <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
+                          )}
                           {isPreviewActive && <PreviewPanel />}
                         </div>
                       </div>

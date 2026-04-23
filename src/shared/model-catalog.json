@@ -1,5 +1,5 @@
 {
-  "updated": "2026-03-20",
+  "updated": "2026-04-23",
   "providers": [
     {
       "id": "openai",
@@ -9,12 +9,11 @@
       "apiKeyHint": "your-api-key",
       "default": "gpt-5.4",
       "models": [
-        { "id": "gpt-5.4", "label": "GPT-5.4 (推荐)", "group": "GPT 系列", "desc": "最强旗舰" },
-        { "id": "gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "GPT 系列", "desc": "轻量高性价比" },
-        { "id": "gpt-4.1", "label": "GPT-4.1", "group": "GPT 系列", "desc": "上一代旗舰" },
-        { "id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "group": "GPT 系列", "desc": "上一代轻量" },
-        { "id": "o3", "label": "o3 (最强推理)", "group": "推理模型 (o 系列)", "desc": "深度推理" },
-        { "id": "o4-mini", "label": "o4 Mini (高性价比)", "group": "推理模型 (o 系列)", "desc": "推理性价比" }
+        { "id": "gpt-5.4", "label": "GPT-5.4 (旗舰)", "group": "GPT 系列", "desc": "1M · 最强推理+编码" },
+        { "id": "gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "GPT 系列", "desc": "400K · 高性价比" },
+        { "id": "gpt-5.4-nano", "label": "GPT-5.4 Nano", "group": "GPT 系列", "desc": "400K · 最轻量" },
+        { "id": "gpt-5.3-codex", "label": "GPT-5.3 Codex", "group": "编码专用", "desc": "Agent 编码优化" },
+        { "id": "gpt-5.2", "label": "GPT-5.2", "group": "GPT 系列", "desc": "上一代旗舰" }
       ]
     },
     {
@@ -23,11 +22,11 @@
       "description": "Claude 系列模型",
       "apiUrl": "https://api.anthropic.com",
       "apiKeyHint": "your-anthropic-key",
-      "default": "claude-sonnet-4-6",
+      "default": "claude-opus-4-7",
       "models": [
-        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6 (最强)", "desc": "Anthropic 最强" },
-        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (推荐)", "desc": "高性价比" },
-        { "id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 (快速)", "desc": "快速轻量" }
+        { "id": "claude-opus-4-7", "label": "Claude Opus 4.7 (旗舰)", "desc": "1M · 最强 Agentic 编码" },
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (推荐)", "desc": "1M · 速度与智能平衡" },
+        { "id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 (快速)", "desc": "200K · 近前沿智能" }
       ]
     },
     {
@@ -37,10 +36,11 @@
       "apiUrl": "https://generativelanguage.googleapis.com/v1beta",
       "default": "gemini-3.1-pro-preview",
       "models": [
-        { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (推荐)", "desc": "最强推理 ARC-AGI-2 77.1%" },
-        { "id": "gemini-3-flash-preview", "label": "Gemini 3 Flash", "desc": "快速" },
-        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "desc": "上一代旗舰" },
-        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (1M 上下文)", "desc": "1M 上下文" }
+        { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (推荐)", "desc": "1M · 最强推理" },
+        { "id": "gemini-3-pro-preview", "label": "Gemini 3 Pro", "desc": "1M · 旗舰" },
+        { "id": "gemini-3-flash-preview", "label": "Gemini 3 Flash", "desc": "1M · 快速" },
+        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "desc": "1M · 上一代旗舰" },
+        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "desc": "1M · 上一代快速" }
       ]
     },
     {
@@ -51,8 +51,8 @@
       "apiKeyHint": "your-api-key",
       "default": "deepseek-chat",
       "models": [
-        { "id": "deepseek-chat", "label": "DeepSeek Chat (推荐)", "desc": "默认选择，thinking toggle" },
-        { "id": "deepseek-reasoner", "label": "DeepSeek Reasoner", "desc": "5+步链式推理专用" }
+        { "id": "deepseek-chat", "label": "DeepSeek Chat (V3.2)", "desc": "128K · 非思考模式" },
+        { "id": "deepseek-reasoner", "label": "DeepSeek Reasoner (V3.2)", "desc": "128K · 思考模式" }
       ]
     },
     {
@@ -60,12 +60,15 @@
       "name": "智谱 AI",
       "description": "GLM 系列模型",
       "apiUrl": "https://api.0ki.cn/api/paas/v4",
-      "default": "glm-5",
+      "default": "glm-5.1",
       "models": [
-        { "id": "glm-5", "label": "GLM-5 (最新旗舰)", "desc": "中文专家 744B" },
-        { "id": "glm-4.7", "label": "GLM-4.7", "desc": "上一代" },
-        { "id": "glm-4.7-flash", "label": "GLM-4.7 Flash (快速)", "desc": "快速判断" },
-        { "id": "glm-4.6v", "label": "GLM-4.6V (视觉)", "desc": "视觉理解" }
+        { "id": "glm-5.1", "label": "GLM-5.1 (最新)", "desc": "200K · 最新旗舰" },
+        { "id": "glm-5", "label": "GLM-5", "desc": "200K · 中文专家" },
+        { "id": "glm-4.7", "label": "GLM-4.7", "desc": "200K · 上一代" },
+        { "id": "glm-4.7-flash", "label": "GLM-4.7 Flash (免费)", "desc": "200K · 快速任务" },
+        { "id": "glm-4.7-flashx", "label": "GLM-4.7 FlashX", "desc": "200K · 增强快速" },
+        { "id": "glm-4.6v", "label": "GLM-4.6V (视觉)", "desc": "128K · 视觉理解" },
+        { "id": "glm-4.6v-flash", "label": "GLM-4.6V Flash", "desc": "128K · 视觉快速" }
       ]
     },
     {
@@ -75,10 +78,10 @@
       "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "default": "qwen3-max",
       "models": [
-        { "id": "qwen3-max", "label": "Qwen3 Max (推荐)", "desc": "最新旗舰" },
-        { "id": "qwen-max-latest", "label": "Qwen Max Latest", "desc": "稳定版" },
-        { "id": "qwen-plus-latest", "label": "Qwen Plus Latest", "desc": "性价比" },
-        { "id": "qwen3-coder", "label": "Qwen3 Coder", "desc": "编码专用" },
+        { "id": "qwen3.6-plus", "label": "Qwen 3.6 Plus (1M)", "desc": "1M · 最新预览" },
+        { "id": "qwen3-max", "label": "Qwen3 Max", "desc": "256K · 推理旗舰" },
+        { "id": "qwen-plus-latest", "label": "Qwen Plus Latest", "desc": "1M · 稳定版" },
+        { "id": "qwen3-coder", "label": "Qwen3 Coder", "desc": "256K · 编码专用" },
         { "id": "qwen-vl-max", "label": "Qwen VL Max (视觉)", "desc": "多模态" }
       ]
     },
@@ -87,11 +90,12 @@
       "name": "Kimi",
       "description": "Moonshot AI 模型",
       "apiUrl": "https://cn.haioi.net/v1",
-      "default": "kimi-k2.5",
+      "default": "kimi-k2.6",
       "models": [
-        { "id": "kimi-k2.5", "label": "Kimi K2.5 (推荐)", "desc": "1T MoE Agent Swarm" },
-        { "id": "kimi-k2-turbo-preview", "label": "Kimi K2 Turbo", "desc": "快速" },
-        { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "desc": "深度推理" }
+        { "id": "kimi-k2.6", "label": "Kimi K2.6 (最新)", "desc": "256K · 多模态 + Agent Swarm" },
+        { "id": "kimi-k2.5", "label": "Kimi K2.5", "desc": "256K · 1T MoE" },
+        { "id": "kimi-k2-turbo-preview", "label": "Kimi K2 Turbo", "desc": "256K · 快速" },
+        { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "desc": "256K · 深度推理" }
       ]
     },
     {
@@ -101,8 +105,8 @@
       "apiUrl": "https://api.minimaxi.com/v1",
       "default": "MiniMax-M2.7",
       "models": [
-        { "id": "MiniMax-M2.7", "label": "MiniMax M2.7 (推荐)", "desc": "Agent 工作流 97% + 编码 SWE-Bench 80.2%" },
-        { "id": "MiniMax-M2.5", "label": "MiniMax M2.5", "desc": "上一代编码王" }
+        { "id": "MiniMax-M2.7", "label": "MiniMax M2.7 (旗舰)", "desc": "200K · 思考+自进化" },
+        { "id": "MiniMax-M2.5", "label": "MiniMax M2.5", "desc": "200K · 上一代" }
       ]
     },
     {
@@ -110,16 +114,16 @@
       "name": "OpenRouter",
       "description": "中转服务",
       "apiUrl": "https://openrouter.ai/api/v1",
-      "default": "openai/gpt-5.4",
+      "default": "anthropic/claude-opus-4-7",
       "models": [
-        { "id": "google/gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "group": "Google Gemini", "desc": "最强推理" },
-        { "id": "google/gemini-3-flash-preview", "label": "Gemini 3 Flash", "group": "Google Gemini", "desc": "快速" },
-        { "id": "anthropic/claude-opus-4.6", "label": "Claude 4.6 Opus", "group": "Anthropic Claude", "desc": "最强" },
-        { "id": "anthropic/claude-sonnet-4.6", "label": "Claude 4.6 Sonnet", "group": "Anthropic Claude", "desc": "性价比" },
-        { "id": "openai/gpt-5.4", "label": "GPT-5.4", "group": "OpenAI", "desc": "最强旗舰" },
-        { "id": "openai/gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "OpenAI", "desc": "轻量" },
-        { "id": "deepseek/deepseek-chat", "label": "DeepSeek Chat", "group": "DeepSeek", "desc": "中文性价比" },
-        { "id": "deepseek/deepseek-reasoner", "label": "DeepSeek Reasoner", "group": "DeepSeek", "desc": "推理" }
+        { "id": "google/gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "group": "Google Gemini", "desc": "1M · 最强推理" },
+        { "id": "google/gemini-3-flash-preview", "label": "Gemini 3 Flash", "group": "Google Gemini", "desc": "1M · 快速" },
+        { "id": "anthropic/claude-opus-4-7", "label": "Claude Opus 4.7", "group": "Anthropic Claude", "desc": "1M · 最强" },
+        { "id": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "group": "Anthropic Claude", "desc": "1M · 性价比" },
+        { "id": "openai/gpt-5.4", "label": "GPT-5.4", "group": "OpenAI", "desc": "1M · 旗舰" },
+        { "id": "openai/gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "OpenAI", "desc": "400K · 轻量" },
+        { "id": "deepseek/deepseek-chat", "label": "DeepSeek Chat", "group": "DeepSeek", "desc": "128K · 性价比" },
+        { "id": "deepseek/deepseek-reasoner", "label": "DeepSeek Reasoner", "group": "DeepSeek", "desc": "128K · 推理" }
       ]
     },
     {
@@ -129,10 +133,11 @@
       "apiUrl": "https://api.perplexity.ai",
       "default": "sonar-pro",
       "models": [
-        { "id": "sonar-pro", "label": "Sonar Pro (推荐)", "desc": "搜索+引用" },
-        { "id": "sonar", "label": "Sonar", "desc": "基础搜索" },
-        { "id": "sonar-reasoning-pro", "label": "Sonar Reasoning Pro", "desc": "搜索+推理" },
-        { "id": "sonar-reasoning", "label": "Sonar Reasoning", "desc": "推理" }
+        { "id": "sonar-pro", "label": "Sonar Pro (推荐)", "desc": "200K · 搜索+引用" },
+        { "id": "sonar", "label": "Sonar", "desc": "128K · 基础搜索" },
+        { "id": "sonar-reasoning-pro", "label": "Sonar Reasoning Pro", "desc": "128K · 搜索+推理" },
+        { "id": "sonar-reasoning", "label": "Sonar Reasoning", "desc": "128K · 推理" },
+        { "id": "sonar-deep-research", "label": "Sonar Deep Research", "desc": "128K · 深度研究" }
       ]
     },
     {
@@ -159,11 +164,12 @@
       "description": "字节跳动豆包系列模型",
       "apiUrl": "https://ark.cn-beijing.volces.com/api/v3",
       "apiKeyHint": "your-volcengine-key",
-      "default": "doubao-1.5-pro-256k",
+      "default": "doubao-seed-1-6",
       "models": [
-        { "id": "doubao-1.5-pro-256k", "label": "Doubao 1.5 Pro 256K (推荐)", "desc": "256K 长上下文" },
-        { "id": "doubao-1.5-thinking-pro", "label": "Doubao 1.5 Thinking Pro", "desc": "深度推理" },
-        { "id": "doubao-seed-1-6-vision-250815", "label": "Doubao Seed 1.6 Vision", "desc": "视觉理解" }
+        { "id": "doubao-seed-1-6", "label": "Doubao Seed 1.6 (推荐)", "desc": "256K · 全能多模态" },
+        { "id": "doubao-seed-1-6-thinking", "label": "Doubao Seed 1.6 Thinking", "desc": "256K · 深度思考" },
+        { "id": "doubao-seed-1-6-flash", "label": "Doubao Seed 1.6 Flash", "desc": "256K · 极速 10ms" },
+        { "id": "doubao-seed-1-6-lite", "label": "Doubao Seed 1.6 Lite", "desc": "256K · 高性价比" }
       ]
     },
     {
@@ -173,8 +179,8 @@
       "apiUrl": "https://api.x.ai/v1",
       "default": "grok-4-1-fast-non-reasoning",
       "models": [
-        { "id": "grok-4-1-fast-non-reasoning", "label": "Grok 4.1 Fast", "desc": "X/Twitter 搜索 + 廉价批量" },
-        { "id": "grok-4-1-fast-reasoning", "label": "Grok 4.1 Fast Reasoning", "desc": "含推理链" }
+        { "id": "grok-4-1-fast-reasoning", "label": "Grok 4.1 Fast Reasoning", "desc": "2M · 含推理链" },
+        { "id": "grok-4-1-fast-non-reasoning", "label": "Grok 4.1 Fast", "desc": "2M · X 搜索+廉价批量" }
       ]
     }
   ]

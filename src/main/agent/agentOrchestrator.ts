@@ -179,16 +179,23 @@ export class AgentOrchestrator {
       const modelState = getModelSessionState();
       const override = modelState.getOverride(sessionId);
       if (override) {
-        const apiKey = this.configService.getApiKey(override.provider);
-        modelConfig = {
-          ...modelConfig,
-          provider: override.provider,
-          model: override.model,
-          apiKey: apiKey || modelConfig.apiKey,
-          temperature: override.temperature ?? modelConfig.temperature,
-          maxTokens: override.maxTokens ?? modelConfig.maxTokens,
-        };
-        logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
+        if (override.adaptive === true) {
+          // 用户选了"自动" → 保持默认 provider/model，只打开 adaptiveRouter
+          modelConfig = { ...modelConfig, adaptive: true };
+          logger.info('[模型选择] session 选了"自动"，使用默认模型 + adaptiveRouter');
+        } else {
+          const apiKey = this.configService.getApiKey(override.provider);
+          modelConfig = {
+            ...modelConfig,
+            provider: override.provider,
+            model: override.model,
+            apiKey: apiKey || modelConfig.apiKey,
+            temperature: override.temperature ?? modelConfig.temperature,
+            maxTokens: override.maxTokens ?? modelConfig.maxTokens,
+            adaptive: false,
+          };
+          logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
+        }
       }
     }
 

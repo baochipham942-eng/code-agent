@@ -36,12 +36,12 @@ interface CreateExperimentDialogProps {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-  { value: 'kimi-k2.5', label: 'Kimi K2.5' },
+  { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'deepseek-chat', label: 'DeepSeek Chat' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' },
 ];
 
 export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({

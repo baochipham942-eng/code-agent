@@ -45,7 +45,7 @@ const logger = createLogger('WebSearch');
 
 export const webSearchTool: Tool = {
   name: 'WebSearch',
-  description: 'Searches the web for information. Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets.',
+  description: 'Searches the web for information. REQUIRED parameter: `query` (non-empty string — do not call without it). Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets.',
   dynamicDescription: () => {
     const now = new Date();
     const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
@@ -78,7 +78,7 @@ Features:
     properties: {
       query: {
         type: 'string',
-        description: 'The search query',
+        description: 'The search query. REQUIRED and must be a non-empty string. Never omit or pass an empty value.',
       },
       count: {
         type: 'number',
@@ -141,6 +141,13 @@ Features:
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const query = params.query as string;
+    if (!query || typeof query !== 'string') {
+      return {
+        success: false,
+        output: '',
+        error: 'WebSearch 需要 query 参数（非空字符串）',
+      };
+    }
     const count = Math.min(Math.max((params.count as number) || 5, 1), 10);
     const parallel = (params.parallel as boolean) ?? true;
     const requestedSources = params.sources as string[] | undefined;

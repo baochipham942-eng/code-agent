@@ -8,8 +8,7 @@ import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import {
   DEFAULT_MODELS,
   MODEL_MAX_TOKENS,
-  CONTEXT_WINDOWS,
-  DEFAULT_CONTEXT_WINDOW,
+  getContextWindow,
   PROVIDER_FALLBACK_CHAIN,
   PROVIDER_REGISTRY,
 } from '../../shared/constants';
@@ -168,11 +167,11 @@ export class AdaptiveRouter {
   }
 
   private findLargerContextModel(context: FallbackContext): FallbackResult | null {
-    const currentWindow = CONTEXT_WINDOWS[context.currentModel] || DEFAULT_CONTEXT_WINDOW;
+    const currentWindow = getContextWindow(context.currentModel);
     const chain = PROVIDER_FALLBACK_CHAIN[context.currentProvider] || [];
     for (const { provider, model } of chain) {
       if (provider === context.currentProvider) continue;
-      const window = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+      const window = getContextWindow(model);
       if (window > currentWindow) {
         return {
           provider,
@@ -187,7 +186,7 @@ export class AdaptiveRouter {
       if (provider === context.currentProvider) continue;
       if (chain.some(c => c.provider === provider)) continue;
       const model = info.defaultModel;
-      const window = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+      const window = getContextWindow(model);
       if (window > currentWindow) {
         return {
           provider,
@@ -207,7 +206,7 @@ export class AdaptiveRouter {
       return {
         provider,
         model,
-        contextWindow: CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW,
+        contextWindow: getContextWindow(model),
         reason: `alternate provider for ${context.reason}`,
       };
     }

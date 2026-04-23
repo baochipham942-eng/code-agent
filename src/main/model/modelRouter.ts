@@ -305,10 +305,10 @@ export class ModelRouter {
       }
     }
 
-    // Adaptive routing for simple tasks
+    // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
     const adaptiveRouter = getAdaptiveRouter();
     const complexity = adaptiveRouter.estimateComplexity(messages);
-    if (complexity.level === 'simple' && !config.useCloudProxy) {
+    if (config.adaptive === true && complexity.level === 'simple' && !config.useCloudProxy) {
       const adaptedConfig = adaptiveRouter.selectModel(complexity, config);
       if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
         // 切换 provider 时需要获取对应的 apiKey

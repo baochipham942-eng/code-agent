@@ -16,7 +16,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, FolderOpen, GitBranch, Package, Wrench } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
 interface TraceNodeRendererProps {
@@ -55,19 +55,6 @@ const ROUTING_LABELS: Record<string, string> = {
 
 function getBrowserWorkbenchLabel(mode: 'managed' | 'desktop'): string {
   return mode === 'managed' ? 'Browser Managed' : 'Browser Desktop';
-}
-
-function formatSnapshotTimestamp(timestamp?: number | null): string | null {
-  if (!timestamp) {
-    return null;
-  }
-
-  const value = new Date(timestamp);
-  if (Number.isNaN(value.getTime())) {
-    return null;
-  }
-
-  return value.toLocaleString();
 }
 
 const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ metadata }) => {
@@ -319,7 +306,9 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
 
   switch (node.turnTimeline.kind) {
     case 'workbench_snapshot':
-      return <WorkbenchSnapshotNode timeline={node.turnTimeline} />;
+      // 每条消息下的"本轮执行快照" meta 卡已从默认流里移除（噪声过重）。
+      // 组件代码保留以便后续在专门视图里复用。
+      return null;
     case 'capability_scope':
       return <CapabilityScopeNode timeline={node.turnTimeline} />;
     case 'blocked_capabilities':
@@ -360,84 +349,6 @@ function getCapabilityPillTone(kind: 'skill' | 'connector' | 'mcp'): 'skill' | '
       return 'connector';
   }
 }
-
-const WorkbenchSnapshotNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const snapshot = timeline.snapshot;
-  if (!snapshot) return null;
-  const browserSessionSnapshot = snapshot.executionIntent?.browserSessionSnapshot;
-  const browserPreview = browserSessionSnapshot?.preview;
-  const lastScreenshotLabel = formatSnapshotTimestamp(browserPreview?.lastScreenshotAtMs);
-
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-400">
-        <Package className="h-3.5 w-3.5 text-sky-300" />
-        <span>本轮执行快照</span>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {snapshot.workingDirectory && (
-          <WorkbenchPill tone="neutral">
-            <span className="inline-flex items-center gap-1">
-              <FolderOpen className="h-3 w-3" />
-              {snapshot.workingDirectory.split('/').filter(Boolean).pop() || snapshot.workingDirectory}
-            </span>
-          </WorkbenchPill>
-        )}
-        {snapshot.routingMode && (
-          <WorkbenchPill tone="info">
-            <span className="inline-flex items-center gap-1">
-              <GitBranch className="h-3 w-3" />
-              {ROUTING_LABELS[snapshot.routingMode] || snapshot.routingMode}
-            </span>
-          </WorkbenchPill>
-        )}
-        {(snapshot.targetAgentNames || snapshot.targetAgentIds || []).map((target) => (
-          <WorkbenchPill key={target} tone="agent">@{target}</WorkbenchPill>
-        ))}
-        {(snapshot.selectedSkillIds || []).map((skillId) => (
-          <WorkbenchPill key={`snapshot-skill-${skillId}`} tone="skill">Skill {skillId}</WorkbenchPill>
-        ))}
-        {(snapshot.selectedConnectorIds || []).map((connectorId) => (
-          <WorkbenchPill key={`snapshot-connector-${connectorId}`} tone="connector">Connector {connectorId}</WorkbenchPill>
-        ))}
-        {(snapshot.selectedMcpServerIds || []).map((serverId) => (
-          <WorkbenchPill key={`snapshot-mcp-${serverId}`} tone="mcp">MCP {serverId}</WorkbenchPill>
-        ))}
-        {snapshot.executionIntent?.browserSessionMode && (
-          <WorkbenchPill tone="info">
-            {getBrowserWorkbenchLabel(snapshot.executionIntent.browserSessionMode)}
-          </WorkbenchPill>
-        )}
-        {browserSessionSnapshot && (
-          <WorkbenchPill tone="info">
-            {browserSessionSnapshot.ready ? 'Browser Ready' : 'Browser Blocked'}
-          </WorkbenchPill>
-        )}
-      </div>
-      {(browserPreview?.title || browserPreview?.url || browserPreview?.frontmostApp || lastScreenshotLabel || browserSessionSnapshot?.blockedDetail) && (
-        <div className="mt-2 space-y-1 text-[11px] text-zinc-400">
-          {(browserPreview?.title || browserPreview?.url) && (
-            <div className="truncate">
-              Browser 预览：{browserPreview?.title || '无标题'}{browserPreview?.url ? ` · ${browserPreview.url}` : ''}
-            </div>
-          )}
-          {browserPreview?.frontmostApp && (
-            <div className="truncate">Frontmost App：{browserPreview.frontmostApp}</div>
-          )}
-          {lastScreenshotLabel && (
-            <div>最近截图：{lastScreenshotLabel}</div>
-          )}
-          {browserSessionSnapshot?.blockedDetail && (
-            <div className="text-amber-200">未就绪：{browserSessionSnapshot.blockedDetail}</div>
-          )}
-          {browserSessionSnapshot?.blockedHint && (
-            <div>{browserSessionSnapshot.blockedHint}</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const CapabilityScopeSection: React.FC<{
   label: string;

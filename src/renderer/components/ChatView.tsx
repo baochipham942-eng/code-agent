@@ -31,7 +31,6 @@ import { isWebMode } from '../utils/platform';
 
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
-import { SessionWorkspaceBar } from './features/chat/SessionWorkspaceBar';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { MessageAttachment, TaskPlan } from '../../shared/contract';
@@ -47,35 +46,14 @@ import {
   Terminal,
   Keyboard,
 } from 'lucide-react';
-import { getSessionStatusPresentation } from '../utils/sessionPresentation';
-
-function getCompactRelativeTime(timestamp: number): string {
-  if (!timestamp || !Number.isFinite(timestamp)) {
-    return '刚刚';
-  }
-
-  const diff = Date.now() - timestamp;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  return `${Math.floor(diff / 86_400_000)}d`;
-}
-
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
-  const setShowEvalCenter = useAppStore((state) => state.setShowEvalCenter);
-  const reviewQueue = useEvalCenterStore((state) => state.reviewQueue);
   const loadReviewQueue = useEvalCenterStore((state) => state.loadReviewQueue);
-  const enqueueReviewItem = useEvalCenterStore((state) => state.enqueueReviewItem);
   const {
     currentSessionId,
     hasOlderMessages,
     isLoadingOlder,
     loadOlderMessages,
-    sessions,
-    sessionRuntimes,
-    backgroundTasks,
-    moveToBackground,
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
@@ -198,18 +176,6 @@ export const ChatView: React.FC = () => {
   const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
   // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
   const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
-  const currentSession = sessions.find((session) => session.id === currentSessionId) || null;
-  const isCurrentSessionInReviewQueue = currentSessionId
-    ? reviewQueue.some((item) => item.sessionId === currentSessionId)
-    : false;
-  const currentBackgroundTask = backgroundTasks.find((task) => task.sessionId === currentSessionId) || undefined;
-  const currentSessionRuntime = currentSessionId ? sessionRuntimes.get(currentSessionId) : undefined;
-  const currentSessionStatus = getSessionStatusPresentation({
-    backgroundTask: currentBackgroundTask,
-    runtime: currentSessionRuntime,
-    taskState: currentSessionState,
-    messageCount: currentSession?.messageCount,
-  });
 
   // Auto-reset isPaused when processing finishes
   useEffect(() => {
@@ -373,83 +339,6 @@ export const ChatView: React.FC = () => {
     await handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
-  const handleResumeSession = useCallback(async () => {
-    if (!currentSessionId) {
-      return;
-    }
-
-    await window.domainAPI?.invoke(IPC_DOMAINS.AGENT, 'resume', { sessionId: currentSessionId });
-  }, [currentSessionId]);
-
-  const handleMoveToBackground = useCallback(async () => {
-    if (!currentSessionId) {
-      return;
-    }
-
-    await moveToBackground(currentSessionId);
-  }, [currentSessionId, moveToBackground]);
-
-  const handleExportMarkdown = useCallback(async () => {
-    if (!currentSessionId) {
-      return;
-    }
-
-    const response = await window.domainAPI?.invoke<{ markdown: string; suggestedFileName: string }>(
-      IPC_DOMAINS.SESSION,
-      'exportMarkdown',
-      { sessionId: currentSessionId },
-    );
-    if (!response?.success || !response.data?.markdown) {
-      throw new Error(response?.error?.message || 'Failed to export markdown');
-    }
-
-    const blob = new Blob([response.data.markdown], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = response.data.suggestedFileName || `session-${currentSessionId}.md`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [currentSessionId]);
-
-  const handleOpenReplay = useCallback(() => {
-    if (!currentSessionId) {
-      return;
-    }
-    setShowEvalCenter(true, undefined, currentSessionId);
-  }, [currentSessionId, setShowEvalCenter]);
-
-  const handleAddToReviewQueue = useCallback(async () => {
-    if (!currentSessionId || !currentSession) {
-      return;
-    }
-
-    await enqueueReviewItem({
-      sessionId: currentSessionId,
-      sessionTitle: currentSession.title,
-      reason: 'manual_review',
-      source: 'current_session_bar',
-    });
-  }, [currentSession, currentSessionId, enqueueReviewItem]);
-
-  const handleReopenWorkspace = useCallback(async () => {
-    const workingDirectory = currentSession?.workingDirectory?.trim();
-    if (!workingDirectory) {
-      return;
-    }
-
-    const response = await window.domainAPI?.invoke<string | null>(
-      IPC_DOMAINS.WORKSPACE,
-      'setCurrent',
-      { dir: workingDirectory },
-    );
-    if (!response?.success) {
-      throw new Error(response?.error?.message || 'Failed to restore workspace');
-    }
-
-    useAppStore.getState().setWorkingDirectory(response.data || workingDirectory);
-  }, [currentSession?.workingDirectory]);
-
   return (
     <div
         className="flex-1 flex overflow-hidden relative"
@@ -484,31 +373,6 @@ export const ChatView: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
-
-        {currentSession && (
-          <SessionWorkspaceBar
-            title={currentSession.title || '未命名会话'}
-            status={currentSessionStatus}
-            activityLabel={getCompactRelativeTime(Math.max(
-              currentSession.updatedAt || 0,
-              currentSessionRuntime?.lastActivityAt || 0,
-              currentBackgroundTask?.backgroundedAt || 0,
-            ))}
-            turnCount={currentSession.turnCount || 0}
-            snapshot={currentSession.workbenchSnapshot}
-            workingDirectory={currentSession.workingDirectory}
-            currentWorkingDirectory={appWorkingDirectory}
-            canResume={currentSessionStatus.kind === 'paused'}
-            canMoveToBackground={currentSessionStatus.kind === 'live'}
-            isInReviewQueue={isCurrentSessionInReviewQueue}
-            onResume={handleResumeSession}
-            onMoveToBackground={handleMoveToBackground}
-            onAddToReviewQueue={handleAddToReviewQueue}
-            onOpenReplay={handleOpenReplay}
-            onExportMarkdown={handleExportMarkdown}
-            onReopenWorkspace={handleReopenWorkspace}
-          />
-        )}
 
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 

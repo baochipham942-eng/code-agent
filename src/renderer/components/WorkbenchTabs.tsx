@@ -40,6 +40,9 @@ export const WorkbenchTabs: React.FC = () => {
     if (id === 'skills') {
       return { id, label: 'Skills', title: 'Session Skills', isDirty: false };
     }
+    if (id === 'files') {
+      return { id, label: '文件', title: '文件浏览器', isDirty: false };
+    }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
     const isDirty = previewTab ? previewTab.content !== previewTab.savedContent : false;

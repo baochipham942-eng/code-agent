@@ -32,7 +32,7 @@ import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 import { isProtocolExposeEnabled, getPocToolDefinitions } from '../../tools/protocolRegistry';
 import {
   getCoreToolDefinitions,
@@ -746,7 +746,7 @@ ${deferredToolsSummary}
     );
 
     let contextApiView = interventionAdjustedEntries;
-    const contextWindowSize = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || 64000;
+    const contextWindowSize = getContextWindow(this.ctx.modelConfig.model);
     try {
       const nextCompressionState = new CompressionState();
       const lastActivityAt = interventionAdjustedEntries.at(-1)?.timestamp ?? Date.now();

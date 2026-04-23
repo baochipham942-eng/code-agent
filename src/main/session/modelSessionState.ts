@@ -15,6 +15,8 @@ export interface ModelOverride {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** true = "自动路由"模式（允许 adaptiveRouter 工作）；缺省 = 严格用指定 provider/model */
+  adaptive?: boolean;
   setAt: number;
 }
 

@@ -272,10 +272,14 @@ export const useAgent = () => {
 
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
+  // 心跳：每收到 SSE 事件更新时间戳；下方 idle-timer 检查超时
+  const lastEventAtRef = useRef(Date.now());
+
   useEffect(() => {
     const unsubscribe = ipcService.on(
       'agent:event',
       (event: { type: string; data: any; sessionId?: string }) => {
+        lastEventAtRef.current = Date.now();
         // 只对非流式事件打印日志，避免控制台刷屏
         const silentEvents = ['stream_chunk', 'stream_reasoning', 'stream_tool_call_delta'];
         if (!silentEvents.includes(event.type)) {
@@ -864,6 +868,25 @@ export const useAgent = () => {
     setSessionTaskProgress,
     setSessionTaskComplete,
   ]); // Remove messages from deps to avoid re-registering
+
+  // Idle-timer 兜底：isProcessing 持续 5 分钟无任何 SSE 事件 → 视为 stuck，强制清状态
+  // 防 dev server 重启 / 网络断开 / agent loop hang 导致 UI 永远转圈
+  useEffect(() => {
+    const STALE_MS = 5 * 60 * 1000;
+    const CHECK_INTERVAL_MS = 30_000;
+    const timer = setInterval(() => {
+      const appState = useAppStore.getState();
+      const hasProcessing = appState.isProcessing || appState.processingSessionIds.size > 0;
+      if (!hasProcessing) return;
+      const idleMs = Date.now() - lastEventAtRef.current;
+      if (idleMs < STALE_MS) return;
+      logger.warn(`[useAgent] No SSE events for ${Math.round(idleMs / 1000)}s while processing — auto-clearing stale state`);
+      Array.from(appState.processingSessionIds).forEach((sid) => appState.setSessionProcessing(sid, false));
+      appState.setIsProcessing(false);
+      lastEventAtRef.current = Date.now();
+    }, CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件

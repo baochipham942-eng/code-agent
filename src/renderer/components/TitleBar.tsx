@@ -8,6 +8,7 @@ import { useDisclosure } from '../hooks/useDisclosure';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3, Sparkles } from 'lucide-react';
 import { isWebMode, isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
+import { SessionActionsMenu } from './SessionActionsMenu';
 // 奶酪图标组件
 const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -30,8 +31,6 @@ export const TitleBar: React.FC = () => {
     setShowDesktopPanel,
     showCronCenter,
     setShowCronCenter,
-    showFileExplorer,
-    setShowFileExplorer,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
     workbenchTabs,
@@ -40,6 +39,7 @@ export const TitleBar: React.FC = () => {
   } = useAppStore();
   const isTaskTabOpen = workbenchTabs.includes('task');
   const isSkillsTabOpen = workbenchTabs.includes('skills');
+  const isFilesTabOpen = workbenchTabs.includes('files');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
@@ -98,6 +98,7 @@ export const TitleBar: React.FC = () => {
           <FolderOpen className="h-3.5 w-3.5 text-amber-400" />
           <span className="max-w-[180px] truncate">{workspaceLabel}</span>
         </button>
+        <SessionActionsMenu />
       </div>
       {/* Right: EvalCenter + Lab + DAG Panel Toggle + Task Panel Toggle */}
       <div className="flex items-center gap-1">
@@ -152,15 +153,15 @@ export const TitleBar: React.FC = () => {
           windowNoDrag
           className={showDesktopPanel ? 'text-cyan-400' : ''}
         />
-        {/* File Explorer Toggle */}
+        {/* File Explorer Toggle — 统一成右侧 workbench tab */}
         <IconButton
           icon={<FolderTree className="w-4 h-4" />}
-          aria-label={showFileExplorer ? '隐藏文件浏览器' : '显示文件浏览器'}
-          onClick={() => setShowFileExplorer(!showFileExplorer)}
+          aria-label={isFilesTabOpen ? '隐藏文件浏览器' : '显示文件浏览器'}
+          onClick={() => (isFilesTabOpen ? closeWorkbenchTab('files') : openWorkbenchTab('files'))}
           variant="ghost"
           size="md"
           windowNoDrag
-          className={showFileExplorer ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
+          className={isFilesTabOpen ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
         />
         {/* Skills Panel Toggle (Standard+ mode) */}
         {isStandard && (

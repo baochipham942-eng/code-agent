@@ -1,6 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
+import type { DomainAPI } from '../../src/shared/ipc/api';
+
+declare global {
+  interface Window {
+    domainAPI?: DomainAPI;
+  }
+}
 
 test.setTimeout(120_000);
+
+const createdSessionIds: string[] = [];
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -22,12 +31,17 @@ async function bootstrapUniqueSession(page: Page): Promise<string> {
   await page.waitForTimeout(2000);
   await dismissApiKeyDialog(page);
 
-  await page.evaluate(async (sessionTitle) => {
+  const sessionId = await page.evaluate(async (sessionTitle) => {
     const response = await window.domainAPI?.invoke<{ id: string }>('session', 'create', { title: sessionTitle });
     if (!response?.success) {
       throw new Error(response?.error?.message || 'failed to create e2e session');
     }
+    return response.data?.id;
   }, title);
+
+  if (sessionId) {
+    createdSessionIds.push(sessionId);
+  }
 
   await page.reload();
   await page.waitForLoadState('domcontentloaded');
@@ -36,6 +50,18 @@ async function bootstrapUniqueSession(page: Page): Promise<string> {
 
   return title;
 }
+
+test.afterEach(async ({ page }) => {
+  if (createdSessionIds.length === 0) return;
+  const idsToDelete = createdSessionIds.splice(0);
+  await page.evaluate(async (ids) => {
+    for (const id of ids) {
+      await window.domainAPI?.invoke('session', 'delete', { sessionId: id });
+    }
+  }, idsToDelete).catch(() => {
+    // Best-effort cleanup; don't fail test teardown on IPC errors.
+  });
+});
 
 test('current session can enter review queue and reopen replay from eval center', async ({ page }) => {
   const title = await bootstrapUniqueSession(page);

@@ -387,6 +387,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       model: params.model,
       temperature: params.temperature,
       maxTokens: params.maxTokens,
+      adaptive: params.adaptive,
     });
   }
 

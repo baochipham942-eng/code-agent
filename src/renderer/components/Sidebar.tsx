@@ -27,12 +27,15 @@ import {
   Pin,
   Search,
   X,
-  FolderOpen,
+  Folder,
+  MessageSquareText,
+  ChevronRight,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
+import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
@@ -143,6 +146,8 @@ export const Sidebar: React.FC = () => {
     softDelete,
     undoDelete,
     pendingDelete,
+    expandedWorkspaces,
+    setWorkspaceExpanded,
   } = useSessionUIStore();
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
@@ -208,6 +213,7 @@ export const Sidebar: React.FC = () => {
         runtime: sessionRuntimes.get(session.id),
         taskState: sessionStates[session.id],
         messageCount: session.messageCount,
+        sessionStatus: session.status,
       });
       if (sessionStatusFilter === 'background' && status.kind !== 'background') {
         return false;
@@ -225,40 +231,13 @@ export const Sidebar: React.FC = () => {
     });
   }, [backgroundTaskMap, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
 
-  // Group sessions by project (workingDirectory), then by date within each project
-  const projectGroupedSessions = useMemo(() => {
-    // Extract project name from workingDirectory (last path segment)
-    const getProjectName = (dir?: string): string => {
-      if (!dir) return '未分类';
-      const segments = dir.replace(/\/+$/, '').split('/');
-      return segments[segments.length - 1] || '未分类';
-    };
-
-    // Group by project
-    const projectMap = new Map<string, SessionWithMeta[]>();
-    for (const session of filteredSessions) {
-      const project = getProjectName(session.workingDirectory);
-      const existing = projectMap.get(project);
-      if (existing) {
-        existing.push(session);
-      } else {
-        projectMap.set(project, [session]);
-      }
-    }
-
-    // Sort projects: most recently updated first
-    const sorted = Array.from(projectMap.entries()).sort((a, b) => {
-      const aMax = Math.max(...a[1].map((s) => s.updatedAt));
-      const bMax = Math.max(...b[1].map((s) => s.updatedAt));
-      return bMax - aMax;
-    });
-
-    // Within each project, group by date
-    return sorted.map(([project, projectSessions]) => ({
-      project,
-      dateGroups: groupSessions(projectSessions, pinnedSessionIds),
-    }));
-  }, [filteredSessions, pinnedSessionIds]);
+  // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
+  // sorted by latest activity; sessions without a workingDirectory go into a
+  // trailing "Chats" bucket. No time sub-groups inside workspaces.
+  const workspaceGroupedSessions = useMemo(
+    () => groupByWorkspace(filteredSessions),
+    [filteredSessions],
+  );
 
   // 按日期分组 (used when search is active — flat list)
   const groupedSessions = useMemo(() => {
@@ -512,6 +491,7 @@ export const Sidebar: React.FC = () => {
       runtime: sessionRuntime,
       taskState: sessionStates[session.id],
       messageCount: session.messageCount,
+      sessionStatus: session.status,
     });
     const latestActivityAt = Math.max(
       session.updatedAt || 0,
@@ -739,28 +719,40 @@ export const Sidebar: React.FC = () => {
             ))}
           </div>
         ) : (
-          /* Default: project-grouped view */
+          /* Default: workspace-grouped view (Codex-style). No time sub-groups. */
           <div className="py-2">
-            {projectGroupedSessions.map(({ project, dateGroups }) => (
-              <div key={project} className="mb-3">
-                {/* Project header */}
-                <div className="sticky top-0 z-20 flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 backdrop-blur-sm">
-                  <FolderOpen className="w-3 h-3 text-zinc-500" />
-                  <span className="text-xs font-medium text-zinc-400">{project}</span>
-                </div>
-                {/* Date groups within project */}
-                {dateGroups.map(({ group, label, sessions: groupSessions }) => (
-                  <div key={`${project}-${group}`} className="mb-1">
-                    <div className="px-3 py-1 text-xs text-zinc-600">
-                      {label}
-                    </div>
+            {workspaceGroupedSessions.map((group) => {
+              const expanded = isWorkspaceExpanded(expandedWorkspaces, group.key);
+              const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
+              return (
+                <div key={group.key} className="mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceExpanded(group.key, !expanded)}
+                    className="sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+                    title={group.path ?? group.name}
+                  >
+                    <ChevronRight
+                      className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                    />
+                    <IconComponent className="w-3 h-3 text-zinc-500" />
+                    <span className="text-xs font-medium text-zinc-400 truncate">{group.name}</span>
+                    <span className="ml-auto text-[10px] text-zinc-600">{group.sessions.length}</span>
+                  </button>
+                  {expanded && (
                     <div className="space-y-0.5">
-                      {groupSessions.map((session) => renderSessionItem(session as SessionWithMeta))}
+                      {group.sessions.length === 0 ? (
+                        <div className="px-3 py-1 text-xs text-zinc-600">No chats</div>
+                      ) : (
+                        group.sessions.map((session) =>
+                          renderSessionItem(session as SessionWithMeta),
+                        )
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

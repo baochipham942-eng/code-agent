@@ -21,6 +21,8 @@ import { isElectronMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
+import { PreviewPanel } from './components/PreviewPanel';
+import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
@@ -76,14 +78,10 @@ function useWindowWidth(): number {
 export const App: React.FC = () => {
   const {
     showSettings,
-    showTaskPanel,
-    setShowTaskPanel,
     setTaskPanelTab,
-    showSkillsPanel,
     showCronCenter,
     showFileExplorer,
     setShowFileExplorer,
-    setShowSkillsPanel,
     showAgentTeamPanel,
     setShowAgentTeamPanel,
     selectedSwarmAgentId,
@@ -91,13 +89,16 @@ export const App: React.FC = () => {
     showEvalCenter,
     setShowSettings,
     setLanguage,
+    workbenchTabs,
+    activeWorkbenchTab,
+    openWorkbenchTab,
   } = useAppStore();
 
   // 响应式：窗口宽度 < 1180 时隐藏右侧面板
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < 1180;
-  const effectiveShowTaskPanel = showTaskPanel && !isNarrowViewport;
-  const effectiveShowSkillsPanel = showSkillsPanel && !isNarrowViewport;
+  const showWorkbench = !isNarrowViewport && workbenchTabs.length > 0;
+  const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
@@ -359,7 +360,7 @@ export const App: React.FC = () => {
       IPC_CHANNELS.SWARM_EVENT,
       (event) => {
         if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
-          setShowTaskPanel(true);
+          openWorkbenchTab('task');
           setTaskPanelTab('orchestration');
         }
         useSwarmStore.getState().handleEvent(event);
@@ -369,7 +370,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [setShowTaskPanel, setTaskPanelTab]);
+  }, [openWorkbenchTab, setTaskPanelTab]);
 
   return (
     <ErrorBoundary>
@@ -412,15 +413,19 @@ export const App: React.FC = () => {
                     </div>
                   </Panel>
 
-                  {(effectiveShowTaskPanel || effectiveShowSkillsPanel) && (
+                  {showWorkbench && (
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
-                  {(effectiveShowTaskPanel || effectiveShowSkillsPanel) && (
+                  {showWorkbench && (
                     <Panel defaultSize="20" minSize="15" maxSize="45" id="right-panel">
-                      {effectiveShowTaskPanel && <TaskPanel />}
-                      {effectiveShowSkillsPanel && (
-                        <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
-                      )}
+                      <div className="flex flex-col h-full bg-zinc-900">
+                        <WorkbenchTabs />
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                          {activeWorkbenchTab === 'task' && <TaskPanel />}
+                          {activeWorkbenchTab === 'skills' && <SkillsPanel />}
+                          {isPreviewActive && <PreviewPanel />}
+                        </div>
+                      </div>
                     </Panel>
                   )}
                 </PanelGroup>

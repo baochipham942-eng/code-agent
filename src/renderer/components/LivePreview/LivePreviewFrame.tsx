@@ -187,8 +187,9 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       if (iframeRef.current) iframeRef.current.src = src;
     });
     setBridgeReady(false);
-    setSelectedElement(tabId, null);
-  }, [tabId, setSelectedElement]);
+    // 不清 selection：P3 (bridge 0.2.0) 之后 vg:ready 会带 restore-selection
+    // 重新找到原元素高亮。用户想手动清请用 bridge 的 vg:clear-selection 或重开 tab。
+  }, []);
 
   const handleOpenExternal = useCallback(() => {
     window.open(devServerUrl, '_blank', 'noopener');

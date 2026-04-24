@@ -11,6 +11,10 @@ import { ToolHeader } from './ToolHeader';
 import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
+import {
+  buildBrowserComputerActionPreview,
+  type BrowserComputerActionPreview,
+} from '../../../../../utils/browserComputerActionPreview';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -113,6 +117,10 @@ export function ToolCallDisplay({
   );
   // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
+  const actionPreview = useMemo(
+    () => buildBrowserComputerActionPreview(toolCall),
+    [toolCall],
+  );
 
   // Auto-collapse on success after 500ms (only if user hasn't manually toggled)
   useEffect(() => {
@@ -153,6 +161,10 @@ export function ToolCallDisplay({
         )}
       </div>
 
+      {actionPreview && !compact && (
+        <BrowserComputerActionPreviewLine preview={actionPreview} />
+      )}
+
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
         <BashOutputPreview toolCall={toolCall} status={status} />
@@ -171,6 +183,37 @@ export function ToolCallDisplay({
           <ToolDetails toolCall={toolCall} compact={compact} />
         </div>
       )}
+    </div>
+  );
+}
+
+function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): string {
+  switch (risk) {
+    case 'read':
+      return 'text-emerald-300';
+    case 'browser_action':
+      return 'text-sky-300';
+    case 'desktop_input':
+      return 'text-amber-300';
+    default:
+      return 'text-zinc-400';
+  }
+}
+
+function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserComputerActionPreview }) {
+  return (
+    <div className="ml-6 mt-0.5 mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
+      <span className="text-zinc-600">Action</span>
+      <span className="text-zinc-300">{preview.summary}</span>
+      {preview.target && (
+        <>
+          <span className="text-zinc-700">→</span>
+          <span className="max-w-[320px] truncate" title={preview.target}>{preview.target}</span>
+        </>
+      )}
+      <span className={getActionPreviewRiskClass(preview.risk)}>{preview.riskLabel}</span>
+      {preview.mode && <span title={preview.mode}>{preview.mode}</span>}
+      {preview.traceId && <span className="font-mono" title={preview.traceId}>{preview.traceId}</span>}
     </div>
   );
 }

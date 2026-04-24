@@ -8,7 +8,9 @@ import {
   isBridgeMessage,
   type SelectedElementInfo,
 } from '../../../shared/livePreview/protocol';
+import { IPC_DOMAINS } from '../../../shared/ipc';
 import { useAppStore, type LivePreviewSelectedElement } from '../../stores/appStore';
+import { invokeDomain } from '../../services/ipcService';
 
 interface Props {
   tabId: string;
@@ -25,14 +27,41 @@ const toSelectedElement = (info: SelectedElementInfo): LivePreviewSelectedElemen
   componentName: info.componentName,
 });
 
+interface ResolvedSourceLocation {
+  absolute: string;
+  relative: string;
+  exists: boolean;
+}
+
+export function getLivePreviewOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function isTrustedLivePreviewBridgeEvent(
+  event: Pick<MessageEvent, 'data' | 'origin' | 'source'>,
+  expectedSource: unknown,
+  expectedOrigin: string | null,
+): boolean {
+  if (!isBridgeMessage(event.data)) return false;
+  if (!expectedSource || event.source !== expectedSource) return false;
+  if (!expectedOrigin || event.origin !== expectedOrigin) return false;
+  return true;
+}
+
 export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const setSelectedElement = useAppStore((s) => s.setSelectedElement);
   const jumpToFileLine = useAppStore((s) => s.jumpToFileLine);
+  const workingDirectory = useAppStore((s) => s.workingDirectory);
   const selectedElement = useAppStore((s) => {
     const tab = s.previewTabs.find((t) => t.id === tabId);
     return tab?.selectedElement ?? null;
   });
+  const expectedOrigin = useMemo(() => getLivePreviewOrigin(devServerUrl), [devServerUrl]);
 
   const [bridgeReady, setBridgeReady] = useState(false);
   const [urlInput, setUrlInput] = useState(devServerUrl);
@@ -40,7 +69,13 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const [frameError, setFrameError] = useState<string | null>(null);
   const [cspSnippet, setCspSnippet] = useState<string>('');
 
-  useEffect(() => setUrlInput(devServerUrl), [devServerUrl]);
+  useEffect(() => {
+    setUrlInput(devServerUrl);
+    setBridgeReady(false);
+    setFrameLoaded(false);
+    setFrameError(null);
+    setSelectedElement(tabId, null);
+  }, [devServerUrl, tabId, setSelectedElement]);
 
   // 读当前页面生效的 CSP（Tauri 把 tauri.conf.json 的 csp 注入成 meta tag）
   useEffect(() => {
@@ -67,17 +102,42 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     return () => clearTimeout(timer);
   }, [bridgeReady, frameLoaded]);
 
+  const resolveAndSetSelectedElement = useCallback(async (info: SelectedElementInfo) => {
+    try {
+      const resolved = await invokeDomain<ResolvedSourceLocation>(
+        IPC_DOMAINS.LIVE_PREVIEW,
+        'resolveSourceLocation',
+        {
+          file: info.location.file,
+          projectRoot: workingDirectory || undefined,
+        },
+      );
+
+      if (!resolved.exists) {
+        setFrameError(`bridge 源码定位失败：${resolved.relative} 不存在`);
+        return;
+      }
+
+      setSelectedElement(tabId, {
+        ...toSelectedElement(info),
+        file: resolved.absolute,
+      });
+    } catch (err) {
+      setFrameError(`bridge 源码定位被拒绝：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [tabId, workingDirectory, setSelectedElement]);
+
   // 监听 iframe 发来的 bridge 消息
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (!isBridgeMessage(e.data)) return;
+      if (!isTrustedLivePreviewBridgeEvent(e, iframeRef.current?.contentWindow, expectedOrigin)) return;
       const msg = e.data;
       switch (msg.type) {
         case 'vg:ready':
           setBridgeReady(true);
           break;
         case 'vg:select':
-          setSelectedElement(tabId, toSelectedElement(msg.payload));
+          void resolveAndSetSelectedElement(msg.payload);
           break;
         case 'vg:hover':
           // MVP 不处理 hover，后续可用于编辑器端预览联动
@@ -86,7 +146,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [tabId, setSelectedElement]);
+  }, [expectedOrigin, resolveAndSetSelectedElement]);
 
   const handleRefresh = useCallback(() => {
     if (!iframeRef.current) return;
@@ -105,11 +165,15 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   }, [devServerUrl]);
 
   const handlePing = useCallback(() => {
+    if (!expectedOrigin) {
+      setFrameError('dev server URL 无效，无法发送 bridge ping');
+      return;
+    }
     iframeRef.current?.contentWindow?.postMessage(
       { source: 'vg:parent', type: 'vg:ping' },
-      '*',
+      expectedOrigin,
     );
-  }, []);
+  }, [expectedOrigin]);
 
   const displayFile = useMemo(() => {
     if (!selectedElement) return null;
@@ -187,6 +251,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       {/* iframe */}
       <div className="flex-1 overflow-hidden bg-white relative">
         <iframe
+          key={devServerUrl}
           ref={iframeRef}
           src={devServerUrl}
           title="Live Preview"

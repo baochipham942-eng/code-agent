@@ -39,6 +39,7 @@ describe('ReplayAnalyticsSidebar failure follow-up', () => {
 
     expect(html).toContain('Failure Follow-up');
     expect(html).toContain('关键上下文没有带入');
+    expect(html).toContain('分流 Dataset · 缺少上下文');
     expect(html).toContain('加入 Failure Follow-up');
     expect(html).toContain('会写入 Review Queue');
   });

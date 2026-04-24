@@ -18,7 +18,7 @@ import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import type { Element } from 'hast';
 import { useAppStore } from '../../../../stores/appStore';
-import { wrapFilePathsInBackticks } from './filePathProcessor';
+import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 import { ChartBlock } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
@@ -402,10 +402,10 @@ const InlineCode = memo(function InlineCode({
   const isFile = isFilePath(text);
   const isHtml = isHtmlFile(text);
 
-  // Regular inline code (not a file)
+  // Regular inline code (not a file) — Codex 风格：无 border，柔和灰底
   if (!isFile) {
     return (
-      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900 text-primary-300 text-xs font-mono border border-zinc-700">
+      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-white/[0.06] text-zinc-200 text-xs font-mono">
         {children}
       </code>
     );
@@ -416,7 +416,7 @@ const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900 text-primary-300 text-xs font-mono border border-zinc-700 cursor-pointer hover:bg-zinc-700 hover:border-primary-500/50 hover:text-primary-200 transition-colors group"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-white/[0.06] text-primary-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-primary-200 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -789,6 +789,23 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           );
         }
 
+        // IACT: [ID](!ticket) — Jira-like ticket auto-link, click to copy ID
+        if (href === '!ticket') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard.writeText(text); }}
+              className="text-sky-400 hover:text-sky-300 underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
+              title={`点击复制 ${text}`}
+            >
+              {children}
+            </button>
+          );
+        }
+
         // Regular links
         return (
           <a
@@ -828,10 +845,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     [handleOpenFile, handlePreviewHtml]
   );
 
-  // Filter out system tags and wrap file paths in backticks before rendering
+  // Filter out system tags, auto-link ticket IDs, wrap file paths before rendering
   const filteredContent = useMemo(() => {
     const cleaned = filterSystemTags(content);
-    return wrapFilePathsInBackticks(cleaned);
+    const withTickets = wrapTicketsAsLinks(cleaned);
+    return wrapFilePathsInBackticks(withTickets);
   }, [content]);
 
   return (

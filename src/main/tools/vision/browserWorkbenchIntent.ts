@@ -155,7 +155,11 @@ export async function ensureManagedBrowserSessionForWorkbench(args: {
     return null;
   }
 
-  await browserService.ensureSession(args.url);
+  if (args.url) {
+    await browserService.ensureSession(args.url);
+  } else {
+    await browserService.ensureSession();
+  }
 
   const notes: string[] = [];
   if (!before.running) {

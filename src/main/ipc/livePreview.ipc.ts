@@ -24,14 +24,15 @@ interface ResolveSourceLocationResponse {
 /**
  * 把 bridge 回传的路径（相对或绝对）统一成绝对路径，并校验落在 projectRoot 之内（防路径逃逸）
  */
-function resolveSourceLocation(
+export function resolveLivePreviewSourceLocation(
   req: ResolveSourceLocationRequest,
 ): ResolveSourceLocationResponse {
   const root = req.projectRoot ? path.resolve(req.projectRoot) : process.cwd();
   const absolute = path.isAbsolute(req.file) ? path.resolve(req.file) : path.resolve(root, req.file);
 
   // 防路径逃逸：解析后的绝对路径必须以 projectRoot 开头
-  const inside = absolute === root || absolute.startsWith(root + path.sep);
+  const relative = path.relative(root, absolute);
+  const inside = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
   if (!inside) {
     throw new Error(`路径逃逸: ${req.file} 不在 ${root} 内`);
   }
@@ -47,7 +48,7 @@ function resolveSourceLocation(
 
   return {
     absolute,
-    relative: path.relative(root, absolute).split(path.sep).join('/'),
+    relative: relative.split(path.sep).join('/'),
     exists,
   };
 }
@@ -55,21 +56,14 @@ function resolveSourceLocation(
 /**
  * 校验一个 URL 是否是可接受的 dev server 地址
  */
-function validateDevServerUrl(rawUrl: string): { ok: true; url: string } | { ok: false; reason: string } {
+export function validateLivePreviewDevServerUrl(rawUrl: string): { ok: true; url: string } | { ok: false; reason: string } {
   try {
     const u = new URL(rawUrl);
     if (!/^https?:$/.test(u.protocol)) return { ok: false, reason: '仅支持 http(s) 协议' };
-    // 只允许本地地址（MVP 阶段）
+    // 只允许当前 renderer CSP frame-src 真能加载的本机 dev server。
     const host = u.hostname;
-    const isLocal =
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '0.0.0.0' ||
-      host.endsWith('.local') ||
-      host.startsWith('192.168.') ||
-      host.startsWith('10.') ||
-      host.startsWith('172.');
-    if (!isLocal) return { ok: false, reason: 'MVP 仅支持本地 dev server（localhost/127.x/内网）' };
+    const isAllowedFrameHost = host === 'localhost' || host === '127.0.0.1';
+    if (!isAllowedFrameHost) return { ok: false, reason: 'Live Preview 仅支持 localhost / 127.0.0.1 dev server' };
     return { ok: true, url: u.toString() };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
@@ -88,7 +82,7 @@ export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
           if (!payload?.url) {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'url is required' } };
           }
-          const result = validateDevServerUrl(payload.url);
+          const result = validateLivePreviewDevServerUrl(payload.url);
           if (!result.ok) {
             return { success: false, error: { code: 'INVALID_URL', message: result.reason } };
           }
@@ -100,7 +94,7 @@ export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
           if (!payload?.file) {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'file is required' } };
           }
-          const data = resolveSourceLocation(payload);
+          const data = resolveLivePreviewSourceLocation(payload);
           return { success: true, data };
         }
 

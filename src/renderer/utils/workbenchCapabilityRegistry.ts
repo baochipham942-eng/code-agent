@@ -107,10 +107,28 @@ function buildConnectorBlockedReason(connector: WorkbenchConnectorCapability): W
     return undefined;
   }
 
+  if (connector.readiness === 'unchecked') {
+    return {
+      code: 'connector_unverified',
+      detail: `Connector ${connector.label} 已启用但还没检查本地授权，本轮不会调用。`,
+      hint: '点"检查/授权"执行一次显式探测；这一步可能拉起本地应用或触发系统授权。',
+      severity: 'warning',
+    };
+  }
+
+  if (connector.readiness === 'failed') {
+    return {
+      code: 'connector_auth_failed',
+      detail: `Connector ${connector.label} 授权/可用性检查失败，本轮不会调用。${connector.error ? ` ${connector.error}` : ''}`,
+      hint: '打开本地应用确认登录和系统授权后，再点"检查/授权"。',
+      severity: 'error',
+    };
+  }
+
   return {
     code: 'connector_disconnected',
     detail: `Connector ${connector.label} 当前未连接，本轮不会调用。`,
-    hint: '先点"重试连接"刷新状态；还不行再"打开本地应用"完成授权/登录，然后重发这条消息。',
+    hint: '先点"启用/重试"把连接器加入 registry；启用后还需要单独做授权/可用性检查。',
     severity: 'warning',
   };
 }
@@ -181,6 +199,20 @@ export function buildWorkbenchConnectorRegistryItem(
 ): WorkbenchConnectorRegistryItem {
   const available = connector.connected;
   const blockedReason = connector.selected ? buildConnectorBlockedReason(connector) : undefined;
+  const connectionState: WorkbenchCapabilityConnectionState = connector.connected
+    ? 'connected'
+    : connector.readiness === 'unchecked'
+      ? 'lazy'
+      : connector.readiness === 'failed'
+        ? 'error'
+        : 'disconnected';
+  const health: WorkbenchCapabilityHealth = connector.connected
+    ? 'healthy'
+    : connector.readiness === 'failed'
+      ? 'error'
+      : connector.readiness === 'unchecked'
+        ? 'degraded'
+        : 'inactive';
 
   return {
     ...connector,
@@ -188,11 +220,11 @@ export function buildWorkbenchConnectorRegistryItem(
     available,
     blocked: connector.selected && !available,
     visibleInWorkbench: available || connector.selected,
-    health: connector.connected ? 'healthy' : 'inactive',
+    health,
     lifecycle: {
       installState: 'not_applicable',
       mountState: 'not_applicable',
-      connectionState: connector.connected ? 'connected' : 'disconnected',
+      connectionState,
     },
     blockedReason,
   };
@@ -243,7 +275,11 @@ function withMissingConnectors(
       label: connector.label,
       selected: false,
       connected: connector.connected,
+      readiness: connector.readiness,
       detail: connector.detail,
+      error: connector.error,
+      checkedAt: connector.checkedAt,
+      actions: connector.actions,
       capabilities: connector.capabilities,
     });
   }
@@ -336,7 +372,11 @@ function buildSelectedWorkbenchConnectorRegistryItems(
       label: connectorId,
       selected: true,
       connected: false,
+      readiness: undefined,
       detail: undefined,
+      error: undefined,
+      checkedAt: undefined,
+      actions: undefined,
       capabilities: [],
     });
   });

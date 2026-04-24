@@ -8,9 +8,12 @@ import { create } from 'zustand';
 import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
 import type {
   EnqueueReviewItemInput,
+  ReviewQueueFailureCapabilityAssetStatus,
+  ReviewQueueFailureAttributionInput,
   ReviewQueueItem,
   UnifiedTraceIdentity,
 } from '@shared/contract/reviewQueue';
+import { buildReviewQueueFailureCapabilityMetadata } from '@shared/contract/reviewQueue';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import ipcService from '../services/ipcService';
 
@@ -145,7 +148,15 @@ interface EvalCenterStore {
   loadSessionList: () => Promise<void>;
   loadReviewQueue: () => Promise<void>;
   enqueueReviewItem: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem | null>;
-  enqueueFailureFollowup: (sessionId: string, sessionTitle?: string) => Promise<ReviewQueueItem | null>;
+  updateFailureAssetStatus: (
+    reviewItemId: string,
+    status: ReviewQueueFailureCapabilityAssetStatus,
+  ) => Promise<ReviewQueueItem | null>;
+  enqueueFailureFollowup: (
+    sessionId: string,
+    sessionTitle?: string,
+    failureAttribution?: ReviewQueueFailureAttributionInput,
+  ) => Promise<ReviewQueueItem | null>;
   setFilterStatus: (status: 'all' | 'recording' | 'completed' | 'error') => void;
   setSortBy: (sort: 'time' | 'turns' | 'cost') => void;
   reset: () => void;
@@ -255,14 +266,38 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     }
   },
 
-  enqueueFailureFollowup: async (sessionId, sessionTitle) => {
+  updateFailureAssetStatus: async (reviewItemId, status) => {
     try {
-      const item = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE, {
+      const item = await ipcService.invoke(
+        EVALUATION_CHANNELS.REVIEW_QUEUE_UPDATE_FAILURE_ASSET,
+        { reviewItemId, status },
+      );
+      if (item) {
+        set((state) => {
+          const next = state.reviewQueue.filter((existing) => existing.id !== item.id);
+          next.unshift(item);
+          return { reviewQueue: next };
+        });
+      }
+      return item || null;
+    } catch {
+      return null;
+    }
+  },
+
+  enqueueFailureFollowup: async (sessionId, sessionTitle, failureAttribution) => {
+    try {
+      const failureCapability = buildReviewQueueFailureCapabilityMetadata(failureAttribution);
+      const payload: EnqueueReviewItemInput = {
         sessionId,
         sessionTitle,
         reason: 'failure_followup',
         source: 'replay_failure',
-      } satisfies EnqueueReviewItemInput);
+      };
+      if (failureCapability) {
+        payload.failureCapability = failureCapability;
+      }
+      const item = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE, payload);
       if (item) {
         set((state) => {
           const next = state.reviewQueue.filter((existing) => existing.id !== item.id);

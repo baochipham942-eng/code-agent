@@ -86,6 +86,7 @@ export * from './appService';
 export * from './trace';
 export * from './turnTimeline';
 export * from './sessionWorkspace';
+export * from './workbenchPreset';
 export * from './reviewQueue';
 
 // Conversation envelope types (chat-native workbench context)

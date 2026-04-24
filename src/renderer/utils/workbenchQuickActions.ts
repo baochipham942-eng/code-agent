@@ -13,7 +13,12 @@ export type WorkbenchQuickActionKind =
   | 'retry_mcp'
   | 'open_mcp_settings'
   | 'retry_connector'
-  | 'open_connector_app';
+  | 'probe_connector'
+  | 'repair_connector_permission'
+  | 'disconnect_connector'
+  | 'remove_connector'
+  | 'open_connector_app'
+  | 'open_connector_settings';
 
 export interface WorkbenchQuickAction {
   kind: WorkbenchQuickActionKind;
@@ -41,6 +46,10 @@ export interface WorkbenchQuickActionHandlers {
   reconnectMcpServer: (serverName: string) => Promise<boolean>;
   refreshMcpStatus?: () => void | Promise<void>;
   retryConnector: (connectorId: string) => Promise<boolean>;
+  probeConnector: (connectorId: string) => Promise<boolean>;
+  repairConnectorPermission: (connectorId: string) => Promise<boolean>;
+  disconnectConnector: (connectorId: string) => Promise<boolean>;
+  removeConnector: (connectorId: string) => Promise<boolean>;
   openConnectorApp: (connectorId: string) => Promise<boolean>;
 }
 
@@ -69,9 +78,66 @@ function buildSkillQuickActions(
   }
 }
 
+function connectorSupports(
+  connector: WorkbenchConnectorRegistryItem,
+  action: NonNullable<WorkbenchConnectorRegistryItem['actions']>[number],
+): boolean {
+  return !connector.actions || connector.actions.includes(action);
+}
+
+function buildConnectorLifecycleActions(
+  connector: WorkbenchConnectorRegistryItem,
+): WorkbenchQuickAction[] {
+  const actions: WorkbenchQuickAction[] = [];
+
+  if (connectorSupports(connector, 'disconnect')) {
+    actions.push({
+      kind: 'disconnect_connector',
+      label: '断开',
+      emphasis: 'secondary',
+    });
+  }
+
+  if (connectorSupports(connector, 'remove')) {
+    actions.push({
+      kind: 'remove_connector',
+      label: '移除',
+      emphasis: 'secondary',
+    });
+  }
+
+  return actions;
+}
+
 function buildConnectorQuickActions(
+  connector: WorkbenchConnectorRegistryItem,
   blockedReason: WorkbenchConnectorRegistryItem['blockedReason'],
 ): WorkbenchQuickAction[] {
+  if (connector.connected) {
+    return buildConnectorLifecycleActions(connector);
+  }
+
+  if (blockedReason?.code === 'connector_unverified' || blockedReason?.code === 'connector_auth_failed') {
+    return [
+      {
+        kind: 'repair_connector_permission',
+        label: '修复权限',
+        emphasis: 'primary',
+      },
+      {
+        kind: 'open_connector_app',
+        label: '打开本地应用',
+        emphasis: 'secondary',
+      },
+      ...buildConnectorLifecycleActions(connector),
+      {
+        kind: 'open_connector_settings',
+        label: '打开连接器设置',
+        emphasis: 'secondary',
+      },
+    ];
+  }
+
   if (blockedReason?.code !== 'connector_disconnected') {
     return [];
   }
@@ -79,12 +145,17 @@ function buildConnectorQuickActions(
   return [
     {
       kind: 'retry_connector',
-      label: '重试连接',
+      label: '启用/重试',
       emphasis: 'primary',
     },
     {
       kind: 'open_connector_app',
       label: '打开本地应用',
+      emphasis: 'secondary',
+    },
+    {
+      kind: 'open_connector_settings',
+      label: '打开连接器设置',
       emphasis: 'secondary',
     },
   ];
@@ -118,7 +189,7 @@ export function getWorkbenchCapabilityQuickActions(
   const blockedReason = getWorkbenchCapabilityBlockedState(capability);
 
   if (options?.includeUnselected) {
-    if (capability.available || !blockedReason) {
+    if (capability.kind !== 'connector' && (capability.available || !blockedReason)) {
       return [];
     }
   } else if (!capability.selected || !capability.blocked || !blockedReason) {
@@ -129,7 +200,7 @@ export function getWorkbenchCapabilityQuickActions(
     case 'skill':
       return buildSkillQuickActions(blockedReason);
     case 'connector':
-      return buildConnectorQuickActions(blockedReason);
+      return buildConnectorQuickActions(capability, blockedReason);
     case 'mcp':
       return buildMcpQuickActions(blockedReason);
     default:
@@ -141,6 +212,20 @@ export function getWorkbenchCapabilityQuickActionFeedback(
   capability: WorkbenchCapabilityRegistryItem,
   completion?: WorkbenchQuickActionCompletion | null,
 ): WorkbenchQuickActionFeedback | null {
+  if (completion?.kind === 'disconnect_connector') {
+    return {
+      tone: 'info',
+      message: '已断开 connector；它不会进入后续运行时 scope。',
+    };
+  }
+
+  if (completion?.kind === 'remove_connector') {
+    return {
+      tone: 'info',
+      message: '已移除 connector；需要时可从连接器设置重新启用。',
+    };
+  }
+
   if (capability.available && !capability.blocked) {
     return {
       tone: 'success',
@@ -176,12 +261,27 @@ export function getWorkbenchCapabilityQuickActionFeedback(
     case 'retry_connector':
       return {
         tone: 'info',
-        message: '已重新检测 connector 状态；还不行就先打开本地应用检查授权。',
+        message: '已启用/刷新 connector；这只是启用，授权/可用性要再点"检查/授权"。',
+      };
+    case 'probe_connector':
+      return {
+        tone: 'info',
+        message: '已触发授权/可用性检查；如果还没恢复，打开本地应用确认登录和系统授权。',
+      };
+    case 'repair_connector_permission':
+      return {
+        tone: 'info',
+        message: '已触发权限修复；修复成功后，下条消息才会进入运行时 scope。',
       };
     case 'open_connector_app':
       return {
         tone: 'info',
-        message: '已拉起本地应用，完成授权/登录后点"重试连接"再发这条消息。',
+        message: '已拉起本地应用；未启用时先点"启用/重试"，已启用后再点"检查/授权"。',
+      };
+    case 'open_connector_settings':
+      return {
+        tone: 'info',
+        message: '已打开连接器设置，启用后回到能力详情再点"检查/授权"。',
       };
     default:
       return null;
@@ -226,11 +326,37 @@ export async function runWorkbenchCapabilityQuickAction(
         return false;
       }
       return handlers.retryConnector(capability.id);
+    case 'probe_connector':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.probeConnector(capability.id);
+    case 'repair_connector_permission':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.repairConnectorPermission(capability.id);
+    case 'disconnect_connector':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.disconnectConnector(capability.id);
+    case 'remove_connector':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      return handlers.removeConnector(capability.id);
     case 'open_connector_app':
       if (capability.kind !== 'connector') {
         return false;
       }
       return handlers.openConnectorApp(capability.id);
+    case 'open_connector_settings':
+      if (capability.kind !== 'connector') {
+        return false;
+      }
+      handlers.openSettingsTab('mcp');
+      return true;
     default:
       return false;
   }

@@ -48,6 +48,12 @@ const browserMocks = vi.hoisted(() => {
               title: activeTab.title,
             }
           : null,
+        mode: 'headless',
+        profileDir: '/tmp/profile',
+        viewport: { width: 1280, height: 720 },
+        allowedHosts: [],
+        blockedHosts: [],
+        lastTrace: null,
       };
     }),
     ensureSession: vi.fn(async (url?: string) => {
@@ -96,6 +102,41 @@ const browserMocks = vi.hoisted(() => {
       title: getActiveTabRecord()?.title || 'about:blank',
       text: 'example page',
       links: [],
+    })),
+    getDomSnapshot: vi.fn(async () => ({
+      url: getActiveTabRecord()?.url || 'about:blank',
+      title: getActiveTabRecord()?.title || 'about:blank',
+      headings: [{ level: 1, text: 'Example' }],
+      interactiveElements: [],
+    })),
+    getAccessibilitySnapshot: vi.fn(async () => ({
+      role: 'WebArea',
+      name: 'Example',
+    })),
+    setViewport: vi.fn(async () => undefined),
+    beginTrace: vi.fn((args: { toolName: string; action: string; params?: Record<string, unknown> }) => ({
+      id: 'trace-1',
+      targetKind: 'browser',
+      toolName: args.toolName,
+      action: args.action,
+      mode: 'headless',
+      startedAtMs: 1,
+      before: null,
+      params: args.params || {},
+    })),
+    finishTrace: vi.fn((trace: any, args: { success: boolean; error?: string | null; screenshotPath?: string | null }) => ({
+      ...trace,
+      completedAtMs: 2,
+      success: args.success,
+      error: args.error || null,
+      screenshotPath: args.screenshotPath || null,
+      after: {
+        url: getActiveTabRecord()?.url || 'about:blank',
+        title: getActiveTabRecord()?.title || 'about:blank',
+        capturedAtMs: 2,
+      },
+      consoleErrors: [],
+      networkFailures: [],
     })),
     isRunning: vi.fn(() => state.running),
     getActiveTab: vi.fn(() => {
@@ -160,8 +201,64 @@ describe('browser workbench gating', () => {
     browserMocks.service.listTabs.mockClear();
     browserMocks.service.navigate.mockClear();
     browserMocks.service.getPageContent.mockClear();
+    browserMocks.service.getDomSnapshot.mockClear();
+    browserMocks.service.getAccessibilitySnapshot.mockClear();
+    browserMocks.service.setViewport.mockClear();
+    browserMocks.service.beginTrace.mockClear();
+    browserMocks.service.finishTrace.mockClear();
     browserMocks.service.isRunning.mockClear();
     browserMocks.service.getActiveTab.mockClear();
+  });
+
+  it('returns structured DOM snapshots through browser_action', async () => {
+    browserMocks.state.running = true;
+    browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com', title: 'Example' }];
+    browserMocks.state.activeTabId = 'tab-1';
+
+    const result = await browserActionTool.execute(
+      {
+        action: 'get_dom_snapshot',
+      },
+      makeContext({
+        executionIntent: {
+          browserSessionMode: 'managed',
+          preferBrowserSession: true,
+          allowBrowserAutomation: true,
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.metadata?.domSnapshot).toMatchObject({
+      url: 'https://example.com',
+      headings: [{ level: 1, text: 'Example' }],
+    });
+    expect(result.metadata?.traceId).toBe('trace-1');
+  });
+
+  it('updates managed browser viewport through browser_action', async () => {
+    browserMocks.state.running = true;
+    browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com', title: 'Example' }];
+    browserMocks.state.activeTabId = 'tab-1';
+
+    const result = await browserActionTool.execute(
+      {
+        action: 'set_viewport',
+        width: 390,
+        height: 844,
+      },
+      makeContext({
+        executionIntent: {
+          browserSessionMode: 'managed',
+          preferBrowserSession: true,
+          allowBrowserAutomation: true,
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(browserMocks.service.setViewport).toHaveBeenCalledWith(390, 844);
+    expect(result.metadata?.viewport).toEqual({ width: 390, height: 844 });
   });
 
   it('blocks browser_action automation when desktop mode disables managed browser automation', async () => {
@@ -204,10 +301,14 @@ describe('browser workbench gating', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(browserMocks.service.ensureSession).toHaveBeenCalledWith('https://example.com');
+    expect(browserMocks.service.ensureSession).toHaveBeenCalledWith();
     expect(browserMocks.service.navigate).toHaveBeenCalledWith('https://example.com', undefined);
     expect(result.output).toContain('自动启动了托管浏览器');
     expect(result.output).toContain('Navigated to: https://example.com');
+    expect(result.metadata?.traceId).toBe('trace-1');
+    expect(browserMocks.service.finishTrace).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'navigate',
+    }), expect.objectContaining({ success: true }));
   });
 
   it('makes Browser.open prefer the managed browser session when managed mode is selected', async () => {

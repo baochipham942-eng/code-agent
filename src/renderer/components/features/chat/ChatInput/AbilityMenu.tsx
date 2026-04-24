@@ -7,10 +7,17 @@
 //
 // ============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, GitBranch, Globe } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ChevronDown, GitBranch, Globe, Info, Loader2, Monitor } from 'lucide-react';
 import type { BrowserSessionMode, ConversationRoutingMode } from '@shared/contract/conversationEnvelope';
 import { useComposerStore } from '../../../../stores/composerStore';
+import type { BrowserWorkbenchRepairAction, BrowserWorkbenchState } from '../../../../hooks/useWorkbenchBrowserSession';
+import {
+  buildBrowserWorkbenchStatusRows,
+  getBrowserWorkbenchOperationalHint,
+  getBrowserWorkbenchReadinessTone,
+  type BrowserWorkbenchStatusTone,
+} from '../../../../utils/workbenchPresentation';
 
 const ROUTING_LABELS: Record<ConversationRoutingMode, string> = {
   auto: 'Auto',
@@ -26,15 +33,42 @@ const BROWSER_LABELS: Record<BrowserSessionMode, string> = {
 
 interface AbilityMenuProps {
   disabled?: boolean;
+  defaultOpen?: boolean;
+  browserSession?: Pick<
+    BrowserWorkbenchState,
+    | 'managedSession'
+    | 'computerSurface'
+    | 'preview'
+    | 'readinessItems'
+    | 'blocked'
+    | 'blockedDetail'
+    | 'blockedHint'
+    | 'repairActions'
+    | 'busyActionKind'
+    | 'actionError'
+  > & {
+    runRepairAction: (action: BrowserWorkbenchRepairAction) => Promise<void>;
+  };
 }
 
-export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) => {
+function getStatusToneClasses(tone?: BrowserWorkbenchStatusTone): string {
+  switch (tone) {
+    case 'ready':
+      return 'text-emerald-300';
+    case 'blocked':
+      return 'text-amber-300';
+    default:
+      return 'text-zinc-300';
+  }
+}
+
+export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defaultOpen = false, browserSession }) => {
   const routingMode = useComposerStore((state) => state.routingMode);
   const setRoutingMode = useComposerStore((state) => state.setRoutingMode);
   const browserSessionMode = useComposerStore((state) => state.browserSessionMode);
   const setBrowserSessionMode = useComposerStore((state) => state.setBrowserSessionMode);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -64,6 +98,20 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
   }, [browserSessionMode, routingMode]);
 
   const hasActive = routingMode !== 'auto' || browserSessionMode !== 'none';
+  const browserStatusRows = useMemo(
+    () => buildBrowserWorkbenchStatusRows({
+      mode: browserSessionMode,
+      browserSession,
+    }),
+    [browserSession, browserSessionMode],
+  );
+  const browserOperationalHint = useMemo(
+    () => getBrowserWorkbenchOperationalHint({
+      mode: browserSessionMode,
+      browserSession,
+    }),
+    [browserSession, browserSessionMode],
+  );
 
   return (
     <div ref={wrapperRef} className="relative flex-shrink-0">
@@ -71,6 +119,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
+        data-testid="ability-menu-trigger"
         className={`inline-flex items-center gap-1 h-8 rounded-lg px-2 text-xs transition-colors ${
           hasActive
             ? 'bg-primary-500/15 text-primary-200 hover:bg-primary-500/20'
@@ -85,7 +134,10 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-3 shadow-xl backdrop-blur z-30">
+        <div
+          data-testid="ability-menu-popover"
+          className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-3 shadow-xl backdrop-blur z-30"
+        >
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
             <GitBranch className="w-3 h-3" />
             Routing
@@ -96,6 +148,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
                 key={mode}
                 type="button"
                 onClick={() => setRoutingMode(mode)}
+                data-testid={`ability-menu-routing-${mode}`}
                 className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
                   routingMode === mode
                     ? 'bg-primary-500/20 text-primary-200'
@@ -117,6 +170,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
                 key={mode}
                 type="button"
                 onClick={() => setBrowserSessionMode(mode)}
+                data-testid={`ability-menu-browser-${mode}`}
                 className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
                   browserSessionMode === mode
                     ? 'bg-primary-500/20 text-primary-200'
@@ -127,6 +181,104 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false }) =>
               </button>
             ))}
           </div>
+          {browserSession && browserSessionMode !== 'none' && (
+            <div
+              data-testid="ability-menu-browser-status"
+              className="mt-2 rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-2 text-[11px] text-zinc-400"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-zinc-300">
+                  <Monitor className="h-3 w-3" />
+                  <span>{browserSessionMode === 'managed' ? 'Managed browser' : 'Computer surface'}</span>
+                </div>
+                <span className={browserSession.blocked ? 'text-amber-300' : 'text-emerald-300'}>
+                  {browserSession.blocked ? 'Blocked' : 'Ready'}
+                </span>
+              </div>
+
+              {browserStatusRows.length > 0 && (
+                <div className="space-y-1">
+                  {browserStatusRows.map((row) => (
+                    <div
+                      key={row.label}
+                      data-testid={`ability-menu-status-row-${row.label.toLowerCase()}`}
+                      className="grid grid-cols-[52px,minmax(0,1fr)] gap-2"
+                    >
+                      <span className="text-zinc-500">{row.label}</span>
+                      <span
+                        className={`truncate ${getStatusToneClasses(row.tone)}`}
+                        title={row.title || row.value}
+                      >
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {browserSessionMode === 'desktop' && browserSession.readinessItems.length > 0 && (
+                <div className="mt-2 space-y-1 border-t border-white/[0.06] pt-2">
+                  {browserSession.readinessItems.map((item) => {
+                    const tone = getBrowserWorkbenchReadinessTone(item);
+                    return (
+                      <div
+                        key={item.key}
+                        data-testid={`ability-menu-readiness-${item.key}`}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {tone === 'ready' ? (
+                            <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-emerald-300" />
+                          ) : tone === 'blocked' ? (
+                            <AlertTriangle className="h-3 w-3 flex-shrink-0 text-amber-300" />
+                          ) : (
+                            <Info className="h-3 w-3 flex-shrink-0 text-zinc-500" />
+                          )}
+                          <span className="truncate text-zinc-400" title={item.detail || item.label}>
+                            {item.label}
+                          </span>
+                        </div>
+                        <span className={`flex-shrink-0 ${getStatusToneClasses(tone)}`}>{item.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {browserOperationalHint && (
+                <div className={`mt-2 leading-relaxed ${browserSession.blocked ? 'text-amber-300' : 'text-zinc-500'}`}>
+                  {browserOperationalHint}
+                </div>
+              )}
+              {browserSession.blocked && browserSession.blockedHint && (
+                <div className="mt-1 leading-relaxed text-zinc-500">{browserSession.blockedHint}</div>
+              )}
+              {browserSession.actionError && (
+                <div className="mt-1 leading-relaxed text-red-300">{browserSession.actionError}</div>
+              )}
+
+              {browserSession.repairActions.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] pt-2">
+                  {browserSession.repairActions.map((action) => {
+                    const loading = browserSession.busyActionKind === action.kind;
+                    return (
+                      <button
+                        key={action.kind}
+                        type="button"
+                        onClick={() => void browserSession.runRepairAction(action)}
+                        disabled={loading}
+                        data-testid={`ability-menu-repair-${action.kind}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-white/[0.16] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+                        <span>{action.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

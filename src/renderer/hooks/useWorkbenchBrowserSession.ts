@@ -7,6 +7,7 @@ import { useComposerStore } from '../stores/composerStore';
 import ipcService from '../services/ipcService';
 import {
   getFrontmostDesktopContext,
+  getComputerSurfaceState,
   getNativeDesktopCapabilities,
   getNativeDesktopCollectorStatus,
   getNativeDesktopPermissionStatus,
@@ -15,6 +16,7 @@ import {
   openNativeDesktopSystemSettings,
   startNativeDesktopCollector,
   type FrontmostContextSnapshot,
+  type ComputerSurfaceState,
   type NativeDesktopCapabilities,
   type NativeDesktopCollectorStatus,
   type NativePermissionSnapshot,
@@ -29,6 +31,7 @@ const EMPTY_MANAGED_BROWSER_SESSION: ManagedBrowserSessionState = {
 
 type BrowserWorkbenchRepairActionKind =
   | 'launch_managed_browser'
+  | 'launch_managed_browser_visible'
   | 'open_screen_capture_settings'
   | 'open_accessibility_settings'
   | 'start_desktop_collector'
@@ -40,10 +43,11 @@ export interface BrowserWorkbenchRepairAction {
 }
 
 export interface BrowserWorkbenchReadinessItem {
-  key: 'screenCapture' | 'accessibility' | 'browserContext' | 'collector';
+  key: 'screenCapture' | 'accessibility' | 'browserContext' | 'collector' | 'computerSurface';
   label: string;
   ready: boolean;
   value: string;
+  tone?: 'ready' | 'blocked' | 'neutral';
   detail?: string | null;
 }
 
@@ -53,11 +57,14 @@ export interface BrowserWorkbenchPreview {
   title?: string | null;
   frontmostApp?: string | null;
   lastScreenshotAtMs?: number | null;
+  surfaceMode?: string | null;
+  traceId?: string | null;
 }
 
 export interface BrowserWorkbenchState {
   mode: BrowserSessionMode;
   managedSession: ManagedBrowserSessionState;
+  computerSurface: ComputerSurfaceState | null;
   preview: BrowserWorkbenchPreview | null;
   readinessItems: BrowserWorkbenchReadinessItem[];
   blocked: boolean;
@@ -76,6 +83,10 @@ function getPermissionStatus(
 }
 
 function getPermissionLabel(status: NativePermissionStatus | null): string {
+  if (!status) {
+    return '未探测';
+  }
+
   switch (status?.status) {
     case 'granted':
       return '已授权';
@@ -84,10 +95,62 @@ function getPermissionLabel(status: NativePermissionStatus | null): string {
     case 'unsupported':
       return '不支持';
     case 'unknown':
-      return '未知';
+      return '未确认';
     default:
-      return '未知';
+      return '未确认';
   }
+}
+
+export function getPermissionReadinessTone(
+  status: Pick<NativePermissionStatus, 'status'> | null,
+): BrowserWorkbenchReadinessItem['tone'] {
+  if (!status || status.status === 'unknown') {
+    return 'neutral';
+  }
+  return status.status === 'granted' ? 'ready' : 'blocked';
+}
+
+function getPermissionDetail(
+  status: NativePermissionStatus | null,
+  label: string,
+): string | null {
+  if (status?.detail) {
+    return status.detail;
+  }
+
+  if (!status) {
+    return `${label}尚未主动探测；为了避免自动触发系统权限检查，只在点击检查/授权入口后刷新。`;
+  }
+
+  if (status.status === 'unknown') {
+    return `${label}状态未确认。`;
+  }
+
+  if (status.status === 'denied') {
+    return `${label}未授权。`;
+  }
+
+  if (status.status === 'unsupported') {
+    return `${label}在当前平台不支持。`;
+  }
+
+  return null;
+}
+
+function getPermissionIssue(
+  status: NativePermissionStatus | null,
+  label: string,
+): string | null {
+  if (status?.status === 'granted') {
+    return null;
+  }
+  if (status?.status === 'unsupported') {
+    return `${label}不支持`;
+  }
+  if (status?.status === 'denied') {
+    return `${label}未授权`;
+  }
+  return `${label}未确认`;
 }
 
 async function loadManagedBrowserSession(): Promise<ManagedBrowserSessionState> {
@@ -109,6 +172,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   const mode = useComposerStore((state) => state.browserSessionMode);
   const setShowDesktopPanel = useAppStore((state) => state.setShowDesktopPanel);
   const [managedSession, setManagedSession] = useState<ManagedBrowserSessionState>(EMPTY_MANAGED_BROWSER_SESSION);
+  const [computerSurface, setComputerSurface] = useState<ComputerSurfaceState | null>(null);
   const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
   const [permissionSnapshot, setPermissionSnapshot] = useState<NativePermissionSnapshot | null>(null);
   const [collectorStatus, setCollectorStatus] = useState<NativeDesktopCollectorStatus | null>(null);
@@ -128,15 +192,17 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
       setCollectorStatus(null);
       setFrontmostContext(null);
       setLastScreenshotAtMs(null);
+      setComputerSurface(null);
       return;
     }
 
-    const [capabilitiesResult, collectorResult, frontmostResult, recentEventsResult] =
+    const [capabilitiesResult, collectorResult, frontmostResult, recentEventsResult, computerSurfaceResult] =
       await Promise.allSettled([
         getNativeDesktopCapabilities(),
         getNativeDesktopCollectorStatus(),
         getFrontmostDesktopContext(),
         listRecentNativeDesktopEvents(12),
+        getComputerSurfaceState(),
       ]);
 
     setCapabilities(capabilitiesResult.status === 'fulfilled' ? capabilitiesResult.value : null);
@@ -147,6 +213,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
         ? recentEventsResult.value.find((event) => Boolean(event.screenshotPath))?.capturedAtMs || null
         : null,
     );
+    setComputerSurface(computerSurfaceResult.status === 'fulfilled' ? computerSurfaceResult.value : null);
   }, []);
 
   // Lazy 权限探测 —— 仅在修复动作（open_screen_capture_settings /
@@ -204,39 +271,71 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     }
 
     const browserContextSupported = Boolean(capabilities?.supportsBrowserContext);
+    const browserContextKnown = Boolean(capabilities);
+    const collectorKnown = Boolean(collectorStatus);
     return [
       {
         key: 'screenCapture',
         label: 'Screen Capture',
         ready: screenCapturePermission?.status === 'granted',
         value: getPermissionLabel(screenCapturePermission),
-        detail: screenCapturePermission?.detail || null,
+        tone: getPermissionReadinessTone(screenCapturePermission),
+        detail: getPermissionDetail(screenCapturePermission, '屏幕录制'),
       },
       {
         key: 'accessibility',
         label: 'Accessibility',
         ready: accessibilityPermission?.status === 'granted',
         value: getPermissionLabel(accessibilityPermission),
-        detail: accessibilityPermission?.detail || null,
+        tone: getPermissionReadinessTone(accessibilityPermission),
+        detail: getPermissionDetail(accessibilityPermission, '辅助功能'),
       },
       {
         key: 'browserContext',
         label: 'Browser Context',
         ready: browserContextSupported,
-        value: browserContextSupported ? '支持' : '不支持',
+        value: browserContextKnown ? (browserContextSupported ? '支持' : '不支持') : '未知',
+        tone: browserContextKnown ? (browserContextSupported ? 'ready' : 'blocked') : 'neutral',
         detail: browserContextSupported
           ? '当前桌面 runtime 可以读取前台浏览器 URL / title。'
-          : '当前桌面 runtime 不能读取浏览器上下文。',
+          : browserContextKnown
+            ? '当前桌面 runtime 不能读取浏览器上下文。'
+            : '尚未读到 desktop runtime capabilities。',
       },
       {
         key: 'collector',
         label: 'Collector',
         ready: Boolean(collectorStatus?.running),
-        value: collectorStatus?.running ? '采集中' : '已停止',
-        detail: collectorStatus?.lastError || null,
+        value: collectorKnown ? (collectorStatus?.running ? '采集中' : '已停止') : '未知',
+        tone: collectorKnown ? (collectorStatus?.running ? 'ready' : 'blocked') : 'neutral',
+        detail: collectorStatus?.lastError || (collectorKnown ? null : 'collector 状态未返回。'),
+      },
+      {
+        key: 'computerSurface',
+        label: 'Computer Surface',
+        ready: Boolean(computerSurface?.ready),
+        value: computerSurface
+          ? computerSurface.background
+            ? '后台 Accessibility'
+            : computerSurface.mode === 'foreground_fallback'
+              ? '前台窗口兜底'
+              : '不可用'
+          : '未知',
+        tone: computerSurface
+          ? computerSurface.background
+            ? 'ready'
+            : computerSurface.mode === 'foreground_fallback'
+              ? 'neutral'
+              : 'blocked'
+          : 'neutral',
+        detail: computerSurface?.background
+          ? (computerSurface.safetyNote || 'Computer Use 会通过 macOS Accessibility 操作指定 app/window。')
+          : computerSurface?.mode === 'foreground_fallback'
+            ? (computerSurface.safetyNote || 'Computer Use 会作用于当前前台 app/window；没有后台隔离。')
+            : 'Computer Surface 状态未返回。',
       },
     ];
-  }, [accessibilityPermission, capabilities?.supportsBrowserContext, collectorStatus?.lastError, collectorStatus?.running, mode, screenCapturePermission]);
+  }, [accessibilityPermission, capabilities?.supportsBrowserContext, collectorStatus?.lastError, collectorStatus?.running, computerSurface?.background, computerSurface?.mode, computerSurface?.ready, computerSurface?.safetyNote, mode, screenCapturePermission]);
 
   const blockedState = useMemo(() => {
     if (mode === 'managed') {
@@ -257,16 +356,22 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     if (!isNativeDesktopAvailable()) {
       issues.push('当前不是桌面 runtime');
     } else {
-      if (!capabilities?.supportsBrowserContext) {
+      if (!capabilities) {
+        issues.push('desktop capabilities 未返回');
+      } else if (!capabilities.supportsBrowserContext) {
         issues.push('browser context 不支持');
       }
-      if (screenCapturePermission?.status !== 'granted') {
-        issues.push('屏幕录制未授权');
+      const screenCaptureIssue = getPermissionIssue(screenCapturePermission, '屏幕录制');
+      if (screenCaptureIssue) {
+        issues.push(screenCaptureIssue);
       }
-      if (accessibilityPermission?.status !== 'granted') {
-        issues.push('辅助功能未授权');
+      const accessibilityIssue = getPermissionIssue(accessibilityPermission, '辅助功能');
+      if (accessibilityIssue) {
+        issues.push(accessibilityIssue);
       }
-      if (!collectorStatus?.running) {
+      if (!collectorStatus) {
+        issues.push('collector 状态未返回');
+      } else if (!collectorStatus.running) {
         issues.push('collector 未启动');
       }
     }
@@ -277,15 +382,25 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
 
     return {
       detail: `当前桌面浏览器上下文未就绪：${issues.join('、')}。`,
-      hint: '先补权限并启动采集；修好后这条消息再发出去，会比黑箱失败可控得多。',
+      hint: '先确认权限并启动采集；权限未确认时不会后台自动探测，点击检查/授权入口后再刷新。',
     };
-  }, [accessibilityPermission?.status, capabilities?.supportsBrowserContext, collectorStatus?.running, mode, screenCapturePermission?.status]);
+  }, [
+    accessibilityPermission?.status,
+    capabilities?.supportsBrowserContext,
+    collectorStatus?.running,
+    managedSession.running,
+    mode,
+    screenCapturePermission?.status,
+  ]);
 
   const repairActions = useMemo<BrowserWorkbenchRepairAction[]>(() => {
     if (mode === 'managed') {
       return managedSession.running
         ? []
-        : [{ kind: 'launch_managed_browser', label: '启动托管浏览器' }];
+        : [
+            { kind: 'launch_managed_browser', label: '启动 Headless' },
+            { kind: 'launch_managed_browser_visible', label: '启动 Visible' },
+          ];
     }
 
     if (mode !== 'desktop') {
@@ -301,7 +416,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     if (screenCaptureStatus !== 'granted' && screenCaptureStatus !== 'unsupported') {
       actions.push({
         kind: 'open_screen_capture_settings',
-        label: '授权屏幕录制',
+        label: screenCaptureStatus === 'denied' ? '授权屏幕录制' : '检查/授权屏幕录制',
       });
     }
 
@@ -309,7 +424,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     if (accessibilityStatus !== 'granted' && accessibilityStatus !== 'unsupported') {
       actions.push({
         kind: 'open_accessibility_settings',
-        label: '授权辅助功能',
+        label: accessibilityStatus === 'denied' ? '授权辅助功能' : '检查/授权辅助功能',
       });
     }
 
@@ -334,6 +449,8 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
         mode,
         url: managedSession.activeTab?.url || null,
         title: managedSession.activeTab?.title || null,
+        surfaceMode: managedSession.mode || 'headless',
+        traceId: managedSession.lastTrace?.id || null,
       };
     }
 
@@ -344,11 +461,26 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
         title: frontmostContext?.browserTitle || frontmostContext?.windowTitle || null,
         frontmostApp: frontmostContext?.appName || null,
         lastScreenshotAtMs,
+        surfaceMode: computerSurface?.mode || 'foreground_fallback',
+        traceId: computerSurface?.lastAction?.id || null,
       };
     }
 
     return null;
-  }, [frontmostContext?.appName, frontmostContext?.browserTitle, frontmostContext?.browserUrl, frontmostContext?.windowTitle, lastScreenshotAtMs, managedSession.activeTab?.title, managedSession.activeTab?.url, mode]);
+  }, [
+    computerSurface?.lastAction?.id,
+    computerSurface?.mode,
+    frontmostContext?.appName,
+    frontmostContext?.browserTitle,
+    frontmostContext?.browserUrl,
+    frontmostContext?.windowTitle,
+    lastScreenshotAtMs,
+    managedSession.activeTab?.title,
+    managedSession.activeTab?.url,
+    managedSession.lastTrace?.id,
+    managedSession.mode,
+    mode,
+  ]);
 
   const runRepairAction = useCallback(async (action: BrowserWorkbenchRepairAction) => {
     setBusyActionKind(action.kind);
@@ -360,6 +492,14 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
           await ipcService.invokeDomain<ManagedBrowserSessionState>(
             IPC_DOMAINS.DESKTOP,
             'ensureManagedBrowserSession',
+            { mode: 'headless' },
+          );
+          break;
+        case 'launch_managed_browser_visible':
+          await ipcService.invokeDomain<ManagedBrowserSessionState>(
+            IPC_DOMAINS.DESKTOP,
+            'ensureManagedBrowserSession',
+            { mode: 'visible' },
           );
           break;
         case 'open_screen_capture_settings':
@@ -397,6 +537,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
 
   return {
     mode,
+    computerSurface,
     managedSession,
     preview,
     readinessItems,

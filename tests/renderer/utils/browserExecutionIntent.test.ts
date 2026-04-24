@@ -10,6 +10,8 @@ describe('buildBrowserSessionIntentSnapshot', () => {
           mode: 'managed',
           title: 'Docs · Example',
           url: 'https://example.com/docs',
+          surfaceMode: 'headless',
+          traceId: 'trace-1',
         },
         blocked: false,
         blockedDetail: undefined,
@@ -20,6 +22,8 @@ describe('buildBrowserSessionIntentSnapshot', () => {
       preview: {
         title: 'Docs · Example',
         url: 'https://example.com/docs',
+        surfaceMode: 'headless',
+        traceId: 'trace-1',
       },
     });
   });

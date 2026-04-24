@@ -218,11 +218,20 @@ export interface MCPResource {
   serverName: string;
 }
 
+export type ConnectorLifecycleAction =
+  | 'repair_permissions'
+  | 'disconnect'
+  | 'remove';
+
 export interface ConnectorStatusSummary {
   id: string;
   label: string;
   connected: boolean;
+  readiness?: 'unchecked' | 'ready' | 'failed' | 'unavailable';
   detail?: string;
+  error?: string;
+  checkedAt?: number;
+  actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
 

@@ -73,7 +73,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
 
       {/* Confirmation popover */}
       {showConfirm && (
-        <div className="absolute bottom-full right-0 mb-2 w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 p-3">
+        <div className="absolute bottom-full left-0 mb-2 w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 p-3">
           <p className="text-xs text-zinc-300 mb-3">
             将自动批准所有权限请求，包括文件写入和命令执行。
           </p>

@@ -600,6 +600,10 @@ export async function initializeSessionStore(): Promise<void> {
     useSessionStore.getState().loadSessions();
   });
 
+  ipcService.on(IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED, (event: { dir: string | null }) => {
+    useAppStore.getState().setWorkingDirectory(event.dir ?? null);
+  });
+
   ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
     useSessionStore.getState().updateSessionRuntime(event);
   });

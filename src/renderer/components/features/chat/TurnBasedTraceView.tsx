@@ -6,18 +6,15 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection } from '@shared/contract/trace';
-import type { TaskPlan } from '@shared/contract';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
-import { InlinePlanCard } from './InlinePlanCard';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
   hasOlderMessages?: boolean;
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
-  plan?: TaskPlan | null;
   searchMatches?: SearchMatch[];
   activeMatchIndex?: number;
 }
@@ -27,7 +24,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   hasOlderMessages,
   isLoadingOlder,
   onLoadOlder,
-  plan,
   searchMatches = [],
   activeMatchIndex = 0,
 }) => {
@@ -80,14 +76,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const isActiveMatchTurn = activeMatch?.turnIndex === index;
 
       return (
-        <div className="max-w-3xl mx-auto">
-          <TurnCard
-            key={turn.turnId}
-            turn={turn}
-            defaultExpanded={isLast || isStreaming}
-            forceExpanded={hasSearchMatch}
-            highlightActive={isActiveMatchTurn}
-          />
+        <div className="w-full px-4">
+          <div className="max-w-3xl mx-auto">
+            <TurnCard
+              key={turn.turnId}
+              turn={turn}
+              defaultExpanded={isLast || isStreaming}
+              forceExpanded={hasSearchMatch}
+              highlightActive={isActiveMatchTurn}
+            />
+          </div>
         </div>
       );
     },
@@ -104,13 +102,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     );
   }, [hasOlderMessages, isLoadingOlder]);
 
-  // Footer: plan card + permission card
-  const Footer = useCallback(() => (
-    <>
-      {plan && <InlinePlanCard plan={plan} />}
-      <PermissionCard />
-    </>
-  ), [plan]);
+  // Footer: permission card (plan moved to PinnedTodoBar above the input)
+  const Footer = useCallback(() => <PermissionCard />, []);
 
   return (
     <Virtuoso
@@ -118,7 +111,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       role="log"
       aria-live="polite"
       aria-label="对话消息"
-      className="h-full px-4 py-3 overflow-x-hidden"
+      className="h-full py-3 overflow-x-hidden"
       totalCount={projection.turns.length}
       itemContent={itemContent}
       followOutput={followOutput}

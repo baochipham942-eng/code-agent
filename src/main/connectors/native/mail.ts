@@ -49,8 +49,71 @@ interface MailSentItem extends MailDraftItem {
   sent: boolean;
 }
 
+type NativeReadiness = 'unchecked' | 'ready' | 'failed' | 'unavailable';
+
+function initialMailReadiness(): NativeReadiness {
+  return process.platform === 'darwin' ? 'unchecked' : 'unavailable';
+}
+
+let mailReadiness: NativeReadiness = initialMailReadiness();
+let mailProbeError: string | undefined;
+let mailProbeCheckedAt: number | undefined;
+
+export function resetMailConnectorReadiness(): void {
+  mailReadiness = initialMailReadiness();
+  mailProbeError = undefined;
+  mailProbeCheckedAt = undefined;
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildMailStatus(capabilities: string[]): ConnectorStatus {
+  if (process.platform !== 'darwin') {
+    return {
+      connected: false,
+      readiness: 'unavailable',
+      detail: 'Mail connector 仅在 macOS 可用。',
+      actions: [],
+      capabilities,
+    };
+  }
+
+  if (mailReadiness === 'ready') {
+    return {
+      connected: true,
+      readiness: 'ready',
+      checkedAt: mailProbeCheckedAt,
+      detail: 'Mail connector 已通过本地授权/可用性检查。',
+      actions: ['disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  if (mailReadiness === 'failed') {
+    return {
+      connected: false,
+      readiness: 'failed',
+      error: mailProbeError,
+      checkedAt: mailProbeCheckedAt,
+      detail: `Mail 授权/可用性检查失败：${mailProbeError || '未知错误'}`,
+      actions: ['repair_permissions', 'disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  return {
+    connected: false,
+    readiness: 'unchecked',
+    detail: 'Mail connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Mail 或触发系统授权。',
+    actions: ['repair_permissions', 'disconnect', 'remove'],
+    capabilities,
+  };
 }
 
 function normalizeAddressList(value: unknown): string[] {
@@ -105,6 +168,28 @@ async function listAccounts(): Promise<MailAccountItem[]> {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((name) => ({ name }));
+}
+
+async function probeMailAccess(): Promise<MailAccountItem[]> {
+  if (process.platform !== 'darwin') {
+    mailReadiness = 'unavailable';
+    mailProbeCheckedAt = Date.now();
+    mailProbeError = 'Mail connector 仅在 macOS 可用。';
+    throw new Error(mailProbeError);
+  }
+
+  try {
+    const accounts = await listAccounts();
+    mailReadiness = 'ready';
+    mailProbeCheckedAt = Date.now();
+    mailProbeError = undefined;
+    return accounts;
+  } catch (error) {
+    mailReadiness = 'failed';
+    mailProbeCheckedAt = Date.now();
+    mailProbeError = errorMessage(error);
+    throw error;
+  }
 }
 
 async function listMailboxes(payload: Record<string, unknown>): Promise<MailboxItem[]> {
@@ -369,21 +454,42 @@ export const mailConnector: Connector = {
   id: 'mail',
   label: 'Mail',
   capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message', 'draft_message', 'send_message'],
+  getCachedStatus(): ConnectorStatus {
+    return buildMailStatus(this.capabilities);
+  },
   async getStatus(): Promise<ConnectorStatus> {
-    // Keep startup status checks side-effect free. Enumerating Mail accounts via
-    // AppleScript will auto-launch Mail, so the real probe moves to first use.
-    return {
-      connected: process.platform === 'darwin',
-      detail: process.platform === 'darwin'
-        ? '按需访问本地 Mail；为避免启动时拉起 Mail，账户探测改为首轮使用时执行。'
-        : 'Mail connector 仅在 macOS 可用。',
-      capabilities: this.capabilities,
-    };
+    return buildMailStatus(this.capabilities);
   },
   async execute(action: string, payload: Record<string, unknown>): Promise<ConnectorExecutionResult> {
     switch (action) {
       case 'get_status':
         return { data: await this.getStatus() };
+      case 'probe_access': {
+        const accounts = await probeMailAccess();
+        return {
+          data: await this.getStatus(),
+          summary: accounts.length > 0
+            ? `Mail 授权/可用性检查通过，可访问 ${accounts.length} 个账户`
+            : 'Mail 授权/可用性检查通过，但没有找到可访问的邮件账户',
+        };
+      }
+      case 'repair_permissions': {
+        resetMailConnectorReadiness();
+        const accounts = await probeMailAccess();
+        return {
+          data: await this.getStatus(),
+          summary: accounts.length > 0
+            ? `Mail 权限修复检查通过，可访问 ${accounts.length} 个账户`
+            : 'Mail 权限修复检查通过，但没有找到可访问的邮件账户',
+        };
+      }
+      case 'disconnect':
+      case 'remove':
+        resetMailConnectorReadiness();
+        return {
+          data: await this.getStatus(),
+          summary: action === 'disconnect' ? 'Mail connector 已断开。' : 'Mail connector 已移除。',
+        };
       case 'list_accounts': {
         const accounts = await listAccounts();
         return {

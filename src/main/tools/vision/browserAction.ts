@@ -7,10 +7,8 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { browserService } from '../../services/infra/browserService.js';
-import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
-import * as fs from 'fs';
-import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -19,110 +17,6 @@ import {
 } from './browserWorkbenchIntent';
 
 const logger = createLogger('BrowserAction');
-
-// 视觉分析配置
-const VISION_CONFIG = {
-  ZHIPU_MODEL: ZHIPU_VISION_MODEL, // flash 不支持 base64，必须用 plus
-  ZHIPU_API_URL: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
-  TIMEOUT_MS: 30000,
-};
-
-/**
- * 带超时的 fetch
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * 使用智谱视觉模型分析截图
- */
-async function analyzeWithVision(
-  imagePath: string,
-  prompt: string
-): Promise<string | null> {
-  const configService = getConfigService();
-  const zhipuApiKey = configService.getApiKey('zhipu');
-
-  if (!zhipuApiKey) {
-    logger.info('[浏览器截图分析] 未配置智谱 API Key，跳过视觉分析');
-    return null;
-  }
-
-  try {
-    // 读取图片并转 base64
-    const imageData = fs.readFileSync(imagePath);
-    const base64Image = imageData.toString('base64');
-
-    const requestBody = {
-      model: VISION_CONFIG.ZHIPU_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/png;base64,${base64Image}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 2048,
-    };
-
-    logger.info('[浏览器截图分析] 使用智谱视觉模型 GLM-4.6V-Flash');
-
-    const response = await fetchWithTimeout(
-      VISION_CONFIG.ZHIPU_API_URL,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${zhipuApiKey}`,
-        },
-        body: JSON.stringify(requestBody),
-      },
-      VISION_CONFIG.TIMEOUT_MS
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.warn('[浏览器截图分析] API 调用失败', { status: response.status, error: errorText });
-      return null;
-    }
-
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
-
-    if (content) {
-      logger.info('[浏览器截图分析] 分析完成', { contentLength: content.length });
-    }
-
-    return content || null;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('[浏览器截图分析] 分析失败', { error: message });
-    return null;
-  }
-}
 
 type BrowserActionType =
   | 'launch'
@@ -135,6 +29,7 @@ type BrowserActionType =
   | 'back'
   | 'forward'
   | 'reload'
+  | 'set_viewport'
   | 'click'
   | 'click_text'
   | 'type'
@@ -143,6 +38,9 @@ type BrowserActionType =
   | 'screenshot'
   | 'get_content'
   | 'get_elements'
+  | 'get_dom_snapshot'
+  | 'get_a11y_snapshot'
+  | 'get_workbench_state'
   | 'wait'
   | 'fill_form'
   | 'get_logs';
@@ -152,6 +50,7 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'back',
   'forward',
   'reload',
+  'set_viewport',
   'click',
   'click_text',
   'type',
@@ -160,6 +59,9 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'screenshot',
   'get_content',
   'get_elements',
+  'get_dom_snapshot',
+  'get_a11y_snapshot',
+  'get_workbench_state',
   'wait',
   'fill_form',
 ]);
@@ -176,7 +78,7 @@ Use this tool to:
 - Read page content and find elements
 
 Actions:
-- launch: Start browser (headless: false shows window)
+- launch: Start isolated managed browser (headless by default; set CODE_AGENT_BROWSER_VISIBLE=1 for visible debugging)
 - close: Close browser
 - new_tab: Open new tab (url optional)
 - close_tab: Close a tab
@@ -184,6 +86,7 @@ Actions:
 - switch_tab: Switch to a specific tab
 - navigate: Go to URL
 - back/forward/reload: Navigation controls
+- set_viewport: Switch the managed browser viewport
 - click: Click element by selector
 - click_text: Click element by text content
 - type: Type text into element
@@ -192,6 +95,9 @@ Actions:
 - screenshot: Capture page screenshot (with optional AI analysis)
 - get_content: Get page text and links
 - get_elements: Find elements by selector
+- get_dom_snapshot: Get structured headings and interactive elements
+- get_a11y_snapshot: Get accessibility snapshot when available, with DOM fallback
+- get_workbench_state: Return managed browser session/workbench state
 - wait: Wait for element or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs (for debugging)
@@ -216,9 +122,10 @@ Examples:
         type: 'string',
         enum: [
           'launch', 'close', 'new_tab', 'close_tab', 'list_tabs', 'switch_tab',
-          'navigate', 'back', 'forward', 'reload',
+          'navigate', 'back', 'forward', 'reload', 'set_viewport',
           'click', 'click_text', 'type', 'press_key', 'scroll',
-          'screenshot', 'get_content', 'get_elements', 'wait', 'fill_form', 'get_logs'
+          'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
+          'get_workbench_state', 'wait', 'fill_form', 'get_logs'
         ],
         description: 'The browser action to perform',
       },
@@ -255,6 +162,14 @@ Examples:
         type: 'number',
         description: 'Wait timeout in milliseconds (default: 5000)',
       },
+      width: {
+        type: 'number',
+        description: 'Viewport width for set_viewport',
+      },
+      height: {
+        type: 'number',
+        description: 'Viewport height for set_viewport',
+      },
       fullPage: {
         type: 'boolean',
         description: 'Capture full page screenshot (default: false)',
@@ -288,6 +203,8 @@ Examples:
     const amount = params.amount as number | undefined;
     const tabId = params.tabId as string | undefined;
     const timeout = params.timeout as number | undefined;
+    const width = params.width as number | undefined;
+    const height = params.height as number | undefined;
     const fullPage = params.fullPage as boolean | undefined;
     const formData = params.formData as Record<string, string> | undefined;
     const analyze = params.analyze as boolean | undefined;
@@ -311,10 +228,14 @@ Examples:
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
     if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
-      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({
-        ...(action === 'navigate' ? { url } : {}),
-      }));
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench());
     }
+
+    const trace = browserService.beginTrace({
+      toolName: 'browser_action',
+      action,
+      params,
+    });
 
     try {
       const rawResult = await (async (): Promise<ToolExecutionResult> => {
@@ -387,6 +308,19 @@ Examples:
           await browserService.reload(tabId);
           return { success: true, output: 'Page reloaded' };
 
+        case 'set_viewport':
+          if (!width || !height) {
+            return { success: false, error: 'width and height required for set_viewport' };
+          }
+          await browserService.setViewport(width, height);
+          return {
+            success: true,
+            output: `Viewport set to ${Math.floor(width)}x${Math.floor(height)}`,
+            metadata: {
+              viewport: { width: Math.floor(width), height: Math.floor(height) },
+            },
+          };
+
         // Interactions
         case 'click':
           if (!selector) {
@@ -448,7 +382,11 @@ Examples:
           // 如果启用分析，进行视觉分析
           if (analyze && result.path) {
             logger.info('[浏览器截图] 启用视觉分析');
-            const analysis = await analyzeWithVision(result.path, analysisPrompt);
+            const analysis = await analyzeImageWithVision({
+              imagePath: result.path,
+              prompt: analysisPrompt,
+              source: 'browser_action.screenshot',
+            });
             if (analysis) {
               output += `\n\n📝 AI 分析结果:\n${analysis}`;
             }
@@ -489,6 +427,39 @@ Examples:
           return { success: true, output: `Found ${elements.length} elements:\n${elementList}` };
         }
 
+        case 'get_dom_snapshot': {
+          const snapshot = await browserService.getDomSnapshot(tabId);
+          return {
+            success: true,
+            output: JSON.stringify(snapshot, null, 2),
+            metadata: {
+              domSnapshot: snapshot,
+            },
+          };
+        }
+
+        case 'get_a11y_snapshot': {
+          const snapshot = await browserService.getAccessibilitySnapshot(tabId);
+          return {
+            success: true,
+            output: JSON.stringify(snapshot, null, 2),
+            metadata: {
+              accessibilitySnapshot: snapshot,
+            },
+          };
+        }
+
+        case 'get_workbench_state': {
+          const state = browserService.getSessionState();
+          return {
+            success: true,
+            output: JSON.stringify(state, null, 2),
+            metadata: {
+              browserWorkbenchState: state,
+            },
+          };
+        }
+
         // Wait
         case 'wait':
           if (selector) {
@@ -526,32 +497,60 @@ Examples:
           return { success: false, error: `Unknown action: ${action}` };
         }
       })();
-      return appendBrowserWorkbenchNote(rawResult, workbenchNotes);
+      const completedTrace = browserService.finishTrace(trace, {
+        success: rawResult.success,
+        error: rawResult.error || null,
+        screenshotPath: getScreenshotPathFromResult(rawResult),
+      });
+      return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace), workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+      const completedTrace = browserService.finishTrace(trace, {
+        success: false,
+        error: errorMessage,
+      });
 
       // Get recent logs for debugging
       const recentLogs = browserService.logger.getLogsAsString(5);
 
       // Provide helpful error messages
       if (errorMessage.includes('No active tab')) {
-        return appendBrowserWorkbenchNote({
+        return appendBrowserWorkbenchNote(withWorkbenchTrace({
           success: false,
           error: `${errorMessage}. Use "launch" then "new_tab" first.\n\n--- Recent Logs ---\n${recentLogs}`,
-        }, workbenchNotes);
+        }, completedTrace), workbenchNotes);
       }
       if (errorMessage.includes('Timeout')) {
-        return appendBrowserWorkbenchNote({
+        return appendBrowserWorkbenchNote(withWorkbenchTrace({
           success: false,
           error: `Timeout: ${errorMessage}. Try increasing timeout or check if element exists.\n\n--- Recent Logs ---\n${recentLogs}`,
-        }, workbenchNotes);
+        }, completedTrace), workbenchNotes);
       }
 
-      return appendBrowserWorkbenchNote({
+      return appendBrowserWorkbenchNote(withWorkbenchTrace({
         success: false,
         error: `${errorMessage}\n\n--- Recent Logs ---\n${recentLogs}`,
-      }, workbenchNotes);
+      }, completedTrace), workbenchNotes);
     }
   },
 };
+
+function getScreenshotPathFromResult(result: ToolExecutionResult): string | null {
+  const path = result.metadata?.path;
+  return typeof path === 'string' ? path : null;
+}
+
+function withWorkbenchTrace(
+  result: ToolExecutionResult,
+  trace: ReturnType<typeof browserService.finishTrace>,
+): ToolExecutionResult {
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      traceId: trace.id,
+      workbenchTrace: trace,
+    },
+  };
+}

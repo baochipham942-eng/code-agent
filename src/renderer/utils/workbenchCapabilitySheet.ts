@@ -45,7 +45,10 @@ export function buildWorkbenchCapabilityRegistryItemFromReference(
         label: reference.label,
         selected: reference.selected,
         connected: reference.connected,
+        readiness: reference.readiness,
         detail: reference.detail,
+        error: reference.error,
+        checkedAt: reference.checkedAt,
         capabilities: reference.capabilities,
       });
     case 'mcp':

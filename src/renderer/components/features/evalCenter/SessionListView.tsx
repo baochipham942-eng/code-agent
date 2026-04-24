@@ -4,7 +4,12 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Eye } from 'lucide-react';
-import { getReviewQueueReasonLabel } from '@shared/contract/reviewQueue';
+import {
+  getReviewQueueFailureAssetStatusLabel,
+  getReviewQueueFailureCapabilityLabel,
+  getReviewQueueReasonLabel,
+  type ReviewQueueFailureCapabilityAssetStatus,
+} from '@shared/contract/reviewQueue';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { SessionListItem } from './SessionListItem';
 
@@ -23,6 +28,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
     reviewQueueLoading,
     loadReviewQueue,
     enqueueReviewItem,
+    updateFailureAssetStatus,
     setFilterStatus,
     setSortBy,
   } = useEvalCenterStore();
@@ -46,6 +52,27 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
       reason: 'manual_review',
       source: 'session_list',
     });
+  };
+
+  const getFailureAssetActions = (
+    status: ReviewQueueFailureCapabilityAssetStatus,
+  ): Array<{ status: ReviewQueueFailureCapabilityAssetStatus; label: string }> => {
+    switch (status) {
+      case 'draft':
+        return [
+          { status: 'ready', label: '标记待应用' },
+          { status: 'dismissed', label: '忽略' },
+        ];
+      case 'ready':
+        return [
+          { status: 'applied', label: '标记已应用' },
+          { status: 'dismissed', label: '忽略' },
+        ];
+      case 'applied':
+      case 'dismissed':
+      default:
+        return [];
+    }
   };
 
   const filtered = useMemo(() => {
@@ -202,29 +229,63 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                 ) : (
                   <div className="mt-2 space-y-1.5">
                     {reviewQueue.slice(0, 5).map((item) => (
-                      <button
+                      <div
                         key={item.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onSelectSession(item.sessionId);
-                        }}
                         className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[11px] font-medium text-zinc-300">
-                            {item.sessionTitle}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
-                            <Eye className="h-3 w-3" />
-                            Replay
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-zinc-600">
-                          <span>{getReviewQueueReasonLabel(item.reason)}</span>
-                          <span>·</span>
-                          <span className="font-mono">{item.trace.traceId.replace('session:', '')}</span>
-                        </div>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSelectSession(item.sessionId);
+                          }}
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-[11px] font-medium text-zinc-300">
+                              {item.sessionTitle}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
+                              <Eye className="h-3 w-3" />
+                              Replay
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-600">
+                            <span>{getReviewQueueReasonLabel(item.reason)}</span>
+                            {item.failureCapability && (
+                              <>
+                                <span>·</span>
+                                <span className="text-amber-500">
+                                  {getReviewQueueFailureCapabilityLabel(item.failureCapability)}
+                                </span>
+                              </>
+                            )}
+                            <span>·</span>
+                            <span className="font-mono">{item.trace.traceId.replace('session:', '')}</span>
+                          </div>
+                        </button>
+                        {item.failureAsset && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-800 pt-2 text-[10px]">
+                            <span className="text-zinc-600">Asset</span>
+                            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
+                              {getReviewQueueFailureAssetStatusLabel(item.failureAsset.status)}
+                            </span>
+                            {getFailureAssetActions(item.failureAsset.status).map((action) => (
+                              <button
+                                key={action.status}
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void updateFailureAssetStatus(item.id, action.status);
+                                }}
+                                className="rounded border border-zinc-700 px-1.5 py-0.5 text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}

@@ -9,6 +9,7 @@ import { summarizeGlob } from './globSummarizer';
 import { summarizeRead } from './readSummarizer';
 import { summarizeEdit, summarizeWrite } from './editSummarizer';
 import { summarizeDefault } from './defaultSummarizer';
+import { summarizeBrowserComputerActionResult } from '../../../../../../utils/browserComputerActionPreview';
 
 /**
  * Generate a smart summary for a tool call result
@@ -18,6 +19,13 @@ export function summarizeTool(toolCall: ToolCall): string | null {
   if (!toolCall.result) return null;
 
   const { name, result } = toolCall;
+  const browserComputerSummary = name === 'browser_action' || name === 'computer_use'
+    ? summarizeBrowserComputerActionResult(toolCall)
+    : null;
+
+  if (browserComputerSummary) {
+    return browserComputerSummary;
+  }
 
   // Error case: show first line of error message
   if (!result.success && result.error) {

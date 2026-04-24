@@ -11,6 +11,7 @@ import { computerUseTool } from './computerUse';
 
 // Actions from computerUseTool
 const COMPUTER_USE_ACTIONS = [
+  'get_state', 'observe', 'get_ax_elements',
   'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
   'locate_element', 'locate_text', 'locate_role',
   'smart_click', 'smart_type', 'smart_hover', 'get_elements',
@@ -24,6 +25,7 @@ export const ComputerTool: Tool = {
 - screenshot: Capture screen or window screenshot with optional AI analysis
 
 ## Basic mouse/keyboard actions (coordinate-based):
+- get_state / observe / get_ax_elements: Read Computer Surface state, frontmost or target app/window, and target app Accessibility elements
 - click / doubleClick / rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
 - type: Type text into focused element
@@ -54,12 +56,15 @@ export const ComputerTool: Tool = {
 - text: Text to type or text to find
 - role: ARIA role (button, link, textbox, etc.)
 - name: Accessible name for role-based location
+- axPath: Background Accessibility path returned by get_ax_elements
 - key: Key to press (enter, tab, escape, etc.)
 - modifiers: Modifier keys ['cmd', 'ctrl', 'alt', 'shift']
 - direction: Scroll direction (up/down/left/right)
 - amount: Scroll amount in pixels
 - exact: Exact text match (default: false)
 - timeout: Wait timeout in ms (default: 5000)
+- limit: Maximum elements for get_ax_elements
+- maxDepth: Maximum Accessibility tree depth for get_ax_elements
 
 IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
   requiresPermission: true,
@@ -71,6 +76,8 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
         type: 'string',
         enum: [
           'screenshot',
+          // computer surface read actions
+          'get_state', 'observe', 'get_ax_elements',
           // computer_use basic actions
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           // computer_use smart actions
@@ -120,6 +127,10 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
       },
+      targetApp: {
+        type: 'string',
+        description: 'Expected target app for desktop actions. With axPath or role/name, macOS can use the background Accessibility surface.',
+      },
       toX: {
         type: 'number',
         description: 'Destination X coordinate (for drag action)',
@@ -164,6 +175,10 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
         type: 'string',
         description: 'Accessible name for role-based location',
       },
+      axPath: {
+        type: 'string',
+        description: 'Background Accessibility path returned by get_ax_elements for target app element addressing',
+      },
       exact: {
         type: 'boolean',
         description: 'Require exact text match (default: false)',
@@ -171,6 +186,14 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
       timeout: {
         type: 'number',
         description: 'Wait timeout in milliseconds (default: 5000)',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum elements to return for get_ax_elements (default: 40, max: 80)',
+      },
+      maxDepth: {
+        type: 'number',
+        description: 'Maximum Accessibility tree depth for get_ax_elements (default: 4, max: 8)',
       },
     },
     required: ['action'],

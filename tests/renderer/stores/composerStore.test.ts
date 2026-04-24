@@ -153,4 +153,114 @@ describe('composerStore', () => {
       selectedMcpServerIds: ['github'],
     });
   });
+
+  it('applies a named workbench preset asset to composer state', () => {
+    useComposerStore.getState().hydrateFromSession('current-session', '/tmp/current');
+
+    useComposerStore.getState().applyWorkbenchPreset({
+      version: 1,
+      id: 'preset-1',
+      name: 'Review Browser Preset',
+      createdAt: 100,
+      updatedAt: 100,
+      source: { kind: 'manual' },
+      context: {
+        workingDirectory: '/tmp/preset',
+        routingMode: 'direct',
+        targetAgentIds: ['agent-1', 'agent-1'],
+        browserSessionMode: 'desktop',
+        selectedSkillIds: ['review-skill', 'review-skill'],
+        selectedConnectorIds: ['mail', 'mail'],
+        selectedMcpServerIds: ['github', 'github'],
+        executionIntent: {
+          browserSessionMode: 'desktop',
+          preferBrowserSession: true,
+          preferDesktopContext: true,
+        },
+      },
+    });
+
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'current-session',
+      workingDirectory: '/tmp/preset',
+      routingMode: 'direct',
+      targetAgentIds: ['agent-1'],
+      browserSessionMode: 'desktop',
+      selectedSkillIds: ['review-skill'],
+      selectedConnectorIds: ['mail'],
+      selectedMcpServerIds: ['github'],
+    });
+  });
+
+  it('preserves the current working directory when applying a capability-only preset', () => {
+    useComposerStore.getState().hydrateFromSession('current-session', '/tmp/current');
+
+    useComposerStore.getState().applyWorkbenchPreset({
+      workingDirectory: null,
+      routingMode: 'auto',
+      targetAgentIds: [],
+      browserSessionMode: 'none',
+      selectedSkillIds: ['review-skill'],
+      selectedConnectorIds: [],
+      selectedMcpServerIds: [],
+    });
+
+    expect(useComposerStore.getState()).toMatchObject({
+      workingDirectory: '/tmp/current',
+      routingMode: 'auto',
+      selectedSkillIds: ['review-skill'],
+    });
+  });
+
+  it('applies a workbench recipe by merging step contexts', () => {
+    useComposerStore.getState().hydrateFromSession('current-session', '/tmp/current');
+
+    useComposerStore.getState().applyWorkbenchRecipe({
+      version: 1,
+      id: 'recipe-1',
+      name: 'Browser then connector',
+      createdAt: 100,
+      updatedAt: 100,
+      source: { kind: 'manual' },
+      steps: [
+        {
+          id: 'step-1',
+          name: 'Browser',
+          context: {
+            workingDirectory: '/tmp/browser',
+            routingMode: 'direct',
+            targetAgentIds: ['agent-1', 'agent-1'],
+            browserSessionMode: 'managed',
+            selectedSkillIds: ['review-skill'],
+            selectedConnectorIds: [],
+            selectedMcpServerIds: [],
+          },
+        },
+        {
+          id: 'step-2',
+          name: 'Connector',
+          context: {
+            workingDirectory: null,
+            routingMode: 'auto',
+            targetAgentIds: [],
+            browserSessionMode: 'none',
+            selectedSkillIds: ['review-skill', 'research-skill'],
+            selectedConnectorIds: ['mail', 'mail'],
+            selectedMcpServerIds: ['github'],
+          },
+        },
+      ],
+    });
+
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'current-session',
+      workingDirectory: '/tmp/browser',
+      routingMode: 'direct',
+      targetAgentIds: ['agent-1'],
+      browserSessionMode: 'managed',
+      selectedSkillIds: ['review-skill', 'research-skill'],
+      selectedConnectorIds: ['mail'],
+      selectedMcpServerIds: ['github'],
+    });
+  });
 });

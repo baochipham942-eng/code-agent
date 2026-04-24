@@ -14,7 +14,10 @@ import { getSwissCheeseEvaluator, type ScoringConfigEntry } from '../evaluation/
 import { AnnotationProxy } from '../evaluation/annotationProxy';
 import type { EvaluationExportFormat } from '../../shared/contract/evaluation';
 import { scoreToGrade } from '../../shared/contract/evaluation';
-import type { EnqueueReviewItemInput } from '../../shared/contract/reviewQueue';
+import type {
+  EnqueueReviewItemInput,
+  UpdateReviewQueueFailureCapabilityAssetInput,
+} from '../../shared/contract/reviewQueue';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
@@ -271,6 +274,14 @@ export function registerEvaluationHandlers(): void {
     async (_event, payload: EnqueueReviewItemInput) => {
       logger.info(`Enqueue session review: ${payload.sessionId}`);
       return reviewQueueService.enqueueSession(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.REVIEW_QUEUE_UPDATE_FAILURE_ASSET,
+    async (_event, payload: UpdateReviewQueueFailureCapabilityAssetInput) => {
+      logger.info(`Update review failure asset: ${payload.reviewItemId} -> ${payload.status}`);
+      return reviewQueueService.updateFailureAssetStatus(payload);
     },
   );
 

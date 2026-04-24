@@ -18,9 +18,10 @@ import {
 // Actions from browserActionTool (kept as-is since they don't conflict)
 const BROWSER_ACTION_ACTIONS = [
   'launch', 'close', 'new_tab', 'close_tab', 'list_tabs', 'switch_tab',
-  'navigate', 'back', 'forward', 'reload',
+  'navigate', 'back', 'forward', 'reload', 'set_viewport',
   'click', 'click_text', 'type', 'press_key', 'scroll',
-  'screenshot', 'get_content', 'get_elements', 'wait', 'fill_form', 'get_logs',
+  'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
+  'get_workbench_state', 'wait', 'fill_form', 'get_logs',
 ] as const;
 
 function remapBrowserToolActionForManagedSession(
@@ -80,12 +81,12 @@ browser opener actions. For full Playwright-based browser automation, use the br
 - newTab / switchTab: Tab management via OS-level scripting
 
 ## Full Playwright-based browser automation (browser_action):
-- launch / close: Start or stop the Playwright browser
+- launch / close: Start or stop the isolated managed browser (headless by default)
 - new_tab / close_tab / list_tabs / switch_tab: Tab management
-- navigate / back / forward / reload: Navigation controls
+- navigate / back / forward / reload / set_viewport: Navigation and viewport controls
 - click / click_text / type / press_key / scroll: Page interactions
 - screenshot: Capture page screenshot (with optional AI analysis)
-- get_content / get_elements: Read page content
+- get_content / get_elements / get_dom_snapshot / get_a11y_snapshot / get_workbench_state: Read page content and workbench state
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
@@ -118,9 +119,10 @@ browser opener actions. For full Playwright-based browser automation, use the br
           'open', 'nav_back', 'nav_forward', 'refresh', 'close_window', 'newTab', 'switchTab',
           // Playwright browser_action actions
           'launch', 'close', 'new_tab', 'close_tab', 'list_tabs', 'switch_tab',
-          'navigate', 'back', 'forward', 'reload',
+          'navigate', 'back', 'forward', 'reload', 'set_viewport',
           'click', 'click_text', 'type', 'press_key', 'scroll',
-          'screenshot', 'get_content', 'get_elements', 'wait', 'fill_form', 'get_logs',
+          'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
+          'get_workbench_state', 'wait', 'fill_form', 'get_logs',
         ],
         description: 'The browser action to perform',
       },
@@ -167,6 +169,14 @@ browser opener actions. For full Playwright-based browser automation, use the br
       timeout: {
         type: 'number',
         description: '[Playwright] Wait timeout in milliseconds (default: 5000)',
+      },
+      width: {
+        type: 'number',
+        description: '[Playwright] Viewport width for set_viewport',
+      },
+      height: {
+        type: 'number',
+        description: '[Playwright] Viewport height for set_viewport',
       },
       fullPage: {
         type: 'boolean',

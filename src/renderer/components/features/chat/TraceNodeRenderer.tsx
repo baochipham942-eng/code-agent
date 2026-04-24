@@ -141,15 +141,11 @@ const UserNode: React.FC<{
       </div>
     )}
     {content && (
-      <div
-        className="pl-3 border-l-2 rounded-r-lg py-2 pr-3"
-        style={{
-          borderColor: 'var(--cc-brand)',
-          backgroundColor: 'var(--cc-user-bg)',
-        }}
-      >
-        <div className="text-zinc-200 leading-relaxed">
-          <MessageContent content={content} isUser={true} />
+      <div className="flex justify-end">
+        <div className="max-w-[80%] rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
+          <div className="text-zinc-200 leading-relaxed">
+            <MessageContent content={content} isUser={true} />
+          </div>
         </div>
       </div>
     )}
@@ -279,6 +275,8 @@ const ToolCallNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       output: node.toolCall.success !== false ? node.toolCall.result : undefined,
       error: node.toolCall.success === false ? node.toolCall.result : undefined,
       duration: node.toolCall.duration,
+      outputPath: node.toolCall.outputPath,
+      metadata: node.toolCall.metadata,
     } : undefined,
   };
 

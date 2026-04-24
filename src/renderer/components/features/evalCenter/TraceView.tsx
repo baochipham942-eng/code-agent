@@ -41,8 +41,8 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
       : 'available';
 
   const handleEnqueueFailureFollowup = useCallback(async () => {
-    await enqueueFailureFollowup(sessionId, sessionInfo?.title);
-  }, [enqueueFailureFollowup, sessionId, sessionInfo?.title]);
+    await enqueueFailureFollowup(sessionId, sessionInfo?.title, replayData?.summary.failureAttribution);
+  }, [enqueueFailureFollowup, replayData?.summary.failureAttribution, sessionId, sessionInfo?.title]);
 
   const scrollToTurn = useCallback((turnIdx: number) => {
     setActiveTurn(turnIdx);

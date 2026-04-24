@@ -16,13 +16,17 @@ import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { AbilityMenu } from './AbilityMenu';
+import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
+import { CostDisplay } from '../../../StatusBar/CostDisplay';
+import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { ComboSkillCard } from './ComboSkillCard';
@@ -112,6 +116,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
+  const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
   const mentionPreview = useMemo(
     () => parseLeadingAgentMentions(value, swarmAgents),
@@ -479,6 +484,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   const modelConfig = useAppStore((s) => s.modelConfig);
+  const sessionCost = useStatusStore((s) => s.sessionCost);
+  const statusStreaming = useStatusStore((s) => s.isStreaming);
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
   return (
@@ -611,6 +618,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onImagePaste={handleImagePaste}
             disabled={disabled && !isProcessing}
             hasAttachments={attachments.length > 0}
+            hasMessages={hasMessages}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
             placeholder={inputPlaceholder}
@@ -647,11 +655,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               />
             </label>
 
+            {/* 权限模式 chip — Default / Full Access */}
+            <PermissionToggle disabled={disabled && !isProcessing} />
+
             {/* 能力 popover — Routing + Browser */}
-            <AbilityMenu disabled={disabled && !isProcessing} />
+            <AbilityMenu disabled={disabled && !isProcessing} browserSession={browserSession} />
 
             {/* 弹性空白 */}
             <div className="flex-1" />
+
+            {/* 累计费用 — Context pill 左边 */}
+            {sessionCost > 0 && (
+              <span className="text-xs mr-1 tabular-nums">
+                <CostDisplay cost={sessionCost} isStreaming={statusStreaming} />
+              </span>
+            )}
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />

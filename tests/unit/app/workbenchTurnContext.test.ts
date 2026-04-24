@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { ConnectorStatus } from '../../../src/main/connectors';
+import { getConnectorRegistry } from '../../../src/main/connectors';
 import {
   buildWorkbenchToolScope,
   buildWorkbenchTurnSystemContext,
@@ -6,7 +8,34 @@ import {
 } from '../../../src/main/app/workbenchTurnContext';
 
 describe('workbenchTurnContext', () => {
+  const registry = getConnectorRegistry();
+
+  function registerConnector(id: string, status: Partial<ConnectorStatus>): void {
+    registry.register({
+      id,
+      label: id,
+      capabilities: ['get_status'],
+      getCachedStatus: () => ({
+        connected: false,
+        capabilities: ['get_status'],
+        ...status,
+      }),
+      async getStatus() {
+        return this.getCachedStatus!();
+      },
+      async execute() {
+        return { data: null };
+      },
+    });
+  }
+
+  afterEach(() => {
+    ['mail', 'calendar', 'reminders'].forEach((id) => registry.unregister(id));
+  });
+
   it('builds a turn-scoped system context for selected skills, connectors, and MCP servers', () => {
+    registerConnector('mail', { connected: true, readiness: 'ready' });
+
     const blocks = buildWorkbenchTurnSystemContext({
       selectedSkillIds: ['review-skill', 'ship-skill'],
       selectedConnectorIds: ['mail'],
@@ -82,6 +111,9 @@ describe('workbenchTurnContext', () => {
   });
 
   it('builds tool scope from selected skills, connectors, and MCP servers', () => {
+    registerConnector('mail', { connected: true, readiness: 'ready' });
+    registerConnector('calendar', { connected: true, readiness: 'ready' });
+
     expect(buildWorkbenchToolScope({
       selectedSkillIds: ['review-skill', 'review-skill', 'ship-skill'],
       selectedConnectorIds: ['mail', 'mail', 'calendar'],
@@ -93,7 +125,21 @@ describe('workbenchTurnContext', () => {
     });
   });
 
+  it('does not allow unchecked or failed connectors into the runtime tool scope', () => {
+    registerConnector('mail', { connected: false, readiness: 'unchecked' });
+    registerConnector('calendar', { connected: false, readiness: 'failed', error: 'not authorized' });
+    registerConnector('reminders', { connected: true, readiness: 'ready' });
+
+    expect(buildWorkbenchToolScope({
+      selectedConnectorIds: ['mail', 'calendar', 'reminders'],
+    })).toEqual({
+      allowedConnectorIds: ['reminders'],
+    });
+  });
+
   it('merges workbench scope into existing run option scope', () => {
+    registerConnector('mail', { connected: true, readiness: 'ready' });
+
     expect(withWorkbenchTurnSystemContext(
       {
         mode: 'normal',

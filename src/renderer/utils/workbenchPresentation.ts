@@ -3,10 +3,29 @@ import type {
   WorkbenchReference,
   WorkbenchSkillCapability,
 } from '../hooks/useWorkbenchCapabilities';
+import type { BrowserWorkbenchReadinessItem, BrowserWorkbenchState } from '../hooks/useWorkbenchBrowserSession';
+import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import type { WorkbenchCapabilityRegistryItem } from './workbenchCapabilityRegistry';
 
 type WorkbenchRuntimeStatus = 'connected' | 'disconnected' | 'connecting' | 'error' | 'lazy';
 type Locale = 'en' | 'zh';
+type BrowserWorkbenchStateForPresentation = Pick<
+  BrowserWorkbenchState,
+  | 'managedSession'
+  | 'computerSurface'
+  | 'preview'
+  | 'blocked'
+  | 'blockedDetail'
+>;
+
+export type BrowserWorkbenchStatusTone = 'ready' | 'blocked' | 'neutral';
+
+export interface BrowserWorkbenchStatusRow {
+  label: string;
+  value: string;
+  tone?: BrowserWorkbenchStatusTone;
+  title?: string;
+}
 
 const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; colorClass: string }> = {
   connected: {
@@ -138,6 +157,20 @@ export function getWorkbenchCapabilityStatusPresentation(
   }
 
   if (capability.kind === 'connector') {
+    if (!capability.connected && capability.readiness === 'unchecked') {
+      return {
+        label: locale === 'zh' ? '待检查' : 'needs check',
+        colorClass: 'text-sky-400',
+      };
+    }
+
+    if (!capability.connected && capability.readiness === 'failed') {
+      return {
+        label: locale === 'zh' ? '检查失败' : 'check failed',
+        colorClass: 'text-red-400',
+      };
+    }
+
     return getWorkbenchConnectorStatusPresentation(capability.connected, options);
   }
 
@@ -229,4 +262,127 @@ export function getWorkbenchReferenceBadge(
     return 'MCP';
   }
   return null;
+}
+
+export function buildBrowserWorkbenchStatusRows(args: {
+  mode: BrowserSessionMode;
+  browserSession: BrowserWorkbenchStateForPresentation | null | undefined;
+}): BrowserWorkbenchStatusRow[] {
+  const { browserSession, mode } = args;
+  if (!browserSession || mode === 'none') {
+    return [];
+  }
+
+  if (mode === 'managed') {
+    const preview = browserSession.preview?.mode === 'managed' ? browserSession.preview : null;
+    const traceId = preview?.traceId || browserSession.managedSession.lastTrace?.id || null;
+    const tabTitle = preview?.title || browserSession.managedSession.activeTab?.title || null;
+    const tabUrl = preview?.url || browserSession.managedSession.activeTab?.url || null;
+
+    return [
+      {
+        label: 'Status',
+        value: browserSession.managedSession.running ? 'Running' : 'Stopped',
+        tone: browserSession.managedSession.running ? 'ready' : 'blocked',
+      },
+      {
+        label: 'Mode',
+        value: preview?.surfaceMode || browserSession.managedSession.mode || 'headless',
+      },
+      ...(tabTitle || tabUrl
+        ? [{
+            label: 'Tab',
+            value: tabTitle || tabUrl || '',
+            title: tabUrl || tabTitle || undefined,
+          }]
+        : []),
+      ...(traceId
+        ? [{
+            label: 'Trace',
+            value: traceId,
+            title: traceId,
+          }]
+        : []),
+    ];
+  }
+
+  const preview = browserSession.preview?.mode === 'desktop' ? browserSession.preview : null;
+  const traceId = preview?.traceId || browserSession.computerSurface?.lastAction?.id || null;
+  const surfaceValue = browserSession.computerSurface?.background
+    ? 'Background Accessibility surface'
+    : browserSession.computerSurface?.mode === 'foreground_fallback'
+      ? 'Foreground fallback (current window)'
+      : 'Unavailable';
+
+  return [
+    {
+      label: 'Surface',
+      value: surfaceValue,
+      tone: browserSession.computerSurface?.ready ? 'ready' : 'blocked',
+      title: browserSession.computerSurface?.safetyNote || undefined,
+    },
+    ...(preview?.frontmostApp || browserSession.computerSurface?.targetApp
+      ? [{
+          label: 'App',
+          value: preview?.frontmostApp || browserSession.computerSurface?.targetApp || '',
+        }]
+      : []),
+    ...(preview?.title
+      ? [{
+          label: 'Window',
+          value: preview.title,
+          title: preview.url || preview.title,
+        }]
+      : []),
+    ...(preview?.url
+      ? [{
+          label: 'URL',
+          value: preview.url,
+          title: preview.url,
+        }]
+      : []),
+    ...(traceId
+      ? [{
+          label: 'Trace',
+          value: traceId,
+          title: traceId,
+        }]
+      : []),
+  ];
+}
+
+export function getBrowserWorkbenchOperationalHint(args: {
+  mode: BrowserSessionMode;
+  browserSession: BrowserWorkbenchStateForPresentation | null | undefined;
+}): string | null {
+  const { browserSession, mode } = args;
+  if (!browserSession || mode === 'none') {
+    return null;
+  }
+
+  if (browserSession.blockedDetail) {
+    return browserSession.blockedDetail;
+  }
+
+  if (mode === 'managed') {
+    return browserSession.managedSession.running
+      ? 'browser_action 会使用托管浏览器。'
+      : '托管浏览器未启动。';
+  }
+
+  if (browserSession.computerSurface?.background) {
+    return browserSession.computerSurface.safetyNote || 'computer_use 会通过 macOS Accessibility 操作指定 app/window。';
+  }
+
+  if (browserSession.computerSurface?.mode === 'foreground_fallback') {
+    return browserSession.computerSurface.safetyNote || 'computer_use 会作用于当前前台 app/window；没有后台隔离，高风险动作仍走确认。';
+  }
+
+  return 'Computer Surface 当前不可用。';
+}
+
+export function getBrowserWorkbenchReadinessTone(
+  item: Pick<BrowserWorkbenchReadinessItem, 'ready' | 'tone'>,
+): BrowserWorkbenchStatusTone {
+  return item.tone || (item.ready ? 'ready' : 'blocked');
 }

@@ -62,7 +62,7 @@ describe('WorkbenchCapabilitySheetLite', () => {
     expect(html).toContain('最近动作: draft 2x');
   });
 
-  it('shows retry + openApp quick actions for a disconnected connector', () => {
+  it('shows authorization probe, openApp, and settings quick actions for an enabled unchecked connector', () => {
     const html = renderToStaticMarkup(
       React.createElement(WorkbenchCapabilitySheetLite, {
         isOpen: true,
@@ -73,7 +73,9 @@ describe('WorkbenchCapabilitySheetLite', () => {
           label: 'Calendar',
           selected: false,
           connected: false,
-          detail: 'offline',
+          readiness: 'unchecked',
+          detail: 'enabled, not checked',
+          actions: ['repair_permissions', 'disconnect', 'remove'],
           capabilities: ['list_events'],
           available: false,
           blocked: false,
@@ -82,7 +84,7 @@ describe('WorkbenchCapabilitySheetLite', () => {
           lifecycle: {
             installState: 'not_applicable',
             mountState: 'not_applicable',
-            connectionState: 'disconnected',
+            connectionState: 'lazy',
           },
         },
         historyItem: null,
@@ -96,9 +98,12 @@ describe('WorkbenchCapabilitySheetLite', () => {
 
     expect(html).toContain('Calendar');
     expect(html).toContain('阻塞原因');
-    expect(html).toContain('Connector Calendar 当前未连接，本轮不会调用。');
+    expect(html).toContain('Connector Calendar 已启用但还没检查本地授权，本轮不会调用。');
     expect(html).toContain('快速动作');
-    expect(html).toContain('重试连接');
+    expect(html).toContain('修复权限');
     expect(html).toContain('打开本地应用');
+    expect(html).toContain('断开');
+    expect(html).toContain('移除');
+    expect(html).toContain('打开连接器设置');
   });
 });

@@ -1,6 +1,7 @@
 import type { ConversationEnvelopeContext, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
+import { getConnectorRegistry } from '../connectors';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -28,8 +29,9 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);
   }
 
-  if (context.selectedConnectorIds?.length) {
-    lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${context.selectedConnectorIds.join('、')}`);
+  const readyConnectorIds = getReadySelectedConnectorIds(context.selectedConnectorIds);
+  if (readyConnectorIds.length) {
+    lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${readyConnectorIds.join('、')}`);
   }
 
   if (context.selectedMcpServerIds?.length) {
@@ -56,6 +58,12 @@ export function buildWorkbenchTurnSystemContext(
   }
   if (browserSessionSnapshot?.preview?.frontmostApp) {
     lines.push(`发送前 frontmost app：${browserSessionSnapshot.preview.frontmostApp}`);
+  }
+  if (browserSessionSnapshot?.preview?.surfaceMode) {
+    lines.push(`发送前 workbench surface：${browserSessionSnapshot.preview.surfaceMode}`);
+  }
+  if (browserSessionSnapshot?.preview?.traceId) {
+    lines.push(`最近 workbench trace：${browserSessionSnapshot.preview.traceId}`);
   }
   const screenshotTimestamp = formatBrowserSnapshotTimestamp(
     browserSessionSnapshot?.preview?.lastScreenshotAtMs,
@@ -85,12 +93,37 @@ export function buildWorkbenchTurnSystemContext(
   ];
 }
 
+function isConnectorReadyForTurnScope(connectorId: string): boolean {
+  const connector = getConnectorRegistry().get(connectorId);
+  if (!connector) {
+    return false;
+  }
+
+  const cachedStatus = connector.getCachedStatus?.();
+  if (!cachedStatus) {
+    return true;
+  }
+
+  if (cachedStatus.readiness) {
+    return cachedStatus.connected && cachedStatus.readiness === 'ready';
+  }
+
+  return cachedStatus.connected;
+}
+
+function getReadySelectedConnectorIds(selectedConnectorIds?: string[]): string[] {
+  return (selectedConnectorIds || [])
+    .map((connectorId) => connectorId.trim())
+    .filter(Boolean)
+    .filter(isConnectorReadyForTurnScope);
+}
+
 export function buildWorkbenchToolScope(
   context?: ConversationEnvelopeContext,
 ): WorkbenchToolScope | undefined {
   return normalizeWorkbenchToolScope({
     allowedSkillIds: context?.selectedSkillIds,
-    allowedConnectorIds: context?.selectedConnectorIds,
+    allowedConnectorIds: getReadySelectedConnectorIds(context?.selectedConnectorIds),
     allowedMcpServerIds: context?.selectedMcpServerIds,
   });
 }

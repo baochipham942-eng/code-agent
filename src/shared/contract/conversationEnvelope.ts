@@ -9,6 +9,8 @@ export interface BrowserSessionIntentPreview {
   title?: string | null;
   frontmostApp?: string | null;
   lastScreenshotAtMs?: number | null;
+  surfaceMode?: string | null;
+  traceId?: string | null;
 }
 
 export interface BrowserSessionIntentSnapshot {

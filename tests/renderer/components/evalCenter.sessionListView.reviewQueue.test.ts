@@ -43,6 +43,30 @@ const storeState = {
       sessionTitle: 'Queued Session',
       reason: 'failure_followup' as const,
       source: 'replay_failure' as const,
+      failureCapability: {
+        sink: 'prompt_policy' as const,
+        category: 'loop' as const,
+        summary: 'Looped through the same action.',
+        stepIndex: 4,
+        confidence: 0.72,
+        evidence: [4],
+      },
+      failureAsset: {
+        id: 'failure-asset:review:session:session-1',
+        reviewItemId: 'review:session:session-1',
+        sessionId: 'session-1',
+        traceId: 'session:session-1',
+        status: 'draft' as const,
+        sink: 'prompt_policy' as const,
+        category: 'loop' as const,
+        title: 'Prompt Policy · 循环卡住 draft',
+        body: 'Looped through the same action.',
+        stepIndex: 4,
+        confidence: 0.72,
+        evidence: [4],
+        createdAt: 100,
+        updatedAt: 100,
+      },
       createdAt: 100,
       updatedAt: 100,
     },
@@ -51,6 +75,7 @@ const storeState = {
   loadSessionList: vi.fn(),
   loadReviewQueue: vi.fn(),
   enqueueReviewItem: vi.fn(),
+  updateFailureAssetStatus: vi.fn(),
   setFilterStatus: vi.fn(),
   setSortBy: vi.fn(),
 };
@@ -78,6 +103,11 @@ describe('SessionListView review queue', () => {
     expect(html).toContain('Queued Session');
     expect(html).toContain('Replay');
     expect(html).toContain('失败回看');
+    expect(html).toContain('Prompt Policy · 循环卡住');
+    expect(html).toContain('Asset');
+    expect(html).toContain('草稿');
+    expect(html).toContain('标记待应用');
+    expect(html).toContain('忽略');
     expect(html).toContain('已在 Review');
     expect(html).toContain('加入 Review');
   });

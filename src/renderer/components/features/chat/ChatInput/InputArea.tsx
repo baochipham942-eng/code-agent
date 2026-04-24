@@ -51,6 +51,8 @@ export interface InputAreaProps {
   actionButtons?: React.ReactNode;
   /** 自定义 placeholder */
   placeholder?: string;
+  /** 当前会话是否已有消息（用于区分首轮 vs 续轮 placeholder） */
+  hasMessages?: boolean;
   /** @deprecated 使用 actionButtons 代替 */
   sendButton?: React.ReactNode;
   /** 获取上一条历史输入 */
@@ -87,6 +89,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       onFocusChange,
       actionButtons,
       placeholder,
+      hasMessages = false,
       sendButton,
       onHistoryPrev,
       onHistoryNext,
@@ -229,13 +232,15 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
 
     const interactionMode = useModeStore((s) => s.interactionMode);
 
-    // 根据交互模式决定 placeholder 文案和颜色
+    // 根据交互模式决定 placeholder 文案和颜色；续轮统一精炼
     const placeholderConfig = {
       code: { text: '描述你想解决的问题...', colorClass: 'placeholder-zinc-500' },
       plan: { text: '描述你的需求，我只出方案不动代码...', colorClass: 'placeholder-amber-500/50' },
       ask: { text: '问我任何问题...', colorClass: 'placeholder-emerald-500/50' },
     };
-    const { text: placeholderText, colorClass: placeholderColor } = placeholderConfig[interactionMode] ?? placeholderConfig.code;
+    const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;
+    const placeholderText = hasMessages ? '继续描述或追加调整...' : baseConfig.text;
+    const placeholderColor = baseConfig.colorClass;
 
     return (
       <div className="relative">

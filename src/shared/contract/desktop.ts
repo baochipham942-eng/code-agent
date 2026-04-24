@@ -48,10 +48,73 @@ export interface ManagedBrowserTabSnapshot {
   title: string;
 }
 
+export type ManagedBrowserMode = 'headless' | 'visible';
+
+export interface WorkbenchSnapshotRef {
+  url?: string | null;
+  title?: string | null;
+  appName?: string | null;
+  screenshotPath?: string | null;
+  capturedAtMs?: number | null;
+}
+
+export interface WorkbenchActionTrace {
+  id: string;
+  targetKind: 'browser' | 'computer';
+  toolName: string;
+  action: string;
+  mode: string;
+  startedAtMs: number;
+  completedAtMs?: number | null;
+  before?: WorkbenchSnapshotRef | null;
+  after?: WorkbenchSnapshotRef | null;
+  params?: Record<string, unknown>;
+  success?: boolean | null;
+  error?: string | null;
+  screenshotPath?: string | null;
+  consoleErrors?: string[];
+  networkFailures?: string[];
+}
+
 export interface ManagedBrowserSessionState {
   running: boolean;
   tabCount: number;
   activeTab?: ManagedBrowserTabSnapshot | null;
+  mode?: ManagedBrowserMode;
+  profileDir?: string | null;
+  viewport?: { width: number; height: number } | null;
+  allowedHosts?: string[];
+  blockedHosts?: string[];
+  lastTrace?: WorkbenchActionTrace | null;
+}
+
+export type ComputerSurfaceMode =
+  | 'background_ax'
+  | 'foreground_fallback'
+  | 'background_surface_unavailable';
+
+export interface ComputerSurfaceSnapshot {
+  capturedAtMs: number;
+  appName?: string | null;
+  windowTitle?: string | null;
+  screenshotPath?: string | null;
+}
+
+export interface ComputerSurfaceState {
+  id: string;
+  mode: ComputerSurfaceMode;
+  platform: string;
+  ready: boolean;
+  background: boolean;
+  requiresForeground?: boolean;
+  approvalScope?: 'session_app' | 'per_action' | 'blocked';
+  safetyNote?: string | null;
+  targetApp?: string | null;
+  blockedReason?: string | null;
+  approvedApps: string[];
+  deniedApps: string[];
+  lastAction?: WorkbenchActionTrace | null;
+  lastSnapshot?: ComputerSurfaceSnapshot | null;
 }
 
 export interface DesktopTimelineQuery {

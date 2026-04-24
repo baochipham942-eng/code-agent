@@ -6,6 +6,7 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/contract';
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
+import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
 import { browserService } from '../services/infra/browserService';
@@ -32,12 +33,20 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
         case 'getManagedBrowserSession':
           return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
 
-        case 'ensureManagedBrowserSession':
-          return { success: true, data: await browserService.ensureSession() } satisfies IPCResponse<unknown>;
+        case 'ensureManagedBrowserSession': {
+          const payload = request.payload as { url?: string; mode?: 'headless' | 'visible' } | undefined;
+          return {
+            success: true,
+            data: await browserService.ensureSession(payload?.url || 'about:blank', { mode: payload?.mode }),
+          } satisfies IPCResponse<unknown>;
+        }
 
         case 'closeManagedBrowserSession':
           await browserService.close();
           return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
+
+        case 'getComputerSurfaceState':
+          return { success: true, data: getComputerSurface().getState() } satisfies IPCResponse<unknown>;
 
         case 'listRecent': {
           const payload = request.payload as { limit?: number } | undefined;

@@ -17,6 +17,15 @@ const domainInvokeMock = vi.hoisted(() => vi.fn());
 const setShowEvalCenterMock = vi.hoisted(() => vi.fn());
 const setWorkingDirectoryMock = vi.hoisted(() => vi.fn());
 const applySessionWorkbenchPresetMock = vi.hoisted(() => vi.fn());
+const applyWorkbenchPresetMock = vi.hoisted(() => vi.fn());
+const applyWorkbenchRecipeMock = vi.hoisted(() => vi.fn());
+const saveWorkbenchPresetFromSessionMock = vi.hoisted(() => vi.fn());
+const promptMock = vi.hoisted(() => vi.fn());
+const workbenchPresetState = vi.hoisted(() => ({
+  presets: [] as any[],
+  recipes: [] as any[],
+  savePresetFromSession: saveWorkbenchPresetFromSessionMock,
+}));
 
 vi.mock('react', async () => {
   const actual = await vi.importActual<typeof import('react')>('react');
@@ -106,6 +115,8 @@ const sessionUiState = {
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,
+  expandedWorkspaces: {},
+  setWorkspaceExpanded: vi.fn(),
 };
 
 const appState = {
@@ -140,10 +151,27 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/composerStore', () => ({
-  useComposerStore: (selector?: (state: { applySessionWorkbenchPreset: typeof applySessionWorkbenchPresetMock }) => unknown) =>
+  useComposerStore: (selector?: (state: {
+    applySessionWorkbenchPreset: typeof applySessionWorkbenchPresetMock;
+    applyWorkbenchPreset: typeof applyWorkbenchPresetMock;
+    applyWorkbenchRecipe: typeof applyWorkbenchRecipeMock;
+  }) => unknown) =>
     selector
-      ? selector({ applySessionWorkbenchPreset: applySessionWorkbenchPresetMock })
-      : { applySessionWorkbenchPreset: applySessionWorkbenchPresetMock },
+      ? selector({
+          applySessionWorkbenchPreset: applySessionWorkbenchPresetMock,
+          applyWorkbenchPreset: applyWorkbenchPresetMock,
+          applyWorkbenchRecipe: applyWorkbenchRecipeMock,
+        })
+      : {
+          applySessionWorkbenchPreset: applySessionWorkbenchPresetMock,
+          applyWorkbenchPreset: applyWorkbenchPresetMock,
+          applyWorkbenchRecipe: applyWorkbenchRecipeMock,
+        },
+}));
+
+vi.mock('../../../src/renderer/stores/workbenchPresetStore', () => ({
+  useWorkbenchPresetStore: (selector?: (state: typeof workbenchPresetState) => unknown) =>
+    selector ? selector(workbenchPresetState) : workbenchPresetState,
 }));
 
 vi.mock('../../../src/renderer/stores/authStore', () => ({
@@ -190,10 +218,17 @@ describe('Sidebar review actions', () => {
     setShowEvalCenterMock.mockReset();
     setWorkingDirectoryMock.mockReset();
     applySessionWorkbenchPresetMock.mockReset();
+    applyWorkbenchPresetMock.mockReset();
+    applyWorkbenchRecipeMock.mockReset();
+    saveWorkbenchPresetFromSessionMock.mockReset();
+    promptMock.mockReset();
+    workbenchPresetState.presets = [];
+    workbenchPresetState.recipes = [];
     Reflect.set(globalThis, 'window', {
       domainAPI: {
         invoke: domainInvokeMock,
       },
+      prompt: promptMock,
     });
   });
 
@@ -240,6 +275,109 @@ describe('Sidebar review actions', () => {
     expect(applySessionWorkbenchPresetMock).toHaveBeenCalledWith(sessionState.sessions[0]);
   });
 
+  it('saves the selected session workbench as a named preset from context menu', () => {
+    promptMock.mockReturnValue('Browser review preset');
+    renderSidebarWithContextMenu();
+
+    const savePresetAction = menuState.items.find((item) => item.label === '保存为 Preset');
+    expect(savePresetAction).toBeTruthy();
+    expect(savePresetAction?.disabled).not.toBe(true);
+
+    savePresetAction?.onClick();
+
+    expect(promptMock).toHaveBeenCalledWith('Preset 名称', 'Reviewable Session');
+    expect(saveWorkbenchPresetFromSessionMock).toHaveBeenCalledWith(sessionState.sessions[0], {
+      name: 'Browser review preset',
+    });
+  });
+
+  it('applies a saved local workbench preset from context menu', async () => {
+    const preset = {
+      version: 1,
+      id: 'preset-1',
+      name: 'Saved Browser',
+      createdAt: 100,
+      updatedAt: 100,
+      source: { kind: 'manual' },
+      context: {
+        workingDirectory: '/repo/saved',
+        routingMode: 'parallel',
+        targetAgentIds: [],
+        browserSessionMode: 'managed',
+        selectedSkillIds: ['review-skill'],
+        selectedConnectorIds: ['mail'],
+        selectedMcpServerIds: ['github'],
+      },
+    };
+    workbenchPresetState.presets = [preset];
+    domainInvokeMock.mockResolvedValueOnce({ success: true, data: '/repo/saved' });
+    renderSidebarWithContextMenu();
+
+    const applyPresetAction = menuState.items.find((item) => item.label === '应用 Preset: Saved Browser');
+    expect(applyPresetAction).toBeTruthy();
+
+    await applyPresetAction?.onClick();
+
+    expect(domainInvokeMock).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'setCurrent', {
+      dir: '/repo/saved',
+    });
+    expect(setWorkingDirectoryMock).toHaveBeenCalledWith('/repo/saved');
+    expect(applyWorkbenchPresetMock).toHaveBeenCalledWith(preset);
+  });
+
+  it('applies a saved local workbench recipe from context menu', async () => {
+    const recipe = {
+      version: 1,
+      id: 'recipe-1',
+      name: 'Daily Browser Flow',
+      createdAt: 100,
+      updatedAt: 100,
+      source: { kind: 'manual' },
+      steps: [
+        {
+          id: 'step-1',
+          name: 'Browser',
+          context: {
+            workingDirectory: '/repo/recipe',
+            routingMode: 'direct',
+            targetAgentIds: ['agent-1'],
+            browserSessionMode: 'managed',
+            selectedSkillIds: ['review-skill'],
+            selectedConnectorIds: [],
+            selectedMcpServerIds: [],
+          },
+        },
+        {
+          id: 'step-2',
+          name: 'Mail',
+          context: {
+            workingDirectory: null,
+            routingMode: 'auto',
+            targetAgentIds: [],
+            browserSessionMode: 'none',
+            selectedSkillIds: ['review-skill'],
+            selectedConnectorIds: ['mail'],
+            selectedMcpServerIds: ['github'],
+          },
+        },
+      ],
+    };
+    workbenchPresetState.recipes = [recipe];
+    domainInvokeMock.mockResolvedValueOnce({ success: true, data: '/repo/recipe' });
+    renderSidebarWithContextMenu();
+
+    const applyRecipeAction = menuState.items.find((item) => item.label === '应用 Recipe: Daily Browser Flow');
+    expect(applyRecipeAction).toBeTruthy();
+
+    await applyRecipeAction?.onClick();
+
+    expect(domainInvokeMock).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'setCurrent', {
+      dir: '/repo/recipe',
+    });
+    expect(setWorkingDirectoryMock).toHaveBeenCalledWith('/repo/recipe');
+    expect(applyWorkbenchRecipeMock).toHaveBeenCalledWith(recipe);
+  });
+
   it('disables workbench reuse when the session has no reusable workbench state', () => {
     const originalSession = sessionState.sessions[0];
     sessionState.sessions[0] = {
@@ -258,6 +396,9 @@ describe('Sidebar review actions', () => {
     const reuseAction = menuState.items.find((item) => item.label === '在当前会话复用工作台');
     expect(reuseAction).toBeTruthy();
     expect(reuseAction?.disabled).toBe(true);
+    const savePresetAction = menuState.items.find((item) => item.label === '保存为 Preset');
+    expect(savePresetAction).toBeTruthy();
+    expect(savePresetAction?.disabled).toBe(true);
 
     sessionState.sessions[0] = originalSession;
   });

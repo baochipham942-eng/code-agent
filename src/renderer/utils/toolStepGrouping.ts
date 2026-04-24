@@ -41,7 +41,9 @@ function classifyTool(name: string): VerbNoun {
 }
 
 function pluralize(noun: string, n: number): string {
-  return n === 1 ? noun : noun + 's';
+  if (n === 1) return noun;
+  if (/(sh|ch|x|s|z)$/.test(noun)) return noun + 'es';
+  return noun + 's';
 }
 
 /**
@@ -87,10 +89,10 @@ export type DisplayNode =
   | { kind: 'tool_group'; tools: TraceNode[]; key: string };
 
 /**
- * 最小聚合阈值：少于此数量不走 step group，直接原样展示
- * （单个工具调用看 step label 反而多一层噪音）
+ * 最小聚合阈值：1 = 所有非 Edit/Write 工具都包成 tool_group，基础态就是 inline 灰字一行
+ * （Codex 风格）。Edit/Write 依然走独立卡片路径。
  */
-export const MIN_GROUP_SIZE = 2;
+export const MIN_GROUP_SIZE = 1;
 
 /**
  * 判断 tool_call 节点是否归 TurnDiffSummary 管
@@ -136,6 +138,102 @@ export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
   flush();
 
   return result;
+}
+
+/**
+ * 单个工具调用的 inline label — 带关键参数预览
+ * 例如 "Ran ls src/"、"Read index.tsx"、"Searched TODO"
+ */
+const SINGLE_TOOL_VERB: Record<string, string> = {
+  Bash: 'Ran',
+  bash: 'Ran',
+  Read: 'Read',
+  ReadPoc: 'Read',
+  Grep: 'Searched',
+  Glob: 'Globbed',
+  GlobPoc: 'Globbed',
+  LS: 'Listed',
+  list_directory: 'Listed',
+  WebSearch: 'Searched web for',
+  WebFetch: 'Fetched',
+  browser_action: 'Browser',
+  computer_use: 'Computer',
+};
+
+const ARG_PREVIEW_MAX = 80;
+
+function takePreview(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= ARG_PREVIEW_MAX) return trimmed;
+  return trimmed.slice(0, ARG_PREVIEW_MAX) + '…';
+}
+
+function shortenPath(path: string): string {
+  if (!path) return '';
+  // 绝对路径取最后两段，避免 /Users/linchen/Downloads/ai/code-agent/src/.../file 占满
+  const segments = path.split('/').filter(Boolean);
+  if (segments.length <= 2) return path;
+  return '.../' + segments.slice(-2).join('/');
+}
+
+function buildActionPreview(toolLabel: string, args: Record<string, unknown>): string {
+  const action = takePreview(args.action);
+  if (!action) return toolLabel;
+
+  const rawAction = typeof args.action === 'string' ? args.action : '';
+  const isTypingAction = rawAction === 'type' || rawAction === 'smart_type';
+  const target = takePreview(
+    isTypingAction
+      ? args.selector ?? args.targetApp ?? args.role ?? args.name
+      : args.selector ?? args.url ?? args.text ?? args.key ?? args.role ?? args.targetApp,
+  );
+
+  return target ? `${toolLabel} ${action} ${target}` : `${toolLabel} ${action}`;
+}
+
+export function buildSingleToolLabel(name: string, args: Record<string, unknown> | undefined): string {
+  const verb = SINGLE_TOOL_VERB[name];
+  const a = args || {};
+  let preview = '';
+
+  switch (name) {
+    case 'Bash':
+    case 'bash':
+      preview = takePreview(a.command);
+      break;
+    case 'Read':
+    case 'ReadPoc':
+      preview = shortenPath(takePreview(a.file_path ?? a.path));
+      break;
+    case 'Grep':
+      preview = takePreview(a.pattern);
+      break;
+    case 'Glob':
+    case 'GlobPoc':
+      preview = takePreview(a.pattern);
+      break;
+    case 'LS':
+    case 'list_directory':
+      preview = shortenPath(takePreview(a.path));
+      break;
+    case 'WebSearch':
+      preview = takePreview(a.query);
+      break;
+    case 'WebFetch':
+      preview = takePreview(a.url);
+      break;
+    case 'browser_action':
+    case 'computer_use':
+      return buildActionPreview(verb, a);
+    default:
+      break;
+  }
+
+  if (verb && preview) return `${verb} ${preview}`;
+  if (verb) return verb;
+  // mcp__*, Task, 未识别的 tool：显示 tool name
+  return `Called ${name}`;
 }
 
 /**

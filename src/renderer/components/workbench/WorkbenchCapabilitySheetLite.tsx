@@ -117,7 +117,9 @@ function getLifecycleRows(capability: WorkbenchCapabilityRegistryItem): Array<{ 
   if (capability.lifecycle.connectionState !== 'not_applicable') {
     rows.push({
       label: '连接',
-      value: formatLifecycleValue(capability.lifecycle.connectionState),
+      value: capability.kind === 'connector' && capability.lifecycle.connectionState === 'lazy'
+        ? '待检查'
+        : formatLifecycleValue(capability.lifecycle.connectionState),
     });
   }
 

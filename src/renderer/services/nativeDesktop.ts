@@ -94,6 +94,38 @@ export interface NativeDesktopCollectorStatus {
   sqliteDbPath?: string | null;
 }
 
+export interface WorkbenchActionTrace {
+  id: string;
+  targetKind: 'browser' | 'computer';
+  toolName: string;
+  action: string;
+  mode: string;
+  startedAtMs: number;
+  completedAtMs?: number | null;
+}
+
+export interface ComputerSurfaceState {
+  id: string;
+  mode: 'background_ax' | 'foreground_fallback' | 'background_surface_unavailable';
+  platform: string;
+  ready: boolean;
+  background: boolean;
+  requiresForeground?: boolean;
+  approvalScope?: 'session_app' | 'per_action' | 'blocked';
+  safetyNote?: string | null;
+  targetApp?: string | null;
+  blockedReason?: string | null;
+  approvedApps: string[];
+  deniedApps: string[];
+  lastAction?: WorkbenchActionTrace | null;
+  lastSnapshot?: {
+    capturedAtMs: number;
+    appName?: string | null;
+    windowTitle?: string | null;
+    screenshotPath?: string | null;
+  } | null;
+}
+
 export interface NativeDesktopCollectorRequest {
   intervalSecs?: number;
   captureScreenshots?: boolean;
@@ -137,6 +169,10 @@ export async function captureNativeDesktopScreenshot(outputPath?: string): Promi
 
 export async function getNativeDesktopCollectorStatus(): Promise<NativeDesktopCollectorStatus> {
   return invoke<NativeDesktopCollectorStatus>('desktop_get_collector_status');
+}
+
+export async function getComputerSurfaceState(): Promise<ComputerSurfaceState> {
+  return postDesktopAction<ComputerSurfaceState>('getComputerSurfaceState');
 }
 
 export async function startNativeDesktopCollector(

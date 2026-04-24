@@ -14,6 +14,7 @@ import { isWebMode, copyPathToClipboard } from '../utils/platform';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
+const LivePreviewFrame = lazy(() => import('./LivePreview/LivePreviewFrame'));
 
 const logger = createLogger('PreviewPanel');
 
@@ -225,6 +226,21 @@ export const PreviewPanel: React.FC = () => {
 
   if (!activeTab) return null;
 
+  // Live dev server preview — 完全独立的渲染路径，绕开文件加载和编辑器逻辑
+  if (activeTab.kind === 'liveDev' && activeTab.devServerUrl) {
+    return (
+      <div
+        className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
+          isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
+        }`}
+      >
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">加载 Live Preview...</div>}>
+          <LivePreviewFrame tabId={activeTab.id} devServerUrl={activeTab.devServerUrl} />
+        </Suspense>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
@@ -353,6 +369,8 @@ export const PreviewPanel: React.FC = () => {
               onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
               language={codeLanguage}
+              jumpToLine={activeTab.jumpToLine}
+              jumpNonce={activeTab.jumpNonce}
             />
           </Suspense>
         ) : isMarkdown && mode === 'edit' ? (
@@ -368,6 +386,8 @@ export const PreviewPanel: React.FC = () => {
               onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
               language="markdown"
+              jumpToLine={activeTab.jumpToLine}
+              jumpNonce={activeTab.jumpNonce}
             />
           </Suspense>
         ) : isMarkdown ? (

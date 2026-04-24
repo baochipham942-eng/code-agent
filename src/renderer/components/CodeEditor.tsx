@@ -4,7 +4,7 @@
 // previewable code or markdown file.
 // ============================================================================
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import CodeMirror, { type Extension } from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
@@ -12,7 +12,7 @@ import { yaml } from '@codemirror/lang-yaml';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, keymap } from '@codemirror/view';
-import { Prec } from '@codemirror/state';
+import { Prec, EditorSelection } from '@codemirror/state';
 
 export type CodeEditorLanguage =
   | 'markdown'
@@ -28,6 +28,12 @@ interface CodeEditorProps {
   onSave: () => void;
   language: CodeEditorLanguage;
   readOnly?: boolean;
+  /**
+   * Visual Grounding: Live Preview 选中元素后驱动的行跳转
+   * 每次 line 变化（即使相同值），外层通过 `jumpNonce` bump 一次即可重新滚动/高亮
+   */
+  jumpToLine?: number;
+  jumpNonce?: number;
 }
 
 function languageExtension(language: CodeEditorLanguage): Extension | null {
@@ -48,8 +54,24 @@ function languageExtension(language: CodeEditorLanguage): Extension | null {
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({
-  value, onChange, onSave, language, readOnly = false,
+  value, onChange, onSave, language, readOnly = false, jumpToLine, jumpNonce,
 }) => {
+  const viewRef = useRef<EditorView | null>(null);
+
+  // 根据 jumpToLine (+ jumpNonce) 滚动到目标行并选中
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !jumpToLine || jumpToLine < 1) return;
+    const doc = view.state.doc;
+    if (jumpToLine > doc.lines) return;
+    const line = doc.line(jumpToLine);
+    view.dispatch({
+      selection: EditorSelection.cursor(line.from),
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    });
+    view.focus();
+  }, [jumpToLine, jumpNonce]);
+
   // Highest precedence so Cmd/Ctrl+S beats the browser's default save dialog.
   const saveKeymap = useMemo(() => Prec.highest(keymap.of([
     {
@@ -77,6 +99,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       readOnly={readOnly}
       height="100%"
       style={{ height: '100%', fontSize: 13 }}
+      onCreateEditor={(view) => {
+        viewRef.current = view;
+      }}
       basicSetup={{
         lineNumbers: true,
         foldGutter: false,

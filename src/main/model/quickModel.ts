@@ -8,11 +8,8 @@
 // - Yes/No decisions
 // ============================================================================
 
-import { ModelRouter } from './modelRouter';
-import { getConfigService } from '../services/core';
-import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../shared/constants';
 
 const logger = createLogger('QuickModel');
 
@@ -36,74 +33,34 @@ export interface ClassificationResult {
 // Quick Model Service
 // ----------------------------------------------------------------------------
 
-let modelRouter: ModelRouter | null = null;
-let quickConfig: ModelConfig | null = null;
+interface QuickModelConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+let quickConfig: QuickModelConfig | null = null;
 
 /**
- * Initialize the quick model configuration
- * Uses the 'quick' capability fallback model
+ * 初始化 quick model：直连智谱官方 bigmodel.cn，不经过 ModelRouter。
+ * 走官方是因为 0ki 代理不支持 glm-4-flash 免费 ID。
  */
-function initializeQuickModel(): ModelConfig | null {
+function initializeQuickModel(): QuickModelConfig | null {
   if (quickConfig) return quickConfig;
 
-  try {
-    const configService = getConfigService();
-    const settings = configService.getSettings();
-
-    // Get base config from user settings
-    const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
-    const baseConfig: ModelConfig = {
-      provider,
-      model: settings.model?.model || DEFAULT_MODELS.chat,
-      apiKey: '', // Will be retrieved from secure storage
-      baseUrl: settings.models?.providers?.[provider]?.baseUrl,
-      temperature: 0.1, // Very low temperature for deterministic outputs
-      maxTokens: 512, // Short responses only
-    };
-
-    // Initialize router if needed
-    if (!modelRouter) {
-      modelRouter = new ModelRouter();
-    }
-
-    // Get the quick fallback model
-    const fallbackConfig = modelRouter.getFallbackConfig('quick', baseConfig);
-
-    if (fallbackConfig) {
-      // Get API key for the fallback provider
-      const apiKey = configService.getServiceApiKey('openrouter');
-      if (apiKey) {
-        quickConfig = {
-          ...fallbackConfig,
-          apiKey,
-          temperature: 0.1,
-          maxTokens: 512,
-        };
-        logger.info('Quick model initialized', {
-          provider: quickConfig.provider,
-          model: quickConfig.model,
-        });
-        return quickConfig;
-      }
-    }
-
-    // Fallback to main model if quick not available
-    logger.warn('Quick model not available, using main model');
-    const mainApiKey = configService.getApiKey(baseConfig.provider);
-    if (mainApiKey) {
-      quickConfig = {
-        ...baseConfig,
-        apiKey: mainApiKey,
-      };
-      return quickConfig;
-    }
-
-    logger.error('No API key available for quick model');
-    return null;
-  } catch (error) {
-    logger.error('Failed to initialize quick model', { error });
+  const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
+  if (!apiKey) {
+    logger.warn('No ZHIPU_OFFICIAL_API_KEY / ZHIPU_API_KEY; quick model disabled');
     return null;
   }
+
+  quickConfig = {
+    apiKey,
+    baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
+    model: DEFAULT_MODELS.quick,
+  };
+  logger.info('Quick model initialized', { model: quickConfig.model });
+  return quickConfig;
 }
 
 /**
@@ -118,31 +75,34 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
     return { success: false, error: 'Quick model not configured' };
   }
 
-  if (!modelRouter) {
-    modelRouter = new ModelRouter();
-  }
-
-  const effectiveMaxTokens = maxTokens ?? config.maxTokens ?? 512;
+  const effectiveMaxTokens = maxTokens ?? 512;
 
   try {
-    logger.debug('Executing quick task', {
-      provider: config.provider,
-      model: config.model,
-      promptLength: prompt.length,
-      maxTokens: effectiveMaxTokens,
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: effectiveMaxTokens,
+        temperature: 0.1,
+        stream: false,
+      }),
     });
 
-    const response = await modelRouter.chat({
-      provider: config.provider,
-      model: config.model,
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: effectiveMaxTokens,
-    });
-
-    if (response.content) {
-      return { success: true, content: response.content };
+    if (!response.ok) {
+      const text = await response.text();
+      return { success: false, error: `${response.status} ${text.slice(0, 200)}` };
     }
 
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === 'string' && content.length > 0) {
+      return { success: true, content };
+    }
     return { success: false, error: 'Empty response from quick model' };
   } catch (error) {
     logger.error('Quick task failed', { error });
@@ -257,7 +217,7 @@ export function getQuickModelInfo(): { provider: string; model: string } | null 
   const config = initializeQuickModel();
   if (!config) return null;
   return {
-    provider: config.provider,
+    provider: 'zhipuOfficial',
     model: config.model,
   };
 }

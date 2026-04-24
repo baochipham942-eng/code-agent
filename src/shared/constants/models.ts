@@ -27,8 +27,8 @@ export const DEFAULT_MODELS = {
   code: 'claude-sonnet-4-6',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
-  /** 快速判断模型 - 智谱 Flash 包年免费 */
-  quick: 'glm-4.7-flash',
+  /** 快速判断模型 - 智谱官方 glm-4-flash 免费（走 bigmodel.cn，非 0ki） */
+  quick: 'glm-4-flash',
   /** 超长上下文模型（128K+） */
   longContext: 'claude-sonnet-4-6',
   /** 包月无限制模型 */

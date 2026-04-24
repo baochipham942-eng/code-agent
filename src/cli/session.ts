@@ -249,8 +249,9 @@ export class CLISessionManager {
     }
 
     // 自动更新会话标题（如果是第一条用户消息）
+    // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
     if (message.role === 'user') {
-      await this.maybeUpdateTitle(message.content);
+      void this.maybeUpdateTitle(message.content).catch(() => { /* 静默降级 */ });
     }
   }
 

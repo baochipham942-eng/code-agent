@@ -207,11 +207,9 @@ export const SEARCH_API_ENDPOINTS = {
 export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
   moonshot: [
     { provider: 'deepseek', model: 'deepseek-chat' },
-    { provider: 'zhipu', model: 'glm-4.7-flash' },
   ],
   deepseek: [
     { provider: 'moonshot', model: 'kimi-k2.5' },
-    { provider: 'zhipu', model: 'glm-4.7-flash' },
   ],
   claude: [
     { provider: 'moonshot', model: 'kimi-k2.5' },

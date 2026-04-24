@@ -41,7 +41,7 @@ export async function callOpenRouter(
   }));
 
   // 获取模型信息
-  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-5.4');
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-5.5');
 
   // 启用流式输出
   const useStream = !!onStream;

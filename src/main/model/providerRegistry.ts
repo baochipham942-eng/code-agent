@@ -31,8 +31,28 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: MODEL_API_ENDPOINTS.deepseek,
     models: [
       {
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        capabilities: ['general', 'code'],
+        maxTokens: 32768,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
+        id: 'deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        capabilities: ['reasoning', 'code'],
+        maxTokens: 65536,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
         id: 'deepseek-chat',
-        name: 'DeepSeek Chat',
+        name: 'DeepSeek Chat (legacy)',
         capabilities: ['general', 'code'],
         maxTokens: 16384,
         supportsTool: true,
@@ -42,7 +62,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
       {
         id: 'deepseek-coder',
-        name: 'DeepSeek Coder',
+        name: 'DeepSeek Coder (legacy)',
         capabilities: ['code'],
         maxTokens: 32768,
         supportsTool: true,
@@ -52,7 +72,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
       {
         id: 'deepseek-reasoner',
-        name: 'DeepSeek R1',
+        name: 'DeepSeek R1 (legacy)',
         capabilities: ['reasoning', 'code'],
         maxTokens: 65536,
         supportsTool: false,

@@ -17,8 +17,8 @@ export const MODEL = {
 export const DEFAULT_MODELS = {
   /** 主要对话模型 - Kimi K2.5 包月 */
   chat: 'claude-sonnet-4-6',
-  /** 推理模型 - DeepSeek R1 (按需付费) */
-  reasoning: 'deepseek-reasoner',
+  /** 推理模型 - DeepSeek V4 Pro (按需付费，替代 R1) */
+  reasoning: 'deepseek-v4-pro',
   /** 视觉理解模型 - 智谱包年 */
   vision: 'glm-4.6v',
   /** 视觉快速模型（不支持 base64） */
@@ -147,9 +147,12 @@ export const TOKENIZER_MAP: Record<string, 'cl100k_base' | 'o200k_base'> = {
   'claude-3-5-sonnet-20241022': 'cl100k_base',
   'claude-sonnet-4-6': 'cl100k_base',
   // DeepSeek — cl100k approximation
+  'deepseek-v4-flash': 'cl100k_base',
+  'deepseek-v4-pro': 'cl100k_base',
   'deepseek-chat': 'cl100k_base',
   'deepseek-reasoner': 'cl100k_base',
   // Kimi / Moonshot — cl100k approximation
+  'kimi-k2.6': 'cl100k_base',
   'kimi-k2.5': 'cl100k_base',
   'moonshot-v1-8k': 'cl100k_base',
   'moonshot-v1-32k': 'cl100k_base',

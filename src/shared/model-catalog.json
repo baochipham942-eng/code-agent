@@ -1,5 +1,5 @@
 {
-  "updated": "2026-04-23",
+  "updated": "2026-04-24",
   "providers": [
     {
       "id": "openai",
@@ -7,13 +7,15 @@
       "description": "GPT / o 系列模型",
       "apiUrl": "https://api.openai.com/v1",
       "apiKeyHint": "your-api-key",
-      "default": "gpt-5.4",
+      "default": "gpt-5.5",
       "models": [
-        { "id": "gpt-5.4", "label": "GPT-5.4 (旗舰)", "group": "GPT 系列", "desc": "1M · 最强推理+编码" },
+        { "id": "gpt-5.5", "label": "GPT-5.5 (最新旗舰)", "group": "GPT 系列", "desc": "1M · 全面升级 writing/coding/research/agent" },
+        { "id": "gpt-5.5-pro", "label": "GPT-5.5 Pro", "group": "GPT 系列", "desc": "1M · Pro/Business/Enterprise 专享" },
+        { "id": "gpt-5.4", "label": "GPT-5.4", "group": "GPT 系列", "desc": "1M · 上一代旗舰" },
         { "id": "gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "GPT 系列", "desc": "400K · 高性价比" },
         { "id": "gpt-5.4-nano", "label": "GPT-5.4 Nano", "group": "GPT 系列", "desc": "400K · 最轻量" },
         { "id": "gpt-5.3-codex", "label": "GPT-5.3 Codex", "group": "编码专用", "desc": "Agent 编码优化" },
-        { "id": "gpt-5.2", "label": "GPT-5.2", "group": "GPT 系列", "desc": "上一代旗舰" }
+        { "id": "gpt-5.2", "label": "GPT-5.2", "group": "GPT 系列", "desc": "旧旗舰" }
       ]
     },
     {
@@ -49,10 +51,12 @@
       "description": "深度求索",
       "apiUrl": "https://api.deepseek.com",
       "apiKeyHint": "your-api-key",
-      "default": "deepseek-chat",
+      "default": "deepseek-v4-flash",
       "models": [
-        { "id": "deepseek-chat", "label": "DeepSeek Chat (V3.2)", "desc": "128K · 非思考模式" },
-        { "id": "deepseek-reasoner", "label": "DeepSeek Reasoner (V3.2)", "desc": "128K · 思考模式" }
+        { "id": "deepseek-v4-flash", "label": "DeepSeek V4 Flash (推荐)", "desc": "1M · 284B/13B MoE Apache 2.0" },
+        { "id": "deepseek-v4-pro", "label": "DeepSeek V4 Pro (推理)", "desc": "1M · 1.6T/49B MoE 深度思考" },
+        { "id": "deepseek-chat", "label": "DeepSeek Chat (legacy)", "desc": "128K · 2026-07-24 退役，已 route 到 V4 Flash" },
+        { "id": "deepseek-reasoner", "label": "DeepSeek Reasoner (legacy)", "desc": "128K · 2026-07-24 退役，已 route 到 V4 Pro" }
       ]
     },
     {
@@ -90,10 +94,10 @@
       "name": "Kimi",
       "description": "Moonshot AI 模型",
       "apiUrl": "https://cn.haioi.net/v1",
-      "default": "kimi-k2.6",
+      "default": "kimi-k2.5",
       "models": [
-        { "id": "kimi-k2.6", "label": "Kimi K2.6 (最新)", "desc": "256K · 多模态 + Agent Swarm" },
-        { "id": "kimi-k2.5", "label": "Kimi K2.5", "desc": "256K · 1T MoE" },
+        { "id": "kimi-k2.6", "label": "Kimi K2.6 (中转暂不支持)", "desc": "256K · 1T MoE open-weight·SWE-Bench Pro 58.6·待中转接入" },
+        { "id": "kimi-k2.5", "label": "Kimi K2.5 (推荐)", "desc": "256K · 当前中转可用的最新版" },
         { "id": "kimi-k2-turbo-preview", "label": "Kimi K2 Turbo", "desc": "256K · 快速" },
         { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "desc": "256K · 深度推理" }
       ]
@@ -120,10 +124,11 @@
         { "id": "google/gemini-3-flash-preview", "label": "Gemini 3 Flash", "group": "Google Gemini", "desc": "1M · 快速" },
         { "id": "anthropic/claude-opus-4-7", "label": "Claude Opus 4.7", "group": "Anthropic Claude", "desc": "1M · 最强" },
         { "id": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "group": "Anthropic Claude", "desc": "1M · 性价比" },
-        { "id": "openai/gpt-5.4", "label": "GPT-5.4", "group": "OpenAI", "desc": "1M · 旗舰" },
+        { "id": "openai/gpt-5.5", "label": "GPT-5.5", "group": "OpenAI", "desc": "1M · 最新旗舰" },
+        { "id": "openai/gpt-5.4", "label": "GPT-5.4", "group": "OpenAI", "desc": "1M · 上一代旗舰" },
         { "id": "openai/gpt-5.4-mini", "label": "GPT-5.4 Mini", "group": "OpenAI", "desc": "400K · 轻量" },
-        { "id": "deepseek/deepseek-chat", "label": "DeepSeek Chat", "group": "DeepSeek", "desc": "128K · 性价比" },
-        { "id": "deepseek/deepseek-reasoner", "label": "DeepSeek Reasoner", "group": "DeepSeek", "desc": "128K · 推理" }
+        { "id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "group": "DeepSeek", "desc": "1M · 284B MoE" },
+        { "id": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "group": "DeepSeek", "desc": "1M · 1.6T MoE 推理" }
       ]
     },
     {

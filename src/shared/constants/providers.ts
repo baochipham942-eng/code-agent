@@ -56,7 +56,7 @@ export interface CanonicalProviderInfo {
 export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   deepseek: {
     aliases: ['deepseek'],
-    defaultModel: 'deepseek-chat',
+    defaultModel: 'deepseek-v4-flash',
     endpoint: MODEL_API_ENDPOINTS.deepseek,
     cloudProxySupported: true,
     displayName: 'DeepSeek',
@@ -70,7 +70,7 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   },
   openai: {
     aliases: ['openai'],
-    defaultModel: 'gpt-5.4',
+    defaultModel: 'gpt-5.5',
     endpoint: MODEL_API_ENDPOINTS.openai,
     cloudProxySupported: true,
     displayName: 'OpenAI',
@@ -206,21 +206,21 @@ export const SEARCH_API_ENDPOINTS = {
  */
 export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
   moonshot: [
-    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   deepseek: [
     { provider: 'moonshot', model: 'kimi-k2.5' },
   ],
   claude: [
     { provider: 'moonshot', model: 'kimi-k2.5' },
-    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   openai: [
     { provider: 'moonshot', model: 'kimi-k2.5' },
-    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   zhipu: [
     { provider: 'moonshot', model: 'kimi-k2.5' },
-    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
 };

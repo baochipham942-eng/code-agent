@@ -128,6 +128,15 @@ export const VISION_MODEL_CAPABILITIES: Record<string, {
 /** 智谱视觉模型（支持 base64） */
 export const ZHIPU_VISION_MODEL = 'glm-4v-plus' as const;
 
+/**
+ * visual_edit 工具专用模型配置 — 可被环境变量 override。
+ * TEXT 路径：无截图时纯文本推理（source + intent）
+ * VISION 路径：有截图时多模态推理（source + intent + image）
+ * 默认值考虑 0ki 代理订阅的实际可用模型。
+ */
+export const VISUAL_EDIT_MODEL_TEXT = 'GLM-4.7' as const;
+export const VISUAL_EDIT_MODEL_VISION = ZHIPU_VISION_MODEL;
+
 /** Mermaid 在线渲染 API */
 export const MERMAID_INK_API = 'https://mermaid.ink';
 

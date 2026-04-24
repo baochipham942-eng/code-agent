@@ -25,10 +25,20 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import {
-  ZHIPU_VISION_MODEL,
+  VISUAL_EDIT_MODEL_TEXT,
+  VISUAL_EDIT_MODEL_VISION,
   MODEL_API_ENDPOINTS,
   MODEL_MAX_TOKENS,
 } from '../../../../shared/constants';
+
+/** 按调用形态选模型：有 screenshot 走 vision model，否则走 text model。
+ *  env override: VISUAL_EDIT_MODEL_TEXT / VISUAL_EDIT_MODEL_VISION */
+function pickVisualEditModel(hasScreenshot: boolean): string {
+  if (hasScreenshot) {
+    return process.env.VISUAL_EDIT_MODEL_VISION || VISUAL_EDIT_MODEL_VISION;
+  }
+  return process.env.VISUAL_EDIT_MODEL_TEXT || VISUAL_EDIT_MODEL_TEXT;
+}
 import { getConfigService } from '../../../services';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { visualEditSchema as schema } from './visualEdit.schema';
@@ -190,10 +200,12 @@ async function callZhipuVision(args: {
   userContent: string;
   screenshotBase64?: string;
   screenshotMimeType?: string;
-}): Promise<string> {
+}): Promise<{ content: string; model: string }> {
   const { apiKey, userContent, screenshotBase64, screenshotMimeType } = args;
+  const hasScreenshot = !!screenshotBase64;
+  const model = pickVisualEditModel(hasScreenshot);
   const contentParts: unknown[] = [{ type: 'text', text: userContent }];
-  if (screenshotBase64) {
+  if (hasScreenshot) {
     const mime = screenshotMimeType || 'image/png';
     contentParts.push({
       type: 'image_url',
@@ -202,7 +214,7 @@ async function callZhipuVision(args: {
   }
 
   const body = {
-    model: ZHIPU_VISION_MODEL,
+    model,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: contentParts },
@@ -233,7 +245,7 @@ async function callZhipuVision(args: {
   };
   const content = result.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error('智谱视觉 API 返回空内容');
-  return content;
+  return { content, model };
 }
 
 class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput> {
@@ -327,13 +339,16 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
     });
 
     let llmRaw: string;
+    let llmModel: string;
     try {
-      llmRaw = await callZhipuVision({
+      const callResult = await callZhipuVision({
         apiKey: zhipuApiKey,
         userContent,
         screenshotBase64: args.screenshotBase64,
         screenshotMimeType: args.screenshotMimeType,
       });
+      llmRaw = callResult.content;
+      llmModel = callResult.model;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `视觉模型调用失败：${msg}`, code: 'VISION_FAILED' };
@@ -413,7 +428,7 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
         oldText: plan.old_text,
         newText: plan.new_text,
         bytesDelta,
-        visionModel: ZHIPU_VISION_MODEL,
+        visionModel: llmModel,
       },
     };
   }

@@ -92,6 +92,15 @@ export const httpsAgent = USE_PROXY ? new HttpsProxyAgent(PROXY_URL) : undefined
 
 // Proxy status logged on first inference call, not at module init (CLI mode timing issue)
 
+/**
+ * 规范化 Claude baseUrl：保证以 /v1 结尾。
+ * 容忍中转 env 只填域名（clawapi.vip 这类中转首页会返回 HTML，让 SSE 解析伪装成 ECONNRESET）。
+ */
+export function normalizeClaudeBaseUrl(url: string): string {
+  const trimmed = url.replace(/\/+$/, '');
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
 // ----------------------------------------------------------------------------
 // HTTP Utilities
 // ----------------------------------------------------------------------------

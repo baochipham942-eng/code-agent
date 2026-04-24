@@ -15,6 +15,7 @@ import {
   convertToolsToClaude,
   convertToClaudeMessages,
   parseClaudeResponse,
+  normalizeClaudeBaseUrl,
 } from './shared';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
@@ -349,7 +350,9 @@ export async function callClaude(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude;
+  const baseUrl = normalizeClaudeBaseUrl(
+    config.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude
+  );
 
   // Convert messages for Claude format
   const systemMessage = messages.find((m) => m.role === 'system');

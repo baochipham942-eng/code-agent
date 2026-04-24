@@ -1,0 +1,377 @@
+# ============================================================================
+# Incremental Edit Budget Tests - 增量编辑预算测试
+# ============================================================================
+# P0 observation masking 修复专项评测（commit c8a8db1d）
+# 验证 L1 placeholder / L3 reread detector / L4 smart masking 三层防御协同工作
+# 核心指标：多轮"读→改→再改"链路的工具调用预算控制（<15 次）
+
+name: "增量编辑预算测试"
+description: "P0 observation masking 修复专项评测，验证多轮文件读→改→再改链路的工具调用预算控制"
+default_timeout: 240000
+tags:
+  - incremental-edit
+  - p0-regression
+  - core-path
+  - anti-reread
+  - budget-control
+
+cases:
+  # --------------------------------------------------------------------------
+  # Case 1: L4 smart masking — 增量编辑不重读
+  # 核心假设：Read 一次后，连续 3 次 Edit 不需要重新 Read
+  # --------------------------------------------------------------------------
+  - id: incremental-edit-no-reread
+    type: task
+    description: "L4 smart masking：增量编辑链路不应重新读取文件"
+    setup:
+      - |
+        cat > test-inc-edit.ts << 'EOF'
+        function add(a, b) {
+          return a + b;
+        }
+        EOF
+    prompt: "读取 test-inc-edit.ts"
+    follow_up_prompts:
+      - "给 add 函数加 TypeScript 类型注解"
+      - "再加一个 subtract 函数"
+      - "在文件顶部加一行注释 // Math utilities"
+    expect:
+      no_crash: true
+      max_tool_calls: 5
+      file_contains:
+        test-inc-edit.ts:
+          - "// Math utilities"
+          - "subtract"
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
+      - type: content_contains
+        description: "文件应包含顶部注释 '// Math utilities'"
+        weight: 0.8
+        params:
+          path: "test-inc-edit.ts"
+          contains: "// Math utilities"
+      - type: content_contains
+        description: "文件应包含新增的 subtract 函数"
+        weight: 0.8
+        params:
+          path: "test-inc-edit.ts"
+          contains: "subtract"
+      - type: content_contains
+        description: "文件应包含类型注解 ': number'"
+        weight: 0.6
+        params:
+          path: "test-inc-edit.ts"
+          contains: ": number"
+      - type: max_tool_calls
+        description: "工具调用预算 <=5（1 Read + 3 Edit + 1 容差）"
+        weight: 1
+        critical: true
+        params:
+          max: 5
+    cleanup:
+      - rm -f test-inc-edit.ts
+
+  # --------------------------------------------------------------------------
+  # Case 2: L3 detector (trackFileReread) — 重读陷阱
+  # 设计意图：3 条 follow-up 都在诱导模型重新读取同一个文件
+  # - 如果 L4 smart masking 失效，模型会 re-read
+  # - 如果 L3 detector 兜底，第 3 次 read 时会注入 <reread-loop-detected> 警告
+  #   迫使模型停止重读；此时工具调用数应仍 <= 3
+  # 核心断言：max_tool_calls <= 3（模型应该从记忆答题，不是再读一遍）
+  # --------------------------------------------------------------------------
+  - id: reread-loop-trap
+    type: conversation
+    description: "L3 detector：诱导重读陷阱，验证 reread-loop 兜底"
+    setup:
+      - |
+        cat > test-reread-trap.ts << 'EOF'
+        // line 1: header
+        export const VERSION = '1.0.0';
+        export const NAME = 'TrapTest';
+
+        export interface Config {
+          host: string;
+          port: number;
+          timeout: number;
+          retries: number;
+        }
+
+        export function createConfig(): Config {
+          return {
+            host: 'localhost',
+            port: 8080,
+            timeout: 3000,
+            retries: 3,
+          };
+        }
+        // line 20: footer
+        EOF
+    prompt: "读取 test-reread-trap.ts 然后告诉我有多少行"
+    follow_up_prompts:
+      - "你刚才读到的第 10 行是什么内容？"
+      - "再确认一次第 5 行和第 15 行"
+      - "保险起见重新读一次完整文件验证"
+    expect:
+      no_crash: true
+      max_tool_calls: 3
+      response_contains:
+        - "行"
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
+      - type: max_tool_calls
+        description: "诱导重读场景下仍应 <=3 次工具调用（L4 成功或 L3 兜底）"
+        weight: 1
+        critical: true
+        params:
+          max: 3
+      - type: response_contains
+        description: "响应应包含 '行' 说明给出了行数答复"
+        weight: 0.6
+        params:
+          text: "行"
+    cleanup:
+      - rm -f test-reread-trap.ts
+
+  # --------------------------------------------------------------------------
+  # Case 3: L1 placeholder + L4 — 改→验→改闭环
+  # 设计意图：Read → Bash(测试失败) → Edit(修复) → Bash(测试通过)
+  # 验证：Edit 后再次 Read/Bash 读到的内容必须是最新的（placeholder 替换正确）
+  # --------------------------------------------------------------------------
+  - id: modify-verify-modify
+    type: task
+    description: "L1 placeholder + L4：改-验-改闭环，验证修改后内容可见"
+    setup:
+      - |
+        cat > test-mvm.js << 'EOF'
+        function isEven(n) {
+          return n % 2 === 1;
+        }
+        module.exports = { isEven };
+        EOF
+      - |
+        cat > test-mvm.test.js << 'EOF'
+        const assert = require('assert');
+        const { isEven } = require('./test-mvm.js');
+        assert.strictEqual(isEven(2), true, '2 should be even');
+        assert.strictEqual(isEven(3), false, '3 should be odd');
+        console.log('all tests passed');
+        EOF
+    prompt: "读取 test-mvm.js 和 test-mvm.test.js，然后运行 node test-mvm.test.js 看是否通过"
+    follow_up_prompts:
+      - "修复 test-mvm.js 里的 bug 让测试通过"
+      - "再跑一次 node test-mvm.test.js 验证"
+    expect:
+      no_crash: true
+      max_tool_calls: 8
+      test_pass: "node test-mvm.test.js"
+      file_contains:
+        test-mvm.js:
+          - "=== 0"
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
+      - type: content_contains
+        description: "test-mvm.js 应包含修复后的 '=== 0' 判定"
+        weight: 1
+        critical: true
+        params:
+          path: "test-mvm.js"
+          contains: "=== 0"
+      - type: test_passes
+        description: "node test-mvm.test.js 应通过"
+        weight: 1
+        critical: true
+        params:
+          command: "node test-mvm.test.js"
+      - type: max_tool_calls
+        description: "工具调用预算 <=8（2 Read + 1 Bash + 1 Edit + 1 Bash + 容差）"
+        weight: 1
+        critical: true
+        params:
+          max: 8
+    cleanup:
+      - rm -f test-mvm.js test-mvm.test.js
+
+  # --------------------------------------------------------------------------
+  # Case 4: L4 smart masking 跨文件 — 两文件一致性修改
+  # 设计意图：A/B 两文件，改 A 的签名后同步更新 B 的调用，不重读任何一个
+  # --------------------------------------------------------------------------
+  - id: cross-file-consistent-edit
+    type: task
+    description: "L4 smart masking 跨文件：同步修改两个文件保持一致性"
+    setup:
+      - |
+        cat > test-util.ts << 'EOF'
+        export function greet(name) {
+          return "hi " + name;
+        }
+        EOF
+      - |
+        cat > test-main.ts << 'EOF'
+        import { greet } from './test-util';
+        console.log(greet('Alice'));
+        EOF
+    prompt: "读取 test-util.ts 和 test-main.ts"
+    follow_up_prompts:
+      - "把 greet 改成接收 name 和 lang 两个参数，lang='zh' 时返回'你好 X'，默认'en'"
+      - "同步更新 test-main.ts 的调用，加上 lang='zh'"
+    expect:
+      no_crash: true
+      max_tool_calls: 7
+      file_contains:
+        test-util.ts:
+          - "lang"
+          - "你好"
+        test-main.ts:
+          - "zh"
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
+      - type: content_contains
+        description: "test-util.ts 应包含新参数 'lang'"
+        weight: 0.8
+        params:
+          path: "test-util.ts"
+          contains: "lang"
+      - type: content_contains
+        description: "test-util.ts 应包含中文问候 '你好'"
+        weight: 0.8
+        params:
+          path: "test-util.ts"
+          contains: "你好"
+      - type: content_contains
+        description: "test-main.ts 应同步传入 lang 值（zh）"
+        weight: 0.8
+        params:
+          path: "test-main.ts"
+          contains: "zh"
+      - type: max_tool_calls
+        description: "工具调用预算 <=7（2 Read + 2 Edit + 容差）"
+        weight: 1
+        critical: true
+        params:
+          max: 7
+    cleanup:
+      - rm -f test-util.ts test-main.ts
+
+  # --------------------------------------------------------------------------
+  # Case 5: 长链路预算 — THE money case
+  # 直接对应 P0 commit 主张："工具调用从 51 降到 <15"
+  # 10 轮 follow-up，每轮期望约 1 次 Edit，整个会话 <=15 次工具调用
+  # --------------------------------------------------------------------------
+  - id: long-chain-budget-15
+    type: task
+    description: "长链路预算：10 轮增量编辑总工具调用 <=15（对应 P0 从 51 降到 <15）"
+    setup:
+      - |
+        cat > test-chain.ts << 'EOF'
+        export class Calculator {}
+        EOF
+    prompt: "读取 test-chain.ts"
+    follow_up_prompts:
+      - "加一个 add 方法"
+      - "加一个 subtract 方法"
+      - "加一个 multiply 方法"
+      - "加一个 divide 方法，除数为 0 抛 Error"
+      - "给所有方法加 TypeScript 类型：参数和返回都是 number"
+      - "加一个 clear 方法，重置内部状态"
+      - "加一个 history 字段记录每次运算"
+      - "让 add/subtract/multiply/divide 把结果 push 到 history"
+      - "加一个 getHistory 方法返回副本"
+      - "在类前面加一行 JSDoc 注释说明这是计算器"
+    expect:
+      no_crash: true
+      max_tool_calls: 15
+      file_contains:
+        test-chain.ts:
+          - "add"
+          - "subtract"
+          - "multiply"
+          - "divide"
+          - "clear"
+          - "history"
+          - "getHistory"
+          - "Error"
+          - "/**"
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
+      - type: content_contains
+        description: "应包含 add 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "add"
+      - type: content_contains
+        description: "应包含 subtract 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "subtract"
+      - type: content_contains
+        description: "应包含 multiply 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "multiply"
+      - type: content_contains
+        description: "应包含 divide 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "divide"
+      - type: content_contains
+        description: "应包含 clear 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "clear"
+      - type: content_contains
+        description: "应包含 history 字段"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "history"
+      - type: content_contains
+        description: "应包含 getHistory 方法"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "getHistory"
+      - type: content_contains
+        description: "应包含 Error（divide-by-zero）"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "Error"
+      - type: content_contains
+        description: "应包含 JSDoc 注释起始 '/**'"
+        weight: 0.6
+        params:
+          path: "test-chain.ts"
+          contains: "/**"
+      - type: max_tool_calls
+        description: "THE money assertion：10 轮增量编辑总工具调用 <=15"
+        weight: 1
+        critical: true
+        params:
+          max: 15
+    cleanup:
+      - rm -f test-chain.ts

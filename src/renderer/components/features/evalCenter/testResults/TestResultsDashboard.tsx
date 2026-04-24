@@ -95,6 +95,15 @@ export const TestResultsDashboard: React.FC = () => {
     }
   }, []);
 
+  // Live subscription — refresh experiment list on progress events from backend
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      EVALUATION_CHANNELS.EXPERIMENT_PROGRESS,
+      () => { loadExperiments(); },
+    );
+    return () => unsubscribe?.();
+  }, [loadExperiments]);
+
   const handleSelectReport = useCallback(async (filePath: string) => {
     // Use cache if available
     const cached = reportCache.current.get(filePath);

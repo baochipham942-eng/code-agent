@@ -224,6 +224,8 @@ export const EVALUATION_CHANNELS = {
   GET_CROSS_EXPERIMENT: 'evaluation:get-cross-experiment',
   GET_GIT_COMMIT: 'evaluation:get-git-commit',
   CREATE_EXPERIMENT: 'evaluation:create-experiment',
+  /** 实验进度推送：run_start / case_start / case_end / run_end */
+  EXPERIMENT_PROGRESS: 'evaluation:experiment-progress',
 
   // Snapshot + Case Detail (Phase 1+3)
   GET_SNAPSHOT: 'evaluation:get-snapshot',

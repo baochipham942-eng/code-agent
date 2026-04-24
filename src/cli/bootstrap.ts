@@ -119,14 +119,16 @@ export async function initializeCLIServices(): Promise<void> {
 
   // Memory service removed — Light Memory (file-based) is used instead
 
-  // 初始化 Skill 发现服务
+  // 初始化 Skill 发现服务（fire-and-forget：skillMetaTool/skillCreateTool 用到时
+  // 会通过 ensureInitialized 等待完成，不阻塞启动与首字响应）
   try {
     const skillDiscoveryService = getSkillDiscoveryService();
-    await skillDiscoveryService.initialize(process.cwd());
-    cliLog('SkillDiscoveryService initialized');
+    void skillDiscoveryService.initialize(process.cwd()).then(
+      () => cliLog('SkillDiscoveryService initialized'),
+      (err) => cliLog('SkillDiscoveryService init failed:', err),
+    );
   } catch (error) {
-    cliLog('Failed to initialize SkillDiscoveryService:', error);
-    // 不抛出错误，允许 CLI 继续运行（skills 功能降级）
+    cliLog('Failed to kick off SkillDiscoveryService:', error);
   }
 
   initialized = true;

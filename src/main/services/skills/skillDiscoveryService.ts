@@ -42,6 +42,8 @@ class SkillDiscoveryService {
   private skills: Map<string, ParsedSkill> = new Map();
   private initialized = false;
   private workingDirectory = '';
+  /** 初始化中的 promise，用于 fire-and-forget 场景下的并发锁 */
+  private initPromise: Promise<void> | null = null;
 
   private normalizeWorkingDirectory(workingDirectory: string): string {
     return path.resolve(workingDirectory);
@@ -53,7 +55,23 @@ class SkillDiscoveryService {
    * @param workingDirectory - 当前工作目录
    */
   async initialize(workingDirectory: string): Promise<void> {
-    this.workingDirectory = this.normalizeWorkingDirectory(workingDirectory);
+    const normalized = this.normalizeWorkingDirectory(workingDirectory);
+
+    // 并发锁：若同目录的 init 正在跑，复用同一个 promise
+    if (this.initPromise && this.workingDirectory === normalized) {
+      return this.initPromise;
+    }
+
+    this.initPromise = this.doInitialize(normalized);
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
+  }
+
+  private async doInitialize(normalizedDir: string): Promise<void> {
+    this.workingDirectory = normalizedDir;
     this.skills.clear();
 
     // 1. 加载内置 Skills（最低优先级）
@@ -91,6 +109,12 @@ class SkillDiscoveryService {
    */
   async ensureInitialized(workingDirectory: string): Promise<void> {
     const normalized = this.normalizeWorkingDirectory(workingDirectory);
+
+    // 已经在跑同目录的 init，直接等它
+    if (this.initPromise && this.workingDirectory === normalized) {
+      return this.initPromise;
+    }
+
     if (!this.initialized || this.workingDirectory !== normalized) {
       await this.initialize(normalized);
     }

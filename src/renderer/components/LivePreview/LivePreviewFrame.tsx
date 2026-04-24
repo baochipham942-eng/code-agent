@@ -72,12 +72,23 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [frameError, setFrameError] = useState<string | null>(null);
   const [cspSnippet, setCspSnippet] = useState<string>('');
+  // Refresh nonce：受控 src 的真相源。改 DOM src 直接 mutate 会被 React
+  // rerender 矫正回 devServerUrl 导致 iframe double-load + contentWindow race。
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  const iframeSrc = useMemo(() => {
+    if (refreshNonce === 0) return devServerUrl;
+    const base = devServerUrl.replace(/([?&])_refresh=\d+&?/, '$1').replace(/[?&]$/, '');
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}_refresh=${refreshNonce}`;
+  }, [devServerUrl, refreshNonce]);
 
   useEffect(() => {
     setUrlInput(devServerUrl);
     setBridgeReady(false);
     setFrameLoaded(false);
     setFrameError(null);
+    setRefreshNonce(0);
     setSelectedElement(tabId, null);
   }, [devServerUrl, tabId, setSelectedElement]);
 
@@ -183,21 +194,14 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   }, [expectedOrigin, tabId, resolveAndSetSelectedElement, setSelectedElement]);
 
   const handleRefresh = useCallback(() => {
-    if (!iframeRef.current) return;
-    // 用 cache-bust query 一次性 reload，不走 about:blank 中转。
-    // 老做法 src='about:blank' → rAF → src=原 URL 有两个坑：
-    //   1) Tauri WKWebView 的 frame-src CSP 对 about:blank 不稳定
-    //   2) about:blank 秒加载会先触发一次 onLoad 让 frameLoaded=true，
-    //      3s 诊断 timer 此时看 bridgeReady=false 会误报 "bridge 未报 ready"
-    // 改成一次赋值一次 load，query 每次覆盖不堆叠。
+    // 通过 React state 推 refreshNonce 变更 iframeSrc（受控），让 iframe 重新 load。
+    // 绝对不要 iframeRef.current.src = ... 直接改 DOM：src 是受控 prop，
+    // React 下一轮 rerender 会把 DOM src 矫正回 devServerUrl，导致 double-load
+    // + contentWindow race，P3 restore 链路瞎掉。
     // 不清 selection：P3 (bridge 0.2.0) 之后 vg:ready 会带 restore-selection
-    // 重新找到原元素高亮。用户想手动清请用 bridge 的 vg:clear-selection 或重开 tab。
-    const base = iframeRef.current.src.replace(/([?&])_refresh=\d+&?/, '$1').replace(/[?&]$/, '');
-    const sep = base.includes('?') ? '&' : '?';
-    iframeRef.current.src = `${base}${sep}_refresh=${Date.now()}`;
+    // 重新找到原元素高亮。
+    setRefreshNonce(Date.now());
     setBridgeReady(false);
-    // 同步 reset frameLoaded，诊断 useEffect 的 6s 窗口从新 iframe 开始 load 起算，
-    // 避免 old frameLoaded=true + new !bridgeReady 组合立刻误报 "bridge 未 ready"。
     setFrameLoaded(false);
     setFrameError(null);
   }, []);
@@ -295,7 +299,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
         <iframe
           key={devServerUrl}
           ref={iframeRef}
-          src={devServerUrl}
+          src={iframeSrc}
           title="Live Preview"
           className="w-full h-full border-0"
           onLoad={() => {

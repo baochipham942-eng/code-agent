@@ -180,15 +180,18 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
 
   const handleRefresh = useCallback(() => {
     if (!iframeRef.current) return;
-    // 强制 reload：重新赋 src 比 contentWindow.location.reload() 跨域安全
-    const src = iframeRef.current.src;
-    iframeRef.current.src = 'about:blank';
-    requestAnimationFrame(() => {
-      if (iframeRef.current) iframeRef.current.src = src;
-    });
-    setBridgeReady(false);
+    // 用 cache-bust query 一次性 reload，不走 about:blank 中转。
+    // 老做法 src='about:blank' → rAF → src=原 URL 有两个坑：
+    //   1) Tauri WKWebView 的 frame-src CSP 对 about:blank 不稳定
+    //   2) about:blank 秒加载会先触发一次 onLoad 让 frameLoaded=true，
+    //      3s 诊断 timer 此时看 bridgeReady=false 会误报 "bridge 未报 ready"
+    // 改成一次赋值一次 load，query 每次覆盖不堆叠。
     // 不清 selection：P3 (bridge 0.2.0) 之后 vg:ready 会带 restore-selection
     // 重新找到原元素高亮。用户想手动清请用 bridge 的 vg:clear-selection 或重开 tab。
+    const base = iframeRef.current.src.replace(/([?&])_refresh=\d+&?/, '$1').replace(/[?&]$/, '');
+    const sep = base.includes('?') ? '&' : '?';
+    iframeRef.current.src = `${base}${sep}_refresh=${Date.now()}`;
+    setBridgeReady(false);
   }, []);
 
   const handleOpenExternal = useCallback(() => {

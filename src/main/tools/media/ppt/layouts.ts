@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import type PptxGenJS from 'pptxgenjs';
 import type { ThemeConfig, LayoutType, SlideData, SlideImage, ChartSlotData, ChartMode } from './types';
 import { isAppleDark } from './themes';
 import { MASTER } from './slideMasters';
@@ -228,8 +229,8 @@ function applyRhythm(candidate: LayoutType): LayoutType {
  * 填充幻灯片内容（使用 placeholder 绑定或坐标填充）
  */
 export function fillSlide(
-  pptx: any,
-  slide: any,
+  pptx: PptxGenJS,
+  slide: PptxGenJS.Slide,
   slideData: SlideData,
   theme: ThemeConfig,
   layout: LayoutType,
@@ -345,7 +346,7 @@ export function fillSlide(
 // 内容填充函数（仅填充内容，骨架在 master 中）
 // ============================================================================
 
-function addPageNumber(slide: any, index: number, theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function addPageNumber(slide: PptxGenJS.Slide, index: number, theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.pageNumber ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').pageNumber;
   if (apple) {
     slide.addText(String(index).padStart(2, '0'), {
@@ -368,7 +369,7 @@ function addPageNumber(slide: any, index: number, theme: ThemeConfig, apple: boo
   }
 }
 
-function fillStatsLayout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillStatsLayout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.stats ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').stats;
   // 只选取包含可提取数字的要点
   const withNumbers = points.filter(p => /\d+[\d.,]*[%万亿KMB]?/i.test(p));
@@ -409,7 +410,7 @@ function fillStatsLayout(slide: any, points: string[], theme: ThemeConfig, apple
   });
 }
 
-function fillCards2Layout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillCards2Layout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.cards2 ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').cards2;
   const leftPoints = points.slice(0, Math.ceil(points.length / 2));
   const rightPoints = points.slice(Math.ceil(points.length / 2));
@@ -462,7 +463,7 @@ function fillCards2Layout(slide: any, points: string[], theme: ThemeConfig, appl
   });
 }
 
-function fillCards3Layout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillCards3Layout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.cards3 ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').cards3;
   const displayPoints = points.slice(0, 3);
 
@@ -501,7 +502,7 @@ function fillCards3Layout(slide: any, points: string[], theme: ThemeConfig, appl
   });
 }
 
-function fillTimelineLayout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillTimelineLayout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.timeline ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').timeline;
   const displayPoints = points.slice(0, 4);
   const n = displayPoints.length;
@@ -557,7 +558,7 @@ function fillTimelineLayout(slide: any, points: string[], theme: ThemeConfig, ap
   });
 }
 
-function fillComparisonLayout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillComparisonLayout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.comparison ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').comparison;
   const half = Math.ceil(points.length / 2);
   const leftPoints = points.slice(0, half);
@@ -599,7 +600,7 @@ function fillComparisonLayout(slide: any, points: string[], theme: ThemeConfig, 
   });
 }
 
-function fillTwoColumnLayout(slide: any, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
+function fillTwoColumnLayout(slide: PptxGenJS.Slide, points: string[], theme: ThemeConfig, apple: boolean, tpl?: LayoutTemplate) {
   const t = tpl?.twoColumn ?? getTemplateForTheme(apple ? 'apple-dark' : 'default').twoColumn;
   const half = Math.ceil(points.length / 2);
   const leftPoints = points.slice(0, half);
@@ -642,7 +643,7 @@ function fillTwoColumnLayout(slide: any, points: string[], theme: ThemeConfig, a
 }
 
 function addSlideImages(
-  slide: any,
+  slide: PptxGenJS.Slide,
   images: SlideImage[],
   theme: ThemeConfig,
   tpl?: LayoutTemplate
@@ -676,8 +677,8 @@ function addSlideImages(
  * 根据 StructuredSlide.layout 分发到对应的 fill*FromSchema() 渲染器
  */
 export function fillStructuredSlide(
-  pptx: any,
-  slide: any,
+  pptx: PptxGenJS,
+  slide: PptxGenJS.Slide,
   data: StructuredSlide,
   theme: ThemeConfig,
   slideIndex: number,
@@ -691,7 +692,7 @@ export function fillStructuredSlide(
   if (data.isTitle) {
     slide.addText(data.title, { placeholder: 'slideTitle' });
     // 副标题：优先 subtitle，fallback 到 points[0]，否则用空字符串清除 placeholder
-    const sub = data.subtitle || (data.content as any)?.points?.[0] || '';
+    const sub = data.subtitle || (data.content as Partial<ListContent>).points?.[0] || '';
     slide.addText(sub, { placeholder: 'body' });
     return;
   }
@@ -765,21 +766,38 @@ export function fillStructuredSlide(
  * 从 StructuredSlide content 中提取 points（用于 fallback 和通用处理）
  */
 function extractPointsFromContent(data: StructuredSlide): string[] {
-  const c = data.content as any;
-  if (c.points) return c.points;
-  if (c.stats) return c.stats.map((s: any) => `${s.value} ${s.label}${s.description ? ' - ' + s.description : ''}`);
-  if (c.steps) return c.steps.map((s: any) => `${s.title}: ${s.description}`);
-  if (c.cards) return c.cards.map((card: any) => `${card.title}: ${card.description}`);
-  if (c.left && c.right) return [...c.left.points, ...c.right.points];
-  if (c.quote) return [c.quote, c.attribution].filter(Boolean);
-  return [];
+  switch (data.layout) {
+    case 'list':
+    case 'highlight':
+      return (data.content as ListContent | HighlightContent).points;
+    case 'chart':
+      return (data.content as ChartContent).points;
+    case 'stats':
+      return (data.content as StatsContent).stats.map((s) => `${s.value} ${s.label}${s.description ? ' - ' + s.description : ''}`);
+    case 'timeline':
+      return (data.content as TimelineContent).steps.map((s) => `${s.title}: ${s.description}`);
+    case 'cards-2':
+      return (data.content as Cards2Content).cards.map((card) => `${card.title}: ${card.description}`);
+    case 'cards-3':
+      return (data.content as Cards3Content).cards.map((card) => `${card.title}: ${card.description}`);
+    case 'comparison': {
+      const content = data.content as ComparisonContent;
+      return [...content.left.points, ...content.right.points];
+    }
+    case 'quote': {
+      const content = data.content as QuoteContent;
+      return [content.quote, content.attribution].filter(Boolean);
+    }
+    default:
+      return [];
+  }
 }
 
 // ============================================================================
 // Per-Layout Schema Renderers
 // ============================================================================
 
-function fillStatsFromSchema(slide: any, content: StatsContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillStatsFromSchema(slide: PptxGenJS.Slide, content: StatsContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.stats;
   const stats = content.stats.slice(0, 4);
   const startX = (10 - (stats.length * t.cardWidth + (stats.length - 1) * t.gap)) / 2;
@@ -820,7 +838,7 @@ function fillStatsFromSchema(slide: any, content: StatsContent, theme: ThemeConf
   });
 }
 
-function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillCards2FromSchema(slide: PptxGenJS.Slide, content: Cards2Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.cards2;
   const s = tpl.cards2Schema;
   // 左侧主卡片
@@ -876,7 +894,7 @@ function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeCo
   });
 }
 
-function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillCards3FromSchema(slide: PptxGenJS.Slide, content: Cards3Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.cards3;
   const s = tpl.cards3Schema;
   const cards = content.cards.slice(0, 3);
@@ -936,13 +954,13 @@ function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeCo
   });
 }
 
-function fillListFromSchema(slide: any, content: ListContent | HighlightContent, theme: ThemeConfig) {
+function fillListFromSchema(slide: PptxGenJS.Slide, content: ListContent | HighlightContent, theme: ThemeConfig) {
   const points = content.points || [];
   const bulletText = points.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
   slide.addText(bulletText, { placeholder: 'body' });
 }
 
-function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillTimelineFromSchema(slide: PptxGenJS.Slide, content: TimelineContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.timeline;
   const ts = tpl.timelineSchema;
   const steps = content.steps.slice(0, 4);
@@ -1008,7 +1026,7 @@ function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: The
   });
 }
 
-function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillComparisonFromSchema(slide: PptxGenJS.Slide, content: ComparisonContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.comparison;
   const s = tpl.comparisonSchema;
   const leftPoints = content.left.points;
@@ -1067,14 +1085,14 @@ function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme:
   });
 }
 
-function fillQuoteFromSchema(slide: any, content: QuoteContent, theme: ThemeConfig) {
+function fillQuoteFromSchema(slide: PptxGenJS.Slide, content: QuoteContent, theme: ThemeConfig) {
   slide.addText(normalizeCJKSpacing(content.quote), { placeholder: 'slideTitle' });
   if (content.attribution) {
     slide.addText(normalizeCJKSpacing(content.attribution), { placeholder: 'body' });
   }
 }
 
-function fillChartFromSchema(pptx: any, slide: any, content: ChartContent, theme: ThemeConfig, chartData: ChartSlotData | null, tpl: LayoutTemplate) {
+function fillChartFromSchema(pptx: PptxGenJS, slide: PptxGenJS.Slide, content: ChartContent, theme: ThemeConfig, chartData: ChartSlotData | null, tpl: LayoutTemplate) {
   // 左侧要点
   const bulletText = content.points.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
   slide.addText(bulletText, { placeholder: 'body' });
@@ -1095,7 +1113,7 @@ function fillChartFromSchema(pptx: any, slide: any, content: ChartContent, theme
   }
 }
 
-function fillTwoColumnFromSchema(slide: any, content: TwoColumnContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
+function fillTwoColumnFromSchema(slide: PptxGenJS.Slide, content: TwoColumnContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.twoColumn;
   const leftPoints = content.leftPoints;
   const rightPoints = content.rightPoints;

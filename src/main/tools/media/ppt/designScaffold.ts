@@ -75,8 +75,13 @@ export function buildScaffold(
 // PPT Design Mode — Auto-generated scaffold
 // ============================================================================
 import { createRequire } from 'module';
+import type PptxGenJSType from 'pptxgenjs';
 const require = createRequire('${escapedRoot}/package.json');
 const PptxGenJS = require('pptxgenjs');
+
+type Slide = PptxGenJSType.Slide;
+type TextOptions = PptxGenJSType.TextPropsOptions;
+type ShapeLine = PptxGenJSType.ShapeLineProps;
 
 ${ds}
 // ── pptxgenjs instance ──
@@ -107,12 +112,12 @@ function dimColor(fg: string, opacity: number = 0.2): string {
 // ── Helper Functions ──
 
 /** 添加全页背景 */
-function addBg(s: any, color?: string) {
+function addBg(s: Slide, color?: string) {
   s.background = { fill: hex6(color || DS.bg) };
 }
 
 /** 添加页面标题（y=0.4, 左对齐） */
-function addTitle(s: any, text: string, opts?: Record<string, any>) {
+function addTitle(s: Slide, text: string, opts?: TextOptions) {
   s.addText(text, {
     x: MX, y: 0.4, w: CW, h: 0.6,
     fontSize: 28, fontFace: F.title,
@@ -122,7 +127,7 @@ function addTitle(s: any, text: string, opts?: Record<string, any>) {
 }
 
 /** 添加页脚文字（底部居中） */
-function addFooter(s: any, text: string) {
+function addFooter(s: Slide, text: string) {
   s.addText(text, {
     x: MX, y: H - 0.5, w: CW, h: 0.3,
     fontSize: 9, fontFace: F.body,
@@ -131,7 +136,7 @@ function addFooter(s: any, text: string) {
 }
 
 /** 添加页码（右下角） */
-function addPageNum(s: any, num: number, total: number) {
+function addPageNum(s: Slide, num: number, total: number) {
   s.addText(\`\${num} / \${total}\`, {
     x: W - 1.2, y: H - 0.5, w: 0.8, h: 0.3,
     fontSize: 9, fontFace: F.body,
@@ -141,16 +146,17 @@ function addPageNum(s: any, num: number, total: number) {
 
 /** 添加圆角卡片 */
 function addCard(
-  s: any,
+  s: Slide,
   x: number, y: number, w: number, h: number,
-  opts?: { fill?: string; line?: any; radius?: number },
+  opts?: { fill?: string; line?: ShapeLine | string; radius?: number },
 ) {
   // 防御：line 可能是字符串（LLM 常见错误）
-  let lineObj = opts?.line || { color: hex6(DS.border), width: 0.5 };
-  if (typeof lineObj === 'string') lineObj = { color: hex6(lineObj), width: 0.5 };
-  else if (lineObj.color) lineObj = { ...lineObj, color: hex6(lineObj.color) };
+  let lineObj: ShapeLine = typeof opts?.line === 'string'
+    ? { color: hex6(opts.line), width: 0.5 }
+    : opts?.line || { color: hex6(DS.border), width: 0.5 };
+  if (lineObj.color) lineObj = { ...lineObj, color: hex6(String(lineObj.color)) };
 
-  s.addShape('roundRect' as any, {
+  s.addShape('roundRect', {
     x, y, w, h,
     fill: { color: hex6(opts?.fill || DS.bgCard) },
     line: lineObj,
@@ -162,7 +168,7 @@ function addCard(
 
 /** Hub-Spoke 架构图：中心圆 + 外围节点 + 射线连线 */
 function addHubSpoke(
-  s: any,
+  s: Slide,
   centerLabel: string,
   nodes: Array<{ label: string; desc?: string; color?: string }>,
   opts?: { centerColor?: string; y?: number },
@@ -174,7 +180,7 @@ function addHubSpoke(
   const hubY = topY + R;
 
   // 中心圆
-  s.addShape('ellipse' as any, {
+  s.addShape('ellipse', {
     x: hubX - R, y: topY, w: R * 2, h: R * 2,
     fill: { color: cColor }, line: { color: cColor, width: 2 },
   });
@@ -217,22 +223,22 @@ function addHubSpoke(
     if (isLeft) {
       const x1 = nx + nodeW;
       const x2 = hubX - R;
-      s.addShape('line' as any, {
+      s.addShape('line', {
         x: x1, y: lineY, w: x2 - x1, h: 0,
         line: { color: lineColor, width: 1.5 },
       });
-      s.addShape('ellipse' as any, {
+      s.addShape('ellipse', {
         x: x2 - 0.08, y: lineY - 0.08, w: 0.16, h: 0.16,
         fill: { color: nColor },
       });
     } else {
       const x1 = hubX + R;
       const x2 = nx;
-      s.addShape('line' as any, {
+      s.addShape('line', {
         x: x1, y: lineY, w: x2 - x1, h: 0,
         line: { color: lineColor, width: 1.5 },
       });
-      s.addShape('ellipse' as any, {
+      s.addShape('ellipse', {
         x: x1 - 0.08, y: lineY - 0.08, w: 0.16, h: 0.16,
         fill: { color: nColor },
       });
@@ -242,7 +248,7 @@ function addHubSpoke(
 
 /** 时间轴：水平线 + 节点 + 标签（所有标签在上方，描述在下方，绝不重叠） */
 function addTimeline(
-  s: any,
+  s: Slide,
   milestones: Array<{ year: string; label: string; desc?: string; color?: string }>,
   opts?: { lineY?: number },
 ) {
@@ -251,7 +257,7 @@ function addTimeline(
   const lineW = W - marginX * 2;
 
   // 水平主线
-  s.addShape('line' as any, {
+  s.addShape('line', {
     x: marginX, y: lineY, w: lineW, h: 0,
     line: { color: hex6(DS.border), width: 2 },
   });
@@ -262,13 +268,13 @@ function addTimeline(
     const mColor = hex6(m.color || [DS.accent, DS.accent2, DS.accent3, DS.accent4][i % 4]);
 
     // 节点圆点
-    s.addShape('ellipse' as any, {
+    s.addShape('ellipse', {
       x: dotCx - 0.15, y: lineY - 0.15, w: 0.3, h: 0.3,
       fill: { color: mColor },
     });
 
     // 垂直短线（圆点到标签区）
-    s.addShape('line' as any, {
+    s.addShape('line', {
       x: dotCx, y: lineY - 0.55, w: 0, h: 0.4,
       line: { color: mColor, width: 1 },
     });
@@ -311,8 +317,9 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err: any) => {
-  console.error('PPT generation failed:', err.message || err);
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('PPT generation failed:', message);
   process.exit(1);
 });
 `;

@@ -17,11 +17,17 @@ retryEvents.setMaxListeners(5);
  */
 const NON_RETRYABLE_PATTERNS = [
   'No available accounts',    // 503 但账号池耗尽，重试无意义
+  'no available accounts',
   'invalid_api_key',          // 401 key 错误
   'Invalid token',            // 智谱 token 错误
   'authentication_error',     // 认证失败
   'insufficient_quota',       // 配额耗尽，跳过重试直接降级
+  'INSUFFICIENT_BALANCE',     // 中转余额不足，重试无意义
+  'Insufficient account balance',
+  'insufficient balance',
   'payment required',         // 402 账户余额不足
+  'model_not_allowed',        // 订阅不含模型，切换 provider/model 才可能恢复
+  'subscription plan does not include access',
   'content_policy',           // 内容策略违规，重试无意义
   'content filter',           // 内容过滤
   'moderation',               // 内容审核拒绝
@@ -57,14 +63,19 @@ const TRANSIENT_CODES = [
   'EAI_AGAIN',
 ];
 
+function includesAnyPattern(msg: string, patterns: string[]): boolean {
+  const normalized = msg.toLowerCase();
+  return patterns.some((pattern) => normalized.includes(pattern.toLowerCase()));
+}
+
 /**
  * 判断错误是否为瞬态错误（网络抖动、服务暂时不可用等）
  * 同时检查 message 文本和 error.code
  */
 export function isTransientError(msg: string, errCode?: string): boolean {
   // 优先检查不可重试模式 — 即使包含 503 等瞬态码也不重试
-  if (NON_RETRYABLE_PATTERNS.some(p => msg.includes(p))) return false;
-  if (TRANSIENT_PATTERNS.some(p => msg.includes(p))) return true;
+  if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
+  if (includesAnyPattern(msg, TRANSIENT_PATTERNS)) return true;
   if (errCode && TRANSIENT_CODES.includes(errCode)) return true;
   return false;
 }
@@ -102,7 +113,7 @@ export interface RetryOptions {
  */
 export function isFallbackEligible(msg: string, errCode?: string): boolean {
   // 不可重试但应该降级的错误（账号耗尽、key 无效等 → 换个 Provider 可能就好了）
-  if (NON_RETRYABLE_PATTERNS.some(p => msg.includes(p))) return true;
+  if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return true;
   return isTransientError(msg, errCode);
 }
 

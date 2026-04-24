@@ -3,7 +3,11 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isTransientError, withTransientRetry } from '../../../src/main/model/providers/retryStrategy';
+import {
+  isFallbackEligible,
+  isTransientError,
+  withTransientRetry,
+} from '../../../src/main/model/providers/retryStrategy';
 
 // Mock logger to suppress console output during tests
 vi.mock('../../../src/main/model/providers/shared', () => ({
@@ -109,6 +113,11 @@ describe('Retry Strategy', () => {
         expect(isTransientError('401 Unauthorized')).toBe(false);
       });
 
+      it('should not retry provider account exhaustion errors', () => {
+        expect(isTransientError('No available accounts: no available accounts')).toBe(false);
+        expect(isTransientError('{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}')).toBe(false);
+      });
+
       it('should not match 400 errors', () => {
         expect(isTransientError('400 Bad Request')).toBe(false);
       });
@@ -120,6 +129,27 @@ describe('Retry Strategy', () => {
       it('should handle no code', () => {
         expect(isTransientError('some error')).toBe(false);
       });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // isFallbackEligible
+  // --------------------------------------------------------------------------
+  describe('isFallbackEligible', () => {
+    it('should fall back on transient errors', () => {
+      expect(isFallbackEligible('read ECONNRESET')).toBe(true);
+      expect(isFallbackEligible('503 Service Unavailable')).toBe(true);
+    });
+
+    it('should fall back on non-retryable provider capacity and billing errors', () => {
+      expect(isFallbackEligible('No available accounts: no available accounts')).toBe(true);
+      expect(isFallbackEligible('{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}')).toBe(true);
+      expect(isFallbackEligible('Your subscription plan does not include access to model: glm-4-flash')).toBe(true);
+      expect(isFallbackEligible('model_not_allowed')).toBe(true);
+    });
+
+    it('should not fall back on ordinary bad requests', () => {
+      expect(isFallbackEligible('400 Bad Request')).toBe(false);
     });
   });
 

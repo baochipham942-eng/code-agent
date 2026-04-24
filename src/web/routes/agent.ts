@@ -76,6 +76,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+      const runModelConfig = {
+        provider: config.modelConfig.provider,
+        model: config.modelConfig.model,
+      };
 
       // Bug 4 fix: 注入 Web 模式上下文，避免 Agent 默认以 CLI 模式自居
       if (!config.systemPrompt) {
@@ -347,10 +351,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const { getDatabase: ensureDb } = await import('../../main/services/core/databaseService');
           const dbForSession = ensureDb();
           if (!dbForSession.getSession(sessionId)) {
-            const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../../shared/constants');
             dbForSession.createSessionWithId(sessionId, {
               title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
-              modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
+              modelConfig: runModelConfig,
             });
           }
 
@@ -412,15 +415,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
-          const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../../shared/constants');
           const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
           // Upsert session
           await sb.supabase.from('sessions').upsert({
             id: sessionId,
             user_id: sb.userId,
             title,
-            model_provider: DEFAULT_PROVIDER,
-            model_name: DEFAULT_MODELS.chat,
+            model_provider: runModelConfig.provider,
+            model_name: runModelConfig.model,
             created_at: Date.now(),
             updated_at: Date.now(),
             source_device_id: 'web',

@@ -16,6 +16,7 @@ import {
   convertToClaudeMessages,
   parseClaudeResponse,
   electronFetch,
+  normalizeClaudeBaseUrl,
 } from './shared';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
@@ -345,7 +346,9 @@ export class ClaudeProvider implements Provider {
       ? config
       : { ...config, promptCaching: { enabled: true, cacheSystem: true } };
 
-    const baseUrl = effectiveConfig.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude;
+    const baseUrl = normalizeClaudeBaseUrl(
+      effectiveConfig.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude
+    );
 
     // System message 单独提取（Claude API 要求 system 不在 messages 数组中）
     const systemMessage = messages.find((m) => m.role === 'system');

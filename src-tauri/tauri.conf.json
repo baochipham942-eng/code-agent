@@ -19,7 +19,7 @@
         "minHeight": 640,
         "resizable": true,
         "visible": false,
-        "url": "http://localhost:8180"
+        "url": "about:blank"
       }
     ],
     "security": {

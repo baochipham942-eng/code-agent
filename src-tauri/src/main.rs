@@ -412,7 +412,13 @@ fn main() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.eval(&format!("window.location.replace('{SERVER_URL}')"));
+                // window 初始 url 是 about:blank（tauri.conf.json），避免启动竞赛下
+                // webServer 未起时页面加载失败白屏。healthcheck 通过后用
+                // webview.navigate() 跳到 SERVER_URL（比 eval+JS 更可靠，且走正常
+                // 导航而不是 cross-origin replace）。
+                if let Ok(url) = SERVER_URL.parse() {
+                    let _ = window.navigate(url);
+                }
                 let _ = window.show();
                 let _ = window.set_focus();
             }

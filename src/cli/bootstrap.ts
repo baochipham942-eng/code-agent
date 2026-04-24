@@ -207,16 +207,17 @@ export function buildCLIConfig(options: {
     ? path.resolve(options.project)
     : process.cwd();
 
-  // 模型配置
-  const provider = options.provider || settings.model?.provider || DEFAULT_PROVIDER;
-  const model = options.model || settings.model?.model || DEFAULT_MODELS.chat;
+  // 模型配置：优先级 options > settings.models.* > 常量
+  const provider = (options.provider || settings.models?.defaultProvider || DEFAULT_PROVIDER) as ModelConfig['provider'];
+  const providerCfg = settings.models?.providers?.[provider];
+  const model = options.model || providerCfg?.model || DEFAULT_MODELS.chat;
 
   const modelConfig: ModelConfig = {
-    provider: provider as ModelConfig['provider'],
+    provider,
     model,
     apiKey: config.getApiKey(provider) || '',
-    temperature: settings.model?.temperature || 0.7,
-    maxTokens: getModelMaxOutputTokens(model),
+    temperature: providerCfg?.temperature ?? 0.7,
+    maxTokens: providerCfg?.maxTokens ?? getModelMaxOutputTokens(model),
   };
 
   // Determine output format: explicit --output-format takes priority over --json

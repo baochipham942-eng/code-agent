@@ -21,6 +21,7 @@ import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCa
 import { runAssertions, runExpectations } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
+import { isNonRetryableError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
@@ -432,6 +433,12 @@ export class TestRunner {
       result.failureReason = message || 'Unknown error';
       result.errors.push(message || String(error));
       this.emit({ type: 'error', testId: testCase.id, error: message });
+      // Circuit breaker: 账号/余额/内容策略等持久性错误 → abort 整个 run，
+      // 避免后续 case 重复踩同一个错误烧 API 费。
+      if (isNonRetryableError(message)) {
+        logger.error('Fatal inference error — aborting run', { testId: testCase.id, error: message });
+        this.aborted = true;
+      }
     } finally {
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {

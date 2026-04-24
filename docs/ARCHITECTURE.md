@@ -199,6 +199,99 @@ code-agent/
 
 ---
 
+### v0.16.65 Live Preview Visual Grounding (D6-D8) + 基础设施修复 (2026-04-24)
+
+把"点 iframe 元素 → 源码位置 → Agent 改代码 → HMR 看效果"做成闭环。跨三处仓库：
+
+- `code-agent`（主仓库）：10 commits，UI + 协议同步 + IPC + 基础设施修复
+- `vite-plugin-code-agent-bridge`（独立仓库）：升级到 v0.2.0，新增 HMR restore 协议
+- `visual-grounding-eval/spike-app`：测试用 fixture（协议消费者验证）
+
+#### 数据流（从 iframe click 到 envelope context）
+
+```
+iframe click
+  ↓ (bridge runtime, vite 插件编译期注入 data-code-agent-source="file:line:col")
+postMessage {type:'vg:select', payload:SelectedElementInfo}
+  ↓ (LivePreviewFrame message handler, 校验 event.source + expectedOrigin)
+resolveAndSetSelectedElement
+  ↓ (IPC domain:livePreview resolveSourceLocation, projectRoot=workingDirectory)
+appStore.setSelectedElement(tabId, {file:absolute, relativeFile, line, column, tag, text, rect, componentName?})
+  ↓ (用户发 Chat message)
+composerStore.buildContext() 读 activePreviewTabId → tab.selectedElement → 拍回 nested SelectedElementInfo
+  ↓
+ConversationEnvelopeContext.livePreviewSelection 随 envelope 到 main 侧
+```
+
+`file` 存绝对路径（main 侧工具消费跨进程方便），`relativeFile` 存 bridge 原 DOM 属性里的 vite-root 相对路径（HMR restore 反查 DOM 用，两端形状对称）。
+
+#### Bridge 协议 v0.2.0（独立 npm 包 + 主仓库 shared 同步）
+
+| 消息 | 方向 | payload | 用途 |
+|---|---|---|---|
+| `vg:ready` | iframe → parent | `{url}` | bridge install 完成通告，parent 以此触发 restore 链路 |
+| `vg:select` | iframe → parent | `SelectedElementInfo` | 用户 click 的结果 |
+| `vg:hover` | iframe → parent | `SelectedElementInfo \| null` | hover 反馈（MVP 不消费，预留） |
+| `vg:selection-stale` **(0.2.0 新增)** | iframe → parent | `{location}` | bridge 按 location 找不到元素时反馈，parent 清 appStore selection |
+| `vg:simulate-click` | parent → iframe | `{selector}` | 编程触发 iframe 内点击 |
+| `vg:clear-selection` | parent → iframe | - | 主动清空 selection |
+| `vg:ping` | parent → iframe | - | 健康检测，bridge 回发 vg:ready |
+| `vg:restore-selection` **(0.2.0 新增)** | parent → iframe | `{location}` | HMR 回流恢复。bridge 按 file+line+column 反查 DOM 重高亮；匹配失败回发 `vg:selection-stale` |
+
+匹配策略：先精确 file+line+column；次选 file+line（column 最易漂移，作 tiebreaker）。
+
+#### HMR 回流恢复 selection（P3 核心）
+
+```
+用户点元素 → appStore 有 selection
+  ↓
+保存代码 / 点 Refresh → iframe full reload
+  ↓
+bridge 重新 install() → post('vg:ready')
+  ↓ (parent 收到 vg:ready)
+LivePreviewFrame 读 useAppStore.getState() 发现 selection 还在
+  ↓
+iframe.contentWindow.postMessage({type:'vg:restore-selection', location:{file:relativeFile,line,column}}, expectedOrigin)
+  ↓ (bridge 的 message listener, 0.2.0 新增 case)
+findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
+  ├── 命中 → rotateClass HIGHLIGHT_CLASS + post('vg:select', extractInfo(...))
+  │          → parent resolveAndSetSelectedElement 回写 appStore（幂等）
+  └── 失败 → post('vg:selection-stale', {location})
+             → parent setSelectedElement(tabId, null) → UI 回未选中态
+```
+
+覆盖范围：完整 full-reload（多数 HMR、手动 Refresh、URL 切换）。Partial HMR 下 DOM 原地替换的 case 暂不覆盖（需 DOM MutationObserver，留未来）。
+
+#### 关键实现坑
+
+| 坑 | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| iframe Refresh double-load | 蓝框偶尔不恢复（时好时坏） | `<iframe src={devServerUrl}>` 受控 prop，`iframeRef.current.src = '?_refresh=xxx'` 直接 mutate DOM 会被 React rerender 矫正回原 URL，实际加载两次、contentWindow 换两次 | 用 `refreshNonce` React state + `useMemo` 推 `iframeSrc`，`<iframe src={iframeSrc}>` 纯受控，单次 load |
+| about:blank CSP 踩坑 | 老 handleRefresh 走 `src='about:blank' → rAF → src=原 URL`，Tauri WKWebView 下 frame-src CSP 对 about:blank 不稳定，且 about:blank 秒加载先触发 onLoad 误导 3s 诊断 timer | 中转态引入时序 race | 一次性 cache-bust query `?_refresh=${Date.now()}`，无中转 |
+| SERVER_AUTH_TOKEN 不跨 restart | dev 下 kill/restart webServer 后 Tauri WebView 里固化的老 token 立刻失效，踩 "Invalid auth token" | `auth.ts` 每次启动 `randomUUID()` 生成新 token | `loadOrGenerateAuthToken()` 启动时先读 `.dev-token`，是合法 UUID v4 就复用；shutdown 不再 unlink `.dev-token` |
+| Tauri 启动白屏 | `cargo tauri dev` 窗口可见但白屏 | `tauri.conf.json` 里 `window.url = "http://localhost:8180"` 硬编码，webview 一创建就请求；beforeDevCommand 还在 build（12s+），webServer 未监听，webview 加载失败进 error 页 | `window.url = "about:blank"`；Rust setup() healthcheck 通过后用 `webview.navigate(Url)` 跳 SERVER_URL，比 eval+JS 可靠 |
+| workspace:setCurrent 不同步 renderer | 直接调 domainAPI setCurrent 后 appStore.workingDirectory 还是 null，LivePreviewFrame 的 resolveSourceLocation 走 `process.cwd()` fallback 丢 selected 条 | 原 `handleSetCurrent` 只更新 main 进程 state 不 emit event | 新增 `WORKSPACE_CURRENT_CHANGED` IPC 事件通道，main emit + renderer `sessionStore` 订阅调 `useAppStore.setWorkingDirectory` |
+
+#### 改动文件索引
+
+| 模块 | 文件 | 作用 |
+|---|---|---|
+| Bridge 协议 | `~/Downloads/ai/vite-plugin-code-agent-bridge/src/protocol.ts` `runtime.ts` | v0.2.0 新增 restore-selection / selection-stale + findElementByLocation |
+| Shared 协议 | `src/shared/livePreview/protocol.ts` | 主仓库侧协议同步到 v0.2.0 |
+| Shared envelope | `src/shared/contract/conversationEnvelope.ts` | `ConversationEnvelopeContext.livePreviewSelection?` |
+| Shared IPC | `src/shared/ipc/legacy-channels.ts` `handlers.ts` | `WORKSPACE_CURRENT_CHANGED` 通道 + IpcEventHandlers 注册 |
+| Main IPC | `src/main/ipc/workspace.ipc.ts` | handleSetCurrent 广播 WORKSPACE_CURRENT_CHANGED |
+| Main auth | `src/web/middleware/auth.ts` `src/web/webServer.ts` | `.dev-token` 复用 + shutdown 不清 |
+| Tauri | `src-tauri/tauri.conf.json` `src-tauri/src/main.rs` | window.url = about:blank + setup navigate(Url) |
+| UI 入口 | `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx` | Live Preview URL input + Open 按钮 |
+| UI 预览面板 | `src/renderer/components/LivePreview/LivePreviewFrame.tsx` | bridge message handler + restore 发起 + stale 清理 + 诊断 |
+| Store | `src/renderer/stores/appStore.ts` | `LivePreviewSelectedElement.relativeFile` |
+| Composer | `src/renderer/stores/composerStore.ts` | `buildContext()` 读活动 tab 的 selection 并拍回协议 nested 形 |
+| Session subscribe | `src/renderer/stores/sessionStore.ts` | 订阅 WORKSPACE_CURRENT_CHANGED |
+| Tests | `tests/renderer/stores/composerStore.test.ts` | 覆盖三种 selection 场景（liveDev 有 / file tab / null） |
+
+---
+
 ## 平台架构（三端产品）
 
 项目基于 Tauri 2.x，扩展为三端产品：

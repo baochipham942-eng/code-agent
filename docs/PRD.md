@@ -194,6 +194,34 @@ Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作
 | 决策审计 | DecisionHistory 缓冲区（50 条），8 种决策类型，/permissions 可观测 |
 | Generative UI 安全 | postMessage 来源校验 + CSP + prompt injection XML 隔离 |
 
+#### 3.1.9 Live Preview + visual_edit（视觉定位编辑，v0.16.65 / 2026-04-24）
+
+把"看见什么改什么"做成闭环 —— 用户在 iframe 里点元素，Agent 直接拿到源码位置去改，省掉"描述元素位置 / 给截图给坐标"的交互成本。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| AbilityMenu Live Preview 入口 | ✅ | ChatInput 能力菜单里输入 dev server URL（默认 `http://localhost:5175/`）一键打开预览，右侧 PreviewPanel 新增 `liveDev` kind tab 加载 iframe |
+| iframe 点击 → 源码定位 | ✅ | iframe 内点任意元素，bridge 通过 `data-code-agent-source="file:line:col"`（vite 插件编译期注入）回传 `SelectedElementInfo` |
+| 蓝框视觉反馈 | ✅ | 选中元素在 iframe 内加 2px 蓝色 outline，面板底部同时显示 `<tag> file:line:col` |
+| selectedElement 自动进入 envelope | ✅ | `composerStore.buildContext()` 读活动 liveDev tab 的 selection，塞入 `ConversationEnvelopeContext.livePreviewSelection` 随消息走，下游 visual_edit / system prompt 消费 |
+| HMR 回流恢复 selection | ✅ | iframe reload（手动 Refresh / vite full reload）后 bridge 重新挂载，parent 自动发 `vg:restore-selection` 让 bridge 按 file:line 反查 DOM 重新高亮 —— 改代码 → 看效果 → 再微调循环不被打断 |
+| Stale 自动清理 | ✅ | bridge 按 source location 找不到元素时发 `vg:selection-stale`，前端清 appStore selection，UI 回未选中态 |
+| visual_edit 工具（Mode A） | ✅ | GLM-4.7 读 selection 上下文 → 输出严格 JSON `{old_text, new_text, summary}` → `old_text` 唯一命中 → atomicWrite 原子替换（0ki 订阅下无 vision 走纯文本推理） |
+| 协议 SemVer 管理 | ✅ | `vite-plugin-code-agent-bridge` 协议独立仓库（v0.2.0），与 `src/shared/livePreview/protocol.ts` 同步 |
+| 安全边界 | ✅ | iframe postMessage 强制 source+origin 校验；`validateDevServerUrl` IPC URL 白名单 + path-escape 防护；`resolveSourceLocation` IPC 规范化 file 路径，拒绝 workingDirectory 外 |
+
+**典型工作流**：
+1. 用户开 dev server（任意 vite 项目，`npm install vite-plugin-code-agent-bridge`）
+2. 在 AbilityMenu 开 Live Preview → 右侧出 iframe
+3. 点击 iframe 中想改的按钮 / 卡片 / 文本 → 蓝框 + 底部 source location
+4. 在 Chat 发消息"把这个按钮改成圆角"→ envelope 自动带 selectedElement → visual_edit 工具用 source location 做 grounding 去 Edit
+5. 保存触发 vite HMR → iframe 重载 → 蓝框自动回到原元素 → 用户直接再发下一轮指令
+
+**当前边界**：
+- 只覆盖 full reload 场景（手动 Refresh / vite 判断 full reload）；partial HMR 下 DOM 原地替换的 case 暂不自动恢复（需 DOM MutationObserver）
+- visual_edit 只支持"精确唯一命中"模式，大段重构 / 跨文件改造仍走 Agent 主链路
+- bridge 插件需 JSX 项目（vite + react / vue / svelte 的 JSX-like 模板），非 JSX 框架不支持
+
 ---
 
 ### 3.2 智能层（差异化）

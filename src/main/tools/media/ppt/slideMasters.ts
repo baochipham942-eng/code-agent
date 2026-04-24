@@ -3,9 +3,10 @@
 // 使用 pptx.defineSlideMaster() 创建可复用的幻灯片模板
 // ============================================================================
 
+import type PptxGenJS from 'pptxgenjs';
 import type { ThemeConfig } from './types';
 import { isAppleDark } from './themes';
-import { getDecorations, buildDecorationObjects } from './masterDecorations';
+import { getDecorations, buildDecorationObjects, type MasterDecorationConfig } from './masterDecorations';
 import {
   MASTER_CONTENT_TITLE,
   MASTER_CONTENT_TITLE_FONT,
@@ -15,6 +16,12 @@ import {
   BRAND_POWERED_BY,
   BRAND_THANK_YOU,
 } from './constants';
+
+type SlideMasterObjects = NonNullable<PptxGenJS.SlideMasterProps['objects']>;
+
+function buildMasterObjects(config: MasterDecorationConfig, theme: ThemeConfig): SlideMasterObjects {
+  return buildDecorationObjects(config, theme) as SlideMasterObjects;
+}
 
 // Master 名称常量
 export const MASTER = {
@@ -32,7 +39,7 @@ export const MASTER = {
 /**
  * 注册所有 Slide Master 到 pptx 实例
  */
-export function registerSlideMasters(pptx: any, theme: ThemeConfig): void {
+export function registerSlideMasters(pptx: PptxGenJS, theme: ThemeConfig): void {
   const apple = isAppleDark(theme);
 
   registerTitleMaster(pptx, theme, apple);
@@ -49,9 +56,9 @@ export function registerSlideMasters(pptx: any, theme: ThemeConfig): void {
 // ============================================================================
 // TITLE Master - 封面页
 // ============================================================================
-function registerTitleMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerTitleMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'TITLE');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // 底部品牌信息
   objects.push({
@@ -104,9 +111,9 @@ function registerTitleMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
 // ============================================================================
 // CONTENT_LIST Master - 内容列表页
 // ============================================================================
-function registerContentListMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerContentListMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'CONTENT_LIST');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // Placeholder: 标题
   objects.push({
@@ -152,9 +159,9 @@ function registerContentListMaster(pptx: any, theme: ThemeConfig, apple: boolean
 // ============================================================================
 // CONTENT_CHART Master - 左文右图表页
 // ============================================================================
-function registerContentChartMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerContentChartMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'CONTENT_CHART');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // Placeholder: 标题
   objects.push({
@@ -200,9 +207,9 @@ function registerContentChartMaster(pptx: any, theme: ThemeConfig, apple: boolea
 // ============================================================================
 // CONTENT_IMAGE Master - 左文右图片页
 // ============================================================================
-function registerContentImageMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerContentImageMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'CONTENT_IMAGE');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // Placeholder: 标题
   objects.push({
@@ -238,9 +245,9 @@ function registerContentImageMaster(pptx: any, theme: ThemeConfig, apple: boolea
 // ============================================================================
 // END Master - 结束页
 // ============================================================================
-function registerEndMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerEndMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'END');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // 副文案
   objects.push({
@@ -291,9 +298,9 @@ function registerEndMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
 // ============================================================================
 // HERO_NUMBER Master - 大数字展示页（apple 风格）
 // ============================================================================
-function registerHeroNumberMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerHeroNumberMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'HERO_NUMBER');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // Placeholder: 标题
   objects.push({
@@ -321,9 +328,9 @@ function registerHeroNumberMaster(pptx: any, theme: ThemeConfig, apple: boolean)
 // ============================================================================
 // QUOTE Master - 引言居中页
 // ============================================================================
-function registerQuoteMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerQuoteMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'QUOTE');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // 大引号装饰（特殊文本元素，不在 config 中）
   objects.push({
@@ -381,9 +388,9 @@ function registerQuoteMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
 // ============================================================================
 // COMPARISON Master - 左右对比页
 // ============================================================================
-function registerComparisonMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerComparisonMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'COMPARISON');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // 中间分隔线（使用 cardBorder 色，非 accent）
   objects.push({
@@ -430,9 +437,9 @@ function registerComparisonMaster(pptx: any, theme: ThemeConfig, apple: boolean)
 // ============================================================================
 // TWO_COL Master - 双列内容页
 // ============================================================================
-function registerTwoColMaster(pptx: any, theme: ThemeConfig, apple: boolean) {
+function registerTwoColMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) {
   const decoConfig = getDecorations(apple, 'TWO_COL');
-  const objects: any[] = buildDecorationObjects(decoConfig, theme);
+  const objects = buildMasterObjects(decoConfig, theme);
 
   // Placeholder: 标题
   objects.push({

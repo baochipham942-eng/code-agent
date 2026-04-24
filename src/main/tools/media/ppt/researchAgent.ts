@@ -12,6 +12,12 @@ import { RESEARCH_MAX_QUERIES, RESEARCH_MAX_URLS, RESEARCH_MAX_FETCH, RESEARCH_M
 
 const logger = createLogger('ResearchAgent');
 
+type RawRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is RawRecord {
+  return typeof value === 'object' && value !== null;
+}
+
 // ============================================================================
 // Query Generation
 // ============================================================================
@@ -151,8 +157,9 @@ ${trimmedContent}
     const response = await modelCallback(prompt);
     const parsed = parseJsonResponse(response);
     if (parsed) {
-      logger.debug(`Extracted: ${parsed.facts?.length || 0} facts, ${parsed.statistics?.length || 0} stats`);
-      return normalizeResearchContext(parsed);
+      const context = normalizeResearchContext(parsed);
+      logger.debug(`Extracted: ${context.facts.length} facts, ${context.statistics.length} stats`);
+      return context;
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -220,7 +227,7 @@ function extractUrls(text: string): string[] {
   return [...new Set(matches)];
 }
 
-function parseJsonResponse(text: string): any {
+function parseJsonResponse(text: string): unknown | null {
   // 直接解析
   try {
     return JSON.parse(text);
@@ -241,29 +248,45 @@ function parseJsonResponse(text: string): any {
   return null;
 }
 
-function normalizeResearchContext(raw: any): ResearchContext {
+function normalizeResearchContext(raw: unknown): ResearchContext {
+  const record = isRecord(raw) ? raw : {};
   return {
-    facts: Array.isArray(raw.facts) ? raw.facts.map((f: any) => ({
-      content: String(f.content || ''),
-      source: String(f.source || 'search'),
-      type: ['fact', 'statistic', 'quote', 'case'].includes(f.type) ? f.type : 'fact',
-    })) : [],
-    statistics: Array.isArray(raw.statistics) ? raw.statistics.map((s: any) => ({
-      label: String(s.label || ''),
-      value: String(s.value || ''),
-      source: String(s.source || 'search'),
-      description: s.description ? String(s.description) : undefined,
-    })) : [],
-    quotes: Array.isArray(raw.quotes) ? raw.quotes.map((q: any) => ({
-      text: String(q.text || ''),
-      attribution: String(q.attribution || ''),
-      source: String(q.source || 'search'),
-    })) : [],
-    sources: Array.isArray(raw.sources) ? raw.sources.map((s: any) => ({
-      url: String(s.url || ''),
-      title: String(s.title || ''),
-      relevance: typeof s.relevance === 'number' ? s.relevance : 0.5,
-    })) : [],
+    facts: Array.isArray(record.facts) ? record.facts.map((item) => {
+      const f = isRecord(item) ? item : {};
+      const type = typeof f.type === 'string' && ['fact', 'statistic', 'quote', 'case'].includes(f.type)
+        ? f.type as ResearchFact['type']
+        : 'fact';
+      return {
+        content: String(f.content || ''),
+        source: String(f.source || 'search'),
+        type,
+      };
+    }) : [],
+    statistics: Array.isArray(record.statistics) ? record.statistics.map((item) => {
+      const s = isRecord(item) ? item : {};
+      return {
+        label: String(s.label || ''),
+        value: String(s.value || ''),
+        source: String(s.source || 'search'),
+        description: s.description ? String(s.description) : undefined,
+      };
+    }) : [],
+    quotes: Array.isArray(record.quotes) ? record.quotes.map((item) => {
+      const q = isRecord(item) ? item : {};
+      return {
+        text: String(q.text || ''),
+        attribution: String(q.attribution || ''),
+        source: String(q.source || 'search'),
+      };
+    }) : [],
+    sources: Array.isArray(record.sources) ? record.sources.map((item) => {
+      const s = isRecord(item) ? item : {};
+      return {
+        url: String(s.url || ''),
+        title: String(s.title || ''),
+        relevance: typeof s.relevance === 'number' ? s.relevance : 0.5,
+      };
+    }) : [],
   };
 }
 

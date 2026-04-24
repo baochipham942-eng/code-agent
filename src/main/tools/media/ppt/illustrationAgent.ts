@@ -8,7 +8,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CONFIG_DIR_NEW } from '../../../config/configPaths';
-import type { StructuredSlide, ListContent, Cards3Content, TimelineContent, ComparisonContent } from './slideSchemas';
+import type {
+  StructuredSlide,
+  ListContent,
+  Cards2Content,
+  Cards3Content,
+  TimelineContent,
+  ComparisonContent,
+  HighlightContent,
+} from './slideSchemas';
 import type { SlideImage } from './types';
 import {
   generateImage,
@@ -62,6 +70,42 @@ const THEME_KEY_STYLES: Record<string, string> = {
   'apple-dark': '苹果深色风格，纯黑背景，精致光影，产品展示风格，高级质感',
 };
 
+function collectScoringText(slide: StructuredSlide): string[] {
+  switch (slide.layout) {
+    case 'list':
+    case 'highlight':
+      return (slide.content as ListContent | HighlightContent).points;
+    case 'cards-2':
+      return (slide.content as Cards2Content).cards.map((c) => `${c.title || ''} ${c.description || ''}`);
+    case 'cards-3':
+      return (slide.content as Cards3Content).cards.map((c) => `${c.title || ''} ${c.description || ''}`);
+    case 'timeline':
+      return (slide.content as TimelineContent).steps.map((s) => `${s.title || ''} ${s.description || ''}`);
+    case 'comparison': {
+      const content = slide.content as ComparisonContent;
+      return [...content.left.points, ...content.right.points];
+    }
+    default:
+      return [];
+  }
+}
+
+function collectPromptText(slide: StructuredSlide): string[] {
+  switch (slide.layout) {
+    case 'list':
+    case 'highlight':
+      return [(slide.content as ListContent | HighlightContent).points.slice(0, 2).join('，')];
+    case 'cards-2':
+      return [(slide.content as Cards2Content).cards.map((c) => c.title).join('，')];
+    case 'cards-3':
+      return [(slide.content as Cards3Content).cards.map((c) => c.title).join('，')];
+    case 'timeline':
+      return [(slide.content as TimelineContent).steps.map((s) => s.title).join('，')];
+    default:
+      return [];
+  }
+}
+
 // ============================================================================
 // Slide Scoring
 // ============================================================================
@@ -99,25 +143,7 @@ function scoreSlideForIllustration(slide: StructuredSlide, _index: number): numb
 
   // Check for visual concept keywords in title and content
   const textParts: string[] = [slide.title || ''];
-
-  const content = slide.content as any;
-  if (content) {
-    if (content.points && Array.isArray(content.points)) {
-      textParts.push(...content.points);
-    }
-    if (content.cards && Array.isArray(content.cards)) {
-      textParts.push(...content.cards.map((c: any) => `${c.title || ''} ${c.description || ''}`));
-    }
-    if (content.steps && Array.isArray(content.steps)) {
-      textParts.push(...content.steps.map((s: any) => `${s.title || ''} ${s.description || ''}`));
-    }
-    if (content.left?.points) {
-      textParts.push(...content.left.points);
-    }
-    if (content.right?.points) {
-      textParts.push(...content.right.points);
-    }
-  }
+  textParts.push(...collectScoringText(slide));
 
   const text = textParts.join(' ');
 
@@ -152,20 +178,7 @@ function buildIllustrationPrompt(slide: StructuredSlide, themeName: string): str
 
   // Extract core concept from slide
   const title = slide.title || '';
-  const contentParts: string[] = [];
-
-  const content = slide.content as any;
-  if (content) {
-    if (content.points && Array.isArray(content.points)) {
-      contentParts.push(content.points.slice(0, 2).join('，'));
-    }
-    if (content.cards && Array.isArray(content.cards)) {
-      contentParts.push(content.cards.map((c: any) => c.title).join('，'));
-    }
-    if (content.steps && Array.isArray(content.steps)) {
-      contentParts.push(content.steps.map((s: any) => s.title).join('，'));
-    }
-  }
+  const contentParts = collectPromptText(slide);
 
   const concept = [title, ...contentParts].filter(Boolean).join('，');
 

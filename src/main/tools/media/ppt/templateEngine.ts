@@ -11,6 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type JSZip from 'jszip';
 import { createLogger } from '../../../services/infra/logger';
 import { DEFAULT_FALLBACK_COLORS, DEFAULT_FALLBACK_FONTS, EMU_PER_INCH } from './constants';
 import type { TemplateProfile, MergedTemplateProfile, TemplateMetadata } from './types';
@@ -34,9 +35,9 @@ export interface TemplateResult {
 // JSZip Loader
 // ============================================================================
 
-function getJSZip(): any {
+function getJSZip(): JSZip {
   try {
-    return require('jszip');
+    return require('jszip') as JSZip;
   } catch {
     throw new Error('jszip is not installed. Run: npm install jszip');
   }
@@ -139,7 +140,7 @@ export async function parseTemplateProfile(pptxPath: string): Promise<TemplatePr
 /**
  * 从 ZIP 提取配色方案
  */
-async function extractColorSchemeFromZip(zip: any): Promise<TemplateProfile['colorScheme']> {
+async function extractColorSchemeFromZip(zip: JSZip): Promise<TemplateProfile['colorScheme']> {
   const defaults = { ...DEFAULT_FALLBACK_COLORS };
 
   try {
@@ -173,7 +174,7 @@ async function extractColorSchemeFromZip(zip: any): Promise<TemplateProfile['col
 /**
  * 从 ZIP 提取字体方案
  */
-async function extractFontsFromZip(zip: any): Promise<TemplateProfile['fonts']> {
+async function extractFontsFromZip(zip: JSZip): Promise<TemplateProfile['fonts']> {
   const defaults = { ...DEFAULT_FALLBACK_FONTS };
 
   try {
@@ -203,7 +204,7 @@ async function extractFontsFromZip(zip: any): Promise<TemplateProfile['fonts']> 
 /**
  * 从 ZIP 提取 slide layouts 信息
  */
-async function extractLayoutsFromZip(zip: any): Promise<TemplateProfile['layouts']> {
+async function extractLayoutsFromZip(zip: JSZip): Promise<TemplateProfile['layouts']> {
   const layouts: TemplateProfile['layouts'] = [];
 
   try {
@@ -426,7 +427,7 @@ export async function assembleFromTemplate(
  * 注入 Speaker Notes 到指定 slide
  */
 async function injectSpeakerNotes(
-  zip: any,
+  zip: JSZip,
   slideFile: string,
   notes: string,
 ): Promise<void> {
@@ -544,8 +545,9 @@ export function loadTemplateIndex(indexPath: string): TemplateMetadata[] {
   try {
     if (!fs.existsSync(indexPath)) return [];
     const content = fs.readFileSync(indexPath, 'utf8');
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed.templates) ? parsed.templates : [];
+    const parsed: unknown = JSON.parse(content);
+    if (!isRecord(parsed)) return [];
+    return Array.isArray(parsed.templates) ? (parsed.templates as TemplateMetadata[]) : [];
   } catch {
     return [];
   }
@@ -554,6 +556,10 @@ export function loadTemplateIndex(indexPath: string): TemplateMetadata[] {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 function escapeXml(text: string): string {
   return text
@@ -600,25 +606,25 @@ export async function extractPlaceholderTags(templatePath: string): Promise<stri
  * 从 StructuredSlide 提取纯文本内容
  */
 function extractContentText(slide: StructuredSlide): string {
-  const content = slide.content as any;
+  const content = slide.content;
   if (!content) return '';
 
-  if (content.points) {
+  if ('points' in content) {
     return content.points.join('\n');
   }
-  if (content.stats) {
-    return content.stats.map((s: any) => `${s.label}: ${s.value}`).join('\n');
+  if ('stats' in content) {
+    return content.stats.map((s) => `${s.label}: ${s.value}`).join('\n');
   }
-  if (content.steps) {
-    return content.steps.map((s: any) => `${s.title}: ${s.description}`).join('\n');
+  if ('steps' in content) {
+    return content.steps.map((s) => `${s.title}: ${s.description}`).join('\n');
   }
-  if (content.cards) {
-    return content.cards.map((c: any) => `${c.title}: ${c.description}`).join('\n');
+  if ('cards' in content) {
+    return content.cards.map((c) => `${c.title}: ${c.description}`).join('\n');
   }
-  if (content.quote) {
+  if ('quote' in content) {
     return `${content.quote}\n— ${content.attribution || ''}`;
   }
-  if (content.left && content.right) {
+  if ('left' in content && 'right' in content) {
     return [
       ...(content.left.points || []),
       ...(content.right.points || []),

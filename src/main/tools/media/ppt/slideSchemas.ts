@@ -5,7 +5,7 @@
 // 借鉴 Presenton (Zod Schema) + AWS (slideFormat mapping) 模式。
 // ============================================================================
 
-import type { LayoutType, ChartType } from './types';
+import type { LayoutType } from './types';
 
 // ============================================================================
 // Per-Layout Content Schemas
@@ -115,148 +115,185 @@ export interface ValidationResult {
   errors: string[];
 }
 
+type MutableRecord = Record<string, unknown>;
+type SlideContentValidator = (content: unknown) => string[];
+
+function isRecord(value: unknown): value is MutableRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function getArrayField(record: MutableRecord, key: string): unknown[] | null {
+  const value = record[key];
+  return Array.isArray(value) ? value : null;
+}
+
+function hasValue(value: unknown): boolean {
+  return Boolean(value);
+}
+
 /** 验证 Stats 内容 */
-function validateStats(content: any): string[] {
+function validateStats(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.stats || !Array.isArray(content.stats)) {
+  const record = isRecord(content) ? content : {};
+  const stats = getArrayField(record, 'stats');
+  if (!stats) {
     errors.push('stats: 缺少 stats 数组');
     return errors;
   }
-  if (content.stats.length < 2 || content.stats.length > 5) {
-    errors.push(`stats: 需要 2-5 项，当前 ${content.stats.length} 项`);
+  if (stats.length < 2 || stats.length > 5) {
+    errors.push(`stats: 需要 2-5 项，当前 ${stats.length} 项`);
   }
-  for (const [i, s] of content.stats.entries()) {
-    if (!s.label) errors.push(`stats[${i}]: 缺少 label`);
-    if (!s.value) errors.push(`stats[${i}]: 缺少 value`);
+  for (const [i, item] of stats.entries()) {
+    const stat = isRecord(item) ? item : {};
+    if (!hasValue(stat.label)) errors.push(`stats[${i}]: 缺少 label`);
+    if (!hasValue(stat.value)) errors.push(`stats[${i}]: 缺少 value`);
   }
   return errors;
 }
 
 /** 验证 Cards2 内容 */
-function validateCards2(content: any): string[] {
+function validateCards2(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.mainCard) {
+  const record = isRecord(content) ? content : {};
+  if (!record.mainCard) {
     errors.push('cards-2: 缺少 mainCard');
   } else {
-    if (!content.mainCard.title) errors.push('cards-2: mainCard 缺少 title');
-    if (!content.mainCard.description) errors.push('cards-2: mainCard 缺少 description');
+    const mainCard = isRecord(record.mainCard) ? record.mainCard : {};
+    if (!hasValue(mainCard.title)) errors.push('cards-2: mainCard 缺少 title');
+    if (!hasValue(mainCard.description)) errors.push('cards-2: mainCard 缺少 description');
   }
-  if (!content.cards || !Array.isArray(content.cards)) {
+  const cards = getArrayField(record, 'cards');
+  if (!cards) {
     errors.push('cards-2: 缺少 cards 数组');
-  } else if (content.cards.length < 1 || content.cards.length > 4) {
-    errors.push(`cards-2: cards 需要 1-4 项，当前 ${content.cards.length} 项`);
+  } else if (cards.length < 1 || cards.length > 4) {
+    errors.push(`cards-2: cards 需要 1-4 项，当前 ${cards.length} 项`);
   }
   return errors;
 }
 
 /** 验证 Cards3 内容 */
-function validateCards3(content: any): string[] {
+function validateCards3(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.cards || !Array.isArray(content.cards)) {
+  const record = isRecord(content) ? content : {};
+  const cards = getArrayField(record, 'cards');
+  if (!cards) {
     errors.push('cards-3: 缺少 cards 数组');
-  } else if (content.cards.length !== 3) {
-    errors.push(`cards-3: 需要恰好 3 项，当前 ${content.cards.length} 项`);
+  } else if (cards.length !== 3) {
+    errors.push(`cards-3: 需要恰好 3 项，当前 ${cards.length} 项`);
   }
   return errors;
 }
 
 /** 验证 List 内容 */
-function validateList(content: any): string[] {
+function validateList(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.points || !Array.isArray(content.points)) {
+  const record = isRecord(content) ? content : {};
+  const points = getArrayField(record, 'points');
+  if (!points) {
     errors.push('list: 缺少 points 数组');
-  } else if (content.points.length < 2 || content.points.length > 8) {
-    errors.push(`list: 需要 2-8 项，当前 ${content.points.length} 项`);
+  } else if (points.length < 2 || points.length > 8) {
+    errors.push(`list: 需要 2-8 项，当前 ${points.length} 项`);
   }
   return errors;
 }
 
 /** 验证 Timeline 内容 */
-function validateTimeline(content: any): string[] {
+function validateTimeline(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.steps || !Array.isArray(content.steps)) {
+  const record = isRecord(content) ? content : {};
+  const steps = getArrayField(record, 'steps');
+  if (!steps) {
     errors.push('timeline: 缺少 steps 数组');
   } else {
-    if (content.steps.length < 2 || content.steps.length > 5) {
-      errors.push(`timeline: 需要 2-5 步，当前 ${content.steps.length} 步`);
+    if (steps.length < 2 || steps.length > 5) {
+      errors.push(`timeline: 需要 2-5 步，当前 ${steps.length} 步`);
     }
-    for (const [i, s] of content.steps.entries()) {
-      if (!s.title) errors.push(`timeline.steps[${i}]: 缺少 title`);
-      if (!s.description) errors.push(`timeline.steps[${i}]: 缺少 description`);
+    for (const [i, item] of steps.entries()) {
+      const step = isRecord(item) ? item : {};
+      if (!hasValue(step.title)) errors.push(`timeline.steps[${i}]: 缺少 title`);
+      if (!hasValue(step.description)) errors.push(`timeline.steps[${i}]: 缺少 description`);
     }
   }
   return errors;
 }
 
 /** 验证 Comparison 内容（容错：自动修正结构） */
-function validateComparison(content: any): string[] {
+function validateComparison(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.left || !content.right) {
+  const record = isRecord(content) ? content : {};
+  if (!record.left || !record.right) {
     errors.push('comparison: 缺少 left 或 right');
     return errors;
   }
 
   // 容错：如果 left/right 是数组，自动转换为 {title: "", points: [...]}
-  if (Array.isArray(content.left)) {
-    content.left = { title: '', points: content.left };
+  if (Array.isArray(record.left)) {
+    record.left = { title: '', points: record.left };
   }
-  if (Array.isArray(content.right)) {
-    content.right = { title: '', points: content.right };
+  if (Array.isArray(record.right)) {
+    record.right = { title: '', points: record.right };
   }
 
   // 容错：如果 left/right 是字符串，包装为 points
-  if (typeof content.left === 'string') {
-    content.left = { title: '', points: [content.left] };
+  if (typeof record.left === 'string') {
+    record.left = { title: '', points: [record.left] };
   }
-  if (typeof content.right === 'string') {
-    content.right = { title: '', points: [content.right] };
+  if (typeof record.right === 'string') {
+    record.right = { title: '', points: [record.right] };
   }
 
   // 容错：提取 points — 如果 left/right 是对象但没有 points，尝试从值数组中提取
-  if (typeof content.left === 'object' && !content.left.points) {
-    const values = Object.values(content.left).filter(v => typeof v === 'string' || Array.isArray(v));
+  if (isRecord(record.left) && !record.left.points) {
+    const values = Object.values(record.left).filter(v => typeof v === 'string' || Array.isArray(v));
     if (values.length > 0) {
-      const pts = values.flatMap(v => Array.isArray(v) ? v : [v]);
-      content.left = { title: content.left.title || '', points: pts };
+      const pts = values.flatMap((v): unknown[] => Array.isArray(v) ? (v as unknown[]) : [v]);
+      record.left = { title: typeof record.left.title === 'string' ? record.left.title : '', points: pts };
     }
   }
-  if (typeof content.right === 'object' && !content.right.points) {
-    const values = Object.values(content.right).filter(v => typeof v === 'string' || Array.isArray(v));
+  if (isRecord(record.right) && !record.right.points) {
+    const values = Object.values(record.right).filter(v => typeof v === 'string' || Array.isArray(v));
     if (values.length > 0) {
-      const pts = values.flatMap(v => Array.isArray(v) ? v : [v]);
-      content.right = { title: content.right.title || '', points: pts };
+      const pts = values.flatMap((v): unknown[] => Array.isArray(v) ? (v as unknown[]) : [v]);
+      record.right = { title: typeof record.right.title === 'string' ? record.right.title : '', points: pts };
     }
   }
 
+  const left = isRecord(record.left) ? record.left : {};
+  const right = isRecord(record.right) ? record.right : {};
+
   // title 非必须（容错后默认空字符串）
-  if (!content.left.points || !Array.isArray(content.left.points)) {
+  if (!Array.isArray(left.points)) {
     errors.push('comparison: left 缺少 points 数组');
   }
-  if (!content.right.points || !Array.isArray(content.right.points)) {
+  if (!Array.isArray(right.points)) {
     errors.push('comparison: right 缺少 points 数组');
   }
   return errors;
 }
 
 /** 验证 Quote 内容 */
-function validateQuote(content: any): string[] {
+function validateQuote(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.quote) errors.push('quote: 缺少 quote');
-  if (!content.attribution) errors.push('quote: 缺少 attribution');
+  const record = isRecord(content) ? content : {};
+  if (!hasValue(record.quote)) errors.push('quote: 缺少 quote');
+  if (!hasValue(record.attribution)) errors.push('quote: 缺少 attribution');
   return errors;
 }
 
 /** 验证 Chart 内容 */
-function validateChart(content: any): string[] {
+function validateChart(content: unknown): string[] {
   const errors: string[] = [];
-  if (!content.points || !Array.isArray(content.points)) {
+  const record = isRecord(content) ? content : {};
+  const points = getArrayField(record, 'points');
+  if (!points) {
     errors.push('chart: 缺少 points 数组');
   }
-  if (content.chartData) {
-    if (!content.chartData.labels || !Array.isArray(content.chartData.labels)) {
+  if (record.chartData) {
+    const chartData = isRecord(record.chartData) ? record.chartData : {};
+    if (!Array.isArray(chartData.labels)) {
       errors.push('chart: chartData 缺少 labels');
     }
-    if (!content.chartData.values || !Array.isArray(content.chartData.values)) {
+    if (!Array.isArray(chartData.values)) {
       errors.push('chart: chartData 缺少 values');
     }
   }
@@ -264,7 +301,7 @@ function validateChart(content: any): string[] {
 }
 
 // 布局 → 验证器映射
-const VALIDATORS: Partial<Record<LayoutType, (c: any) => string[]>> = {
+const VALIDATORS: Partial<Record<LayoutType, SlideContentValidator>> = {
   'stats': validateStats,
   'cards-2': validateCards2,
   'cards-3': validateCards3,
@@ -307,7 +344,7 @@ export function validateSlideContent(slide: StructuredSlide): ValidationResult {
     errors.push('缺少 content');
   } else {
     // 容错：如果 content 是字符串，尝试解析
-    let contentObj = slide.content;
+    let contentObj: unknown = slide.content;
     if (typeof contentObj === 'string') {
       try { contentObj = JSON.parse(contentObj); } catch { /* keep as-is */ }
     }
@@ -326,16 +363,18 @@ export function validateSlideContent(slide: StructuredSlide): ValidationResult {
  * 解决 LLM 将 content 内容"上提"到顶层的问题：
  * {layout:"stats", stats:[...]} → {layout:"stats", content:{stats:[...]}}
  */
-function normalizeSlideContent(slide: any): StructuredSlide {
+function normalizeSlideContent(slide: StructuredSlide): StructuredSlide {
+  const raw = slide as unknown as Record<string, unknown>;
+  const rawLayout = raw.layout;
   // 容错：layout="title"/"end" 映射为 list + isTitle/isEnd
-  if (slide.layout === 'title') {
-    return { ...slide, layout: 'list', isTitle: true, content: { points: slide.points || [] } };
+  if (rawLayout === 'title') {
+    return { ...slide, layout: 'list', isTitle: true, content: { points: (raw.points as string[] | undefined) || [] } };
   }
-  if (slide.layout === 'end') {
-    return { ...slide, layout: 'list', isEnd: true, content: { points: slide.points || [] } };
+  if (rawLayout === 'end') {
+    return { ...slide, layout: 'list', isEnd: true, content: { points: (raw.points as string[] | undefined) || [] } };
   }
 
-  if (slide.content && typeof slide.content === 'object' && Object.keys(slide.content).length > 0) {
+  if (isRecord(slide.content) && Object.keys(slide.content).length > 0) {
     return slide; // content 已正确填充
   }
 
@@ -353,20 +392,20 @@ function normalizeSlideContent(slide: any): StructuredSlide {
     'two-column': ['leftPoints', 'rightPoints'],
   };
 
-  const keys = layoutKeys[slide.layout];
+  const keys = typeof rawLayout === 'string' ? layoutKeys[rawLayout] : undefined;
   if (!keys) return slide;
 
-  const content: Record<string, any> = {};
+  const content: Record<string, unknown> = {};
   let hasContent = false;
   for (const key of keys) {
-    if (slide[key] !== undefined) {
-      content[key] = slide[key];
+    if (raw[key] !== undefined) {
+      content[key] = raw[key];
       hasContent = true;
     }
   }
 
   if (hasContent) {
-    return { ...slide, content };
+    return { ...slide, content: content as LayoutContent };
   }
 
   return slide;

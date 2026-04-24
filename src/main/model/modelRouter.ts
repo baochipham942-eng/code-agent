@@ -64,6 +64,7 @@ export class ModelRouter {
     ['openrouter', new OpenRouterProvider()],
     ['zhipu', new ZhipuProvider()],
     ['claude', new ClaudeProvider()],
+    ['anthropic', new ClaudeProvider()],
     ['gemini', new GeminiProvider()],
     ['volcengine', new VolcengineProvider()],
   ]);

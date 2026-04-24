@@ -54,7 +54,10 @@ export interface PreviewTab {
 
 // Bridge 回传的元素信息（保持与 shared/livePreview/protocol.ts 中 SelectedElementInfo 同形）
 export interface LivePreviewSelectedElement {
+  /** 绝对路径（resolveSourceLocation 规范化后），composer 注入 envelope 用这个 */
   file: string;
+  /** 原始相对路径（bridge 里 data-code-agent-source 存的形），用于 HMR vg:restore-selection 反查 DOM */
+  relativeFile: string;
   line: number;
   column: number;
   tag: string;

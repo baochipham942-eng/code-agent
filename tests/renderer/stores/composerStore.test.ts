@@ -281,6 +281,7 @@ describe('composerStore', () => {
           devServerUrl: 'http://localhost:5175/',
           selectedElement: {
             file: '/Users/linchen/work/app/src/Hero.tsx',
+            relativeFile: 'src/Hero.tsx',
             line: 42,
             column: 7,
             tag: 'button',

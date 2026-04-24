@@ -151,7 +151,12 @@ class Logger {
     this.context = context;
     // CLI 模式下默认只输出 ERROR，避免日志噪音污染交互界面
     // --debug 时恢复 DEBUG 级别
-    if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+    // WEB 模式（webServer.cjs，由 webEnvInit 同时设置 CODE_AGENT_CLI_MODE 和
+    // CODE_AGENT_WEB_MODE 来防 keytar SIGSEGV）不应走 CLI 静默路径 —
+    // 否则 TestRunner 等模块的 INFO 日志会全部丢失，debug 无可见性。
+    const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
+      && process.env.CODE_AGENT_WEB_MODE !== 'true';
+    if (isCliOnly) {
       const isDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
       this.level = isDebug ? LogLevel.DEBUG : LogLevel.ERROR;
     } else {
@@ -195,7 +200,10 @@ class Logger {
 
   private log(level: string, message: string, args: unknown[]): void {
     // CLI 模式下只输出 ERROR（运行时检查，防止 ESM import hoisting 导致构造时 env 未设置）
-    if (process.env.CODE_AGENT_CLI_MODE === 'true' && level !== 'ERROR'
+    // WEB 模式不适用 — 见 constructor 注释
+    const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
+      && process.env.CODE_AGENT_WEB_MODE !== 'true';
+    if (isCliOnly && level !== 'ERROR'
         && process.env.DEBUG !== 'true' && !process.argv.includes('--debug')) {
       // 仍然写文件，但不输出到 stderr
       if (level !== 'DEBUG') {

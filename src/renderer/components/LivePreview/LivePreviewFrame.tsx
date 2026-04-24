@@ -89,7 +89,8 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     setCspSnippet(m ? m[0] : contents ? 'frame-src 未在 meta CSP 中' : 'meta CSP 未注入（可能通过 HTTP header）');
   }, []);
 
-  // 3 秒没 bridge ready 就提示诊断信息
+  // 6 秒没 bridge ready 就提示诊断信息。放宽到 6s 是因为 Tauri WKWebView 下
+  // iframe reload → bridge inject → postMessage 链路偶尔比 Chrome 慢，3s 会误报。
   useEffect(() => {
     if (bridgeReady) return;
     const timer = setTimeout(() => {
@@ -102,7 +103,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
           'iframe 未能加载 —— 检查：1) spike-app dev server 在否 2) Tauri CSP frame-src 是否允许 localhost 3) 端口是否正确',
         );
       }
-    }, 3000);
+    }, 6000);
     return () => clearTimeout(timer);
   }, [bridgeReady, frameLoaded]);
 
@@ -144,6 +145,9 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       switch (msg.type) {
         case 'vg:ready': {
           setBridgeReady(true);
+          // 诊断 timer 若已误报 frameError（例如 Tauri 下 bridge 比 6s 晚报 ready），
+          // 这里 ready 一来立刻清错误，让 UI 自恢复。
+          setFrameError(null);
           // 0.2.0 HMR 回流恢复：iframe 重新挂载 bridge 后，若 appStore 还有
           // selection（用户没主动清），让 bridge 按 source location 反查 DOM 重高亮。
           // 用 getState() 而非 selector 依赖，避免 handler closure 追过期值。
@@ -192,6 +196,10 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     const sep = base.includes('?') ? '&' : '?';
     iframeRef.current.src = `${base}${sep}_refresh=${Date.now()}`;
     setBridgeReady(false);
+    // 同步 reset frameLoaded，诊断 useEffect 的 6s 窗口从新 iframe 开始 load 起算，
+    // 避免 old frameLoaded=true + new !bridgeReady 组合立刻误报 "bridge 未 ready"。
+    setFrameLoaded(false);
+    setFrameError(null);
   }, []);
 
   const handleOpenExternal = useCallback(() => {

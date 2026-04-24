@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { app, ipcMain } from '../platform';
+import { broadcastToRenderer } from '../platform/windowBridge';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -620,6 +621,25 @@ export function registerEvaluationHandlers(): void {
 
           const runner = new TestRunner(testConfig, agent);
 
+          // Push progress to renderer so UI can refresh without manual reload
+          const pushProgress = (payload: Record<string, unknown>) => {
+            broadcastToRenderer(EVALUATION_CHANNELS.EXPERIMENT_PROGRESS, { experimentId, ...payload });
+          };
+          pushProgress({ type: 'run_start', totalCases: testCases.length });
+          runner.addEventListener((event) => {
+            if (event.type === 'case_start') {
+              pushProgress({ type: 'case_start', testId: event.testId, description: event.description });
+            } else if (event.type === 'case_end') {
+              pushProgress({
+                type: 'case_end',
+                testId: event.result.testId,
+                status: event.result.status,
+                score: event.result.score,
+                duration: event.result.duration,
+              });
+            }
+          });
+
           // 4. Run all tests
           const summary = await runner.runAll();
 
@@ -655,6 +675,16 @@ export function registerEvaluationHandlers(): void {
             avgScore: summary.averageScore,
           });
 
+          broadcastToRenderer(EVALUATION_CHANNELS.EXPERIMENT_PROGRESS, {
+            experimentId,
+            type: 'run_end',
+            status: 'completed',
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            avgScore: summary.averageScore,
+          });
+
         } catch (execError: unknown) {
           const errMsg = execError instanceof Error ? execError.message : String(execError);
           logger.error('Experiment execution failed', { experimentId, error: errMsg });
@@ -670,6 +700,12 @@ export function registerEvaluationHandlers(): void {
           } catch (dbError) {
             logger.error('Failed to update experiment status to failed', { experimentId, error: dbError });
           }
+          broadcastToRenderer(EVALUATION_CHANNELS.EXPERIMENT_PROGRESS, {
+            experimentId,
+            type: 'run_end',
+            status: 'failed',
+            error: errMsg,
+          });
         }
       })();
 

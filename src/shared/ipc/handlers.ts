@@ -57,7 +57,7 @@ import type {
 } from '../contract/contextView';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
-import { DAG_CHANNELS } from './channels';
+import { DAG_CHANNELS, EVALUATION_CHANNELS } from './channels';
 
 import type {
   TelemetrySession,
@@ -636,6 +636,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
   // Provider fallback events
   [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
+  // Evaluation experiment progress (UI 实时刷新)
+  [EVALUATION_CHANNELS.EXPERIMENT_PROGRESS]: (event: ExperimentProgressEvent) => void;
 }
 
 export interface ProviderFallbackEvent {
@@ -643,3 +645,9 @@ export interface ProviderFallbackEvent {
   to: { provider: string; model: string };
   reason: string;
 }
+
+export type ExperimentProgressEvent =
+  | { experimentId: string; type: 'run_start'; totalCases: number }
+  | { experimentId: string; type: 'case_start'; testId: string; description: string }
+  | { experimentId: string; type: 'case_end'; testId: string; status: string; score: number; duration: number }
+  | { experimentId: string; type: 'run_end'; status: 'completed' | 'failed'; total?: number; passed?: number; failed?: number; avgScore?: number; error?: string };

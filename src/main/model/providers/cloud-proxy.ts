@@ -45,7 +45,7 @@ export async function callViaCloudProxy(
   };
   const providerName = PROVIDER_NAME_MAP[config.provider] ?? config.provider;
 
-  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-5.4');
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-5.5');
 
   // 构建工具定义（OpenAI 兼容格式）
   const openaiTools = tools.map((tool) => ({

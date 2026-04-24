@@ -79,7 +79,7 @@ export class CLIConfigService {
         default: DEFAULT_MODELS.chat,
         defaultProvider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5 使用 moonshot provider
         providers: {
-          deepseek: { enabled: true, model: 'deepseek-chat' }, // deepseek provider 自身的默认模型
+          deepseek: { enabled: true, model: 'deepseek-v4-flash' }, // deepseek provider 自身的默认模型 (V4 2026-04-24 发布)
           openai: { enabled: false },
           claude: { enabled: false },
           zhipu: { enabled: false },

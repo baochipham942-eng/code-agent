@@ -34,15 +34,15 @@ export const MODEL_MIGRATIONS: Record<string, string> = {
   'claude-sonnet-4-20250514': 'claude-sonnet-4-6',
   'claude-3-5-sonnet-20241022': 'claude-sonnet-4-6',
   'claude-3-5-haiku-20241022': 'claude-haiku-4-5-20251001',
-  // OpenAI
+  // OpenAI — GPT-5.5 于 2026-04-23 发布，替代 5.4 成为旗舰
   'gpt-4o': 'gpt-5.4-mini',
   'gpt-4o-mini': 'gpt-5.4-mini',
-  'gpt-4.1': 'gpt-5.4',
+  'gpt-4.1': 'gpt-5.5',
   'gpt-4.1-mini': 'gpt-5.4-mini',
-  'o3': 'gpt-5.4',
+  'o3': 'gpt-5.5',
   'o4-mini': 'gpt-5.4-mini',
-  // DeepSeek
-  'deepseek-coder': 'deepseek-chat',
+  // DeepSeek — V4 于 2026-04-24 发布，legacy chat/reasoner 2026-07-24 退役
+  'deepseek-coder': 'deepseek-v4-flash',
   // 火山豆包 — 1.5 系列 → 1.6 系列
   'doubao-1.5-pro-256k': 'doubao-seed-1-6',
   'doubao-1.5-thinking-pro': 'doubao-seed-1-6-thinking',
@@ -80,6 +80,8 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'claude-sonnet-4-6': 64_000,
   'claude-haiku-4-5-20251001': 64_000,
   // OpenAI
+  'gpt-5.5': 128_000,
+  'gpt-5.5-pro': 128_000,
   'gpt-5.4': 128_000,
   'gpt-5.4-mini': 128_000,
   'gpt-5.4-nano': 128_000,
@@ -92,6 +94,8 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'gemini-2.5-pro': 64_000,
   'gemini-2.5-flash': 64_000,
   // DeepSeek — 官方 API 上限
+  'deepseek-v4-flash': 64_000,
+  'deepseek-v4-pro': 64_000,
   'deepseek-chat': 8_192,
   'deepseek-reasoner': 64_000,
   // 智谱 GLM
@@ -148,6 +152,8 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'claude-sonnet-4-6': 1_000_000,
   'claude-haiku-4-5-20251001': 200_000,
   // OpenAI
+  'gpt-5.5': 1_000_000,
+  'gpt-5.5-pro': 1_000_000,
   'gpt-5.4': 1_000_000,
   'gpt-5.4-mini': 400_000,
   'gpt-5.4-nano': 400_000,
@@ -159,7 +165,9 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'gemini-3-flash-preview': 1_000_000,
   'gemini-2.5-pro': 1_000_000,
   'gemini-2.5-flash': 1_000_000,
-  // DeepSeek
+  // DeepSeek — V4 原生 1M 上下文
+  'deepseek-v4-flash': 1_000_000,
+  'deepseek-v4-pro': 1_000_000,
   'deepseek-chat': 128_000,
   'deepseek-reasoner': 128_000,
   // 智谱 GLM

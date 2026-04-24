@@ -1,6 +1,8 @@
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
 export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
-  // DeepSeek
+  // DeepSeek — V4 官方价格待公告，先沿用 V3.2 价格作为近似，实测后校正
+  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
+  'deepseek-v4-pro': { input: 0.55, output: 2.19 },
   'deepseek-chat': { input: 0.14, output: 0.28 },
   'deepseek-coder': { input: 0.14, output: 0.28 },
   'deepseek-reasoner': { input: 0.55, output: 2.19 },
@@ -18,6 +20,7 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'glm-4.7-flash': { input: 0, output: 0 },
   'glm-4.6v-flash': { input: 0, output: 0 },
   // Moonshot
+  'kimi-k2.6': { input: 0.6, output: 2.5 },
   'kimi-k2.5': { input: 0, output: 0 },
   'moonshot-v1-8k': { input: 0.12, output: 0.12 },
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },

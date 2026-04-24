@@ -80,6 +80,15 @@ export function isTransientError(msg: string, errCode?: string): boolean {
   return false;
 }
 
+/**
+ * 判断错误是否为"致命"（账号/余额/内容策略等持久性错误）
+ * 用于上层（如 TestRunner）在批量执行场景下做 circuit breaker，
+ * 避免每个 case 都重复踩同一个持久性错误烧 API 费。
+ */
+export function isNonRetryableError(msg: string): boolean {
+  return includesAnyPattern(msg, NON_RETRYABLE_PATTERNS);
+}
+
 export interface RetryOptions {
   /** Provider 名称，用于日志 */
   providerName: string;

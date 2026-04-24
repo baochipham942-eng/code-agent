@@ -69,7 +69,7 @@ import { getRepoMap } from '../../context/repoMap';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { buildSessionMetadataBlock } from '../../lightMemory/sessionMetadata';
 import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
+import { getPromptForTask, buildDynamicPromptV2, needsGenerativeUI, GENERATIVE_UI_PROMPT, type AgentMode } from '../../prompts/builder';
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
@@ -645,9 +645,20 @@ export class ContextAssembly {
     }
 
     // 注入轻量记忆索引（File-as-Memory）
+    // 默认只放短提示（~30 tok），实际索引按意图注入——检测到用户查询跟记忆/过往有关时才塞全量
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
-      systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+      const lastUserForMem = [...this.ctx.messages].reverse().find((m: any) => m.role === 'user');
+      const userQueryForMem = (lastUserForMem?.content || '') as string;
+      const memIntentPattern = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
+      if (typeof userQueryForMem === 'string' && memIntentPattern.test(userQueryForMem)) {
+        // 用户查询涉及过往记忆，注入完整索引
+        systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+        logger.debug('[ContextAssembly] memory_index injected (intent matched)');
+      } else {
+        // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查
+        systemPrompt += `\n\n<memory_hint>Memory files available via MemoryRead tool (see ~/.claude/memory/ and ~/.code-agent/memory/).</memory_hint>`;
+      }
     }
 
     // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配
@@ -695,6 +706,15 @@ export class ContextAssembly {
     const recentConvs = await buildRecentConversationsBlock();
     if (recentConvs) {
       systemPrompt += `\n\n${recentConvs}`;
+    }
+
+    // 按意图注入 Generative UI 能力说明（~700 tok）
+    // 日常对话不需要这段，只有用户要画图/做表/生成 HTML 时才注入
+    const lastUserMsgForGenUI = [...this.ctx.messages].reverse().find((m: any) => m.role === 'user');
+    const userQueryForGenUI = lastUserMsgForGenUI?.content || '';
+    if (typeof userQueryForGenUI === 'string' && needsGenerativeUI(userQueryForGenUI)) {
+      systemPrompt += `\n\n${GENERATIVE_UI_PROMPT}`;
+      logger.debug('[ContextAssembly] GenerativeUI prompt injected (intent matched)');
     }
 
     // 注入延迟工具提示

@@ -9,60 +9,21 @@ export const TOOLS_PROMPT = `
 
 | Tool | Use |
 |------|-----|
-| Read | Read files |
-| Write | Create files |
-| Edit | Modify files (read first!) |
+| Read / Write / Edit | File ops (Edit requires prior Read) |
 | Bash | Shell commands (git/npm/test) |
-| Glob | Find files (patterns) |
-| Grep | Search content (regex) |
-| WebSearch | Search the web |
+| Glob / Grep | File discovery / content search |
+| WebSearch | Web info lookup |
 | AskUserQuestion | Ask user for clarification |
-| task | Sub-agents (complex tasks) |
-| teammate | Agent communication |
-| Skill | Execute skills (/ppt, /commit, etc) |
-| CodeExecute | Batch tool calls in JS (3+ similar ops) |
+| task | Sub-agents for complex/parallel work |
+| teammate | Agent coordination (handoff/query/broadcast) |
+| Skill | Slash commands (\`/xxx\` always routes here) |
+| CodeExecute | Batch 3+ similar tool calls in JS |
 
-### CodeExecute (Programmatic Tool Calling)
-
-When a task needs 3+ similar tool calls, use CodeExecute to batch them:
-\`\`\`javascript
-const files = await callTool('Glob', { pattern: 'src/**/*.ts' });
-let total = 0;
-for (const f of files.output.split('\\n').filter(Boolean)) {
-  const r = await callTool('Read', { file_path: f });
-  if (r.success) total += r.output.split('\\n').length;
-}
-return \`\${total} lines in \${files.output.split('\\n').filter(Boolean).length} files\`;
-\`\`\`
-Advantage: intermediate callTool results stay in code memory, only return/console.log enters your context.
-
-### Slash Commands (Skills)
-
-When user types \`/xxx\` (e.g., \`/ppt\`, \`/commit\`), call skill tool:
-\`\`\`json
-skill({ "command": "ppt", "args": "Code Agent 介绍，5页" })
-\`\`\`
-
-When user types a slash command, always route through the skill tool — direct tool calls bypass skill validation and dependency checks.
-When a user/project skill has outdated instructions, fix it in-place with Edit — the system auto-reloads on save. Never modify builtin/library/plugin skills.
-
-### Skill Creation
-
-After completing a complex multi-step task, consider if the workflow is reusable. If yes, use SkillCreate to save it — the user confirms before creation. Only for genuinely repeatable patterns, not one-off tasks.
-
-### Tool Rules
-
-Use dedicated tools for file ops (no cat/grep/sed in Bash) — dedicated tools provide structured output and are auditable.
-Use \`teammate\` tool for agent coordination (coordinate/handoff/query/broadcast/inbox/agents).
-
-### Multi-step Tasks
-
-For 2+ files or 3+ steps, list your plan as a numbered list in your thinking/response.
-The system will automatically parse and track your task list.
-Example format:
-1. Read existing code
-2. Implement the feature
-3. Run tests to verify
+### Rules
+- Dedicated file tools over Bash (no cat/grep/sed in shell) — structured, auditable
+- \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls
+- User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
+- For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
 `;
 
 // Orchestrator Mode prompt (for swarm scenarios)

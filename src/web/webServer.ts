@@ -570,9 +570,9 @@ async function main(): Promise<void> {
   // 优雅退出
   const shutdown = () => {
     console.log('\nShutting down...');
-    // Clean up dev token file
-    const devTokenPath = path.join(process.cwd(), '.dev-token');
-    try { fs.unlinkSync(devTokenPath); } catch {}
+    // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
+    // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
+    // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
     server.close();
     process.exit(0);

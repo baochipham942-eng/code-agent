@@ -3,11 +3,33 @@
 // ============================================================================
 
 import { randomUUID, timingSafeEqual } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
 // ── Server Auth Token ─────────────────────────────────────────────────────
-/** Generated on startup, printed to stdout for Tauri/frontend */
-export const SERVER_AUTH_TOKEN = randomUUID();
+/**
+ * 启动时先复用 .dev-token 里的旧 token（dev convenience），没有或格式不合法
+ * 才生成新的。复用后 kill/restart webServer 不会让 Tauri WebView 里固化的
+ * token 失效，避免 "Invalid auth token" 踩坑。
+ *
+ * .dev-token 写入/清理由 webServer.ts 负责（listen callback + shutdown），
+ * 若进程 crash 未清理，下次启动就会复用上次的 token — 这正是我们想要的。
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function loadOrGenerateAuthToken(): string {
+  const devTokenPath = path.join(process.cwd(), '.dev-token');
+  try {
+    const existing = fs.readFileSync(devTokenPath, 'utf-8').trim();
+    if (UUID_RE.test(existing)) return existing;
+  } catch {
+    // ENOENT or unreadable — fall through to fresh generation
+  }
+  return randomUUID();
+}
+
+/** Loaded from .dev-token on startup (dev) or freshly generated; printed to stdout for Tauri/frontend */
+export const SERVER_AUTH_TOKEN = loadOrGenerateAuthToken();
 
 // ── CORS ──────────────────────────────────────────────────────────────────
 /** Allowed CORS origins */

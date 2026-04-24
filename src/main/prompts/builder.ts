@@ -76,11 +76,26 @@ export function buildPrompt(): string {
 
   // Stable prefix (cacheable across turns)
   const stablePrefix = [getSoul(), basePrompt, ...getToolDescriptions()].join('\n\n');
-  // Dynamic section (may change per turn: rules, generative UI)
-  const dynamicSection = [...getRulesForPrompt(), GENERATIVE_UI_PROMPT].join('\n\n');
+  // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
+  const dynamicSection = getRulesForPrompt().join('\n\n');
 
-  return `${stablePrefix}${DYNAMIC_BOUNDARY_MARKER}${dynamicSection}`;
+  return dynamicSection
+    ? `${stablePrefix}${DYNAMIC_BOUNDARY_MARKER}${dynamicSection}`
+    : stablePrefix;
 }
+
+/**
+ * 检测消息是否需要 Generative UI 能力
+ * 用于按需注入 GENERATIVE_UI_PROMPT，避免日常对话白白背 ~700 tok
+ */
+export function needsGenerativeUI(message: string): boolean {
+  if (!message) return false;
+  // 图表/可视化/表格/文档/HTML/PPT 等关键词
+  const pattern = /图表|chart|可视化|visuali[sz]|饼图|柱状图|折线图|直方图|散点图|趋势图|生成\s*HTML|generative[_\s]?ui|交互式|interactive|电子表格|spreadsheet|excel|xlsx|csv|文档生成|generate\s+doc|doc\s*(ument)?\s*生成|mermaid|流程图|思维导图|架构图|饼状图|PPT|幻灯片|slides/i;
+  return pattern.test(message);
+}
+
+export { GENERATIVE_UI_PROMPT };
 
 export const SYSTEM_PROMPT: string = buildPrompt();
 

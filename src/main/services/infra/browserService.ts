@@ -12,7 +12,12 @@ import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
-import type { ManagedBrowserSessionState } from '../../../shared/contract/desktop';
+import type {
+  ManagedBrowserMode,
+  ManagedBrowserSessionState,
+  WorkbenchActionTrace,
+  WorkbenchSnapshotRef,
+} from '../../../shared/contract/desktop';
 
 // Lazy-load playwright to avoid hard dependency at module load time
 // (e.g., when bundled for test runner where playwright is not installed)
@@ -89,6 +94,25 @@ export interface ElementInfo {
   rect: { x: number; y: number; width: number; height: number };
 }
 
+export interface BrowserDomSnapshot {
+  url: string;
+  title: string;
+  headings: Array<{ level: number; text: string }>;
+  interactiveElements: Array<{
+    tag: string;
+    role?: string | null;
+    text: string;
+    ariaLabel?: string | null;
+    placeholder?: string | null;
+    selectorHint: string;
+    rect: { x: number; y: number; width: number; height: number };
+  }>;
+}
+
+export interface ManagedBrowserLaunchOptions {
+  mode?: ManagedBrowserMode;
+}
+
 class BrowserService implements Disposable {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -96,15 +120,28 @@ class BrowserService implements Disposable {
   private activeTabId: string | null = null;
   private disposed = false;
   private screenshotDir: string;
+  private profileDir: string;
+  private mode: ManagedBrowserMode;
+  private viewport = { width: 1280, height: 720 };
+  private traces: WorkbenchActionTrace[] = [];
+  private consoleErrors: string[] = [];
+  private networkFailures: string[] = [];
+  private allowedHosts: string[];
+  private blockedHosts: string[];
   public logger: BrowserLogger = new BrowserLogger();
 
   constructor() {
-    this.screenshotDir = path.join(
-      app?.getPath('userData') || process.cwd(),
-      'screenshots'
-    );
+    const userData = app?.getPath('userData') || process.cwd();
+    this.screenshotDir = path.join(userData, 'screenshots');
+    this.profileDir = path.join(userData, 'managed-browser-profile');
+    this.mode = this.getDefaultMode();
+    this.allowedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_ALLOWED_HOSTS);
+    this.blockedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_BLOCKED_HOSTS);
     if (!fs.existsSync(this.screenshotDir)) {
       fs.mkdirSync(this.screenshotDir, { recursive: true });
+    }
+    if (!fs.existsSync(this.profileDir)) {
+      fs.mkdirSync(this.profileDir, { recursive: true });
     }
     this.logger.log('INFO', 'BrowserService initialized');
   }
@@ -113,35 +150,52 @@ class BrowserService implements Disposable {
   // Browser Lifecycle
   // --------------------------------------------------------------------------
 
-  async launch(): Promise<void> {
+  async launch(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
     if (this.browser) {
       this.logger.log('WARN', 'Browser already running, skipping launch');
       return;
     }
 
-    this.logger.log('INFO', 'Launching Chromium browser...');
+    this.mode = options.mode || this.getDefaultMode();
+    this.logger.log('INFO', `Launching isolated Chromium browser (${this.mode})...`);
     const pw = await getPlaywright();
-    this.browser = await pw.chromium.launch({
-      headless: false, // Show browser window for visual feedback
+    this.context = await pw.chromium.launchPersistentContext(this.profileDir, {
+      headless: this.mode === 'headless',
+      viewport: this.viewport,
+      acceptDownloads: false,
+      ignoreHTTPSErrors: false,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--no-first-run',
+        '--no-default-browser-check',
       ],
-    });
-
-    this.context = await this.browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      env: buildBrowserEnvironment(),
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
+    this.browser = this.context.browser();
 
-    this.logger.log('INFO', 'Browser launched successfully (viewport: 1280x720)');
+    await this.context.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (!this.isUrlAllowed(url)) {
+        this.logger.log('WARN', `Blocked browser request: ${url}`);
+        await route.abort('blockedbyclient');
+        return;
+      }
+      await route.continue();
+    });
+
+    this.logger.log('INFO', `Browser launched successfully (viewport: ${this.viewport.width}x${this.viewport.height})`);
   }
 
   async close(): Promise<void> {
-    if (this.browser) {
+    if (this.browser || this.context) {
       this.logger.log('INFO', 'Closing browser...');
-      await this.browser.close();
+      await this.context?.close().catch(() => undefined);
+      await this.browser?.close().catch(() => undefined);
       this.browser = null;
       this.context = null;
       this.tabs.clear();
@@ -153,7 +207,7 @@ class BrowserService implements Disposable {
   }
 
   isRunning(): boolean {
-    return this.browser !== null;
+    return this.browser !== null || this.context !== null;
   }
 
   // --------------------------------------------------------------------------
@@ -161,6 +215,12 @@ class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async newTab(url?: string): Promise<string> {
+    if (url) {
+      const allowed = this.validateUrl(url);
+      if (!allowed.allowed) {
+        throw new Error(allowed.reason);
+      }
+    }
     await this.ensureBrowser();
 
     this.logger.log('INFO', `Creating new tab${url ? ` with URL: ${url}` : ''}`);
@@ -192,9 +252,28 @@ class BrowserService implements Disposable {
     // Log console messages from the page
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
-        this.logger.log('ERROR', `[Page Console] ${msg.text()}`);
+        const entry = `[${tabId}] ${msg.text()}`;
+        this.consoleErrors.push(entry);
+        this.consoleErrors = this.consoleErrors.slice(-50);
+        this.logger.log('ERROR', `[Page Console] ${entry}`);
       } else if (msg.type() === 'warning') {
         this.logger.log('WARN', `[Page Console] ${msg.text()}`);
+      }
+    });
+
+    page.on('requestfailed', (request) => {
+      const entry = `[${tabId}] ${request.url()} ${request.failure()?.errorText || 'request failed'}`;
+      this.networkFailures.push(entry);
+      this.networkFailures = this.networkFailures.slice(-50);
+      this.logger.log('WARN', `[Page Request Failed] ${entry}`);
+    });
+
+    page.on('response', (response) => {
+      if (response.status() >= 400) {
+        const entry = `[${tabId}] ${response.status()} ${response.url()}`;
+        this.networkFailures.push(entry);
+        this.networkFailures = this.networkFailures.slice(-50);
+        this.logger.log('WARN', `[Page Response] ${entry}`);
       }
     });
 
@@ -252,13 +331,19 @@ class BrowserService implements Disposable {
           title: activeTab.title,
         }
         : null,
+      mode: this.mode,
+      profileDir: this.profileDir,
+      viewport: this.viewport,
+      allowedHosts: this.allowedHosts,
+      blockedHosts: this.blockedHosts,
+      lastTrace: this.traces.at(-1) || null,
     };
   }
 
-  async ensureSession(url: string = 'about:blank'): Promise<ManagedBrowserSessionState> {
-    await this.ensureBrowser();
+  async ensureSession(url: string = 'about:blank', options: ManagedBrowserLaunchOptions = {}): Promise<ManagedBrowserSessionState> {
+    await this.ensureBrowser(options);
     if (!this.getActiveTab()) {
-      await this.newTab(url);
+      await this.newTab(url === 'about:blank' ? undefined : url);
     }
     return this.getSessionState();
   }
@@ -268,6 +353,10 @@ class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async navigate(url: string, tabId?: string): Promise<void> {
+    const allowed = this.validateUrl(url);
+    if (!allowed.allowed) {
+      throw new Error(allowed.reason);
+    }
     const tab = this.getTab(tabId);
     this.logger.log('INFO', `Navigating to: ${url}`);
     await tab.page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -290,6 +379,20 @@ class BrowserService implements Disposable {
   async reload(tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.reload();
+  }
+
+  async setViewport(width: number, height: number): Promise<void> {
+    this.viewport = {
+      width: Math.max(320, Math.floor(width)),
+      height: Math.max(240, Math.floor(height)),
+    };
+    await Promise.all(
+      Array.from(this.tabs.values()).map((tab) =>
+        tab.page.setViewportSize(this.viewport).catch((error) => {
+          this.logger.log('WARN', `Failed to set viewport for ${tab.id}: ${error}`);
+        })
+      ),
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -410,6 +513,71 @@ class BrowserService implements Disposable {
     return this.findElements(selectors, tab.id);
   }
 
+  async getDomSnapshot(tabId?: string): Promise<BrowserDomSnapshot> {
+    const tab = this.getTab(tabId);
+    const page = tab.page;
+    const [headings, interactiveElements] = await Promise.all([
+      page.$$eval('h1,h2,h3,h4,h5,h6', (nodes) =>
+        nodes.slice(0, 30).map((node) => ({
+          level: Number(node.tagName.replace(/^H/i, '')) || 0,
+          text: node.textContent?.trim().slice(0, 160) || '',
+        })).filter((item) => item.text)
+      ).catch(() => []),
+      page.$$eval(
+        'button, a[href], input, select, textarea, [role], [onclick], [tabindex]',
+        (nodes) => nodes.slice(0, 80).map((node) => {
+          const el = node as HTMLElement;
+          const rect = el.getBoundingClientRect();
+          const id = el.getAttribute('id');
+          const className = el.getAttribute('class');
+          const tag = el.tagName.toLowerCase();
+          const selectorHint = id
+            ? `#${id}`
+            : className
+              ? `${tag}.${className.split(/\s+/).filter(Boolean)[0]}`
+              : tag;
+          return {
+            tag,
+            role: el.getAttribute('role'),
+            text: el.textContent?.trim().slice(0, 160) || '',
+            ariaLabel: el.getAttribute('aria-label'),
+            placeholder: el.getAttribute('placeholder'),
+            selectorHint,
+            rect: {
+              x: Math.round(rect.x),
+              y: Math.round(rect.y),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          };
+        }).filter((item) => item.rect.width > 0 && item.rect.height > 0)
+      ).catch(() => []),
+    ]);
+
+    return {
+      url: page.url(),
+      title: await page.title(),
+      headings,
+      interactiveElements,
+    };
+  }
+
+  async getAccessibilitySnapshot(tabId?: string): Promise<unknown> {
+    const tab = this.getTab(tabId);
+    const pageWithAccessibility = tab.page as unknown as {
+      accessibility?: {
+        snapshot(options?: { interestingOnly?: boolean }): Promise<unknown>;
+      };
+    };
+    if (pageWithAccessibility.accessibility?.snapshot) {
+      return await pageWithAccessibility.accessibility.snapshot({ interestingOnly: true });
+    }
+    return {
+      fallback: 'playwright_accessibility_snapshot_unavailable',
+      domSnapshot: await this.getDomSnapshot(tabId),
+    };
+  }
+
   // --------------------------------------------------------------------------
   // Screenshots
   // --------------------------------------------------------------------------
@@ -497,6 +665,48 @@ class BrowserService implements Disposable {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  beginTrace(args: {
+    toolName: string;
+    action: string;
+    params?: Record<string, unknown>;
+  }): WorkbenchActionTrace {
+    return {
+      id: `trace_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      targetKind: 'browser',
+      toolName: args.toolName,
+      action: args.action,
+      mode: this.mode,
+      startedAtMs: Date.now(),
+      before: this.snapshotActiveTab(),
+      params: redactTraceParams(args.params || {}),
+      consoleErrors: [],
+      networkFailures: [],
+    };
+  }
+
+  finishTrace(
+    trace: WorkbenchActionTrace,
+    args: {
+      success: boolean;
+      error?: string | null;
+      screenshotPath?: string | null;
+    },
+  ): WorkbenchActionTrace {
+    const completed: WorkbenchActionTrace = {
+      ...trace,
+      completedAtMs: Date.now(),
+      after: this.snapshotActiveTab(args.screenshotPath || undefined),
+      success: args.success,
+      error: args.error || null,
+      screenshotPath: args.screenshotPath || null,
+      consoleErrors: this.consoleErrors.slice(-10),
+      networkFailures: this.networkFailures.slice(-10),
+    };
+    this.traces.push(completed);
+    this.traces = this.traces.slice(-100);
+    return completed;
+  }
+
   // --------------------------------------------------------------------------
   // Private Helpers
   // --------------------------------------------------------------------------
@@ -515,9 +725,9 @@ class BrowserService implements Disposable {
     }
   }
 
-  private async ensureBrowser(): Promise<void> {
+  private async ensureBrowser(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
     if (!this.browser) {
-      await this.launch();
+      await this.launch(options);
     }
   }
 
@@ -532,6 +742,110 @@ class BrowserService implements Disposable {
     }
     return tab;
   }
+
+  private getDefaultMode(): ManagedBrowserMode {
+    return process.env.CODE_AGENT_BROWSER_VISIBLE === '1'
+      ? 'visible'
+      : 'headless';
+  }
+
+  private snapshotActiveTab(screenshotPath?: string): WorkbenchSnapshotRef | null {
+    const tab = this.getActiveTab();
+    if (!tab) {
+      return null;
+    }
+
+    return {
+      url: tab.url,
+      title: tab.title,
+      screenshotPath: screenshotPath || null,
+      capturedAtMs: Date.now(),
+    };
+  }
+
+  private validateUrl(url: string): { allowed: true } | { allowed: false; reason: string } {
+    if (this.isUrlAllowed(url)) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason: `URL is blocked by Browser Workbench policy: ${url}`,
+    };
+  }
+
+  isUrlAllowed(url: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+
+    if (['about:', 'data:', 'blob:'].includes(parsed.protocol)) {
+      return true;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return false;
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    if (matchesHostList(host, this.blockedHosts)) {
+      return false;
+    }
+    if (this.allowedHosts.length === 0) {
+      return true;
+    }
+    return isLocalHost(host) || matchesHostList(host, this.allowedHosts);
+  }
+}
+
+function parseHostList(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function matchesHostList(host: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(1);
+      return host.endsWith(suffix);
+    }
+    return host === pattern || host.endsWith(`.${pattern}`);
+  });
+}
+
+function isLocalHost(host: string): boolean {
+  return host === 'localhost'
+    || host === '127.0.0.1'
+    || host === '::1'
+    || host.endsWith('.local');
+}
+
+function buildBrowserEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL']) {
+    const value = process.env[key];
+    if (value) {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+
+function redactTraceParams(params: Record<string, unknown>): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (/password|token|secret|credential|cookie/i.test(key)) {
+      redacted[key] = '[redacted]';
+    } else if (typeof value === 'string' && value.length > 500) {
+      redacted[key] = `${value.slice(0, 500)}...`;
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
 }
 
 // Singleton instance

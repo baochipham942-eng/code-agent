@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { create } from 'zustand';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
+import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSkillStore } from '../stores/skillStore';
 import { requestMcpStatusReload } from './useMcpStatus';
@@ -156,6 +157,8 @@ export interface WorkbenchCapabilityQuickActionRunner {
 
 export function useWorkbenchCapabilityQuickActionRunner(): WorkbenchCapabilityQuickActionRunner {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
+  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
   const mountSkill = useSkillStore((state) => state.mountSkill);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const sessionKey = getQuickActionSessionKey(currentSessionId);
@@ -202,6 +205,24 @@ export function useWorkbenchCapabilityQuickActionRunner(): WorkbenchCapabilityQu
           await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'retry', { connectorId });
           return true;
         },
+        probeConnector: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'probe', { connectorId });
+          return true;
+        },
+        repairConnectorPermission: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'repairPermission', { connectorId });
+          return true;
+        },
+        disconnectConnector: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'disconnect', { connectorId });
+          setSelectedConnectorIds(selectedConnectorIds.filter((id) => id !== connectorId));
+          return true;
+        },
+        removeConnector: async (connectorId) => {
+          await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'remove', { connectorId });
+          setSelectedConnectorIds(selectedConnectorIds.filter((id) => id !== connectorId));
+          return true;
+        },
         openConnectorApp: async (connectorId) => {
           await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'openApp', { connectorId });
           return true;
@@ -232,7 +253,7 @@ export function useWorkbenchCapabilityQuickActionRunner(): WorkbenchCapabilityQu
         .getState()
         .setRunningActionKey(nextSessionKey, null);
     }
-  }, [currentSessionId, mountSkill, openSettingsTab]);
+  }, [currentSessionId, mountSkill, openSettingsTab, selectedConnectorIds, setSelectedConnectorIds]);
 
   return {
     runningActionKey,

@@ -8,7 +8,7 @@ import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
-import { buildStepLabel } from '../../../utils/toolStepGrouping';
+import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -23,10 +23,26 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const label = useMemo(() => {
+    if (nodes.length === 1) {
+      const tc = nodes[0].toolCall;
+      if (tc) return buildSingleToolLabel(tc.name, tc.args as Record<string, unknown> | undefined);
+    }
     const names = nodes
       .map((n) => n.toolCall?.name)
       .filter((x): x is string => !!x);
     return buildStepLabel(names);
+  }, [nodes]);
+
+  // 任一 tool 失败则整行加红点；任一 tool 正在流式则不显示红点（避免误判）
+  const status = useMemo<'streaming' | 'error' | 'ok'>(() => {
+    let hasError = false;
+    for (const n of nodes) {
+      const tc = n.toolCall;
+      if (!tc) continue;
+      if (tc._streaming) return 'streaming';
+      if (tc.success === false) hasError = true;
+    }
+    return hasError ? 'error' : 'ok';
   }, [nodes]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
@@ -48,6 +64,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   output: tc.success !== false ? tc.result : undefined,
                   error: tc.success === false ? tc.result : undefined,
                   duration: tc.duration,
+                  outputPath: tc.outputPath,
+                  metadata: tc.metadata,
                 }
               : undefined,
         } as ToolCall;
@@ -67,7 +85,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         ) : (
           <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
         )}
-        <span className="truncate">{label}</span>
+        {status === 'error' && (
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" aria-label="失败" />
+        )}
+        <span className="truncate font-mono">{label}</span>
       </button>
 
       {expanded && (

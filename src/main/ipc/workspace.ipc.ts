@@ -5,6 +5,7 @@
 import type { IpcMain, BrowserWindow } from '../platform';
 import { dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 
@@ -40,6 +41,7 @@ async function handleGetCurrent(getAppService: () => AgentApplicationService | n
 async function handleSetCurrent(
   payload: { dir: string | null | undefined },
   getAppService: () => AgentApplicationService | null,
+  getMainWindow: () => BrowserWindow | null,
 ): Promise<string | null> {
   const nextDir = payload.dir?.trim();
   if (!nextDir) {
@@ -50,6 +52,12 @@ async function handleSetCurrent(
   if (appService) {
     appService.setWorkingDirectory(nextDir);
   }
+
+  // 广播给所有 renderer 订阅者（appStore），让渲染进程 workingDirectory 跟上
+  // main 侧的变更。不依赖调用方 dual-write response.data，避免直调 domainAPI
+  // 时 renderer store 落空（LivePreviewFrame.resolveSourceLocation 会 fallback
+  // 到 process.cwd() 丢掉 "selected" 条）。
+  getMainWindow()?.webContents.send(IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED, { dir: nextDir });
 
   return nextDir;
 }
@@ -239,7 +247,7 @@ export function registerWorkspaceHandlers(
           data = await handleGetCurrent(getAppService);
           break;
         case 'setCurrent':
-          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService);
+          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow);
           break;
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Brain, FileText, AlertTriangle, StopCircle } from 'lucide-react';
+import { Brain, AlertTriangle, StopCircle } from 'lucide-react';
 
 interface StreamingIndicatorProps {
   startTime: number;
@@ -11,10 +11,10 @@ interface StreamingIndicatorProps {
 }
 
 // Phase thresholds (seconds) and their display config
+// 默认态 0-30s 保持 Codex 式克制：dots + 灰字；30s+ 再升级图标和颜色
 const PHASES = [
   { threshold: 0,  label: '思考中...',       color: 'text-zinc-400', icon: null },
-  { threshold: 5,  label: '深度分析中...',    color: 'text-zinc-300', icon: Brain },
-  { threshold: 15, label: '组织回复中...',    color: 'text-zinc-300', icon: FileText },
+  { threshold: 30, label: '深度分析中...',    color: 'text-zinc-300', icon: Brain },
   { threshold: 60, label: '处理时间较长...',  color: 'text-amber-400', icon: AlertTriangle },
   { threshold: 90, label: '工具可能卡住',    color: 'text-red-400', icon: AlertTriangle },
 ] as const;

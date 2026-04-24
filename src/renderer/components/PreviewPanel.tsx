@@ -235,7 +235,11 @@ export const PreviewPanel: React.FC = () => {
         }`}
       >
         <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">加载 Live Preview...</div>}>
-          <LivePreviewFrame tabId={activeTab.id} devServerUrl={activeTab.devServerUrl} />
+          <LivePreviewFrame
+            key={`${activeTab.id}:${activeTab.devServerUrl}`}
+            tabId={activeTab.id}
+            devServerUrl={activeTab.devServerUrl}
+          />
         </Suspense>
       </div>
     );

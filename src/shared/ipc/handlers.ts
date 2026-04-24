@@ -112,6 +112,7 @@ import type {
 import type {
   EnqueueReviewItemInput,
   ReviewQueueItem,
+  UpdateReviewQueueFailureCapabilityAssetInput,
 } from '../contract/reviewQueue';
 
 import type {
@@ -421,6 +422,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_GET_CASE_DETAIL]: (experimentId: string, caseId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: () => Promise<ReviewQueueItem[]>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE]: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem>;
+  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_UPDATE_FAILURE_ASSET]: (payload: UpdateReviewQueueFailureCapabilityAssetInput) => Promise<ReviewQueueItem | null>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;
@@ -604,6 +606,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
+  [IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED]: (event: { dir: string | null }) => void;
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
   [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;

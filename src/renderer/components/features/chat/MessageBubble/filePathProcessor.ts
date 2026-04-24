@@ -158,3 +158,46 @@ export function wrapFilePathsInBackticks(markdown: string): string {
     })
     .join('');
 }
+
+// ============================================================================
+// Ticket ID auto-link: 识别形如 DSECDCN-1988、JIRA-42 的 issue key，转成
+// [ID](!ticket) 的 IACT 链接，由 MessageContent 的 a renderer 分支点击复制 ID。
+// 故意不做 git sha — 7-40 hex 字符误伤率太高。
+// ============================================================================
+
+const TICKET_PATTERN = /\b[A-Z]{2,10}-\d{1,6}\b/g;
+
+function processTicketSegment(text: string): string {
+  TICKET_PATTERN.lastIndex = 0;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = TICKET_PATTERN.exec(text)) !== null) {
+    const matched = match[0];
+    const matchIndex = match.index;
+
+    if (isInsideMarkdownLink(text, matchIndex, matched.length)) continue;
+
+    // Skip if already wrapped in backticks
+    const charBefore = matchIndex > 0 ? text[matchIndex - 1] : '';
+    const charAfter = matchIndex + matched.length < text.length
+      ? text[matchIndex + matched.length]
+      : '';
+    if (charBefore === '`' || charAfter === '`') continue;
+
+    result += text.slice(lastIndex, matchIndex);
+    result += `[${matched}](!ticket)`;
+    lastIndex = matchIndex + matched.length;
+  }
+
+  result += text.slice(lastIndex);
+  return result;
+}
+
+export function wrapTicketsAsLinks(markdown: string): string {
+  const segments = splitByCode(markdown);
+  return segments
+    .map(segment => (segment.isCode ? segment.text : processTicketSegment(segment.text)))
+    .join('');
+}

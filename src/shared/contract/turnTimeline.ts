@@ -19,6 +19,8 @@ export type BlockedCapabilityReasonCode =
   | 'skill_not_mounted'
   | 'skill_missing'
   | 'connector_disconnected'
+  | 'connector_unverified'
+  | 'connector_auth_failed'
   | 'mcp_disconnected'
   | 'mcp_error'
   | 'scope_empty'

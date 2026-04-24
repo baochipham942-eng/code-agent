@@ -6,9 +6,9 @@
 // ============================================================================
 
 import type { Connector } from './base';
-import { calendarConnector } from './native/calendar';
-import { mailConnector } from './native/mail';
-import { remindersConnector } from './native/reminders';
+import { calendarConnector, resetCalendarConnectorReadiness } from './native/calendar';
+import { mailConnector, resetMailConnectorReadiness } from './native/mail';
+import { remindersConnector, resetRemindersConnectorReadiness } from './native/reminders';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 
 type ConnectorFactory = () => Connector;
@@ -19,6 +19,18 @@ const NATIVE_FACTORIES: Record<NativeConnectorId, ConnectorFactory> = {
   reminders: () => remindersConnector,
 };
 
+const NATIVE_READINESS_RESETTERS: Record<NativeConnectorId, () => void> = {
+  calendar: resetCalendarConnectorReadiness,
+  mail: resetMailConnectorReadiness,
+  reminders: resetRemindersConnectorReadiness,
+};
+
+function resetNativeConnectorReadiness(id: string): void {
+  if (id in NATIVE_READINESS_RESETTERS) {
+    NATIVE_READINESS_RESETTERS[id as NativeConnectorId]();
+  }
+}
+
 export class ConnectorRegistry {
   private connectors = new Map<string, Connector>();
 
@@ -27,6 +39,7 @@ export class ConnectorRegistry {
   }
 
   unregister(id: string): boolean {
+    resetNativeConnectorReadiness(id);
     return this.connectors.delete(id);
   }
 
@@ -59,6 +72,7 @@ export class ConnectorRegistry {
 
     for (const id of Array.from(this.connectors.keys())) {
       if (!nextIds.has(id)) {
+        resetNativeConnectorReadiness(id);
         this.connectors.delete(id);
       }
     }

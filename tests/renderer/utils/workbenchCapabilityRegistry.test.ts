@@ -49,7 +49,9 @@ describe('buildWorkbenchCapabilityRegistry', () => {
           id: 'calendar',
           label: 'Calendar',
           connected: false,
-          detail: 'offline',
+          readiness: 'unchecked',
+          detail: 'enabled, not checked',
+          actions: ['repair_permissions', 'disconnect', 'remove'],
           capabilities: ['list_events'],
         },
       ],
@@ -128,10 +130,14 @@ describe('buildWorkbenchCapabilityRegistry', () => {
       selected: true,
       available: false,
       blocked: true,
-      health: 'inactive',
+      health: 'degraded',
       visibleInWorkbench: true,
+      lifecycle: {
+        connectionState: 'lazy',
+      },
+      actions: ['repair_permissions', 'disconnect', 'remove'],
       blockedReason: {
-        code: 'connector_disconnected',
+        code: 'connector_unverified',
         severity: 'warning',
       },
     });

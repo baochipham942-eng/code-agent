@@ -27,6 +27,8 @@ export function buildBrowserSessionIntentSnapshot(args: {
             ...(preview.url !== undefined ? { url: preview.url } : {}),
             ...(preview.frontmostApp !== undefined ? { frontmostApp: preview.frontmostApp } : {}),
             ...(preview.lastScreenshotAtMs !== undefined ? { lastScreenshotAtMs: preview.lastScreenshotAtMs } : {}),
+            ...(preview.surfaceMode !== undefined ? { surfaceMode: preview.surfaceMode } : {}),
+            ...(preview.traceId !== undefined ? { traceId: preview.traceId } : {}),
           },
         }
       : {}),

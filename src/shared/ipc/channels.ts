@@ -233,6 +233,7 @@ export const EVALUATION_CHANNELS = {
   // Phase 6.2 + minimal 6.3: review queue / failure follow-up sink
   REVIEW_QUEUE_LIST: 'evaluation:review-queue:list',
   REVIEW_QUEUE_ENQUEUE: 'evaluation:review-queue:enqueue',
+  REVIEW_QUEUE_UPDATE_FAILURE_ASSET: 'evaluation:review-queue:update-failure-asset',
 } as const;
 
 /**

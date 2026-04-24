@@ -14,6 +14,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
+import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
@@ -395,7 +396,6 @@ export const ChatView: React.FC = () => {
               hasOlderMessages={hasOlderMessages}
               isLoadingOlder={isLoadingOlder}
               onLoadOlder={loadOlderMessages}
-              plan={plan}
               searchMatches={searchMatches}
               activeMatchIndex={activeMatchIndex}
             />
@@ -444,6 +444,9 @@ export const ChatView: React.FC = () => {
 
         {/* Context inline strip - shows when > 50% */}
         <InlineStrip />
+
+        {/* Pinned todo progress bar — visible above the input */}
+        <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
 
         {/* Input */}
         <ChatInput

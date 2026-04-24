@@ -36,10 +36,57 @@ const CONNECTOR_STATUS_POLL_MS = 15_000;
 let connectorStatusWatchTimer: NodeJS.Timeout | null = null;
 let lastConnectorStatusSnapshot = '';
 
+function isNativeConnectorId(id: string | undefined): id is NativeConnectorId {
+  return Boolean(id && (NATIVE_CONNECTOR_IDS as readonly string[]).includes(id));
+}
+
+export function getEnabledNativeConnectorIdsAfterRetry(args: {
+  connectorId?: string;
+  enabledNative: string[];
+  registered: boolean;
+}): string[] | null {
+  if (!args.connectorId || args.registered || !isNativeConnectorId(args.connectorId)) {
+    return null;
+  }
+
+  if (args.enabledNative.includes(args.connectorId)) {
+    return [...args.enabledNative];
+  }
+
+  return [...args.enabledNative, args.connectorId];
+}
+
+export function getEnabledNativeConnectorIdsAfterDisconnect(args: {
+  connectorId?: string;
+  enabledNative: string[];
+}): string[] | null {
+  if (!isNativeConnectorId(args.connectorId)) {
+    return null;
+  }
+
+  return args.enabledNative.filter((id) => id !== args.connectorId);
+}
+
+export function getEnabledNativeConnectorIdsAfterPermissionRepair(args: {
+  connectorId?: string;
+  enabledNative: string[];
+}): string[] | null {
+  if (!isNativeConnectorId(args.connectorId)) {
+    return null;
+  }
+
+  if (args.enabledNative.includes(args.connectorId)) {
+    return [...args.enabledNative];
+  }
+
+  return [...args.enabledNative, args.connectorId];
+}
+
 export function normalizeConnectorStatuses(statuses: ConnectorStatusSummary[]): ConnectorStatusSummary[] {
   return [...statuses]
     .map((status) => ({
       ...status,
+      ...(status.actions ? { actions: [...status.actions].sort() } : {}),
       capabilities: [...status.capabilities].sort(),
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -57,7 +104,11 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       id: connector.id,
       label: connector.label,
       connected: status.connected,
+      readiness: status.readiness,
       detail: status.detail,
+      error: status.error,
+      checkedAt: status.checkedAt,
+      actions: status.actions,
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;
   }));
@@ -119,15 +170,139 @@ async function handleSetNativeEnabled(
   return handleListStatuses();
 }
 
-async function handleRetryConnector(connectorId: string | undefined): Promise<ConnectorStatusSummary[]> {
+async function handleRetryConnector(
+  getConfigService: () => ConfigService | null,
+  connectorId: string | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
   // 失效 broadcast 快照，强制下一次 poll 发事件；并立刻重新 listStatuses 回执
   lastConnectorStatusSnapshot = '';
   if (connectorId) {
     const connector = getConnectorRegistry().get(connectorId);
+    const enabledAfterRetry = getEnabledNativeConnectorIdsAfterRetry({
+      connectorId,
+      enabledNative: readEnabledNative(getConfigService),
+      registered: Boolean(connector),
+    });
+
+    if (enabledAfterRetry) {
+      await persistEnabledNative(getConfigService, enabledAfterRetry);
+      getConnectorRegistry().configure(enabledAfterRetry);
+      await broadcast();
+      return handleListStatuses();
+    }
+
     if (!connector) {
       throw new Error(`Unknown connector: ${connectorId}`);
     }
   }
+  return handleListStatuses();
+}
+
+async function handleProbeConnector(
+  connectorId: string | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
+  if (!connectorId) {
+    throw new Error('connectorId is required');
+  }
+
+  const connector = getConnectorRegistry().get(connectorId);
+  if (!connector) {
+    throw new Error(`Unknown connector: ${connectorId}`);
+  }
+
+  try {
+    await connector.execute('probe_access', {});
+  } finally {
+    lastConnectorStatusSnapshot = '';
+    await broadcast();
+  }
+
+  return handleListStatuses();
+}
+
+async function handleDisconnectConnector(
+  getConfigService: () => ConfigService | null,
+  connectorId: string | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
+  const next = getEnabledNativeConnectorIdsAfterDisconnect({
+    connectorId,
+    enabledNative: readEnabledNative(getConfigService),
+  });
+
+  if (!next) {
+    throw new Error(`Unknown native connector id: ${connectorId}`);
+  }
+
+  const connector = getConnectorRegistry().get(connectorId!);
+  if (connector) {
+    await connector.execute('disconnect', {});
+  }
+
+  await persistEnabledNative(getConfigService, next);
+  getConnectorRegistry().unregister(connectorId!);
+  lastConnectorStatusSnapshot = '';
+  await broadcast();
+  return handleListStatuses();
+}
+
+async function handleRemoveConnector(
+  getConfigService: () => ConfigService | null,
+  connectorId: string | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
+  const next = getEnabledNativeConnectorIdsAfterDisconnect({
+    connectorId,
+    enabledNative: readEnabledNative(getConfigService),
+  });
+
+  if (!next) {
+    throw new Error(`Unknown native connector id: ${connectorId}`);
+  }
+
+  const connector = getConnectorRegistry().get(connectorId!);
+  if (connector) {
+    await connector.execute('remove', {});
+  }
+
+  await persistEnabledNative(getConfigService, next);
+  getConnectorRegistry().unregister(connectorId!);
+  lastConnectorStatusSnapshot = '';
+  await broadcast();
+  return handleListStatuses();
+}
+
+async function handleRepairConnectorPermission(
+  getConfigService: () => ConfigService | null,
+  connectorId: string | undefined,
+  broadcast: () => Promise<void>,
+): Promise<ConnectorStatusSummary[]> {
+  const next = getEnabledNativeConnectorIdsAfterPermissionRepair({
+    connectorId,
+    enabledNative: readEnabledNative(getConfigService),
+  });
+
+  if (!next) {
+    throw new Error(`Unknown native connector id: ${connectorId}`);
+  }
+
+  await persistEnabledNative(getConfigService, next);
+  getConnectorRegistry().configure(next);
+
+  const connector = getConnectorRegistry().get(connectorId!);
+  if (!connector) {
+    throw new Error(`Unknown connector: ${connectorId}`);
+  }
+
+  try {
+    await connector.execute('repair_permissions', {});
+  } finally {
+    lastConnectorStatusSnapshot = '';
+    await broadcast();
+  }
+
   return handleListStatuses();
 }
 
@@ -219,7 +394,36 @@ export function registerConnectorHandlers(
           break;
         case 'retry':
           data = await handleRetryConnector(
+            getConfigService,
             (request.payload as { connectorId?: string } | undefined)?.connectorId,
+            broadcast,
+          );
+          break;
+        case 'probe':
+          data = await handleProbeConnector(
+            (request.payload as { connectorId?: string } | undefined)?.connectorId,
+            broadcast,
+          );
+          break;
+        case 'disconnect':
+          data = await handleDisconnectConnector(
+            getConfigService,
+            (request.payload as { connectorId?: string } | undefined)?.connectorId,
+            broadcast,
+          );
+          break;
+        case 'remove':
+          data = await handleRemoveConnector(
+            getConfigService,
+            (request.payload as { connectorId?: string } | undefined)?.connectorId,
+            broadcast,
+          );
+          break;
+        case 'repairPermission':
+          data = await handleRepairConnectorPermission(
+            getConfigService,
+            (request.payload as { connectorId?: string } | undefined)?.connectorId,
+            broadcast,
           );
           break;
         case 'openApp':

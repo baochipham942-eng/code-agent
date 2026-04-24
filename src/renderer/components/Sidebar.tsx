@@ -8,6 +8,7 @@ import { useSelectionStore } from '../stores/selectionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
+import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTaskStore } from '../stores/taskStore';
 import {
@@ -39,6 +40,12 @@ import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGroupin
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
+import {
+  createWorkbenchRecipeMergedContext,
+  getDefaultWorkbenchPresetName,
+  type WorkbenchPreset,
+  type WorkbenchRecipe,
+} from '@shared/contract/workbenchPreset';
 
 const logger = createLogger('Sidebar');
 
@@ -108,9 +115,18 @@ function canReuseSessionWorkbench(session: SessionWithMeta): boolean {
   return hasWorkspace || hasRouting || hasBrowserSession || hasCapabilities;
 }
 
+function formatPresetMenuLabel(name: string): string {
+  return name.length > 28 ? `${name.slice(0, 25)}...` : name;
+}
+
 export const Sidebar: React.FC = () => {
   const { clearPlanningState, setShowSettings, setShowEvalCenter, setWorkingDirectory } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
+  const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
+  const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
+  const savedWorkbenchPresets = useWorkbenchPresetStore((state) => state.presets);
+  const savedWorkbenchRecipes = useWorkbenchPresetStore((state) => state.recipes);
+  const saveWorkbenchPresetFromSession = useWorkbenchPresetStore((state) => state.savePresetFromSession);
   const {
     sessions,
     currentSessionId,
@@ -286,6 +302,55 @@ export const Sidebar: React.FC = () => {
     const isArchived = !!session.isArchived;
     const reusableWorkbenchDirectory = getReusableWorkbenchDirectory(session);
     const reusableWorkbench = canReuseSessionWorkbench(session);
+    const recentPresetItems: ContextMenuItem[] = savedWorkbenchPresets.slice(0, 3).map((preset: WorkbenchPreset) => ({
+      label: `应用 Preset: ${formatPresetMenuLabel(preset.name)}`,
+      icon: '🧩',
+      onClick: async () => {
+        try {
+          const presetDirectory = preset.context.workingDirectory?.trim();
+          if (presetDirectory) {
+            const response = await window.domainAPI?.invoke<string | null>(
+              IPC_DOMAINS.WORKSPACE,
+              'setCurrent',
+              { dir: presetDirectory },
+            );
+            if (response && !response.success) {
+              throw new Error(response.error?.message || 'Failed to sync preset directory');
+            }
+            setWorkingDirectory(response?.data || presetDirectory);
+          }
+
+          applyWorkbenchPreset(preset);
+        } catch (error) {
+          logger.error('Failed to apply workbench preset', error);
+        }
+      },
+    }));
+    const recentRecipeItems: ContextMenuItem[] = savedWorkbenchRecipes.slice(0, 3).map((recipe: WorkbenchRecipe) => ({
+      label: `应用 Recipe: ${formatPresetMenuLabel(recipe.name)}`,
+      icon: '🧪',
+      onClick: async () => {
+        try {
+          const recipeContext = createWorkbenchRecipeMergedContext(recipe);
+          const recipeDirectory = recipeContext.workingDirectory?.trim();
+          if (recipeDirectory) {
+            const response = await window.domainAPI?.invoke<string | null>(
+              IPC_DOMAINS.WORKSPACE,
+              'setCurrent',
+              { dir: recipeDirectory },
+            );
+            if (response && !response.success) {
+              throw new Error(response.error?.message || 'Failed to sync recipe directory');
+            }
+            setWorkingDirectory(response?.data || recipeDirectory);
+          }
+
+          applyWorkbenchRecipe(recipe);
+        } catch (error) {
+          logger.error('Failed to apply workbench recipe', error);
+        }
+      },
+    }));
 
     return [
       {
@@ -366,6 +431,27 @@ export const Sidebar: React.FC = () => {
         },
       },
       {
+        label: '保存为 Preset',
+        icon: '💾',
+        disabled: !reusableWorkbench,
+        onClick: () => {
+          const fallbackName = getDefaultWorkbenchPresetName(session);
+          const promptedName =
+            typeof window !== 'undefined' && typeof window.prompt === 'function'
+              ? window.prompt('Preset 名称', fallbackName)
+              : fallbackName;
+          if (promptedName === null) {
+            return;
+          }
+
+          saveWorkbenchPresetFromSession(session, {
+            name: promptedName.trim() || fallbackName,
+          });
+        },
+      },
+      ...recentPresetItems,
+      ...recentRecipeItems,
+      {
         label: '导出 Markdown',
         icon: '📝',
         onClick: async () => {
@@ -419,10 +505,15 @@ export const Sidebar: React.FC = () => {
     ];
   }, [
     applySessionWorkbenchPreset,
+    applyWorkbenchPreset,
+    applyWorkbenchRecipe,
     archiveSession,
     pinnedSessionIds,
+    savedWorkbenchPresets,
+    savedWorkbenchRecipes,
     setShowEvalCenter,
     setWorkingDirectory,
+    saveWorkbenchPresetFromSession,
     softDelete,
     togglePin,
     unarchiveSession,

@@ -19,6 +19,10 @@ import { useAppStore } from '../../../../../stores/appStore';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
 import { isPreviewable } from '../../../../../utils/previewable';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
+import {
+  formatBrowserComputerActionArguments,
+  formatBrowserComputerActionResultDetails,
+} from '../../../../../utils/browserComputerActionPreview';
 
 // ============================================================================
 // ANSI 转义码过滤 - 清理终端输出中的颜色和格式代码
@@ -67,6 +71,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
   const imageResult = extractImageResult(toolCall);
   const videoResult = extractVideoResult(toolCall);
   const generatedFileResult = extractGeneratedFile(toolCall);
+  const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
 
   const canPreviewCreated = isPreviewable(createdFilePath);
 
@@ -181,11 +186,13 @@ export function ToolDetails({ toolCall, compact }: Props) {
                   : 'text-red-300 border-red-500/20'
               }`}
             >
-              {result.error
-                ? stripAnsiCodes(result.error)
-                : typeof result.output === 'string'
-                  ? stripAnsiCodes(result.output)
-                  : JSON.stringify(result.output, null, 2)}
+              {safeBrowserComputerResult
+                ? stripAnsiCodes(safeBrowserComputerResult)
+                : result.error
+                  ? stripAnsiCodes(result.error)
+                  : typeof result.output === 'string'
+                    ? stripAnsiCodes(result.output)
+                    : JSON.stringify(result.output, null, 2)}
             </pre>
           )}
         </div>
@@ -202,6 +209,11 @@ function formatArgs(
   toolName: string,
   args: Record<string, unknown>
 ): string {
+  const browserComputerArgs = formatBrowserComputerActionArguments(toolName, args);
+  if (browserComputerArgs) {
+    return browserComputerArgs;
+  }
+
   switch (toolName) {
     case 'Read': {
       let filePath = (args.file_path as string) || '';

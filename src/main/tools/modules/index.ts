@@ -8,6 +8,8 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import type { ToolSchema } from '../../protocol/tools';
+import type { Tool } from '../types';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -76,6 +78,13 @@ import { academicSearchSchema } from './network/academicSearch.schema';
 
 // vision/
 import { visualEditSchema } from './vision/visualEdit.schema';
+import { browserActionTool } from '../vision/browserAction';
+import { browserNavigateTool } from '../vision/browserNavigate';
+import { BrowserTool } from '../vision/BrowserTool';
+import { ComputerTool } from '../vision/ComputerTool';
+import { computerUseTool } from '../vision/computerUse';
+import { guiAgentTool } from '../vision/guiAgent';
+import { screenshotTool } from '../vision/screenshot';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -86,6 +95,19 @@ import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
 import { enterPlanModeSchema } from './planning/enterPlanMode.schema';
 import { exitPlanModeSchema } from './planning/exitPlanMode.schema';
+
+function legacyVisionSchema(
+  tool: Pick<Tool, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
+  options: Omit<ToolSchema, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
+): ToolSchema {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    ...(tool.dynamicDescription ? { dynamicDescription: tool.dynamicDescription } : {}),
+    ...options,
+  };
+}
 
 export function registerMigratedTools(registry: ToolRegistry): void {
   // ── file/ batch 1 ─────────────────────────────────────────────────────
@@ -164,78 +186,57 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
 
   // ── batch 4: vision/ wrapper 模式（7 个，wrappers.ts 单文件聚合 module）─
-  // 注：register 要求 schema 立即提供（getSchemas 用），所以这里写完整 schema
+  // 注：register 要求 schema 立即提供（getSchemas 用），所以这里复用 legacy tool 的真实 schema。
   // loader 内 lazy 拉 wrappers.ts 拿对应 module
   registry.register(
-    {
-      name: 'Browser',
-      description: 'Browser facade — list pages, take screenshots, click, type, etc.',
-      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+    legacyVisionSchema(BrowserTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).browserModule,
   );
   registry.register(
-    {
-      name: 'Computer',
-      description: 'Computer use facade — screenshot, click, type, key, scroll on the desktop.',
-      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+    legacyVisionSchema(ComputerTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).computerModule,
   );
   registry.register(
-    {
-      name: 'browser_action',
-      description: 'Direct browser action sub-tool used by the Browser facade.',
-      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+    legacyVisionSchema(browserActionTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).browserActionModule,
   );
   registry.register(
-    {
-      name: 'browser_navigate',
-      description: 'Navigate the browser to a URL or back/forward in history.',
-      inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: [] },
+    legacyVisionSchema(browserNavigateTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).browserNavigateModule,
   );
   registry.register(
-    {
-      name: 'computer_use',
-      description: 'Direct computer use sub-tool used by the Computer facade.',
-      inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+    legacyVisionSchema(computerUseTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).computerUseModule,
   );
   registry.register(
-    {
-      name: 'screenshot',
-      description: 'Take a screenshot of the desktop or a specific window/region.',
-      inputSchema: { type: 'object', properties: {}, required: [] },
+    legacyVisionSchema(screenshotTool, {
       category: 'vision',
       permissionLevel: 'read',
       readOnly: true,
       allowInPlanMode: true,
-    },
+    }),
     async () => (await import('./vision/wrappers')).screenshotModule,
   );
   registry.register(
-    {
-      name: 'gui_agent',
-      description: 'Run a GUI automation agent task with high-level instructions.',
-      inputSchema: { type: 'object', properties: { task: { type: 'string' } }, required: ['task'] },
+    legacyVisionSchema(guiAgentTool, {
       category: 'vision',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./vision/wrappers')).guiAgentModule,
   );
 

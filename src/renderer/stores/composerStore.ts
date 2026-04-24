@@ -4,32 +4,16 @@ import type {
   ConversationEnvelopeContext,
   ConversationRoutingMode,
 } from '@shared/contract/conversationEnvelope';
-import type { Session } from '@shared/contract/session';
-
-type SessionWorkbenchPresetSource = Pick<
-  Session,
-  'workingDirectory' | 'workbenchSnapshot' | 'workbenchProvenance'
->;
-
-function dedupeIds(ids?: string[]): string[] {
-  return Array.from(new Set((ids ?? []).filter(Boolean)));
-}
-
-function resolvePresetWorkingDirectory(source: SessionWorkbenchPresetSource): string | null {
-  const candidates = [
-    source.workbenchProvenance?.workingDirectory,
-    source.workingDirectory,
-  ];
-
-  for (const candidate of candidates) {
-    const trimmed = candidate?.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  return null;
-}
+import {
+  createWorkbenchRecipeMergedContext,
+  createWorkbenchPresetContextFromSession,
+  dedupeWorkbenchIds,
+  normalizeWorkbenchPresetContext,
+  type WorkbenchPreset,
+  type WorkbenchPresetContext,
+  type WorkbenchPresetSessionSource,
+  type WorkbenchRecipe,
+} from '@shared/contract/workbenchPreset';
 
 interface ComposerState {
   workingDirectory: string | null;
@@ -41,7 +25,9 @@ interface ComposerState {
   selectedMcpServerIds: string[];
   hydratedSessionId: string | null;
   hydrateFromSession: (sessionId: string | null, workingDirectory: string | null) => void;
-  applySessionWorkbenchPreset: (source: SessionWorkbenchPresetSource) => void;
+  applySessionWorkbenchPreset: (source: WorkbenchPresetSessionSource) => void;
+  applyWorkbenchPreset: (preset: WorkbenchPreset | WorkbenchPresetContext) => void;
+  applyWorkbenchRecipe: (recipe: WorkbenchRecipe) => void;
   setWorkingDirectory: (dir: string | null) => void;
   setRoutingMode: (mode: ConversationRoutingMode) => void;
   setTargetAgentIds: (ids: string[]) => void;
@@ -63,6 +49,27 @@ const initialComposerState = {
   selectedMcpServerIds: [],
   hydratedSessionId: null,
 };
+
+function getWorkbenchPresetContext(
+  preset: WorkbenchPreset | WorkbenchPresetContext,
+): WorkbenchPresetContext {
+  return normalizeWorkbenchPresetContext('context' in preset ? preset.context : preset);
+}
+
+function applyWorkbenchPresetContext(
+  state: ComposerState,
+  context: WorkbenchPresetContext,
+): Partial<ComposerState> {
+  return {
+    workingDirectory: context.workingDirectory ?? state.workingDirectory,
+    routingMode: context.routingMode,
+    targetAgentIds: context.routingMode === 'direct' ? context.targetAgentIds : [],
+    browserSessionMode: context.browserSessionMode,
+    selectedSkillIds: context.selectedSkillIds,
+    selectedConnectorIds: context.selectedConnectorIds,
+    selectedMcpServerIds: context.selectedMcpServerIds,
+  };
+}
 
 export const useComposerStore = create<ComposerState>((set, get) => ({
   ...initialComposerState,
@@ -94,33 +101,28 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     }),
 
   applySessionWorkbenchPreset: (source) =>
-    set((state) => {
-      const targetAgentIds = dedupeIds(source.workbenchProvenance?.targetAgentIds);
-      const requestedRoutingMode =
-        source.workbenchProvenance?.routingMode ?? source.workbenchSnapshot?.routingMode ?? 'auto';
-      const routingMode =
-        requestedRoutingMode === 'direct' && targetAgentIds.length === 0
-          ? 'auto'
-          : requestedRoutingMode;
-      const nextWorkingDirectory = resolvePresetWorkingDirectory(source);
+    set((state) => ({
+      ...state,
+      ...applyWorkbenchPresetContext(
+        state,
+        createWorkbenchPresetContextFromSession(source),
+      ),
+    })),
 
-      return {
-        ...state,
-        workingDirectory: nextWorkingDirectory ?? state.workingDirectory,
-        routingMode,
-        targetAgentIds: routingMode === 'direct' ? targetAgentIds : [],
-        browserSessionMode: source.workbenchProvenance?.executionIntent?.browserSessionMode ?? 'none',
-        selectedSkillIds: dedupeIds(
-          source.workbenchProvenance?.selectedSkillIds ?? source.workbenchSnapshot?.skillIds,
-        ),
-        selectedConnectorIds: dedupeIds(
-          source.workbenchProvenance?.selectedConnectorIds ?? source.workbenchSnapshot?.connectorIds,
-        ),
-        selectedMcpServerIds: dedupeIds(
-          source.workbenchProvenance?.selectedMcpServerIds ?? source.workbenchSnapshot?.mcpServerIds,
-        ),
-      };
-    }),
+  applyWorkbenchPreset: (preset) =>
+    set((state) => ({
+      ...state,
+      ...applyWorkbenchPresetContext(state, getWorkbenchPresetContext(preset)),
+    })),
+
+  applyWorkbenchRecipe: (recipe) =>
+    set((state) => ({
+      ...state,
+      ...applyWorkbenchPresetContext(
+        state,
+        createWorkbenchRecipeMergedContext(recipe),
+      ),
+    })),
 
   setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
 
@@ -132,24 +134,24 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
 
   setTargetAgentIds: (ids) =>
     set((state) => ({
-      targetAgentIds: state.routingMode === 'direct' ? Array.from(new Set(ids)) : [],
+      targetAgentIds: state.routingMode === 'direct' ? dedupeWorkbenchIds(ids) : [],
     })),
 
   setBrowserSessionMode: (mode) => set({ browserSessionMode: mode }),
 
   setSelectedSkillIds: (ids) =>
     set({
-      selectedSkillIds: Array.from(new Set(ids)),
+      selectedSkillIds: dedupeWorkbenchIds(ids),
     }),
 
   setSelectedConnectorIds: (ids) =>
     set({
-      selectedConnectorIds: Array.from(new Set(ids)),
+      selectedConnectorIds: dedupeWorkbenchIds(ids),
     }),
 
   setSelectedMcpServerIds: (ids) =>
     set({
-      selectedMcpServerIds: Array.from(new Set(ids)),
+      selectedMcpServerIds: dedupeWorkbenchIds(ids),
     }),
 
   resetForSuccessfulSend: () =>

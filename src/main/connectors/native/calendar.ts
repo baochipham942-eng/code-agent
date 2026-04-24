@@ -22,8 +22,71 @@ interface CalendarEventItem {
   url?: string;
 }
 
+type NativeReadiness = 'unchecked' | 'ready' | 'failed' | 'unavailable';
+
+function initialCalendarReadiness(): NativeReadiness {
+  return process.platform === 'darwin' ? 'unchecked' : 'unavailable';
+}
+
+let calendarReadiness: NativeReadiness = initialCalendarReadiness();
+let calendarProbeError: string | undefined;
+let calendarProbeCheckedAt: number | undefined;
+
+export function resetCalendarConnectorReadiness(): void {
+  calendarReadiness = initialCalendarReadiness();
+  calendarProbeError = undefined;
+  calendarProbeCheckedAt = undefined;
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
+  if (process.platform !== 'darwin') {
+    return {
+      connected: false,
+      readiness: 'unavailable',
+      detail: 'Calendar connector 仅在 macOS 可用。',
+      actions: [],
+      capabilities,
+    };
+  }
+
+  if (calendarReadiness === 'ready') {
+    return {
+      connected: true,
+      readiness: 'ready',
+      checkedAt: calendarProbeCheckedAt,
+      detail: 'Calendar connector 已通过本地授权/可用性检查。',
+      actions: ['disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  if (calendarReadiness === 'failed') {
+    return {
+      connected: false,
+      readiness: 'failed',
+      error: calendarProbeError,
+      checkedAt: calendarProbeCheckedAt,
+      detail: `Calendar 授权/可用性检查失败：${calendarProbeError || '未知错误'}`,
+      actions: ['repair_permissions', 'disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  return {
+    connected: false,
+    readiness: 'unchecked',
+    detail: 'Calendar connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Calendar 或触发系统授权。',
+    actions: ['repair_permissions', 'disconnect', 'remove'],
+    capabilities,
+  };
 }
 
 async function listCalendars(): Promise<string[]> {
@@ -42,6 +105,28 @@ async function listCalendars(): Promise<string[]> {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+async function probeCalendarAccess(): Promise<string[]> {
+  if (process.platform !== 'darwin') {
+    calendarReadiness = 'unavailable';
+    calendarProbeCheckedAt = Date.now();
+    calendarProbeError = 'Calendar connector 仅在 macOS 可用。';
+    throw new Error(calendarProbeError);
+  }
+
+  try {
+    const calendars = await listCalendars();
+    calendarReadiness = 'ready';
+    calendarProbeCheckedAt = Date.now();
+    calendarProbeError = undefined;
+    return calendars;
+  } catch (error) {
+    calendarReadiness = 'failed';
+    calendarProbeCheckedAt = Date.now();
+    calendarProbeError = errorMessage(error);
+    throw error;
+  }
 }
 
 async function listEvents(payload: Record<string, unknown>): Promise<CalendarEventItem[]> {
@@ -299,22 +384,42 @@ export const calendarConnector: Connector = {
   id: 'calendar',
   label: 'Calendar',
   capabilities: ['get_status', 'list_calendars', 'list_events', 'create_event', 'update_event', 'delete_event'],
+  getCachedStatus(): ConnectorStatus {
+    return buildCalendarStatus(this.capabilities);
+  },
   async getStatus(): Promise<ConnectorStatus> {
-    // Keep startup status checks side-effect free. Enumerating calendars via
-    // AppleScript will auto-launch Calendar, so the real probe moves to first
-    // use.
-    return {
-      connected: process.platform === 'darwin',
-      detail: process.platform === 'darwin'
-        ? '按需访问本地 Calendar；为避免启动时拉起 Calendar，日历探测改为首轮使用时执行。'
-        : 'Calendar connector 仅在 macOS 可用。',
-      capabilities: this.capabilities,
-    };
+    return buildCalendarStatus(this.capabilities);
   },
   async execute(action: string, payload: Record<string, unknown>): Promise<ConnectorExecutionResult> {
     switch (action) {
       case 'get_status':
         return { data: await this.getStatus() };
+      case 'probe_access': {
+        const calendars = await probeCalendarAccess();
+        return {
+          data: await this.getStatus(),
+          summary: calendars.length > 0
+            ? `Calendar 授权/可用性检查通过，可访问 ${calendars.length} 个日历`
+            : 'Calendar 授权/可用性检查通过，但没有找到可访问的日历',
+        };
+      }
+      case 'repair_permissions': {
+        resetCalendarConnectorReadiness();
+        const calendars = await probeCalendarAccess();
+        return {
+          data: await this.getStatus(),
+          summary: calendars.length > 0
+            ? `Calendar 权限修复检查通过，可访问 ${calendars.length} 个日历`
+            : 'Calendar 权限修复检查通过，但没有找到可访问的日历',
+        };
+      }
+      case 'disconnect':
+      case 'remove':
+        resetCalendarConnectorReadiness();
+        return {
+          data: await this.getStatus(),
+          summary: action === 'disconnect' ? 'Calendar connector 已断开。' : 'Calendar connector 已移除。',
+        };
       case 'list_calendars': {
         const calendars = await listCalendars();
         return {

@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { ParsedSkill, SkillSource } from '@shared/contract/agentSkill';
 import type { ToolCall } from '@shared/contract/tool';
-import type { ConnectorStatusSummary } from '@shared/ipc';
+import type { ConnectorLifecycleAction, ConnectorStatusSummary } from '@shared/ipc';
 import {
   extractWorkbenchReferenceFromToolCall,
 } from '@shared/contract/workbenchTools';
@@ -30,7 +30,11 @@ export interface WorkbenchConnectorCapability {
   label: string;
   selected: boolean;
   connected: boolean;
+  readiness?: ConnectorStatusSummary['readiness'];
   detail?: string;
+  error?: string;
+  checkedAt?: number;
+  actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
 
@@ -167,7 +171,11 @@ export function buildWorkbenchCapabilities(args: {
       label: connector?.label || connectorId,
       selected: selectedConnectorIds.includes(connectorId),
       connected: connector?.connected ?? false,
+      readiness: connector?.readiness,
       detail: connector?.detail,
+      error: connector?.error,
+      checkedAt: connector?.checkedAt,
+      actions: connector?.actions,
       capabilities: connector?.capabilities || [],
     };
   });
@@ -280,7 +288,10 @@ export function buildWorkbenchReferences(args: {
       label: connector?.label || connectorId,
       selected: connector?.selected ?? false,
       connected: connector?.connected ?? false,
+      readiness: connector?.readiness,
       detail: connector?.detail,
+      error: connector?.error,
+      checkedAt: connector?.checkedAt,
       capabilities: connector?.capabilities || [],
       invoked: true,
     };

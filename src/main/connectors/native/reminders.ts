@@ -20,8 +20,71 @@ interface ReminderItem {
   remindAtMs?: number | null;
 }
 
+type NativeReadiness = 'unchecked' | 'ready' | 'failed' | 'unavailable';
+
+function initialRemindersReadiness(): NativeReadiness {
+  return process.platform === 'darwin' ? 'unchecked' : 'unavailable';
+}
+
+let remindersReadiness: NativeReadiness = initialRemindersReadiness();
+let remindersProbeError: string | undefined;
+let remindersProbeCheckedAt: number | undefined;
+
+export function resetRemindersConnectorReadiness(): void {
+  remindersReadiness = initialRemindersReadiness();
+  remindersProbeError = undefined;
+  remindersProbeCheckedAt = undefined;
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
+  if (process.platform !== 'darwin') {
+    return {
+      connected: false,
+      readiness: 'unavailable',
+      detail: 'Reminders connector 仅在 macOS 可用。',
+      actions: [],
+      capabilities,
+    };
+  }
+
+  if (remindersReadiness === 'ready') {
+    return {
+      connected: true,
+      readiness: 'ready',
+      checkedAt: remindersProbeCheckedAt,
+      detail: 'Reminders connector 已通过本地授权/可用性检查。',
+      actions: ['disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  if (remindersReadiness === 'failed') {
+    return {
+      connected: false,
+      readiness: 'failed',
+      error: remindersProbeError,
+      checkedAt: remindersProbeCheckedAt,
+      detail: `Reminders 授权/可用性检查失败：${remindersProbeError || '未知错误'}`,
+      actions: ['repair_permissions', 'disconnect', 'remove'],
+      capabilities,
+    };
+  }
+
+  return {
+    connected: false,
+    readiness: 'unchecked',
+    detail: 'Reminders connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Reminders 或触发系统授权。',
+    actions: ['repair_permissions', 'disconnect', 'remove'],
+    capabilities,
+  };
 }
 
 async function listReminderLists(): Promise<string[]> {
@@ -40,6 +103,28 @@ async function listReminderLists(): Promise<string[]> {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+async function probeRemindersAccess(): Promise<string[]> {
+  if (process.platform !== 'darwin') {
+    remindersReadiness = 'unavailable';
+    remindersProbeCheckedAt = Date.now();
+    remindersProbeError = 'Reminders connector 仅在 macOS 可用。';
+    throw new Error(remindersProbeError);
+  }
+
+  try {
+    const lists = await listReminderLists();
+    remindersReadiness = 'ready';
+    remindersProbeCheckedAt = Date.now();
+    remindersProbeError = undefined;
+    return lists;
+  } catch (error) {
+    remindersReadiness = 'failed';
+    remindersProbeCheckedAt = Date.now();
+    remindersProbeError = errorMessage(error);
+    throw error;
+  }
 }
 
 async function listReminders(payload: Record<string, unknown>): Promise<ReminderItem[]> {
@@ -265,22 +350,42 @@ export const remindersConnector: Connector = {
   id: 'reminders',
   label: 'Reminders',
   capabilities: ['get_status', 'list_lists', 'list_reminders', 'create_reminder', 'update_reminder', 'delete_reminder'],
+  getCachedStatus(): ConnectorStatus {
+    return buildRemindersStatus(this.capabilities);
+  },
   async getStatus(): Promise<ConnectorStatus> {
-    // Keep startup status checks side-effect free. Enumerating reminder lists
-    // via AppleScript will auto-launch Reminders, so the real probe moves to
-    // first use.
-    return {
-      connected: process.platform === 'darwin',
-      detail: process.platform === 'darwin'
-        ? '按需访问本地 Reminders；为避免启动时拉起 Reminders，列表探测改为首轮使用时执行。'
-        : 'Reminders connector 仅在 macOS 可用。',
-      capabilities: this.capabilities,
-    };
+    return buildRemindersStatus(this.capabilities);
   },
   async execute(action: string, payload: Record<string, unknown>): Promise<ConnectorExecutionResult> {
     switch (action) {
       case 'get_status':
         return { data: await this.getStatus() };
+      case 'probe_access': {
+        const lists = await probeRemindersAccess();
+        return {
+          data: await this.getStatus(),
+          summary: lists.length > 0
+            ? `Reminders 授权/可用性检查通过，可访问 ${lists.length} 个列表`
+            : 'Reminders 授权/可用性检查通过，但没有找到可访问的提醒列表',
+        };
+      }
+      case 'repair_permissions': {
+        resetRemindersConnectorReadiness();
+        const lists = await probeRemindersAccess();
+        return {
+          data: await this.getStatus(),
+          summary: lists.length > 0
+            ? `Reminders 权限修复检查通过，可访问 ${lists.length} 个列表`
+            : 'Reminders 权限修复检查通过，但没有找到可访问的提醒列表',
+        };
+      }
+      case 'disconnect':
+      case 'remove':
+        resetRemindersConnectorReadiness();
+        return {
+          data: await this.getStatus(),
+          summary: action === 'disconnect' ? 'Reminders connector 已断开。' : 'Reminders connector 已移除。',
+        };
       case 'list_lists': {
         const lists = await listReminderLists();
         return {

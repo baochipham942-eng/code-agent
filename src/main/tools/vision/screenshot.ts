@@ -9,116 +9,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfigService } from '../../services';
-import { createLogger } from '../../services/infra/logger';
-import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
 
 const execAsync = promisify(exec);
-const logger = createLogger('Screenshot');
-
-// 视觉分析配置
-const VISION_CONFIG = {
-  ZHIPU_MODEL: ZHIPU_VISION_MODEL, // flash 不支持 base64，必须用 plus
-  ZHIPU_API_URL: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
-  TIMEOUT_MS: 30000,
-};
-
-/**
- * 带超时的 fetch
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * 使用智谱视觉模型分析截图
- */
-async function analyzeWithVision(
-  imagePath: string,
-  prompt: string
-): Promise<string | null> {
-  const configService = getConfigService();
-  const zhipuApiKey = configService.getApiKey('zhipu');
-
-  if (!zhipuApiKey) {
-    logger.info('[截图分析] 未配置智谱 API Key，跳过视觉分析');
-    return null;
-  }
-
-  try {
-    // 读取图片并转 base64
-    const imageData = fs.readFileSync(imagePath);
-    const base64Image = imageData.toString('base64');
-
-    const requestBody = {
-      model: VISION_CONFIG.ZHIPU_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/png;base64,${base64Image}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 2048,
-    };
-
-    logger.info('[截图分析] 使用智谱视觉模型 GLM-4.6V-Flash');
-
-    const response = await fetchWithTimeout(
-      VISION_CONFIG.ZHIPU_API_URL,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${zhipuApiKey}`,
-        },
-        body: JSON.stringify(requestBody),
-      },
-      VISION_CONFIG.TIMEOUT_MS
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.warn('[截图分析] API 调用失败', { status: response.status, error: errorText });
-      return null;
-    }
-
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
-
-    if (content) {
-      logger.info('[截图分析] 分析完成', { contentLength: content.length });
-    }
-
-    return content || null;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('[截图分析] 分析失败', { error: message });
-    return null;
-  }
-}
 
 export const screenshotTool: Tool = {
   name: 'screenshot',
@@ -283,7 +176,11 @@ Returns the path to the saved screenshot file and optional AI analysis.`,
           message: '🔍 正在分析截图内容...',
         });
 
-        analysis = await analyzeWithVision(outputPath, analysisPrompt);
+        analysis = await analyzeImageWithVision({
+          imagePath: outputPath,
+          prompt: analysisPrompt,
+          source: 'screenshot',
+        });
         if (analysis) {
           output += `\n\n📝 AI 分析结果:\n${analysis}`;
         }

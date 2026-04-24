@@ -1,7 +1,7 @@
 # Chat-Native Workbench 下一阶段完整路线图
 
 日期：2026-04-17  
-状态：已按 2026-04-18 实际状态对齐  
+状态：已按 2026-04-24 productization 实际状态对齐
 关联设计：[2026-04-16-chat-native-agent-workbench-plan.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-chat-native-agent-workbench-plan.md)  
 关联实施：[2026-04-16-phase1-chat-native-workbench-implementation-spec.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-phase1-chat-native-workbench-implementation-spec.md)  
 关联分析：[2026-04-16-accio-vs-code-agent-core-differences.md](/Users/linchen/Downloads/ai/code-agent/docs/analysis/2026-04-16-accio-vs-code-agent-core-differences.md)  
@@ -17,10 +17,10 @@
 
 - `Phase 1` 已交付并关账
 - `Phase 2` 已交付并关账
-- `Phase 3` 已落基础骨架，但 `connector lifecycle` 还没有完成产品化闭环，不能关账
+- `Phase 3` 已落基础骨架和 native connector 最小产品化管理面，但非 native connector 与统一管理面还没完成，不能整体关账
 - `Phase 4` 已有最小显式 browser / desktop session 心智
 - `Phase 5` 已有最小 session-native workspace 闭环
-- `Phase 6` 已按 `trace identity -> review queue -> failure_followup sink -> session-backed reuse` 的最小闭环关账
+- `Phase 6` 已按 `trace identity -> review queue -> failure_followup asset draft -> session-backed reuse / local presets` 的最小闭环关账
 
 一句话判断：
 
@@ -38,8 +38,8 @@
 - `useWorkbenchCapabilities / useWorkbenchInsights`：共享能力模型、引用模型、历史模型、视图模型已成型
 - `WorkbenchPrimitives`：聊天栏、trace、TaskPanel 的基础 workbench 展示原件已开始共享
 - `Unified Trace Identity + Review Queue`：Replay / Eval Center / session list 现在共享稳定 trace identity，而不是各找各的最近文件
-- `failure_followup sink`：Replay 里的 failure attribution 已能回流到 Review Queue
-- `session-backed reuse`：历史 session 的 workbench 配置已能回灌到当前 session
+- `failure_followup sink`：Replay 里的 failure attribution 已能回流到 Review Queue，并生成本地 failure asset draft
+- `session-backed reuse / local presets`：历史 session 的 workbench 配置已能回灌到当前 session，命名 preset 与 recipe store 已有本地资产层
 
 这意味着：
 
@@ -49,13 +49,13 @@
 
 ### P0：还没关账的 backlog
 
-1. `Connector lifecycle` 的真实产品化闭环
-2. `Failure-to-Capability` 的多分流回流
-3. 命名 `presets / recipes` 资产库
+1. `Connector lifecycle` 的非 native / 统一管理面
+2. `Failure-to-Capability` 的 triage、批处理与 asset apply/export
+3. 命名 `presets / recipes` 的 UI、搜索、分享、版本化与 recipe 执行编排
 
 ### P1：做得更完整，而不是补第一版
 
-4. 更完整的 browser / desktop readiness gate
+4. browser / desktop readiness 与 artifact consistency 补强
 5. 更强的 session search / background / long-session robustness
 
 ### P2：后续增强
@@ -187,31 +187,61 @@
 
 ### 当前实际状态
 
-已落基础骨架，但不能关账。
+已落 native connector 最小产品化闭环和设置页 lifecycle 管理入口；非 native connector 和更完整的统一管理面仍是 backlog。
 
 当前已落：
 
 - `capability registry` / lifecycle 字段 / unified sheet 已有
 - `skill mount` 与 `MCP retry` 有最短路径 quick action
 - selected capability 会展示真实 blocked reason / hint
+- `NativeConnectorsSection` 已能展示 native connector status/readiness/actions，并直接触发检查、修复权限、断开、移除
 
-当前未落：
+当前仍未落：
 
-- connector 没有一键 `connect / retry` 闭环
-- 没有统一的“发现 -> 安装 / 连接 / 挂载 -> 修复 -> 授权 -> 移除 / 断开”产品路径
+- 没有跨 skill / connector / MCP 的统一“发现 -> 安装 / 连接 / 挂载 -> 修复 -> 授权 -> 移除 / 断开”产品路径
 - 还不能把 Phase 3 写成“任一 capability 都能从不可用走到可用于当前 turn”
 
 当前产品口径必须明确：
 
-`connector lifecycle` 还没有完成产品化；blocked connector 只展示真实 blocked reason / hint，不再暗示有假 quick action 闭环。
+`connector lifecycle` 已覆盖 native connector 的启用、显式检查、权限修复、断开、移除、设置页 lifecycle 入口和 toolScope gate；还没有覆盖非 native connector，也没有做完整统一连接器管理面。
+
+### 2026-04-24 connector lifecycle 最小产品化补齐
+
+这轮只补 native connector 的 lifecycle 主路径，不重做 AbilityMenu 或 Settings IA。
+
+已落：
+
+- `connector.retry` 对已知 native connector 不再停在 `Unknown connector`，而是写入 `connectors.enabledNative`、重新 configure registry，并广播最新 status
+- enabled native connector 默认进入 `待检查` / `connector_unverified`，不再因为 macOS 平台存在就直接显示 connected
+- `检查/授权` 会触发真实 AppleScript probe，成功后标记 ready，失败后标记 `connector_auth_failed` 并保留错误信息
+- connector quick actions 拆成 `启用/重试`、`检查/授权`、`打开本地应用`、`打开连接器设置`
+- native connector status 增加 `repair_permissions` / `disconnect` / `remove` lifecycle actions
+- IPC 增加 `repairPermission` / `disconnect` / `remove`，会同步 `connectors.enabledNative`、registry 和状态 broadcast
+- 断开/移除后会从当前 composer 选择里移掉 connector，避免 stale selection 继续进入下一轮
+- `打开连接器设置` 复用现有 MCP settings tab 里的 `NativeConnectorsSection`
+- `NativeConnectorsSection` 已从 `listNativeInventory + listStatuses` 合并 readiness/actions，并提供 `检查 / 修复权限 / 断开 / 移除` 按钮
+- 单测覆盖 retry enable helper、disconnect/remove 设置更新、connector quick action routing、sheet 文案和 registry blocked 映射
+
+仍不宣称完成：
+
+- 不在启动时自动拉起 Mail / Calendar / Reminders
+- probe 状态是当前运行期的最小 UI 状态，不是完整长期授权资产
+- 非 native connector、完整权限修复向导、跨 connector 的统一管理面仍是后续 backlog
 
 证据：
 
 - `src/renderer/utils/workbenchCapabilityRegistry.ts`
 - `src/renderer/utils/workbenchQuickActions.ts`
-- `src/renderer/components/workbench/WorkbenchCapabilitySheetLite.tsx`
-- `tests/renderer/utils/workbenchCapabilityRegistry.test.ts`
+- `src/main/ipc/connector.ipc.ts`
+- `src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner.ts`
+- `src/renderer/components/features/settings/sections/NativeConnectorsSection.tsx`
+- `tests/unit/ipc/connector.ipc.test.ts`
+- `tests/renderer/components/nativeConnectorsSection.test.ts`
 - `tests/renderer/utils/workbenchQuickActions.test.ts`
+- `src/renderer/components/workbench/WorkbenchCapabilitySheetLite.tsx`
+- `tests/unit/connectors/nativeConnectorStatus.test.ts`
+- `tests/renderer/utils/workbenchCapabilityRegistry.test.ts`
+- `tests/renderer/components/workbenchCapabilitySheetLite.test.ts`
 
 ### 目标
 
@@ -319,13 +349,16 @@
 
 ### 当前实际状态
 
-最小闭环已落，但 richer desktop readiness backlog 仍在。
+最小闭环已落，但 browser / desktop readiness 与 artifact consistency backlog 仍在。
 
-当前最小落点是：
+已补：
 
 - `browserSessionMode / executionIntent` 已进入 `ConversationEnvelope` 与 workbench metadata
 - 聊天里的 workbench badge / trace snapshot 已能区分 `managed / desktop` 模式
 - browser context blocked 时，trace 已能展示 blocked detail / hint / preview
+- `browser_action` 已有 managed browser trace、DOM/a11y snapshot、viewport 和 workbench state 读回能力
+- `computer_use` 已有只读 `get_state / observe`，能在行动前读 Computer Surface readiness 和 frontmost app/window
+- `npm run acceptance:browser-computer` 能跑真实 headless managed browser + 只读 Computer Surface smoke
 
 这意味着：
 
@@ -337,10 +370,71 @@
 - `src/shared/contract/turnTimeline.ts`
 - `tests/renderer/components/traceNodeRenderer.launchRequest.test.ts`
 - `tests/renderer/hooks/useTurnExecutionClarity.test.ts`
+- `tests/unit/tools/vision/browserWorkbenchGating.test.ts`
+- `tests/unit/tools/vision/computerSurfaceGating.test.ts`
+- `scripts/acceptance/browser-computer-smoke.ts`
 
-### 目标
+### 2026-04-24 browser / desktop readiness backlog 已补项
 
-把已有的 browser / computer-use / native desktop 能力从“工具存在”升级为“产品可理解入口”。
+这部分归入 Phase 4 最小闭环后的补强，不新开 Browser Use / Computer Use 的后续 phase。当前补的是发送前 readiness、执行中 trace 与工具结果展示的一致性。
+
+已补：
+
+- `AbilityMenu` 在发送前展示当前 `Managed browser / Computer surface` 的状态、mode、tab/window、trace 和 blocked 状态
+- Desktop 模式下能把 `screen capture / accessibility / browser context / collector / Computer Surface` readiness 压到同一个 popover 里
+- `AbilityMenu` 直接接入 `repairActions`，可以从同一个入口启动托管浏览器、打开权限设置或启动 desktop collector
+- `workbenchPresentation` 新增 browser/computer presentation helper，避免 UI 直接拼底层 state
+- `useWorkbenchBrowserSession` 的 preview 依赖覆盖 `lastTrace / surface mode`，trace 更新能反映到发送前预览
+- `ToolCallDisplay` 对 `browser_action / computer_use` 展示 action preview，能看到动作摘要、目标、风险标签、mode 和 trace id
+- trace node / grouped tool step 重建 `ToolCall` 时保留 result metadata，避免 `workbenchTrace` 在渲染层丢失
+- grouped tool step 的折叠行已能显示 `Browser click ...` / `Computer type ...` 这类 action + target 摘要
+- browser / desktop 输入类 action 不在 action preview、折叠行、collapsed result summary 或失败自动展开详情里展示原始输入文本，只展示字符数或安全目标
+- `npm run acceptance:browser-computer-workflow` 能跑真实托管浏览器 workflow：DOM observe -> safe click -> DOM/readback -> trace 检查
+
+证据：
+
+- `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx`
+- `src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx`
+- `src/renderer/components/features/chat/ToolStepGroup.tsx`
+- `src/renderer/utils/browserComputerActionPreview.ts`
+- `src/renderer/utils/toolStepGrouping.ts`
+- `src/renderer/utils/workbenchPresentation.ts`
+- `tests/renderer/components/browserComputerActionPreview.rendering.test.ts`
+- `tests/renderer/utils/browserComputerActionPreview.test.ts`
+- `tests/renderer/utils/toolStepGrouping.browserComputer.test.ts`
+- `tests/renderer/utils/workbenchPresentation.browser.test.ts`
+- `scripts/acceptance/browser-computer-workflow-smoke.ts`
+
+### 2026-04-24 artifact consistency / acceptance backlog 已补项
+
+这部分只补可验收性和桌面 readiness 细节，不扩 runtime 执行模型，也不把 Browser Use / Computer Use 写回待开发主项。
+
+已补：
+
+- `npm run acceptance:browser-computer-ui` 用系统 Chrome headless + CDP 打开真实 renderer 组件 markup
+- UI smoke 覆盖 `ToolCallDisplay` action preview、失败自动展开详情、`ToolStepGroup` grouped metadata 保留
+- UI smoke 同时检查 visible text 和 raw HTML，确保输入类 payload 不从真实 DOM 泄露
+- Desktop readiness 将权限的 `未探测 / 未确认` 与 `未授权` 分开，避免在未主动 probe macOS 权限时误报 denied
+- repair action 文案在未知状态下显示 `检查/授权`，只在明确 denied 时显示 `授权`
+- Computer Surface 已补 macOS `background_ax` 最小后台面：`get_ax_elements` 先读目标 app 的 Accessibility 元素并返回 `axPath`，`targetApp + axPath` 或 `targetApp + role/name/selector` 再走后台 Accessibility；坐标类动作仍明确落回当前前台 app/window 兜底
+- `acceptance:browser-computer-background-ax` 作为显式 opt-in smoke，用临时原生 Cocoa target 验证 `targetApp + axPath` 的后台 `type/click` 能真实改变目标状态；默认完整 suite 不执行这段桌面动作
+- `AbilityMenu` 的 desktop readiness popover 有 SSR 回归，确认 `未探测` 与 `未授权` 在真实渲染文本和状态色上分开
+- acceptance 文档把 base smoke、workflow smoke、UI smoke 拆成可重复验收清单
+- `npm run acceptance:browser-computer-all` 顺序跑完整 browser/computer acceptance suite，避免只跑单段 smoke 造成假闭环
+
+证据：
+
+- `scripts/acceptance/browser-computer-ui-smoke.tsx`
+- `scripts/acceptance/browser-computer-suite.ts`
+- `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx`
+- `src/renderer/hooks/useWorkbenchBrowserSession.ts`
+- `tests/renderer/components/abilityMenu.browserReadiness.test.ts`
+- `tests/renderer/hooks/useWorkbenchBrowserSession.readiness.test.ts`
+- `docs/acceptance/browser-computer-workbench-smoke.md`
+
+### Phase 4 原目标与当前口径
+
+原目标是把已有的 browser / computer-use / native desktop 能力从“工具存在”升级为“产品可理解入口”。当前最小闭环已落，后续只按 readiness / artifact consistency backlog 推进。
 
 ### 为什么值钱
 
@@ -351,19 +445,19 @@
 - `nativeDesktop`
 - frontmost context / screenshot / desktop collector
 
-但产品入口还不清楚。用户现在的心智仍然是：
+原问题是产品入口不清楚，用户心智容易停在：
 
 `模型自己会不会调用这些工具`
 
-而不是：
+Phase 4 最小闭环要拉回到：
 
 `这条消息要不要连桌面 / 连浏览器 / 用哪种浏览器上下文`
 
-### 子项
+### 原子项对应状态
 
 #### 4.1 Browser Session Chip
 
-在 workbench bar 里新增显式 `Browser` 区块，至少支持三种状态：
+已由 AbilityMenu、workbench badge 与 trace snapshot 覆盖最小显式入口，至少能区分三种状态：
 
 - 未接入
 - 使用托管浏览器
@@ -371,18 +465,18 @@
 
 #### 4.2 Desktop Readiness Gate
 
-在 native desktop 模式下显式展示：
+readiness popover 已覆盖下列基础状态；后续只继续补更完整的修复路径和状态一致性：
 
 - screen capture permission
 - accessibility permission
 - browser context support
 - collector status
 
-不满足时，给明确修复路径。
+不满足时，给明确修复路径。这部分属于 backlog，不再作为新的 phase。
 
 #### 4.3 Session Preview
 
-建立轻量 browser / desktop session preview：
+已有轻量 browser / desktop session preview 与 action preview；后续补 artifact 展示与恢复一致性：
 
 - 当前 URL / title
 - 当前 frontmost app
@@ -391,21 +485,21 @@
 
 #### 4.4 Workbench Intent
 
-把 browser / computer-use 变成 workbench intent，而不是纯工具：
+browser / computer-use 已进入 workbench intent；当前最小 intent 是：
 
 - `preferBrowserSession`
 - `preferDesktopContext`
-- `allowBrowserAutomation`
+- 后续执行策略开关
 
 这样后续执行解释层才能说清楚“为什么这轮去动浏览器了”。
 
-### 成功标准
+### 最小成功标准（已覆盖，继续补体验一致性）
 
 - 用户在发送前就知道这条消息有没有 browser / desktop 上下文
 - 权限或 collector 未就绪时，不会再是黑箱失败
 - browser/computer-use 不再只是 tool 层概念，而成为 workbench 层概念
 
-### 建议落点
+### 后续只看这些落点
 
 - `nativeDesktop.ts`
 - settings 中的 desktop section
@@ -437,9 +531,9 @@
 - `tests/renderer/components/sidebar.reviewActions.test.ts`
 - `tests/renderer/components/chatView.sessionWorkspace.actions.test.ts`
 
-### 目标
+### Phase 5 原目标与当前口径
 
-让用户把会话当工作单元来管理，而不是继续把所有内容当成一个长滚动流。
+原目标是让用户把会话当工作单元来管理，而不是继续把所有内容当成一个长滚动流。当前最小闭环已落，后续是 session search / background / long-session robustness 增强。
 
 ### 为什么值钱
 
@@ -451,20 +545,20 @@
 - 恢复、导出、回顾、继续工作都不顺
 - 后续的评测和学习闭环也无从挂载
 
-### 子项
+### 原子项对应状态
 
 #### 5.1 Sidebar + Main 会话结构
 
-实现真正的：
+已具备 Sidebar / current session bar 的最小入口；完整结构继续围绕：
 
 - sidebar：会话列表
 - main：当前会话完整 trace
 
-不是继续在单流里插 divider。
+推进，不再把 Phase 5 重新写成待开发主项。
 
 #### 5.2 Session Metadata
 
-每个 session 至少展示：
+最小 metadata 已能支撑回看与回用；完整维度仍是增强：
 
 - title
 - live / done / error
@@ -474,7 +568,7 @@
 
 #### 5.3 Resume / Background / Export
 
-把已有底层能力产品化：
+Replay / Review / Resume / Export / Reopen Workspace 已接入最小入口；完整 UX 仍围绕：
 
 - resume
 - move to background
@@ -483,7 +577,7 @@
 
 #### 5.4 Session Search / Filter
 
-至少支持：
+后续增强再补：
 
 - title keyword
 - capability usage
@@ -491,13 +585,13 @@
 - status
 - date range
 
-### 成功标准
+### 最小成功标准（已覆盖，继续补完整 UX）
 
 - 用户能把“当前工作”和“历史工作”清楚分开
 - 恢复一个老会话时，不需要回忆它当时用了什么 workbench 上下文
 - 后台运行中的会话能被稳定感知
 
-### 建议落点
+### 后续增强落点
 
 - session list / history view
 - `backgroundTaskManager`
@@ -512,16 +606,18 @@
 
 把 workbench 中的成功/失败经验沉淀成可复盘、可评测、可回用的资产。
 
-### 当前实现状态（2026-04-18 closing + 6.3/6.4 minimal landings）
+### 当前实现状态（2026-04-18 closing + 2026-04-24 productization landings）
 
 - 已落地：`6.1 Unified Trace Identity`
 - 已落地：`6.2 Review Queue`
 - 已落地（最小）：`6.3 Replay / failure attribution -> failure_followup sink`
 - 已落地（最小）：`6.4 Historical session -> current session workbench reuse`
-- 未落地：`6.3 Failure-to-Capability Feedback` 的多分流产品化
-- 未落地：`6.4 Reusable Recipes / Presets` 的命名资产库 / recipe 产品化
+- 已落地（最小产品化）：`6.3 Failure-to-Capability Feedback` 的 `skill / dataset / prompt-policy / capability-health` 分流 metadata、UI 标签与本地 `failureAsset` draft 持久化
+- 已落地（最小产品化）：`6.4 Named Presets` 的本地命名 preset 资产库、保存和应用
+- 已落地（能力层）：`6.4 Recipes` 的 contract/store CRUD、从 presets 生成 recipe、hydrate / upsert / delete / list 本地持久化
+- 未落地：recipe 管理 UI、多步 recipe 执行编排、preset/recipe 搜索/分享/版本化管理
 
-因此按这轮 closing 的标准，`Phase 6` 已可以视为完成并关账；当前已经接通 `review/replay` 闭环、最小 `failure follow-up` sink，以及最小 `session-backed reuse`。但 `6.3` 的多分流产品化和 `6.4` 的命名 preset/recipe 资产库仍留在后续 roadmap，不算这轮已交付。
+因此按这轮 closing 的标准，`Phase 6` 已可以视为完成并关账；当前已经接通 `review/replay` 闭环、failure follow-up 多分流 metadata + asset draft、session-backed reuse、本地命名 preset，以及 recipe 的本地能力层。但 recipe 管理 UI、多步执行编排和 preset/recipe 管理增强仍留在后续 roadmap，不算这轮已交付。
 
 ### 为什么值钱
 
@@ -570,11 +666,11 @@
 - `tests/renderer/components/sidebar.reviewActions.test.ts`
 - `tests/e2e/review-queue.e2e.spec.ts`
 
-#### 6.3 Failure-to-Capability Feedback（仅最小 sink 已落地）
+#### 6.3 Failure-to-Capability Feedback（已落最小多分流 + asset draft）
 
 当一轮失败时，支持沉淀成：
 
-- 当前已支持：从 Replay / failure attribution 把会话写入 `failure_followup` sink，回到 Review Queue 继续跟进
+- 当前已支持：从 Replay / failure attribution 把会话写入 `failure_followup` sink，带上 `skill / dataset / prompt-policy / capability-health` 分流 metadata，回到 Review Queue 继续跟进，并生成本地 `failureAsset` draft
 
 - 新 skill 候选
 - 新 dataset case
@@ -585,60 +681,76 @@
 
 - Replay 已能产出 `failureAttribution`
 - `ReplayAnalyticsSidebar` 已能把失败会话写入 `failure_followup` sink
+- `ReviewQueue` 会持久化 `failureCapability` metadata，并在 Replay / Review Queue 列表展示分流标签
+- `review_queue_failure_assets` 会为 `failure_followup + failureCapability` 生成 draft，并随 `ReviewQueueService.listItems()` 返回 `failureAsset`
 - sink 写入后，会话回到持久化 `Review Queue`，并保留 Replay 回看入口
 
 当前还没做：
 
-- failure 结果按不同 sink 分流到 `skill / dataset / prompt-policy / capability-health`
-- richer triage、批量处理、归因后的资产沉淀
+- richer triage、批量处理、asset apply/export、归因后的真实资产流转
 
 为什么现在仍可把 `Phase 6` 关账：
 
-- 因为这轮 Phase 6 的完成定义是“失败会话能进入 review/replay 的回流链”，这条最小闭环已经成立
-- 但这不等于 `Failure-to-Capability` 本身已经完整产品化；那部分仍在 backlog
+- 因为这轮 Phase 6 的完成定义是“失败会话能进入 review/replay 的回流链，并带上可执行的分流方向和本地资产草稿”，这条最小闭环已经成立
+- 但这不等于完整 triage / 批处理 / asset apply / 自动建真实资产已经完成；那部分仍在 backlog
 
 证据：
 
 - `src/main/evaluation/telemetryQueryService.ts`
+- `src/shared/contract/reviewQueue.ts`
+- `src/main/evaluation/reviewQueueService.ts`
 - `src/renderer/components/features/evalCenter/ReplayAnalyticsSidebar.tsx`
+- `src/renderer/components/features/evalCenter/SessionListView.tsx`
 - `src/renderer/stores/evalCenterStore.ts`
+- `tests/unit/shared/reviewQueue.test.ts`
+- `tests/unit/evaluation/reviewQueueService.test.ts`
 - `tests/renderer/components/evalCenter.replayAnalyticsSidebar.failureFollowup.test.ts`
+- `tests/renderer/components/evalCenter.sessionListView.reviewQueue.test.ts`
 - `tests/renderer/stores/evalCenterStore.reviewQueue.test.ts`
 
-#### 6.4 Reusable Recipes / Presets（已落最小 session-backed reuse，未落命名 preset/recipe）
+#### 6.4 Reusable Recipes / Presets（已落本地命名 preset + recipe store，未落管理 UI / 执行编排）
 
 把高频 workbench 组合沉淀成：
 
 - 当前已支持：从历史 session 把已持久化的 workbench 配置复用到当前会话
-- 当前边界：只复用 session 上已经持久化的 workspace / routing / capability 选择，不提供命名 preset 管理、recipe 编排或跨 session 资产库
+- 当前已支持：从当前/历史 session 保存本地命名 preset，并应用回 composer
+- 当前已支持：从一组 presets 生成 recipe，本地 hydrate / upsert / delete / list 持久化
+- 当前边界：preset 管理只到本地 localStorage 和 Sidebar 右键菜单；recipe 只到 contract/store 能力层；不提供管理 UI、多步执行编排、搜索、分享或版本化管理
 
 - “代码审查”
 - “发版检查”
 - “browser scrape + summarize”
 - “mail + calendar + reminders”
 
-这些不是 macro，而是 workbench preset。当前实现只到 `session-backed reuse`，还没到完整 preset 产品。
+这些不是 macro，而是 workbench preset/recipe。当前实现已经到本地命名 preset 的最小产品形态和 recipe 的本地能力层，还没到完整 preset/recipe 产品。
 
 当前最小落点：
 
 - `historical session -> current session` 的 workbench reuse 已成立
 - reuse 基于 session 已持久化的 `workingDirectory / workbenchProvenance / workbenchSnapshot`
+- `WorkbenchPreset` / `WorkbenchRecipe` 契约已定义
+- `workbenchPresetStore` 已支持本地 preset 保存、hydrate、rename、delete
+- `workbenchPresetStore` 已支持 recipe create/upsert/delete/clear/get/list 和 localStorage 持久化
+- `createWorkbenchRecipeFromPresets` / `normalizeWorkbenchRecipe` 已支持从 presets 生成本地 recipe 并规范化 step/context
+- `composerStore.applyWorkbenchPreset` 已支持把命名 preset 应用回当前 composer
 
 当前还没做：
 
-- 命名 preset 资产库
-- recipe 编排
-- 可搜索/可分享/可版本化的 preset 管理
+- recipe 管理 UI 与多步执行编排
+- 可搜索/可分享/可版本化的 preset/recipe 管理
 
 为什么现在仍可把 `Phase 6` 关账：
 
-- 因为这轮要验证的是“历史工作台能否回灌到当前工作台”，不是“preset 产品是否完整”
-- 这条 `session-backed reuse` 已经成立，所以 `Phase 6` 的 reuse 子目标可以记为最小闭环已落
-- 但不能把它写成“完整 presets / recipes 已完成”
+- 因为这轮要验证的是“历史工作台能否回灌到当前工作台，并能沉淀成可命名资产 / 可组合 recipe 草稿”，这条最小闭环已经成立
+- 但不能把它写成“完整 presets / recipes 管理产品已完成”
 
 证据：
 
 - `src/main/services/core/repositories/SessionRepository.ts`
+- `src/shared/contract/workbenchPreset.ts`
+- `src/renderer/stores/workbenchPresetStore.ts`
+- `tests/unit/shared/workbenchPreset.test.ts`
+- `tests/renderer/stores/workbenchPresetStore.test.ts`
 - `src/renderer/stores/composerStore.ts`
 - `src/renderer/components/Sidebar.tsx`
 - `tests/renderer/stores/composerStore.test.ts`
@@ -711,29 +823,29 @@
 
 ### 先收口的 backlog
 
-- `Phase 3` 未关账部分：真实 connector lifecycle（至少要有明确 connect/retry 闭环，或产品上明确不做）
+- `Phase 3` 后续产品化：native connector lifecycle 与设置页管理入口已有最小闭环；剩余是非 native connector、完整权限修复向导和统一管理面
 - `Phase 4/5` 已落最小闭环后的稳定性与体验补强：browser / desktop artifact 的展示与恢复一致性
-- `Phase 6.3/6.4` 未产品化部分：failure-to-capability 多分流、命名 preset/recipe 资产库
+- `Phase 6.3/6.4` 后续产品化：failure-to-capability 的 triage / 批处理 / asset apply，recipe 管理 UI / 多步执行编排，preset/recipe 搜索/分享/版本化管理
 
 原因：
 
 - 这些是当前文档与产品口径里仍不能写成“已完整完成”的部分
-- 其中 `connector lifecycle` 是最直接的产品缺口，`6.3/6.4` 是最明确的复利 backlog
+- 其中 `connector lifecycle` 的非 native / 统一管理面是最直接的产品缺口，`6.3/6.4` 的 asset apply 和 recipe 管理 UI 是最明确的复利 backlog
 - 其余 `Phase 1/2/4/5/6` 已完成的最小闭环，应以稳定性和口径清晰为主，而不是重新开 spec
 
 ## 7. 我自己的优先级判断
 
 如果只看当前还值得继续投入的 3 件事：
 
-1. `Connector lifecycle` 真闭环或明确砍边界
-2. `Failure-to-Capability` 多分流产品化
-3. `Named presets / recipes` 资产化
+1. `Connector lifecycle` 非 native / 统一管理面
+2. `Failure-to-Capability` triage / 批处理 / asset apply
+3. `Named presets / recipes` 的管理 UI、搜索/分享/版本化和 recipe 执行编排
 
 原因很直接：
 
-- 第一项解决“用户看到 blocked 但没法真的继续”
-- 第二项解决“失败会话只能回 review queue，还不能沉淀成不同改进动作”
-- 第三项解决“历史 session 能复用，但还没有可命名、可管理、可分享的资产层”
+- 第一项解决“native 已能继续，其他 connector 和管理面还没统一”
+- 第二项解决“失败会话已有分流方向和 asset draft，但还没进入真实改进资产流转”
+- 第三项解决“preset 已能命名保存，recipe 也有能力层，但 UI、执行、搜索、分享、版本管理还没成型”
 
 而：
 
@@ -749,8 +861,8 @@
 
 建议按下面顺序单独开题：
 
-1. `Connector lifecycle` 是否要做真 connect/retry 闭环；如果不做，就把产品边界写死并清掉误导入口
-2. `Failure-to-Capability` 的 sink 分流模型和归档方式
-3. `Named presets / recipes` 的资产模型、命名、管理和编排边界
+1. `Connector lifecycle` 的非 native connector 和统一管理面
+2. `Failure-to-Capability` 从 asset draft 到 triage / apply / export 的流转方式
+3. `Named presets / recipes` 的管理 UI、多步执行编排、搜索、分享和版本化边界
 
 这样下一轮才是在真实 backlog 上继续，而不是对已经落地的 `Phase 1-6` 重新写一遍计划。

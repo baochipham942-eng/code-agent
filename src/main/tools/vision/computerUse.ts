@@ -4,9 +4,11 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { ComputerSurfaceState, WorkbenchActionTrace } from '../../../shared/contract/desktop';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
+import { getComputerSurface } from '../../services/desktop/computerSurface';
 import { browserService } from '../../services/infra/browserService.js';
 import {
   appendBrowserWorkbenchNote,
@@ -19,6 +21,7 @@ const execAsync = promisify(exec);
 
 // Extended action types with smart location capabilities
 type ActionType =
+  | 'get_state' | 'observe' | 'get_ax_elements'
   | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
   // Smart location actions (Playwright-powered)
   | 'locate_element' | 'locate_text' | 'locate_role'
@@ -27,6 +30,7 @@ type ActionType =
 
 interface ComputerAction {
   action: ActionType;
+  targetApp?: string;
   x?: number;
   y?: number;
   text?: string;
@@ -40,8 +44,12 @@ interface ComputerAction {
   selector?: string;
   role?: string;
   name?: string;
+  axPath?: string;
   exact?: boolean;
   timeout?: number;
+  includeScreenshot?: boolean;
+  limit?: number;
+  maxDepth?: number;
 }
 
 export const computerUseTool: Tool = {
@@ -49,6 +57,9 @@ export const computerUseTool: Tool = {
   description: `Control the computer with mouse, keyboard, and smart element location.
 
 ## Basic Actions (coordinate-based):
+- get_state: Return Computer Surface readiness, mode, approvals, and last action
+- observe: Return frontmost app/window snapshot before choosing an action
+- get_ax_elements: List accessible elements for a target app/window through macOS Accessibility
 - click/doubleClick/rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
 - type: Type text into focused element
@@ -68,16 +79,26 @@ export const computerUseTool: Tool = {
 ## Parameters:
 - action: The action to perform
 - x, y: Screen coordinates (for basic mouse actions)
+- targetApp: Expected app for desktop actions. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
 - selector: CSS selector (for smart actions)
 - text: Text to type or text to find
 - role: ARIA role (button, link, textbox, etc.)
 - name: Accessible name for role-based location
+- axPath: Background Accessibility path returned by get_ax_elements, for stable target app element addressing
 - key: Key to press (enter, tab, escape, etc.)
 - modifiers: Modifier keys ['cmd', 'ctrl', 'alt', 'shift']
 - exact: Exact text match (default: false)
 - timeout: Wait timeout in ms (default: 5000)
+- includeScreenshot: Include a screenshot path for observe (default: false)
+- limit: Maximum elements for get_ax_elements (default: 40)
+- maxDepth: Maximum Accessibility tree depth for get_ax_elements (default: 4)
 
 ## Examples:
+- {"action": "get_state"} - check Computer Surface readiness
+- {"action": "observe", "includeScreenshot": true} - inspect the frontmost app/window
+- {"action": "get_ax_elements", "targetApp": "Finder"} - list accessible buttons/fields for a target app
+- {"action": "click", "targetApp": "Finder", "axPath": "1.2.3"} - press an element returned by get_ax_elements
+- {"action": "click", "targetApp": "Finder", "role": "button", "name": "Back"} - press an accessible element through the background macOS surface
 - {"action": "smart_click", "selector": "button.submit"}
 - {"action": "smart_click", "text": "Sign In"}
 - {"action": "locate_role", "role": "button", "name": "Submit"}
@@ -93,6 +114,8 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       action: {
         type: 'string',
         enum: [
+          'get_state', 'observe',
+          'get_ax_elements',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
@@ -102,6 +125,10 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       x: {
         type: 'number',
         description: 'X coordinate on screen (for basic mouse actions)',
+      },
+      targetApp: {
+        type: 'string',
+        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost.',
       },
       y: {
         type: 'number',
@@ -123,6 +150,10 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       name: {
         type: 'string',
         description: 'Accessible name for role-based location',
+      },
+      axPath: {
+        type: 'string',
+        description: 'Background Accessibility path returned by get_ax_elements for target app element addressing',
       },
       key: {
         type: 'string',
@@ -158,6 +189,18 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
         type: 'number',
         description: 'Wait timeout in milliseconds (default: 5000)',
       },
+      includeScreenshot: {
+        type: 'boolean',
+        description: 'Include screenshot path for observe action (default: false)',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum elements to return for get_ax_elements (default: 40, max: 80)',
+      },
+      maxDepth: {
+        type: 'number',
+        description: 'Maximum Accessibility tree depth for get_ax_elements (default: 4, max: 8)',
+      },
     },
     required: ['action'],
   },
@@ -192,12 +235,50 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench());
     }
 
+    const computerSurface = getComputerSurface();
+    if (isSurfaceReadAction(action.action)) {
+      const result = await executeSurfaceReadAction(computerSurface, action);
+      return appendBrowserWorkbenchNote(result, workbenchNotes);
+    }
+
+    const surfaceAuth = isSmartAction(action.action)
+      ? null
+      : await computerSurface.authorizeAction(action, context);
+    if (surfaceAuth && !surfaceAuth.allowed) {
+      const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
+        success: false,
+        error: surfaceAuth.reason || 'Computer Surface authorization failed',
+      });
+      return appendBrowserWorkbenchNote({
+        success: false,
+        error: surfaceAuth.reason || 'Computer Surface authorization failed',
+        metadata: {
+          code: 'COMPUTER_SURFACE_BLOCKED',
+          workbenchBlocked: true,
+          computerSurface: surfaceAuth.state,
+          computerSurfaceMode: surfaceAuth.state.mode,
+          backgroundSurface: surfaceAuth.state.mode === 'background_ax',
+          foregroundFallback: surfaceAuth.state.mode === 'foreground_fallback',
+          background: surfaceAuth.state.background,
+          requiresForeground: surfaceAuth.state.requiresForeground,
+          approvalScope: surfaceAuth.state.approvalScope,
+          safetyNote: surfaceAuth.state.safetyNote,
+          targetApp: surfaceAuth.state.targetApp || null,
+          sensitiveAction: surfaceAuth.sensitive,
+          traceId: completedTrace.id,
+          workbenchTrace: completedTrace,
+        },
+      }, workbenchNotes);
+    }
+
     try {
       let result: ToolExecutionResult;
 
       // Smart actions use Playwright (browser must be running)
       if (isSmartAction(action.action)) {
         result = await executeSmartAction(action);
+      } else if (surfaceAuth?.state.mode === 'background_ax') {
+        result = await computerSurface.executeBackgroundAction(action);
       } else if (process.platform === 'darwin') {
         result = await executeMacOSAction(action);
       } else if (process.platform === 'linux') {
@@ -211,15 +292,203 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
         };
       }
 
+      if (surfaceAuth) {
+        const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
+          success: result.success,
+          error: result.error || null,
+        });
+        result = withComputerSurfaceMetadata(result, {
+          state: computerSurface.getState({
+            targetApp: surfaceAuth.state.targetApp || undefined,
+            blockedReason: result.success ? null : result.error || null,
+            mode: surfaceAuth.state.mode,
+          }),
+          trace: completedTrace,
+          sensitive: surfaceAuth.sensitive,
+        });
+      }
+
       return appendBrowserWorkbenchNote(result, workbenchNotes);
     } catch (error) {
-      return appendBrowserWorkbenchNote({
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const result: ToolExecutionResult = {
         success: false,
-        error: `Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      }, workbenchNotes);
+        error: `Action failed: ${errorMessage}`,
+      };
+      if (surfaceAuth) {
+        const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
+          success: false,
+          error: errorMessage,
+        });
+        return appendBrowserWorkbenchNote(withComputerSurfaceMetadata(result, {
+          state: computerSurface.getState({
+            targetApp: surfaceAuth.state.targetApp || undefined,
+            blockedReason: errorMessage,
+            mode: surfaceAuth.state.mode,
+          }),
+          trace: completedTrace,
+          sensitive: surfaceAuth.sensitive,
+        }), workbenchNotes);
+      }
+      return appendBrowserWorkbenchNote(result, workbenchNotes);
     }
   },
 };
+
+function withComputerSurfaceMetadata(
+  result: ToolExecutionResult,
+  args: {
+    state: ComputerSurfaceState;
+    trace: WorkbenchActionTrace;
+    sensitive: boolean;
+  },
+): ToolExecutionResult {
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      computerSurface: args.state,
+      computerSurfaceMode: args.state.mode,
+      backgroundSurface: args.state.mode === 'background_ax',
+      foregroundFallback: args.state.mode === 'foreground_fallback',
+      background: args.state.background,
+      requiresForeground: args.state.requiresForeground,
+      approvalScope: args.state.approvalScope,
+      safetyNote: args.state.safetyNote,
+      targetApp: args.state.targetApp || null,
+      sensitiveAction: args.sensitive,
+      traceId: args.trace.id,
+      workbenchTrace: args.trace,
+    },
+  };
+}
+
+function isSurfaceReadAction(action: ActionType): boolean {
+  return action === 'get_state' || action === 'observe' || action === 'get_ax_elements';
+}
+
+async function executeSurfaceReadAction(
+  computerSurface: ReturnType<typeof getComputerSurface>,
+  action: ComputerAction,
+): Promise<ToolExecutionResult> {
+  if (action.action === 'observe') {
+    return observeComputerSurface(computerSurface, action);
+  }
+
+  if (action.action === 'get_ax_elements') {
+    return listComputerSurfaceElements(computerSurface, action);
+  }
+
+  return getComputerSurfaceStateResult(computerSurface.getState({
+    targetApp: action.targetApp || undefined,
+  }));
+}
+
+function getComputerSurfaceStateResult(state: ComputerSurfaceState): ToolExecutionResult {
+  return {
+    success: true,
+    output: formatComputerSurfaceState(state),
+    metadata: {
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: state.mode === 'background_ax',
+      foregroundFallback: state.mode === 'foreground_fallback',
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: state.targetApp || null,
+    },
+  };
+}
+
+async function observeComputerSurface(
+  computerSurface: ReturnType<typeof getComputerSurface>,
+  action: Pick<ComputerAction, 'includeScreenshot' | 'targetApp'>,
+): Promise<ToolExecutionResult> {
+  const snapshot = await computerSurface.observe({
+    includeScreenshot: action.includeScreenshot,
+    targetApp: action.targetApp,
+  });
+  const state = computerSurface.getState({
+    targetApp: snapshot.appName || undefined,
+  });
+  const label = action.targetApp ? 'Target' : 'Frontmost';
+  return {
+    success: true,
+    output: [
+      formatComputerSurfaceState(state),
+      `${label}: ${snapshot.appName || action.targetApp || 'unknown'}${snapshot.windowTitle ? ` · ${snapshot.windowTitle}` : ''}`,
+      snapshot.screenshotPath ? `Screenshot: ${snapshot.screenshotPath}` : null,
+    ].filter(Boolean).join('\n'),
+    metadata: {
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: state.mode === 'background_ax',
+      foregroundFallback: state.mode === 'foreground_fallback',
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: state.targetApp || null,
+      computerSurfaceSnapshot: snapshot,
+    },
+  };
+}
+
+async function listComputerSurfaceElements(
+  computerSurface: ReturnType<typeof getComputerSurface>,
+  action: ComputerAction,
+): Promise<ToolExecutionResult> {
+  const result = await computerSurface.listBackgroundElements(action);
+  const state = computerSurface.getState({
+    targetApp: action.targetApp || undefined,
+    blockedReason: result.success ? null : result.error || null,
+    mode: 'background_ax',
+  });
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: state.mode === 'background_ax',
+      foregroundFallback: state.mode === 'foreground_fallback',
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: state.targetApp || action.targetApp || null,
+    },
+  };
+}
+
+function formatComputerSurfaceState(state: ComputerSurfaceState): string {
+  const parts = [
+    `Computer Surface: ${state.ready ? 'ready' : 'not ready'}`,
+    `mode=${state.mode}`,
+    `background=${state.background ? 'yes' : 'no'}`,
+  ];
+  if (state.requiresForeground) {
+    parts.push('foreground=current app/window');
+  }
+  if (state.mode === 'background_ax') {
+    parts.push('targeting=macOS Accessibility');
+  }
+  if (state.approvalScope) {
+    parts.push(`approval=${state.approvalScope}`);
+  }
+  if (state.targetApp) {
+    parts.push(`target=${state.targetApp}`);
+  }
+  if (state.blockedReason) {
+    parts.push(`blocked=${state.blockedReason}`);
+  }
+  if (state.lastAction?.id) {
+    parts.push(`lastTrace=${state.lastAction.id}`);
+  }
+  return parts.join(' · ');
+}
 
 // Check if action is a smart (Playwright-based) action
 function isSmartAction(action: ActionType): boolean {
@@ -619,11 +888,12 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
 
   await execAsync(command);
 
+  const typedTextSuffix = action.text ? ` text: ${action.text.length} chars` : '';
   return {
     success: true,
     output: `Action completed: ${action.action}${
       action.x !== undefined ? ` at (${action.x}, ${action.y})` : ''
-    }${action.text ? ` text: "${action.text.substring(0, 20)}..."` : ''}${
+    }${typedTextSuffix}${
       action.key ? ` key: ${action.key}` : ''
     }`,
   };

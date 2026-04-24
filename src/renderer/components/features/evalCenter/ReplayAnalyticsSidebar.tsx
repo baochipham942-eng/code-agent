@@ -4,6 +4,10 @@
 
 import React from 'react';
 import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
+import {
+  buildReviewQueueFailureCapabilityMetadata,
+  getReviewQueueFailureCapabilityLabel,
+} from '@shared/contract/reviewQueue';
 
 interface ReplaySummary {
   totalTurns: number;
@@ -79,6 +83,7 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({
     ? `${(summary.totalDurationMs / 60000).toFixed(1)}m`
     : `${(summary.totalDurationMs / 1000).toFixed(1)}s`;
   const rootCause = summary.failureAttribution?.rootCause;
+  const failureCapability = buildReviewQueueFailureCapabilityMetadata(summary.failureAttribution);
   const hasFailureSignal = Boolean(rootCause) || Boolean(summary.deviations && summary.deviations.length > 0);
   const followupButtonLabel = failureFollowupState === 'queued'
     ? '已在 Failure Follow-up'
@@ -183,12 +188,17 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({
                 : 'Replay 里检测到明显偏差，适合进入失败回看。'}
             </div>
             {rootCause && (
-              <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
                 <span>{rootCause.category}</span>
                 <span>·</span>
                 <span>step {rootCause.stepIndex}</span>
                 <span>·</span>
                 <span>置信度 {(rootCause.confidence * 100).toFixed(0)}%</span>
+              </div>
+            )}
+            {failureCapability && (
+              <div className="inline-flex w-fit items-center rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                分流 {getReviewQueueFailureCapabilityLabel(failureCapability)}
               </div>
             )}
             {summary.failureAttribution?.causalChain?.length ? (

@@ -1,11 +1,14 @@
 // Live Preview Frame — 嵌入用户 dev server 的 iframe，订阅 bridge postMessage
-// 协议与 vite-plugin-code-agent-bridge v0.1.0 对齐，见 src/shared/livePreview/protocol.ts
-// MVP：iframe 加载 URL + 地址栏 + Refresh；点击事件写入 store 里的 selectedElement。
+// 协议与 vite-plugin-code-agent-bridge v0.2.0 对齐，见 src/shared/livePreview/protocol.ts
+// 0.2.0: 支持 HMR 回流恢复 —— vg:ready 后若 appStore 还有 selection，发
+// vg:restore-selection 请求 bridge 反查 DOM 重新高亮；匹配失败发 vg:selection-stale
+// 由前端清 store。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, ExternalLink, Target, FileCode } from 'lucide-react';
 import {
   isBridgeMessage,
+  MESSAGE_SOURCE_PARENT,
   type SelectedElementInfo,
 } from '../../../shared/livePreview/protocol';
 import { IPC_DOMAINS } from '../../../shared/ipc';
@@ -19,6 +22,7 @@ interface Props {
 
 const toSelectedElement = (info: SelectedElementInfo): LivePreviewSelectedElement => ({
   file: info.location.file,
+  relativeFile: info.location.file,
   line: info.location.line,
   column: info.location.column,
   tag: info.tag,
@@ -120,7 +124,12 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
 
       setSelectedElement(tabId, {
         ...toSelectedElement(info),
+        // info.location.file 是 bridge 注入的 relative path，resolved.absolute 是
+        // IPC 规范化后的绝对路径。两个都存：composer 注入 envelope 用 absolute
+        // （下游工具跨进程消费方便），vg:restore-selection 反查 DOM 用 relative
+        // （bridge 注入 DOM 的 data-code-agent-source 就是 relative）。
         file: resolved.absolute,
+        relativeFile: info.location.file,
       });
     } catch (err) {
       setFrameError(`bridge 源码定位被拒绝：${err instanceof Error ? err.message : String(err)}`);
@@ -133,20 +142,41 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       if (!isTrustedLivePreviewBridgeEvent(e, iframeRef.current?.contentWindow, expectedOrigin)) return;
       const msg = e.data;
       switch (msg.type) {
-        case 'vg:ready':
+        case 'vg:ready': {
           setBridgeReady(true);
+          // 0.2.0 HMR 回流恢复：iframe 重新挂载 bridge 后，若 appStore 还有
+          // selection（用户没主动清），让 bridge 按 source location 反查 DOM 重高亮。
+          // 用 getState() 而非 selector 依赖，避免 handler closure 追过期值。
+          const active = useAppStore.getState().previewTabs.find((t) => t.id === tabId);
+          const sel = active?.selectedElement;
+          if (sel && expectedOrigin && iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(
+              {
+                source: MESSAGE_SOURCE_PARENT,
+                type: 'vg:restore-selection',
+                location: { file: sel.relativeFile, line: sel.line, column: sel.column },
+              },
+              expectedOrigin,
+            );
+          }
           break;
+        }
         case 'vg:select':
           void resolveAndSetSelectedElement(msg.payload);
           break;
         case 'vg:hover':
           // MVP 不处理 hover，后续可用于编辑器端预览联动
           break;
+        case 'vg:selection-stale':
+          // bridge 说目标元素已找不到（被删、或 source location 漂移到不可识别）。
+          // 前端清 selection 让 UI 回到未选中态，避免用户看到底部条亮着但 iframe 里没框。
+          setSelectedElement(tabId, null);
+          break;
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [expectedOrigin, resolveAndSetSelectedElement]);
+  }, [expectedOrigin, tabId, resolveAndSetSelectedElement, setSelectedElement]);
 
   const handleRefresh = useCallback(() => {
     if (!iframeRef.current) return;

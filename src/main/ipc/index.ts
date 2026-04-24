@@ -50,6 +50,7 @@ import { registerSoulHandlers } from './soul.ipc';
 import { registerVoicePasteHandlers } from './voicePaste.ipc';
 import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
+import { registerLivePreviewHandlers } from './livePreview.ipc';
 
 export * from './types';
 
@@ -203,6 +204,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Provider handlers (连接测试)
   registerProviderHandlers(ipcMain);
+
+  // Live Preview handlers (click-to-source bridge 配合)
+  registerLivePreviewHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

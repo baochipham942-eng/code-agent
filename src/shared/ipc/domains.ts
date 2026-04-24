@@ -34,6 +34,7 @@ export const IPC_DOMAINS = {
   DESKTOP: 'domain:desktop', // 原生桌面活动
   SOUL: 'domain:soul',
   PROVIDER: 'domain:provider',
+  LIVE_PREVIEW: 'domain:livePreview', // Live dev server 预览 + click-to-source bridge
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

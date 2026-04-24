@@ -34,7 +34,7 @@ type CloudUIStrings = {
 export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'products' | 'about';
 export type TaskPanelTab = 'monitor' | 'orchestration';
 
-// Preview tab — one per opened file
+// Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')
 export interface PreviewTab {
   id: string;
   path: string;
@@ -43,6 +43,24 @@ export interface PreviewTab {
   mode: 'preview' | 'edit';
   lastActivatedAt: number;
   isLoaded: boolean;    // whether readFile has populated savedContent yet
+  // Live Preview (D3+) — 存在时覆盖文件语义
+  kind?: 'file' | 'liveDev';
+  devServerUrl?: string;
+  selectedElement?: LivePreviewSelectedElement | null;
+  // D6: 外部驱动的编辑器跳转（file tab 使用）
+  jumpToLine?: number;
+  jumpNonce?: number;
+}
+
+// Bridge 回传的元素信息（保持与 shared/livePreview/protocol.ts 中 SelectedElementInfo 同形）
+export interface LivePreviewSelectedElement {
+  file: string;
+  line: number;
+  column: number;
+  tag: string;
+  text: string;
+  rect: { x: number; y: number; width: number; height: number };
+  componentName?: string;
 }
 
 // Max open preview tabs. When exceeded, the least-recently-activated tab is evicted.
@@ -172,6 +190,9 @@ interface AppState {
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
   openPreview: (filePath: string) => void;
+  openLivePreview: (devServerUrl: string) => void;
+  setSelectedElement: (tabId: string, element: LivePreviewSelectedElement | null) => void;
+  jumpToFileLine: (filePath: string, line: number) => void;
   closePreview: () => void;
   closePreviewTab: (id: string) => void;
   setActivePreviewTab: (id: string) => void;
@@ -397,6 +418,72 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
   },
+  openLivePreview: (devServerUrl) => {
+    // 以 URL 作为唯一 key，沿用 preview: 前缀的 WorkbenchTabId 机制
+    set((state) => {
+      const newWorkbenchId: WorkbenchTabId = `preview:${devServerUrl}`;
+      const existing = state.previewTabs.find((t) => t.kind === 'liveDev' && t.path === devServerUrl);
+      if (existing) {
+        return {
+          ...state,
+          activePreviewTabId: existing.id,
+          previewTabs: state.previewTabs.map((t) =>
+            t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
+          ),
+          workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
+            ? state.workbenchTabs
+            : [...state.workbenchTabs, newWorkbenchId],
+          activeWorkbenchTab: newWorkbenchId,
+        };
+      }
+      const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tab: PreviewTab = {
+        id,
+        path: devServerUrl,
+        content: '',
+        savedContent: '',
+        mode: 'preview',
+        lastActivatedAt: nextPreviewTabTick(),
+        isLoaded: true, // live 不需要 readFile 预热
+        kind: 'liveDev',
+        devServerUrl,
+        selectedElement: null,
+      };
+      let carried = state.previewTabs;
+      let workbenchCarried = state.workbenchTabs;
+      if (carried.length >= MAX_PREVIEW_TABS) {
+        const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
+        carried = carried.filter((t) => t.id !== oldest.id);
+        const evictedWorkbenchId: WorkbenchTabId = `preview:${oldest.path}`;
+        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
+      }
+      return {
+        ...state,
+        previewTabs: [...carried, tab],
+        activePreviewTabId: id,
+        workbenchTabs: [...workbenchCarried, newWorkbenchId],
+        activeWorkbenchTab: newWorkbenchId,
+      };
+    });
+  },
+
+  setSelectedElement: (tabId, element) => set((state) => ({
+    previewTabs: state.previewTabs.map((t) => (t.id === tabId ? { ...t, selectedElement: element } : t)),
+  })),
+
+  jumpToFileLine: (filePath, line) => {
+    // 先打开文件（已打开则激活）。openPreview 会把目标 tab 设为 active，
+    // 之后通过 activePreviewTabId 定位写入 jumpToLine / 递增 jumpNonce。
+    get().openPreview(filePath);
+    const activeId = get().activePreviewTabId;
+    if (!activeId) return;
+    set((state) => ({
+      previewTabs: state.previewTabs.map((t) =>
+        t.id === activeId ? { ...t, jumpToLine: line, jumpNonce: (t.jumpNonce ?? 0) + 1 } : t,
+      ),
+    }));
+  },
+
   closePreview: () => set((state) => ({
     previewTabs: [],
     activePreviewTabId: null,

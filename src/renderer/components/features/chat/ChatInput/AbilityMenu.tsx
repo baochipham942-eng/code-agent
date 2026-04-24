@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, GitBranch, Globe, Info, Loader2, Monitor } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Eye, GitBranch, Globe, Info, Loader2, Monitor } from 'lucide-react';
 import type { BrowserSessionMode, ConversationRoutingMode } from '@shared/contract/conversationEnvelope';
 import { useComposerStore } from '../../../../stores/composerStore';
 import type { BrowserWorkbenchRepairAction, BrowserWorkbenchState } from '../../../../hooks/useWorkbenchBrowserSession';
@@ -69,7 +69,16 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
   const setBrowserSessionMode = useComposerStore((state) => state.setBrowserSessionMode);
 
   const [open, setOpen] = useState(defaultOpen);
+  const [livePreviewUrl, setLivePreviewUrl] = useState('http://localhost:5175/');
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const handleOpenLivePreview = useCallback(() => {
+    const url = livePreviewUrl.trim();
+    if (!url) return;
+    // 复用 index.tsx 挂载的全局入口 — 走 validateDevServerUrl IPC 校验链路
+    void window.__openLivePreview?.(url);
+    setOpen(false);
+  }, [livePreviewUrl]);
 
   useEffect(() => {
     if (!open) return;
@@ -181,6 +190,35 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
               </button>
             ))}
           </div>
+          <div className="mt-3 mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+            <Eye className="w-3 h-3" />
+            Live Preview
+          </div>
+          <div className="flex gap-1">
+            <input
+              type="url"
+              value={livePreviewUrl}
+              onChange={(e) => setLivePreviewUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleOpenLivePreview();
+                }
+              }}
+              placeholder="http://localhost:5175/"
+              data-testid="ability-menu-live-preview-url"
+              className="flex-1 min-w-0 rounded-md bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:bg-white/[0.06]"
+            />
+            <button
+              type="button"
+              onClick={handleOpenLivePreview}
+              data-testid="ability-menu-live-preview-open"
+              className="flex-shrink-0 rounded-md bg-primary-500/15 px-3 py-1.5 text-xs text-primary-200 transition-colors hover:bg-primary-500/25"
+            >
+              Open
+            </button>
+          </div>
+
           {browserSession && browserSessionMode !== 'none' && (
             <div
               data-testid="ability-menu-browser-status"

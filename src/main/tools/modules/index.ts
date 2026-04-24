@@ -74,6 +74,9 @@ import { twitterFetchSchema } from './network/twitterFetch.schema';
 import { youtubeTranscriptSchema } from './network/youtubeTranscript.schema';
 import { academicSearchSchema } from './network/academicSearch.schema';
 
+// vision/
+import { visualEditSchema } from './vision/visualEdit.schema';
+
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
@@ -234,6 +237,12 @@ export function registerMigratedTools(registry: ToolRegistry): void {
       permissionLevel: 'execute',
     },
     async () => (await import('./vision/wrappers')).guiAgentModule,
+  );
+
+  // visual_edit — Live Preview 点击元素 → 视觉 LLM 产 diff → 原子落盘
+  registry.register(
+    visualEditSchema,
+    async () => (await import('./vision/visualEdit')).visualEditModule,
   );
 
   // ── connectors（mail / reminders / calendar）— 全部 native ─────────────

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 describe('composerStore', () => {
   beforeEach(() => {
@@ -13,6 +14,7 @@ describe('composerStore', () => {
       selectedMcpServerIds: [],
       hydratedSessionId: null,
     });
+    useAppStore.setState({ previewTabs: [], activePreviewTabId: null });
   });
 
   it('hydrates from session and resets routing state on session switch', () => {
@@ -262,5 +264,89 @@ describe('composerStore', () => {
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
     });
+  });
+
+  it('injects livePreviewSelection from active liveDev tab (D8 P2)', () => {
+    useAppStore.setState({
+      previewTabs: [
+        {
+          id: 'live-1',
+          path: 'http://localhost:5175/',
+          content: '',
+          savedContent: '',
+          mode: 'preview',
+          lastActivatedAt: 1,
+          isLoaded: true,
+          kind: 'liveDev',
+          devServerUrl: 'http://localhost:5175/',
+          selectedElement: {
+            file: '/Users/linchen/work/app/src/Hero.tsx',
+            line: 42,
+            column: 7,
+            tag: 'button',
+            text: 'Clicked 0 times',
+            rect: { x: 100, y: 200, width: 80, height: 32 },
+            componentName: 'HeroCTA',
+          },
+        },
+      ],
+      activePreviewTabId: 'live-1',
+    });
+
+    const context = useComposerStore.getState().buildContext();
+    expect(context?.livePreviewSelection).toEqual({
+      location: {
+        file: '/Users/linchen/work/app/src/Hero.tsx',
+        line: 42,
+        column: 7,
+      },
+      tag: 'button',
+      text: 'Clicked 0 times',
+      rect: { x: 100, y: 200, width: 80, height: 32 },
+      componentName: 'HeroCTA',
+    });
+  });
+
+  it('omits livePreviewSelection when active tab is a file tab (not liveDev)', () => {
+    useAppStore.setState({
+      previewTabs: [
+        {
+          id: 'file-1',
+          path: '/x/y.tsx',
+          content: '',
+          savedContent: '',
+          mode: 'preview',
+          lastActivatedAt: 1,
+          isLoaded: true,
+          kind: 'file',
+          selectedElement: null,
+        },
+      ],
+      activePreviewTabId: 'file-1',
+    });
+    const context = useComposerStore.getState().buildContext();
+    expect(context?.livePreviewSelection).toBeUndefined();
+  });
+
+  it('omits livePreviewSelection when no element is selected', () => {
+    useAppStore.setState({
+      previewTabs: [
+        {
+          id: 'live-1',
+          path: 'http://localhost:5175/',
+          content: '',
+          savedContent: '',
+          mode: 'preview',
+          lastActivatedAt: 1,
+          isLoaded: true,
+          kind: 'liveDev',
+          devServerUrl: 'http://localhost:5175/',
+          selectedElement: null,
+        },
+      ],
+      activePreviewTabId: 'live-1',
+    });
+    const context = useComposerStore.getState().buildContext();
+    expect(context?.livePreviewSelection).toBeUndefined();
   });
 });

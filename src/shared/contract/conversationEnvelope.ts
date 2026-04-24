@@ -1,5 +1,6 @@
 import type { MessageAttachment } from './message';
 import type { AppServiceRunOptions } from './appService';
+import type { SelectedElementInfo } from '../livePreview/protocol';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
@@ -53,6 +54,10 @@ export interface ConversationEnvelopeContext {
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
   executionIntent?: ConversationExecutionIntent;
+  // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
+  // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
+  // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。
+  livePreviewSelection?: SelectedElementInfo | null;
 }
 
 export interface ConversationEnvelope {

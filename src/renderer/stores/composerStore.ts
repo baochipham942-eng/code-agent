@@ -4,6 +4,7 @@ import type {
   ConversationEnvelopeContext,
   ConversationRoutingMode,
 } from '@shared/contract/conversationEnvelope';
+import type { SelectedElementInfo } from '@shared/livePreview/protocol';
 import {
   createWorkbenchRecipeMergedContext,
   createWorkbenchPresetContextFromSession,
@@ -14,6 +15,29 @@ import {
   type WorkbenchPresetSessionSource,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
+import { useAppStore, type LivePreviewSelectedElement } from './appStore';
+
+// appStore 存的是 flat 结构（来自 LivePreviewFrame 的 toSelectedElement），
+// envelope 走 shared/livePreview/protocol.ts 的 nested SelectedElementInfo 形。
+// 这里在 composer 侧把 flat 拍回 nested，让 main 侧只看到协议统一的一种形。
+function toEnvelopeSelection(flat: LivePreviewSelectedElement): SelectedElementInfo {
+  return {
+    location: { file: flat.file, line: flat.line, column: flat.column },
+    tag: flat.tag,
+    text: flat.text,
+    rect: flat.rect,
+    ...(flat.componentName ? { componentName: flat.componentName } : {}),
+  };
+}
+
+function readActiveLivePreviewSelection(): SelectedElementInfo | null {
+  const appState = useAppStore.getState();
+  const activeId = appState.activePreviewTabId;
+  if (!activeId) return null;
+  const tab = appState.previewTabs.find((t) => t.id === activeId);
+  if (!tab || tab.kind !== 'liveDev' || !tab.selectedElement) return null;
+  return toEnvelopeSelection(tab.selectedElement);
+}
 
 interface ComposerState {
   workingDirectory: string | null;
@@ -198,6 +222,11 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
         preferDesktopContext: true,
         allowBrowserAutomation: false,
       };
+    }
+
+    const livePreviewSelection = readActiveLivePreviewSelection();
+    if (livePreviewSelection) {
+      context.livePreviewSelection = livePreviewSelection;
     }
 
     return Object.keys(context).length > 0 ? context : undefined;

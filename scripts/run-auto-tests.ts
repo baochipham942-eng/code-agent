@@ -24,7 +24,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { execSync, spawn } from 'child_process';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION } from '../src/shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
+const DEFAULT_GENERATION = 'gen8';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -230,6 +230,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
     apiKey?: string;
   };
 
+  // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
+  // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
+  private messages: import('../../shared/contract').Message[] = [];
+
   constructor(config: {
     workingDirectory: string;
     generation: string;
@@ -244,6 +248,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
     this.toolMode = config.toolMode ?? 'deferred';
+    // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
+    process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
   }
 
   async sendMessage(prompt: string): Promise<{
@@ -277,11 +283,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
         workingDirectory: this.workingDirectory,
       });
 
-      // 3. Shared messages array (AgentLoop writes into it directly)
-      const messages: import('../../shared/contract').Message[] = [];
+      // 3. Shared messages array — persisted on the adapter instance so follow-up
+      // prompts within the same case see prior tool_results and assistant responses.
+      // reset() clears this between cases.
+      const messages = this.messages;
 
       // 4. Create AgentLoop with correct event handlers
-      this.currentSessionId = `test-${Date.now()}`;
+      // Reuse session id across follow-ups so AgentLoop's session-scoped state stays consistent.
+      if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
       const loop = new AgentLoop({
         sessionId: this.currentSessionId,
         workingDirectory: this.workingDirectory,
@@ -356,7 +365,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
   }
 
   async reset(): Promise<void> {
-    // Each sendMessage creates a new loop, so no state to reset
+    // Clear conversation history and session id between cases so each case starts fresh.
+    // Within a case, sendMessage() reuses this.messages so follow-ups share history.
+    this.messages = [];
+    this.currentSessionId = undefined;
   }
 
   getAgentInfo(): { name: string; model: string; provider: string } {

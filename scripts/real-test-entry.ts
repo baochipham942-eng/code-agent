@@ -27,7 +27,8 @@ Module.prototype.require = function(id: string) {
 import path from 'path';
 import fs from 'fs/promises';
 import * as testing from '../src/main/testing/index';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION } from '../src/shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
+const DEFAULT_GENERATION = 'gen8';
 
 // ============================================================================
 

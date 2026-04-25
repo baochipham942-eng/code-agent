@@ -41,7 +41,12 @@ interface ExperimentCase {
   data_json: string;
 }
 
-export const ExperimentDetailPage: React.FC = () => {
+interface ExperimentDetailPageProps {
+  /** 当从实验列表点击进入时传入；不传（或 null）时 fallback 加载最新一条 */
+  experimentId?: string | null;
+}
+
+export const ExperimentDetailPage: React.FC<ExperimentDetailPageProps> = ({ experimentId }) => {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [report, setReport] = useState<TestRunReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,15 +64,19 @@ export const ExperimentDetailPage: React.FC = () => {
     const loadExperiment = async () => {
       setExperimentLoading(true);
       try {
-        const experiments = await ipcService.invoke(
-          EVALUATION_CHANNELS.LIST_EXPERIMENTS as 'evaluation:list-experiments',
-          10
-        ) as Array<{ id: string }> | undefined;
-        if (experiments && experiments.length > 0) {
-          const latest = experiments[0];
+        let targetId = experimentId;
+        if (!targetId) {
+          // fallback：没传 experimentId 时加载最新一条（保持侧栏直接点 detail 的旧行为）
+          const experiments = await ipcService.invoke(
+            EVALUATION_CHANNELS.LIST_EXPERIMENTS as 'evaluation:list-experiments',
+            10
+          ) as Array<{ id: string }> | undefined;
+          targetId = experiments && experiments.length > 0 ? experiments[0].id : null;
+        }
+        if (targetId) {
           const data = await ipcService.invoke(
             EVALUATION_CHANNELS.LOAD_EXPERIMENT as 'evaluation:load-experiment',
-            latest.id
+            targetId
           ) as ExperimentData | null | undefined;
           if (data) {
             setExperiment(data);
@@ -77,7 +86,7 @@ export const ExperimentDetailPage: React.FC = () => {
       finally { setExperimentLoading(false); }
     };
     loadExperiment();
-  }, []);
+  }, [experimentId]);
 
   // Populate report from experiment DB data (replaces file-based fallback)
   useEffect(() => {

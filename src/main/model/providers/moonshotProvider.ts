@@ -38,4 +38,9 @@ export class MoonshotProvider extends BaseOpenAIProvider {
   protected getExtraHeaders(): Record<string, string> {
     return { 'User-Agent': 'claude-code/1.0' };
   }
+
+  protected isThinkingMode(_config: ModelConfig): boolean {
+    // Kimi K2.5 走 thinking-mode 协议，与 DeepSeek 同。
+    return true;
+  }
 }

@@ -64,6 +64,14 @@ export abstract class BaseOpenAIProvider implements Provider {
   }
 
   /**
+   * 是否走 thinking-mode 协议（DeepSeek/Kimi 这类要求 history 中所有 assistant 消息
+   * 携带 reasoning_content 字段的模型）。子类按需 override 返回 true。
+   */
+  protected isThinkingMode(_config: ModelConfig): boolean {
+    return false;
+  }
+
+  /**
    * 构建请求体
    * 默认实现，子类可 override 来定制
    */
@@ -76,7 +84,7 @@ export abstract class BaseOpenAIProvider implements Provider {
 
     const body: Record<string, unknown> = {
       model: config.model || DEFAULT_MODEL,
-      messages: convertToOpenAIMessages(messages),
+      messages: convertToOpenAIMessages(messages, { thinkingMode: this.isThinkingMode(config) }),
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
       stream: true,

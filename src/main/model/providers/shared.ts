@@ -319,7 +319,10 @@ function createToolCallIdNormalizer(messages: ModelMessage[]): (id: string) => s
  * Convert messages to OpenAI format (supports structured tool_calls)
  * 包含 sanitizeToolCallOrder 后处理，确保 assistant+tool_calls 后紧跟 tool 响应
  */
-export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage[] {
+export function convertToOpenAIMessages(
+  messages: ModelMessage[],
+  options?: { thinkingMode?: boolean }
+): OpenAIMessage[] {
   const normalizeToolCallId = createToolCallIdNormalizer(messages);
   const raw = messages.map((m) => {
     // 结构化工具调用（assistant + toolCalls）
@@ -333,12 +336,16 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage
           function: { name: tc.name, arguments: tc.arguments },
         })),
       };
-      // Kimi K2.5 / DeepSeek 推理模型协议：history 中所有 assistant 消息必须携带
-      // reasoning_content 字段，否则 DeepSeek thinking-mode 会返回
-      // 400 "reasoning_content must be passed back". 原先的 truthy 检查会漏掉
-      // tool_use 等 thinking 为空字符串/undefined 的响应。统一传字段，缺值给空串。
-      // 对非 thinking 模型（OpenAI/智谱标准接口）该字段会被忽略，不影响。
-      msg.reasoning_content = m.thinking ?? '';
+      // Kimi K2.5 / DeepSeek thinking-mode：history 中**所有** assistant 消息必须携带
+      // reasoning_content 字段（包括为空的情况），否则 DeepSeek 会返回
+      // 400 "reasoning_content must be passed back".
+      // 其他 provider（如 GLM）：仅在有 reasoning 时传，避免不必要的协议字段引入
+      // 微弱的模型行为变化。caller 通过 thinkingMode 选择。
+      if (options?.thinkingMode) {
+        msg.reasoning_content = m.thinking ?? '';
+      } else if (m.thinking) {
+        msg.reasoning_content = m.thinking;
+      }
       return msg;
     }
     // 结构化工具结果（role='tool' + toolCallId）

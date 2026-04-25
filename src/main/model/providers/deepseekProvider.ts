@@ -22,6 +22,12 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
     return config.apiKey || '';
   }
 
+  protected isThinkingMode(_config: ModelConfig): boolean {
+    // DeepSeek 全系列（v4-flash / v4 / r1 / reasoner）走 thinking-mode 协议，
+    // 历史 assistant 消息缺 reasoning_content 字段会被服务端 400 拒绝。
+    return true;
+  }
+
   protected buildRequestBody(
     messages: ModelMessage[],
     tools: ToolDefinition[],
@@ -35,7 +41,7 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
     const body: Record<string, unknown> = {
       model: config.model || DEFAULT_MODELS.chat,
       messages: useToolCalling
-        ? convertToOpenAIMessages(messages)
+        ? convertToOpenAIMessages(messages, { thinkingMode: this.isThinkingMode(config) })
         : convertToTextOnlyMessages(messages),
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? recommendedMaxTokens,

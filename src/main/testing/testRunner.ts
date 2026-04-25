@@ -61,6 +61,7 @@ export class TestRunner {
   private agent: AgentInterface;
   private listeners: TestEventListener[] = [];
   private aborted = false;
+  private abortReason?: string;
 
   constructor(config: TestRunnerConfig, agent: AgentInterface) {
     this.config = config;
@@ -108,10 +109,11 @@ export class TestRunner {
    * Run all tests
    */
   async runAll(): Promise<TestRunSummary> {
-    const runId = uuidv4();
+    const runId = this.config.runId || uuidv4();
     const startTime = Date.now();
     const results: TestResult[] = [];
     this.aborted = false;
+    this.abortReason = undefined;
 
     // Load test suites
     const suites = await loadAllTestSuites(this.config.testCaseDir);
@@ -249,6 +251,7 @@ export class TestRunner {
       performance: this.calculatePerformanceStats(results),
       gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),
       ...(casesWithTrials.length > 0 ? { unstableCaseCount, averageStdDev } : {}),
+      ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });
@@ -438,6 +441,7 @@ export class TestRunner {
       if (isNonRetryableError(message)) {
         logger.error('Fatal inference error — aborting run', { testId: testCase.id, error: message });
         this.aborted = true;
+        this.abortReason = message;
       }
     } finally {
       // Run cleanup commands

@@ -612,6 +612,11 @@ export function registerEvaluationHandlers(): void {
           });
 
           const testConfig = createDefaultConfig(workingDir, {
+            // 把 handler 的 experimentId 交给 TestRunner 当 runId，
+            // 让 TestRunner 内部 persistTestRun(L543) 走同一主键，
+            // 与 handler 初始 insertExperiment(L505) 的 id 一致 →
+            // INSERT OR REPLACE 收敛成一条记录，消除 DB 双写。
+            runId: experimentId,
             filterIds: testCases.map(tc => tc.id),
             stopOnFailure: false,
             enableEvalCritic: false,
@@ -641,20 +646,14 @@ export function registerEvaluationHandlers(): void {
           });
 
           // 4. Run all tests
+          //    TestRunner 内部 saveResults 会 persistTestRun 到 experiments 表
+          //    （用我们传入的 runId = experimentId），覆盖 L505 的 ui-created
+          //    初始记录，所以这里不再重复 persist。
           const summary = await runner.runAll();
 
-          // 5. Persist results via ExperimentAdapter (updates the experiment record)
-          const { ExperimentAdapter } = await import('../evaluation/experimentAdapter');
-          const adapter = new ExperimentAdapter(db);
-
-          // Overwrite the experiment with actual results (ExperimentAdapter uses INSERT OR REPLACE)
-          // We need to set the runId to our experimentId so it updates the same record
-          (summary as any).runId = experimentId;
-          summary.environment.model = config.model;
-          summary.environment.provider = 'anthropic';
-          await adapter.persistTestRun(summary);
-
-          // 6. Update status to 'completed' with final stats
+          // 5. Update status: aborted（如余额不足熔断）→ failed，让 UI 明确显示
+          //    失败而非"看起来像没运行"；正常跑完 → completed。
+          const finalStatus = summary.aborted ? 'failed' : 'completed';
           db.updateExperimentSummary(experimentId, JSON.stringify({
             total: summary.total,
             passed: summary.passed,
@@ -664,21 +663,24 @@ export function registerEvaluationHandlers(): void {
             passRate: summary.total > 0 ? summary.passed / summary.total : 0,
             avgScore: summary.averageScore,
             duration: summary.duration,
-            status: 'completed',
+            status: finalStatus,
+            ...(summary.abortReason ? { error: summary.abortReason } : {}),
           }));
 
-          logger.info('Experiment completed successfully', {
+          logger.info('Experiment run finished', {
             experimentId,
+            status: finalStatus,
             total: summary.total,
             passed: summary.passed,
             failed: summary.failed,
             avgScore: summary.averageScore,
+            ...(summary.abortReason ? { abortReason: summary.abortReason } : {}),
           });
 
           broadcastToRenderer(EVALUATION_CHANNELS.EXPERIMENT_PROGRESS, {
             experimentId,
             type: 'run_end',
-            status: 'completed',
+            status: finalStatus,
             total: summary.total,
             passed: summary.passed,
             failed: summary.failed,

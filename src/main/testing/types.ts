@@ -281,6 +281,10 @@ export interface TestRunSummary {
   gitCommit?: string;
   /** Warning message if DB persistence failed (best-effort save) */
   persistenceWarning?: string;
+  /** 若被 circuit breaker 熔断（如余额不足），标记为 true，剩余 case 不再执行 */
+  aborted?: boolean;
+  /** 熔断原因（error message），用于 UI 明确显示失败而非"像未运行" */
+  abortReason?: string;
   /** Number of cases with stdDev > threshold (stability metric) */
   unstableCaseCount?: number;
   /** Mean stdDev across all cases with trials (stability metric) */
@@ -291,6 +295,10 @@ export interface TestRunSummary {
  * Test runner configuration
  */
 export interface TestRunnerConfig {
+  /** Optional pre-assigned runId — caller (如评测中心 IPC handler) 传入后
+   *  TestRunner 不再自生 uuid，保证 DB 主键和 handler experimentId 一致，
+   *  避免 handler 初始 insert + TestRunner 内部 persist 双写成两条记录。 */
+  runId?: string;
   /** Directory containing test cases */
   testCaseDir: string;
   /** Directory for test results */

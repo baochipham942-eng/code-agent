@@ -343,6 +343,16 @@ export class TestRunner {
         }
       }
 
+      // Circuit breaker: agentAdapter.sendMessage 把 inference error 塞进 errors 数组而不
+      // throw（见 agentAdapter.ts:350-353），下面 catch 块接不到，要单独扫一遍 errors
+      // 识别致命错误，否则余额不足时后续 case 会继续消耗 API 额度。
+      const fatalError = result.errors.find(isNonRetryableError);
+      if (fatalError && !this.aborted) {
+        logger.error('Fatal inference error — aborting run', { testId: testCase.id, error: fatalError });
+        this.aborted = true;
+        this.abortReason = fatalError;
+      }
+
       // Emit tool events
       for (const te of result.toolExecutions) {
         this.emit({

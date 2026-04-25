@@ -74,12 +74,26 @@ export const ExperimentDetailPage: React.FC<ExperimentDetailPageProps> = ({ expe
           targetId = experiments && experiments.length > 0 ? experiments[0].id : null;
         }
         if (targetId) {
-          const data = await ipcService.invoke(
+          // backend loadExperiment 返回 { experiment: {...}, cases: [...] },
+          // 需要 flatten 成组件期望的扁平结构（id/name/status/created_at/cases）。
+          const raw = await ipcService.invoke(
             EVALUATION_CHANNELS.LOAD_EXPERIMENT as 'evaluation:load-experiment',
             targetId
-          ) as ExperimentData | null | undefined;
-          if (data) {
-            setExperiment(data);
+          ) as { experiment: { id: string; name: string; timestamp: number; model: string | null; summary_json: string }; cases: ExperimentCase[] } | null | undefined;
+          if (raw?.experiment) {
+            let status = 'unknown';
+            try {
+              const parsed = JSON.parse(raw.experiment.summary_json || '{}');
+              if (typeof parsed.status === 'string') status = parsed.status;
+            } catch { /* ignore */ }
+            setExperiment({
+              id: raw.experiment.id,
+              name: raw.experiment.name,
+              model: raw.experiment.model || 'unknown',
+              status,
+              created_at: raw.experiment.timestamp,
+              cases: raw.cases || [],
+            });
           }
         }
       } catch { /* best-effort */ }

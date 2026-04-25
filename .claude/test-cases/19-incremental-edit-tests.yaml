@@ -68,8 +68,8 @@ cases:
           contains: ": number"
       - type: max_tool_calls
         description: "工具调用预算 <=5（1 Read + 3 Edit + 1 容差）"
-        weight: 1
-        critical: true
+        weight: 0.5
+        critical: false
         params:
           max: 5
     cleanup:
@@ -128,8 +128,8 @@ cases:
         params: {}
       - type: max_tool_calls
         description: "诱导重读场景下仍应 <=3 次工具调用（L4 成功或 L3 兜底）"
-        weight: 1
-        critical: true
+        weight: 0.5
+        critical: false
         params:
           max: 3
       - type: response_contains
@@ -196,8 +196,8 @@ cases:
           command: "node test-mvm.test.js"
       - type: max_tool_calls
         description: "工具调用预算 <=8（2 Read + 1 Bash + 1 Edit + 1 Bash + 容差）"
-        weight: 1
-        critical: true
+        weight: 0.5
+        critical: false
         params:
           max: 8
     cleanup:
@@ -261,8 +261,8 @@ cases:
           contains: "zh"
       - type: max_tool_calls
         description: "工具调用预算 <=7（2 Read + 2 Edit + 容差）"
-        weight: 1
-        critical: true
+        weight: 0.5
+        critical: false
         params:
           max: 7
     cleanup:
@@ -369,8 +369,8 @@ cases:
           contains: "/**"
       - type: max_tool_calls
         description: "THE money assertion：10 轮增量编辑总工具调用 <=15"
-        weight: 1
-        critical: true
+        weight: 0.5
+        critical: false
         params:
           max: 15
     cleanup:

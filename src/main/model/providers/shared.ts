@@ -365,7 +365,17 @@ export function convertToOpenAIMessages(
     }
     // 其他消息（system, user, 无 toolCalls 的 assistant）
     if (typeof m.content === 'string') {
-      return { role: m.role as OpenAIMessage['role'], content: m.content };
+      const msg: OpenAIMessage = { role: m.role as OpenAIMessage['role'], content: m.content };
+      // 纯文本 assistant 消息（无 tool_calls）也要遵守 thinking-mode 协议，
+      // 否则 DeepSeek follow-up 给完文字回复后的下一次请求会因历史缺字段被 400 拒
+      if (m.role === 'assistant') {
+        if (options?.thinkingMode) {
+          msg.reasoning_content = m.thinking ?? '';
+        } else if (m.thinking) {
+          msg.reasoning_content = m.thinking;
+        }
+      }
+      return msg;
     }
     return {
       role: m.role as OpenAIMessage['role'],

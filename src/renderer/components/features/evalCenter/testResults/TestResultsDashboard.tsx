@@ -20,7 +20,12 @@ interface ExperimentSummary {
   git_commit: string | null;
 }
 
-export const TestResultsDashboard: React.FC = () => {
+interface TestResultsDashboardProps {
+  /** 点击实验行时调用（由父组件切到详情页并传 experimentId） */
+  onSelectExperiment?: (experimentId: string) => void;
+}
+
+export const TestResultsDashboard: React.FC<TestResultsDashboardProps> = ({ onSelectExperiment }) => {
   const [showCreateExperiment, setShowCreateExperiment] = useState(false);
   const [reports, setReports] = useState<TestReportListItem[]>([]);
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
@@ -325,7 +330,11 @@ ${currentReport.results.map(r => {
                   : 'text-zinc-500';
 
                 return (
-                  <div key={exp.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-600/20 transition text-xs">
+                  <div
+                    key={exp.id}
+                    onClick={() => onSelectExperiment?.(exp.id)}
+                    className={`flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-600/20 transition text-xs ${onSelectExperiment ? 'cursor-pointer' : ''}`}
+                  >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-zinc-200 font-medium truncate">{exp.name}</span>

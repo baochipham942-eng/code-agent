@@ -33,6 +33,12 @@ export const EvalCenterPanel: React.FC = () => {
   } = useAppStore();
   const [activeNav, setActiveNav] = useState<NavItem>('sessions');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
+
+  const handleSelectExperiment = (experimentId: string) => {
+    setSelectedExperimentId(experimentId);
+    setActiveNav('detail');
+  };
 
   const handleClose = () => setShowEvalCenter(false);
 
@@ -112,10 +118,10 @@ export const EvalCenterPanel: React.FC = () => {
                 <SessionListView onSelectSession={handleSelectSession} />
               )
             )}
-            {activeNav === 'overview' && <TestResultsDashboard />}
+            {activeNav === 'overview' && <TestResultsDashboard onSelectExperiment={handleSelectExperiment} />}
             {activeNav === 'test-cases' && <TestCaseManager />}
             {activeNav === 'scoring' && <ScoringConfigPage />}
-            {activeNav === 'detail' && <ExperimentDetailPage />}
+            {activeNav === 'detail' && <ExperimentDetailPage experimentId={selectedExperimentId} />}
             {activeNav === 'failure' && <FailureAnalysisPage />}
             {activeNav === 'compare' && <CrossExperimentPage />}
           </div>

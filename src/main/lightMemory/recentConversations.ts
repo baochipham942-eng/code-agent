@@ -78,6 +78,7 @@ function formatSummaries(summaries: ConversationSummary[]): string {
  * Append a new conversation summary. Keeps last MAX_ENTRIES entries.
  */
 export async function appendConversationSummary(summary: ConversationSummary): Promise<void> {
+  if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return;
   try {
     await ensureMemoryDir();
     let summaries = await loadSummaries();
@@ -103,6 +104,7 @@ export async function appendConversationSummary(summary: ConversationSummary): P
  * Returns null if no summaries exist.
  */
 export async function buildRecentConversationsBlock(): Promise<string | null> {
+  if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return null;
   try {
     const summaries = await loadSummaries();
     if (summaries.length === 0) return null;

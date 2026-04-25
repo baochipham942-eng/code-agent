@@ -78,7 +78,7 @@ export const OBSERVATION_MASKING = {
   MIN_TOKEN_THRESHOLD: 100,
   PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
   PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
-  PLACEHOLDER_FILE_READ: '[File content was read previously and cleared to save context. Proceed with your task based on what you already know. If you need specific content, ask the user.]',
+  PLACEHOLDER_FILE_READ: '[File content omitted from history to save context. You have already received this file content earlier in this conversation. Do NOT re-read this file unless you have specific reason to believe it changed externally — rely on your prior understanding to proceed.]',
 } as const;
 
 /** 子 Agent 上下文压缩配置 */

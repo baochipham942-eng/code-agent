@@ -25,7 +25,7 @@ import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {
   name: 'Edit',
-  description: `Performs exact string replacements in files. ALWAYS prefer this over Write for modifying existing files — it only sends the diff. NEVER write new files unless explicitly required. The edit will FAIL if old_text is not unique in the file — provide more surrounding context to make it unique, or use replace_all for global replacements. You must read the file with Read before editing.`,
+  description: `Performs exact string replacements in files. ALWAYS prefer this over Write for modifying existing files — it only sends the diff. NEVER write new files unless explicitly required. The edit will FAIL if old_text is not unique in the file — provide more surrounding context to make it unique, or use replace_all for global replacements. Before your FIRST edit to any file, you must have called Read on it earlier in this conversation. Subsequent edits to the same file do NOT require re-reading — the system tracks read state and your prior knowledge of the file remains valid until the file is modified externally.`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -36,8 +36,7 @@ export const editFileTool: Tool = {
         description:
           'Absolute path to the file to edit. MUST be a string. ' +
           'Examples: "/Users/name/project/src/index.ts", "/home/user/config.json". ' +
-          'Supports ~ for home directory. File must already exist. ' +
-          'IMPORTANT: You must read this file with read_file before editing.',
+          'Supports ~ for home directory. File must already exist.',
       },
       old_text: {
         type: 'string',

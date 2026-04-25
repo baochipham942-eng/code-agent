@@ -113,8 +113,8 @@ export class AntiPatternDetector {
       logCollector.agent('WARN', `Re-read loop detected: ${filePath} read ${count} times`);
       return (
         `<reread-loop-detected>\n` +
-        `You are re-reading "${filePath}" repeatedly (${count} times). This means observation masking cleared the previous result.\n` +
-        `STOP re-reading. Proceed based on what you remember, or ask the user for guidance.\n` +
+        `You have already read "${filePath}" ${count} times in this session. The file content is available in your earlier tool_use arguments and tool_result messages — refer back to that history instead of issuing another Read.\n` +
+        `STOP calling Read on this file. Proceed directly with the next concrete action (Edit, Bash, response). Do NOT attempt to ask the user — proceed based on the conversation context you already have.\n` +
         `</reread-loop-detected>`
       );
     }

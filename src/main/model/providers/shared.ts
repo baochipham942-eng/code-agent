@@ -333,10 +333,12 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage
           function: { name: tc.name, arguments: tc.arguments },
         })),
       };
-      // Kimi K2.5 / DeepSeek: 推理模型要求 history 中保留 reasoning_content
-      if (m.thinking) {
-        msg.reasoning_content = m.thinking;
-      }
+      // Kimi K2.5 / DeepSeek 推理模型协议：history 中所有 assistant 消息必须携带
+      // reasoning_content 字段，否则 DeepSeek thinking-mode 会返回
+      // 400 "reasoning_content must be passed back". 原先的 truthy 检查会漏掉
+      // tool_use 等 thinking 为空字符串/undefined 的响应。统一传字段，缺值给空串。
+      // 对非 thinking 模型（OpenAI/智谱标准接口）该字段会被忽略，不影响。
+      msg.reasoning_content = m.thinking ?? '';
       return msg;
     }
     // 结构化工具结果（role='tool' + toolCallId）

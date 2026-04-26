@@ -8,6 +8,7 @@ import type { ToolCall } from '@shared/contract';
 import { formatParams, formatDuration, getToolDisplayName } from './utils';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
+import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 
 interface Props {
   toolCall: ToolCall;
@@ -17,7 +18,9 @@ interface Props {
 export function ToolHeader({ toolCall, status }: Props) {
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
   // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
-  const hasShortDesc = typeof toolCall.shortDescription === 'string'
+  // feature flag 关闭时强制 fallback，便于 A/B 对比。
+  const hasShortDesc = isSemanticToolUIEnabled()
+    && typeof toolCall.shortDescription === 'string'
     && toolCall.shortDescription.trim().length > 0;
   const displayName = hasShortDesc
     ? toolCall.shortDescription!.trim()

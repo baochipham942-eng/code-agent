@@ -12,6 +12,7 @@
 import React, { useState } from 'react';
 import { Bot, ChevronUp, ChevronDown, Square, ExternalLink } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
+import { useAppStore } from '../../../stores/appStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
@@ -128,6 +129,18 @@ export function SwarmInlineMonitor() {
 
 function SwarmAgentRow({ agent }: { agent: SwarmAgentState }) {
   const colorClass = colorFor(agent.id);
+  const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  const setTaskPanelTab = useAppStore((s) => s.setTaskPanelTab);
+  const setSelectedSwarmAgentId = useAppStore((s) => s.setSelectedSwarmAgentId);
+
+  const handleOpen = () => {
+    // 三步打开 SwarmMonitor 面板 + 切到 monitor tab + focus 这个 agent
+    // —— 让用户从底部浮层一键跳到右侧详细视图，不用手动切 tab
+    openWorkbenchTab('task');
+    setTaskPanelTab('monitor');
+    setSelectedSwarmAgentId(agent.id);
+  };
+
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors">
       <span className={`font-semibold ${colorClass}`}>{agent.name || agent.id.slice(0, 8)}</span>
@@ -137,8 +150,9 @@ function SwarmAgentRow({ agent }: { agent: SwarmAgentState }) {
       </span>
       <button
         type="button"
-        className="ml-auto flex items-center gap-1 text-zinc-500 hover:text-zinc-300 transition-colors"
-        title={`查看 ${agent.name || agent.id} 详情（在右侧 SwarmMonitor 面板）`}
+        onClick={handleOpen}
+        className="ml-auto flex items-center gap-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+        title={`查看 ${agent.name || agent.id} 详情`}
       >
         Open
         <ExternalLink size={10} />

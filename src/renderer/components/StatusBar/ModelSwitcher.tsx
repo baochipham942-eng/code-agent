@@ -434,8 +434,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         aria-expanded={open}
         className={`
           font-medium cursor-pointer truncate max-w-[200px]
-          hover:text-purple-300 transition-colors
-          ${isOverridden ? 'text-amber-400' : 'text-purple-400'}
+          hover:text-white transition-colors
+          ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
         `}
         title={
           overrideAdaptive

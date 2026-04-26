@@ -568,12 +568,19 @@ async function main(): Promise<void> {
   });
 
   // 优雅退出
-  const shutdown = () => {
+  const shutdown = async () => {
     console.log('\nShutting down...');
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
+    // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
+    try {
+      const { getDevServerManager } = await import('../main/services/infra/devServerManager');
+      await getDevServerManager().disposeAll();
+    } catch (err) {
+      console.warn('[shutdown] devServerManager dispose failed:', err);
+    }
     server.close();
     process.exit(0);
   };

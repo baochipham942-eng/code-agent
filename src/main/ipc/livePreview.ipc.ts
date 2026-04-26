@@ -9,6 +9,7 @@
 import path from 'node:path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { getDevServerManager } from '../services/infra/devServerManager';
 
 interface ResolveSourceLocationRequest {
   file: string;
@@ -70,12 +71,28 @@ export function validateLivePreviewDevServerUrl(rawUrl: string): { ok: true; url
   }
 }
 
+function requireProjectPath(payload: unknown): string {
+  const path = (payload as { path?: string } | null)?.path;
+  if (!path || typeof path !== 'string' || !path.trim()) {
+    throw new Error('path is required');
+  }
+  return path.trim();
+}
+
+function requireSessionId(payload: unknown): string {
+  const sid = (payload as { sessionId?: string } | null)?.sessionId;
+  if (!sid || typeof sid !== 'string') {
+    throw new Error('sessionId is required');
+  }
+  return sid;
+}
+
 export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle(IPC_DOMAINS.LIVE_PREVIEW, (_event, req: IPCRequest): IPCResponse => {
+  ipcMain.handle(IPC_DOMAINS.LIVE_PREVIEW, async (_event, req: IPCRequest): Promise<IPCResponse> => {
     try {
       switch (req.action) {
         case 'ping':
-          return { success: true, data: { pong: true, version: '0.1.0' } };
+          return { success: true, data: { pong: true, version: '0.2.0' } };
 
         case 'validateDevServerUrl': {
           const payload = req.payload as { url?: string };
@@ -95,6 +112,52 @@ export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'file is required' } };
           }
           const data = resolveLivePreviewSourceLocation(payload);
+          return { success: true, data };
+        }
+
+        // --------------------------------------------------------------------
+        // V2-A devServerManager
+        // --------------------------------------------------------------------
+        case 'detectFramework': {
+          const projectPath = requireProjectPath(req.payload);
+          const data = getDevServerManager().detect(projectPath);
+          return { success: true, data };
+        }
+
+        case 'startDevServer': {
+          const projectPath = requireProjectPath(req.payload);
+          // 同步返回 status='starting' 的 session；renderer 调
+          // waitDevServerReady 拿 URL，或用 getDevServerSession 轮询 status
+          const session = getDevServerManager().start(projectPath);
+          return { success: true, data: session };
+        }
+
+        case 'waitDevServerReady': {
+          const sessionId = requireSessionId(req.payload);
+          const url = await getDevServerManager().waitForReady(sessionId);
+          return { success: true, data: { url } };
+        }
+
+        case 'stopDevServer': {
+          const sessionId = requireSessionId(req.payload);
+          await getDevServerManager().stop(sessionId);
+          return { success: true, data: { sessionId } };
+        }
+
+        case 'getDevServerSession': {
+          const sessionId = requireSessionId(req.payload);
+          const session = getDevServerManager().get(sessionId);
+          return { success: true, data: session };
+        }
+
+        case 'getDevServerLogs': {
+          const sessionId = requireSessionId(req.payload);
+          const logs = getDevServerManager().getLogs(sessionId);
+          return { success: true, data: logs };
+        }
+
+        case 'listDevServers': {
+          const data = getDevServerManager().list();
           return { success: true, data };
         }
 

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Circle, Clock, Eye, Globe2, Monitor, RefreshCw, Server, Shield, Sparkles, AlertTriangle } from 'lucide-react';
+import { Circle, Clock, Globe2, Monitor, RefreshCw, Server, Shield, Sparkles, AlertTriangle } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   ActivityProviderDescriptor,
@@ -17,6 +17,7 @@ import {
   isWebMode,
 } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { NativeDesktopSection } from '../sections/NativeDesktopSection';
 import { OpenchronicleSettings } from './OpenchronicleSettings';
@@ -297,36 +298,23 @@ export const ScreenMemorySettings: React.FC = () => {
 
   if (web) {
     return (
-      <div className="space-y-5 max-w-3xl">
-        <header>
-          <h2 className="text-xl font-semibold text-zinc-200 flex items-center gap-2">
-            <Eye className="w-5 h-5" />
-            屏幕记忆
-          </h2>
-          <p className="text-sm text-zinc-400 mt-1">
-            Web 模式不直接控制本机屏幕记忆。请在桌面版里配置。
-          </p>
-        </header>
+      <SettingsPage
+        title="屏幕记忆"
+        description="Web 模式不直接控制本机屏幕记忆。请在桌面版里配置。"
+      >
         <WebModeBanner />
         <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-4 text-sm text-zinc-400">
           统一入口已保留，但 OpenChronicle daemon 和 Native Desktop provider 都需要桌面壳能力。
         </div>
-      </div>
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h2 className="text-xl font-semibold text-zinc-200 flex items-center gap-2">
-          <Eye className="w-5 h-5" />
-          屏幕记忆
-        </h2>
-        <p className="text-sm text-zinc-400 mt-1">
-          自动屏幕记忆和手动桌面活动先放在同一个入口里，当前只做能力可见和设置整合。
-        </p>
-      </header>
-
+    <SettingsPage
+      title="屏幕记忆"
+      description="配置屏幕记忆采集、注入和隐私边界。预览与桌面活动控制默认收在诊断区。"
+    >
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {statusItems.map((item) => (
           <div key={item.label} className={`rounded-lg border px-3 py-2 ${toneClass[item.tone]}`}>
@@ -336,13 +324,21 @@ export const ScreenMemorySettings: React.FC = () => {
         ))}
       </div>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <ProviderHeading
-            icon={<Sparkles className="w-4 h-4" />}
-            title="统一 ActivityContext 预览"
-            description="预览最近屏幕上下文和即将注入 agent 的摘要，不展示本地截图路径。"
-          />
+      <SettingsSection title="采集与注入设置">
+        <ProviderHeading
+          icon={<Server className="w-4 h-4" />}
+          title="自动屏幕记忆 / OpenChronicle 外部 provider"
+          description={openchronicleProvider?.summary || '通过 Code Agent 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
+          provider={openchronicleProvider}
+          fallbackKind="daemon"
+        />
+        <OpenchronicleSettings embedded />
+      </SettingsSection>
+
+      <SettingsDetails
+        title="诊断与预览"
+        description="ActivityContext 预览和手动桌面活动控制用于排查采集链路，默认收起。"
+        actions={(
           <button
             onClick={refreshActivityContext}
             disabled={contextLoading}
@@ -351,37 +347,32 @@ export const ScreenMemorySettings: React.FC = () => {
             <RefreshCw className={`h-3.5 w-3.5 ${contextLoading ? 'animate-spin' : ''}`} />
             刷新
           </button>
-        </div>
-        <ActivityContextPreviewPanel context={activityContext} degraded={contextError} />
-      </section>
-
-      <section className="space-y-3">
-          <ProviderHeading
-            icon={<Server className="w-4 h-4" />}
-            title="自动屏幕记忆 / OpenChronicle 外部 provider"
-          description={openchronicleProvider?.summary || '通过 Code Agent 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
-          provider={openchronicleProvider}
-          fallbackKind="daemon"
-        />
-        <OpenchronicleSettings embedded />
-      </section>
-
-      <section className="space-y-3">
-        <ProviderHeading
-          icon={tauri ? <Monitor className="w-4 h-4" /> : <Globe2 className="w-4 h-4" />}
-          title="手动桌面活动 / Tauri Native Desktop provider"
-          description={nativeDesktopProvider?.summary || 'Tauri 桌面版可直接查看和控制本机桌面活动采集；其他桌面壳只展示能力边界。'}
-          provider={nativeDesktopProvider}
-          fallbackKind="bundled"
-        />
-        {tauri ? (
-          <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
-            <NativeDesktopSection />
-          </div>
-        ) : (
-          <NativeDesktopUnavailable />
         )}
-      </section>
-    </div>
+      >
+        <div className="space-y-4">
+          <ProviderHeading
+            icon={<Sparkles className="w-4 h-4" />}
+            title="统一 ActivityContext 预览"
+            description="预览最近屏幕上下文和即将注入 agent 的摘要，不展示本地截图路径。"
+          />
+          <ActivityContextPreviewPanel context={activityContext} degraded={contextError} />
+
+          <ProviderHeading
+            icon={tauri ? <Monitor className="w-4 h-4" /> : <Globe2 className="w-4 h-4" />}
+            title="手动桌面活动 / Tauri Native Desktop provider"
+            description={nativeDesktopProvider?.summary || 'Tauri 桌面版可直接查看和控制本机桌面活动采集；其他桌面壳只展示能力边界。'}
+            provider={nativeDesktopProvider}
+            fallbackKind="bundled"
+          />
+          {tauri ? (
+            <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
+              <NativeDesktopSection />
+            </div>
+          ) : (
+            <NativeDesktopUnavailable />
+          )}
+        </div>
+      </SettingsDetails>
+    </SettingsPage>
   );
 };

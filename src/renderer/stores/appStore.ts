@@ -20,6 +20,7 @@ import {
   MODEL_MAX_TOKENS,
   getProviderEndpoint,
 } from '@shared/constants';
+import type { SettingsTab } from '../utils/settingsTabs';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -46,7 +47,7 @@ type CloudUIStrings = {
 };
 
 // 设置页 Tab 类型
-export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'products' | 'about';
+export type { SettingsTab } from '../utils/settingsTabs';
 export type TaskPanelTab = 'monitor' | 'orchestration';
 
 // Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')

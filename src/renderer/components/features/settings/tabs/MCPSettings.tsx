@@ -17,12 +17,12 @@ import {
   ExternalLink,
   Plus,
 } from 'lucide-react';
-import { useI18n } from '../../../../hooks/useI18n';
 import { useMcpStatus } from '../../../../hooks/useMcpStatus';
 import { useWorkbenchInsights } from '../../../../hooks/useWorkbenchInsights';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { Button } from '../../../primitives';
+import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
@@ -47,7 +47,6 @@ import {
 const logger = createLogger('MCPSettings');
 
 export const MCPSettings: React.FC = () => {
-  const { t } = useI18n();
   const {
     status: mcpStatus,
     isLoading,
@@ -223,45 +222,11 @@ export const MCPSettings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <SettingsPage
+      title="MCP"
+      description="配置 Agent 可调用的外部工具服务器。运行状态和桥接诊断收在下方，不占主要设置流。"
+    >
       <WebModeBanner />
-
-      {/* Local Bridge Service */}
-      <LocalBridgeSection />
-
-      {/* Native Connectors */}
-      <NativeConnectorsSection />
-
-      {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">MCP 服务器</h3>
-        <p className="text-xs text-zinc-400 mb-4">
-          Model Context Protocol 服务器状态。MCP 允许 Agent 调用外部工具和资源。
-        </p>
-      </div>
-
-      {/* Overall Status */}
-      {mcpStatus && (
-        <div className="bg-zinc-800 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-zinc-200 mb-3">总览</h4>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-semibold text-zinc-200">
-                {mcpStatus.connectedServers.length}
-              </div>
-              <div className="text-xs text-zinc-400">已连接服务器</div>
-            </div>
-            <div>
-              <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
-              <div className="text-xs text-zinc-400">可用工具</div>
-            </div>
-            <div>
-              <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
-              <div className="text-xs text-zinc-400">可用资源</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Codex CLI Integration */}
       <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
@@ -340,10 +305,10 @@ export const MCPSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Server List */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-zinc-200">服务器列表</h4>
+      <SettingsSection
+        title="服务器配置"
+        description="启用、禁用或添加 MCP server。详细连接状态放在诊断区。"
+        actions={(
           <Button
             size="sm"
             variant="ghost"
@@ -352,7 +317,9 @@ export const MCPSettings: React.FC = () => {
           >
             添加服务器
           </Button>
-        </div>
+        )}
+      >
+        <div className="space-y-3">
         {mcpServers.length === 0 ? (
           <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
             没有配置任何 MCP 服务器
@@ -429,19 +396,20 @@ export const MCPSettings: React.FC = () => {
             );
           })
         )}
-      </div>
+        </div>
 
-      {/* Refresh from Cloud Button */}
-      <Button
-        onClick={handleRefreshFromCloud}
-        loading={isRefreshing}
-        variant="primary"
-        fullWidth
-        leftIcon={!isRefreshing ? <Cloud className="w-4 h-4" /> : undefined}
-        className="!bg-indigo-600 hover:!bg-indigo-500"
-      >
-        {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
-      </Button>
+        <div className="mt-3">
+          <Button
+            onClick={handleRefreshFromCloud}
+            loading={isRefreshing}
+            variant="secondary"
+            fullWidth
+            leftIcon={!isRefreshing ? <Cloud className="w-4 h-4" /> : undefined}
+          >
+            {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
+          </Button>
+        </div>
+      </SettingsSection>
 
       {/* Message */}
       {message && (
@@ -459,14 +427,46 @@ export const MCPSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Info Box */}
-      <div className="bg-zinc-800 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-200 mb-2">关于 MCP</h4>
+      <SettingsDetails
+        title="运行状态与本地桥接"
+        description="这里用于排查连接、桥接和本地 connector 状态，默认收起。"
+      >
+        <div className="space-y-4">
+          <LocalBridgeSection />
+          <NativeConnectorsSection />
+          {mcpStatus && (
+            <div className="rounded-lg bg-zinc-800 p-4">
+              <h4 className="text-sm font-medium text-zinc-200 mb-3">总览</h4>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-semibold text-zinc-200">
+                    {mcpStatus.connectedServers.length}
+                  </div>
+                  <div className="text-xs text-zinc-400">已连接服务器</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
+                  <div className="text-xs text-zinc-400">可用工具</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
+                  <div className="text-xs text-zinc-400">可用资源</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </SettingsDetails>
+
+      <SettingsDetails
+        title="协议说明"
+        description="MCP 的概念说明和自动连接行为。"
+      >
         <p className="text-xs text-zinc-400 leading-relaxed">
           MCP (Model Context Protocol) 是一个开放协议，允许 AI 模型安全地访问外部工具和数据源。
           已配置的服务器会在应用启动时自动连接。云端配置支持热更新，无需重启应用。
         </p>
-      </div>
+      </SettingsDetails>
 
       {/* Add Server Editor Modal */}
       <McpServerEditor
@@ -485,6 +485,6 @@ export const MCPSettings: React.FC = () => {
         onQuickAction={runQuickAction}
         onClose={() => setActiveSheetTarget(null)}
       />
-    </div>
+    </SettingsPage>
   );
 };

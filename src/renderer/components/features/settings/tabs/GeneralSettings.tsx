@@ -7,6 +7,7 @@ import { CheckCircle, Shield, ShieldOff, ShieldAlert } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import { SettingsPage } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 
@@ -81,14 +82,12 @@ export const GeneralSettings: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <SettingsPage
+      title="权限与安全"
+      description="控制 Agent 执行敏感操作时的权限检查行为。"
+    >
       <WebModeBanner />
       <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">安全模式</h3>
-        <p className="text-xs text-zinc-500 mb-4">
-          控制 Agent 执行敏感操作时的权限检查行为
-        </p>
-
         {isLoading ? (
           <div className="text-xs text-zinc-500">加载中...</div>
         ) : (
@@ -159,6 +158,6 @@ export const GeneralSettings: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+    </SettingsPage>
   );
 };

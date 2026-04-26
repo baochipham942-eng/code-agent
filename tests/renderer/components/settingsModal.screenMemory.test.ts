@@ -12,7 +12,10 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
   }),
 }));
 
-import { buildSettingsTabs } from '../../../src/renderer/components/features/settings/SettingsModal';
+import {
+  buildSettingsTabGroups,
+  buildSettingsTabs,
+} from '../../../src/renderer/components/features/settings/SettingsModal';
 
 const t = {
   settings: {
@@ -51,5 +54,34 @@ describe('SettingsModal screen memory tab visibility', () => {
     });
 
     expect(tabs.map((tab) => tab.id)).not.toContain('openchronicle');
+  });
+
+  it('groups settings tabs by product intent', () => {
+    const groups = buildSettingsTabGroups({
+      t,
+      showScreenMemoryTab: true,
+      showUpdateTab: true,
+      hasOptionalUpdate: true,
+    });
+
+    expect(groups.map((group) => group.label)).toEqual([
+      '基础偏好',
+      '能力与连接',
+      '记忆与隐私',
+      '系统',
+    ]);
+    expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
+      'general',
+      'conversation',
+      'model',
+      'appearance',
+    ]);
+    expect(groups[0].tabs[0].label).toBe('权限与安全');
+    expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
+      'cache',
+      'update',
+      'about',
+    ]);
+    expect(groups[3].tabs[0].label).toBe('数据与存储');
   });
 });

@@ -18,10 +18,10 @@ import {
   Search,
   Star,
   X,
-  Download,
   AlertTriangle,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
+import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type {
   LocalSkillLibrary,
@@ -630,16 +630,12 @@ export const SkillsSettings: React.FC = () => {
     );
   }
 
-      <WebModeBanner />
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">Skills 管理</h3>
-        <p className="text-xs text-zinc-400">
-          管理已安装的 Skill 库，启用或禁用单个 Skill。
-        </p>
-      </div>
+    <SettingsPage
+      title="Skills"
+      description="管理已安装的 Skill 库和启用状态。发现、搜索、安装类动作默认收在管理区。"
+    >
+      <WebModeBanner />
 
       {/* Message */}
       {message && (
@@ -659,11 +655,7 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Installed Libraries */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-200">
-          已安装的 Skill 库 ({libraries.length})
-        </h4>
+      <SettingsSection title={`已安装的 Skill 库 (${libraries.length})`}>
         {libraries.length === 0 ? (
           <div className="bg-zinc-800 rounded-lg p-6 text-center">
             <Package className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
@@ -685,8 +677,13 @@ export const SkillsSettings: React.FC = () => {
             />
           ))
         )}
-      </div>
+      </SettingsSection>
 
+      <SettingsDetails
+        title="发现与安装"
+        description="推荐仓库、SkillsMP 搜索和自定义仓库添加放在这里，避免占用日常设置流。"
+      >
+      <div className="space-y-6">
       {/* Recommended Repos */}
       {recommendedRepos.length > 0 && (
         <div className="space-y-3">
@@ -814,9 +811,13 @@ export const SkillsSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Info Box */}
-      <div className="bg-zinc-800 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-200 mb-2">关于 Skills</h4>
+      </div>
+      </SettingsDetails>
+
+      <SettingsDetails
+        title="关于 Skills"
+        description="Skill 的用途和创建入口。"
+      >
         <p className="text-xs text-zinc-400 leading-relaxed">
           Skills 是预定义的工作流，可以帮助 Agent 更高效地完成特定任务。
           启用的 Skills 会在相关场景下自动推荐使用。
@@ -831,7 +832,7 @@ export const SkillsSettings: React.FC = () => {
           了解如何创建 Skill
           <ExternalLink className="w-3 h-3" />
         </a>
-      </div>
-    </div>
+      </SettingsDetails>
+    </SettingsPage>
   );
 };

@@ -17,8 +17,8 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
+import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type {
@@ -406,7 +406,6 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
 // ============================================================================
 
 export const ChannelsSettings: React.FC = () => {
-  const { t } = useI18n();
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -571,29 +570,27 @@ export const ChannelsSettings: React.FC = () => {
     );
   }
 
-      <WebModeBanner />
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">多通道接入</h3>
-        <p className="text-xs text-zinc-400 mb-4">
-          配置外部通道以通过 HTTP API、飞书等方式与 Agent 交互。
-        </p>
-      </div>
+    <SettingsPage
+      title="通道"
+      description="配置外部入口，让 HTTP API、飞书或 Telegram 可以和 Agent 交互。连接说明默认收起。"
+    >
+      <WebModeBanner />
 
-      {/* Add Button */}
-      <Button
-        disabled={isWebMode()}
-        onClick={handleAdd}
-        variant="primary"
-        leftIcon={<Plus className="w-4 h-4" />}
+      <SettingsSection
+        title="通道账号"
+        actions={(
+          <Button
+            disabled={isWebMode()}
+            onClick={handleAdd}
+            variant="primary"
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            添加通道
+          </Button>
+        )}
       >
-        添加通道
-      </Button>
-
-      {/* Account List */}
-      <div className="space-y-3">
+        <div className="space-y-3">
         {accounts.length === 0 ? (
           <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
             还没有配置任何通道
@@ -691,7 +688,8 @@ export const ChannelsSettings: React.FC = () => {
             </div>
           ))
         )}
-      </div>
+        </div>
+      </SettingsSection>
 
       {/* Message */}
       {message && (
@@ -709,9 +707,10 @@ export const ChannelsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Info Box */}
-      <div className="bg-zinc-800 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-200 mb-2">使用说明</h4>
+      <SettingsDetails
+        title="连接说明"
+        description="各通道的认证、端口和代理要求。"
+      >
         <div className="text-xs text-zinc-400 leading-relaxed space-y-2">
           <p>
             <strong>HTTP API:</strong> 创建本地 REST API 端点，支持同步和流式响应。
@@ -726,7 +725,7 @@ export const ChannelsSettings: React.FC = () => {
             通过 @BotFather 创建 Bot 获取 Token，使用 Long Polling 无需公网。
           </p>
         </div>
-      </div>
+      </SettingsDetails>
 
       {/* Modal */}
       {showModal && (
@@ -737,6 +736,6 @@ export const ChannelsSettings: React.FC = () => {
           onClose={() => setShowModal(false)}
         />
       )}
-    </div>
+    </SettingsPage>
   );
 };

@@ -166,7 +166,10 @@ async function main(): Promise<void> {
     if (browserStateProvider && browserStateProvider !== provider) {
       failures.push(`Managed browser provider mismatch: expected ${provider}, got ${browserStateProvider}.`);
     }
-    if (!browserState?.activeTab?.url?.startsWith('data:text/html')) {
+    const activeUrl = browserState?.activeTab?.url || '';
+    const activeUrlLooksLikeSmokePage = activeUrl.startsWith('data:text/html')
+      || activeUrl === 'data:[redacted]';
+    if (!activeUrlLooksLikeSmokePage || domSnapshot?.title !== 'Phase2 Browser Computer Smoke') {
       failures.push('Managed browser did not stay on the isolated smoke page.');
     }
     if (!domSnapshot?.headings.some((heading) => heading.text === 'Phase2 Smoke')) {

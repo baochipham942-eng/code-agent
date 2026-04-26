@@ -325,7 +325,7 @@ export class ToolExecutionEngine {
           );
 
           this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
-          this.ctx.onEvent({ type: 'tool_call_end', data: blockedResult });
+          this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, blockedResult) });
           return blockedResult;
         }
 
@@ -404,7 +404,7 @@ export class ToolExecutionEngine {
       );
 
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
@@ -797,7 +797,7 @@ export class ToolExecutionEngine {
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500), toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
@@ -885,7 +885,7 @@ export class ToolExecutionEngine {
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
-      this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {

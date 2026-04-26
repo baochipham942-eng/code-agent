@@ -1109,17 +1109,17 @@ async function smartType(
     return { success: false, error: 'text required for smart_type' };
   }
   try {
-    const preview = action.text.length > 30 ? action.text.substring(0, 30) + '...' : action.text;
+    const lengthPreview = `${action.text.length} chars`;
     if (action.selector) {
       await page.fill(action.selector, action.text, { timeout });
-      return { success: true, output: `Typed into ${action.selector}: "${preview}"` };
+      return { success: true, output: `Typed ${lengthPreview} into ${action.selector}` };
     } else if (action.role) {
       type RoleType = Parameters<typeof page.getByRole>[0];
       const locator = action.name
         ? page.getByRole(action.role as RoleType, { name: action.name, exact: action.exact })
         : page.getByRole(action.role as RoleType);
       await locator.fill(action.text, { timeout });
-      return { success: true, output: `Typed into role="${action.role}": "${preview}"` };
+      return { success: true, output: `Typed ${lengthPreview} into role="${action.role}"` };
     }
     return { success: false, error: 'No valid target specified' };
   } catch (e) {

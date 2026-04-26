@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildBrowserComputerActionPreview,
   formatBrowserComputerActionArguments,
@@ -60,6 +60,34 @@ describe('buildBrowserComputerActionPreview', () => {
       risk: 'read',
       riskLabel: '只读',
     });
+  });
+
+  it('shows browser targetRef label, source, and snapshot age in action preview', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-26T10:00:05Z'));
+    try {
+      expect(buildBrowserComputerActionPreview(makeToolCall({
+        name: 'browser_action',
+        arguments: {
+          action: 'click',
+          targetRef: {
+            refId: 'tref_snapshot-1_1',
+            source: 'dom',
+            selector: '#phase2-button',
+            name: 'Run Phase2',
+            snapshotId: 'snapshot-1',
+            capturedAtMs: new Date('2026-04-26T10:00:00Z').getTime(),
+          },
+        },
+      }))).toMatchObject({
+        surface: 'browser',
+        summary: '点击页面元素',
+        target: 'Run Phase2 · dom · 5s old · snapshot-1',
+        risk: 'browser_action',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('redacts typed desktop text to a length-only preview', () => {
@@ -273,6 +301,34 @@ describe('buildBrowserComputerActionPreview', () => {
     expect(result).not.toContain('secret@example.com');
   });
 
+  it('previews browser secretRef input without exposing the ref name', () => {
+    const toolCall = makeToolCall({
+      name: 'browser_action',
+      arguments: {
+        action: 'type',
+        selector: '#password',
+        secretRef: 'env:CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Typed secretRef env:CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD into #password',
+      },
+    });
+
+    const preview = buildBrowserComputerActionPreview(toolCall);
+    const args = formatBrowserComputerActionArguments(toolCall.name, toolCall.arguments || {});
+    const summary = summarizeBrowserComputerActionResult(toolCall);
+
+    expect(preview).toMatchObject({
+      summary: '输入 secretRef',
+      target: '#password',
+    });
+    expect(args).toContain('[secretRef]');
+    expect(args).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+    expect(summary).toBe('输入 secretRef -> #password');
+  });
+
   it('redacts browser form values from expanded arguments', () => {
     const args = formatBrowserComputerActionArguments('browser_action', {
       action: 'fill_form',
@@ -320,11 +376,79 @@ describe('buildBrowserComputerActionPreview', () => {
         metadata: {
           domSnapshot: {
             headings: ['Title'],
-            interactive: [{ tag: 'button' }],
+            interactiveElements: [{
+              tag: 'button',
+              targetRef: {
+                refId: 'tref_snapshot-1_1',
+                source: 'dom',
+                selector: '#submit',
+                snapshotId: 'snapshot-1',
+              },
+            }],
           },
         },
       },
     }))).toBe('DOM snapshot: 1 headings · 1 interactive');
+  });
+
+  it('summarizes browser account state without cookie values', () => {
+    const summary = summarizeBrowserComputerActionResult(makeToolCall({
+      name: 'browser_action',
+      arguments: {
+        action: 'get_account_state',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'cookie-secret',
+        metadata: {
+          browserAccountState: {
+            status: 'account_state_expired',
+            cookieCount: 2,
+            expiredCookieCount: 1,
+            originCount: 1,
+            localStorageEntryCount: 3,
+          },
+        },
+      },
+    }));
+
+    expect(summary).toBe('账号态: account_state_expired · 2 cookies · 1 origins · 3 localStorage · 1 expired');
+    expect(summary).not.toContain('cookie-secret');
+  });
+
+  it('summarizes download and upload artifacts without raw local paths', () => {
+    const download = summarizeBrowserComputerActionResult(makeToolCall({
+      name: 'browser_action',
+      arguments: {
+        action: 'wait_for_download',
+        selector: '#download',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Download completed at /Users/linchen/Downloads/private/report.txt',
+        metadata: {
+          browserArtifact: {
+            kind: 'download',
+            name: 'report.txt',
+            artifactPath: '.../report.txt',
+            size: 12,
+            sha256: 'a'.repeat(64),
+          },
+        },
+      },
+    }));
+    const args = formatBrowserComputerActionArguments('browser_action', {
+      action: 'upload_file',
+      selector: '#file',
+      uploadFilePath: '/Users/linchen/Downloads/private.env',
+    });
+
+    expect(download).toBe('下载完成 · report.txt · 12 bytes · sha256 aaaaaaaaaaaa...');
+    expect(download).not.toContain('/Users/linchen');
+    expect(args).toContain('private.env');
+    expect(args).not.toContain('/Users/linchen/Downloads');
   });
 
   it('ignores unrelated tools', () => {

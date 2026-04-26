@@ -48,9 +48,51 @@ export interface ManagedBrowserTabSnapshot {
   title: string;
 }
 
+export interface ManagedBrowserAccountStateSummary {
+  status: 'empty' | 'available' | 'account_state_expired';
+  cookieCount: number;
+  expiredCookieCount: number;
+  originCount: number;
+  localStorageEntryCount: number;
+  sessionStorageEntryCount: number;
+  cookieDomains: string[];
+  origins: string[];
+  updatedAtMs: number;
+  storageStatePath?: string | null;
+}
+
 export type ManagedBrowserMode = 'headless' | 'visible';
 export type ManagedBrowserProvider = 'system-chrome-cdp' | 'playwright-bundled';
 export type ManagedBrowserProviderPreference = ManagedBrowserProvider | 'auto';
+export type ManagedBrowserProfileMode = 'persistent' | 'isolated';
+export type ManagedBrowserLeaseStatus = 'active' | 'expired' | 'released';
+export type ManagedBrowserProxyMode = 'direct' | 'http' | 'socks';
+export type ManagedBrowserProxySource = 'default' | 'env' | 'request';
+
+export interface ManagedBrowserLeaseState {
+  leaseId: string;
+  owner: string;
+  acquiredAtMs: number;
+  lastHeartbeatAtMs: number;
+  expiresAtMs: number;
+  ttlMs: number;
+  status: ManagedBrowserLeaseStatus;
+}
+
+export interface ManagedBrowserProxyConfig {
+  mode: ManagedBrowserProxyMode;
+  server?: string | null;
+  bypass: string[];
+  regionHint?: string | null;
+  source: ManagedBrowserProxySource;
+}
+
+export interface ManagedBrowserExternalBridgeState {
+  enabled: false;
+  status: 'unsupported';
+  requiresExplicitAuthorization: true;
+  reason: string;
+}
 
 export interface WorkbenchSnapshotRef {
   url?: string | null;
@@ -117,6 +159,15 @@ export interface WorkbenchActionTrace {
 }
 
 export interface ManagedBrowserSessionState {
+  sessionId?: string | null;
+  profileId?: string | null;
+  profileMode?: ManagedBrowserProfileMode;
+  workspaceScope?: string | null;
+  artifactDir?: string | null;
+  lease?: ManagedBrowserLeaseState | null;
+  proxy?: ManagedBrowserProxyConfig | null;
+  externalBridge?: ManagedBrowserExternalBridgeState | null;
+  accountState?: ManagedBrowserAccountStateSummary | null;
   running: boolean;
   tabCount: number;
   activeTab?: ManagedBrowserTabSnapshot | null;

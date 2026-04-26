@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
-import type { ManagedBrowserSessionState } from '@shared/contract/desktop';
+import type {
+  ManagedBrowserAccountStateSummary,
+  ManagedBrowserLeaseState,
+  ManagedBrowserProfileMode,
+  ManagedBrowserProxyConfig,
+  ManagedBrowserSessionState,
+} from '@shared/contract/desktop';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
@@ -28,6 +34,18 @@ const EMPTY_MANAGED_BROWSER_SESSION: ManagedBrowserSessionState = {
   tabCount: 0,
   activeTab: null,
 };
+
+interface ManagedBrowserSessionPreviewMetadata {
+  sessionId?: string | null;
+  profileMode?: ManagedBrowserProfileMode | null;
+  profileId?: string | null;
+  profileDirSummary?: string | null;
+  artifactDirSummary?: string | null;
+  workspaceScopeSummary?: string | null;
+  accountState?: ManagedBrowserAccountStateSummary | null;
+  lease?: ManagedBrowserLeaseState | null;
+  proxy?: ManagedBrowserProxyConfig | null;
+}
 
 type BrowserWorkbenchRepairActionKind =
   | 'launch_managed_browser'
@@ -59,6 +77,15 @@ export interface BrowserWorkbenchPreview {
   lastScreenshotAtMs?: number | null;
   surfaceMode?: string | null;
   traceId?: string | null;
+  sessionId?: string | null;
+  profileMode?: ManagedBrowserProfileMode | null;
+  profileId?: string | null;
+  profileDirSummary?: string | null;
+  artifactDirSummary?: string | null;
+  workspaceScopeSummary?: string | null;
+  accountState?: ManagedBrowserAccountStateSummary | null;
+  lease?: ManagedBrowserLeaseState | null;
+  proxy?: ManagedBrowserProxyConfig | null;
 }
 
 export interface BrowserWorkbenchState {
@@ -151,6 +178,83 @@ function getPermissionIssue(
     return `${label}未授权`;
   }
   return `${label}未确认`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function firstStringField(value: unknown, keys: string[]): string | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  for (const key of keys) {
+    const field = record[key];
+    if (typeof field === 'string' && field.trim()) {
+      return field.trim();
+    }
+  }
+  return null;
+}
+
+function getPathBasename(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) || normalized || null;
+}
+
+function summarizePathTail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  const basename = getPathBasename(trimmed);
+  if (!trimmed || !basename) {
+    return null;
+  }
+  return basename === trimmed ? basename : `.../${basename}`;
+}
+
+function getProfileMode(value: unknown): ManagedBrowserProfileMode | null {
+  return value === 'persistent' || value === 'isolated' ? value : null;
+}
+
+function summarizeWorkspaceScope(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return summarizePathTail(value) || value.trim() || null;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  const label = firstStringField(record, ['label', 'name', 'id']);
+  if (label) {
+    return label;
+  }
+  return summarizePathTail(firstStringField(record, ['path', 'root', 'cwd', 'workingDirectory']));
+}
+
+function getManagedSessionPreviewMetadata(
+  session: ManagedBrowserSessionState,
+): ManagedBrowserSessionPreviewMetadata {
+  const profileDir = firstStringField(session, ['profileDir']);
+  const artifactDir = firstStringField(session, ['artifactDir', 'artifactsDir', 'artifactDirectory', 'artifactRoot']);
+  const profileMode = getProfileMode(asRecord(session)?.profileMode)
+    || (profileDir ? 'persistent' : null);
+
+  return {
+    sessionId: firstStringField(session, ['sessionId', 'id']),
+    profileMode,
+    profileId: firstStringField(session, ['profileId']) || getPathBasename(profileDir),
+    profileDirSummary: summarizePathTail(profileDir),
+    artifactDirSummary: summarizePathTail(artifactDir),
+    workspaceScopeSummary: summarizeWorkspaceScope(asRecord(session)?.workspaceScope),
+    accountState: asRecord(session)?.accountState as ManagedBrowserAccountStateSummary | null | undefined,
+    lease: asRecord(session)?.lease as ManagedBrowserLeaseState | null | undefined,
+    proxy: asRecord(session)?.proxy as ManagedBrowserProxyConfig | null | undefined,
+  };
 }
 
 async function loadManagedBrowserSession(): Promise<ManagedBrowserSessionState> {
@@ -441,7 +545,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     });
 
     return actions;
-  }, [accessibilityPermission?.status, collectorStatus?.running, mode, screenCapturePermission?.status]);
+  }, [accessibilityPermission?.status, collectorStatus?.running, managedSession.running, mode, screenCapturePermission?.status]);
 
   const preview = useMemo<BrowserWorkbenchPreview | null>(() => {
     if (mode === 'managed') {
@@ -451,6 +555,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
         title: managedSession.activeTab?.title || null,
         surfaceMode: managedSession.mode || 'headless',
         traceId: managedSession.lastTrace?.id || null,
+        ...getManagedSessionPreviewMetadata(managedSession),
       };
     }
 
@@ -475,10 +580,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     frontmostContext?.browserUrl,
     frontmostContext?.windowTitle,
     lastScreenshotAtMs,
-    managedSession.activeTab?.title,
-    managedSession.activeTab?.url,
-    managedSession.lastTrace?.id,
-    managedSession.mode,
+    managedSession,
     mode,
   ]);
 
@@ -492,14 +594,14 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
           await ipcService.invokeDomain<ManagedBrowserSessionState>(
             IPC_DOMAINS.DESKTOP,
             'ensureManagedBrowserSession',
-            { mode: 'headless' },
+            { mode: 'headless', profileMode: 'persistent' },
           );
           break;
         case 'launch_managed_browser_visible':
           await ipcService.invokeDomain<ManagedBrowserSessionState>(
             IPC_DOMAINS.DESKTOP,
             'ensureManagedBrowserSession',
-            { mode: 'visible' },
+            { mode: 'visible', profileMode: 'persistent' },
           );
           break;
         case 'open_screen_capture_settings':

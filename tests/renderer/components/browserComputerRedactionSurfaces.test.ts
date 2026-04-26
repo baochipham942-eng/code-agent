@@ -109,6 +109,16 @@ describe('browser/computer redaction surfaces', () => {
               role: 'textbox',
               name: SECRET,
             },
+            browserWorkbenchState: {
+              sessionId: 'browser_session_1',
+              profileId: 'managed-browser-profile',
+              profileMode: 'persistent',
+              profileDir: '/Users/linchen/Library/Application Support/code-agent/managed-browser-profile',
+              artifactDir: '/Users/linchen/Downloads/ai/code-agent/.workbench/artifacts/run-42',
+              workspaceScope: '/Users/linchen/Downloads/ai/code-agent',
+              cookies: [{ name: 'sid', value: 'cookie-secret' }],
+              storageState: { cookies: [{ name: 'sid', value: 'cookie-secret' }] },
+            },
             browserComputerRecoveryActionOutcome: {
               status: 'success',
               title: '页面证据已刷新',
@@ -136,8 +146,14 @@ describe('browser/computer redaction surfaces', () => {
     expect(json).toContain('[redacted 18 chars]');
     expect(json).toContain('页面证据已刷新');
     expect(json).toContain('DOM headings: 1');
+    expect(json).toContain('browser_session_1');
+    expect(json).toContain('managed-browser-profile');
+    expect(json).toContain('.../run-42');
     expect(json).not.toContain('domSnapshot');
     expect(json).not.toContain('accessibilitySnapshot');
+    expect(json).not.toContain('/Users/linchen');
+    expect(json).not.toContain('cookie-secret');
+    expect(json).not.toContain('storageState');
     expect(json).not.toContain(SECRET);
   });
 

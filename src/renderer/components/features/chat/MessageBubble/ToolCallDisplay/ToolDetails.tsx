@@ -251,11 +251,14 @@ function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputerNextSte
     }];
   }
 
-  if (toolCall.name === 'computer_use' && action.startsWith('smart_') && toolCall.arguments?.selector) {
+  if (
+    (toolCall.name === 'browser_action' && code === 'STALE_TARGET_REF')
+    || (toolCall.name === 'computer_use' && action.startsWith('smart_') && toolCall.arguments?.selector)
+  ) {
     return [{
       id: 'refresh_browser_snapshot',
       title: '刷新页面证据',
-      detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用选择器或 AX 证据重试。',
+      detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用新 targetRef、选择器或 AX 证据重试。',
       executable: true,
       run: async () => {
         const response = await window.domainAPI?.invoke<Record<string, unknown>>(

@@ -6,7 +6,9 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { browserService } from '../../services/infra/browserService.js';
+import * as path from 'path';
+import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
+import { browserService, redactBrowserWorkbenchTraceParams } from '../../services/infra/browserService.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
 import {
@@ -41,6 +43,11 @@ type BrowserActionType =
   | 'get_dom_snapshot'
   | 'get_a11y_snapshot'
   | 'get_workbench_state'
+  | 'get_account_state'
+  | 'export_storage_state'
+  | 'import_storage_state'
+  | 'wait_for_download'
+  | 'upload_file'
   | 'wait'
   | 'fill_form'
   | 'get_logs';
@@ -62,6 +69,11 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'get_dom_snapshot',
   'get_a11y_snapshot',
   'get_workbench_state',
+  'get_account_state',
+  'export_storage_state',
+  'import_storage_state',
+  'wait_for_download',
+  'upload_file',
   'wait',
   'fill_form',
 ]);
@@ -98,6 +110,11 @@ Actions:
 - get_dom_snapshot: Get structured headings and interactive elements
 - get_a11y_snapshot: Get accessibility snapshot when available, with DOM fallback
 - get_workbench_state: Return managed browser session/workbench state
+- get_account_state: Return cookie/storage summary without values
+- export_storage_state: Save Playwright storageState to a local artifact file
+- import_storage_state: Import cookies and storage seed from a local storageState file
+- wait_for_download: Click an element and save the completed download as an artifact
+- upload_file: Set a file input or file chooser target to a user-approved file
 - wait: Wait for element or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs (for debugging)
@@ -125,7 +142,8 @@ Examples:
           'navigate', 'back', 'forward', 'reload', 'set_viewport',
           'click', 'click_text', 'type', 'press_key', 'scroll',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
-          'get_workbench_state', 'wait', 'fill_form', 'get_logs'
+          'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
+          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
         ],
         description: 'The browser action to perform',
       },
@@ -135,7 +153,12 @@ Examples:
       },
       selector: {
         type: 'string',
-        description: 'CSS selector for element interactions',
+        description: 'CSS selector for element interactions. Prefer targetRef from get_dom_snapshot when available.',
+      },
+      targetRef: {
+        type: 'object',
+        description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
+        additionalProperties: true,
       },
       text: {
         type: 'string',
@@ -186,6 +209,18 @@ Examples:
         type: 'string',
         description: 'Custom prompt for AI analysis',
       },
+      storageStatePath: {
+        type: 'string',
+        description: 'Local path for import_storage_state/export_storage_state. Export creates an artifact path when omitted.',
+      },
+      uploadFilePath: {
+        type: 'string',
+        description: 'Local file path for upload_file. Sensitive paths require permission.',
+      },
+      secretRef: {
+        type: 'string',
+        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. The secret value is never returned in output.',
+      },
     },
     required: ['action'],
   },
@@ -197,6 +232,7 @@ Examples:
     const action = params.action as BrowserActionType;
     const url = params.url as string | undefined;
     const selector = params.selector as string | undefined;
+    const targetRef = params.targetRef as string | BrowserTargetRef | undefined;
     const text = params.text as string | undefined;
     const key = params.key as string | undefined;
     const direction = params.direction as 'up' | 'down' | undefined;
@@ -208,6 +244,9 @@ Examples:
     const fullPage = params.fullPage as boolean | undefined;
     const formData = params.formData as Record<string, string> | undefined;
     const analyze = params.analyze as boolean | undefined;
+    const storageStatePath = params.storageStatePath as string | undefined;
+    const uploadFilePath = params.uploadFilePath as string | undefined;
+    const secretRef = params.secretRef as string | undefined;
     const analysisPrompt = (params.prompt as string) || `请分析这个网页截图的内容，包括：
 1. 页面的主要用途和类型
 2. 可见的主要元素（按钮、链接、表单等）
@@ -242,7 +281,7 @@ Examples:
         switch (action) {
         // Browser lifecycle
         case 'launch':
-          await browserService.launch();
+          await browserService.launch({ leaseOwner: 'browser_action' });
           return { success: true, output: 'Browser launched successfully' };
 
         case 'close':
@@ -323,8 +362,18 @@ Examples:
 
         // Interactions
         case 'click':
+          if (targetRef) {
+            const resolved = await browserService.clickTargetRef(targetRef, tabId);
+            return {
+              success: true,
+              output: `Clicked targetRef: ${formatBrowserTargetRefLabel(resolved)}`,
+              metadata: {
+                targetRef: summarizeBrowserTargetRefForTool(resolved),
+              },
+            };
+          }
           if (!selector) {
-            return { success: false, error: 'selector required for click' };
+            return { success: false, error: 'selector or targetRef required for click' };
           }
           await browserService.click(selector, tabId);
           return { success: true, output: `Clicked element: ${selector}` };
@@ -346,14 +395,39 @@ Examples:
         }
 
         case 'type':
+          if (text === undefined && !secretRef) {
+            return { success: false, error: 'text or secretRef required for type' };
+          }
+          const textToType = secretRef ? resolveBrowserSecretRef(secretRef) : text;
+          if (textToType === undefined) {
+            return { success: false, error: `secretRef unavailable: ${summarizeSecretRef(secretRef)}` };
+          }
+          if (targetRef) {
+            const resolved = await browserService.typeTargetRef(targetRef, textToType, tabId);
+            return {
+              success: true,
+              output: secretRef
+                ? `Typed secretRef ${summarizeSecretRef(secretRef)} into targetRef: ${formatBrowserTargetRefLabel(resolved)}`
+                : `Typed ${textToType.length} chars into targetRef: ${formatBrowserTargetRefLabel(resolved)}`,
+              metadata: {
+                targetRef: summarizeBrowserTargetRefForTool(resolved),
+                secretRef: secretRef ? summarizeSecretRef(secretRef) : undefined,
+              },
+            };
+          }
           if (!selector) {
-            return { success: false, error: 'selector required for type' };
+            return { success: false, error: 'selector or targetRef required for type' };
           }
-          if (text === undefined) {
-            return { success: false, error: 'text required for type' };
-          }
-          await browserService.type(selector, text, tabId);
-          return { success: true, output: `Typed "${text}" into ${selector}` };
+          await browserService.type(selector, textToType, tabId);
+          return {
+            success: true,
+            output: secretRef
+              ? `Typed secretRef ${summarizeSecretRef(secretRef)} into ${selector}`
+              : `Typed ${textToType.length} chars into ${selector}`,
+            metadata: {
+              secretRef: secretRef ? summarizeSecretRef(secretRef) : undefined,
+            },
+          };
 
         case 'press_key':
           if (!key) {
@@ -451,11 +525,96 @@ Examples:
 
         case 'get_workbench_state': {
           const state = browserService.getSessionState();
+          const safeState = summarizeManagedBrowserStateForTool(state);
           return {
             success: true,
-            output: JSON.stringify(state, null, 2),
+            output: JSON.stringify(safeState, null, 2),
             metadata: {
-              browserWorkbenchState: state,
+              browserWorkbenchState: safeState,
+            },
+          };
+        }
+
+        case 'get_account_state': {
+          const accountState = await browserService.getAccountStateSummary();
+          return {
+            success: true,
+            output: JSON.stringify(summarizeAccountStateForTool(accountState), null, 2),
+            metadata: {
+              browserAccountState: summarizeAccountStateForTool(accountState),
+            },
+          };
+        }
+
+        case 'export_storage_state': {
+          const artifact = await browserService.exportStorageState(storageStatePath);
+          return {
+            success: true,
+            output: `Storage state exported: ${summarizePathTail(artifact.path) || 'storage_state.json'}`,
+            metadata: {
+              storageStatePath: artifact.path,
+              browserAccountState: summarizeAccountStateForTool(artifact.accountState),
+            },
+          };
+        }
+
+        case 'import_storage_state': {
+          if (!storageStatePath) {
+            return { success: false, error: 'storageStatePath required for import_storage_state' };
+          }
+          const accountState = await browserService.importStorageState(storageStatePath);
+          return {
+            success: true,
+            output: `Storage state imported: ${summarizePathTail(storageStatePath) || 'storage_state.json'}`,
+            metadata: {
+              storageStatePath,
+              browserAccountState: summarizeAccountStateForTool(accountState),
+            },
+          };
+        }
+
+        case 'wait_for_download': {
+          if (!selector && !targetRef) {
+            return { success: false, error: 'selector or targetRef required for wait_for_download' };
+          }
+          const artifact = await browserService.waitForDownload({ selector, targetRef }, tabId);
+          return {
+            success: true,
+            output: `Download completed: ${artifact.name} (${artifact.size} bytes, sha256=${artifact.sha256.slice(0, 12)})`,
+            metadata: {
+              browserArtifact: summarizeBrowserArtifactForTool(artifact),
+            },
+          };
+        }
+
+        case 'upload_file': {
+          if (!uploadFilePath) {
+            return { success: false, error: 'uploadFilePath required for upload_file' };
+          }
+          if (!selector && !targetRef) {
+            return { success: false, error: 'selector or targetRef required for upload_file' };
+          }
+          const approval = await requestUploadFileApprovalIfNeeded(uploadFilePath, context);
+          if (!approval.approved) {
+            return {
+              success: false,
+              error: approval.reason || 'Upload file permission denied',
+              metadata: {
+                code: 'UPLOAD_FILE_PERMISSION_DENIED',
+              },
+            };
+          }
+          const artifact = await browserService.uploadFile({
+            filePath: uploadFilePath,
+            selector,
+            targetRef,
+            tabId,
+          });
+          return {
+            success: true,
+            output: `Upload file selected: ${artifact.name} (${artifact.size} bytes, sha256=${artifact.sha256.slice(0, 12)})`,
+            metadata: {
+              browserArtifact: summarizeBrowserArtifactForTool(artifact),
             },
           };
         }
@@ -515,6 +674,30 @@ Examples:
       const recentLogs = browserService.logger.getLogsAsString(5);
 
       // Provide helpful error messages
+      const targetRefError = getBrowserTargetRefErrorDetails(error);
+      if (targetRefError) {
+        return appendBrowserWorkbenchNote(withWorkbenchTrace({
+          success: false,
+          error: `${targetRefError.message}\n\nRecovery: ${targetRefError.retryHint}`,
+          metadata: {
+            code: targetRefError.code,
+            recoverable: true,
+            targetRef: {
+              refId: targetRefError.refId,
+              snapshotId: targetRefError.snapshotId,
+            },
+            browserComputerRecoveryActionOutcome: {
+              status: 'recoverable',
+              title: 'TargetRef is stale. Refresh the DOM snapshot and retry.',
+              evidence: [
+                targetRefError.refId ? `TargetRef: ${targetRefError.refId}` : 'TargetRef: missing',
+                targetRefError.snapshotId ? `Snapshot: ${targetRefError.snapshotId}` : 'Snapshot: missing',
+              ],
+              retryHint: targetRefError.retryHint,
+            },
+          },
+        }, completedTrace), workbenchNotes);
+      }
       if (errorMessage.includes('No active tab')) {
         return appendBrowserWorkbenchNote(withWorkbenchTrace({
           success: false,
@@ -541,16 +724,268 @@ function getScreenshotPathFromResult(result: ToolExecutionResult): string | null
   return typeof path === 'string' ? path : null;
 }
 
+function summarizeBrowserTargetRefForTool(targetRef: BrowserTargetRef): Record<string, unknown> {
+  return {
+    refId: targetRef.refId,
+    source: targetRef.source,
+    selector: targetRef.selector,
+    role: targetRef.role || null,
+    name: targetRef.name || null,
+    textHint: targetRef.textHint || null,
+    tabId: targetRef.tabId,
+    snapshotId: targetRef.snapshotId,
+    capturedAtMs: targetRef.capturedAtMs,
+    ttlMs: targetRef.ttlMs,
+    confidence: targetRef.confidence,
+  };
+}
+
+function summarizeBrowserArtifactForTool(artifact: BrowserArtifactSummary): Record<string, unknown> {
+  return {
+    artifactId: artifact.artifactId,
+    kind: artifact.kind,
+    name: artifact.name,
+    artifactPath: summarizePathTail(artifact.artifactPath),
+    size: artifact.size,
+    mimeType: artifact.mimeType,
+    sha256: artifact.sha256,
+    createdAtMs: artifact.createdAtMs,
+    sessionId: artifact.sessionId,
+  };
+}
+
+function summarizeAccountStateForTool(accountState: unknown): Record<string, unknown> | null {
+  if (!accountState) {
+    return null;
+  }
+  const state = accountState as Record<string, unknown>;
+  return {
+    status: state.status || 'empty',
+    cookieCount: state.cookieCount || 0,
+    expiredCookieCount: state.expiredCookieCount || 0,
+    originCount: state.originCount || 0,
+    localStorageEntryCount: state.localStorageEntryCount || 0,
+    sessionStorageEntryCount: state.sessionStorageEntryCount || 0,
+    cookieDomains: Array.isArray(state.cookieDomains) ? state.cookieDomains : [],
+    origins: Array.isArray(state.origins) ? state.origins : [],
+    updatedAtMs: state.updatedAtMs || null,
+    storageStatePath: summarizePathTail(typeof state.storageStatePath === 'string' ? state.storageStatePath : undefined),
+  };
+}
+
+function formatBrowserTargetRefLabel(targetRef: BrowserTargetRef): string {
+  return [
+    targetRef.name || targetRef.textHint || targetRef.selector || targetRef.refId,
+    targetRef.source,
+    targetRef.snapshotId,
+  ].filter(Boolean).join(' · ');
+}
+
+function getBrowserTargetRefErrorDetails(error: unknown): {
+  code: string;
+  message: string;
+  retryHint: string;
+  refId: string | null;
+  snapshotId: string | null;
+} | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const record = error as Record<string, unknown>;
+  if (record.code !== 'STALE_TARGET_REF') {
+    return null;
+  }
+  return {
+    code: typeof record.code === 'string' ? record.code : 'STALE_TARGET_REF',
+    message: error instanceof Error ? error.message : 'TargetRef is stale or unavailable.',
+    retryHint: typeof record.retryHint === 'string'
+      ? record.retryHint
+      : 'Run browser_action.get_dom_snapshot and retry with a fresh targetRef.',
+    refId: typeof record.refId === 'string' ? record.refId : null,
+    snapshotId: typeof record.snapshotId === 'string' ? record.snapshotId : null,
+  };
+}
+
+function resolveBrowserSecretRef(secretRef: string | undefined): string | undefined {
+  if (!secretRef) {
+    return undefined;
+  }
+  if (secretRef.startsWith('env:')) {
+    const envName = secretRef.slice(4);
+    if (!/^[A-Z0-9_]+$/.test(envName)) {
+      return undefined;
+    }
+    return process.env[envName];
+  }
+  return undefined;
+}
+
+function summarizeSecretRef(secretRef: string | undefined): string {
+  if (!secretRef) {
+    return 'secretRef';
+  }
+  if (secretRef.startsWith('env:')) {
+    return 'env';
+  }
+  return 'secretRef';
+}
+
+async function requestUploadFileApprovalIfNeeded(
+  filePath: string,
+  context: ToolContext,
+): Promise<{ approved: boolean; reason?: string }> {
+  if (!isSensitiveUploadPath(filePath)) {
+    return { approved: true };
+  }
+  const approved = await context.requestPermission({
+    type: 'file_read',
+    tool: 'browser_action.upload_file',
+    dangerLevel: 'warning',
+    reason: '上传敏感路径下的本地文件需要确认。',
+    details: {
+      file: summarizePathTail(filePath),
+      action: 'upload_file',
+    },
+  });
+  return approved
+    ? { approved: true }
+    : { approved: false, reason: 'Sensitive upload file was not approved.' };
+}
+
+function isSensitiveUploadPath(filePath: string): boolean {
+  const resolved = pathResolve(filePath);
+  const basename = getPathBasenameForUpload(resolved).toLowerCase();
+  if (/\.(env|pem|key|p12|pfx)$/i.test(basename)) {
+    return true;
+  }
+  if (/credential|secret|token|password|id_rsa|id_dsa|id_ecdsa|id_ed25519/i.test(basename)) {
+    return true;
+  }
+  const home = process.env.HOME ? pathResolve(process.env.HOME) : null;
+  if (!home) {
+    return false;
+  }
+  const sensitiveRoots = ['Desktop', 'Downloads', '.ssh', '.aws', '.config'].map((segment) => `${home}/${segment}`);
+  return sensitiveRoots.some((root) => resolved === root || resolved.startsWith(`${root}/`));
+}
+
+function pathResolve(value: string): string {
+  return path.resolve(value).replace(/\/+$/g, '') || value;
+}
+
+function getPathBasenameForUpload(value: string): string {
+  const parts = value.split('/').filter(Boolean);
+  return parts.at(-1) || value;
+}
+
 function withWorkbenchTrace(
   result: ToolExecutionResult,
   trace: ReturnType<typeof browserService.finishTrace>,
 ): ToolExecutionResult {
+  const safeTrace = {
+    ...trace,
+    params: redactBrowserWorkbenchTraceParams(trace.toolName || 'browser_action', trace.params || {}),
+  };
   return {
     ...result,
     metadata: {
       ...(result.metadata || {}),
-      traceId: trace.id,
-      workbenchTrace: trace,
+      traceId: safeTrace.id,
+      workbenchTrace: safeTrace,
     },
   };
+}
+
+function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {
+  return {
+    sessionId: state.sessionId || null,
+    profileId: state.profileId || null,
+    profileMode: state.profileMode || null,
+    workspaceScope: summarizeWorkspaceScope(state.workspaceScope || undefined),
+    artifactDir: summarizePathTail(state.artifactDir || undefined),
+    lease: state.lease
+      ? {
+          leaseId: state.lease.leaseId,
+          owner: state.lease.owner,
+          acquiredAtMs: state.lease.acquiredAtMs,
+          lastHeartbeatAtMs: state.lease.lastHeartbeatAtMs,
+          expiresAtMs: state.lease.expiresAtMs,
+          ttlMs: state.lease.ttlMs,
+          status: state.lease.status,
+        }
+      : null,
+    proxy: state.proxy
+      ? {
+          mode: state.proxy.mode,
+          bypass: state.proxy.bypass,
+          regionHint: state.proxy.regionHint || null,
+          source: state.proxy.source,
+        }
+      : null,
+    externalBridge: state.externalBridge
+      ? {
+          enabled: false,
+          status: state.externalBridge.status,
+          requiresExplicitAuthorization: true,
+          reason: state.externalBridge.reason,
+        }
+      : null,
+    accountState: summarizeAccountStateForTool(state.accountState),
+    running: state.running,
+    tabCount: state.tabCount,
+    activeTab: state.activeTab
+      ? {
+          id: state.activeTab.id,
+          url: summarizeUrl(state.activeTab.url),
+          title: state.activeTab.title,
+        }
+      : null,
+    mode: state.mode || null,
+    provider: state.provider || null,
+    requestedProvider: state.requestedProvider || null,
+    cdpPort: state.cdpPort || null,
+    missingExecutable: state.missingExecutable || false,
+    recommendedAction: state.recommendedAction || null,
+    providerFallbackReason: state.providerFallbackReason || null,
+    viewport: state.viewport || null,
+    allowedHosts: state.allowedHosts || [],
+    blockedHosts: state.blockedHosts || [],
+    lastTraceId: state.lastTrace?.id || null,
+  };
+}
+
+function summarizePathTail(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.replace(/\\/g, '/');
+  const tail = normalized.split('/').filter(Boolean).pop();
+  return tail ? `.../${tail}` : null;
+}
+
+function summarizeWorkspaceScope(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return value.includes('/') || value.includes('\\')
+    ? summarizePathTail(value)
+    : value;
+}
+
+function summarizeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return `${url.origin}${url.pathname}`;
+    }
+    if (url.protocol === 'about:' && url.pathname === 'blank') {
+      return 'about:blank';
+    }
+    if (url.protocol === 'blob:') {
+      return url.origin !== 'null' ? `blob:${url.origin}/[redacted]` : 'blob:[redacted]';
+    }
+    return `${url.protocol}[redacted]`;
+  } catch {
+    return '[invalid URL]';
+  }
 }

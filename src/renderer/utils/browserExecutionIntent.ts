@@ -29,6 +29,11 @@ export function buildBrowserSessionIntentSnapshot(args: {
             ...(preview.lastScreenshotAtMs !== undefined ? { lastScreenshotAtMs: preview.lastScreenshotAtMs } : {}),
             ...(preview.surfaceMode !== undefined ? { surfaceMode: preview.surfaceMode } : {}),
             ...(preview.traceId !== undefined ? { traceId: preview.traceId } : {}),
+            ...(preview.sessionId !== undefined ? { sessionId: preview.sessionId } : {}),
+            ...(preview.profileId !== undefined ? { profileId: preview.profileId } : {}),
+            ...(preview.profileMode !== undefined ? { profileMode: preview.profileMode } : {}),
+            ...(preview.artifactDirSummary !== undefined ? { artifactDirSummary: preview.artifactDirSummary } : {}),
+            ...(preview.workspaceScopeSummary !== undefined ? { workspaceScopeSummary: preview.workspaceScopeSummary } : {}),
           },
         }
       : {}),

@@ -13,6 +13,7 @@ import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import {
   isBrowserComputerToolName,
+  sanitizeBrowserComputerMetadata,
   sanitizeBrowserComputerToolArguments,
   redactBrowserComputerInputPayloadsInValue,
 } from '../../shared/utils/browserComputerRedaction';
@@ -181,9 +182,17 @@ function generateMetadataHeader(session: CachedSession, options: ExportOptions):
     lines.push(`total_tokens: ${session.totalTokens}`);
   }
 
-  if (session.metadata) {
+  const safeMetadata = session.metadata
+    ? sanitizeBrowserComputerMetadata(
+        'browser_action',
+        { action: 'get_workbench_state' },
+        session.metadata as Record<string, unknown>,
+      ) || session.metadata
+    : null;
+
+  if (safeMetadata) {
     lines.push('metadata:');
-    for (const [key, value] of Object.entries(session.metadata)) {
+    for (const [key, value] of Object.entries(safeMetadata)) {
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
         lines.push(`  ${key}: ${value}`);
       }

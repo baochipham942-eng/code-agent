@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
 
 export interface SkillStatusMessageProps {
   content: string;
@@ -40,25 +40,16 @@ export const SkillStatusMessage: React.FC<SkillStatusMessageProps> = ({ content 
     return null;
   }
 
+  // 灰色脚注样式，对照 Codex 的 "Using xxx skill" 一行提示
+  // 鼠标悬停时通过 title 暴露原始 message（含 skill 描述）
+  const tooltip = name ? `${message}` : message;
+
   return (
-    <div className="skill-status animate-slideUp">
-      <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-500/10 to-accent-purple/10 border border-primary-500/20">
-        {/* Loading spinner */}
-        <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-primary-500/20">
-          <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
-        </div>
-
-        {/* Status message */}
-        <span className="text-sm text-zinc-400">{message}</span>
-
-        {/* Skill name badge */}
-        {name && (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800 border border-zinc-700">
-            <Sparkles className="w-3 h-3 text-accent-purple" />
-            <span className="text-xs font-medium text-zinc-400">/{name}</span>
-          </div>
-        )}
-      </div>
+    <div className="skill-status px-1 py-1 text-xs text-zinc-500 flex items-center gap-1.5" title={tooltip ?? undefined}>
+      <Lightbulb className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+      <span className="truncate">
+        {name ? <>Using <span className="text-zinc-300 font-medium">{name}</span> skill</> : message}
+      </span>
     </div>
   );
 };

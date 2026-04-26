@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.3 (对应 v0.16.65)
-> 日期: 2026-04-23
+> 版本: 9.4 (对应 v0.16.65+)
+> 日期: 2026-04-26
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -22,6 +22,7 @@
 | [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、SpawnGuard、异步通知（历史设计 + 实现指引） |
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline），与 TaskPanel(sidecar) 分工 |
+| [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 
 ### 架构决策记录 (ADR)
@@ -39,6 +40,7 @@
 | [009](./decisions/009-dual-coordinator-split.md) | 双 Coordinator 拆分 | accepted |
 | [010](./decisions/010-swarm-road-to-10.md) | Swarm Road to 10 | closed |
 | [011](./decisions/011-chat-native-workbench.md) | Chat-Native Workbench 架构 | accepted |
+| [012](./decisions/012-live-preview-v2-c-deferred.md) | Live Preview V2-C Next.js 支持延期，V2 收敛为 Vite-only MVP | accepted |
 
 ---
 
@@ -56,7 +58,7 @@
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | Kimi K2.5 (主要), 智谱/DeepSeek/OpenAI/火山引擎 (备用), Local/Ollama (本地) |
+| AI 模型 | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录 |
 | 本地桥接 | packages/bridge (localhost:9527) |
 | 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
@@ -144,9 +146,9 @@ code-agent/
 └── supabase/                    # 数据库迁移
 ```
 
-### 工具体系（96 个注册工具）
+### 工具体系（96+ 个注册工具）
 
-按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。
+按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-04-24 之后新增 visual_edit 与 Browser/Computer 生产化子动作，文档口径用 96+ 避免把工具总数写死。
 
 | 分类 | 数量 | 代表工具 |
 |------|------|----------|
@@ -283,12 +285,35 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 | Main IPC | `src/main/ipc/workspace.ipc.ts` | handleSetCurrent 广播 WORKSPACE_CURRENT_CHANGED |
 | Main auth | `src/web/middleware/auth.ts` `src/web/webServer.ts` | `.dev-token` 复用 + shutdown 不清 |
 | Tauri | `src-tauri/tauri.conf.json` `src-tauri/src/main.rs` | window.url = about:blank + setup navigate(Url) |
-| UI 入口 | `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx` | Live Preview URL input + Open 按钮 |
+| UI 入口（历史） | `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx` | 2026-04-24 的 Live Preview URL input + Open 按钮；2026-04-26 B+ 后迁到 `SessionActionsMenu` / `DevServerLauncher` |
 | UI 预览面板 | `src/renderer/components/LivePreview/LivePreviewFrame.tsx` | bridge message handler + restore 发起 + stale 清理 + 诊断 |
 | Store | `src/renderer/stores/appStore.ts` | `LivePreviewSelectedElement.relativeFile` |
 | Composer | `src/renderer/stores/composerStore.ts` | `buildContext()` 读活动 tab 的 selection 并拍回协议 nested 形 |
 | Session subscribe | `src/renderer/stores/sessionStore.ts` | 订阅 WORKSPACE_CURRENT_CHANGED |
 | Tests | `tests/renderer/stores/composerStore.test.ts` | 覆盖三种 selection 场景（liveDev 有 / file tab / null） |
+
+---
+
+### v0.16.65+ 2026-04-26 实现回写
+
+4 月 26 日这批提交没有 bump package version，但已经明显改变了稳定架构口径。当前要按 `v0.16.65+` 记录，而不是继续只停在 4 月 23 日的面板整合状态。
+
+| 能力域 | 当前状态 | 关键落点 |
+|---|---|---|
+| Workbench B+ 信息架构 | ChatInput 移除 AbilityMenu；低频动作收进 `+`；Code/Plan/Ask 收进 `+` 菜单；模型和 effort 合并成单胶囊；Routing / Browser 归入 Settings 的“对话”tab；Settings 分组导航与页面骨架落地；TitleBar 只保留核心入口，全局工具移入 Sidebar User Menu | `ChatInput/InputAddMenu.tsx`、`ConversationSettings.tsx`、`SettingsModal.tsx`、`SettingsLayout.tsx`、`settingsTabs.ts`、`SessionActionsMenu.tsx`、`Sidebar.tsx`、`WorkbenchTabs.tsx` |
+| Live Preview V2-A/B | `devServerManager` 能探测并启动本地 dev server，DevServerLauncher 作为模态入口；bridge protocol 升级到 0.3.0，选中元素带 `className` 与 `computedStyle`；TweakPanel 支持 spacing/color/fontSize/radius/align 5 类 Tailwind 原子改写；V2-C Next.js App Router 支持按 ADR-012 延期 | `devServerManager.ts`、`LivePreviewFrame.tsx`、`TweakPanel.tsx`、`tweakWriter.ts`、`tailwindCategories.ts`、`docs/decisions/012-live-preview-v2-c-deferred.md` |
+| Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径 | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`docs/acceptance/browser-computer-workbench-smoke.md` |
+| Activity Providers | OpenChronicle 与 Tauri Native Desktop 不再各自直塞 prompt；新增 provider-neutral `ActivityContextProvider`、`ActivityProvider` contract、prompt formatter 与 renderer preview。OpenChronicle 仍是外部 daemon provider，Tauri Native Desktop 是 bundled provider | `activityContextProvider.ts`、`activityProviderRegistry.ts`、`activityPromptFormatter.ts`、`activityContext.ts`、`activityProvider.ts` |
+| Semantic Tool UI | 工具 input schema 强制注入 `_meta.shortDescription`；provider parser 抽出 `_meta` 写到 ToolCall 顶层并剥离执行参数；SessionRepository 对无 `_meta` 的历史/弱模型工具调用生成 fallback shortDescription。前端用语义标题、target icon、memory citation 折叠卡、会话 diff 聚合卡和 URL favicon chip 改善可读性 | `prompts/builder.ts`、`model/providers/shared.ts`、`SessionRepository.ts`、`ToolHeader.tsx`、`MemoryCitationGroup.tsx`、`SessionDiffSummary.tsx`、`LinkPreviewCard.tsx` |
+| Eval / model 协议修复 | 评测实验支持 SSE 进度、行点击进详情、fatal inference error 熔断、DB 去重；multi-turn adapter 真保留 messages；recent memory 在评测中隔离；thinking-mode provider 补齐 `reasoning_content` history 字段；`max_tool_calls` 从 critical gate 降为 weighted score | `testRunner.ts`、`agentAdapter.ts`、`retryStrategy.ts`、`providers/shared.ts`、`docs/knowledge/eval-tracking.md`、`docs/knowledge/bug-fixes.md` |
+
+#### Live Preview V2 当前边界
+
+V2 的稳定口径是 **Vite-only MVP**：自动起 dev server + 点击源码定位 + TweakPanel 原子样式修改。Next.js App Router 不计入 V2 完成定义，原因见 ADR-012。后续若 React / Next / SWC 生态出现可复用方案，再重新评估 V3。
+
+#### Browser / Computer 当前边界
+
+Browser 主路径是 in-app managed browser，默认验收走 System Chrome headless + CDP。远程浏览器池、外部 Chrome profile、外部 CDP attach、extension bridge 仍保留为 backlog，不写成当前已完成。Computer Surface 的 background AX / CGEvent 只对显式 target app/window 和本地受控 smoke 成立，foreground fallback 仍是需要人工确认的当前前台动作面。
 
 ---
 
@@ -581,7 +606,7 @@ Parent Agent
 | **自适应路由** | `src/main/model/adaptiveRouter.ts` | 简单任务 → glm-4-flash（免费），失败原因感知 fallback（overflow→更大窗口，rate_limit→换 provider） |
 | **推理缓存** | `src/main/model/inferenceCache.ts` | LRU 缓存（50 条，5min TTL） |
 | **错误恢复引擎** | `src/main/errors/recoveryEngine.ts` | 6 种错误模式自动恢复 |
-| **Moonshot Provider** | `src/main/model/providers/moonshot.ts` | Kimi K2.5 SSE 流式支持 |
+| **Moonshot Provider** | `src/main/model/providers/moonshot.ts` | Kimi K2.5 / Kimi K2.6 SSE 流式支持 |
 
 ### 工程能力
 

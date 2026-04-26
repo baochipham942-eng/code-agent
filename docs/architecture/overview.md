@@ -12,12 +12,13 @@
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                    Presentation Layer (React 18)                       │  │
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────────┐  │  │
-│  │  │  Chat View   │ │ FileExplorer │ │ ChatSearch   │ │  Settings   │  │  │
-│  │  │  + Trace     │ │    Panel     │ │    Bar       │ │   Panel     │  │  │
+│  │  │ Chat View    │ │WorkbenchTabs │ │ Live Preview │ │ Settings    │  │  │
+│  │  │ + Trace UI   │ │Task/Skills/  │ │ + TweakPanel │ │Conversation │  │  │
+│  │  │              │ │Files/Preview │ │              │ │Activity     │  │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └─────────────┘  │  │
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────────┐  │  │
-│  │  │ MemoFloater  │ │ GenerativeUI │ │ ComboSkills  │ │ CronCenter  │  │  │
-│  │  │              │ │ + ChartBlock │ │              │ │   Panel     │  │  │
+│  │  │Sidebar User  │ │Semantic Tool │ │ GenerativeUI │ │Automation   │  │  │
+│  │  │Menu          │ │UI + Citation │ │ + ChartBlock │ │/Cron Center │  │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └─────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                            │ Platform Abstraction                            │
@@ -40,7 +41,7 @@
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      Tool Layer (96 工具, 9 类)                        │  │
+│  │                      Tool Layer (96+ 工具, 9 类)                       │  │
 │  │                                                                        │  │
 │  │  Shell & 文件    规划 & 任务      文档 & 媒体      多 Agent            │  │
 │  │  ┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐         │  │
@@ -56,7 +57,7 @@
 │  │  └──────────┘   └──────────┘    └──────────┘    └──────────┘         │  │
 │  │                                                                        │  │
 │  │  ┌─────────────────────────────────────────────────────────────────┐   │  │
-│  │  │  15 核心工具 (始终可见) + 81 延迟工具 (ToolSearch 按需加载)       │   │  │
+│  │  │  15 核心工具 (始终可见) + 81+ 延迟工具 (ToolSearch 按需加载)      │   │  │
 │  │  │  统一入口: Process, MCPUnified, DocEdit, ExcelAutomate 等        │   │  │
 │  │  └─────────────────────────────────────────────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
@@ -64,8 +65,8 @@
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         External Layer                                 │  │
 │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────────────┐  │  │
-│  │  │  Kimi K2.5 │ │  智谱 GLM  │ │  DeepSeek  │ │ OpenAI / Claude  │  │  │
-│  │  │  (primary) │ │  (backup)  │ │  (backup)  │ │    (backup)      │  │  │
+│  │  │  GPT-5.5   │ │  Kimi K2.6 │ │  DeepSeek  │ │  Claude / GLM    │  │  │
+│  │  │  (primary) │ │  (router)  │ │  (router)  │ │    (fallback)    │  │  │
 │  │  └────────────┘ └────────────┘ └────────────┘ └───────────────────┘  │  │
 │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                       │  │
 │  │  │   Ollama   │ │   File     │ │  Network   │                       │  │
@@ -108,7 +109,17 @@
 | **IPC 通信** | Platform Abstraction Layer (`src/main/platform/`) | 统一替代直接 Electron 导入，跨平台兼容 |
 | **本地存储** | SQLite (better-sqlite3) | 会话/配置持久化 |
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
-| **AI 模型** | Kimi K2.5 (主要), 智谱/DeepSeek/OpenAI (备用), Ollama (本地 Vision) | 多模型路由 |
+| **AI 模型** | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由 |
+
+## 2026-04-26 当前架构增量
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Workbench B+ | ChatInput 保留高频发送动作，低频动作收进 `+`；Routing / Browser 归到 Settings “对话”tab；TitleBar 瘦身，全局页面入口进入 Sidebar User Menu | [workbench.md](./workbench.md) |
+| Live Preview V2 | Vite-only MVP：devServerManager + DevServerLauncher + click-to-source + protocol 0.3.0 + TweakPanel；Next.js App Router 支持按 ADR-012 延期 | [ADR-012](../decisions/012-live-preview-v2-c-deferred.md) |
+| Browser / Computer Workbench | in-app managed browser 具备 session/profile/account/artifact/lease/proxy/TargetRef；Computer Surface 具备 background AX / CGEvent 受控验证路径 | [browser-computer-workbench-smoke.md](../acceptance/browser-computer-workbench-smoke.md) |
+| Activity Providers | OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 统一输出 `ActivityContext`，由 prompt formatter 控制注入 | [activity-providers.md](./activity-providers.md) |
+| Semantic Tool UI | `_meta.shortDescription` 从 prompt/schema/provider/parser 到 ToolCall UI 打通，弱模型缺失时有 fallback generator；Memory citation / diff summary / URL chip 进入聊天展示层 | [workbench.md](./workbench.md) |
 
 ## 分层架构
 
@@ -116,7 +127,7 @@
 |------|------|----------|
 | Presentation | UI 组件、状态管理、Generative UI、用户交互 | [frontend.md](./frontend.md) |
 | Application | Agent 编排、平台抽象、Light Memory、Skills 系统 | [agent-core.md](./agent-core.md) |
-| Tool | 96 个工具（9 类），Core/Deferred 双层、统一入口 | [tool-system.md](./tool-system.md) |
+| Tool | 96+ 个工具（9 类），Core/Deferred 双层、统一入口 | [tool-system.md](./tool-system.md) |
 | Data | 本地存储、云端同步 | [data-storage.md](./data-storage.md) |
 | Cloud | 云端任务、多设备同步 | [cloud-architecture.md](./cloud-architecture.md) |
 
@@ -146,8 +157,11 @@
 | **System Tray** | platform `miscCompat.ts` → Tray | 系统托盘集成 |
 | **Desktop Vision** | `desktopVisionAnalyzer.ts` + Rust FFI | 后台截图 + 视觉模型语义描述（Ollama 本地 / 智谱云端） |
 | **Cron Center** | renderer `features/cron/` | 定时任务管理面板 |
+| **Activity Providers** | `src/main/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
+| **Live Preview V2** | `src/main/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
+| **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `src/main/services/desktop/` | 托管浏览器会话、TargetRef、artifact、Computer Surface 安全动作面 |
 
-## 工具体系（96 个注册工具）
+## 工具体系（96+ 个注册工具）
 
 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。按功能分为 9 类：
 
@@ -159,7 +173,7 @@
 | 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart |
 | 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
 | 记忆 | 2 | MemoryWrite, MemoryRead |
-| 视觉 & 浏览器 | 5 | Computer, Browser, GuiAgent |
+| 视觉 & 浏览器 | 5+ | Computer, Browser, GuiAgent, visual_edit, Live Preview IPC |
 | 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, Teammate |
 | 统一入口 + 元工具 | 13 | Process, MCPUnified, DocEdit, ToolSearch |
 

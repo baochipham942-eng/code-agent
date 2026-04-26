@@ -98,9 +98,10 @@ Next.js 项目的 React 版本分布（截至 2026-04）：
 
 1. ✓ live-preview-v2.md 标 C 砍 + reason
 2. ✓ 本 ADR 落库
-3. （可选）`devServerManager.ts` 探测到 Next 时的 reason 文案优化为「V2 不支持，建议换 Vite 项目；或手动 `next dev` 后填 URL」（已在 D1 写过类似，仅微调措辞）
-4. （可选）npm 包 README 加「Vite-only」标识
-5. V3 优先级里加「Next.js 支持评估」 — 等 React 19 生态成熟、SWC 插件社区方案出现再决策
+3. ✓ `docs/ARCHITECTURE.md`、`docs/PRD.md`、`docs/architecture/workbench.md` 已把 V2 当前口径写成 Vite-only MVP
+4. （可选）`devServerManager.ts` 探测到 Next 时的 reason 文案优化为「V2 不支持，建议换 Vite 项目；或手动 `next dev` 后填 URL」（已在 D1 写过类似，仅微调措辞）
+5. （可选）npm 包 README 加「Vite-only」标识
+6. V3 优先级里加「Next.js 支持评估」 — 等 React 19 生态成熟、SWC 插件社区方案出现再决策
 
 ## 相关文档
 

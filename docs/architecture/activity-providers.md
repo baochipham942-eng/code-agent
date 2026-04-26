@@ -1,6 +1,20 @@
-# Activity Providers Migration Notes
+# Activity Providers Architecture
 
-This document is the migration slice for unifying screen activity providers. It does not describe a new runtime that already exists; it names the ownership boundaries we should converge on from the current implementation.
+This document records the 2026-04-26 migration that unified screen memory and desktop activity providers behind provider-neutral contracts. It still preserves the original ownership boundaries: OpenChronicle remains an external daemon provider, while Tauri Native Desktop remains the bundled capture provider.
+
+## Implemented State (2026-04-26)
+
+| Layer | Status | Files |
+| --- | --- | --- |
+| Shared provider vocabulary | Implemented: `ActivityProviderKind`, capture source, lifecycle, context role, privacy boundary, provider list result. | `src/shared/contract/activityProvider.ts` |
+| Shared context DTO | Implemented: `ActivityContext`, `ActivityContextSource`, `ActivityContextItem`, `ActivityEvidenceRef`, token budget hint. | `src/shared/contract/activityContext.ts` |
+| Provider registry | Implemented: provider-neutral listing for automatic screen memory and manual desktop activity provider status. | `src/main/services/activity/activityProviderRegistry.ts` |
+| Activity context builder | Implemented: reads OpenChronicle, Tauri Native Desktop events, audio segments, and screenshot analysis into one bounded context object. | `src/main/services/activity/activityContextProvider.ts` |
+| Prompt formatter | Implemented: supports legacy separate `<screen-memory>` / `<desktop-activity-context>` blocks and a unified activity-context form. | `src/main/services/activity/activityPromptFormatter.ts` |
+| Runtime injection | Implemented: `conversationRuntime` calls `getCurrentActivityContext()` and formats prompt blocks; activity context failures remain non-blocking. | `src/main/agent/runtime/conversationRuntime.ts` |
+| Renderer preview | Implemented: normalizes activity-context response for Settings surfaces and shows source summaries / unavailable reasons. | `src/renderer/services/activityContext.ts` |
+
+Current product rule: activity context can inform the model, but it does not grant permission to act on the desktop. Browser/computer action gating remains in Browser/Computer Workbench and desktop IPC.
 
 ## Current Provider Ownership
 
@@ -12,27 +26,31 @@ The bundled provider already has Node-side read and processing services. `Native
 
 Audio is part of the bundled desktop activity surface but should remain explicitly user-visible. The current audio service records through `sox rec`, VAD, and ASR (`src/main/services/desktop/desktopAudioCapture.ts:1`, `src/main/services/desktop/desktopAudioCapture.ts:20`). The UI keeps audio as a manual button and mode selector in the desktop panel (`src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:1035`, `src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:1050`), and the IPC layer documents why it is not auto-started by meeting-app detection (`src/main/ipc/desktop.ipc.ts:20`).
 
-## Target Interfaces
+## Interfaces
 
 `ActivityProvider` is the source adapter. It answers: what provider is installed, whether it is running, what permissions or daemon health are blocking it, and how to query activity records. OpenChronicle and Tauri Native Desktop are two implementations with different lifecycle ownership. OpenChronicle provider delegates lifecycle to an external daemon and reads through MCP. Tauri provider owns bundled capture and reads local app data.
 
-`ActivityContextProvider` is the normalized context builder. It should consume one or more `ActivityProvider` implementations and return a bounded, redacted context object for the agent. The current OpenChronicle path already does a narrow version of this in `fetchOpenchronicleContext()`: it loads OpenChronicle settings, calls the MCP `current_context` tool, filters captures, formats headlines/timeline, and returns a short text block (`src/main/services/external/openchronicleContextProvider.ts:197`, `src/main/services/external/openchronicleContextProvider.ts:204`, `src/main/services/external/openchronicleContextProvider.ts:206`, `src/main/services/external/openchronicleContextProvider.ts:213`). Native desktop has raw and derived data paths but no equivalent single provider facade yet.
+`ActivityContextProvider` is the normalized context builder. It consumes one or more `ActivityProvider` implementations and returns a bounded, redacted context object for the agent. The earlier OpenChronicle-only path already did a narrow version of this in `fetchOpenchronicleContext()`: it loads OpenChronicle settings, calls the MCP `current_context` tool, filters captures, formats headlines/timeline, and returns a short text block (`src/main/services/external/openchronicleContextProvider.ts:197`, `src/main/services/external/openchronicleContextProvider.ts:204`, `src/main/services/external/openchronicleContextProvider.ts:206`, `src/main/services/external/openchronicleContextProvider.ts:213`). The current implementation adds the shared provider contracts and builder so native desktop, audio, screenshot analysis, and OpenChronicle can enter prompt formatting through the same `ActivityContext` shape.
 
 `ContextInjectionPolicy` decides when and how activity context enters the prompt. It should not be owned by either provider. Today injection is provider-specific: `conversationRuntime` calls `fetchOpenchronicleContext()` and injects `<screen-memory>` directly at session start (`src/main/agent/runtime/conversationRuntime.ts:804`, `src/main/agent/runtime/conversationRuntime.ts:806`, `src/main/agent/runtime/conversationRuntime.ts:808`). The older contextual memory hook is a no-op (`src/main/agent/runtime/streamHandler.ts:53`), and native-derived activity is bootstrapped separately for non-simple tasks (`src/main/agent/runtime/conversationRuntime.ts:815`). The target is to move the decision into a policy layer that can choose provider, token budget, redaction level, timing, and disable reasons.
 
-The frontend should reflect the same split. The global desktop panel already renders the bundled provider timeline (`src/renderer/App.tsx:546`, `src/renderer/App.tsx:557`) through `NativeDesktopSection`, which loads collector status, recent events, and audio status (`src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:896`, `src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:908`). The settings modal currently exposes only the OpenChronicle settings tab for screen memory (`src/renderer/components/features/settings/SettingsModal.tsx:85`, `src/renderer/components/features/settings/SettingsModal.tsx:147`). Long term, the user-facing IA should be one "Activity / Screen Memory" surface with provider cards plus one timeline, not separate mental models.
+The frontend should reflect the same split. The global desktop panel already renders the bundled provider timeline (`src/renderer/App.tsx:546`, `src/renderer/App.tsx:557`) through `NativeDesktopSection`, which loads collector status, recent events, and audio status (`src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:896`, `src/renderer/components/features/settings/sections/NativeDesktopSection.tsx:908`). The settings modal exposes the desktop-only screen memory tab (`src/renderer/components/features/settings/SettingsModal.tsx:85`, `src/renderer/components/features/settings/SettingsModal.tsx:147`) and search index entry, while full provider-card IA remains follow-up work. Long term, the user-facing IA should be one "Activity / Screen Memory" surface with provider cards plus one timeline, not separate mental models.
 
-## Migration Phases
+## Migration Phases / Current Status
 
 ### Phase 1: ActivityContextProvider
 
-Create a provider-neutral `ActivityContextProvider` boundary in main-process code. The first version should wrap the existing OpenChronicle context path without changing behavior, then add a Tauri Native Desktop implementation that can return a small recent-context payload from `NativeDesktopService.getTimeline()` and/or derived summaries. The important migration step is naming the normalized output and source metadata: provider id, provider type, captured window/app/url fields, redaction status, freshness, and confidence.
+Status: implemented.
+
+Create a provider-neutral `ActivityContextProvider` boundary in main-process code. The first version wraps the existing OpenChronicle context path without changing behavior, then adds Tauri Native Desktop events, audio segments, and screenshot analysis as separate sources. The important migration step is naming the normalized output and source metadata: provider id, provider type, captured window/app/url fields, redaction status, freshness, confidence, and evidence references.
 
 This phase should also make provider availability explicit. OpenChronicle availability is daemon/MCP health from `openchronicleSupervisor` and `OpenchronicleStatus`; Tauri availability is Tauri runtime plus collector status and TCC permissions from `nativeDesktop.ts` / `native_desktop.rs`. The current renderer already distinguishes Tauri availability through `window.__TAURI_INTERNALS__` (`src/renderer/services/nativeDesktop.ts:178`), but the prompt path does not yet consume that as a provider capability.
 
 ### Phase 2: Prompt Injection Switch
 
-Move prompt injection from direct OpenChronicle calls to `ContextInjectionPolicy`. The current direct injection is hard-coded in `conversationRuntime` (`src/main/agent/runtime/conversationRuntime.ts:804`). The policy should decide:
+Status: partially implemented through `ActivityPromptFormatter`; a fuller policy object is still future work.
+
+Move prompt injection from direct OpenChronicle calls to provider-neutral activity context formatting. The old direct injection was hard-coded in `conversationRuntime` (`src/main/agent/runtime/conversationRuntime.ts:804`). The next policy layer should decide:
 
 - whether activity context is allowed for this session;
 - which provider wins when both OpenChronicle and Tauri Native Desktop are enabled;
@@ -41,9 +59,11 @@ Move prompt injection from direct OpenChronicle calls to `ContextInjectionPolicy
 - whether injection happens only at session start or can be refreshed later;
 - what audit metadata is recorded for injected context.
 
-Default behavior should preserve today's OpenChronicle injection when the OpenChronicle toggle and `autoInjectContext` are enabled (`src/shared/contract/openchronicle.ts:5`, `src/shared/contract/openchronicle.ts:12`). The migration should then allow switching to bundled native context without duplicating `<screen-memory>` blocks or mixing two providers' raw captures into one untraceable prompt.
+Default behavior preserves OpenChronicle injection when the OpenChronicle toggle and `autoInjectContext` are enabled (`src/shared/contract/openchronicle.ts:5`, `src/shared/contract/openchronicle.ts:12`). The implemented formatter also allows bundled native context to be present without mixing two providers' raw captures into one untraceable prompt.
 
 ### Phase 3: Tauri Native Long-Termization / Sidecar Evaluation
+
+Status: not extracted, by design.
 
 Keep capture bundled in Tauri until there is a clear reason to split it. The Rust collector is tied to Tauri commands, app storage, macOS screen capture, and TCC-sensitive behavior (`src-tauri/src/native_desktop.rs:1457`, `src-tauri/src/native_desktop.rs:1601`). Moving that too early would create install, permission, and lifecycle complexity without reducing much product risk.
 

@@ -16,11 +16,17 @@
 - Phase 5A：未做远程池、外部 CDP attach、外部 profile 或 extension bridge；只做 session lease/TTL、crash cleanup、proxy schema 与 external bridge unsupported 状态。
 - Phase 6：本地 browser task benchmark 已落地，覆盖 navigation、form、extract、login-like、download/upload、failure recovery、redaction export，并支持 fixture-only trace -> recipe draft -> rerun。
 
+当前完成定义：
+
+`in-app managed browser 可以承担本地受控工作流和产品化验收；external / remote browser 仍是明确未交付边界。`
+
+本文后面的“差距清单”和“目标架构”保留了原始设计语境，但涉及 BrowserSession、TargetRef、AccountState、download/upload、lease/proxy 的条目，已经按本节实施状态从 Missing 变成 Present。
+
 ## 1. 核心判断
 
-`code-agent` 当前已经有可用的 browser / computer workbench 闭环，但成熟度还停在 smoke 与工作台集成级。
+`code-agent` 当前的 in-app managed browser 已经从 smoke 与工作台集成级推进到本地受控生产化基线；external / remote browser 仍保持未交付边界。
 
-最值得优先补的是生产级 browser agent 必须具备的会话生命周期；页面点击能力已经有基础，不该继续只在动作表面加功能：
+已经补齐的主线是生产级 browser agent 必须具备的会话生命周期；后续优先补多 session、账号恢复、真实站点人工接管和 durable trace，而不是继续只在动作表面加功能：
 
 - `BrowserSession`
 - `Profile / AccountState`
@@ -37,35 +43,36 @@
 
 | 模块 | 当前成熟度 | 主要证据 | 判断 |
 | --- | --- | --- | --- |
-| in-app managed browser | 可用 smoke / workbench 集成级 | [browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:140), [browserProvider.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserProvider.ts:19), [browserAction.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/browserAction.ts:21) | 能 launch、tab、navigate、click/type、snapshot、screenshot、trace、host guard；但还是单例服务，缺 BrowserSession、账号态、下载上传、多 session。 |
-| desktop / external browser | 桌面上下文和 OS browser 操作级 | [BrowserTool.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/BrowserTool.ts:69), [useWorkbenchBrowserSession.ts](/Users/linchen/Downloads/ai/code-agent/src/renderer/hooks/useWorkbenchBrowserSession.ts:184) | 有 OS 导航、前台浏览器上下文、desktop readiness；缺 Chrome profile 复用、外部 CDP attach、extension bridge。 |
+| in-app managed browser | 本地受控生产化基线 | [browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:140), [browserProvider.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserProvider.ts:19), [browserAction.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/browserAction.ts:21) | 已有 BrowserSession/Profile/AccountState/TargetRef/Artifact/Lease/Proxy/trace/recovery/benchmark；仍不做 remote pool。 |
+| desktop / external browser | 桌面上下文和 OS browser 操作级 | [BrowserTool.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/BrowserTool.ts:69), [useWorkbenchBrowserSession.ts](/Users/linchen/Downloads/ai/code-agent/src/renderer/hooks/useWorkbenchBrowserSession.ts:184) | 有 OS 导航、前台浏览器上下文、desktop readiness；外部 Chrome profile / external CDP / extension bridge 仍未交付。 |
 | computer surface | fallback 与安全执行层较完整 | [computerUse.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/computerUse.ts:27), [computerSurfaceGating.test.ts](/Users/linchen/Downloads/ai/code-agent/tests/unit/tools/vision/computerSurfaceGating.test.ts:273) | read action、foreground approval、background AX / CGEvent、失败分类已成型；适合作为 fallback 和 desktop app 支撑，不适合作为 browser 主路径。 |
 
 ## 3. 差距清单
 
-### Missing
+### Still Missing
 
 | 缺口 | 当前状态 | 影响 |
 | --- | --- | --- |
-| `BrowserSession` | [browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:140) 是单例 browser/context/tabs。 | 无法绑定 task、profile、artifact、trace、lease、TTL。 |
-| 账号态产品路径 | 只有固定 `managed-browser-profile`。[browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:159) | 登录态隔离、导入导出、过期检测都没有落点。 |
-| 下载 / 上传 | context 明确 `acceptDownloads: false`。[browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:795) | 无法覆盖 invoice/report/file 型真实任务。 |
 | 多 session | 当前只有一个 browser/context，多个 tab 共享同一上下文。 | 并行任务、不同账号、崩溃回收、租约都无法可靠表达。 |
 | 远程浏览器池 | provider 只有本地 System Chrome CDP 和 Playwright bundled。 | 外部 CDP、自建 browser service、Browserbase/Skyvern Cloud 只能临时接，不能产品化。 |
-| Proxy | 只有 allow/block host guard。[browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:1038) | per-session proxy、地区出口、bypass、失败诊断都缺。 |
-| TargetRef | DOM/a11y snapshot 有 selector/text/rect，但没有稳定 ref。 | action preview、replay、self-healing recovery 没有可复用目标对象。 |
-| Workflow / Eval | 有 smoke suite，但没有 browser task benchmark。 | 成熟度无法用固定任务证明，只能证明单点动作可用。 |
+| External browser bridge | 当前状态明确为 `unsupported`。 | 不能复用用户外部 Chrome profile / cookies，也不做外部 CDP attach。 |
 | 反 bot / CAPTCHA 边界 | 无风险识别、人工接管、CAPTCHA 状态。 | 真实网站任务失败时无法给出产品化分流。 |
 
-### Present But Incomplete
+### Present But Incomplete / 已补齐基础
 
 | 能力 | 已有基础 | 不完整点 |
 | --- | --- | --- |
-| Persistent profile | 固定 profile dir 已能被 System Chrome CDP / Playwright persistent context 使用。 | 全局共享，无 workspace/session 隔离，无 storageState 导入导出。 |
+| BrowserSession | session/profile/workspace/artifact/lease/proxy/accountState 字段已进入 `ManagedBrowserSessionState`。 | 多 context / 多任务并行仍未做。 |
+| Persistent / isolated profile | persistent 兼容旧 profile；isolated profile close 后清理。 | 完整 profile 管理 UI 未做。 |
+| AccountState | storageState import/export、cookie/localStorage/sessionStorage summary、expired cookie 分类已落。 | 不展示 raw cookie/storage；真实账号过期恢复仍需后续 UI。 |
+| Download / Upload | 本地 fixture download/upload artifact 已落地并有 hash/name/mime/size 摘要。 | 大文件、敏感文件确认、真实网站文件流仍需扩展。 |
+| Proxy | per-session proxy schema、system Chrome proxy args、credentialed proxy URL 拒绝已落。 | 地区出口诊断和复杂 bypass UI 未做。 |
+| TargetRef | snapshotId + targetRef + stale recovery metadata 已落。 | 不承诺跨页面长期稳定；self-healing 仍是局部恢复。 |
+| Workflow / Eval | browser task benchmark 已覆盖 7 类本地 fixture。 | 还不是云端/真实网站 workflow 平台。 |
 | Trace | `beginTrace / finishTrace` 有 before/after、console/network failures、参数脱敏。[browserService.ts](/Users/linchen/Downloads/ai/code-agent/src/main/services/infra/browserService.ts:700) | 只保留进程内 last 100，无 durable trace、resume、recipe。 |
-| Redaction | [browserComputerRedaction.ts](/Users/linchen/Downloads/ai/code-agent/src/shared/utils/browserComputerRedaction.ts:1) 覆盖 typed text、form data、raw metadata。 | `browser_action.type` 源头仍会拼 raw text 输出。[browserAction.ts](/Users/linchen/Downloads/ai/code-agent/src/main/tools/vision/browserAction.ts:356) |
+| Redaction | [browserComputerRedaction.ts](/Users/linchen/Downloads/ai/code-agent/src/shared/utils/browserComputerRedaction.ts:1) 覆盖 typed text、form data、raw metadata。 | 继续守住新 surfaces，不把后续 action 新字段绕过脱敏层。 |
 | Recovery | [desktop.ipc.ts](/Users/linchen/Downloads/ai/code-agent/src/main/ipc/desktop.ipc.ts:38) 有 managed recovery snapshot。 | 只有 DOM/a11y 摘要，没有 recovery plan、ref resolve、retry path。 |
-| Renderer readiness | [useWorkbenchBrowserSession.ts](/Users/linchen/Downloads/ai/code-agent/src/renderer/hooks/useWorkbenchBrowserSession.ts:156) 能展示 session/readiness/repair。 | 没有 profile/account/artifact/lease 可视化。 |
+| Renderer readiness | [useWorkbenchBrowserSession.ts](/Users/linchen/Downloads/ai/code-agent/src/renderer/hooks/useWorkbenchBrowserSession.ts:156) 能展示 session/readiness/repair/profile/account/artifact/lease/proxy。 | 还没有完整 account/profile 管理面。 |
 
 ## 4. 目标架构
 

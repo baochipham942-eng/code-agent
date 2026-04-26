@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### 2026-04-26 Productization Pass
+
+- Chat-Native Workbench B+ IA: ChatInput `+` menu, model+effort capsule, Settings “Conversation” tab, Sidebar User Menu, and slimmer TitleBar.
+- Live Preview V2-A/B: devServerManager / DevServerLauncher, bridge protocol 0.3.0, TweakPanel, `applyTweak` IPC, and Vite-only MVP scope.
+- Browser / Computer Workbench productionization: managed BrowserSession/Profile/AccountState/Artifact/Lease/Proxy/TargetRef, browser task benchmark, and background AX / CGEvent smoke paths.
+- Activity Providers: provider-neutral ActivityProvider / ActivityContext contracts for OpenChronicle, Tauri Native Desktop, audio, and screenshot analysis.
+- Semantic Tool UI: `_meta.shortDescription` schema/parser path, fallback shortDescription generator, target context icons, memory citation group, session diff summary, and raw URL preview chips.
+
 #### Security Module (Session A: A1-A5)
 - **Command Monitor** (`src/main/security/commandMonitor.ts`)
   - Pre-execution validation for shell commands
@@ -100,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Live Preview V2-C Next.js App Router support is deferred; V2 scope is now Vite-only MVP.
+- Evaluation `max_tool_calls` assertions are weighted process-quality signals instead of critical failure gates.
+- Thinking-mode providers send `reasoning_content` consistently for assistant history, scoped through provider overrides.
 - **edit_file**: Now requires file to be read first (read-before-edit)
 - **edit_file**: Smart quote normalization for better string matching
 - **edit_file**: Warning on external file modification

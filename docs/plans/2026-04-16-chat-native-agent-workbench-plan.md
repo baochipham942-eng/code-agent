@@ -1,7 +1,7 @@
 # Chat-Native Agent Workbench 详细设计
 
 日期：2026-04-16
-状态：历史设计稿（已按 2026-04-18 实际状态补充对齐）
+状态：历史设计稿（已按 2026-04-26 实际状态补充对齐）
 关联分析：`docs/analysis/2026-04-16-accio-vs-code-agent-core-differences.md`
 
 ## 0. 使用方式
@@ -9,7 +9,7 @@
 这份文档保留 `2026-04-16` 当天的原始设计判断。
 
 - 第 `3-14` 节描述的是当时的待实现问题与原计划，不应再直接当成当前状态说明。
-- 当前真实产品口径，以本节和后续 implementation spec / roadmap 里的“`2026-04-18` 实际状态”说明为准。
+- 当前真实产品口径，以本节和后续 implementation spec / roadmap 里的“`2026-04-26` 实际状态”说明为准。
 
 ## 0.1 2026-04-18 实际状态对齐
 
@@ -21,6 +21,15 @@
   - 证据：`src/renderer/utils/workbenchCapabilityRegistry.ts`、`src/renderer/utils/workbenchQuickActions.ts`、`src/renderer/components/workbench/WorkbenchCapabilitySheetLite.tsx`、`tests/renderer/utils/workbenchQuickActions.test.ts`、`tests/renderer/utils/workbenchCapabilityRegistry.test.ts`
 - `Phase 6` 当前完成定义是：`6.1 Unified Trace Identity` 已落、`6.2 Review Queue` 已落、`6.3` 只落 `failure_followup` sink、`6.4` 只落 `session-backed reuse`。命名 `preset/recipe` 资产库和 `failure-to-capability` 多分流仍在 backlog。
   - 证据：`src/shared/contract/reviewQueue.ts`、`src/main/evaluation/reviewQueueService.ts`、`src/main/evaluation/telemetryQueryService.ts`、`src/renderer/stores/evalCenterStore.ts`、`src/renderer/components/features/evalCenter/ReplayAnalyticsSidebar.tsx`、`src/renderer/components/Sidebar.tsx`、`src/renderer/stores/composerStore.ts`、`tests/unit/evaluation/reviewQueueService.test.ts`、`tests/renderer/stores/evalCenterStore.reviewQueue.test.ts`、`tests/renderer/components/evalCenter.replayAnalyticsSidebar.failureFollowup.test.ts`、`tests/renderer/components/sidebar.reviewActions.test.ts`、`tests/e2e/review-queue.e2e.spec.ts`
+
+## 0.2 2026-04-26 实际状态补丁
+
+这份设计仍然解释“为什么要做 chat-native workbench”，但具体入口和能力边界已经升级：
+
+- Workbench B+：ChatInput 不再堆低频控制，`+` 承载附加动作和模式切换；Settings “对话”tab 承载 Routing / Browser 偏好；Sidebar User Menu 承载全局页面入口。
+- Live Preview V2-A/B：`devServerManager`、`DevServerLauncher`、bridge protocol 0.3.0、`TweakPanel` 和 Tailwind 原子改写已落；Next.js App Router 支持按 ADR-012 延期。
+- Browser / Computer：in-app managed browser 已有 BrowserSession/Profile/AccountState/Artifact/Lease/Proxy/TargetRef/stale recovery/download/upload/benchmark；external / remote browser 仍是未交付边界。
+- Activity Providers / Semantic Tool UI：屏幕活动上下文和工具调用展示都进入统一语义层，不再只依赖原始 tool/event payload。
 
 ## 1. 目标
 

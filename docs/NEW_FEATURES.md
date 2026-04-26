@@ -2,12 +2,63 @@
 
 ## 概览
 
-本次更新增加了以下核心功能：
+截至 2026-04-26，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 workbench、live preview、browser/computer 和 activity context 四条主线：
+
+1. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
+2. **Live Preview V2** - Vite-only devServerManager、click-to-source、TweakPanel、bridge protocol 0.3.0、Next.js 支持延期
+3. **Browser / Computer Workbench** - in-app managed browser 的 session/profile/account/artifact/lease/proxy/TargetRef，Computer Surface background AX / CGEvent
+4. **Activity Providers** - OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 统一成 ActivityContext
+5. **评测与模型协议修复** - experiment progress SSE、fatal error 熔断、multi-turn adapter 修复、thinking-mode `reasoning_content` 协议修复
+
+早期更新增加了以下核心功能：
 
 1. **多模型 SDK 支持** - 支持 DeepSeek、Claude、OpenAI、Groq、本地模型
 2. **云端 Agent** - Vercel Serverless 部署，支持浏览器自动化
 3. **GUI Agent** - 基于 Claude Computer Use 的屏幕控制能力
 4. **macOS 签名打包** - 完整的代码签名和公证配置
+
+---
+
+## 2026-04-26 当前新增能力
+
+### Chat-Native Workbench B+
+
+| 能力 | 说明 |
+|------|------|
+| ChatInput `+` 菜单 | 附件、slash command、Code/Plan/Ask 收进单一入口 |
+| 模型 + effort 胶囊 | 模型和 reasoning effort 作为一组配置展示 |
+| Settings “对话”tab | Routing / Browser 低频偏好迁出输入框 |
+| Settings 分组导航 | 基础偏好、能力与连接、记忆与隐私、系统四组；搜索和外部跳转复用同一 tab registry |
+| Settings 页面骨架 | `SettingsLayout` 统一 settings page / section / details，MCP 诊断信息进入折叠区 |
+| Sidebar User Menu | Eval / Lab / Automation / Agent Flow / Desktop 全局入口从 TitleBar 移入用户菜单 |
+| Semantic Tool UI | `_meta.shortDescription`、target icon、memory citation、session diff、URL chip 进入聊天渲染 |
+
+### Live Preview V2
+
+| 能力 | 说明 |
+|------|------|
+| DevServerLauncher | 探测并启动本地 Vite/CRA dev server，显示 logs，关闭 tab 自动 stop |
+| Bridge protocol 0.3.0 | `SelectedElementInfo` 回传 `className` 与 `computedStyle` |
+| TweakPanel | spacing / color / fontSize / radius / align 5 类 Tailwind 原子修改 |
+| Vite-only MVP | Next.js App Router V2-C 已按 ADR-012 延期 |
+
+### Browser / Computer Workbench
+
+| 能力 | 说明 |
+|------|------|
+| Managed BrowserSession/Profile | sessionId、profileId、profileMode、workspaceScope、artifactDir、lease、proxy |
+| AccountState | storageState import/export、cookie/localStorage/sessionStorage summary、expired cookie 分类 |
+| TargetRef / Artifact | snapshotId、targetRef、stale recovery、download/upload artifact 摘要 |
+| Acceptance suite | System Chrome/CDP、workflow、browser task benchmark、UI、app-host、background AX/CGEvent |
+| Computer Surface | foreground fallback、background AX、background CGEvent 三类动作面分开表达 |
+
+### Activity Providers
+
+| 能力 | 说明 |
+|------|------|
+| ActivityProvider contract | 描述 provider kind、lifecycle、capture source、privacy boundary |
+| ActivityContextProvider | 汇总 OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis |
+| Prompt formatter | 控制 legacy separate blocks 和 unified activity-context block |
 
 ---
 

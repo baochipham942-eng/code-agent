@@ -1,7 +1,7 @@
 # Chat-Native Workbench 下一阶段完整路线图
 
 日期：2026-04-17  
-状态：已按 2026-04-24 productization 实际状态对齐
+状态：已按 2026-04-26 productization 实际状态对齐
 关联设计：[2026-04-16-chat-native-agent-workbench-plan.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-chat-native-agent-workbench-plan.md)  
 关联实施：[2026-04-16-phase1-chat-native-workbench-implementation-spec.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-phase1-chat-native-workbench-implementation-spec.md)  
 关联分析：[2026-04-16-accio-vs-code-agent-core-differences.md](/Users/linchen/Downloads/ai/code-agent/docs/analysis/2026-04-16-accio-vs-code-agent-core-differences.md)  
@@ -21,10 +21,13 @@
 - `Phase 4` 已有最小显式 browser / desktop session 心智
 - `Phase 5` 已有最小 session-native workspace 闭环
 - `Phase 6` 已按 `trace identity -> review queue -> failure_followup asset draft -> session-backed reuse / local presets` 的最小闭环关账
+- `Live Preview V2-A/B` 已按 Vite-only MVP 收敛：DevServerLauncher + TweakPanel 已交付，Next.js App Router V2-C 按 ADR-012 延期
+- `Browser / Computer Workbench` 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy/TargetRef 与 browser task benchmark 已落地
+- `Semantic Tool UI` 已打通 `_meta.shortDescription` 从 prompt/schema/parser 到 trace UI 的链路，弱模型缺失时走 fallback generator
 
 一句话判断：
 
-`后续 backlog 不该再笼统写成“继续做 Phase 2-6”，而要写成“补齐尚未产品化的 richer backlog”。`
+`后续 backlog 不该再笼统写成“继续做 Phase 2-6”，而要写成“补齐尚未产品化的 richer backlog 和 4 月 26 日之后还留着的硬边界”。`
 
 ## 2. 当前已完成的基础
 
@@ -40,6 +43,9 @@
 - `Unified Trace Identity + Review Queue`：Replay / Eval Center / session list 现在共享稳定 trace identity，而不是各找各的最近文件
 - `failure_followup sink`：Replay 里的 failure attribution 已能回流到 Review Queue，并生成本地 failure asset draft
 - `session-backed reuse / local presets`：历史 session 的 workbench 配置已能回灌到当前 session，命名 preset 与 recipe store 已有本地资产层
+- `Live Preview V2-A/B`：本地 dev server lifecycle、iframe source grounding、protocol 0.3.0、TweakPanel 五类原子样式修改已落地
+- `Browser/Computer productionization`：managed browser session/profile/account/artifact/lease/proxy、TargetRef/stale recovery、download/upload、browser task benchmark、background AX/CGEvent smoke 已落地
+- `Semantic Tool UI`：工具 `_meta.shortDescription` 强制 schema、provider parser、SessionRepository fallback、ToolHeader/MemoryCitation/SessionDiff/URL chip 已接入
 
 这意味着：
 
@@ -52,17 +58,18 @@
 1. `Connector lifecycle` 的非 native / 统一管理面
 2. `Failure-to-Capability` 的 triage、批处理与 asset apply/export
 3. 命名 `presets / recipes` 的 UI、搜索、分享、版本化与 recipe 执行编排
+4. Live Preview V3：partial HMR、批注/多选、Next.js 支持重新评估
 
 ### P1：做得更完整，而不是补第一版
 
-4. browser / desktop readiness 与 artifact consistency 补强
-5. 更强的 session search / background / long-session robustness
+5. remote browser pool / external CDP / external profile / extension bridge 的边界设计
+6. 更强的 session search / background / long-session robustness
 
 ### P2：后续增强
 
-6. `Multi-agent team productization`
-7. 更丰富的 personalization
-8. `Performance / virtualization`
+7. `Multi-agent team productization`
+8. 更丰富的 personalization
+9. `Performance / virtualization`
 
 ### 明确不建议现在做
 
@@ -70,6 +77,8 @@
 - 重做整套 settings 信息架构
 - 引入更复杂的 team/channel 数据模型
 - 做“插件商城”式大而全 capability marketplace
+- 把 Next.js App Router click-to-source 硬塞回 V2
+- 在没有独立授权和隔离前接外部 Chrome profile / extension bridge
 
 ## 4. 路线图
 
@@ -349,7 +358,7 @@
 
 ### 当前实际状态
 
-最小闭环已落，但 browser / desktop readiness 与 artifact consistency backlog 仍在。
+最小闭环已落，2026-04-26 又补到 Browser / Computer productionization 基线。当前剩余 backlog 主要是 remote/external browser、CAPTCHA/anti-bot 分流和更完整的 workflow 产品化，不再是 managed browser 基础对象缺失。
 
 已补：
 
@@ -359,10 +368,14 @@
 - `browser_action` 已有 managed browser trace、DOM/a11y snapshot、viewport 和 workbench state 读回能力
 - `computer_use` 已有只读 `get_state / observe`，能在行动前读 Computer Surface readiness 和 frontmost app/window
 - `npm run acceptance:browser-computer` 能跑真实 headless managed browser + 只读 Computer Surface smoke
+- managed browser 已有 `sessionId / profileId / profileMode / workspaceScope / artifactDir / lease / proxy / accountState / externalBridge` 这些一等状态字段
+- DOM/a11y snapshot 已带 `snapshotId`，interactive element 已带 `targetRef`，stale ref 能返回 recoverable metadata
+- storageState import/export、download/upload artifact、本地 browser task benchmark 已接入
+- Computer Surface 已有 `background_ax` 与 `background_cgevent` 两条受控 smoke 路径
 
 这意味着：
 
-`browser / desktop` 已不再只是底层工具概念，而已经进入 workbench 层的显式上下文。
+`browser / desktop` 已不再只是底层工具概念，而已经进入 workbench 层的显式上下文和可验收执行面。
 
 证据：
 
@@ -373,10 +386,17 @@
 - `tests/unit/tools/vision/browserWorkbenchGating.test.ts`
 - `tests/unit/tools/vision/computerSurfaceGating.test.ts`
 - `scripts/acceptance/browser-computer-smoke.ts`
+- `tests/unit/services/infra/browserServiceProfileResolver.test.ts`
+- `scripts/acceptance/browser-computer-workflow-smoke.ts`
+- `scripts/acceptance/browser-task-benchmark.ts`
+- `scripts/acceptance/browser-computer-background-ax-smoke.ts`
+- `scripts/acceptance/browser-computer-background-cgevent-smoke.ts`
 
 ### 2026-04-24 browser / desktop readiness backlog 已补项
 
 这部分归入 Phase 4 最小闭环后的补强，不新开 Browser Use / Computer Use 的后续 phase。当前补的是发送前 readiness、执行中 trace 与工具结果展示的一致性。
+
+2026-04-26 B+ IA 后，以下 `AbilityMenu` 证据只代表当时的历史入口；当前入口已经迁到 ChatInput `+`、Settings “对话”tab 和 Sidebar User Menu，Browser / Computer 的生产化状态以 2026-04-26 roadmap 与 workbench 架构文档为准。
 
 已补：
 
@@ -432,6 +452,40 @@
 - `tests/renderer/hooks/useWorkbenchBrowserSession.readiness.test.ts`
 - `docs/acceptance/browser-computer-workbench-smoke.md`
 
+### 2026-04-26 Browser / Computer productionization 已补项
+
+这轮按 `docs/plans/2026-04-26-browser-use-production-roadmap.md` 收到 Phase 1-6 最小闭环，但严格限定为 in-app managed browser 主路径。
+
+已补：
+
+- BrowserSession/Profile：persistent 兼容旧 `managed-browser-profile`，isolated profile 使用临时目录并在 close 后清理
+- AccountState：storageState import/export、cookie/localStorage/sessionStorage summary、expired cookie 分类
+- Snapshot/TargetRef：`snapshotId` 与 `targetRef` 贯穿 DOM/a11y observe、click/type、stale recovery 和 trace
+- Artifact：download/upload 的 name/hash/mime/size/session 摘要进入 managed browser artifact 区
+- Lease/Proxy：managed browser 有 lease/TTL、crash cleanup、proxy schema；默认 proxy mode 是 `direct`
+- External bridge：显式记录 `unsupported`，不偷读外部 Chrome profile / cookie
+- Phase 6 benchmark：navigation、form、extract、login-like、download/upload、failure recovery、redaction export、fixture-only recipe rerun
+- Computer Surface：background AX 与 background CGEvent 均有临时 native target smoke，和 foreground fallback 边界分开
+
+仍不宣称完成：
+
+- 不做远程浏览器池、外部 CDP attach、外部 profile、extension bridge
+- 不承诺 CAPTCHA / anti-bot 自动处理
+- 不把受控 fixture smoke 外推成任意桌面 app 后台自动化已成熟
+
+证据：
+
+- `src/shared/contract/desktop.ts`
+- `src/main/services/infra/browserService.ts`
+- `src/main/services/infra/browserProvider.ts`
+- `src/main/tools/vision/browserAction.ts`
+- `src/main/tools/vision/computerUse.ts`
+- `src/renderer/hooks/useWorkbenchBrowserSession.ts`
+- `tests/unit/services/infra/browserServiceProfileResolver.test.ts`
+- `scripts/acceptance/browser-computer-workflow-smoke.ts`
+- `scripts/acceptance/browser-task-benchmark.ts`
+- `docs/acceptance/browser-computer-workbench-smoke.md`
+
 ### Phase 4 原目标与当前口径
 
 原目标是把已有的 browser / computer-use / native desktop 能力从“工具存在”升级为“产品可理解入口”。当前最小闭环已落，后续只按 readiness / artifact consistency backlog 推进。
@@ -457,7 +511,7 @@ Phase 4 最小闭环要拉回到：
 
 #### 4.1 Browser Session Chip
 
-已由 AbilityMenu、workbench badge 与 trace snapshot 覆盖最小显式入口，至少能区分三种状态：
+历史上由 AbilityMenu、workbench badge 与 trace snapshot 覆盖最小显式入口；2026-04-26 B+ 后入口迁到 ChatInput `+`、Settings “对话”tab 和 Sidebar User Menu，仍要能区分三种状态：
 
 - 未接入
 - 使用托管浏览器
@@ -493,11 +547,12 @@ browser / computer-use 已进入 workbench intent；当前最小 intent 是：
 
 这样后续执行解释层才能说清楚“为什么这轮去动浏览器了”。
 
-### 最小成功标准（已覆盖，继续补体验一致性）
+### 最小成功标准（已覆盖，继续补外部边界和体验一致性）
 
 - 用户在发送前就知道这条消息有没有 browser / desktop 上下文
 - 权限或 collector 未就绪时，不会再是黑箱失败
 - browser/computer-use 不再只是 tool 层概念，而成为 workbench 层概念
+- managed browser 的会话、账号态、产物、恢复、脱敏都能通过本地 fixture 验收
 
 ### 后续只看这些落点
 
@@ -824,8 +879,10 @@ Replay / Review / Resume / Export / Reopen Workspace 已接入最小入口；完
 ### 先收口的 backlog
 
 - `Phase 3` 后续产品化：native connector lifecycle 与设置页管理入口已有最小闭环；剩余是非 native connector、完整权限修复向导和统一管理面
-- `Phase 4/5` 已落最小闭环后的稳定性与体验补强：browser / desktop artifact 的展示与恢复一致性
+- `Phase 4/5` 已落最小闭环后的稳定性与体验补强：browser / desktop 外部边界、session search、background/long-session robustness
 - `Phase 6.3/6.4` 后续产品化：failure-to-capability 的 triage / 批处理 / asset apply，recipe 管理 UI / 多步执行编排，preset/recipe 搜索/分享/版本化管理
+- `Live Preview V3`：partial HMR、批注/多选、Next.js 支持重新评估；V2 不再扩大范围
+- `Semantic Tool UI`：提高 `_meta` 质量和 provider 覆盖率，但保留 fallback generator，不让 UI 可读性依赖单一模型配合
 
 原因：
 
@@ -864,5 +921,7 @@ Replay / Review / Resume / Export / Reopen Workspace 已接入最小入口；完
 1. `Connector lifecycle` 的非 native connector 和统一管理面
 2. `Failure-to-Capability` 从 asset draft 到 triage / apply / export 的流转方式
 3. `Named presets / recipes` 的管理 UI、多步执行编排、搜索、分享和版本化边界
+4. `Live Preview V3` 的 partial HMR / 多选 / Next 支持重新评估
+5. `Browser external boundary` 的 remote pool / external CDP / extension bridge 产品边界
 
 这样下一轮才是在真实 backlog 上继续，而不是对已经落地的 `Phase 1-6` 重新写一遍计划。

@@ -1,7 +1,7 @@
 # Phase 2 执行清晰度实施规格
 
 日期：2026-04-17  
-状态：已完成（已按 2026-04-18 代码/测试对齐）  
+状态：已完成（已按 2026-04-26 代码/测试对齐）
 关联路线图：[2026-04-17-chat-native-workbench-next-phase-roadmap.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-17-chat-native-workbench-next-phase-roadmap.md)  
 关联设计：[2026-04-16-chat-native-agent-workbench-plan.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-chat-native-agent-workbench-plan.md)  
 关联实施：[2026-04-16-phase1-chat-native-workbench-implementation-spec.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-phase1-chat-native-workbench-implementation-spec.md)  
@@ -20,6 +20,15 @@
 - `blocked capability` 当前产品边界是：skill / MCP 可以在统一 sheet 里走最短路径动作，但 connector 只展示真实 blocked reason / hint，没有一键 `connect / retry` 闭环。
   - 证据：`src/renderer/utils/workbenchCapabilityRegistry.ts`、`src/renderer/utils/workbenchQuickActions.ts`、`src/renderer/components/workbench/WorkbenchCapabilitySheetLite.tsx`、`tests/renderer/utils/workbenchQuickActions.test.ts`、`tests/renderer/utils/workbenchCapabilityRegistry.test.ts`
 - 因此下面凡是把 `direct` 写成“只在 renderer 本地短路”或把 `auto` 写成“只有 notification”的地方，都应理解为原始假设，不是当前代码状态。
+
+## 0.1 2026-04-26 状态补丁
+
+Phase 2 的 `execution clarity projection` 已被后续几批提交继续扩展，当前不只解释 routing / blocked capability / artifact owner：
+
+- Semantic Tool UI 已把 `_meta.shortDescription` 从 schema 注入、provider parser、SessionRepository fallback 到 ToolCall UI 打通，聊天里的工具标题、目标、引用和 URL chip 更接近语义层展示。
+- Browser / Computer tool call 的 action preview、trace id、风险标签、脱敏摘要已经进入 `ToolCallDisplay` / grouped tool step，而不是只靠底层 tool payload。
+- Activity Providers 把 OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 汇入统一 `ActivityContext`，prompt 注入由 formatter 处理。
+- Eval / Replay 侧已补 SSE progress、fatal error 熔断、DB 去重、真实 multi-turn history、recent memory 隔离和 `max_tool_calls` weighted scoring；这些会影响 execution clarity 的回放和验收口径。
 
 ## 1. 结论
 

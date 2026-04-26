@@ -62,6 +62,18 @@
 
 ## 后果
 
+### 2026-04-26 实施补充
+
+ADR-011 的方向没有改变，但产品入口在后续实现里进一步收窄：
+
+- ChatInput 不再承载 AbilityMenu；低频动作进入 `+` 菜单，Routing / Browser 默认偏好进入 Settings “对话”tab
+- Live Preview 从每轮输入的能力菜单迁出，成为 session/workspace 级入口，并补齐 DevServerLauncher 与 TweakPanel
+- Browser / Computer 从显式入口推进到生产化基线：managed browser session/profile/account/artifact/lease/proxy/TargetRef 与 Computer Surface background AX/CGEvent 都有验收
+- Tool trace 从“工具名 + 参数”升级为 semantic tool UI：`_meta.shortDescription`、target icon、memory citations、session diff summary 进入主聊天渲染
+- OpenChronicle / Tauri Native Desktop 的 screen memory 入口被归入 Activity Providers，不再让单一 provider 定义 prompt 注入架构
+
+这批补充仍然遵守原决策：不重写 orchestration 引擎，不引入 team/channel 大模型，不做 capability marketplace。
+
 ### 积极影响
 
 - 聊天主链路承载 workspace / routing / capability 的**选择、执行、解释**全流程，TaskPanel 降级为高级控制面

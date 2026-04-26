@@ -1,7 +1,7 @@
 # Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.4
-> 日期: 2026-04-23
+> 版本: 2.5
+> 日期: 2026-04-26
 > 作者: Lin Chen
 
 ---
@@ -16,11 +16,12 @@
 
 | 维度 | Code Agent | 竞品（Claude Code / Cursor / Windsurf） |
 |------|-----------|----------------------------------------|
-| 模型绑定 | 13+ Provider 智能路由，按任务复杂度选模型 | 锁定 1-2 家 Provider |
+| 模型绑定 | 13+ Provider 智能路由，模型目录已同步 GPT-5.5 / DeepSeek V4 / Kimi K2.6 | 锁定 1-2 家 Provider |
 | 成本控制 | 自适应路由降本 60%（简单任务→免费模型） | 固定模型，无成本优化 |
 | 质量闭环 | 内置 Swiss Cheese 评测框架，132→164/200 可量化 | 无内置评测 |
 | 记忆系统 | Light Memory 文件即记忆，跨会话持续学习 | 无跨会话学习 |
 | 协作模式 | DAG 多 Agent 并行编排 | 单 Agent |
+| 浏览器/桌面执行 | in-app managed browser + Computer Surface，带会话、profile、artifact、TargetRef 和安全恢复路径 | 多数停留在单步浏览器或前台桌面点击 |
 | 部署形态 | Tauri 桌面 + Web 双模式 | 仅桌面或仅 IDE 插件 |
 
 ### 1.3 目标用户
@@ -54,7 +55,7 @@
 | 前端 | React 18 + TypeScript + Tailwind + Zustand |
 | 构建 | esbuild（main/preload）+ Vite（renderer） |
 | 数据库 | SQLite（better-sqlite3）+ Supabase（云同步） |
-| AI 模型 | Kimi K2.5（主）/ DeepSeek / Claude / OpenAI / 智谱 等 13+ Provider |
+| AI 模型 | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / Claude / OpenAI / 智谱 等 13+ Provider |
 
 ---
 
@@ -81,6 +82,10 @@
 | Artifact 追踪 | ✅ | 自动提取 chart/spreadsheet/mermaid artifacts 并展示 |
 | 推理强度控制 | ✅ | 4 级 Effort Selector（Low/Med/High/Max） |
 | Code/Plan/Ask 模式 | ✅ | 三种交互模式一键切换 |
+| Semantic Tool UI | ✅ | 工具调用通过 `_meta.shortDescription` 或 fallback generator 展示产品语义标题，减少裸工具名/路径噪音 |
+| Memory Citation 展示 | ✅ | Memory 引用折叠成 rationale + source chips，避免长引用挤占工具详情 |
+| 会话级 Diff 聚合 | ✅ | 当前 session 汇总 `X files changed`，不需要逐条翻 Write/Edit |
+| 链接预览 chip | ✅ | raw URL 渲染为 favicon + 域名标签，带文字的 markdown link 保持原样 |
 
 #### 3.1.2 工具系统
 
@@ -142,12 +147,12 @@
 
 详细架构见 [docs/architecture/workbench.md](./architecture/workbench.md)，决策背景见 [ADR-011](./decisions/011-chat-native-workbench.md)。
 
-当前产品边界（明确未产品化）：
-- Connector 只展示 blocked reason + hint，**没有一键 connect / retry 闭环**
-- 命名 `preset / recipe` 资产库未做（历史 session 复用已落最小闭环）
-- Failure-to-Capability 多分流（skill / dataset / prompt-policy / capability-health）未做
+当前产品边界：
+- Native connector lifecycle 已有启用、检查、修复权限、断开、移除和设置页入口；非 native connector 与完整统一管理面仍是 backlog
+- 命名 `preset` 已有本地资产库，`recipe` 已有 contract/store 能力层；管理 UI、多步执行编排、搜索、分享、版本化仍未产品化
+- Failure-to-Capability 已有 `skill / dataset / prompt-policy / capability-health` metadata 与本地 `failureAsset` draft；triage、批处理、apply/export 仍是 backlog
 
-#### 3.1.5 右侧工作面板（v0.16.60-65）
+#### 3.1.5 Workbench 信息架构（v0.16.60-65+）
 
 Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作面板，用 `WorkbenchTabs` 顶栏切换，避免多面板同时展开抢宽度。
 
@@ -161,8 +166,15 @@ Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作
 | Preview CSV/TSV | ✅ | 表格视图，支持列宽自适应 |
 | Preview 图片 / PDF | ✅ | base64 data URL 内嵌渲染，无需外部文件服务 |
 | Preview 面板整合 | ✅ | Task/Skills/Preview header 去掉重复标题和关闭按钮，由顶栏统一管理 |
+| WorkbenchTabs `+` | ✅ | 关闭 Task/Skills/Files 后可在右侧 tab bar 就地重开，不回 TitleBar 找入口 |
+| ChatInput `+` 菜单 | ✅ | 附件、slash command、Code/Plan/Ask 等低频或模式动作收进一个二级菜单 |
+| 模型 + effort 胶囊 | ✅ | 模型名与 reasoning effort 合并为单一配置入口 |
+| Settings “对话”tab | ✅ | Routing 与 Browser 从 ChatInput 移到设置页，作为低频全局对话偏好 |
+| Settings 分组导航 | ✅ | 设置页按基础偏好、能力与连接、记忆与隐私、系统分组；搜索结果使用统一 tab registry 跳转 |
+| Settings 页面骨架 | ✅ | `SettingsLayout` 提供 page / section / details primitives，MCP 诊断与本地桥状态收进折叠详情 |
+| Sidebar User Menu | ✅ | Eval / Lab / Automation / Agent Flow / Desktop 等全局工具从 TitleBar 移到左下用户菜单 |
 
-**死代码清理**：CloudTaskToggle / TaskListToggle / DAGToggle / ObservabilityToggle 及其 orphan state 全部移除，TitleBar 只保留 File Explorer / Skills / Task 三个入口。
+**死代码清理与入口收敛**：CloudTaskToggle / TaskListToggle / DAGToggle / ObservabilityToggle 及其 orphan state 全部移除。TitleBar 只保留核心工作区入口和最小 Task 入口，全局工具不再挤在顶栏右侧。
 
 #### 3.1.6 文件资源管理器（v0.16.60-65）
 
@@ -194,33 +206,75 @@ Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作
 | 决策审计 | DecisionHistory 缓冲区（50 条），8 种决策类型，/permissions 可观测 |
 | Generative UI 安全 | postMessage 来源校验 + CSP + prompt injection XML 隔离 |
 
-#### 3.1.9 Live Preview + visual_edit（视觉定位编辑，v0.16.65 / 2026-04-24）
+#### 3.1.9 Live Preview + visual_edit（视觉定位编辑，v0.16.65+ / 2026-04-24~26）
 
 把"看见什么改什么"做成闭环 —— 用户在 iframe 里点元素，Agent 直接拿到源码位置去改，省掉"描述元素位置 / 给截图给坐标"的交互成本。
 
 | 能力 | 状态 | 说明 |
 |------|------|------|
-| AbilityMenu Live Preview 入口 | ✅ | ChatInput 能力菜单里输入 dev server URL（默认 `http://localhost:5175/`）一键打开预览，右侧 PreviewPanel 新增 `liveDev` kind tab 加载 iframe |
+| Live Preview 入口 | ✅ | 从 ChatInput AbilityMenu 迁出，进入 SessionActionsMenu / DevServerLauncher；入口跟当前 session 和 working directory 绑定 |
+| DevServerLauncher | ✅ | 可探测 Vite/CRA 等本地项目，启动 dev server、等待 ready、查看 logs；关闭 live tab 后自动 stop |
 | iframe 点击 → 源码定位 | ✅ | iframe 内点任意元素，bridge 通过 `data-code-agent-source="file:line:col"`（vite 插件编译期注入）回传 `SelectedElementInfo` |
 | 蓝框视觉反馈 | ✅ | 选中元素在 iframe 内加 2px 蓝色 outline，面板底部同时显示 `<tag> file:line:col` |
 | selectedElement 自动进入 envelope | ✅ | `composerStore.buildContext()` 读活动 liveDev tab 的 selection，塞入 `ConversationEnvelopeContext.livePreviewSelection` 随消息走，下游 visual_edit / system prompt 消费 |
 | HMR 回流恢复 selection | ✅ | iframe reload（手动 Refresh / vite full reload）后 bridge 重新挂载，parent 自动发 `vg:restore-selection` 让 bridge 按 file:line 反查 DOM 重新高亮 —— 改代码 → 看效果 → 再微调循环不被打断 |
 | Stale 自动清理 | ✅ | bridge 按 source location 找不到元素时发 `vg:selection-stale`，前端清 appStore selection，UI 回未选中态 |
+| Bridge protocol 0.3.0 | ✅ | `SelectedElementInfo` 多回传 `className` 与 `computedStyle`，供样式面板读取当前值 |
+| TweakPanel | ✅ | 支持 spacing / color / fontSize / radius / align 5 类 Tailwind 原子操作，走 `applyTweak` IPC 和 `tweakWriter`，不必每次调 LLM |
 | visual_edit 工具（Mode A） | ✅ | GLM-4.7 读 selection 上下文 → 输出严格 JSON `{old_text, new_text, summary}` → `old_text` 唯一命中 → atomicWrite 原子替换（0ki 订阅下无 vision 走纯文本推理） |
-| 协议 SemVer 管理 | ✅ | `vite-plugin-code-agent-bridge` 协议独立仓库（v0.2.0），与 `src/shared/livePreview/protocol.ts` 同步 |
+| 协议 SemVer 管理 | ✅ | `vite-plugin-code-agent-bridge` 协议独立仓库（v0.3.0），与 `src/shared/livePreview/protocol.ts` 同步 |
 | 安全边界 | ✅ | iframe postMessage 强制 source+origin 校验；`validateDevServerUrl` IPC URL 白名单 + path-escape 防护；`resolveSourceLocation` IPC 规范化 file 路径，拒绝 workingDirectory 外 |
 
 **典型工作流**：
 1. 用户开 dev server（任意 vite 项目，`npm install vite-plugin-code-agent-bridge`）
-2. 在 AbilityMenu 开 Live Preview → 右侧出 iframe
+2. 在会话动作或 DevServerLauncher 打开 Live Preview → 右侧出 iframe
 3. 点击 iframe 中想改的按钮 / 卡片 / 文本 → 蓝框 + 底部 source location
 4. 在 Chat 发消息"把这个按钮改成圆角"→ envelope 自动带 selectedElement → visual_edit 工具用 source location 做 grounding 去 Edit
-5. 保存触发 vite HMR → iframe 重载 → 蓝框自动回到原元素 → 用户直接再发下一轮指令
+5. 简单样式可直接用 TweakPanel 改 Tailwind class；复杂修改仍走 Agent / visual_edit
+6. 保存触发 vite HMR → iframe 重载 → 蓝框自动回到原元素 → 用户直接再发下一轮指令
 
 **当前边界**：
+- V2 当前口径是 Vite-only MVP；Next.js App Router 支持按 ADR-012 延期，不计入 V2 完成定义
 - 只覆盖 full reload 场景（手动 Refresh / vite 判断 full reload）；partial HMR 下 DOM 原地替换的 case 暂不自动恢复（需 DOM MutationObserver）
 - visual_edit 只支持"精确唯一命中"模式，大段重构 / 跨文件改造仍走 Agent 主链路
-- bridge 插件需 JSX 项目（vite + react / vue / svelte 的 JSX-like 模板），非 JSX 框架不支持
+- bridge 插件需 Vite + 可注入源码定位的前端项目；非 JSX / 非 Vite 框架不写成当前已支持
+
+#### 3.1.10 Browser / Computer Workbench 生产化（2026-04-26）
+
+Browser/Computer 不再只是底层工具，而是 workbench 里的显式执行面。主路径优先 in-app managed browser；desktop/computer surface 负责当前桌面上下文、后台 AX/CGEvent 受控动作，以及前台 fallback 边界说明。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| System Chrome + CDP 验收 | ✅ | acceptance 默认走系统 Chrome headless + CDP，不依赖 Playwright bundled Chromium |
+| BrowserSession/Profile | ✅ | managed session 带 `sessionId / profileId / profileMode / workspaceScope / artifactDir`；persistent 兼容旧 profile，isolated profile 关闭后安全清理 |
+| AccountState | ✅ | 支持 storageState import/export、cookie/localStorage/sessionStorage summary 与 expired cookie 分类 |
+| TargetRef / Snapshot | ✅ | DOM/a11y snapshot 带 `snapshotId`，interactive element 带 `targetRef`；stale targetRef 返回 recoverable metadata |
+| Download / Upload Artifact | ✅ | local fixture download/upload 产物进入 managed browser artifact 区，只暴露 name/hash/mime/size/session 摘要 |
+| Lease / Proxy / External Bridge boundary | ✅ | managed browser 有 lease/TTL、proxy schema；external bridge 默认 `unsupported` 且需要显式授权后才可能扩展 |
+| Browser Task Benchmark | ✅ | 本地 fixture 覆盖 navigation、form、extract、login-like、download/upload、failure recovery、redaction export、recipe rerun |
+| Computer Surface background AX | ✅ | 可对临时 native target 用 `targetApp + axPath` 后台 type/click，真实操作限定在受控目标 |
+| Computer Surface background CGEvent | ✅ | 可对指定 `pid + windowId + windowLocalPoint` 的临时目标窗口发后台 click |
+| Privacy / Recovery UI | ✅ | typed text、cookie、screenshot base64、local path 在 trace/replay/export/UI 中脱敏；失败卡只暴露安全恢复动作 |
+
+当前边界：
+- 不做远程浏览器池、外部 Chrome profile、外部 CDP attach、extension bridge
+- 不自动处理 CAPTCHA / 反 bot；遇到这类场景分流到人工接管或 unsupported
+- Computer foreground fallback 明确表示当前前台 app/window 动作，需要人工确认
+
+#### 3.1.11 Activity Providers / Screen Memory（2026-04-26）
+
+OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 已被统一到 provider-neutral activity context 模型里。它们可以一起生成 prompt-ready context，但 source、privacy、evidenceRefs 和 token budget 必须保留。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| ActivityProvider contract | ✅ | `bundled / sidecar / daemon` 三类 provider，描述 lifecycle、capture source、privacy boundary |
+| ActivityContextProvider | ✅ | 汇总 OpenChronicle、Tauri native events、audio segments、screenshot analysis，输出统一 `ActivityContext` |
+| Prompt formatter | ✅ | 默认保留 legacy separate blocks，也支持 unified activity context block |
+| OpenChronicle daemon | ✅ | 外部 daemon supervisor + MCP health + settings UI + blacklist app/url/secure fields filter |
+| Tauri Native Desktop | ✅ | bundled provider，继续由 Tauri/Rust collector 管采集，Node 侧读 timeline / current context / recent events |
+| Renderer preview | ✅ | 设置页能看到 activity context sources、摘要和不可用原因 |
+
+安全边界：activity context 可以帮助理解当前工作现场，但不等于授权工具行动。屏幕、URL、标题、截图、音频和衍生摘要必须在 UI 与 prompt metadata 中保持来源可追踪。
 
 ---
 
@@ -231,14 +285,14 @@ Task / Skills / Preview / Files 从三个独立面板合并为统一右侧工作
 ```
 用户消息 → 复杂度评估 → 模型选择
                            ├── 简单任务 → GLM-4.7-Flash（免费）
-                           ├── 中等任务 → DeepSeek / Kimi K2.5
-                           ├── 复杂任务 → Claude Opus / GPT-4o
+                           ├── 中等任务 → DeepSeek V4 / Kimi K2.6 / GLM-4.6
+                           ├── 复杂任务 → GPT-5.5 / Claude Opus / DeepSeek V4 Pro
                            └── 失败降级 → PROVIDER_FALLBACK_CHAIN
 ```
 
 | 能力 | 说明 |
 |------|------|
-| 13+ Provider 支持 | DeepSeek, Claude, OpenAI, Groq, Qwen, Moonshot, Minimax, Zhipu, Perplexity, OpenRouter, Gemini, 火山引擎 (豆包), Local (Ollama) |
+| 13+ Provider 支持 | OpenAI, DeepSeek, Claude, Groq, Qwen, Moonshot, Minimax, Zhipu, Perplexity, OpenRouter, Gemini, 火山引擎 (豆包), Local (Ollama) |
 | 能力匹配选模型 | `selectModelByCapability()` 按任务类型分配 |
 | 自动降级链 | Provider 故障时自动切换备选 |
 | 运行时切换 | StatusBar 下拉菜单实时切换模型 |

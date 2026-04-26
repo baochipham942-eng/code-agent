@@ -30,6 +30,15 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const prevActiveMatchRef = useRef(-1);
 
+  // 让滚动条在两侧各占一半空间：
+  // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
+  // ChatInput 区偏左 3px，跟 ChatInput 卡片左缘对不齐
+  const handleScrollerRef = useCallback((el: HTMLElement | Window | null) => {
+    if (el instanceof HTMLElement) {
+      el.style.scrollbarGutter = 'stable both-edges';
+    }
+  }, []);
+
   // Scroll to active search match when it changes
   useEffect(() => {
     if (searchMatches.length === 0) return;
@@ -112,6 +121,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       aria-live="polite"
       aria-label="对话消息"
       className="h-full py-3 overflow-x-hidden"
+      scrollerRef={handleScrollerRef}
       totalCount={projection.turns.length}
       itemContent={itemContent}
       followOutput={followOutput}

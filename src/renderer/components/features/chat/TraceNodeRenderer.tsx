@@ -442,15 +442,24 @@ const CapabilityScopeNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
           emptyLabel="本轮还没有 tool call 命中这些 capability。"
           hasContent={scope.invoked.length > 0}
         >
-          <div className="space-y-1.5">
+          {/* subgrid 让所有行的 pill / summary / count 三列在跨行间对齐 —
+              col1 由所有 pill 中最长的撑出来，避免 server name 长度不同导致错位 */}
+          <div
+            className="grid gap-y-1.5"
+            style={{ gridTemplateColumns: 'max-content minmax(0, 1fr) max-content' }}
+          >
             {scope.invoked.map((item) => {
               const actionSummary = formatWorkbenchHistoryActionSummary(item.topActions, { maxActions: 2 });
               return (
-                <div key={`invoked-${item.kind}-${item.id}`} className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
+                <div
+                  key={`invoked-${item.kind}-${item.id}`}
+                  className="col-span-3 grid items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
+                  style={{ gridTemplateColumns: 'subgrid' }}
+                >
                   <WorkbenchPill tone={getCapabilityPillTone(item.kind)}>
                     {item.label}
                   </WorkbenchPill>
-                  <div className="min-w-0 flex-1 text-[11px] text-zinc-400">
+                  <div className="min-w-0 truncate text-[11px] text-zinc-400">
                     {actionSummary || 'invoked'}
                   </div>
                   <div className="text-[10px] text-zinc-600">{item.count}x</div>

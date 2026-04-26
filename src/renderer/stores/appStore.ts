@@ -81,6 +81,10 @@ export interface LivePreviewSelectedElement {
   text: string;
   rect: { x: number; y: number; width: number; height: number };
   componentName?: string;
+  /** V2-B (protocol 0.3.0) — DOM class 属性当前值，TweakPanel 解析展示 */
+  className?: string;
+  /** V2-B (protocol 0.3.0) — getComputedStyle 子集，TweakPanel 渲染当前值 */
+  computedStyle?: import('@shared/livePreview/protocol').ComputedStyleSnapshot;
 }
 
 // Max open preview tabs. When exceeded, the least-recently-activated tab is evicted.

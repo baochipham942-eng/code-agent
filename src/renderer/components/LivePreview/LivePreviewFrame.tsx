@@ -29,6 +29,9 @@ const toSelectedElement = (info: SelectedElementInfo): LivePreviewSelectedElemen
   text: info.text,
   rect: info.rect,
   componentName: info.componentName,
+  // V2-B (protocol 0.3.0) — pre-0.3 bridge 不发这两个字段，直接 undefined
+  className: info.className,
+  computedStyle: info.computedStyle,
 });
 
 interface ResolvedSourceLocation {

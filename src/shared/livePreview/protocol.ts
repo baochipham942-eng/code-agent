@@ -1,9 +1,10 @@
 // Live Preview ↔ Code Agent postMessage 协议
-// 与 vite-plugin-code-agent-bridge v0.2.0 对齐
+// 与 vite-plugin-code-agent-bridge v0.3.0 对齐
 // 若升级协议，同步 /Users/linchen/Downloads/ai/vite-plugin-code-agent-bridge/src/protocol.ts
 // 0.2.0: 新增 vg:restore-selection / vg:selection-stale 支持 HMR 回流恢复
+// 0.3.0: SelectedElementInfo 加 className + computedStyle，支持 V2-B Tweak 面板
 
-export const PROTOCOL_VERSION = '0.2.0';
+export const PROTOCOL_VERSION = '0.3.0';
 export const MESSAGE_SOURCE_BRIDGE = 'visual-grounding-bridge';
 export const MESSAGE_SOURCE_PARENT = 'vg:parent';
 
@@ -13,12 +14,31 @@ export interface SourceLocation {
   column: number;
 }
 
+/** 0.3.0 — Tweak 面板需要的 computed style 子集 */
+export interface ComputedStyleSnapshot {
+  color?: string;
+  backgroundColor?: string;
+  padding?: string;
+  paddingTop?: string;
+  paddingRight?: string;
+  paddingBottom?: string;
+  paddingLeft?: string;
+  margin?: string;
+  fontSize?: string;
+  borderRadius?: string;
+  textAlign?: string;
+}
+
 export interface SelectedElementInfo {
   location: SourceLocation;
   tag: string;
   text: string;
   rect: { x: number; y: number; width: number; height: number };
   componentName?: string;
+  /** 0.3.0 — DOM `class` 属性当前值，TweakPanel 解析展示 */
+  className?: string;
+  /** 0.3.0 — getComputedStyle 子集，TweakPanel 渲染当前值 */
+  computedStyle?: ComputedStyleSnapshot;
 }
 
 export type BridgeMessage =

@@ -11,11 +11,11 @@ import {
   electronFetch,
   logger,
   httpsAgent,
-  safeJsonParse,
   convertToolsToClaude,
   convertToClaudeMessages,
   parseClaudeResponse,
   normalizeClaudeBaseUrl,
+  buildToolCallFromAccumulator,
 } from './shared';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
@@ -231,11 +231,7 @@ function claudeSSEStream(options: {
                 };
 
                 if (toolCalls.size > 0) {
-                  result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-                    id: tc.id,
-                    name: tc.name,
-                    arguments: safeJsonParse(tc.arguments),
-                  }));
+                  result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
                 }
                 // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
                 if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
@@ -289,11 +285,7 @@ function claudeSSEStream(options: {
             usage: usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) },
           };
           if (toolCalls.size > 0) {
-            result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: safeJsonParse(tc.arguments),
-            }));
+            result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
           }
           if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
             result.contentParts = contentParts;

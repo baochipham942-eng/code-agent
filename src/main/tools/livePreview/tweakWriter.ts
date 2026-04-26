@@ -21,28 +21,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse } from '@babel/parser';
 import MagicString from 'magic-string';
-import { applyMutation, type ClassMutation, type MutationResult } from './tailwindCategories';
-
-export interface TweakLocation {
-  /** 绝对路径 */
-  file: string;
-  /** 1-based, 跟 bridge / babel loc 一致 */
-  line: number;
-  /** 0-based, bridge 给的就是 0-based */
-  column: number;
-}
-
-export type TweakResult =
-  | {
-      ok: true;
-      newClassName: string;
-      mutation: MutationResult;
-    }
-  | {
-      ok: false;
-      reason: 'expression' | 'no-className' | 'element-not-found' | 'parse-error' | 'noop' | 'io';
-      detail?: string;
-    };
+import { applyMutation, type ClassMutation } from './tailwindCategories';
+import type { TweakLocation, TweakResult } from '../../../shared/livePreview/tweak';
+export type { TweakLocation, TweakResult } from '../../../shared/livePreview/tweak';
 
 interface JSXOpeningLike {
   type: 'JSXOpeningElement';

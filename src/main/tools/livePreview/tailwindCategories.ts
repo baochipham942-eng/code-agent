@@ -13,26 +13,11 @@
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// Mutation API
+// Mutation API（types 在 src/shared/livePreview/tweak.ts 声明，renderer 共用）
 // ----------------------------------------------------------------------------
 
-export type ColorTarget = 'text' | 'bg' | 'border';
-export type SpacingAxis = 'p' | 'px' | 'py' | 'pt' | 'pr' | 'pb' | 'pl' | 'm' | 'mx' | 'my' | 'gap';
-export type FontSizeKey = 'xs' | 'sm' | 'base' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
-export type RadiusKey = 'none' | 'sm' | '' /* default rounded */ | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full';
-export type AlignAxis = 'text' | 'items' | 'justify';
-export type TextAlignValue = 'left' | 'center' | 'right';
-export type ItemsAlignValue = 'start' | 'center' | 'end';
-export type JustifyAlignValue = 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
-
-export type ClassMutation =
-  | { kind: 'color'; target: ColorTarget; color: string; shade: number }
-  | { kind: 'spacing'; axis: SpacingAxis; value: number }
-  | { kind: 'fontSize'; size: FontSizeKey }
-  | { kind: 'radius'; size: RadiusKey }
-  | { kind: 'align'; axis: 'text'; value: TextAlignValue }
-  | { kind: 'align'; axis: 'items'; value: ItemsAlignValue }
-  | { kind: 'align'; axis: 'justify'; value: JustifyAlignValue };
+import type { ClassMutation } from '../../../shared/livePreview/tweak';
+export type { ClassMutation, ColorTarget, SpacingAxis, FontSizeKey, RadiusKey } from '../../../shared/livePreview/tweak';
 
 export interface MutationResult {
   /** 应用后的有序去重 class 列表 */

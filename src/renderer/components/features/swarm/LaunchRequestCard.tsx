@@ -1,8 +1,49 @@
 import React, { useState } from 'react';
-import { GitBranch } from 'lucide-react';
+import { GitBranch, ChevronDown, ChevronRight } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { SwarmLaunchRequest } from '@shared/contract/swarm';
+import type { SwarmLaunchRequest, SwarmLaunchTaskPreview } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
+
+// 给每个 agent 分配一种稳定颜色（按 task.id hash），让用户像 Codex 截图里
+// "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
+const AGENT_COLORS = [
+  'text-emerald-400',
+  'text-purple-400',
+  'text-cyan-400',
+  'text-amber-400',
+  'text-pink-400',
+  'text-blue-400',
+] as const;
+
+function agentColorFor(taskId: string): string {
+  let hash = 0;
+  for (let i = 0; i < taskId.length; i++) {
+    hash = (hash * 31 + taskId.charCodeAt(i)) | 0;
+  }
+  return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
+}
+
+// Codex-style 完整 prompt 展示行，默认折叠 4 行，可点击展开看完整。
+const TaskPromptBlock: React.FC<{ task: SwarmLaunchTaskPreview; colorClass: string }> = ({ task, colorClass }) => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        className="mt-1.5 flex items-start gap-1 text-left text-zinc-400 hover:text-zinc-200 transition-colors w-full"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown size={12} className="mt-0.5 flex-shrink-0" /> : <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />}
+        <span className="text-[11px]">
+          Created <span className={`font-semibold ${colorClass}`}>{task.role}</span> with the instructions
+        </span>
+      </button>
+      <div className={`mt-1.5 text-xs leading-5 text-zinc-400 whitespace-pre-wrap ${expanded ? '' : 'line-clamp-4'}`}>
+        {task.task}
+      </div>
+    </div>
+  );
+};
 
 export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => {
   const [feedback, setFeedback] = useState(request.feedback || '');
@@ -83,43 +124,46 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       </div>
 
       <div className="mt-3 space-y-2">
-        {request.tasks.map((task) => (
-          <div key={task.id} className="rounded-lg border border-white/[0.04] bg-zinc-900/70 px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300">
-                {task.role}
-              </span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                  task.writeAccess
-                    ? 'bg-amber-500/15 text-amber-300'
-                    : 'bg-emerald-500/15 text-emerald-300'
-                }`}
-              >
-                {task.writeAccess ? '可写' : '只读'}
-              </span>
-              {task.dependsOn && task.dependsOn.length > 0 && (
-                <span className="text-[10px] text-cyan-300">
-                  依赖 {task.dependsOn.join(', ')}
+        {request.tasks.map((task) => {
+          const agentColor = agentColorFor(task.id);
+          return (
+            <div key={task.id} className="rounded-lg border border-white/[0.04] bg-zinc-900/70 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-semibold ${agentColor}`}>
+                  {task.role}
                 </span>
-              )}
-            </div>
-            <div className="mt-2 text-xs leading-5 text-zinc-400 line-clamp-4">{task.task}</div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {task.tools.slice(0, 4).map((tool) => (
                 <span
-                  key={`${task.id}-${tool}`}
-                  className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                    task.writeAccess
+                      ? 'bg-amber-500/15 text-amber-300'
+                      : 'bg-emerald-500/15 text-emerald-300'
+                  }`}
                 >
-                  {tool}
+                  {task.writeAccess ? '可写' : '只读'}
                 </span>
-              ))}
-              {task.tools.length > 4 && (
-                <span className="text-[10px] text-zinc-600">+{task.tools.length - 4}</span>
-              )}
+                {task.dependsOn && task.dependsOn.length > 0 && (
+                  <span className="text-[10px] text-cyan-300">
+                    依赖 {task.dependsOn.join(', ')}
+                  </span>
+                )}
+              </div>
+              <TaskPromptBlock task={task} colorClass={agentColor} />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {task.tools.slice(0, 4).map((tool) => (
+                  <span
+                    key={`${task.id}-${tool}`}
+                    className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
+                  >
+                    {tool}
+                  </span>
+                ))}
+                {task.tools.length > 4 && (
+                  <span className="text-[10px] text-zinc-600">+{task.tools.length - 4}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {request.status === 'pending' && (

@@ -112,6 +112,28 @@ export interface TelemetryToolCall {
   parallel: boolean;
 }
 
+export interface ComputerSurfaceReliabilitySummary {
+  sessionId: string;
+  totalActions: number;
+  successfulActions: number;
+  failedActions: number;
+  foregroundFallbackActions: number;
+  backgroundAxActions: number;
+  backgroundCgEventActions: number;
+  byFailureKind: Array<{ failureKind: string; count: number }>;
+  byMode: Array<{ mode: string; count: number; failed: number }>;
+  recentFailures: Array<{
+    toolCallId: string;
+    timestamp: number;
+    name: string;
+    failureKind?: string | null;
+    mode?: string | null;
+    targetApp?: string | null;
+    action?: string | null;
+    error?: string | null;
+  }>;
+}
+
 // ----------------------------------------------------------------------------
 // Timeline Event
 // ----------------------------------------------------------------------------

@@ -72,20 +72,6 @@ function StatusIndicator({ status }: { status: ToolStatus }) {
   }
 }
 
-// Extract file path from Write tool call result
-function extractWriteFilePath(toolCall: ToolCall): string | null {
-  if (toolCall.name !== 'Write') return null;
-  if (toolCall.result && !toolCall.result.success) return null;
-
-  const output = toolCall.result?.output as string;
-  if (output) {
-    const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
-    if (match) return match[1].trim();
-  }
-
-  return (toolCall.arguments?.file_path as string) || null;
-}
-
 interface ToolCallDisplayProps {
   toolCall: ToolCall;
   index: number;
@@ -155,11 +141,6 @@ export function ToolCallDisplay({
       >
         <StatusIndicator status={status} />
         <ToolHeader toolCall={toolCall} status={status} />
-        {/* Inline file name for Write tool — 仅在 shortDescription 缺失时兜底，
-            语义 UI 模式下 ToolHeader 已经把路径放进标题，再贴一次只会重复 */}
-        {!expanded && status === 'success' && toolCall.name === 'Write' && !toolCall.shortDescription && (
-          <span className="ml-auto"><InlineWriteFileName filePath={extractWriteFilePath(toolCall)} /></span>
-        )}
       </div>
 
       {actionPreview && !compact && (
@@ -282,35 +263,6 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
     </div>
   );
 }
-
-// Plain clickable file name for the collapsed Write tool row. Click opens
-// the file in the right-side workbench preview panel.
-function InlineWriteFileName({ filePath }: { filePath: string | null }) {
-  const openPreview = useAppStore((state) => state.openPreview);
-  const workingDirectory = useAppStore((state) => state.workingDirectory);
-  if (!filePath) return null;
-
-  const fileName = filePath.split('/').pop() || filePath;
-  const resolvedPath = filePath.startsWith('/')
-    ? filePath
-    : workingDirectory
-      ? `${workingDirectory}/${filePath}`
-      : filePath;
-
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        openPreview(resolvedPath);
-      }}
-      className="text-xs text-zinc-400 hover:text-emerald-400 truncate max-w-[280px] transition-colors"
-      title={filePath}
-    >
-      {fileName}
-    </button>
-  );
-}
-
 
 // ============================================================================
 // Compact Version for Cowork Mode (kept for backward compatibility)

@@ -3,6 +3,7 @@ import {
   resolveLivePreviewSourceLocation,
   validateLivePreviewDevServerUrl,
 } from '../../../src/main/ipc/livePreview.ipc';
+import { getDevServerManager } from '../../../src/main/services/infra/devServerManager';
 
 describe('livePreview IPC helpers', () => {
   it('accepts only dev server URLs that match renderer frame-src', () => {
@@ -40,5 +41,41 @@ describe('livePreview IPC helpers', () => {
       file: '../outside.ts',
       projectRoot: process.cwd(),
     })).toThrow('路径逃逸');
+  });
+
+  it('prefers the managed dev server project path when a session id is provided', () => {
+    const manager = getDevServerManager();
+    const originalGet = manager.get.bind(manager);
+    const projectPath = `${process.cwd()}/.test-live-preview-project`;
+
+    (manager as unknown as {
+      get: typeof manager.get;
+    }).get = (sessionId: string) => sessionId === 'dev-session-1'
+      ? {
+          sessionId,
+          projectPath,
+          framework: 'vite',
+          packageManager: 'npm',
+          status: 'ready',
+          url: 'http://localhost:5173',
+          pid: null,
+          startedAt: 1,
+        }
+      : null;
+
+    try {
+      const resolved = resolveLivePreviewSourceLocation({
+        file: 'src/App.tsx',
+        projectRoot: process.cwd(),
+        devServerSessionId: 'dev-session-1',
+      });
+
+      expect(resolved.absolute).toBe(`${projectPath}/src/App.tsx`);
+      expect(resolved.relative).toBe('src/App.tsx');
+    } finally {
+      (manager as unknown as {
+        get: typeof manager.get;
+      }).get = originalGet;
+    }
   });
 });

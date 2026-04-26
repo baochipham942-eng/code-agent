@@ -120,8 +120,6 @@ export const SettingsModal: React.FC = () => {
     showUpdateTab,
     hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
   });
-  const isScreenMemoryTab = activeTab === 'openchronicle';
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -131,7 +129,7 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className={`relative w-full max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn ${isScreenMemoryTab ? 'max-w-5xl' : 'max-w-2xl'}`}>
+      <div className="relative w-full max-w-2xl max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-zinc-200">{t.settings.title}</h2>
@@ -144,7 +142,7 @@ export const SettingsModal: React.FC = () => {
           />
         </div>
 
-        <div className={isScreenMemoryTab ? 'flex h-[72vh] min-h-[560px]' : 'flex h-[500px]'}>
+        <div className="flex h-[500px]">
           {/* Sidebar */}
           <div className="w-48 border-r border-zinc-700 p-2 flex flex-col gap-2">
             <SettingsSearch onNavigate={handleSearchNavigate} />
@@ -168,7 +166,7 @@ export const SettingsModal: React.FC = () => {
           </div>
 
           {/* Content */}
-          <div className={`flex-1 overflow-y-auto ${isScreenMemoryTab ? 'p-5' : 'p-6'}`}>
+          <div className="flex-1 overflow-y-auto p-6">
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'model' && (

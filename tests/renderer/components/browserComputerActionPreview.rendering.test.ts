@@ -173,6 +173,31 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('secret@example.com');
   });
 
+  it('keeps Write file names next to the tool label instead of pushing them to the row edge', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          name: 'Write',
+          arguments: {
+            path: 'docs/source-ai-agent-evolution.md',
+            content: '# AI Agent',
+          },
+          result: {
+            toolCallId: 'tool-1',
+            success: true,
+            output: 'Created file: docs/source-ai-agent-evolution.md',
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain('Write');
+    expect(html).toContain('source-ai-agent-evolution.md');
+    expect(html).not.toContain('ml-auto');
+  });
+
   it('preserves metadata when grouped trace nodes are rebuilt into ToolCallDisplay props', () => {
     const nodes: TraceNode[] = [
       {

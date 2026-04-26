@@ -3,6 +3,17 @@ import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
 import type {
+  BackgroundCgEventAppDiagnosis,
+  BackgroundCgEventClickResult,
+  BackgroundCgEventWindow,
+  BackgroundCgEventWindowPoint,
+  BackgroundCgEventWindowBounds,
+  ListBackgroundCgEventWindowsOptions,
+} from './backgroundCgEventSurface';
+import { backgroundCgEventSurface } from './backgroundCgEventSurface';
+import type {
+  ComputerSurfaceAxQuality,
+  ComputerSurfaceFailureKind,
   ComputerSurfaceMode,
   ComputerSurfaceSnapshot,
   ComputerSurfaceState,
@@ -31,6 +42,16 @@ export interface ComputerSurfaceAction {
   key?: string;
   x?: number;
   y?: number;
+  pid?: number;
+  windowId?: number;
+  windowRef?: string;
+  bundleId?: string;
+  title?: string;
+  windowLocalPoint?: BackgroundCgEventWindowPoint;
+  windowX?: number;
+  windowY?: number;
+  button?: 'left' | 'right';
+  clickCount?: number;
   toX?: number;
   toY?: number;
   selector?: string;
@@ -56,9 +77,18 @@ export interface ComputerSurfaceAuthorization {
   state: ComputerSurfaceState;
   trace: WorkbenchActionTrace;
   sensitive: boolean;
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction?: string | null;
 }
 
 type ComputerSurfaceApprovalScope = NonNullable<ComputerSurfaceState['approvalScope']>;
+
+interface ComputerSurfacePreflightBlock {
+  failureKind: ComputerSurfaceFailureKind;
+  blockingReasons: string[];
+  recommendedAction: string;
+}
 
 const DEFAULT_DENIED_APPS = [
   'Terminal',
@@ -76,9 +106,12 @@ const FOREGROUND_FALLBACK_SAFETY_NOTE =
   'Computer Surface 会作用于当前前台 app/window；没有后台隔离。';
 const BACKGROUND_AX_SAFETY_NOTE =
   'Computer Surface 会通过 macOS Accessibility 操作指定 app/window；坐标类动作仍需前台窗口兜底。';
+const BACKGROUND_CGEVENT_SAFETY_NOTE =
+  'Computer Surface 会向指定 macOS pid/windowId 投递 CGEvent；必须先选窗口并使用窗口内坐标。';
 const BACKGROUND_UNAVAILABLE_SAFETY_NOTE =
   '当前平台没有可用的 Computer Surface 后台或前台执行器。';
 const BACKGROUND_AX_ACTIONS = new Set(['click', 'doubleClick', 'type']);
+const BACKGROUND_CGEVENT_ACTIONS = new Set(['click', 'doubleClick', 'rightClick']);
 
 class DesktopComputerSurface {
   private readonly id = 'default-computer-surface';
@@ -112,7 +145,7 @@ class DesktopComputerSurface {
   }
 
   async executeBackgroundAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
-    if (!this.canUseBackgroundAction(action) || !action.targetApp) {
+    if (!this.canUseBackgroundAxAction(action) || !action.targetApp) {
       return {
         success: false,
         error: 'Background Computer Surface requires targetApp plus axPath or role/name/selector, and does not support coordinate actions.',
@@ -133,13 +166,13 @@ class DesktopComputerSurface {
     ];
 
     try {
-      const { stdout } = await execFileAsync('osascript', [
+      const stdout = getExecStdout(await execFileAsync('osascript', [
         ...toAppleScriptArgs(BACKGROUND_AX_ACTION_SCRIPT),
         ...scriptArgs,
       ], {
         timeout: Math.max(1_000, Math.min(action.timeout || 8_000, 30_000)),
         maxBuffer: 1024 * 1024,
-      });
+      }));
       const output = stdout.trim() || `Background action completed: ${action.action}`;
       return {
         success: true,
@@ -189,7 +222,7 @@ class DesktopComputerSurface {
     const maxDepth = clampInt(action.maxDepth, 1, 8, 4);
 
     try {
-      const { stdout } = await execFileAsync('osascript', [
+      const stdout = getExecStdout(await execFileAsync('osascript', [
         ...toAppleScriptArgs(BACKGROUND_AX_ELEMENTS_SCRIPT),
         targetApp,
         String(limit),
@@ -197,8 +230,16 @@ class DesktopComputerSurface {
       ], {
         timeout: Math.max(1_000, Math.min(action.timeout || 8_000, 30_000)),
         maxBuffer: 1024 * 1024,
-      });
+      }));
       const elements = parseBackgroundElementLines(stdout);
+      const axQuality = assessAxTreeQuality(elements, elements.length >= limit);
+      const poorAxTree = axQuality.grade === 'poor';
+      const blockingReasons = poorAxTree
+        ? [`AX tree quality is poor for ${targetApp}: ${axQuality.reasons.join('; ')}`]
+        : undefined;
+      const recommendedAction = poorAxTree
+        ? 'Try a narrower target window, increase maxDepth, or use foreground observe before retrying the action.'
+        : null;
       const output = elements.length > 0
         ? [
             `Found ${elements.length} background AX elements for ${targetApp}:`,
@@ -206,8 +247,12 @@ class DesktopComputerSurface {
               `${element.index}. ${element.role}${element.name ? ` "${element.name}"` : ''}`,
               element.axPath ? ` [axPath=${element.axPath}]` : '',
             ].join('')),
+            formatAxQualityLine(axQuality),
           ].join('\n')
-        : `No background AX elements found for ${targetApp}.`;
+        : [
+            `No background AX elements found for ${targetApp}.`,
+            formatAxQualityLine(axQuality),
+          ].join('\n');
       return {
         success: true,
         output,
@@ -218,6 +263,10 @@ class DesktopComputerSurface {
           targetElementCount: elements.length,
           limit,
           maxDepth,
+          axQuality,
+          failureKind: poorAxTree ? 'ax_tree_poor' : null,
+          blockingReasons,
+          recommendedAction,
         },
       };
     } catch (error) {
@@ -228,16 +277,152 @@ class DesktopComputerSurface {
     }
   }
 
+  async listBackgroundCgEventWindows(
+    options: ListBackgroundCgEventWindowsOptions = {},
+  ): Promise<ComputerSurfaceActionResult> {
+    if (!this.canUseBackgroundSurface()) {
+      return {
+        success: false,
+        error: 'Background CGEvent Computer Surface is not available on this platform.',
+      };
+    }
+
+    try {
+      const windows = await backgroundCgEventSurface.listWindows(options);
+      const recommendedWindow = windows.find((window) => window.recommended) || windows[0] || null;
+      const output = windows.length > 0
+        ? [
+            `Found ${windows.length} background CGEvent window candidates${formatTargetSuffix(options)}:`,
+            ...windows.map(formatBackgroundCgEventWindowLine),
+            recommendedWindow ? `Recommended window: ${formatBackgroundCgEventWindowLine(recommendedWindow)}` : null,
+          ].join('\n')
+        : `No background CGEvent window candidates found${formatTargetSuffix(options)}.`;
+      return {
+        success: true,
+        output,
+        metadata: {
+          backgroundSurface: true,
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: options.targetApp || null,
+          windows,
+          targetWindowCount: windows.length,
+          recommendedWindow,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Background CGEvent window listing failed: ${formatExecError(error)}`,
+        metadata: {
+          backgroundSurface: true,
+          computerSurfaceMode: 'background_cgevent',
+          failureKind: 'evidence_unavailable',
+          blockingReasons: [formatExecError(error)],
+          recommendedAction: 'Check macOS screen recording/window access and retry get_windows.',
+        },
+      };
+    }
+  }
+
+  async executeBackgroundCgEventAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    const normalized = normalizeBackgroundCgEventRequest(action);
+    if (!normalized) {
+      return {
+        success: false,
+        error: 'Background CGEvent action requires pid, windowId, and windowLocalPoint/windowX/windowY.',
+      };
+    }
+
+    try {
+      const result = await backgroundCgEventSurface.clickWindow(normalized);
+      return {
+        success: true,
+        output: [
+          `Background CGEvent ${action.action} completed: ${result.appName}`,
+          `pid=${result.pid} windowId=${result.windowId}`,
+          result.windowRef ? `windowRef=${result.windowRef}` : null,
+          result.bundleId ? `bundleId=${result.bundleId}` : null,
+          result.title ? `title="${result.title}"` : null,
+          `bounds=${formatBounds(result.bounds)}`,
+          `windowLocal=(${roundPoint(result.windowLocalPoint.x)}, ${roundPoint(result.windowLocalPoint.y)})`,
+          `screen=(${roundPoint(result.screenPoint.x)}, ${roundPoint(result.screenPoint.y)})`,
+          `active=${result.isTargetActive ? 'yes' : 'no'}`,
+          `usedWindowLocation=${result.usedWindowLocation ? 'yes' : 'no'}`,
+          result.eventNumbers?.length ? `eventNumbers=${result.eventNumbers.join(',')}` : null,
+          `button=${result.button} clickCount=${result.clickCount}`,
+        ].filter(Boolean).join(' · '),
+        metadata: backgroundCgEventMetadata(result),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Background CGEvent action failed: ${formatExecError(error)}`,
+      };
+    }
+  }
+
+  async diagnoseApp(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    if (!this.canUseBackgroundSurface()) {
+      return {
+        success: false,
+        error: 'Computer Surface app diagnosis is not available on this platform.',
+      };
+    }
+
+    try {
+      const diagnosis = await backgroundCgEventSurface.diagnoseApp({
+        targetApp: action.targetApp,
+        bundleId: action.bundleId,
+        title: action.title,
+        pid: action.pid,
+        windowId: action.windowId,
+        limit: action.limit,
+        timeoutMs: action.timeout,
+      });
+      return {
+        success: true,
+        output: formatAppDiagnosis(diagnosis),
+        metadata: {
+          backgroundSurface: true,
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: action.targetApp || null,
+          appDiagnosis: diagnosis,
+          recommendedWindow: diagnosis.recommendedWindow || null,
+          windows: diagnosis.windows,
+          targetWindowCount: diagnosis.windows.length,
+          tcc: diagnosis.permissions,
+          axSuitable: diagnosis.ax.suitable,
+          cgEventSuitable: diagnosis.cgEvent.suitable,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Computer Surface app diagnosis failed: ${formatExecError(error)}`,
+        metadata: {
+          backgroundSurface: true,
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: action.targetApp || null,
+          failureKind: 'evidence_unavailable',
+          blockingReasons: [formatExecError(error)],
+          recommendedAction: 'Check Xcode command line tools, Screen Recording, Accessibility, and retry diagnose_app.',
+        },
+      };
+    }
+  }
+
   async authorizeAction(
     action: ComputerSurfaceAction,
     context: ComputerSurfacePermissionContext = {},
   ): Promise<ComputerSurfaceAuthorization> {
     const actionMode = this.resolveActionMode(action);
     const before = await this.observe({
-      targetApp: actionMode === 'background_ax' ? action.targetApp : undefined,
+      targetApp: actionMode === 'background_ax' || actionMode === 'background_cgevent'
+        ? action.targetApp
+        : undefined,
     });
     const targetApp = action.targetApp || before.appName || null;
-    const mode = targetApp
+    const mode = action.targetApp && targetApp
       ? this.resolveActionMode({ ...action, targetApp })
       : actionMode;
     const trace: WorkbenchActionTrace = {
@@ -256,28 +441,124 @@ class DesktopComputerSurface {
       params: redactAction(action),
     };
 
-    if (!targetApp) {
+    const preflightBlock = await this.preflightAction(action, {
+      before,
+      targetApp,
+      mode,
+    });
+    if (preflightBlock) {
+      const failureTrace: WorkbenchActionTrace = {
+        ...trace,
+        failureKind: preflightBlock.failureKind,
+        blockingReasons: preflightBlock.blockingReasons,
+        recommendedAction: preflightBlock.recommendedAction,
+      };
       return {
         allowed: false,
-        reason: 'Computer Surface cannot determine the target app.',
-        state: this.getState({ targetApp, blockedReason: 'target app unknown', approvalScope: 'blocked', mode }),
-        trace,
+        reason: preflightBlock.blockingReasons.join(' '),
+        state: this.getState({
+          targetApp,
+          blockedReason: preflightBlock.blockingReasons.join(' '),
+          approvalScope: 'blocked',
+          mode,
+          failureKind: preflightBlock.failureKind,
+          blockingReasons: preflightBlock.blockingReasons,
+          recommendedAction: preflightBlock.recommendedAction,
+        }),
+        trace: failureTrace,
         sensitive: false,
+        failureKind: preflightBlock.failureKind,
+        blockingReasons: preflightBlock.blockingReasons,
+        recommendedAction: preflightBlock.recommendedAction,
       };
     }
 
-    if (this.isDeniedApp(targetApp)) {
+    if (!targetApp) {
+      const blockingReasons = ['Computer Surface cannot determine the target app.'];
       return {
         allowed: false,
-        reason: `Computer Surface blocked automation for protected app: ${targetApp}`,
+        reason: blockingReasons[0],
+        state: this.getState({
+          targetApp,
+          blockedReason: 'target app unknown',
+          approvalScope: 'blocked',
+          mode,
+          failureKind: 'locator_missing',
+          blockingReasons,
+          recommendedAction: 'Run computer_use.observe first, then retry with targetApp or a concrete locator.',
+        }),
+        trace: {
+          ...trace,
+          failureKind: 'locator_missing',
+          blockingReasons,
+          recommendedAction: 'Run computer_use.observe first, then retry with targetApp or a concrete locator.',
+        },
+        sensitive: false,
+        failureKind: 'locator_missing',
+        blockingReasons,
+        recommendedAction: 'Run computer_use.observe first, then retry with targetApp or a concrete locator.',
+      };
+    }
+
+    if (mode === 'foreground_fallback' && action.targetApp) {
+      const frontmostApp = before.appName || null;
+      if (!frontmostApp || !sameAppName(frontmostApp, action.targetApp)) {
+        const current = frontmostApp || 'unknown frontmost app';
+        const blockingReasons = [
+          `Computer Surface foreground fallback requires the target app to be frontmost. Requested ${action.targetApp}, current frontmost is ${current}.`,
+        ];
+        const recommendedAction = `Bring ${action.targetApp} to the foreground, then retry the foreground fallback action.`;
+        return {
+          allowed: false,
+          reason: blockingReasons[0],
+          state: this.getState({
+            targetApp: action.targetApp,
+            blockedReason: `target app is not foreground: current ${current}`,
+            approvalScope: 'blocked',
+            mode,
+            failureKind: 'target_not_frontmost',
+            blockingReasons,
+            recommendedAction,
+          }),
+          trace: {
+            ...trace,
+            failureKind: 'target_not_frontmost',
+            blockingReasons,
+            recommendedAction,
+          },
+          sensitive: false,
+          failureKind: 'target_not_frontmost',
+          blockingReasons,
+          recommendedAction,
+        };
+      }
+    }
+
+    if (this.isDeniedApp(targetApp)) {
+      const blockingReasons = [`Computer Surface blocked automation for protected app: ${targetApp}`];
+      const recommendedAction = 'Choose a non-protected target app or remove the app from the denied list intentionally.';
+      return {
+        allowed: false,
+        reason: blockingReasons[0],
         state: this.getState({
           targetApp,
           blockedReason: `protected app: ${targetApp}`,
           approvalScope: 'blocked',
           mode,
+          failureKind: 'permission_denied',
+          blockingReasons,
+          recommendedAction,
         }),
-        trace,
+        trace: {
+          ...trace,
+          failureKind: 'permission_denied',
+          blockingReasons,
+          recommendedAction,
+        },
         sensitive: false,
+        failureKind: 'permission_denied',
+        blockingReasons,
+        recommendedAction,
       };
     }
 
@@ -296,7 +577,7 @@ class DesktopComputerSurface {
           targetApp,
           action: action.action,
           surfaceMode: mode,
-          background: mode === 'background_ax',
+          background: mode === 'background_ax' || mode === 'background_cgevent',
           requiresForeground: this.requiresForeground(mode),
           approvalScope: sensitive ? 'per_action' : 'session_app',
           safetyNote: this.getSafetyNote(mode),
@@ -305,25 +586,44 @@ class DesktopComputerSurface {
         reason: sensitive
           ? 'Sensitive Computer Use action requires explicit confirmation.'
           : mode === 'background_ax'
-            ? `Approve background Computer Use for ${targetApp}.`
+            ? `Approve background Accessibility Computer Use for ${targetApp}.`
+            : mode === 'background_cgevent'
+              ? `Approve background CGEvent click for ${targetApp}.`
             : `Approve Computer Use for the current foreground ${targetApp} window.`,
         dangerLevel: sensitive ? 'danger' : 'warning',
       });
 
       if (!approved) {
-        return {
-          allowed: false,
-          reason: sensitive
+        const blockingReasons = [
+          sensitive
             ? 'Sensitive Computer Use action was not approved.'
             : `Computer Use for ${targetApp} was not approved.`,
+        ];
+        const recommendedAction = sensitive
+          ? 'Confirm the sensitive Computer Use action explicitly if it is intentional.'
+          : `Approve Computer Use for ${targetApp}, then retry.`;
+        return {
+          allowed: false,
+          reason: blockingReasons[0],
           state: this.getState({
             targetApp,
             blockedReason: 'approval required',
             approvalScope: sensitive ? 'per_action' : 'session_app',
             mode,
+            failureKind: 'permission_denied',
+            blockingReasons,
+            recommendedAction,
           }),
-          trace,
+          trace: {
+            ...trace,
+            failureKind: 'permission_denied',
+            blockingReasons,
+            recommendedAction,
+          },
           sensitive,
+          failureKind: 'permission_denied',
+          blockingReasons,
+          recommendedAction,
         };
       }
 
@@ -340,13 +640,111 @@ class DesktopComputerSurface {
     };
   }
 
+  private async preflightAction(
+    action: ComputerSurfaceAction,
+    args: {
+      before: ComputerSurfaceSnapshot;
+      targetApp: string | null;
+      mode: ComputerSurfaceMode;
+    },
+  ): Promise<ComputerSurfacePreflightBlock | null> {
+    if (process.platform !== 'darwin' || args.mode === 'background_surface_unavailable') {
+      return {
+        failureKind: 'ax_unavailable',
+        blockingReasons: [`Computer Surface is not available on ${process.platform}.`],
+        recommendedAction: 'Use Browser/Managed mode or run Computer Use on macOS.',
+      };
+    }
+
+    if (BACKGROUND_CGEVENT_ACTIONS.has(action.action) && hasBackgroundCgEventTargetFragment(action)) {
+      if (!action.targetApp) {
+        return {
+          failureKind: 'target_window_not_found',
+          blockingReasons: ['Background CGEvent action needs an explicit targetApp plus pid, windowId, and windowLocalPoint/windowX/windowY from computer_use.get_windows.'],
+          recommendedAction: 'Run computer_use.get_windows, choose the target window, then retry with targetApp, pid, windowId, and a window-local point.',
+        };
+      }
+      if (!normalizeBackgroundCgEventRequest(action)) {
+        return {
+          failureKind: 'target_window_not_found',
+          blockingReasons: ['Background CGEvent action needs targetApp, pid, windowId, and windowLocalPoint/windowX/windowY from computer_use.get_windows.'],
+          recommendedAction: 'Run computer_use.get_windows, choose the target window, then retry with pid, windowId, and a window-local point.',
+        };
+      }
+    }
+
+    if (args.mode === 'background_cgevent' && !normalizeBackgroundCgEventRequest(action)) {
+      return {
+        failureKind: 'target_window_not_found',
+        blockingReasons: ['Background CGEvent action needs targetApp, pid, windowId, and windowLocalPoint/windowX/windowY from computer_use.get_windows.'],
+        recommendedAction: 'Run computer_use.get_windows, choose the target window, then retry with pid, windowId, and a window-local point.',
+      };
+    }
+
+    if (!args.targetApp) {
+      return {
+        failureKind: 'locator_missing',
+        blockingReasons: ['Computer Surface could not determine a target app/window.'],
+        recommendedAction: 'Run computer_use.observe first, then retry with targetApp or a concrete locator.',
+      };
+    }
+
+    if (action.targetApp) {
+      const targetStatus = await this.getTargetAppProcessStatus(action.targetApp);
+      if (targetStatus.permissionDenied) {
+        return {
+          failureKind: 'permission_denied',
+          blockingReasons: targetStatus.error
+            ? [`Accessibility/System Events permission check failed: ${targetStatus.error}`]
+            : ['Accessibility/System Events permission check failed.'],
+          recommendedAction: 'Grant Accessibility permission in System Settings, then restart the app if macOS asks for it.',
+        };
+      }
+      if (targetStatus.running === false) {
+        return {
+          failureKind: 'target_app_not_running',
+          blockingReasons: [`Target app is not running: ${action.targetApp}.`],
+          recommendedAction: `Open ${action.targetApp}, then retry the Computer Use action.`,
+        };
+      }
+      if (args.mode === 'background_ax' && !args.before.appName) {
+        return {
+          failureKind: 'target_app_not_running',
+          blockingReasons: [`Target app is not running or did not expose a window: ${action.targetApp}.`],
+          recommendedAction: `Open ${action.targetApp} and make sure it has a visible window, then retry the Computer Use action.`,
+        };
+      }
+    }
+
+    return null;
+  }
+
   async recordAction(
     trace: WorkbenchActionTrace,
-    args: { success: boolean; error?: string | null },
+    args: {
+      success: boolean;
+      error?: string | null;
+      failureKind?: ComputerSurfaceFailureKind | null;
+      blockingReasons?: string[];
+      recommendedAction?: string | null;
+      evidenceSummary?: string[];
+      axQuality?: ComputerSurfaceAxQuality | null;
+    },
   ): Promise<WorkbenchActionTrace> {
+    const targetApp = typeof trace.params?.targetApp === 'string' ? trace.params.targetApp : undefined;
     const after = await this.observe({
-      targetApp: trace.mode === 'background_ax' ? trace.before?.appName || undefined : undefined,
+      targetApp: trace.mode === 'background_ax' || trace.mode === 'background_cgevent'
+        ? targetApp || trace.before?.appName || undefined
+        : undefined,
     });
+    const evidenceSummary = args.evidenceSummary || this.buildActionEvidenceSummary(trace, after);
+    const failureKind = args.failureKind ?? trace.failureKind ?? (args.success ? null : 'action_execution_failed');
+    const blockingReasons = args.blockingReasons
+      || trace.blockingReasons
+      || (args.error ? [args.error] : undefined);
+    const recommendedAction = args.recommendedAction
+      ?? trace.recommendedAction
+      ?? (!args.success ? 'Inspect the before/after evidence and retry with observe or AX candidates before another mutating action.' : null);
     const completed: WorkbenchActionTrace = {
       ...trace,
       completedAtMs: Date.now(),
@@ -358,9 +756,94 @@ class DesktopComputerSurface {
         screenshotPath: after.screenshotPath || null,
         capturedAtMs: after.capturedAtMs,
       },
+      failureKind,
+      blockingReasons,
+      recommendedAction,
+      evidenceSummary,
+      axQuality: args.axQuality ?? trace.axQuality ?? null,
     };
     this.lastAction = completed;
     return completed;
+  }
+
+  private async getTargetAppProcessStatus(targetApp: string): Promise<{
+    running: boolean | null;
+    permissionDenied?: boolean;
+    error?: string;
+  }> {
+    if (process.platform !== 'darwin') {
+      return { running: null };
+    }
+
+    try {
+      const stdout = getExecStdout(await execFileAsync('osascript', [
+        '-e',
+        'on run argv',
+        '-e',
+        'set targetApp to item 1 of argv',
+        '-e',
+        'tell application "System Events"',
+        '-e',
+        'if exists application process targetApp then return "running"',
+        '-e',
+        'return "missing"',
+        '-e',
+        'end tell',
+        '-e',
+        'end run',
+        targetApp,
+      ], {
+        timeout: 3_000,
+        maxBuffer: 1024 * 256,
+      }));
+      const text = stdout.trim();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (text === 'running') return { running: true };
+      if (text === 'missing') return { running: false };
+      if (lines.length >= 2) return { running: true };
+      if (lines.length === 1 && sameAppName(lines[0], targetApp)) return { running: false };
+      return { running: false };
+    } catch (error) {
+      const message = formatExecError(error);
+      return {
+        running: null,
+        permissionDenied: isLikelyAccessibilityPermissionError(message),
+        error: message,
+      };
+    }
+  }
+
+  private buildActionEvidenceSummary(
+    trace: WorkbenchActionTrace,
+    after: ComputerSurfaceSnapshot,
+  ): string[] {
+    const beforeApp = trace.before?.appName || 'unknown app';
+    const beforeTitle = trace.before?.title || 'unknown window';
+    const afterApp = after.appName || 'unknown app';
+    const afterTitle = after.windowTitle || 'unknown window';
+    const params = trace.params || {};
+    const targetApp = typeof params.targetApp === 'string' ? params.targetApp : trace.before?.appName || null;
+    const targetRole = typeof params.role === 'string' ? params.role : null;
+    const targetName = typeof params.name === 'string' ? params.name : null;
+    const targetAxPath = typeof params.axPath === 'string' ? params.axPath : null;
+    const targetSelector = typeof params.selector === 'string' ? params.selector : null;
+    const pid = typeof params.pid === 'number' ? params.pid : null;
+    const windowId = typeof params.windowId === 'number' ? params.windowId : null;
+    const windowLocalPoint = parseWindowLocalPointFromParams(params);
+    return [
+      `Before: ${beforeApp} · ${beforeTitle}`,
+      `After: ${afterApp} · ${afterTitle}`,
+      targetApp ? `Target app: ${targetApp}` : null,
+      trace.mode === 'background_ax'
+        ? `AX locator: ${[targetRole, targetName, targetAxPath || targetSelector].filter(Boolean).join(' · ') || 'unknown'}`
+        : null,
+      trace.mode === 'background_cgevent'
+        ? `CGEvent window: ${[pid ? `pid ${pid}` : null, windowId ? `window ${windowId}` : null].filter(Boolean).join(' · ') || 'unknown'}`
+        : null,
+      trace.mode === 'background_cgevent' && windowLocalPoint
+        ? `Window local point: ${roundPoint(windowLocalPoint.x)}, ${roundPoint(windowLocalPoint.y)}`
+        : null,
+    ].filter(Boolean) as string[];
   }
 
   getState(overrides: {
@@ -368,6 +851,11 @@ class DesktopComputerSurface {
     blockedReason?: string | null;
     approvalScope?: ComputerSurfaceApprovalScope;
     mode?: ComputerSurfaceMode;
+    failureKind?: ComputerSurfaceFailureKind | null;
+    blockingReasons?: string[];
+    recommendedAction?: string | null;
+    evidenceSummary?: string[];
+    axQuality?: ComputerSurfaceAxQuality | null;
   } = {}): ComputerSurfaceState {
     const mode = overrides.mode || this.getDefaultMode();
     const blockedReason = overrides.blockedReason || null;
@@ -376,7 +864,7 @@ class DesktopComputerSurface {
       mode,
       platform: process.platform,
       ready: this.isReady(mode),
-      background: mode === 'background_ax',
+      background: mode === 'background_ax' || mode === 'background_cgevent',
       requiresForeground: this.requiresForeground(mode),
       approvalScope: this.resolveApprovalScope(mode, blockedReason, overrides.approvalScope),
       safetyNote: this.getSafetyNote(mode),
@@ -386,6 +874,11 @@ class DesktopComputerSurface {
       deniedApps: [...this.deniedApps],
       lastAction: this.lastAction,
       lastSnapshot: this.lastSnapshot,
+      failureKind: overrides.failureKind ?? null,
+      blockingReasons: overrides.blockingReasons,
+      recommendedAction: overrides.recommendedAction ?? null,
+      evidenceSummary: overrides.evidenceSummary,
+      axQuality: overrides.axQuality ?? null,
     };
   }
 
@@ -399,7 +892,10 @@ class DesktopComputerSurface {
   }
 
   private resolveActionMode(action: ComputerSurfaceAction): ComputerSurfaceMode {
-    if (this.canUseBackgroundAction(action)) {
+    if (this.canUseBackgroundCgEventAction(action)) {
+      return 'background_cgevent';
+    }
+    if (this.canUseBackgroundAxAction(action)) {
       return 'background_ax';
     }
     return process.platform === 'darwin'
@@ -419,6 +915,9 @@ class DesktopComputerSurface {
     if (mode === 'background_ax') {
       return BACKGROUND_AX_SAFETY_NOTE;
     }
+    if (mode === 'background_cgevent') {
+      return BACKGROUND_CGEVENT_SAFETY_NOTE;
+    }
     return mode === 'foreground_fallback'
       ? FOREGROUND_FALLBACK_SAFETY_NOTE
       : BACKGROUND_UNAVAILABLE_SAFETY_NOTE;
@@ -432,13 +931,20 @@ class DesktopComputerSurface {
     return this.deniedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase());
   }
 
-  private canUseBackgroundAction(action: ComputerSurfaceAction): boolean {
+  private canUseBackgroundAxAction(action: ComputerSurfaceAction): boolean {
     return this.canUseBackgroundSurface()
       && Boolean(action.targetApp)
       && BACKGROUND_AX_ACTIONS.has(action.action)
       && hasBackgroundElementLocator(action)
       && action.x === undefined
       && action.y === undefined;
+  }
+
+  private canUseBackgroundCgEventAction(action: ComputerSurfaceAction): boolean {
+    return this.canUseBackgroundSurface()
+      && Boolean(action.targetApp)
+      && BACKGROUND_CGEVENT_ACTIONS.has(action.action)
+      && Boolean(normalizeBackgroundCgEventRequest(action));
   }
 
   private approvalKey(targetApp: string, mode: ComputerSurfaceMode): string {
@@ -461,7 +967,7 @@ class DesktopComputerSurface {
     }
 
     try {
-      const { stdout } = await execFileAsync('osascript', [
+      const stdout = getExecStdout(await execFileAsync('osascript', [
         '-e',
         'tell application "System Events" to set frontApp to first application process whose frontmost is true',
         '-e',
@@ -472,7 +978,7 @@ class DesktopComputerSurface {
         'tell application "System Events" to if exists window 1 of frontApp then set winTitle to name of window 1 of frontApp',
         '-e',
         'return appName & "\n" & winTitle',
-      ]);
+      ]));
       const [appName, ...titleParts] = stdout.trim().split('\n');
       return {
         appName: appName || null,
@@ -489,7 +995,7 @@ class DesktopComputerSurface {
     }
 
     try {
-      const { stdout } = await execFileAsync('osascript', [
+      const stdout = getExecStdout(await execFileAsync('osascript', [
         '-e',
         'on run argv',
         '-e',
@@ -513,8 +1019,15 @@ class DesktopComputerSurface {
         '-e',
         'end run',
         targetApp,
-      ]);
-      const [appName, ...titleParts] = stdout.trim().split('\n');
+      ]));
+      const text = stdout.trim();
+      const [appName, ...titleParts] = text.split('\n');
+      if (sameAppName(appName || '', targetApp) && titleParts.length === 0) {
+        return {
+          appName: null,
+          windowTitle: null,
+        };
+      }
       return {
         appName: appName || targetApp,
         windowTitle: titleParts.join('\n') || null,
@@ -799,7 +1312,20 @@ function parseList(value: string | undefined, fallback: string[]): string[] {
 }
 
 function hasBackgroundElementLocator(action: ComputerSurfaceAction): boolean {
-  return Boolean(action.axPath || action.name || action.selector || action.role);
+  return Boolean(action.axPath || action.selector || (action.role && action.name));
+}
+
+function hasBackgroundCgEventTargetFragment(action: ComputerSurfaceAction): boolean {
+  return action.pid !== undefined
+    || action.windowId !== undefined
+    || action.windowRef !== undefined
+    || action.windowLocalPoint !== undefined
+    || action.windowX !== undefined
+    || action.windowY !== undefined;
+}
+
+function sameAppName(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
 function normalizeBackgroundAction(action: string): string {
@@ -819,7 +1345,9 @@ function clampInt(value: number | undefined, min: number, max: number, fallback:
   return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
-function parseBackgroundElementLines(stdout: string): Array<{ index: number; role: string; name: string; axPath: string }> {
+type BackgroundAxElement = { index: number; role: string; name: string; axPath: string };
+
+function parseBackgroundElementLines(stdout: string): BackgroundAxElement[] {
   return stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -837,8 +1365,265 @@ function parseBackgroundElementLines(stdout: string): Array<{ index: number; rol
     .filter((element) => element.index > 0 && element.role);
 }
 
+function assessAxTreeQuality(elements: BackgroundAxElement[], reachedLimit: boolean): ComputerSurfaceAxQuality {
+  const elementCount = elements.length;
+  const labeledElementCount = elements.filter((element) => element.name.trim().length > 0).length;
+  const withAxPathCount = elements.filter((element) => element.axPath.trim().length > 0).length;
+  const unlabeledRatio = elementCount > 0 ? 1 - labeledElementCount / elementCount : 1;
+  const missingAxPathRatio = elementCount > 0 ? 1 - withAxPathCount / elementCount : 1;
+  const roleCounts: Record<string, number> = {};
+  const labelRoleCounts = new Map<string, number>();
+  for (const element of elements) {
+    const role = element.role || 'unknown';
+    roleCounts[role] = (roleCounts[role] || 0) + 1;
+    const labelKey = `${role}:${element.name.trim().toLowerCase()}`;
+    if (element.name.trim()) {
+      labelRoleCounts.set(labelKey, (labelRoleCounts.get(labelKey) || 0) + 1);
+    }
+  }
+
+  const duplicateLabelRoleCount = [...labelRoleCounts.values()]
+    .filter((count) => count > 1)
+    .reduce((sum, count) => sum + count, 0);
+  const reasons: string[] = [];
+  let score = 1;
+
+  if (elementCount === 0) {
+    reasons.push('no interactive AX elements returned');
+    score = 0;
+  } else {
+    if (elementCount < 3) {
+      reasons.push(`only ${elementCount} interactive AX element${elementCount === 1 ? '' : 's'} returned`);
+      score -= 0.25;
+    }
+    if (unlabeledRatio > 0.35) {
+      reasons.push(`${Math.round(unlabeledRatio * 100)}% of candidates are unlabeled`);
+      score -= 0.3;
+    } else if (unlabeledRatio > 0.1) {
+      reasons.push(`${Math.round(unlabeledRatio * 100)}% of candidates are unlabeled`);
+      score -= 0.1;
+    }
+    if (missingAxPathRatio > 0.2) {
+      reasons.push(`${Math.round(missingAxPathRatio * 100)}% of candidates lack axPath`);
+      score -= 0.2;
+    }
+    if (duplicateLabelRoleCount > 0) {
+      reasons.push(`${duplicateLabelRoleCount} candidates share the same role/name`);
+      score -= Math.min(0.25, duplicateLabelRoleCount / Math.max(1, elementCount));
+    }
+    if (reachedLimit) {
+      reasons.push('candidate listing reached the requested limit');
+      score -= 0.1;
+    }
+  }
+
+  const clampedScore = Math.max(0, Math.min(1, score));
+  const roundedScore = Math.round(clampedScore * 100) / 100;
+  const grade: ComputerSurfaceAxQuality['grade'] = roundedScore >= 0.75
+    ? 'good'
+    : roundedScore >= 0.45
+      ? 'usable'
+      : 'poor';
+
+  return {
+    score: roundedScore,
+    grade,
+    elementCount,
+    labeledElementCount,
+    withAxPathCount,
+    unlabeledRatio: Math.round(unlabeledRatio * 100) / 100,
+    missingAxPathRatio: Math.round(missingAxPathRatio * 100) / 100,
+    duplicateLabelRoleCount,
+    roleCounts,
+    reasons: reasons.length > 0 ? reasons : ['AX tree has enough labeled, addressable candidates'],
+  };
+}
+
+function formatAxQualityLine(quality: ComputerSurfaceAxQuality): string {
+  return `AX quality: ${quality.grade} score=${quality.score} (${quality.reasons.join('; ')})`;
+}
+
+function formatBackgroundCgEventWindowLine(window: BackgroundCgEventWindow): string {
+  const title = window.title ? ` "${window.title}"` : '';
+  const quality = typeof window.qualityScore === 'number'
+    ? `quality=${window.qualityGrade || 'unknown'}:${window.qualityScore}`
+    : null;
+  const ref = window.windowRef ? `windowRef=${window.windowRef}` : null;
+  const recommended = window.recommended ? 'recommended=yes' : null;
+  return [
+    `${window.appName}${title}`,
+    window.bundleId ? `bundleId=${window.bundleId}` : null,
+    `pid=${window.pid}`,
+    `windowId=${window.windowId}`,
+    `bounds=${formatBounds(window.bounds)}`,
+    quality,
+    ref,
+    recommended,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatBounds(bounds: BackgroundCgEventWindowBounds): string {
+  return `${roundPoint(bounds.x)},${roundPoint(bounds.y)} ${roundPoint(bounds.width)}x${roundPoint(bounds.height)}`;
+}
+
+function formatTargetSuffix(options: ListBackgroundCgEventWindowsOptions): string {
+  const parts = [
+    options.targetApp ? `targetApp=${options.targetApp}` : null,
+    options.bundleId ? `bundleId=${options.bundleId}` : null,
+    options.title ? `title="${options.title}"` : null,
+    options.pid ? `pid=${options.pid}` : null,
+    options.windowId ? `windowId=${options.windowId}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? ` for ${parts.join(' · ')}` : '';
+}
+
+function formatAppDiagnosis(diagnosis: BackgroundCgEventAppDiagnosis): string {
+  return [
+    `Computer Surface diagnosis${diagnosis.targetApp ? ` for ${diagnosis.targetApp}` : ''}`,
+    `Platform: ${diagnosis.platform}${diagnosis.os.version ? ` · ${diagnosis.os.version}` : ''}`,
+    `Helper: ${diagnosis.helper.available ? 'available' : 'unavailable'}${diagnosis.helper.path ? ` · ${diagnosis.helper.path}` : ''}`,
+    `TCC: Accessibility=${diagnosis.permissions.accessibilityTrusted === true ? 'granted' : diagnosis.permissions.accessibilityTrusted === false ? 'missing' : 'unknown'} · ScreenRecording=${diagnosis.permissions.screenRecordingGranted === true ? 'granted' : diagnosis.permissions.screenRecordingGranted === false ? 'missing' : 'unknown'}`,
+    `CGEventSetWindowLocation: ${diagnosis.symbols.cgEventSetWindowLocationAvailable === true ? 'available' : diagnosis.symbols.cgEventSetWindowLocationAvailable === false ? 'unavailable' : 'unknown'}`,
+    `Processes: ${diagnosis.processes.length ? diagnosis.processes.map((process) => `${process.appName} pid=${process.pid}${process.bundleId ? ` bundleId=${process.bundleId}` : ''}${process.isActive ? ' active=yes' : ''}`).join('; ') : 'none'}`,
+    `AX suitability: ${diagnosis.ax.suitable ? 'yes' : 'no'} · ${diagnosis.ax.reasons.join('; ')}`,
+    `CGEvent suitability: ${diagnosis.cgEvent.suitable ? 'yes' : 'no'} · ${diagnosis.cgEvent.reasons.join('; ')}`,
+    diagnosis.recommendedWindow ? `Recommended window: ${formatBackgroundCgEventWindowLine(diagnosis.recommendedWindow)}` : 'Recommended window: none',
+    diagnosis.windows.length > 0
+      ? [
+          `Window candidates: ${diagnosis.windows.length}`,
+          ...diagnosis.windows.slice(0, 8).map(formatBackgroundCgEventWindowLine),
+        ].join('\n')
+      : 'Window candidates: none',
+  ].join('\n');
+}
+
+function backgroundCgEventMetadata(result: BackgroundCgEventClickResult): Record<string, unknown> {
+  return {
+    backgroundSurface: true,
+    computerSurfaceMode: 'background_cgevent',
+    targetApp: result.appName,
+    targetBundleId: result.bundleId || null,
+    targetPid: result.pid,
+    targetWindowId: result.windowId,
+    targetWindowRef: result.windowRef || null,
+    targetWindowTitle: result.title || null,
+    targetWindowBounds: result.bounds,
+    windowLocalPoint: result.windowLocalPoint,
+    screenPoint: result.screenPoint,
+    button: result.button,
+    clickCount: result.clickCount,
+    isTargetActive: result.isTargetActive,
+    usedWindowLocation: result.usedWindowLocation,
+    eventNumbers: result.eventNumbers || [],
+    targetVerification: result.targetVerification || null,
+    evidenceSummary: [
+      `pid=${result.pid} windowId=${result.windowId}${result.windowRef ? ` windowRef=${result.windowRef}` : ''}`,
+      `bounds=${formatBounds(result.bounds)}`,
+      `windowLocal=${roundPoint(result.windowLocalPoint.x)},${roundPoint(result.windowLocalPoint.y)} screen=${roundPoint(result.screenPoint.x)},${roundPoint(result.screenPoint.y)}`,
+      `active=${result.isTargetActive ? 'yes' : 'no'} usedWindowLocation=${result.usedWindowLocation ? 'yes' : 'no'}`,
+      `button=${result.button} clickCount=${result.clickCount}${result.eventNumbers?.length ? ` eventNumbers=${result.eventNumbers.join(',')}` : ''}`,
+      result.targetVerification?.warnings.length
+        ? `verification warnings=${result.targetVerification.warnings.join('; ')}`
+        : null,
+    ].filter(Boolean),
+  };
+}
+
+function normalizeBackgroundCgEventRequest(action: ComputerSurfaceAction): {
+  pid: number;
+  windowId: number;
+  windowRef?: string;
+  targetApp?: string;
+  bundleId?: string;
+  title?: string;
+  windowLocalPoint: BackgroundCgEventWindowPoint;
+  button: 'left' | 'right';
+  clickCount: number;
+  timeoutMs?: number;
+} | null {
+  const point = getWindowLocalPoint(action);
+  const parsedRef = parseWindowRef(action.windowRef);
+  const pid = action.pid ?? parsedRef?.pid;
+  const windowId = action.windowId ?? parsedRef?.windowId;
+  if (
+    !isPositiveFiniteNumber(pid)
+    || !isPositiveFiniteNumber(windowId)
+    || !point
+  ) {
+    return null;
+  }
+  return {
+    pid: Math.trunc(pid),
+    windowId: Math.trunc(windowId),
+    windowRef: action.windowRef,
+    targetApp: action.targetApp,
+    bundleId: action.bundleId,
+    title: action.title,
+    windowLocalPoint: point,
+    button: action.button === 'right' || action.action === 'rightClick' ? 'right' : 'left',
+    clickCount: action.action === 'doubleClick'
+      ? 2
+      : Math.max(1, Math.min(2, Math.trunc(action.clickCount || 1))),
+    timeoutMs: action.timeout,
+  };
+}
+
+function parseWindowRef(windowRef: string | undefined): { pid: number; windowId: number } | null {
+  if (!windowRef) return null;
+  const match = /^cgwin:(\d+):(\d+):[a-f0-9]{12}$/i.exec(windowRef.trim());
+  if (!match) return null;
+  return {
+    pid: Number.parseInt(match[1], 10),
+    windowId: Number.parseInt(match[2], 10),
+  };
+}
+
+function getWindowLocalPoint(action: ComputerSurfaceAction): BackgroundCgEventWindowPoint | null {
+  if (
+    action.windowLocalPoint
+    && Number.isFinite(action.windowLocalPoint.x)
+    && Number.isFinite(action.windowLocalPoint.y)
+  ) {
+    return action.windowLocalPoint;
+  }
+  if (Number.isFinite(action.windowX) && Number.isFinite(action.windowY)) {
+    return {
+      x: action.windowX as number,
+      y: action.windowY as number,
+    };
+  }
+  return null;
+}
+
+function parseWindowLocalPointFromParams(params: Record<string, unknown>): BackgroundCgEventWindowPoint | null {
+  const action = params as unknown as ComputerSurfaceAction;
+  return getWindowLocalPoint(action);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function roundPoint(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
 function toAppleScriptArgs(lines: string[]): string[] {
   return lines.flatMap((line) => ['-e', line]);
+}
+
+function getExecStdout(result: unknown): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (Buffer.isBuffer(result)) {
+    return result.toString('utf8');
+  }
+  if (result && typeof result === 'object' && 'stdout' in result) {
+    const stdout = (result as { stdout?: string | Buffer }).stdout;
+    return Buffer.isBuffer(stdout) ? stdout.toString('utf8') : stdout || '';
+  }
+  return '';
 }
 
 function formatExecError(error: unknown): string {
@@ -846,6 +1631,10 @@ function formatExecError(error: unknown): string {
     return error.message.replace(/\s+/g, ' ').trim();
   }
   return 'Unknown error';
+}
+
+function isLikelyAccessibilityPermissionError(message: string): boolean {
+  return /not authorized|not permitted|operation not permitted|assistive access|accessibility|privacy|tcc/i.test(message);
 }
 
 function isSensitiveAction(action: ComputerSurfaceAction): boolean {

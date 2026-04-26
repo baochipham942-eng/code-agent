@@ -69,6 +69,7 @@ import type {
   TelemetryToolStat,
   TelemetryIntentStat,
   TelemetryPushEvent,
+  ComputerSurfaceReliabilitySummary,
 } from '../contract/telemetry';
 
 import type {
@@ -517,6 +518,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_GET_TURNS]: (sessionId: string) => Promise<TelemetryTurn[]>;
   [IPC_CHANNELS.TELEMETRY_GET_TURN_DETAIL]: (turnId: string) => Promise<{ turn: TelemetryTurn; modelCalls: TelemetryModelCall[]; toolCalls: TelemetryToolCall[]; events: TelemetryTimelineEvent[] } | null>;
   [IPC_CHANNELS.TELEMETRY_GET_TOOL_STATS]: (sessionId: string) => Promise<TelemetryToolStat[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_COMPUTER_SURFACE_SUMMARY]: (sessionId: string) => Promise<ComputerSurfaceReliabilitySummary>;
   [IPC_CHANNELS.TELEMETRY_GET_INTENT_DIST]: (sessionId: string) => Promise<TelemetryIntentStat[]>;
   [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
   [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;

@@ -5,6 +5,11 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
+import {
+  formatAcceptanceError,
+  makeSystemChromeProviderOptions,
+  SYSTEM_CHROME_CDP_PROVIDER,
+} from './browser-computer-system-chrome.ts';
 import { browserService } from '../../src/main/services/infra/browserService.ts';
 import { browserActionTool } from '../../src/main/tools/vision/browserAction.ts';
 import { computerUseTool } from '../../src/main/tools/vision/computerUse.ts';
@@ -26,6 +31,7 @@ Usage:
 
 Options:
   --visible        Launch managed browser in visible mode.
+  --provider <id>  Browser provider. Default: system-chrome-cdp.
   --keep-browser   Keep the managed browser open after the smoke.
   --json           Print JSON only.
   --help           Show this help.
@@ -56,16 +62,20 @@ function makeSmokeUrl(): string {
 }
 
 function makeToolContext(): ToolContext {
+  const mode = process.env.CODE_AGENT_BROWSER_VISIBLE === '1' ? 'visible' : 'headless';
   return {
     workingDirectory: process.cwd(),
     sessionId: 'browser-computer-smoke',
     requestPermission: async () => true,
     executionIntent: {
       browserSessionMode: 'managed',
+      browserProvider: SYSTEM_CHROME_CDP_PROVIDER,
       preferBrowserSession: true,
       allowBrowserAutomation: true,
       browserSessionSnapshot: {
         ready: true,
+        provider: SYSTEM_CHROME_CDP_PROVIDER,
+        mode,
       },
     },
   };
@@ -97,6 +107,8 @@ async function main(): Promise<void> {
   if (hasFlag(args, 'visible')) {
     process.env.CODE_AGENT_BROWSER_VISIBLE = '1';
   }
+  const provider = getProvider(args);
+  const mode = hasFlag(args, 'visible') ? 'visible' : 'headless';
 
   const context = makeToolContext();
   const failures: string[] = [];
@@ -108,6 +120,9 @@ async function main(): Promise<void> {
 
   try {
     await browserService.close().catch(() => undefined);
+    await browserService.launch(makeLaunchOptions(provider, mode)).catch((error) => {
+      throw new Error(formatAcceptanceError(error));
+    });
 
     navigateResult = await runTool(browserActionTool, {
       action: 'navigate',
@@ -147,6 +162,10 @@ async function main(): Promise<void> {
     if (!browserState?.running) {
       failures.push('Managed browser session is not running.');
     }
+    const browserStateProvider = (browserState as { provider?: string | null } | null)?.provider ?? null;
+    if (browserStateProvider && browserStateProvider !== provider) {
+      failures.push(`Managed browser provider mismatch: expected ${provider}, got ${browserStateProvider}.`);
+    }
     if (!browserState?.activeTab?.url?.startsWith('data:text/html')) {
       failures.push('Managed browser did not stay on the isolated smoke page.');
     }
@@ -166,6 +185,8 @@ async function main(): Promise<void> {
     const result = {
       ok: failures.length === 0,
       browser: {
+        providerRequested: provider,
+        provider: browserStateProvider || provider,
         running: browserState?.running ?? false,
         mode: browserState?.mode ?? null,
         activeTab: browserState?.activeTab ?? null,
@@ -182,6 +203,8 @@ async function main(): Promise<void> {
       printJson(result);
     } else {
       printKeyValue('Browser / Computer Workbench Smoke Summary', [
+        ['browserProviderRequested', result.browser.providerRequested],
+        ['browserProvider', result.browser.provider],
         ['browserRunning', result.browser.running],
         ['browserMode', result.browser.mode],
         ['activeUrl', result.browser.activeTab?.url?.slice(0, 80) ?? null],
@@ -214,4 +237,19 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(finishWithError);
+function getProvider(args: ReturnType<typeof parseArgs>): string {
+  const value = args.options.provider;
+  if (value === undefined || value === true) {
+    return SYSTEM_CHROME_CDP_PROVIDER;
+  }
+  return Array.isArray(value) ? value[value.length - 1] : value;
+}
+
+function makeLaunchOptions(provider: string, mode: 'headless' | 'visible'): Record<string, unknown> {
+  if (provider === SYSTEM_CHROME_CDP_PROVIDER) {
+    return makeSystemChromeProviderOptions(mode);
+  }
+  return { mode, provider };
+}
+
+main().catch((error) => finishWithError(formatAcceptanceError(error)));

@@ -17,6 +17,10 @@ import { invokeDomain } from './services/ipcService';
 declare global {
   interface Window {
     __openLivePreview?: (url: string) => Promise<void>;
+    // V2-A 调试入口：Console 调 __startDevServer('/path/to/project')
+    // 自动跑探测 → 启动 → 等 ready → 把 URL 喂给 LivePreviewFrame
+    __startDevServer?: (projectPath: string) => Promise<void>;
+    __stopDevServer?: (sessionId: string) => Promise<void>;
   }
 }
 window.__openLivePreview = async (url: string) => {
@@ -29,6 +33,46 @@ window.__openLivePreview = async (url: string) => {
     useAppStore.getState().openLivePreview(result.url);
   } catch (err) {
     console.error('[LivePreview] URL rejected', err);
+  }
+};
+
+window.__startDevServer = async (projectPath: string) => {
+  try {
+    const detection = await invokeDomain<{
+      framework: string;
+      packageManager: string;
+      supported: boolean;
+      reason?: string;
+    }>(IPC_DOMAINS.LIVE_PREVIEW, 'detectFramework', { path: projectPath });
+    console.log('[LivePreview] detect:', detection);
+    if (!detection.supported) {
+      console.error('[LivePreview] 不支持:', detection.reason);
+      return;
+    }
+    const session = await invokeDomain<{ sessionId: string; status: string }>(
+      IPC_DOMAINS.LIVE_PREVIEW,
+      'startDevServer',
+      { path: projectPath },
+    );
+    console.log('[LivePreview] starting session:', session.sessionId);
+    const ready = await invokeDomain<{ url: string }>(
+      IPC_DOMAINS.LIVE_PREVIEW,
+      'waitDevServerReady',
+      { sessionId: session.sessionId },
+    );
+    console.log('[LivePreview] ready URL:', ready.url, '(session', session.sessionId, ')');
+    useAppStore.getState().openLivePreview(ready.url);
+  } catch (err) {
+    console.error('[LivePreview] startDevServer failed', err);
+  }
+};
+
+window.__stopDevServer = async (sessionId: string) => {
+  try {
+    await invokeDomain(IPC_DOMAINS.LIVE_PREVIEW, 'stopDevServer', { sessionId });
+    console.log('[LivePreview] stopped', sessionId);
+  } catch (err) {
+    console.error('[LivePreview] stopDevServer failed', err);
   }
 };
 

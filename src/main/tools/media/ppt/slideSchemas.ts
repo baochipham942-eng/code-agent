@@ -405,7 +405,7 @@ function normalizeSlideContent(slide: StructuredSlide): StructuredSlide {
   }
 
   if (hasContent) {
-    return { ...slide, content: content as LayoutContent };
+    return { ...slide, content: content as unknown as LayoutContent };
   }
 
   return slide;

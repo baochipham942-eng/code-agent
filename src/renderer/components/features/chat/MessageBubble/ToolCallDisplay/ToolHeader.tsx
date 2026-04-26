@@ -16,6 +16,22 @@ interface Props {
   status: ToolStatus;
 }
 
+/**
+ * 构造 ToolHeader 的 hover tooltip：当模型 shortDescription 用 "..." 缩写了路径，
+ * tooltip 兜底贴出完整的 file_path / path / command，让用户 hover 能看全。
+ */
+function buildToolHeaderTitle(toolCall: ToolCall, displayName: string): string {
+  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
+  const filePath = args.file_path ?? args.path;
+  if (typeof filePath === 'string' && filePath && !displayName.includes(filePath)) {
+    return `${displayName}\n${filePath}`;
+  }
+  if (typeof args.command === 'string' && args.command && !displayName.includes(args.command)) {
+    return `${displayName}\n${args.command}`;
+  }
+  return displayName;
+}
+
 export function ToolHeader({ toolCall, status }: Props) {
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
   // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
@@ -47,8 +63,14 @@ export function ToolHeader({ toolCall, status }: Props) {
       )}
 
       {/* Tool name - always semibold, neutral color */}
-      {/* truncate + min-w-0 让长 shortDescription（如完整 Bash 命令）按 CSS 截断而不撑爆 layout */}
-      <span className="text-zinc-200 font-semibold truncate min-w-0">{displayName}</span>
+      {/* truncate + min-w-0 让长 shortDescription（如完整 Bash 命令）按 CSS 截断而不撑爆 layout；
+          title 暴露完整文本便于 hover 看全（包含 args.file_path 等附加上下文） */}
+      <span
+        className="text-zinc-200 font-semibold truncate min-w-0"
+        title={buildToolHeaderTitle(toolCall, displayName)}
+      >
+        {displayName}
+      </span>
 
       {/* Sandbox badge */}
       {isSandboxed && (

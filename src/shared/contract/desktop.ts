@@ -49,6 +49,8 @@ export interface ManagedBrowserTabSnapshot {
 }
 
 export type ManagedBrowserMode = 'headless' | 'visible';
+export type ManagedBrowserProvider = 'system-chrome-cdp' | 'playwright-bundled';
+export type ManagedBrowserProviderPreference = ManagedBrowserProvider | 'auto';
 
 export interface WorkbenchSnapshotRef {
   url?: string | null;
@@ -58,12 +60,46 @@ export interface WorkbenchSnapshotRef {
   capturedAtMs?: number | null;
 }
 
+export type ComputerSurfaceFailureKind =
+  | 'permission_denied'
+  | 'target_app_not_running'
+  | 'target_not_frontmost'
+  | 'target_window_not_found'
+  | 'ax_unavailable'
+  | 'ax_tree_poor'
+  | 'locator_missing'
+  | 'locator_ambiguous'
+  | 'coordinate_untrusted'
+  | 'action_execution_failed'
+  | 'evidence_unavailable';
+
+export type ComputerSurfaceAxQualityGrade = 'good' | 'usable' | 'poor';
+
+export interface ComputerSurfaceAxQuality {
+  score: number;
+  grade: ComputerSurfaceAxQualityGrade;
+  elementCount: number;
+  labeledElementCount: number;
+  withAxPathCount: number;
+  unlabeledRatio: number;
+  missingAxPathRatio: number;
+  duplicateLabelRoleCount: number;
+  roleCounts: Record<string, number>;
+  reasons: string[];
+}
+
 export interface WorkbenchActionTrace {
   id: string;
   targetKind: 'browser' | 'computer';
   toolName: string;
   action: string;
   mode: string;
+  provider?: ManagedBrowserProvider | null;
+  executable?: string | null;
+  cdpPort?: number | null;
+  profileDir?: string | null;
+  missingExecutable?: boolean | null;
+  recommendedAction?: string | null;
   startedAtMs: number;
   completedAtMs?: number | null;
   before?: WorkbenchSnapshotRef | null;
@@ -74,6 +110,10 @@ export interface WorkbenchActionTrace {
   screenshotPath?: string | null;
   consoleErrors?: string[];
   networkFailures?: string[];
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  evidenceSummary?: string[];
+  axQuality?: ComputerSurfaceAxQuality | null;
 }
 
 export interface ManagedBrowserSessionState {
@@ -81,7 +121,14 @@ export interface ManagedBrowserSessionState {
   tabCount: number;
   activeTab?: ManagedBrowserTabSnapshot | null;
   mode?: ManagedBrowserMode;
+  provider?: ManagedBrowserProvider | null;
+  requestedProvider?: ManagedBrowserProviderPreference | null;
+  executable?: string | null;
+  cdpPort?: number | null;
   profileDir?: string | null;
+  missingExecutable?: boolean | null;
+  recommendedAction?: string | null;
+  providerFallbackReason?: string | null;
   viewport?: { width: number; height: number } | null;
   allowedHosts?: string[];
   blockedHosts?: string[];
@@ -90,6 +137,7 @@ export interface ManagedBrowserSessionState {
 
 export type ComputerSurfaceMode =
   | 'background_ax'
+  | 'background_cgevent'
   | 'foreground_fallback'
   | 'background_surface_unavailable';
 
@@ -115,6 +163,11 @@ export interface ComputerSurfaceState {
   deniedApps: string[];
   lastAction?: WorkbenchActionTrace | null;
   lastSnapshot?: ComputerSurfaceSnapshot | null;
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction?: string | null;
+  evidenceSummary?: string[];
+  axQuality?: ComputerSurfaceAxQuality | null;
 }
 
 export interface DesktopTimelineQuery {

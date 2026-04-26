@@ -4,8 +4,13 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { ComputerSurfaceState, WorkbenchActionTrace } from '../../../shared/contract/desktop';
-import { exec } from 'child_process';
+import type {
+  ComputerSurfaceAxQuality,
+  ComputerSurfaceFailureKind,
+  ComputerSurfaceState,
+  WorkbenchActionTrace,
+} from '../../../shared/contract/desktop';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
@@ -17,11 +22,11 @@ import {
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Extended action types with smart location capabilities
 type ActionType =
-  | 'get_state' | 'observe' | 'get_ax_elements'
+  | 'get_state' | 'observe' | 'get_ax_elements' | 'get_windows' | 'diagnose_app'
   | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
   // Smart location actions (Playwright-powered)
   | 'locate_element' | 'locate_text' | 'locate_role'
@@ -33,6 +38,16 @@ interface ComputerAction {
   targetApp?: string;
   x?: number;
   y?: number;
+  pid?: number;
+  windowId?: number;
+  windowRef?: string;
+  bundleId?: string;
+  title?: string;
+  windowLocalPoint?: { x: number; y: number };
+  windowX?: number;
+  windowY?: number;
+  button?: 'left' | 'right';
+  clickCount?: number;
   text?: string;
   key?: string;
   modifiers?: string[];
@@ -60,6 +75,8 @@ export const computerUseTool: Tool = {
 - get_state: Return Computer Surface readiness, mode, approvals, and last action
 - observe: Return frontmost app/window snapshot before choosing an action
 - get_ax_elements: List accessible elements for a target app/window through macOS Accessibility
+- get_windows: List scored visible macOS window candidates with pid/windowId/windowRef/bounds for background CGEvent debugging
+- diagnose_app: Diagnose target app process/window/TCC/AX/CGEvent readiness in one call
 - click/doubleClick/rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
 - type: Type text into focused element
@@ -80,6 +97,8 @@ export const computerUseTool: Tool = {
 - action: The action to perform
 - x, y: Screen coordinates (for basic mouse actions)
 - targetApp: Expected app for desktop actions. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
+- pid/windowId/windowRef/windowLocalPoint: macOS background CGEvent target from get_windows, for closed-source app debugging without foreground activation
+- bundleId/title: Optional expected target identity from get_windows; checked before background CGEvent clicks
 - selector: CSS selector (for smart actions)
 - text: Text to type or text to find
 - role: ARIA role (button, link, textbox, etc.)
@@ -97,7 +116,10 @@ export const computerUseTool: Tool = {
 - {"action": "get_state"} - check Computer Surface readiness
 - {"action": "observe", "includeScreenshot": true} - inspect the frontmost app/window
 - {"action": "get_ax_elements", "targetApp": "Finder"} - list accessible buttons/fields for a target app
+- {"action": "get_windows", "targetApp": "Preview"} - list target windows for background CGEvent click debugging
+- {"action": "diagnose_app", "targetApp": "Preview"} - diagnose target app windows, permissions, AX, and CGEvent suitability
 - {"action": "click", "targetApp": "Finder", "axPath": "1.2.3"} - press an element returned by get_ax_elements
+- {"action": "click", "targetApp": "Preview", "pid": 123, "windowId": 456, "windowLocalPoint": {"x": 50, "y": 80}} - send a background CGEvent click to a chosen window
 - {"action": "click", "targetApp": "Finder", "role": "button", "name": "Back"} - press an accessible element through the background macOS surface
 - {"action": "smart_click", "selector": "button.submit"}
 - {"action": "smart_click", "text": "Sign In"}
@@ -116,6 +138,8 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
         enum: [
           'get_state', 'observe',
           'get_ax_elements',
+          'diagnose_app',
+          'get_windows',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
@@ -133,6 +157,51 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       y: {
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
+      },
+      pid: {
+        type: 'number',
+        description: 'macOS process id returned by get_windows for background CGEvent actions',
+      },
+      windowId: {
+        type: 'number',
+        description: 'macOS CGWindowID returned by get_windows for background CGEvent actions',
+      },
+      windowRef: {
+        type: 'string',
+        description: 'Stable macOS window reference returned by get_windows; includes pid/windowId plus title/bounds identity hash',
+      },
+      bundleId: {
+        type: 'string',
+        description: 'Expected macOS bundle identifier for target app/window filtering and stale-window checks',
+      },
+      title: {
+        type: 'string',
+        description: 'Expected target window title for get_windows filtering and stale-window checks',
+      },
+      windowLocalPoint: {
+        type: 'object',
+        properties: {
+          x: { type: 'number' },
+          y: { type: 'number' },
+        },
+        description: 'Point inside the target window for background CGEvent actions',
+      },
+      windowX: {
+        type: 'number',
+        description: 'X coordinate inside the target window for background CGEvent actions',
+      },
+      windowY: {
+        type: 'number',
+        description: 'Y coordinate inside the target window for background CGEvent actions',
+      },
+      button: {
+        type: 'string',
+        enum: ['left', 'right'],
+        description: 'Mouse button for background CGEvent actions',
+      },
+      clickCount: {
+        type: 'number',
+        description: 'Click count for background CGEvent actions',
       },
       selector: {
         type: 'string',
@@ -232,13 +301,20 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
     if (workbenchPolicy.preferManagedBrowser && isSmartAction(action.action)) {
-      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench());
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({
+        executionIntent: context.executionIntent,
+      }));
     }
 
     const computerSurface = getComputerSurface();
     if (isSurfaceReadAction(action.action)) {
       const result = await executeSurfaceReadAction(computerSurface, action);
       return appendBrowserWorkbenchNote(result, workbenchNotes);
+    }
+
+    const earlySurfaceBlock = buildComputerSurfacePreflightBlockedResult(action, computerSurface);
+    if (earlySurfaceBlock) {
+      return appendBrowserWorkbenchNote(earlySurfaceBlock, workbenchNotes);
     }
 
     const surfaceAuth = isSmartAction(action.action)
@@ -248,7 +324,13 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
         success: false,
         error: surfaceAuth.reason || 'Computer Surface authorization failed',
+        failureKind: surfaceAuth.failureKind || surfaceAuth.trace.failureKind || surfaceAuth.state.failureKind || null,
+        blockingReasons: surfaceAuth.blockingReasons || surfaceAuth.trace.blockingReasons || surfaceAuth.state.blockingReasons,
+        recommendedAction: surfaceAuth.recommendedAction || surfaceAuth.trace.recommendedAction || surfaceAuth.state.recommendedAction || null,
       });
+      const failureKind = surfaceAuth.failureKind || completedTrace.failureKind || surfaceAuth.state.failureKind || null;
+      const blockingReasons = surfaceAuth.blockingReasons || completedTrace.blockingReasons || surfaceAuth.state.blockingReasons;
+      const recommendedAction = surfaceAuth.recommendedAction || completedTrace.recommendedAction || surfaceAuth.state.recommendedAction || null;
       return appendBrowserWorkbenchNote({
         success: false,
         error: surfaceAuth.reason || 'Computer Surface authorization failed',
@@ -257,7 +339,7 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
           workbenchBlocked: true,
           computerSurface: surfaceAuth.state,
           computerSurfaceMode: surfaceAuth.state.mode,
-          backgroundSurface: surfaceAuth.state.mode === 'background_ax',
+          backgroundSurface: isBackgroundComputerSurfaceMode(surfaceAuth.state.mode),
           foregroundFallback: surfaceAuth.state.mode === 'foreground_fallback',
           background: surfaceAuth.state.background,
           requiresForeground: surfaceAuth.state.requiresForeground,
@@ -267,6 +349,10 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
           sensitiveAction: surfaceAuth.sensitive,
           traceId: completedTrace.id,
           workbenchTrace: completedTrace,
+          failureKind,
+          blockingReasons,
+          recommendedAction,
+          evidenceSummary: completedTrace.evidenceSummary || surfaceAuth.state.evidenceSummary,
         },
       }, workbenchNotes);
     }
@@ -279,6 +365,8 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
         result = await executeSmartAction(action);
       } else if (surfaceAuth?.state.mode === 'background_ax') {
         result = await computerSurface.executeBackgroundAction(action);
+      } else if (surfaceAuth?.state.mode === 'background_cgevent') {
+        result = await computerSurface.executeBackgroundCgEventAction(action);
       } else if (process.platform === 'darwin') {
         result = await executeMacOSAction(action);
       } else if (process.platform === 'linux') {
@@ -293,15 +381,31 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
       }
 
       if (surfaceAuth) {
+        const failureKind = result.success
+          ? null
+          : classifyComputerSurfaceActionFailure(result.error || '', surfaceAuth.state.mode);
         const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
           success: result.success,
           error: result.error || null,
+          failureKind,
+          blockingReasons: result.success ? undefined : result.error ? [result.error] : undefined,
+          recommendedAction: result.success
+            ? null
+            : surfaceAuth.state.mode === 'background_ax'
+              ? 'Refresh AX elements and retry with a current axPath or role/name locator.'
+              : surfaceAuth.state.mode === 'background_cgevent'
+                ? 'Run get_windows again and retry with the current pid, windowId, and window-local point.'
+                : 'Observe the foreground window and retry with a verified target.',
+          evidenceSummary: getEvidenceSummaryFromMetadata(result.metadata),
         });
         result = withComputerSurfaceMetadata(result, {
           state: computerSurface.getState({
             targetApp: surfaceAuth.state.targetApp || undefined,
             blockedReason: result.success ? null : result.error || null,
             mode: surfaceAuth.state.mode,
+            failureKind,
+            blockingReasons: result.success ? undefined : result.error ? [result.error] : undefined,
+            evidenceSummary: getEvidenceSummaryFromMetadata(result.metadata),
           }),
           trace: completedTrace,
           sensitive: surfaceAuth.sensitive,
@@ -319,6 +423,9 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
         const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
           success: false,
           error: errorMessage,
+          failureKind: 'action_execution_failed',
+          blockingReasons: [errorMessage],
+          recommendedAction: 'Inspect the before/after evidence and retry with a verified target.',
         });
         return appendBrowserWorkbenchNote(withComputerSurfaceMetadata(result, {
           state: computerSurface.getState({
@@ -349,7 +456,7 @@ function withComputerSurfaceMetadata(
       ...(result.metadata || {}),
       computerSurface: args.state,
       computerSurfaceMode: args.state.mode,
-      backgroundSurface: args.state.mode === 'background_ax',
+      backgroundSurface: isBackgroundComputerSurfaceMode(args.state.mode),
       foregroundFallback: args.state.mode === 'foreground_fallback',
       background: args.state.background,
       requiresForeground: args.state.requiresForeground,
@@ -359,12 +466,224 @@ function withComputerSurfaceMetadata(
       sensitiveAction: args.sensitive,
       traceId: args.trace.id,
       workbenchTrace: args.trace,
+      failureKind: args.trace.failureKind || args.state.failureKind || (!result.success ? 'action_execution_failed' : null),
+      blockingReasons: args.trace.blockingReasons || args.state.blockingReasons || (!result.success && result.error ? [result.error] : undefined),
+      recommendedAction: args.trace.recommendedAction || args.state.recommendedAction || null,
+      evidenceSummary: args.trace.evidenceSummary || args.state.evidenceSummary || result.metadata?.evidenceSummary,
+      axQuality: args.trace.axQuality || args.state.axQuality || null,
     },
   };
 }
 
+function isBackgroundComputerSurfaceMode(mode: ComputerSurfaceState['mode']): boolean {
+  return mode === 'background_ax' || mode === 'background_cgevent';
+}
+
+function buildComputerSurfacePreflightBlockedResult(
+  action: ComputerAction,
+  computerSurface: ReturnType<typeof getComputerSurface>,
+): ToolExecutionResult | null {
+  if (!shouldBlockMissingDesktopLocator(action)) {
+    return null;
+  }
+
+  const blockingReasons = [
+    'Background Accessibility action needs axPath, selector, or role plus name for a stable target locator.',
+  ];
+  const recommendedAction = 'Run computer_use.get_ax_elements for the target app and retry with the returned axPath.';
+  const trace: WorkbenchActionTrace = {
+    id: `computer_trace_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    targetKind: 'computer',
+    toolName: 'computer_use',
+    action: action.action,
+    mode: 'background_ax',
+    startedAtMs: Date.now(),
+    params: redactComputerActionParams(action),
+    success: false,
+    error: blockingReasons[0],
+    failureKind: 'locator_missing',
+    blockingReasons,
+    recommendedAction,
+  };
+  const state = computerSurface.getState({
+    targetApp: action.targetApp || undefined,
+    blockedReason: blockingReasons[0],
+    approvalScope: 'blocked',
+    mode: 'background_ax',
+    failureKind: 'locator_missing',
+    blockingReasons,
+    recommendedAction,
+  });
+
+  return {
+    success: false,
+    error: blockingReasons[0],
+    metadata: {
+      code: 'COMPUTER_SURFACE_BLOCKED',
+      workbenchBlocked: true,
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: true,
+      foregroundFallback: false,
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: action.targetApp || null,
+      sensitiveAction: false,
+      traceId: trace.id,
+      workbenchTrace: trace,
+      failureKind: 'locator_missing',
+      blockingReasons,
+      recommendedAction,
+    },
+  };
+}
+
+function shouldBlockMissingDesktopLocator(action: ComputerAction): boolean {
+  if (isSmartAction(action.action) || isSurfaceReadAction(action.action)) {
+    return false;
+  }
+  if (!action.targetApp || !['click', 'doubleClick'].includes(action.action)) {
+    return false;
+  }
+  if (isFiniteNumber(action.x) && isFiniteNumber(action.y)) {
+    return false;
+  }
+  if (hasBackgroundCgEventLocator(action)) {
+    return false;
+  }
+  return !hasDesktopElementLocator(action);
+}
+
+function hasDesktopElementLocator(action: ComputerAction): boolean {
+  return Boolean(action.axPath || action.selector || (action.role && action.name));
+}
+
+function hasBackgroundCgEventLocator(action: ComputerAction): boolean {
+  const hasWindowIdentity = (isFiniteNumber(action.pid) && isFiniteNumber(action.windowId))
+    || isValidWindowRef(action.windowRef);
+  const hasWindowPoint = Boolean(
+    (action.windowLocalPoint && isFiniteNumber(action.windowLocalPoint.x) && isFiniteNumber(action.windowLocalPoint.y))
+    || (isFiniteNumber(action.windowX) && isFiniteNumber(action.windowY)),
+  );
+  return hasWindowIdentity && hasWindowPoint;
+}
+
+function isValidWindowRef(value: unknown): value is string {
+  return typeof value === 'string' && /^cgwin:\d+:\d+:[a-f0-9]{12}$/i.test(value);
+}
+
+function classifyComputerSurfaceActionFailure(
+  error: string,
+  mode: ComputerSurfaceState['mode'],
+): ComputerSurfaceFailureKind {
+  const message = error.toLowerCase();
+  if (/not authorized|not permitted|operation not permitted|assistive access|accessibility|privacy|tcc/.test(message)) {
+    return 'permission_denied';
+  }
+  if (/target app is not running|application isn't running|app is not running/.test(message)) {
+    return 'target_app_not_running';
+  }
+  if (/target window verification failed|stale|not visible now|target window not found|window not found|windowref|windowid|window id/.test(message)) {
+    return 'target_window_not_found';
+  }
+  if (/target element not found|element not found|no matching element|could not find/.test(message)) {
+    return 'locator_missing';
+  }
+  if (/multiple matches|ambiguous|more than one/.test(message)) {
+    return 'locator_ambiguous';
+  }
+  if (/coordinate|screen point|invalid index|outside/.test(message)) {
+    return 'coordinate_untrusted';
+  }
+  return mode === 'background_ax' && /ax|accessibility|ui element/.test(message)
+    ? 'ax_unavailable'
+    : 'action_execution_failed';
+}
+
+function getComputerSurfaceReliabilityFromMetadata(
+  metadata: Record<string, unknown>,
+  result?: ToolExecutionResult,
+  mode: ComputerSurfaceState['mode'] = 'background_ax',
+): {
+  failureKind: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction: string | null;
+  axQuality: ComputerSurfaceAxQuality | null;
+} {
+  const failureKind = isComputerSurfaceFailureKind(metadata.failureKind)
+    ? metadata.failureKind
+    : !result?.success && result?.error
+      ? classifyComputerSurfaceActionFailure(result.error, mode)
+      : null;
+  const blockingReasons = Array.isArray(metadata.blockingReasons)
+    ? metadata.blockingReasons.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const recommendedAction = typeof metadata.recommendedAction === 'string'
+    ? metadata.recommendedAction
+    : null;
+  const axQuality = isComputerSurfaceAxQuality(metadata.axQuality)
+    ? metadata.axQuality
+    : null;
+  return {
+    failureKind,
+    blockingReasons,
+    recommendedAction,
+    axQuality,
+  };
+}
+
+function isComputerSurfaceFailureKind(value: unknown): value is ComputerSurfaceFailureKind {
+  return typeof value === 'string' && [
+    'permission_denied',
+    'target_app_not_running',
+    'target_not_frontmost',
+    'target_window_not_found',
+    'ax_unavailable',
+    'ax_tree_poor',
+    'locator_missing',
+    'locator_ambiguous',
+    'coordinate_untrusted',
+    'action_execution_failed',
+    'evidence_unavailable',
+  ].includes(value);
+}
+
+function isComputerSurfaceAxQuality(value: unknown): value is ComputerSurfaceAxQuality {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.score === 'number'
+    && ['good', 'usable', 'poor'].includes(String(record.grade))
+    && typeof record.elementCount === 'number'
+    && Array.isArray(record.reasons);
+}
+
+function redactComputerActionParams(action: ComputerAction): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(action)) {
+    redacted[key] = key === 'text' && typeof value === 'string'
+      ? `[redacted ${value.length} chars]`
+      : value;
+  }
+  return redacted;
+}
+
+function getEvidenceSummaryFromMetadata(metadata: Record<string, unknown> | undefined): string[] | undefined {
+  const value = metadata?.evidenceSummary;
+  if (!Array.isArray(value)) return undefined;
+  const summary = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  return summary.length > 0 ? summary : undefined;
+}
+
 function isSurfaceReadAction(action: ActionType): boolean {
-  return action === 'get_state' || action === 'observe' || action === 'get_ax_elements';
+  return action === 'get_state'
+    || action === 'observe'
+    || action === 'get_ax_elements'
+    || action === 'get_windows'
+    || action === 'diagnose_app';
 }
 
 async function executeSurfaceReadAction(
@@ -379,6 +698,14 @@ async function executeSurfaceReadAction(
     return listComputerSurfaceElements(computerSurface, action);
   }
 
+  if (action.action === 'get_windows') {
+    return listComputerSurfaceWindows(computerSurface, action);
+  }
+
+  if (action.action === 'diagnose_app') {
+    return diagnoseComputerSurfaceApp(computerSurface, action);
+  }
+
   return getComputerSurfaceStateResult(computerSurface.getState({
     targetApp: action.targetApp || undefined,
   }));
@@ -391,7 +718,7 @@ function getComputerSurfaceStateResult(state: ComputerSurfaceState): ToolExecuti
     metadata: {
       computerSurface: state,
       computerSurfaceMode: state.mode,
-      backgroundSurface: state.mode === 'background_ax',
+      backgroundSurface: isBackgroundComputerSurfaceMode(state.mode),
       foregroundFallback: state.mode === 'foreground_fallback',
       background: state.background,
       requiresForeground: state.requiresForeground,
@@ -424,7 +751,7 @@ async function observeComputerSurface(
     metadata: {
       computerSurface: state,
       computerSurfaceMode: state.mode,
-      backgroundSurface: state.mode === 'background_ax',
+      backgroundSurface: isBackgroundComputerSurfaceMode(state.mode),
       foregroundFallback: state.mode === 'foreground_fallback',
       background: state.background,
       requiresForeground: state.requiresForeground,
@@ -441,10 +768,15 @@ async function listComputerSurfaceElements(
   action: ComputerAction,
 ): Promise<ToolExecutionResult> {
   const result = await computerSurface.listBackgroundElements(action);
+  const reliability = getComputerSurfaceReliabilityFromMetadata(result.metadata || {}, result, 'background_ax');
   const state = computerSurface.getState({
     targetApp: action.targetApp || undefined,
     blockedReason: result.success ? null : result.error || null,
     mode: 'background_ax',
+    failureKind: reliability.failureKind,
+    blockingReasons: reliability.blockingReasons,
+    recommendedAction: reliability.recommendedAction,
+    axQuality: reliability.axQuality,
   });
   return {
     ...result,
@@ -452,13 +784,95 @@ async function listComputerSurfaceElements(
       ...(result.metadata || {}),
       computerSurface: state,
       computerSurfaceMode: state.mode,
-      backgroundSurface: state.mode === 'background_ax',
+      backgroundSurface: isBackgroundComputerSurfaceMode(state.mode),
       foregroundFallback: state.mode === 'foreground_fallback',
       background: state.background,
       requiresForeground: state.requiresForeground,
       approvalScope: state.approvalScope,
       safetyNote: state.safetyNote,
       targetApp: state.targetApp || action.targetApp || null,
+      failureKind: reliability.failureKind,
+      blockingReasons: reliability.blockingReasons,
+      recommendedAction: reliability.recommendedAction,
+      axQuality: reliability.axQuality,
+    },
+  };
+}
+
+async function listComputerSurfaceWindows(
+  computerSurface: ReturnType<typeof getComputerSurface>,
+  action: ComputerAction,
+): Promise<ToolExecutionResult> {
+  const result = await computerSurface.listBackgroundCgEventWindows({
+    targetApp: action.targetApp,
+    bundleId: action.bundleId,
+    title: action.title,
+    pid: action.pid,
+    windowId: action.windowId,
+    limit: action.limit,
+    timeoutMs: action.timeout,
+  });
+  const metadata = result.metadata || {};
+  const reliability = getComputerSurfaceReliabilityFromMetadata(metadata, result, 'background_cgevent');
+  const state = computerSurface.getState({
+    targetApp: action.targetApp || undefined,
+    blockedReason: result.success ? null : result.error || null,
+    mode: 'background_cgevent',
+    failureKind: reliability.failureKind,
+    blockingReasons: reliability.blockingReasons,
+    recommendedAction: reliability.recommendedAction,
+  });
+  return {
+    ...result,
+    metadata: {
+      ...metadata,
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: true,
+      foregroundFallback: false,
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: action.targetApp || null,
+      failureKind: reliability.failureKind,
+      blockingReasons: reliability.blockingReasons,
+      recommendedAction: reliability.recommendedAction,
+    },
+  };
+}
+
+async function diagnoseComputerSurfaceApp(
+  computerSurface: ReturnType<typeof getComputerSurface>,
+  action: ComputerAction,
+): Promise<ToolExecutionResult> {
+  const result = await computerSurface.diagnoseApp(action);
+  const metadata = result.metadata || {};
+  const reliability = getComputerSurfaceReliabilityFromMetadata(metadata, result, 'background_cgevent');
+  const state = computerSurface.getState({
+    targetApp: action.targetApp || undefined,
+    blockedReason: result.success ? null : result.error || null,
+    mode: 'background_cgevent',
+    failureKind: reliability.failureKind,
+    blockingReasons: reliability.blockingReasons,
+    recommendedAction: reliability.recommendedAction,
+  });
+  return {
+    ...result,
+    metadata: {
+      ...metadata,
+      computerSurface: state,
+      computerSurfaceMode: state.mode,
+      backgroundSurface: true,
+      foregroundFallback: false,
+      background: state.background,
+      requiresForeground: state.requiresForeground,
+      approvalScope: state.approvalScope,
+      safetyNote: state.safetyNote,
+      targetApp: action.targetApp || null,
+      failureKind: reliability.failureKind,
+      blockingReasons: reliability.blockingReasons,
+      recommendedAction: reliability.recommendedAction,
     },
   };
 }
@@ -475,6 +889,9 @@ function formatComputerSurfaceState(state: ComputerSurfaceState): string {
   if (state.mode === 'background_ax') {
     parts.push('targeting=macOS Accessibility');
   }
+  if (state.mode === 'background_cgevent') {
+    parts.push('targeting=macOS CGEvent');
+  }
   if (state.approvalScope) {
     parts.push(`approval=${state.approvalScope}`);
   }
@@ -486,6 +903,12 @@ function formatComputerSurfaceState(state: ComputerSurfaceState): string {
   }
   if (state.lastAction?.id) {
     parts.push(`lastTrace=${state.lastAction.id}`);
+  }
+  if (state.axQuality) {
+    parts.push(`axQuality=${state.axQuality.grade}:${state.axQuality.score}`);
+  }
+  if (state.failureKind) {
+    parts.push(`failure=${state.failureKind}`);
   }
   return parts.join(' · ');
 }
@@ -803,47 +1226,57 @@ async function getInteractiveElements(
 
 // macOS implementation using AppleScript/cliclick
 async function executeMacOSAction(action: ComputerAction): Promise<ToolExecutionResult> {
-  let command: string;
-
   switch (action.action) {
     case 'click':
-      if (action.x === undefined || action.y === undefined) {
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
         return { success: false, error: 'x and y coordinates required for click' };
       }
-      // Using AppleScript for mouse control
-      command = `osascript -e 'tell application "System Events" to click at {${action.x}, ${action.y}}'`;
-      // Alternative using cliclick if installed: `cliclick c:${action.x},${action.y}`
+      await runOsaScript([
+        `tell application "System Events" to click at {${Math.round(action.x)}, ${Math.round(action.y)}}`,
+      ]);
       break;
 
     case 'doubleClick':
-      if (action.x === undefined || action.y === undefined) {
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
         return { success: false, error: 'x and y coordinates required for double click' };
       }
-      command = `osascript -e 'tell application "System Events" to click at {${action.x}, ${action.y}}' && osascript -e 'tell application "System Events" to click at {${action.x}, ${action.y}}'`;
+      await runOsaScript([
+        `tell application "System Events" to click at {${Math.round(action.x)}, ${Math.round(action.y)}}`,
+      ]);
+      await runOsaScript([
+        `tell application "System Events" to click at {${Math.round(action.x)}, ${Math.round(action.y)}}`,
+      ]);
       break;
 
     case 'rightClick':
-      if (action.x === undefined || action.y === undefined) {
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
         return { success: false, error: 'x and y coordinates required for right click' };
       }
-      command = `osascript -e 'tell application "System Events" to click at {${action.x}, ${action.y}} with control down'`;
+      await runOsaScript([
+        `tell application "System Events" to click at {${Math.round(action.x)}, ${Math.round(action.y)}} with control down`,
+      ]);
       break;
 
     case 'move':
-      if (action.x === undefined || action.y === undefined) {
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
         return { success: false, error: 'x and y coordinates required for move' };
       }
-      // AppleScript doesn't support pure mouse move, use cliclick if available
-      command = `cliclick m:${action.x},${action.y} 2>/dev/null || echo "Mouse moved to ${action.x},${action.y}"`;
+      try {
+        await execFileAsync('cliclick', [`m:${Math.round(action.x)},${Math.round(action.y)}`]);
+      } catch (error) {
+        return { success: false, error: `Mouse move requires cliclick: ${formatExecutionError(error)}` };
+      }
       break;
 
     case 'type': {
       if (!action.text) {
         return { success: false, error: 'text required for type action' };
       }
-      // Escape special characters for AppleScript
-      const escapedText = action.text.replace(/"/g, '\\"').replace(/\\/g, '\\\\');
-      command = `osascript -e 'tell application "System Events" to keystroke "${escapedText}"'`;
+      await runOsaScript([
+        'on run argv',
+        'tell application "System Events" to keystroke (item 1 of argv)',
+        'end run',
+      ], [action.text]);
       break;
     }
 
@@ -852,14 +1285,18 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
         return { success: false, error: 'key required for key action' };
       }
       const keyCode = getAppleScriptKeyCode(action.key);
-      const modifierStr = action.modifiers?.length
-        ? `using {${action.modifiers.map(m => `${m} down`).join(', ')}}`
-        : '';
+      const modifierStr = formatAppleScriptModifiers(action.modifiers);
 
       if (keyCode.isKeyCode) {
-        command = `osascript -e 'tell application "System Events" to key code ${keyCode.value} ${modifierStr}'`;
+        await runOsaScript([
+          `tell application "System Events" to key code ${keyCode.value}${modifierStr}`,
+        ]);
       } else {
-        command = `osascript -e 'tell application "System Events" to keystroke "${keyCode.value}" ${modifierStr}'`;
+        await runOsaScript([
+          'on run argv',
+          `tell application "System Events" to keystroke (item 1 of argv)${modifierStr}`,
+          'end run',
+        ], [String(keyCode.value)]);
       }
       break;
     }
@@ -870,23 +1307,31 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       const deltaY = scrollDir === 'up' ? -scrollAmount : (scrollDir === 'down' ? scrollAmount : 0);
       const deltaX = scrollDir === 'left' ? -scrollAmount : (scrollDir === 'right' ? scrollAmount : 0);
 
-      command = `osascript -e 'tell application "System Events" to scroll {${deltaX}, ${deltaY}}'`;
+      await runOsaScript([
+        `tell application "System Events" to scroll {${deltaX}, ${deltaY}}`,
+      ]);
       break;
     }
 
     case 'drag':
-      if (action.x === undefined || action.y === undefined ||
-          action.toX === undefined || action.toY === undefined) {
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y) ||
+          !isFiniteNumber(action.toX) || !isFiniteNumber(action.toY)) {
         return { success: false, error: 'x, y, toX, toY coordinates required for drag' };
       }
-      command = `cliclick dd:${action.x},${action.y} dm:${action.toX},${action.toY} du:${action.toX},${action.toY} 2>/dev/null || echo "Dragged from ${action.x},${action.y} to ${action.toX},${action.toY}"`;
+      try {
+        await execFileAsync('cliclick', [
+          `dd:${Math.round(action.x)},${Math.round(action.y)}`,
+          `dm:${Math.round(action.toX)},${Math.round(action.toY)}`,
+          `du:${Math.round(action.toX)},${Math.round(action.toY)}`,
+        ]);
+      } catch (error) {
+        return { success: false, error: `Drag requires cliclick: ${formatExecutionError(error)}` };
+      }
       break;
 
     default:
       return { success: false, error: `Unknown action: ${action.action}` };
   }
-
-  await execAsync(command);
 
   const typedTextSuffix = action.text ? ` text: ${action.text.length} chars` : '';
   return {
@@ -899,44 +1344,84 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
   };
 }
 
+async function runOsaScript(lines: string[], args: string[] = []): Promise<void> {
+  await execFileAsync('osascript', [
+    ...lines.flatMap((line) => ['-e', line]),
+    ...args,
+  ]);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatAppleScriptModifiers(modifiers: string[] | undefined): string {
+  if (!modifiers?.length) {
+    return '';
+  }
+  const mapped = modifiers
+    .map((modifier) => {
+      switch (modifier) {
+        case 'cmd':
+          return 'command down';
+        case 'ctrl':
+          return 'control down';
+        case 'alt':
+          return 'option down';
+        case 'shift':
+          return 'shift down';
+        default:
+          return null;
+      }
+    })
+    .filter((modifier) => modifier !== null);
+
+  return mapped.length > 0 ? ` using {${mapped.join(', ')}}` : '';
+}
+
+function formatExecutionError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.replace(/\s+/g, ' ').trim();
+  }
+  return 'Unknown error';
+}
+
 // Linux implementation using xdotool
 async function executeLinuxAction(action: ComputerAction): Promise<ToolExecutionResult> {
-  let command: string;
-
   switch (action.action) {
     case 'click':
       if (action.x === undefined || action.y === undefined) {
         return { success: false, error: 'x and y coordinates required for click' };
       }
-      command = `xdotool mousemove ${action.x} ${action.y} click 1`;
+      await execFileAsync('xdotool', ['mousemove', String(action.x), String(action.y), 'click', '1']);
       break;
 
     case 'doubleClick':
       if (action.x === undefined || action.y === undefined) {
         return { success: false, error: 'x and y coordinates required for double click' };
       }
-      command = `xdotool mousemove ${action.x} ${action.y} click --repeat 2 1`;
+      await execFileAsync('xdotool', ['mousemove', String(action.x), String(action.y), 'click', '--repeat', '2', '1']);
       break;
 
     case 'rightClick':
       if (action.x === undefined || action.y === undefined) {
         return { success: false, error: 'x and y coordinates required for right click' };
       }
-      command = `xdotool mousemove ${action.x} ${action.y} click 3`;
+      await execFileAsync('xdotool', ['mousemove', String(action.x), String(action.y), 'click', '3']);
       break;
 
     case 'move':
       if (action.x === undefined || action.y === undefined) {
         return { success: false, error: 'x and y coordinates required for move' };
       }
-      command = `xdotool mousemove ${action.x} ${action.y}`;
+      await execFileAsync('xdotool', ['mousemove', String(action.x), String(action.y)]);
       break;
 
     case 'type':
       if (!action.text) {
         return { success: false, error: 'text required for type action' };
       }
-      command = `xdotool type "${action.text.replace(/"/g, '\\"')}"`;
+      await execFileAsync('xdotool', ['type', action.text]);
       break;
 
     case 'key': {
@@ -953,7 +1438,7 @@ async function executeLinuxAction(action: ComputerAction): Promise<ToolExecution
         }
       }).join('+') || '';
       const keyStr = modifiers ? `${modifiers}+${action.key}` : action.key;
-      command = `xdotool key ${keyStr}`;
+      await execFileAsync('xdotool', ['key', keyStr]);
       break;
     }
 
@@ -961,7 +1446,7 @@ async function executeLinuxAction(action: ComputerAction): Promise<ToolExecution
       const amount = Math.ceil((action.amount || 100) / 10);
       const button = action.direction === 'up' ? 4 : (action.direction === 'down' ? 5 :
                      action.direction === 'left' ? 6 : 7);
-      command = `xdotool click --repeat ${amount} ${button}`;
+      await execFileAsync('xdotool', ['click', '--repeat', String(amount), String(button)]);
       break;
     }
 
@@ -970,14 +1455,17 @@ async function executeLinuxAction(action: ComputerAction): Promise<ToolExecution
           action.toX === undefined || action.toY === undefined) {
         return { success: false, error: 'x, y, toX, toY coordinates required for drag' };
       }
-      command = `xdotool mousemove ${action.x} ${action.y} mousedown 1 mousemove ${action.toX} ${action.toY} mouseup 1`;
+      await execFileAsync('xdotool', [
+        'mousemove', String(action.x), String(action.y),
+        'mousedown', '1',
+        'mousemove', String(action.toX), String(action.toY),
+        'mouseup', '1',
+      ]);
       break;
 
     default:
       return { success: false, error: `Unknown action: ${action.action}` };
   }
-
-  await execAsync(command);
 
   return {
     success: true,

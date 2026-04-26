@@ -17,3 +17,12 @@ export {
   stopDesktopAudioCapture,
   getAudioCaptureStatus,
 } from './desktopAudioCapture';
+
+export {
+  backgroundCgEventSurface,
+} from './backgroundCgEventSurface';
+export type {
+  BackgroundCgEventClickRequest,
+  BackgroundCgEventClickResult,
+  BackgroundCgEventWindow,
+} from './backgroundCgEventSurface';

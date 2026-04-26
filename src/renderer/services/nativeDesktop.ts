@@ -102,11 +102,44 @@ export interface WorkbenchActionTrace {
   mode: string;
   startedAtMs: number;
   completedAtMs?: number | null;
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction?: string | null;
+  evidenceSummary?: string[];
+  axQuality?: ComputerSurfaceAxQuality | null;
+}
+
+export type ComputerSurfaceFailureKind =
+  | 'permission_denied'
+  | 'target_app_not_running'
+  | 'target_not_frontmost'
+  | 'target_window_not_found'
+  | 'ax_unavailable'
+  | 'ax_tree_poor'
+  | 'locator_missing'
+  | 'locator_ambiguous'
+  | 'coordinate_untrusted'
+  | 'action_execution_failed'
+  | 'evidence_unavailable';
+
+export type ComputerSurfaceAxQualityGrade = 'good' | 'usable' | 'poor';
+
+export interface ComputerSurfaceAxQuality {
+  score: number;
+  grade: ComputerSurfaceAxQualityGrade;
+  elementCount: number;
+  labeledElementCount: number;
+  withAxPathCount: number;
+  unlabeledRatio: number;
+  missingAxPathRatio: number;
+  duplicateLabelRoleCount: number;
+  roleCounts: Record<string, number>;
+  reasons: string[];
 }
 
 export interface ComputerSurfaceState {
   id: string;
-  mode: 'background_ax' | 'foreground_fallback' | 'background_surface_unavailable';
+  mode: 'background_ax' | 'background_cgevent' | 'foreground_fallback' | 'background_surface_unavailable';
   platform: string;
   ready: boolean;
   background: boolean;
@@ -124,6 +157,11 @@ export interface ComputerSurfaceState {
     windowTitle?: string | null;
     screenshotPath?: string | null;
   } | null;
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction?: string | null;
+  evidenceSummary?: string[];
+  axQuality?: ComputerSurfaceAxQuality | null;
 }
 
 export interface NativeDesktopCollectorRequest {

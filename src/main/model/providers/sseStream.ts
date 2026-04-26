@@ -7,7 +7,7 @@ import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
-import { logger, httpsAgent, safeJsonParse, parseContextLengthError } from './shared';
+import { logger, httpsAgent, parseContextLengthError, buildToolCallFromAccumulator } from './shared';
 import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -26,6 +26,7 @@ function normalizeToolName(name: string): string {
   normalized = normalized.replace(/_\d+$/, '');
   return normalized || name; // 防止空串
 }
+
 
 export interface StreamSnapshot {
   /** Accumulated text content so far */
@@ -241,11 +242,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             };
 
             if (toolCalls.size > 0) {
-              result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-                id: tc.id,
-                name: tc.name,
-                arguments: safeJsonParse(tc.arguments),
-              }));
+              result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
             }
             // 只在有交错时才附带 contentParts
             if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
@@ -432,11 +429,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           };
 
           if (toolCalls.size > 0) {
-            result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: safeJsonParse(tc.arguments),
-            }));
+            result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
           }
 
           resolve(result);

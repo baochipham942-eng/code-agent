@@ -4,7 +4,7 @@
 
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { ToolDefinition, ToolCall } from '../../../shared/contract';
+import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
@@ -772,6 +772,51 @@ export function safeJsonParse(str: string): Record<string, unknown> {
     __parseError: true,
     __errorMessage: 'All JSON parse strategies failed',
     __rawArguments: str.substring(0, 1000),
+  };
+}
+
+/**
+ * 把流式累积好的 tool_call 拼接对象转成 ToolCall：
+ * 1. 解析 arguments JSON
+ * 2. 抽出约定的 `_meta` envelope 字段（产品视角语义元数据：shortDescription /
+ *    targetContext / expectedOutcome），写到 ToolCall 顶层
+ * 3. 从 arguments 中删除 `_meta`，避免污染下游工具执行参数
+ *
+ * 模型未输出 `_meta` 时各语义字段保持 undefined，UI 自动 fallback 到既有渲染。
+ * 各 OpenAI / Anthropic provider 的 stream parser 都用此 helper，保证一致。
+ */
+export function buildToolCallFromAccumulator(tc: {
+  id: string;
+  name: string;
+  arguments: string;
+}): ToolCall {
+  const parsed = safeJsonParse(tc.arguments);
+  let args: Record<string, unknown> = {};
+  let shortDescription: string | undefined;
+  let targetContext: ToolCallTargetContext | undefined;
+  let expectedOutcome: string | undefined;
+
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    args = { ...(parsed as Record<string, unknown>) };
+    const meta = (args as { _meta?: unknown })._meta;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+      const m = meta as Record<string, unknown>;
+      if (typeof m.shortDescription === 'string') shortDescription = m.shortDescription;
+      if (typeof m.expectedOutcome === 'string') expectedOutcome = m.expectedOutcome;
+      if (m.targetContext && typeof m.targetContext === 'object' && !Array.isArray(m.targetContext)) {
+        targetContext = m.targetContext as ToolCallTargetContext;
+      }
+      delete (args as { _meta?: unknown })._meta;
+    }
+  }
+
+  return {
+    id: tc.id,
+    name: tc.name,
+    arguments: args,
+    ...(shortDescription !== undefined && { shortDescription }),
+    ...(targetContext !== undefined && { targetContext }),
+    ...(expectedOutcome !== undefined && { expectedOutcome }),
   };
 }
 

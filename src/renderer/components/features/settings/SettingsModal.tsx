@@ -12,7 +12,7 @@ import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
-import { isElectronMode } from '../../../utils/platform';
+import { isDesktopShellMode, isElectronMode } from '../../../utils/platform';
 import { SettingsSearch } from './SettingsSearch';
 import type { SettingsTab as SearchSettingsTab } from '../../../utils/settingsIndex';
 
@@ -29,7 +29,7 @@ import { MemoryTab } from './tabs/MemoryTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { AboutSettings } from './tabs/AboutSettings';
-import { OpenchronicleSettings } from './tabs/OpenchronicleSettings';
+import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
 import ipcService from '../../../services/ipcService';
 
 // ============================================================================
@@ -37,6 +37,41 @@ import ipcService from '../../../services/ipcService';
 // ============================================================================
 
 type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
+
+interface SettingsTabConfig {
+  id: SettingsTab;
+  label: string;
+  icon: React.ReactNode;
+  badge?: boolean;
+}
+
+interface BuildSettingsTabsOptions {
+  t: ReturnType<typeof useI18n>['t'];
+  showScreenMemoryTab: boolean;
+  showUpdateTab: boolean;
+  hasOptionalUpdate: boolean;
+}
+
+export function buildSettingsTabs({
+  t,
+  showScreenMemoryTab,
+  showUpdateTab,
+  hasOptionalUpdate,
+}: BuildSettingsTabsOptions): SettingsTabConfig[] {
+  return [
+    { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
+    { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
+    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
+    { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'channels', label: '通道', icon: <Settings className="w-4 h-4" /> },
+    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
+    ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
+    ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
+    { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
+  ];
+}
 
 // ============================================================================
 // Component
@@ -73,19 +108,14 @@ export const SettingsModal: React.FC = () => {
     checkUpdate();
   }, []);
 
-  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; badge?: boolean }[] = [
-    { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
-    { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
-    { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
-    { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
-    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
-    { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
-    { id: 'channels', label: '通道', icon: <Settings className="w-4 h-4" /> },
-    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
-    ...(isElectronMode() ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
-    ...(isElectronMode() ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate }] : []),
-    { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
-  ];
+  const showUpdateTab = isElectronMode();
+  const tabs = buildSettingsTabs({
+    t,
+    showScreenMemoryTab: isDesktopShellMode(),
+    showUpdateTab,
+    hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
+  });
+  const isScreenMemoryTab = activeTab === 'openchronicle';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -96,7 +126,7 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[80vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
+      <div className={`relative w-full max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn ${isScreenMemoryTab ? 'max-w-5xl' : 'max-w-2xl'}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-zinc-200">{t.settings.title}</h2>
@@ -109,7 +139,7 @@ export const SettingsModal: React.FC = () => {
           />
         </div>
 
-        <div className="flex h-[500px]">
+        <div className={isScreenMemoryTab ? 'flex h-[72vh] min-h-[560px]' : 'flex h-[500px]'}>
           {/* Sidebar */}
           <div className="w-48 border-r border-zinc-700 p-2 flex flex-col gap-2">
             <SettingsSearch onNavigate={handleSearchNavigate} />
@@ -133,7 +163,7 @@ export const SettingsModal: React.FC = () => {
           </div>
 
           {/* Content */}
-          <div className="flex-1 p-6 overflow-y-auto">
+          <div className={`flex-1 overflow-y-auto ${isScreenMemoryTab ? 'p-5' : 'p-6'}`}>
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
@@ -144,8 +174,8 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'memory' && <MemoryTab />}
-            {isElectronMode() && activeTab === 'openchronicle' && <OpenchronicleSettings />}
-            {isElectronMode() && activeTab === 'update' && (
+            {activeTab === 'openchronicle' && <ScreenMemorySettings />}
+            {showUpdateTab && activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}
                 onUpdateInfoChange={setOptionalUpdateInfo}

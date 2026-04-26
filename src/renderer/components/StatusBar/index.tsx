@@ -10,6 +10,8 @@ import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ModelIndicator } from './ModelIndicator';
 import { ModelSwitcher } from './ModelSwitcher';
+import { InteractionModeIndicator } from './InteractionModeIndicator';
+import { EffortLevelIndicator } from './EffortLevelIndicator';
 import { MessageCounter } from './MessageCounter';
 import { TokenUsage } from './TokenUsage';
 import { CostDisplay } from './CostDisplay';
@@ -58,9 +60,13 @@ export function StatusBar() {
         z-50
       "
     >
-      {/* 左侧区域：模型、消息数、Token */}
+      {/* 左侧区域：模型、交互模式、推理 effort、消息数、Token */}
       <div className="flex items-center gap-3">
         <ModelSwitcher currentModel={modelConfig.model} />
+        <Separator />
+        <InteractionModeIndicator />
+        <Separator />
+        <EffortLevelIndicator />
         <Separator />
         <MessageCounter count={messages.length} />
         <Separator />

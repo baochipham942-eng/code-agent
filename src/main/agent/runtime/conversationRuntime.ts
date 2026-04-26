@@ -28,7 +28,8 @@ import { getDesktopActivityUnderstandingService } from '../../desktop/desktopAct
 import { buildWorkspaceActivityContextBlock } from '../../desktop/workspaceActivitySearchService';
 import { buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
-import { fetchOpenchronicleContext } from '../../services/external/openchronicleContextProvider';
+import { getCurrentActivityContext } from '../../services/activity/activityContextProvider';
+import { formatActivityPromptContext } from '../../services/activity/activityPromptFormatter';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -255,18 +256,6 @@ export class ConversationRuntime {
         }
       }
 
-      const desktopContextBlock = desktopActivity.buildContextBlock({
-        summaryLimit: 3,
-        todoLimit: 3,
-        sinceHours: 6,
-      });
-      if (desktopContextBlock) {
-        this.contextAssembly.injectSystemMessage(
-          `<desktop-activity-context>\n${desktopContextBlock}\n</desktop-activity-context>`
-        );
-        logger.info('[AgentLoop] Desktop activity context injected');
-      }
-
       const existingSystemContextTokens =
         estimateTokens(this.ctx.systemPrompt)
         + estimateTokens(this.ctx.persistentSystemContext.join('\n\n'))
@@ -352,6 +341,32 @@ export class ConversationRuntime {
       logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing without it', {
         error: String(error),
       });
+    }
+  }
+
+  private async injectActivityContext(options: { includeDesktopActivity: boolean }): Promise<void> {
+    try {
+      const context = await getCurrentActivityContext();
+      const formatted = formatActivityPromptContext(context, {
+        mode: 'legacySeparate',
+        maxChars: 4_500,
+      });
+
+      if (formatted.mode !== 'legacySeparate') return;
+
+      if (formatted.screenMemoryBlock) {
+        this.contextAssembly.injectSystemMessage(`<screen-memory>\n${formatted.screenMemoryBlock}\n</screen-memory>`);
+        logger.info('[AgentLoop] Activity screen-memory context injected at session start');
+      }
+
+      if (options.includeDesktopActivity && formatted.desktopActivityBlock) {
+        this.contextAssembly.injectSystemMessage(
+          `<desktop-activity-context>\n${formatted.desktopActivityBlock}\n</desktop-activity-context>`
+        );
+        logger.info('[AgentLoop] Activity desktop context injected at session start');
+      }
+    } catch {
+      // Graceful: activity context never blocks a run.
     }
   }
 
@@ -801,16 +816,7 @@ export class ConversationRuntime {
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
     }
 
-    // 屏幕记忆 (OpenChronicle) — cross-app context from external daemon
-    try {
-      const ocContext = await fetchOpenchronicleContext();
-      if (ocContext) {
-        this.contextAssembly.injectSystemMessage(`<screen-memory>\n${ocContext}\n</screen-memory>`);
-        logger.info('[AgentLoop] OpenChronicle context injected at session start');
-      }
-    } catch {
-      // graceful: never block session on OC failure
-    }
+    await this.injectActivityContext({ includeDesktopActivity: !isSimpleTask });
 
     if (!isSimpleTask) {
       await this.bootstrapDesktopDerivedContext(userMessage);

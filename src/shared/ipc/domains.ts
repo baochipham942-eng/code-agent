@@ -32,6 +32,7 @@ export const IPC_DOMAINS = {
   CRON: 'domain:cron',
   CAPTURE: 'domain:capture', // 浏览器采集
   DESKTOP: 'domain:desktop', // 原生桌面活动
+  ACTIVITY: 'domain:activity', // 屏幕记忆 / 桌面活动 provider 聚合
   SOUL: 'domain:soul',
   PROVIDER: 'domain:provider',
   LIVE_PREVIEW: 'domain:livePreview', // Live dev server 预览 + click-to-source bridge

@@ -3,7 +3,7 @@
 // Static index of all settings entries for fuzzy search
 // ============================================================================
 
-export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'update' | 'about';
+export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
 
 export interface SettingsEntry {
   tab: SettingsTab;
@@ -58,6 +58,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'memory', tabLabel: '记忆', label: 'Light Memory', keywords: ['memory', '记忆', '文件', '记忆文件'] },
   { tab: 'memory', tabLabel: '记忆', label: '会话统计', keywords: ['session', 'stats', '会话', '统计', '深度', '活跃'] },
   { tab: 'memory', tabLabel: '记忆', label: '模型使用', keywords: ['model', 'usage', '模型', '使用', '分布'] },
+
+  // Screen Memory
+  { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '自动屏幕记忆', keywords: ['screen memory', '屏幕记忆', 'openchronicle', 'daemon', '桌面活动'] },
+  { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '手动桌面活动', keywords: ['native desktop', 'tauri', 'desktop', '桌面活动', '截图', '录音'] },
 
   // Update
   { tab: 'update', tabLabel: '更新', label: '版本更新', keywords: ['update', 'version', '更新', '版本', '升级', '下载'] },

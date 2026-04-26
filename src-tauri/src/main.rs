@@ -17,7 +17,9 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 mod native_desktop;
+mod native_app_icon;
 
+use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
     desktop_get_frontmost_context, desktop_get_permission_status, desktop_list_recent_events,
@@ -406,7 +408,8 @@ fn main() {
             desktop_update_analyze_text,
             desktop_request_microphone_permission,
             desktop_start_audio_rec,
-            desktop_stop_audio_rec
+            desktop_stop_audio_rec,
+            desktop_get_app_icon
         ])
         .setup(|app| {
             if is_server_running() {

@@ -199,6 +199,22 @@ export async function getFrontmostDesktopContext(): Promise<FrontmostContextSnap
   return invoke<FrontmostContextSnapshot>('desktop_get_frontmost_context');
 }
 
+export interface AppIconResult {
+  /** data:image/png;base64,... */
+  dataUrl: string;
+  /** Resolved app bundle path */
+  appPath: string;
+}
+
+/**
+ * 通过 NSWorkspace 拿 macOS app 图标，输出 base64 PNG dataURL。
+ * query 可以是 bundle id（com.apple.Safari）或显示名（"Safari"）。
+ * 仅在 Tauri 桌面模式下可用，dev:web / 非 macOS 会 throw。
+ */
+export async function getMacOSAppIcon(query: string, size = 64): Promise<AppIconResult> {
+  return invoke<AppIconResult>('desktop_get_app_icon', { query, size });
+}
+
 export async function captureNativeDesktopScreenshot(outputPath?: string): Promise<ScreenshotCaptureResult> {
   return invoke<ScreenshotCaptureResult>('desktop_capture_screenshot', {
     request: { outputPath },

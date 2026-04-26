@@ -310,6 +310,8 @@ export const TELEMETRY_CHANNELS = {
   GET_TURN_DETAIL: 'telemetry:get-turn-detail',
   /** 获取工具使用统计 */
   GET_TOOL_STATS: 'telemetry:get-tool-stats',
+  /** 获取 Computer Use 可靠性聚合 */
+  GET_COMPUTER_SURFACE_SUMMARY: 'telemetry:get-computer-surface-summary',
   /** 获取意图分布统计 */
   GET_INTENT_DIST: 'telemetry:get-intent-dist',
   /** 获取会话所有事件（用于时间线） */

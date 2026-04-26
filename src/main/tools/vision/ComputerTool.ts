@@ -11,7 +11,7 @@ import { computerUseTool } from './computerUse';
 
 // Actions from computerUseTool
 const COMPUTER_USE_ACTIONS = [
-  'get_state', 'observe', 'get_ax_elements',
+  'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
   'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
   'locate_element', 'locate_text', 'locate_role',
   'smart_click', 'smart_type', 'smart_hover', 'get_elements',
@@ -25,7 +25,7 @@ export const ComputerTool: Tool = {
 - screenshot: Capture screen or window screenshot with optional AI analysis
 
 ## Basic mouse/keyboard actions (coordinate-based):
-- get_state / observe / get_ax_elements: Read Computer Surface state, frontmost or target app/window, and target app Accessibility elements
+- get_state / observe / get_ax_elements / get_windows / diagnose_app: Read Computer Surface state, frontmost or target app/window, Accessibility candidates, scored macOS windows, and App-level AX/TCC/CGEvent diagnostics
 - click / doubleClick / rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
 - type: Type text into focused element
@@ -51,6 +51,8 @@ export const ComputerTool: Tool = {
 - analyze: [screenshot] Enable AI analysis (default: false)
 - prompt: [screenshot] Custom prompt for AI analysis
 - x, y: Screen coordinates (for basic mouse actions)
+- pid, windowId, windowRef, windowLocalPoint/windowX/windowY: [macOS CGEvent] Background target returned by get_windows
+- bundleId, title: [macOS CGEvent] Expected target identity for get_windows filters and stale-window checks
 - toX, toY: Destination coordinates (for drag)
 - selector: CSS selector (for smart actions)
 - text: Text to type or text to find
@@ -77,7 +79,7 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
         enum: [
           'screenshot',
           // computer surface read actions
-          'get_state', 'observe', 'get_ax_elements',
+          'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
           // computer_use basic actions
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           // computer_use smart actions
@@ -126,6 +128,51 @@ IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
       y: {
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
+      },
+      pid: {
+        type: 'number',
+        description: '[macOS CGEvent] Process id returned by get_windows',
+      },
+      windowId: {
+        type: 'number',
+        description: '[macOS CGEvent] CGWindowID returned by get_windows',
+      },
+      windowRef: {
+        type: 'string',
+        description: '[macOS CGEvent] Stable window reference returned by get_windows',
+      },
+      bundleId: {
+        type: 'string',
+        description: '[macOS CGEvent] Expected target app bundle identifier',
+      },
+      title: {
+        type: 'string',
+        description: '[macOS CGEvent] Expected target window title',
+      },
+      windowLocalPoint: {
+        type: 'object',
+        properties: {
+          x: { type: 'number' },
+          y: { type: 'number' },
+        },
+        description: '[macOS CGEvent] Point inside the target window',
+      },
+      windowX: {
+        type: 'number',
+        description: '[macOS CGEvent] X coordinate inside the target window',
+      },
+      windowY: {
+        type: 'number',
+        description: '[macOS CGEvent] Y coordinate inside the target window',
+      },
+      button: {
+        type: 'string',
+        enum: ['left', 'right'],
+        description: '[macOS CGEvent] Mouse button',
+      },
+      clickCount: {
+        type: 'number',
+        description: '[macOS CGEvent] Click count',
       },
       targetApp: {
         type: 'string',

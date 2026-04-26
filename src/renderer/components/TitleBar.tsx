@@ -9,6 +9,7 @@ import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, Fol
 import { isWebMode, isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { LivePreviewLauncher } from './TitleBar/LivePreviewLauncher';
 // 奶酪图标组件
 const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -99,6 +100,9 @@ export const TitleBar: React.FC = () => {
           <span className="max-w-[180px] truncate">{workspaceLabel}</span>
         </button>
         <SessionActionsMenu />
+        {/* Live Preview 入口（B+ IA：从 ChatInput 能力 popover 挪到顶栏，
+            跟工作目录绑定显示，不再每条 turn 都看到） */}
+        <LivePreviewLauncher />
       </div>
       {/* Right: EvalCenter + Lab + DAG Panel Toggle + Task Panel Toggle */}
       <div className="flex items-center gap-1">

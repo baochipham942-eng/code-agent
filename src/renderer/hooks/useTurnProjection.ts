@@ -153,6 +153,9 @@ export function projectTurns(
               outputPath: tc.result?.outputPath,
               metadata: tc.result?.metadata,
               _streaming: tc._streaming,
+              shortDescription: tc.shortDescription,
+              targetContext: tc.targetContext,
+              expectedOutcome: tc.expectedOutcome,
             },
             metadata: msg.metadata,
           });

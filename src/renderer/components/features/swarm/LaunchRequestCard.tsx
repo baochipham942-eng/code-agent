@@ -103,7 +103,13 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
       <div className="flex items-center gap-2">
         <GitBranch className="w-4 h-4 text-primary-400" />
-        <div className="text-sm text-zinc-100">并行编排启动确认</div>
+        <div className="text-sm text-zinc-100 font-medium">
+          {request.status === 'approved'
+            ? `Spawning ${request.agentCount} agent${request.agentCount > 1 ? 's' : ''}`
+            : request.status === 'rejected'
+              ? '已取消编排'
+              : `准备 spawn ${request.agentCount} 个 agent — 待确认`}
+        </div>
         <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass}`}>
           {request.status === 'pending' ? '待确认' : request.status === 'approved' ? '已启动' : '已取消'}
         </span>

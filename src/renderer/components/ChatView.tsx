@@ -18,6 +18,7 @@ import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
+import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
@@ -447,6 +448,9 @@ export const ChatView: React.FC = () => {
 
         {/* Pinned todo progress bar — visible above the input */}
         <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
+
+        {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
+        <SwarmInlineMonitor />
 
         {/* Input */}
         <ChatInput

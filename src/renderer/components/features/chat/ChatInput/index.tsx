@@ -16,7 +16,6 @@ import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
-import { AbilityMenu } from './AbilityMenu';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
 import { CostDisplay } from '../../../StatusBar/CostDisplay';
@@ -33,7 +32,6 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
-import { InteractionModeIndicator } from '../../../StatusBar/InteractionModeIndicator';
 import ipcService from '../../../../services/ipcService';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import {
@@ -631,17 +629,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           />
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
-            {/* "+" 二级菜单（Codex 风格）— 收纳 /命令 + 上传附件 */}
+            {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}
             <InputAddMenu
               onSlashCommand={() => { setShowSlashPopover(true); setSlashFilter(''); }}
               onFileSelect={handleFileSelect}
             />
 
-            {/* 权限模式 chip — Default / Full Access（一等公民，保留独立位置） */}
+            {/* 权限模式 chip — Default / Full Access（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
-            {/* 能力 popover — Routing + Browser（一等公民，保留独立位置） */}
-            <AbilityMenu disabled={disabled && !isProcessing} browserSession={browserSession} />
+            {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
+                Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}
 
             {/* 弹性空白 */}
             <div className="flex-1" />
@@ -653,10 +651,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               </span>
             )}
 
-            {/* 交互模式（Code/Plan/Ask）— effort 已收进 ModelSwitcher trigger 显示 */}
-            <div className="text-xs">
-              <InteractionModeIndicator />
-            </div>
+            {/* B+ 移除: InteractionModeIndicator — 已收进 InputAddMenu 二级菜单 */}
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />

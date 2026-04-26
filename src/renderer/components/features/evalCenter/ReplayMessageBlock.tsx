@@ -4,18 +4,25 @@
 
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import {
+  buildBrowserComputerActionPreview,
+  formatBrowserComputerActionArguments,
+  formatBrowserComputerActionResultDetails,
+  summarizeBrowserComputerActionResult,
+} from '../../../utils/browserComputerActionPreview';
 
-interface ToolCallData {
+export interface ToolCallData {
   id: string;
   name: string;
   args: Record<string, unknown>;
   result?: string;
+  resultMetadata?: Record<string, unknown>;
   success: boolean;
   duration: number;
   category: string;
 }
 
-interface ReplayBlockData {
+export interface ReplayBlockData {
   type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
   content: string;
   toolCall?: ToolCallData;
@@ -107,6 +114,7 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
 
   // Format args preview
   const argsPreview = formatArgsPreview(toolCall.name, toolCall.args);
+  const resultDetails = formatResultDetails(toolCall);
 
   return (
     <div className={`border rounded-lg overflow-hidden ${colorClass.split(' ').slice(1).join(' ')}`}>
@@ -124,21 +132,26 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
           className={`w-3 h-3 text-zinc-600 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
         />
       </button>
+      {resultDetails && (
+        <div className="px-3 pb-2 text-[10px] text-zinc-500 whitespace-pre-wrap break-words">
+          {resultDetails}
+        </div>
+      )}
       {expanded && (
         <div className="px-3 pb-2.5 border-t border-zinc-700/20 pt-2 space-y-2">
           {/* Args */}
           <div>
             <div className="text-[10px] text-zinc-600 mb-0.5">ARGS</div>
             <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
-              {JSON.stringify(toolCall.args, null, 2)}
+              {formatArgsDetails(toolCall.name, toolCall.args)}
             </pre>
           </div>
           {/* Result */}
-          {toolCall.result && (
+          {resultDetails && (
             <div>
               <div className="text-[10px] text-zinc-600 mb-0.5">RESULT</div>
               <pre className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
-                {toolCall.result}
+                {resultDetails}
               </pre>
             </div>
           )}
@@ -158,6 +171,16 @@ const ErrorBlock: React.FC<{ content: string }> = ({ content }) => (
 );
 
 function formatArgsPreview(toolName: string, args: Record<string, unknown>): string {
+  const browserComputerPreview = buildBrowserComputerActionPreview({
+    name: toolName,
+    arguments: args,
+  });
+  if (browserComputerPreview) {
+    return browserComputerPreview.target
+      ? `${browserComputerPreview.summary} -> ${browserComputerPreview.target}`
+      : browserComputerPreview.summary;
+  }
+
   const lower = toolName.toLowerCase();
   if ((lower === 'read') && args.file_path) {
     return String(args.file_path);
@@ -185,4 +208,41 @@ function formatArgsPreview(toolName: string, args: Record<string, unknown>): str
     return first.length > 50 ? first.slice(0, 50) + '...' : first;
   }
   return '';
+}
+
+export function formatArgsDetails(toolName: string, args: Record<string, unknown>): string {
+  return formatBrowserComputerActionArguments(toolName, args) || JSON.stringify(args, null, 2);
+}
+
+export function formatResultDetails(toolCall: ToolCallData): string | null {
+  const result = toolCall.result
+    ? {
+        toolCallId: toolCall.id,
+        success: toolCall.success,
+        output: toolCall.success ? toolCall.result : undefined,
+        error: toolCall.success ? undefined : toolCall.result,
+        metadata: toolCall.resultMetadata,
+      }
+    : toolCall.resultMetadata
+      ? {
+          toolCallId: toolCall.id,
+          success: toolCall.success,
+          metadata: toolCall.resultMetadata,
+        }
+      : undefined;
+
+  const browserComputerResult = formatBrowserComputerActionResultDetails({
+    name: toolCall.name,
+    arguments: toolCall.args,
+    result,
+  }) || summarizeBrowserComputerActionResult({
+    name: toolCall.name,
+    arguments: toolCall.args,
+    result,
+  });
+
+  if (browserComputerResult) {
+    return browserComputerResult;
+  }
+  return toolCall.result || null;
 }

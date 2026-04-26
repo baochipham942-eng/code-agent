@@ -5,7 +5,10 @@
 export {
   formatToolCallForHistory,
   sanitizeToolResultForHistory,
+  sanitizeToolResultForHistoryWithCall,
+  sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistory,
+  sanitizeToolResultsForHistoryWithCalls,
   buildMultimodalContent,
   stripImagesFromMessages,
   extractUserRequestText,

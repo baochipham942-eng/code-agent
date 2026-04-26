@@ -32,6 +32,10 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import {
+  sanitizeBrowserComputerToolArguments,
+  sanitizeBrowserComputerToolResult,
+} from '../../../shared/utils/browserComputerRedaction';
 
 // Import refactored modules
 import type {
@@ -94,6 +98,17 @@ import type { ConversationRuntime } from './conversationRuntime';
 import { detectStructuredToolFailure } from './toolResultNormalization';
 
 const logger = createLogger('AgentLoop');
+
+function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> | undefined {
+  return sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
+}
+
+function sanitizeToolResultForObservation(
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  result: ToolResult,
+): ToolResult {
+  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
+}
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -354,7 +369,7 @@ export class ToolExecutionEngine {
     const toolSpanId = `tool-${toolCall.id}`;
     langfuse.startNestedSpan(this.ctx.currentIterationSpanId, toolSpanId, {
       name: `Tool: ${toolCall.name}`,
-      input: toolCall.arguments,
+      input: sanitizeToolArgumentsForObservation(toolCall),
       metadata: { toolId: toolCall.id, toolName: toolCall.name },
     });
 
@@ -388,17 +403,18 @@ export class ToolExecutionEngine {
         `</tool-arguments-parse-error>`
       );
 
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
+          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
           this.ctx.onToolExecutionLog({
             sessionId: this.ctx.sessionId,
             toolCallId: toolCall.id,
             toolName: toolCall.name,
-            args: toolCall.arguments as Record<string, unknown>,
-            result: toolResult,
+            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
+            result: safeToolResult,
           });
         } catch {
           // Never let logging break tool execution
@@ -780,17 +796,18 @@ export class ToolExecutionEngine {
       });
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500));
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500), toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
+          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
           this.ctx.onToolExecutionLog({
             sessionId: this.ctx.sessionId,
             toolCallId: toolCall.id,
             toolName: toolCall.name,
-            args: toolCall.arguments as Record<string, unknown>,
-            result: toolResult,
+            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
+            result: safeToolResult,
           });
         } catch {
           // Never let logging break tool execution
@@ -872,12 +889,13 @@ export class ToolExecutionEngine {
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
+          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
           this.ctx.onToolExecutionLog({
             sessionId: this.ctx.sessionId,
             toolCallId: toolCall.id,
             toolName: toolCall.name,
-            args: toolCall.arguments as Record<string, unknown>,
-            result: toolResult,
+            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
+            result: safeToolResult,
           });
         } catch {
           // Never let logging break tool execution

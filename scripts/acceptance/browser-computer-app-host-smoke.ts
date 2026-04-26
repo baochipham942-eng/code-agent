@@ -757,6 +757,8 @@ async function main(): Promise<void> {
     await desktopPanel.waitFor({ state: 'visible', timeout: 10_000 });
     const desktopPanelText = await desktopPanel.innerText({ timeout: 2_000 }).catch(() => '');
     await expectTextIncludes('desktop panel', desktopPanelText, '桌面活动', failures);
+    await page.mouse.click(10, 10).catch(() => undefined);
+    await desktopPanel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
     const chatInputFailure = await exerciseChatInputComputerFailure(page, failures);
 
     const result = {

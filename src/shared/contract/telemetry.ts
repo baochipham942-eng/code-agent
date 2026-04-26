@@ -110,6 +110,12 @@ export interface TelemetryToolCall {
   timestamp: number;
   index: number; // index within turn
   parallel: boolean;
+  computerSurfaceFailureKind?: string;
+  computerSurfaceMode?: string;
+  computerSurfaceTargetApp?: string;
+  computerSurfaceAction?: string;
+  computerSurfaceAxQualityScore?: number;
+  computerSurfaceAxQualityGrade?: string;
 }
 
 export interface ComputerSurfaceReliabilitySummary {
@@ -243,7 +249,7 @@ export interface TelemetryAdapter {
   onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string): void;
   onModelCall(turnId: string, call: TelemetryModelCall): void;
   onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean): void;
-  onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined): void;
+  onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>): void;
   onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void;
 }
 

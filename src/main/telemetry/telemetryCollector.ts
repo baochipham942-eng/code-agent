@@ -21,6 +21,10 @@ import type {
 } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
+import {
+  sanitizeBrowserComputerToolArguments,
+  sanitizeBrowserComputerToolResult,
+} from '../../shared/utils/browserComputerRedaction';
 
 
 // ----------------------------------------------------------------------------
@@ -61,9 +65,70 @@ interface PendingToolCall {
   toolCallId: string;
   name: string;
   arguments: string;
+  rawArguments?: Record<string, unknown>;
   timestamp: number;
   index: number;
   parallel: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function extractComputerSurfaceFields(
+  name: string,
+  argsJson: string,
+  metadata?: Record<string, unknown>,
+): Partial<TelemetryToolCall> {
+  if (name !== 'computer_use') {
+    return {};
+  }
+  const safeMetadata = metadata || {};
+  const trace = isRecord(safeMetadata.workbenchTrace) ? safeMetadata.workbenchTrace : {};
+  const axQuality = isRecord(safeMetadata.axQuality)
+    ? safeMetadata.axQuality
+    : isRecord(trace.axQuality)
+      ? trace.axQuality
+      : {};
+  let parsedArgs: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(argsJson);
+    if (isRecord(parsed)) {
+      parsedArgs = parsed;
+    }
+  } catch {
+    parsedArgs = {};
+  }
+  return {
+    computerSurfaceFailureKind: asString(safeMetadata.failureKind) || asString(trace.failureKind),
+    computerSurfaceMode: asString(safeMetadata.computerSurfaceMode) || asString(trace.mode),
+    computerSurfaceTargetApp: asString(safeMetadata.targetApp) || asString(trace.targetApp) || asString(parsedArgs.targetApp),
+    computerSurfaceAction: asString(trace.action) || asString(parsedArgs.action),
+    computerSurfaceAxQualityScore: asNumber(axQuality.score),
+    computerSurfaceAxQualityGrade: asString(axQuality.grade),
+  };
+}
+
+function sanitizeToolArgsForTelemetry(name: string, args: unknown): {
+  serialized: string;
+  rawArguments?: Record<string, unknown>;
+} {
+  if (!isRecord(args)) {
+    return { serialized: JSON.stringify(args ?? {}) };
+  }
+  const safeArgs = sanitizeBrowserComputerToolArguments(name, args) || args;
+  return {
+    serialized: JSON.stringify(safeArgs),
+    rawArguments: args,
+  };
 }
 
 export class TelemetryCollector {
@@ -375,11 +440,13 @@ export class TelemetryCollector {
   ): void {
     if (this.activeTurn?.id !== turnId) return;
 
+    const safeArgs = sanitizeToolArgsForTelemetry(name, args);
     const pending: PendingToolCall = {
       id: generateMessageId(),
       toolCallId,
       name,
-      arguments: JSON.stringify(args ?? {}),
+      arguments: safeArgs.serialized,
+      rawArguments: safeArgs.rawArguments,
       timestamp: Date.now(),
       index,
       parallel,
@@ -394,6 +461,7 @@ export class TelemetryCollector {
     error: string | undefined,
     durationMs: number,
     output: string | undefined,
+    metadata?: Record<string, unknown>,
   ): void {
     if (this.activeTurn?.id !== turnId) return;
 
@@ -401,7 +469,15 @@ export class TelemetryCollector {
     if (!pending) return;
     this.pendingToolCalls.delete(toolCallId);
 
+    const safeResult = sanitizeBrowserComputerToolResult(pending.name, pending.rawArguments, {
+      output,
+      error,
+      metadata,
+    });
+    const safeError = safeResult.error;
+    const safeOutput = safeResult.output;
     const errorCategory = error ? classifyError(error) : undefined;
+    const computerSurfaceFields = extractComputerSurfaceFields(pending.name, pending.arguments, metadata);
     const record: TelemetryToolCall & { turnId: string; sessionId: string } = {
       id: pending.id,
       turnId,
@@ -409,14 +485,15 @@ export class TelemetryCollector {
       toolCallId,
       name: pending.name,
       arguments: pending.arguments,
-      resultSummary: output ?? error ?? '',
+      resultSummary: safeOutput ?? safeError ?? '',
       success,
-      error,
+      error: safeError,
       errorCategory,
       durationMs,
       timestamp: pending.timestamp,
       index: pending.index,
       parallel: pending.parallel,
+      ...computerSurfaceFields,
     };
     this.turnToolCalls.push(record);
 
@@ -484,8 +561,8 @@ export class TelemetryCollector {
       onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean) {
         collector.recordToolCallStart(turnId, toolCallId, name, args, index, parallel);
       },
-      onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined) {
-        collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output);
+      onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>) {
+        collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
       },
       onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string) {
         collector.endTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash);

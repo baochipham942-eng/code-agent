@@ -8,6 +8,7 @@ import { X, Download, FileText, FileJson, Check, Copy, Loader2 } from 'lucide-re
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { Message } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
+import { sanitizeMessagesForBrowserComputerExport } from '../../../utils/browserComputerExportRedaction';
 
 const logger = createLogger('ExportModal');
 
@@ -42,6 +43,15 @@ function formatMessageToMarkdown(message: Message): string {
       if (call.arguments) {
         content += `  \`\`\`json\n  ${JSON.stringify(call.arguments, null, 2).split('\n').join('\n  ')}\n  \`\`\`\n`;
       }
+      if (call.result) {
+        const resultText = call.result.success ? call.result.output : call.result.error;
+        if (resultText) {
+          content += `  **结果**\n\n  \`\`\`\n  ${String(resultText).split('\n').join('\n  ')}\n  \`\`\`\n`;
+        }
+        if (call.result.metadata) {
+          content += `  **元数据**\n\n  \`\`\`json\n  ${JSON.stringify(call.result.metadata, null, 2).split('\n').join('\n  ')}\n  \`\`\`\n`;
+        }
+      }
     });
     content += '</details>\n';
   }
@@ -49,22 +59,24 @@ function formatMessageToMarkdown(message: Message): string {
   return `### ${role}\n_${timestamp}_\n\n${content}\n`;
 }
 
-function exportToMarkdown(title: string, messages: Message[]): string {
+export function exportToMarkdown(title: string, messages: Message[]): string {
   const header = `# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
 
-  const messageContent = messages
+  const messageContent = safeMessages
     .map(formatMessageToMarkdown)
     .join('\n---\n\n');
 
   return header + messageContent;
 }
 
-function exportToJson(title: string, messages: Message[]): string {
+export function exportToJson(title: string, messages: Message[]): string {
+  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
   const exportData = {
     title,
     exportedAt: new Date().toISOString(),
-    messageCount: messages.length,
-    messages: messages.map(msg => ({
+    messageCount: safeMessages.length,
+    messages: safeMessages.map(msg => ({
       id: msg.id,
       role: msg.role,
       content: msg.content,

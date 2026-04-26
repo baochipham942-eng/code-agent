@@ -96,7 +96,7 @@ export class MetricsCollector implements TelemetryAdapter {
     this.metrics.toolCallsByName[name] = (this.metrics.toolCallsByName[name] || 0) + 1;
   }
 
-  onToolCallEnd(_turnId: string, toolCallId: string, success: boolean, error: string | undefined, _durationMs: number, _output: string | undefined): void {
+  onToolCallEnd(_turnId: string, toolCallId: string, success: boolean, error: string | undefined, _durationMs: number, _output: string | undefined, _metadata?: Record<string, unknown>): void {
     this.pendingToolCalls.delete(toolCallId);
     if (success) {
       this.metrics.toolSuccessCount++;
@@ -178,9 +178,9 @@ export function composeTelemetryAdapters(
       primary.onToolCallStart(turnId, toolCallId, name, args, index, parallel);
       secondary.onToolCallStart(turnId, toolCallId, name, args, index, parallel);
     },
-    onToolCallEnd(turnId, toolCallId, success, error, durationMs, output) {
-      primary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output);
-      secondary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output);
+    onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata) {
+      primary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
+      secondary.onToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
     },
     onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash) {
       primary.onTurnEnd(turnId, assistantResponse, thinking, systemPromptHash);

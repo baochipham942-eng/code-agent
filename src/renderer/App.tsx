@@ -550,7 +550,10 @@ export const App: React.FC = () => {
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => useAppStore.getState().setShowDesktopPanel(false)}
           />
-          <div className="relative w-full max-w-4xl h-[80vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn flex flex-col">
+          <div
+            data-testid="desktop-status-panel"
+            className="relative w-full max-w-4xl h-[80vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn flex flex-col"
+          >
             <NativeDesktopSection />
           </div>
         </div>

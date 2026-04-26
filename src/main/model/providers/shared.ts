@@ -867,6 +867,14 @@ export function buildToolCallFromAccumulator(tc: {
     }
   }
 
+  // Fallback：如果模型没 emit shortDescription（GLM/Kimi 实测覆盖率低），
+  // 用机械规则生成一个保底版（比工具内部命名好看，比"操作完成"有信息），
+  // 让 UI 100% 覆盖到产品视角语义。targetContext / expectedOutcome 不强制
+  // fallback（缺它们 UI 渲染降级但不致崩）。
+  if (!shortDescription) {
+    shortDescription = generateFallbackShortDescription(tc.name, args);
+  }
+
   return {
     id: tc.id,
     name: tc.name,
@@ -875,6 +883,97 @@ export function buildToolCallFromAccumulator(tc: {
     ...(targetContext !== undefined && { targetContext }),
     ...(expectedOutcome !== undefined && { expectedOutcome }),
   };
+}
+
+/**
+ * 模型没 emit shortDescription 时的机械兜底生成器。规则尽量贴近产品视角语义，
+ * 不行就退化到 "Used <Tool>"，永远比"操作完成"好。
+ */
+export function generateFallbackShortDescription(
+  toolName: string,
+  args: Record<string, unknown>,
+): string {
+  const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s);
+  const fileName = (p: unknown): string => {
+    const s = typeof p === 'string' ? p : '';
+    const parts = s.split(/[\\/]/);
+    return parts[parts.length - 1] || s;
+  };
+
+  // MCP: mcp_<server>_<tool>
+  if (toolName.startsWith('mcp_')) {
+    const m = toolName.match(/^mcp_([^_]+)_(.+)$/);
+    if (m) {
+      const server = m[1].split(/[-_]/).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+      return `Use ${server} to ${m[2].replace(/_/g, ' ')}`;
+    }
+  }
+
+  switch (toolName) {
+    case 'Bash':
+    case 'bash': {
+      const cmd = typeof args.command === 'string' ? args.command.split('\n')[0] : '';
+      return cmd ? `Run: ${truncate(cmd, 60)}` : 'Run shell command';
+    }
+    case 'Read':
+    case 'ReadPoc': {
+      const f = fileName(args.file_path ?? args.path);
+      return f ? `Read ${f}` : 'Read file';
+    }
+    case 'Write':
+    case 'WritePoc': {
+      const f = fileName(args.file_path);
+      return f ? `Write ${f}` : 'Write file';
+    }
+    case 'Edit': {
+      const f = fileName(args.file_path);
+      return f ? `Edit ${f}` : 'Edit file';
+    }
+    case 'Glob':
+    case 'GlobPoc': {
+      const p = typeof args.pattern === 'string' ? args.pattern : '';
+      return p ? `Find files matching ${truncate(p, 40)}` : 'Find files';
+    }
+    case 'Grep': {
+      const p = typeof args.pattern === 'string' ? args.pattern : '';
+      return p ? `Search for "${truncate(p, 40)}"` : 'Search in files';
+    }
+    case 'LS':
+    case 'list_directory': {
+      const p = typeof args.path === 'string' ? args.path : '.';
+      return `List ${truncate(p, 40)}`;
+    }
+    case 'WebSearch': {
+      const q = typeof args.query === 'string' ? args.query : '';
+      return q ? `Search web for "${truncate(q, 40)}"` : 'Search the web';
+    }
+    case 'WebFetch':
+    case 'web_fetch': {
+      const u = typeof args.url === 'string' ? args.url : '';
+      return u ? `Fetch ${truncate(u, 50)}` : 'Fetch web page';
+    }
+    case 'memory_search': {
+      const q = typeof args.query === 'string' ? args.query : '';
+      return q ? `Search memory for "${truncate(q, 40)}"` : 'Search memory';
+    }
+    case 'memory_store':
+      return 'Store to memory';
+    case 'todo_write':
+      return 'Update task list';
+    case 'AskUserQuestion':
+      return 'Ask user a question';
+    case 'browser_action': {
+      const action = typeof args.action === 'string' ? args.action : 'action';
+      return `Browser ${action}`;
+    }
+    case 'computer_use': {
+      const action = typeof args.action === 'string' ? args.action : 'action';
+      const target = typeof args.targetApp === 'string' ? args.targetApp : '';
+      return target ? `${action} in ${target}` : `Computer ${action}`;
+    }
+    default:
+      return `Use ${toolName}`;
+  }
 }
 
 /**

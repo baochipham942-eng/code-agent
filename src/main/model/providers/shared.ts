@@ -912,8 +912,9 @@ export function generateFallbackShortDescription(
   switch (toolName) {
     case 'Bash':
     case 'bash': {
-      const cmd = typeof args.command === 'string' ? args.command.split('\n')[0] : '';
-      return cmd ? `Run: ${truncate(cmd, 60)}` : 'Run shell command';
+      // 保留首行完整（多行 heredoc/链式命令只取第一行），CSS 处理过长视觉
+      const cmd = typeof args.command === 'string' ? args.command.split('\n')[0].trim() : '';
+      return cmd ? `Run: ${cmd}` : 'Run shell command';
     }
     case 'Read':
     case 'ReadPoc': {

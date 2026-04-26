@@ -189,10 +189,11 @@ export function formatParams(toolCall: ToolCall): string {
 }
 
 function truncateCommand(cmd: string): string {
-  // Get first line, max 40 chars
-  const firstLine = cmd.split('\n')[0];
-  if (firstLine.length <= 40) return firstLine;
-  return firstLine.slice(0, 37) + '...';
+  // 保留首行完整内容（不再硬截断 40 字符）。多行命令（heredoc 等）只取第一行做
+  // 概要展示；ToolHeader 用 CSS `truncate` 处理超长视觉。命令对程序员是关键
+  // 信息——一个一眼能看见的 `git status -uall --porcelain` 比 `git stat...`
+  // 信息密度高得多。
+  return cmd.split('\n')[0];
 }
 
 function shortenPath(path: string): string {

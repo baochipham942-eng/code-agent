@@ -38,7 +38,8 @@ export function ToolHeader({ toolCall, status }: Props) {
       <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
 
       {/* Tool name - always semibold, neutral color */}
-      <span className="text-zinc-200 font-semibold">{displayName}</span>
+      {/* truncate + min-w-0 让长 shortDescription（如完整 Bash 命令）按 CSS 截断而不撑爆 layout */}
+      <span className="text-zinc-200 font-semibold truncate min-w-0">{displayName}</span>
 
       {/* Sandbox badge */}
       {isSandboxed && (

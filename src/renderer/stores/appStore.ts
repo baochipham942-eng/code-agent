@@ -21,6 +21,21 @@ import {
   getProviderEndpoint,
 } from '@shared/constants';
 
+// V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
+// 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
+function fireStopDevServer(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  void (async () => {
+    try {
+      const { invokeDomain } = await import('../services/ipcService');
+      const { IPC_DOMAINS } = await import('@shared/ipc');
+      await invokeDomain(IPC_DOMAINS.LIVE_PREVIEW, 'stopDevServer', { sessionId });
+    } catch (err) {
+      console.warn('[appStore] stopDevServer failed for', sessionId, err);
+    }
+  })();
+}
+
 // 渐进披露级别
 export type DisclosureLevel = 'simple' | 'standard' | 'advanced' | 'expert';
 
@@ -46,6 +61,8 @@ export interface PreviewTab {
   // Live Preview (D3+) — 存在时覆盖文件语义
   kind?: 'file' | 'liveDev';
   devServerUrl?: string;
+  /** V2-A: Code Agent 自起的 dev server session id；用户外部起的 dev server 留空 */
+  devServerSessionId?: string;
   selectedElement?: LivePreviewSelectedElement | null;
   // D6: 外部驱动的编辑器跳转（file tab 使用）
   jumpToLine?: number;
@@ -125,6 +142,9 @@ interface AppState {
   // Lab State (实验室)
   showLab: boolean;
 
+  // V2-A: DevServerLauncher 模态可见性。true 时 App 渲染 <DevServerLauncher />
+  devServerLauncherOpen: boolean;
+
   // EvalCenter State (评测中心：合并会话评测 + 遥测)
   showEvalCenter: boolean;
   evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
@@ -193,7 +213,10 @@ interface AppState {
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
   openPreview: (filePath: string) => void;
-  openLivePreview: (devServerUrl: string) => void;
+  openLivePreview: (devServerUrl: string, devServerSessionId?: string) => void;
+  /** V2-A: 打开/关闭 dev server launcher 模态 */
+  openDevServerLauncher: () => void;
+  closeDevServerLauncher: () => void;
   setSelectedElement: (tabId: string, element: LivePreviewSelectedElement | null) => void;
   jumpToFileLine: (filePath: string, line: number) => void;
   closePreview: () => void;
@@ -275,6 +298,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initial Lab State
   showLab: false,
+  devServerLauncherOpen: false,
 
   // Initial EvalCenter State
   showEvalCenter: false,
@@ -363,6 +387,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
   toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
   setShowLab: (show) => set({ showLab: show }),
+  openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
+  closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowEvalCenter: (show, tab, sessionId) => set({
     showEvalCenter: show,
     ...(tab ? { evalCenterTab: tab } : {}),
@@ -421,7 +447,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
   },
-  openLivePreview: (devServerUrl) => {
+  openLivePreview: (devServerUrl, devServerSessionId) => {
     // 以 URL 作为唯一 key，沿用 preview: 前缀的 WorkbenchTabId 机制
     set((state) => {
       const newWorkbenchId: WorkbenchTabId = `preview:${devServerUrl}`;
@@ -431,7 +457,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...state,
           activePreviewTabId: existing.id,
           previewTabs: state.previewTabs.map((t) =>
-            t.id === existing.id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
+            t.id === existing.id
+              ? {
+                  ...t,
+                  lastActivatedAt: nextPreviewTabTick(),
+                  // 后续启动同一 URL 时刷新 sessionId（用户重启 dev server 的场景）
+                  devServerSessionId: devServerSessionId ?? t.devServerSessionId,
+                }
+              : t,
           ),
           workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
             ? state.workbenchTabs
@@ -450,6 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoaded: true, // live 不需要 readFile 预热
         kind: 'liveDev',
         devServerUrl,
+        devServerSessionId,
         selectedElement: null,
       };
       let carried = state.previewTabs;
@@ -487,17 +521,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  closePreview: () => set((state) => ({
-    previewTabs: [],
-    activePreviewTabId: null,
-    workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchId(w)),
-    activeWorkbenchTab: isPreviewWorkbenchId(state.activeWorkbenchTab ?? 'task')
-      ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchId(w)) ?? null)
-      : state.activeWorkbenchTab,
-  })),
+  closePreview: () => {
+    // V2-A: 收掉所有 Code Agent 自起的 dev server 子进程
+    const sessions = get().previewTabs.map((t) => t.devServerSessionId).filter(Boolean) as string[];
+    sessions.forEach(fireStopDevServer);
+    set((state) => ({
+      previewTabs: [],
+      activePreviewTabId: null,
+      workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchId(w)),
+      activeWorkbenchTab: isPreviewWorkbenchId(state.activeWorkbenchTab ?? 'task')
+        ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchId(w)) ?? null)
+        : state.activeWorkbenchTab,
+    }));
+  },
   closePreviewTab: (id) => {
     set((state) => {
       const closing = state.previewTabs.find((t) => t.id === id);
+      // V2-A: 关掉这个 tab 对应的 dev server（如果是 Code Agent 自起的）
+      fireStopDevServer(closing?.devServerSessionId);
       const closingWorkbenchId: WorkbenchTabId | null = closing
         ? `preview:${closing.path}`
         : null;

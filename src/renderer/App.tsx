@@ -22,6 +22,7 @@ import { isDesktopShellMode, isTauriMode } from './utils/platform';
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
+import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
@@ -433,6 +434,9 @@ export const App: React.FC = () => {
 
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}
+
+      {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
+      <DevServerLauncher />
 
       {/* Lab Page */}
       {showLab && <LabPage />}

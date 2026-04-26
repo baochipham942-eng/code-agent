@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Cpu, Palette, Info, Database, Download, Plug, Settings, Brain, Sparkles, Eye } from 'lucide-react';
+import { X, Cpu, Palette, Info, Database, Download, Plug, Settings, Brain, Sparkles, Eye, GitBranch } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -21,6 +21,7 @@ const logger = createLogger('SettingsModal');
 
 // Tab Components
 import { GeneralSettings } from './tabs/GeneralSettings';
+import { ConversationSettings } from './tabs/ConversationSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { DataSettings } from './tabs/DataSettings';
@@ -37,7 +38,7 @@ import ipcService from '../../../services/ipcService';
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
+type SettingsTab = 'general' | 'conversation' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
 
 interface SettingsTabConfig {
   id: SettingsTab;
@@ -61,6 +62,7 @@ export function buildSettingsTabs({
 }: BuildSettingsTabsOptions): SettingsTabConfig[] {
   return [
     { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
+    { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
@@ -168,6 +170,7 @@ export const SettingsModal: React.FC = () => {
           {/* Content */}
           <div className={`flex-1 overflow-y-auto ${isScreenMemoryTab ? 'p-5' : 'p-6'}`}>
             {activeTab === 'general' && <GeneralSettings />}
+            {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

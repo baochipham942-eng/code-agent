@@ -133,11 +133,34 @@ export const useConversationStreamEffects = ({
               if (event.data.toolCalls && event.data.toolCalls.length > 0) {
                 const existingToolCalls = targetMessage.toolCalls || [];
                 if (existingToolCalls.length > 0) {
+                  // streaming 期间 in-memory ToolCall 缺产品视角语义字段（_meta envelope
+                  // 抽取在前端 stream_tool_call_delta 已尽力，但模型不 emit 时仍空），
+                  // message 事件传来的版本经过 main 进程 sanitize / 兜底，shortDescription
+                  // 等字段更完整。把这些字段 merge 进 existing，但保留 streaming 时
+                  // 已经写好的 result。
+                  const fromEvent = new Map<string, ToolCall>(
+                    event.data.toolCalls.map((tc: ToolCall) => [tc.id, tc] as [string, ToolCall]),
+                  );
+                  mergedToolCalls = existingToolCalls.map((existing: ToolCall) => {
+                    const fresh = fromEvent.get(existing.id);
+                    if (!fresh) return existing;
+                    return {
+                      ...existing,
+                      shortDescription: fresh.shortDescription ?? existing.shortDescription,
+                      targetContext: fresh.targetContext ?? existing.targetContext,
+                      expectedOutcome: fresh.expectedOutcome ?? existing.expectedOutcome,
+                      // arguments 用 main 进程 sanitize 过的版本（已剥 _meta、过滤敏感）
+                      arguments: fresh.arguments ?? existing.arguments,
+                    };
+                  });
+                  // 追加 event 中存在但 existing 没有的（极少见，但保住兼容）
                   const existingIds = new Set(existingToolCalls.map((tc: ToolCall) => tc.id));
                   const newOnes = event.data.toolCalls.filter(
                     (tc: ToolCall) => !existingIds.has(tc.id)
                   );
-                  mergedToolCalls = [...existingToolCalls, ...newOnes];
+                  if (newOnes.length > 0) {
+                    mergedToolCalls = [...mergedToolCalls, ...newOnes];
+                  }
                 } else {
                   mergedToolCalls = event.data.toolCalls;
                 }

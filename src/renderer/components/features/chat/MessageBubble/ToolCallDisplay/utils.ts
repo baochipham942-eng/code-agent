@@ -107,6 +107,14 @@ export function formatParams(toolCall: ToolCall): string {
   const { name, arguments: args } = toolCall;
   if (!args) return '';
 
+  // MCP tools (mcp_<server>_<tool>): server 名走 displayName，tool 名走这里当副标题
+  if (name.startsWith('mcp_')) {
+    const parts = name.match(/^mcp_([^_]+)_(.+)$/);
+    if (parts) {
+      return parts[2];
+    }
+  }
+
   switch (name) {
     case 'Bash':
       return truncateCommand(String(args.command || ''));
@@ -224,6 +232,36 @@ function shortenUrl(url: string): string {
 
 
 // ============================================================================
+// MCP Server Display Names
+// ============================================================================
+// 已知 MCP server 的显示名映射。命中走 Title Case 友好名，未命中按 hyphen-case
+// 自动转 Title Case 兜底（如 my-server → My Server）。新增 server 不需要改这里
+// 也能正常显示，只是命中映射表的会更精致（如 chrome-devtools → Chrome DevTools）。
+const MCP_SERVER_DISPLAY_NAMES: Record<string, string> = {
+  'better-icons': 'Better Icons',
+  'chrome-devtools': 'Chrome DevTools',
+  'computer-use': 'Computer Use',
+  'deepwiki': 'DeepWiki',
+  'exa': 'Exa',
+  'firecrawl': 'Firecrawl',
+  'github': 'GitHub',
+  'memory': 'Memory',
+  'obsidian': 'Obsidian',
+  'pencil': 'Pencil',
+};
+
+function formatMcpServerName(serverSlug: string): string {
+  const known = MCP_SERVER_DISPLAY_NAMES[serverSlug];
+  if (known) return known;
+  // 兜底：hyphen/underscore-case → Title Case
+  return serverSlug
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+// ============================================================================
 // Tool Name Display
 // ============================================================================
 
@@ -266,9 +304,10 @@ export function getToolDisplayName(name: string): string {
 
   if (name.startsWith('mcp_')) {
     // Parse MCP tool name: mcp_<serverName>_<toolName>
+    // 显示 server 名作为主标题（如 "Exa"），tool 名走 formatParams 当副标题
     const parts = name.match(/^mcp_([^_]+)_(.+)$/);
     if (parts) {
-      return `MCP:${parts[2]}`;
+      return formatMcpServerName(parts[1]);
     }
     return name;
   }

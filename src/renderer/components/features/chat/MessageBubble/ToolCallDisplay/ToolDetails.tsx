@@ -24,6 +24,8 @@ import {
   formatBrowserComputerActionArguments,
   formatBrowserComputerActionResultDetails,
 } from '../../../../../utils/browserComputerActionPreview';
+import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
+import type { Citation } from '@shared/contract/citation';
 
 // ============================================================================
 // ANSI 转义码过滤 - 清理终端输出中的颜色和格式代码
@@ -204,6 +206,13 @@ export function ToolDetails({ toolCall, compact }: Props) {
           )}
         </div>
       )}
+
+      {/* Memory citations: 模型从 memory 来源引用片段时同步出 rationale + lineRange */}
+      {(() => {
+        const rawCitations = toolCall.result?.metadata?.citations;
+        if (!Array.isArray(rawCitations) || rawCitations.length === 0) return null;
+        return <MemoryCitationGroup citations={rawCitations as Citation[]} />;
+      })()}
     </div>
   );
 }

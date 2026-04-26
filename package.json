@@ -25,6 +25,7 @@
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",
     "acceptance:browser-computer": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-smoke.ts",
     "acceptance:browser-computer-workflow": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-workflow-smoke.ts",
+    "acceptance:browser-task-benchmark": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-task-benchmark.ts",
     "acceptance:browser-computer-system-chrome": "npx tsx scripts/acceptance/browser-computer-system-chrome-smoke.ts",
     "acceptance:browser-computer-background-ax": "npx tsx scripts/acceptance/browser-computer-background-ax-smoke.ts",
     "acceptance:browser-computer-background-cgevent": "npx tsx scripts/acceptance/browser-computer-background-cgevent-smoke.ts",

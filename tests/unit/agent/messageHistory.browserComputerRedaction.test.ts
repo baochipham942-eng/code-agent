@@ -147,4 +147,57 @@ describe('Browser/Computer history redaction', () => {
     expect(json).not.toContain(typedSecret);
     expect(json).not.toContain('typed-password');
   });
+
+  it('summarizes managed browser profile and artifact paths before persistence', () => {
+    const toolCalls: ToolCall[] = [{
+      id: 'tool-1',
+      name: 'browser_action',
+      arguments: {
+        action: 'get_workbench_state',
+      },
+    }];
+    const toolResults: ToolResult[] = [{
+      toolCallId: 'tool-1',
+      success: true,
+      output: 'Browser workbench state',
+      metadata: {
+        browserWorkbenchState: {
+          sessionId: 'browser_session_1',
+          profileId: 'managed-browser-profile',
+          profileMode: 'persistent',
+          profileDir: '/Users/linchen/Library/Application Support/code-agent/managed-browser-profile',
+          artifactDir: '/Users/linchen/Downloads/ai/code-agent/.workbench/artifacts/run-42',
+          workspaceScope: '/Users/linchen/Downloads/ai/code-agent',
+          cookie: {
+            name: 'session',
+            value: 'cookie-secret',
+          },
+          storageState: {
+            cookies: [{ name: 'sid', value: 'cookie-secret' }],
+          },
+        },
+        workbenchTrace: {
+          id: 'trace-profile',
+          targetKind: 'browser',
+          toolName: 'browser_action',
+          action: 'get_workbench_state',
+          mode: 'headless',
+          startedAtMs: 1,
+          profileDir: '/Users/linchen/Library/Application Support/code-agent/managed-browser-profile',
+        },
+      },
+    }];
+
+    const sanitized = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
+    const json = JSON.stringify(sanitized);
+
+    expect(json).toContain('browser_session_1');
+    expect(json).toContain('managed-browser-profile');
+    expect(json).toContain('.../run-42');
+    expect(json).toContain('.../code-agent');
+    expect(json).not.toContain('/Users/linchen');
+    expect(json).not.toContain('cookie-secret');
+    expect(json).not.toContain('storageState');
+    expect(json).not.toContain('profileDir');
+  });
 });

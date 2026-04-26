@@ -4,6 +4,12 @@ import type {
   WorkbenchSkillCapability,
 } from '../hooks/useWorkbenchCapabilities';
 import type { BrowserWorkbenchReadinessItem, BrowserWorkbenchState } from '../hooks/useWorkbenchBrowserSession';
+import type {
+  ManagedBrowserAccountStateSummary,
+  ManagedBrowserLeaseState,
+  ManagedBrowserProfileMode,
+  ManagedBrowserProxyConfig,
+} from '@shared/contract/desktop';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import type { WorkbenchCapabilityRegistryItem } from './workbenchCapabilityRegistry';
 
@@ -264,6 +270,152 @@ export function getWorkbenchReferenceBadge(
   return null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function firstStringField(value: unknown, keys: string[]): string | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  for (const key of keys) {
+    const field = record[key];
+    if (typeof field === 'string' && field.trim()) {
+      return field.trim();
+    }
+  }
+  return null;
+}
+
+function getPathBasename(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) || normalized || null;
+}
+
+function summarizePathTail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  const basename = getPathBasename(trimmed);
+  if (!trimmed || !basename) {
+    return null;
+  }
+  return basename === trimmed ? basename : `.../${basename}`;
+}
+
+function getProfileMode(value: unknown): ManagedBrowserProfileMode | null {
+  return value === 'persistent' || value === 'isolated' ? value : null;
+}
+
+function summarizeWorkspaceScope(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return summarizePathTail(value) || value.trim() || null;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const label = firstStringField(record, ['label', 'name', 'id']);
+  if (label) {
+    return label;
+  }
+
+  return summarizePathTail(firstStringField(record, ['path', 'root', 'cwd', 'workingDirectory']));
+}
+
+function buildManagedBrowserProfileValue(preview: unknown, session: unknown): string | null {
+  const profileDir = firstStringField(session, ['profileDir']);
+  const profileMode = getProfileMode(firstStringField(preview, ['profileMode']) || firstStringField(session, ['profileMode']))
+    || (profileDir ? 'persistent' : null);
+  const profileId = firstStringField(preview, ['profileId'])
+    || firstStringField(session, ['profileId'])
+    || getPathBasename(profileDir);
+  const profileSummary = firstStringField(preview, ['profileDirSummary'])
+    || summarizePathTail(profileDir);
+
+  if (profileMode && profileId) {
+    return `${profileMode} / ${profileId}`;
+  }
+  if (profileMode && profileSummary) {
+    return `${profileMode} / ${profileSummary}`;
+  }
+  if (profileMode) {
+    return profileMode;
+  }
+  return profileId || profileSummary;
+}
+
+function buildManagedBrowserScopeValue(preview: unknown, session: unknown): string | null {
+  const artifactSummary = firstStringField(preview, ['artifactDirSummary'])
+    || summarizePathTail(firstStringField(session, ['artifactDir', 'artifactsDir', 'artifactDirectory', 'artifactRoot']));
+  if (artifactSummary) {
+    return `artifact: ${artifactSummary}`;
+  }
+
+  const sessionRecord = asRecord(session);
+  const workspaceSummary = firstStringField(preview, ['workspaceScopeSummary'])
+    || summarizeWorkspaceScope(sessionRecord?.workspaceScope)
+    || summarizePathTail(firstStringField(session, ['workspaceScope', 'workspaceRoot', 'workspaceDir', 'workingDirectory']));
+  return workspaceSummary ? `workspace: ${workspaceSummary}` : null;
+}
+
+function getAccountState(preview: unknown, session: unknown): ManagedBrowserAccountStateSummary | null {
+  const previewRecord = asRecord(preview);
+  const sessionRecord = asRecord(session);
+  const value = previewRecord?.accountState || sessionRecord?.accountState;
+  return asRecord(value) ? value as unknown as ManagedBrowserAccountStateSummary : null;
+}
+
+function buildManagedBrowserAccountValue(accountState: ManagedBrowserAccountStateSummary | null): string | null {
+  if (!accountState) {
+    return null;
+  }
+  return [
+    accountState.status,
+    `${accountState.cookieCount || 0} cookies`,
+    `${accountState.originCount || 0} origins`,
+    accountState.expiredCookieCount > 0 ? `${accountState.expiredCookieCount} expired` : null,
+  ].filter(Boolean).join(' / ');
+}
+
+function getManagedBrowserLease(preview: unknown, session: unknown): ManagedBrowserLeaseState | null {
+  const value = asRecord(preview)?.lease || asRecord(session)?.lease;
+  return asRecord(value) ? value as unknown as ManagedBrowserLeaseState : null;
+}
+
+function buildManagedBrowserLeaseValue(lease: ManagedBrowserLeaseState | null): string | null {
+  if (!lease) {
+    return null;
+  }
+  const secondsLeft = Math.max(0, Math.ceil((lease.expiresAtMs - Date.now()) / 1000));
+  return lease.status === 'active'
+    ? `${lease.status} / ${secondsLeft}s / ${lease.owner}`
+    : `${lease.status} / ${lease.owner}`;
+}
+
+function getManagedBrowserProxy(preview: unknown, session: unknown): ManagedBrowserProxyConfig | null {
+  const value = asRecord(preview)?.proxy || asRecord(session)?.proxy;
+  return asRecord(value) ? value as unknown as ManagedBrowserProxyConfig : null;
+}
+
+function buildManagedBrowserProxyValue(proxy: ManagedBrowserProxyConfig | null): string | null {
+  if (!proxy) {
+    return null;
+  }
+  if (proxy.mode === 'direct') {
+    return proxy.regionHint ? `direct / ${proxy.regionHint}` : 'direct';
+  }
+  const bypass = proxy.bypass.length > 0 ? ` / bypass ${proxy.bypass.length}` : '';
+  const region = proxy.regionHint ? ` / ${proxy.regionHint}` : '';
+  return `${proxy.mode}${region}${bypass}`;
+}
+
 export function buildBrowserWorkbenchStatusRows(args: {
   mode: BrowserSessionMode;
   browserSession: BrowserWorkbenchStateForPresentation | null | undefined;
@@ -278,6 +430,14 @@ export function buildBrowserWorkbenchStatusRows(args: {
     const traceId = preview?.traceId || browserSession.managedSession.lastTrace?.id || null;
     const tabTitle = preview?.title || browserSession.managedSession.activeTab?.title || null;
     const tabUrl = preview?.url || browserSession.managedSession.activeTab?.url || null;
+    const sessionId = firstStringField(preview, ['sessionId'])
+      || firstStringField(browserSession.managedSession, ['sessionId', 'id']);
+    const profileValue = buildManagedBrowserProfileValue(preview, browserSession.managedSession);
+    const scopeValue = buildManagedBrowserScopeValue(preview, browserSession.managedSession);
+    const accountValue = buildManagedBrowserAccountValue(getAccountState(preview, browserSession.managedSession));
+    const lease = getManagedBrowserLease(preview, browserSession.managedSession);
+    const leaseValue = buildManagedBrowserLeaseValue(lease);
+    const proxyValue = buildManagedBrowserProxyValue(getManagedBrowserProxy(preview, browserSession.managedSession));
 
     return [
       {
@@ -285,10 +445,55 @@ export function buildBrowserWorkbenchStatusRows(args: {
         value: browserSession.managedSession.running ? 'Running' : 'Stopped',
         tone: browserSession.managedSession.running ? 'ready' : 'blocked',
       },
+      ...(sessionId
+        ? [{
+            label: 'Session',
+            value: sessionId,
+            title: sessionId,
+          }]
+        : []),
       {
         label: 'Mode',
         value: preview?.surfaceMode || browserSession.managedSession.mode || 'headless',
       },
+      ...(profileValue
+        ? [{
+            label: 'Profile',
+            value: profileValue,
+            title: profileValue,
+          }]
+        : []),
+      ...(scopeValue
+        ? [{
+            label: 'Scope',
+            value: scopeValue,
+            title: scopeValue,
+          }]
+        : []),
+      ...(accountValue
+        ? [{
+            label: 'Account',
+            value: accountValue,
+            title: accountValue,
+            tone: accountValue.startsWith('account_state_expired') ? 'blocked' as const : 'ready' as const,
+          }]
+        : []),
+      ...(leaseValue
+        ? [{
+            label: 'Lease',
+            value: leaseValue,
+            title: leaseValue,
+            tone: lease?.status === 'active' ? 'ready' as const : 'blocked' as const,
+          }]
+        : []),
+      ...(proxyValue
+        ? [{
+            label: 'Proxy',
+            value: proxyValue,
+            title: proxyValue,
+            tone: 'neutral' as const,
+          }]
+        : []),
       ...(tabTitle || tabUrl
         ? [{
             label: 'Tab',

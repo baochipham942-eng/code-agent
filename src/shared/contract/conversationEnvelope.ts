@@ -1,6 +1,7 @@
 import type { MessageAttachment } from './message';
 import type { AppServiceRunOptions } from './appService';
 import type { SelectedElementInfo } from '../livePreview/protocol';
+import type { ManagedBrowserProfileMode } from './desktop';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
@@ -12,6 +13,11 @@ export interface BrowserSessionIntentPreview {
   lastScreenshotAtMs?: number | null;
   surfaceMode?: string | null;
   traceId?: string | null;
+  sessionId?: string | null;
+  profileId?: string | null;
+  profileMode?: ManagedBrowserProfileMode | null;
+  artifactDirSummary?: string | null;
+  workspaceScopeSummary?: string | null;
 }
 
 export interface BrowserSessionIntentSnapshot {

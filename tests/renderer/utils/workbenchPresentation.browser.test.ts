@@ -17,6 +17,7 @@ const trace: WorkbenchActionTrace = {
 
 describe('browser workbench presentation', () => {
   it('builds managed browser status rows with active tab and trace', () => {
+    const leaseExpiresAtMs = Date.now() + 30_000;
     const browserSession = {
       managedSession: {
         running: true,
@@ -27,6 +28,27 @@ describe('browser workbench presentation', () => {
           url: 'https://example.com/docs',
         },
         mode: 'headless' as const,
+        sessionId: 'session-main',
+        profileMode: 'isolated',
+        profileId: 'profile-preview',
+        profileDir: '/Users/linchen/Library/Application Support/code-agent/private-profile-preview',
+        artifactDir: '/Users/linchen/Downloads/ai/code-agent/.workbench/artifacts/run-42',
+        lease: {
+          leaseId: 'lease-preview',
+          owner: 'browser-action',
+          acquiredAtMs: 1,
+          lastHeartbeatAtMs: 2,
+          expiresAtMs: leaseExpiresAtMs,
+          ttlMs: 30_000,
+          status: 'active' as const,
+        },
+        proxy: {
+          mode: 'http' as const,
+          server: 'http://127.0.0.1:7890',
+          bypass: ['localhost', '127.0.0.1'],
+          source: 'request' as const,
+          regionHint: 'us-west',
+        },
         lastTrace: trace,
       },
       computerSurface: null,
@@ -36,23 +58,84 @@ describe('browser workbench presentation', () => {
         url: 'https://example.com/docs',
         surfaceMode: 'headless',
         traceId: 'trace-preview',
+        sessionId: 'session-preview',
+        profileMode: 'isolated',
+        profileId: 'profile-preview',
+        artifactDirSummary: '.../run-42',
+        lease: {
+          leaseId: 'lease-preview',
+          owner: 'browser-action',
+          acquiredAtMs: 1,
+          lastHeartbeatAtMs: 2,
+          expiresAtMs: leaseExpiresAtMs,
+          ttlMs: 30_000,
+          status: 'active' as const,
+        },
+        proxy: {
+          mode: 'http' as const,
+          server: 'http://127.0.0.1:7890',
+          bypass: ['localhost', '127.0.0.1'],
+          source: 'request' as const,
+          regionHint: 'us-west',
+        },
       },
       blocked: false,
     };
 
-    expect(buildBrowserWorkbenchStatusRows({
+    const rows = buildBrowserWorkbenchStatusRows({
       mode: 'managed',
       browserSession,
-    })).toEqual(expect.arrayContaining([
+    });
+
+    expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Status', value: 'Running', tone: 'ready' }),
+      expect.objectContaining({ label: 'Session', value: 'session-preview' }),
       expect.objectContaining({ label: 'Mode', value: 'headless' }),
+      expect.objectContaining({ label: 'Profile', value: 'isolated / profile-preview' }),
+      expect.objectContaining({ label: 'Scope', value: 'artifact: .../run-42' }),
+      expect.objectContaining({ label: 'Lease', value: expect.stringContaining('active /') }),
+      expect.objectContaining({ label: 'Proxy', value: 'http / us-west / bypass 2' }),
       expect.objectContaining({ label: 'Tab', value: 'Docs' }),
       expect.objectContaining({ label: 'Trace', value: 'trace-preview' }),
     ]));
+    expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Library');
+    expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Downloads/ai/code-agent/.workbench');
+    expect(JSON.stringify(rows)).not.toContain('127.0.0.1:7890');
     expect(getBrowserWorkbenchOperationalHint({
       mode: 'managed',
       browserSession,
     })).toBe('browser_action 会使用托管浏览器。');
+  });
+
+  it('falls back to a workspace scope summary for managed browser rows', () => {
+    const browserSession = {
+      managedSession: {
+        running: true,
+        tabCount: 0,
+        activeTab: null,
+        mode: 'visible' as const,
+        profileDir: '/Users/linchen/Library/Application Support/code-agent/managed-browser-profile',
+        workspaceScope: '/Users/linchen/Downloads/ai/code-agent',
+      },
+      computerSurface: null,
+      preview: {
+        mode: 'managed' as const,
+        surfaceMode: 'visible',
+      },
+      blocked: false,
+    };
+
+    const rows = buildBrowserWorkbenchStatusRows({
+      mode: 'managed',
+      browserSession,
+    });
+
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Profile', value: 'persistent / managed-browser-profile' }),
+      expect.objectContaining({ label: 'Scope', value: 'workspace: .../code-agent' }),
+    ]));
+    expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Library');
+    expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Downloads/ai');
   });
 
   it('builds desktop computer surface rows with foreground context', () => {

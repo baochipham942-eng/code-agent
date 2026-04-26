@@ -2,6 +2,8 @@ const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
 const SENSITIVE_KEY_PATTERN =
   /password|token|secret|credential|cookie|authorization/i;
+const SENSITIVE_PATH_KEY_PATTERN =
+  /profile(dir|path)|userDataDir|artifact(dir|path)|download(dir|path)|uploadFilePath|workspace(scope|path|root|dir|directory)|storageState|localStorage|sessionStorage/i;
 const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "accessibilitySnapshot",
   "analysis",
@@ -12,12 +14,20 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "elements",
   "html",
   "imageBase64",
+  "cookie",
+  "cookies",
+  "localStorage",
+  "profileDir",
+  "profilePath",
   "rawAccessibilitySnapshot",
   "rawAxTree",
   "rawDomSnapshot",
   "rawHtml",
   "screenshotBase64",
   "screenshotData",
+  "sessionStorage",
+  "storageState",
+  "userDataDir",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
 
@@ -71,6 +81,9 @@ export function redactBrowserComputerInputArgs(
   if ("formData" in safeArgs) {
     safeArgs.formData = redactBrowserComputerFormData(safeArgs.formData);
   }
+  if ("secretRef" in safeArgs) {
+    safeArgs.secretRef = "[secretRef]";
+  }
 
   return safeArgs;
 }
@@ -83,6 +96,9 @@ function sanitizePotentiallySensitiveArgs(
 ): unknown {
   if (key && SENSITIVE_KEY_PATTERN.test(key)) {
     return "[redacted]";
+  }
+  if (key && SENSITIVE_PATH_KEY_PATTERN.test(key)) {
+    return summarizeBrowserComputerLocalPath(value);
   }
   if (typeof value === "string") {
     const payloadRedacted = redactBrowserComputerInputPayloadsInValue(
@@ -144,6 +160,22 @@ function summarizeBrowserComputerUrl(value: string): string {
   } catch {
     return value;
   }
+}
+
+function summarizeBrowserComputerLocalPath(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return "[redacted]";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "[redacted]";
+  }
+  const tail = trimmed
+    .replace(/[\\/]+$/g, "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop();
+  return tail ? `.../${tail}` : "[redacted]";
 }
 
 function sanitizeSnapshotRef(
@@ -290,7 +322,7 @@ function sanitizeRecoveryEvidence(
   if (!text) {
     return null;
   }
-  if (/^(DOM headings|Interactive elements|Accessibility snapshot|Candidates|Target app|App|Mode|Status):/i.test(text)) {
+  if (/^(DOM headings|Interactive elements|Accessibility snapshot|Candidates|Target app|TargetRef|Snapshot|App|Mode|Status):/i.test(text)) {
     return text;
   }
   if (/^只打开了状态面板/.test(text)) {
@@ -310,6 +342,9 @@ function sanitizeBrowserComputerMetadataValue(
   }
   if (key && SENSITIVE_KEY_PATTERN.test(key)) {
     return "[redacted]";
+  }
+  if (key && SENSITIVE_PATH_KEY_PATTERN.test(key)) {
+    return summarizeBrowserComputerLocalPath(value);
   }
   if (
     key === "workbenchTrace" ||

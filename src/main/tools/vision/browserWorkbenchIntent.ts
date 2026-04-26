@@ -157,9 +157,9 @@ export async function ensureManagedBrowserSessionForWorkbench(args: {
   }
 
   if (args.url) {
-    await browserService.ensureSession(args.url);
+    await browserService.ensureSession(args.url, { leaseOwner: 'browser_workbench' });
   } else {
-    await browserService.ensureSession();
+    await browserService.ensureSession('about:blank', { leaseOwner: 'browser_workbench' });
   }
 
   const notes: string[] = [];

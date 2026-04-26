@@ -81,4 +81,22 @@ describe('browser provider resolution', () => {
     expect(args).toContain('--window-size=1280,720');
     expect(args).toContain('--headless=new');
   });
+
+  it('adds managed in-app proxy args for system Chrome without changing provider priority', () => {
+    const args = buildSystemChromeCdpArgs({
+      cdpPort: 9222,
+      profileDir: '/tmp/profile',
+      headless: true,
+      viewport: { width: 1280, height: 720 },
+      proxy: {
+        mode: 'http',
+        server: 'http://127.0.0.1:7890',
+        bypass: ['localhost', '127.0.0.1'],
+        source: 'request',
+      },
+    });
+
+    expect(args).toContain('--proxy-server=http://127.0.0.1:7890');
+    expect(args).toContain('--proxy-bypass-list=localhost;127.0.0.1');
+  });
 });

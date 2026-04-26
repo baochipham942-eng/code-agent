@@ -23,6 +23,7 @@ const BROWSER_READ_ACTIONS = new Set([
   'get_dom_snapshot',
   'get_a11y_snapshot',
   'get_workbench_state',
+  'get_account_state',
   'get_logs',
   'screenshot',
   'wait',
@@ -62,6 +63,9 @@ function formatUrlTarget(url: string | null): string | null {
 }
 
 function formatSelector(args: Record<string, unknown>): string | null {
+  const targetRef = formatTargetRefTarget(args.targetRef);
+  if (targetRef) return targetRef;
+
   const axPath = asString(args.axPath);
   if (axPath) return `axPath ${truncate(axPath, 40)}`;
 
@@ -88,6 +92,44 @@ function formatSelectorWithoutInputText(args: Record<string, unknown>): string |
   return formatSelector(targetArgs);
 }
 
+function formatTargetRefTarget(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return `targetRef ${truncate(value.trim(), 36)}`;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const label = asString(record.name)
+    || asString(record.textHint)
+    || asString(record.selector)
+    || asString(record.refId)
+    || 'target';
+  const source = asString(record.source) || 'ref';
+  const age = formatTargetRefAge(record.capturedAtMs);
+  const snapshot = asString(record.snapshotId);
+  return [
+    truncate(label, 42),
+    source,
+    age,
+    snapshot ? truncate(snapshot, 28) : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatTargetRefAge(capturedAtMs: unknown): string | null {
+  if (typeof capturedAtMs !== 'number' || !Number.isFinite(capturedAtMs)) {
+    return null;
+  }
+  const ageMs = Math.max(0, Date.now() - capturedAtMs);
+  if (ageMs < 1000) {
+    return '<1s old';
+  }
+  if (ageMs < 60_000) {
+    return `${Math.floor(ageMs / 1000)}s old`;
+  }
+  return `${Math.floor(ageMs / 60_000)}m old`;
+}
+
 function formatDesktopElementTarget(args: Record<string, unknown>): string | null {
   const axPath = asString(args.axPath);
   if (axPath) return `axPath ${truncate(axPath, 40)}`;
@@ -105,12 +147,20 @@ function formatDesktopElementTarget(args: Record<string, unknown>): string | nul
 }
 
 function formatTypedText(args: Record<string, unknown>): string {
+  if (asString(args.secretRef)) {
+    return 'secretRef';
+  }
   const text = asString(args.text);
   return text ? `${text.length} chars` : 'text';
 }
 
 function isInputPayloadAction(action: string): boolean {
-  return action === 'type' || action === 'smart_type' || action === 'fill_form';
+  return action === 'type'
+    || action === 'smart_type'
+    || action === 'fill_form'
+    || action === 'upload_file'
+    || action === 'export_storage_state'
+    || action === 'import_storage_state';
 }
 
 function getTraceMetadata(toolCall: Pick<ToolCall, 'result'>): {
@@ -178,6 +228,16 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>): {
       return { summary: '读取 accessibility snapshot' };
     case 'get_workbench_state':
       return { summary: '读取 browser workbench state' };
+    case 'get_account_state':
+      return { summary: '读取账号态摘要' };
+    case 'export_storage_state':
+      return { summary: '导出 storageState', target: basename(args.storageStatePath) };
+    case 'import_storage_state':
+      return { summary: '导入 storageState', target: basename(args.storageStatePath) };
+    case 'wait_for_download':
+      return { summary: '等待下载完成', target: formatSelector(args) };
+    case 'upload_file':
+      return { summary: '上传文件', target: basename(args.uploadFilePath) || formatSelector(args) };
     case 'wait':
       return { summary: '等待页面状态', target: formatSelector(args) || asString(args.timeout) };
     case 'fill_form': {
@@ -309,6 +369,40 @@ function joinResultSummary(preview: BrowserComputerActionPreview): string {
   return preview.target ? `${preview.summary} -> ${preview.target}` : preview.summary;
 }
 
+function formatAccountStateSummary(value: unknown, prefix = '账号态'): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const status = asString(value.status) || 'empty';
+  const cookieCount = asNumber(value.cookieCount) ?? 0;
+  const originCount = asNumber(value.originCount) ?? 0;
+  const localStorageEntryCount = asNumber(value.localStorageEntryCount) ?? 0;
+  const expiredCookieCount = asNumber(value.expiredCookieCount) ?? 0;
+  return [
+    `${prefix}: ${status}`,
+    `${cookieCount} cookies`,
+    `${originCount} origins`,
+    `${localStorageEntryCount} localStorage`,
+    expiredCookieCount > 0 ? `${expiredCookieCount} expired` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatArtifactSummary(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const kind = asString(value.kind) || 'artifact';
+  const name = asString(value.name) || asString(value.artifactPath) || 'artifact';
+  const size = asNumber(value.size);
+  const sha256 = asString(value.sha256);
+  return [
+    kind === 'download' ? '下载完成' : kind === 'upload' ? '上传文件已选择' : 'Artifact',
+    name,
+    size !== null ? `${size} bytes` : null,
+    sha256 ? `sha256 ${truncate(sha256, 15)}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -402,7 +496,8 @@ export function summarizeBrowserComputerActionResult(
         return parseFoundCount(toolCall.result.output) || joinResultSummary(preview);
       case 'get_dom_snapshot': {
         const headings = countArray((metadata.domSnapshot as Record<string, unknown> | undefined)?.headings);
-        const interactive = countArray((metadata.domSnapshot as Record<string, unknown> | undefined)?.interactive);
+        const interactive = countArray((metadata.domSnapshot as Record<string, unknown> | undefined)?.interactiveElements)
+          ?? countArray((metadata.domSnapshot as Record<string, unknown> | undefined)?.interactive);
         if (headings !== null || interactive !== null) {
           return `DOM snapshot: ${headings ?? 0} headings · ${interactive ?? 0} interactive`;
         }
@@ -412,6 +507,15 @@ export function summarizeBrowserComputerActionResult(
         return 'Accessibility snapshot 已读取';
       case 'get_workbench_state':
         return 'Browser workbench state 已读取';
+      case 'get_account_state':
+        return formatAccountStateSummary(metadata.browserAccountState) || '账号态摘要已读取';
+      case 'export_storage_state':
+        return formatAccountStateSummary(metadata.browserAccountState, 'Storage state 已导出') || joinResultSummary(preview);
+      case 'import_storage_state':
+        return formatAccountStateSummary(metadata.browserAccountState, 'Storage state 已导入') || joinResultSummary(preview);
+      case 'wait_for_download':
+      case 'upload_file':
+        return formatArtifactSummary(metadata.browserArtifact) || joinResultSummary(preview);
       case 'get_content':
         return '页面内容已读取';
       case 'get_logs':
@@ -490,6 +594,15 @@ export function formatBrowserComputerActionArguments(
   }
   if ('formData' in safeArgs) {
     safeArgs.formData = redactFormData(safeArgs.formData);
+  }
+  if ('secretRef' in safeArgs) {
+    safeArgs.secretRef = '[secretRef]';
+  }
+  if ('uploadFilePath' in safeArgs) {
+    safeArgs.uploadFilePath = basename(safeArgs.uploadFilePath);
+  }
+  if ('storageStatePath' in safeArgs) {
+    safeArgs.storageStatePath = basename(safeArgs.storageStatePath);
   }
 
   return JSON.stringify(safeArgs, null, 2);

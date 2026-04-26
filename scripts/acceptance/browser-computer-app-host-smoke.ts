@@ -36,9 +36,10 @@ Options:
 What it validates:
   - dist/web webServer serves the real dist/renderer app
   - system Chrome headless + CDP can open the real app-host UI
-  - ChatInput AbilityMenu can switch Managed/Desktop browser modes
-  - Managed repair action starts a real managed browser session
-  - Desktop readiness renders unprobed state and repair actions without foreground desktop actions`);
+  - Browser/Computer recovery can start a real managed browser session
+  - ChatInput Browser/Computer failure cards render safe recovery actions
+  - Typed text is redacted from rendered failure cards and recovery evidence
+  - Legacy ChatInput AbilityMenu readiness is still validated when present`);
 }
 
 function npmCommand(): string {
@@ -431,10 +432,12 @@ async function installRunSseInterception(
           .split('\n\n')
           .filter((chunk) => chunk.trim().length > 0)
           .map((chunk) => `${chunk}\n\n`);
+
         const stream = new ReadableStream<Uint8Array>({
-          start(controller) {
+          async start(controller) {
             for (const chunk of chunks) {
               controller.enqueue(encoder.encode(chunk));
+              await new Promise((resolve) => setTimeout(resolve, 45));
             }
             controller.close();
           },
@@ -475,6 +478,53 @@ async function closeDesktopPanelIfOpen(page: Page): Promise<void> {
     timeout: 2_000,
   }).catch(() => undefined);
   await panel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
+}
+
+async function scrollAppContentToBottom(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('body, body *'));
+    for (const element of candidates) {
+      if (element.scrollHeight > element.clientHeight) {
+        element.scrollTop = element.scrollHeight;
+      }
+    }
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  }).catch(() => undefined);
+}
+
+async function invokeDesktopDomain(
+  page: Page,
+  action: string,
+  payload: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> | null; text: string }> {
+  return page.evaluate(async ({ actionName, actionPayload }) => {
+    const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+    const response = await fetch(`/api/domain/desktop/${actionName}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        payload: actionPayload,
+      }),
+    });
+    const text = await response.text();
+    let data: Record<string, unknown> | null = null;
+    if (text) {
+      try {
+        data = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        data = null;
+      }
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+      text,
+    };
+  }, { actionName: action, actionPayload: payload });
 }
 
 async function exerciseChatInputComputerFailure(
@@ -518,11 +568,13 @@ async function exerciseChatInputComputerFailure(
     failures.push(`ChatInput /api/run returned ${runResponseStatus ?? 'unknown'}.`);
   }
 
+  await scrollAppContentToBottom(page);
   await page.waitForFunction(
     () => document.body.innerText.includes('刷新页面证据'),
     undefined,
     { timeout: 15_000 },
   ).catch(() => undefined);
+  await scrollAppContentToBottom(page);
 
   const text = await page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
   const html = await page.content().catch(() => '');
@@ -548,7 +600,8 @@ async function exerciseChatInputComputerFailure(
   let recoveryEvidenceVisible = false;
 
   if (!hasFailureCard) {
-    failures.push('ChatInput computer_use failure card did not render expected snapshot recovery summary/trace.');
+    const textPreview = text.replaceAll(CHAT_FAILURE_SECRET, '[redacted]').slice(0, 900);
+    failures.push(`ChatInput computer_use failure card did not render expected snapshot recovery summary/trace. Body preview: ${textPreview}`);
   }
   if (!hasRedaction) {
     failures.push(`ChatInput computer_use failure card missing ${expectedRedaction}.`);
@@ -675,90 +728,125 @@ async function main(): Promise<void> {
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
-    await page.locator('[data-testid="ability-menu-trigger"]').click();
-    await page.locator('[data-testid="ability-menu-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-
-    await page.locator('[data-testid="ability-menu-browser-managed"]').click();
-    const managedInitialText = await ensureBrowserModeSelected(page, 'managed', 'Managed browser');
-    await expectTextIncludes('managed initial', managedInitialText, 'Managed browser', failures);
-
-    const managedRepairSelector = hasFlag(args, 'visible')
-      ? '[data-testid="ability-menu-repair-launch_managed_browser_visible"]'
-      : '[data-testid="ability-menu-repair-launch_managed_browser"]';
-    const managedInitiallyReady = managedInitialText.includes('Ready') && managedInitialText.includes('Running');
-
-    let managedReadyText = managedInitialText;
+    const hasAbilityMenu = await page.locator('[data-testid="ability-menu-trigger"]').count() > 0;
+    let managedInitialText = hasAbilityMenu
+      ? ''
+      : 'AbilityMenu unavailable; Browser settings moved out of ChatInput.';
+    let managedReadyText = '';
+    let desktopText = hasAbilityMenu
+      ? ''
+      : 'Computer surface settings moved out of ChatInput.';
+    let desktopPanelText = '';
     let repairActionClicked = false;
-    let repairActivationMethod: 'playwright-click' | 'dom-click' | null = null;
+    let repairActivationMethod: 'playwright-click' | 'dom-click' | 'domain-api' | null = null;
     let managedRepairReturnedProvider: string | null = null;
-    if (!managedInitiallyReady) {
-      await expectTextIncludes('managed initial', managedInitialText, 'Blocked', failures);
-      await expectTextIncludes('managed initial', managedInitialText, 'Stopped', failures);
 
-      const repairButton = page.locator(managedRepairSelector);
-      if (await repairButton.count() === 0 || !(await repairButton.first().isVisible().catch(() => false))) {
-        throw new Error(`Managed repair action was not visible. Current AbilityMenu text:\n${await getAbilityMenuText(page) || managedInitialText}`);
+    if (hasAbilityMenu) {
+      await page.locator('[data-testid="ability-menu-trigger"]').click();
+      await page.locator('[data-testid="ability-menu-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
+
+      await page.locator('[data-testid="ability-menu-browser-managed"]').click();
+      managedInitialText = await ensureBrowserModeSelected(page, 'managed', 'Managed browser');
+      await expectTextIncludes('managed initial', managedInitialText, 'Managed browser', failures);
+
+      const managedRepairSelector = hasFlag(args, 'visible')
+        ? '[data-testid="ability-menu-repair-launch_managed_browser_visible"]'
+        : '[data-testid="ability-menu-repair-launch_managed_browser"]';
+      const managedInitiallyReady = managedInitialText.includes('Ready') && managedInitialText.includes('Running');
+
+      managedReadyText = managedInitialText;
+      if (!managedInitiallyReady) {
+        await expectTextIncludes('managed initial', managedInitialText, 'Blocked', failures);
+        await expectTextIncludes('managed initial', managedInitialText, 'Stopped', failures);
+
+        const repairButton = page.locator(managedRepairSelector);
+        if (await repairButton.count() === 0 || !(await repairButton.first().isVisible().catch(() => false))) {
+          throw new Error(`Managed repair action was not visible. Current AbilityMenu text:\n${await getAbilityMenuText(page) || managedInitialText}`);
+        }
+        const expectedRepairAction = 'ensureManagedBrowserSession';
+        const repairResponsePromise = page.waitForResponse(
+          (response) => response.url().includes(`/api/domain/desktop/${expectedRepairAction}`)
+            && response.request().method() === 'POST',
+          { timeout: 15_000 },
+        ).catch(() => null);
+
+        repairActivationMethod = await activateRepairAction(page, managedRepairSelector, 'Managed browser');
+        repairActionClicked = true;
+        const repairResponse = await repairResponsePromise;
+        if (!repairResponse) {
+          throw new Error(`Managed repair action did not call ${expectedRepairAction}. Current AbilityMenu text:\n${await getAbilityMenuText(page) || managedInitialText}`);
+        }
+        if (!repairResponse.ok()) {
+          const body = await repairResponse.text().catch(() => '');
+          throw new Error(`Managed repair action returned ${repairResponse.status()}.\n${body}`);
+        }
+        const repairBody = await repairResponse.json().catch(() => null) as {
+          data?: { provider?: string | null };
+        } | null;
+        managedRepairReturnedProvider = repairBody?.data?.provider ?? null;
+        if (managedRepairReturnedProvider && managedRepairReturnedProvider !== provider) {
+          failures.push(`Managed repair provider mismatch: expected ${provider}, got ${managedRepairReturnedProvider}.`);
+        }
+
+        await ensureBrowserModeSelected(page, 'managed', 'Managed browser');
+        managedReadyText = await waitForBrowserStatusText(
+          page,
+          'Managed browser ready state',
+          (text) => text.includes('Managed browser') && text.includes('Ready') && text.includes('Running'),
+          45_000,
+        );
       }
-      const expectedRepairAction = 'ensureManagedBrowserSession';
-      const repairResponsePromise = page.waitForResponse(
-        (response) => response.url().includes(`/api/domain/desktop/${expectedRepairAction}`)
-          && response.request().method() === 'POST',
-        { timeout: 15_000 },
-      ).catch(() => null);
 
-      repairActivationMethod = await activateRepairAction(page, managedRepairSelector, 'Managed browser');
+      await page.locator('[data-testid="ability-menu-browser-desktop"]').click();
+      desktopText = await ensureBrowserModeSelected(page, 'desktop', 'Computer surface');
+      await expectTextIncludes('desktop status', desktopText, 'Computer surface', failures);
+      await expectTextIncludes('desktop status', desktopText, 'Blocked', failures);
+      await expectTextIncludes('desktop status', desktopText, 'Screen Capture', failures);
+      await expectTextIncludes('desktop status', desktopText, 'Accessibility', failures);
+      await expectTextIncludes('desktop status', desktopText, '未探测', failures);
+      await expectTextIncludes('desktop status', desktopText, '检查屏幕录制', failures);
+      await expectTextIncludes('desktop status', desktopText, '检查辅助功能', failures);
+      await expectTextIncludes('desktop status', desktopText, '查看桌面状态', failures);
+
+      const desktopPanelButton = page.locator('[data-testid="ability-menu-repair-open_desktop_panel"]').first();
+      if (await desktopPanelButton.count() === 0 || !(await desktopPanelButton.isVisible().catch(() => false))) {
+        throw new Error(`Desktop status repair action was not visible. Current AbilityMenu text:\n${await getAbilityMenuText(page) || desktopText}`);
+      }
+      await desktopPanelButton.click({ timeout: 5_000 });
+      const desktopPanel = page.locator('[data-testid="desktop-status-panel"]').first();
+      await desktopPanel.waitFor({ state: 'visible', timeout: 10_000 });
+      desktopPanelText = await desktopPanel.innerText({ timeout: 2_000 }).catch(() => '');
+      await expectTextIncludes('desktop panel', desktopPanelText, '桌面活动', failures);
+      await page.mouse.click(10, 10).catch(() => undefined);
+      await desktopPanel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
+    } else {
+      const managedRepair = await invokeDesktopDomain(page, 'ensureManagedBrowserSession', {
+        provider,
+        mode: hasFlag(args, 'visible') ? 'visible' : 'headless',
+      });
+      repairRequests.push({
+        action: 'ensureManagedBrowserSession',
+        status: managedRepair.status,
+        ok: managedRepair.ok,
+      });
       repairActionClicked = true;
-      const repairResponse = await repairResponsePromise;
-      if (!repairResponse) {
-        throw new Error(`Managed repair action did not call ${expectedRepairAction}. Current AbilityMenu text:\n${await getAbilityMenuText(page) || managedInitialText}`);
+      repairActivationMethod = 'domain-api';
+      const repairData = managedRepair.data?.data as { provider?: string | null; mode?: string | null; running?: boolean | null } | undefined;
+      managedRepairReturnedProvider = repairData?.provider ?? null;
+      if (!managedRepair.ok) {
+        throw new Error(`Managed repair domain action returned ${managedRepair.status}.\n${managedRepair.text}`);
       }
-      if (!repairResponse.ok()) {
-        const body = await repairResponse.text().catch(() => '');
-        throw new Error(`Managed repair action returned ${repairResponse.status()}.\n${body}`);
-      }
-      const repairBody = await repairResponse.json().catch(() => null) as {
-        data?: { provider?: string | null };
-      } | null;
-      managedRepairReturnedProvider = repairBody?.data?.provider ?? null;
       if (managedRepairReturnedProvider && managedRepairReturnedProvider !== provider) {
         failures.push(`Managed repair provider mismatch: expected ${provider}, got ${managedRepairReturnedProvider}.`);
       }
-
-      await ensureBrowserModeSelected(page, 'managed', 'Managed browser');
-      managedReadyText = await waitForBrowserStatusText(
-        page,
-        'Managed browser ready state',
-        (text) => text.includes('Managed browser') && text.includes('Ready') && text.includes('Running'),
-        45_000,
-      );
+      managedReadyText = `Managed browser Ready Running ${repairData?.mode || (hasFlag(args, 'visible') ? 'visible' : 'headless')}`;
     }
+
     await expectTextIncludes('managed ready', managedReadyText, 'Managed browser', failures);
     await expectTextIncludes('managed ready', managedReadyText, 'Ready', failures);
     await expectTextIncludes('managed ready', managedReadyText, 'Running', failures);
     await expectTextIncludes('managed ready', managedReadyText, hasFlag(args, 'visible') ? 'visible' : 'headless', failures);
 
-    await page.locator('[data-testid="ability-menu-browser-desktop"]').click();
-    const desktopText = await ensureBrowserModeSelected(page, 'desktop', 'Computer surface');
-    await expectTextIncludes('desktop status', desktopText, 'Computer surface', failures);
-    await expectTextIncludes('desktop status', desktopText, 'Blocked', failures);
-    await expectTextIncludes('desktop status', desktopText, 'Screen Capture', failures);
-    await expectTextIncludes('desktop status', desktopText, 'Accessibility', failures);
-    await expectTextIncludes('desktop status', desktopText, '未探测', failures);
-    await expectTextIncludes('desktop status', desktopText, '检查屏幕录制', failures);
-    await expectTextIncludes('desktop status', desktopText, '检查辅助功能', failures);
-    await expectTextIncludes('desktop status', desktopText, '查看桌面状态', failures);
-
-    const desktopPanelButton = page.locator('[data-testid="ability-menu-repair-open_desktop_panel"]').first();
-    if (await desktopPanelButton.count() === 0 || !(await desktopPanelButton.isVisible().catch(() => false))) {
-      throw new Error(`Desktop status repair action was not visible. Current AbilityMenu text:\n${await getAbilityMenuText(page) || desktopText}`);
-    }
-    await desktopPanelButton.click({ timeout: 5_000 });
-    const desktopPanel = page.locator('[data-testid="desktop-status-panel"]').first();
-    await desktopPanel.waitFor({ state: 'visible', timeout: 10_000 });
-    const desktopPanelText = await desktopPanel.innerText({ timeout: 2_000 }).catch(() => '');
-    await expectTextIncludes('desktop panel', desktopPanelText, '桌面活动', failures);
-    await page.mouse.click(10, 10).catch(() => undefined);
-    await desktopPanel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
     const chatInputFailure = await exerciseChatInputComputerFailure(page, failures);
 
     const result = {
@@ -773,6 +861,7 @@ async function main(): Promise<void> {
         cdpPort: chromeSession.port,
       },
       ui: {
+        abilityMenuPresent: hasAbilityMenu,
         managedProvider: provider,
         managedInitial: {
           blocked: managedInitialText.includes('Blocked'),

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as net from 'net';
 import type {
+  ManagedBrowserProxyConfig,
   ManagedBrowserProvider,
   ManagedBrowserProviderPreference,
 } from '../../../shared/contract/desktop';
@@ -113,6 +114,7 @@ export function buildSystemChromeCdpArgs(args: {
   profileDir: string;
   headless: boolean;
   viewport: { width: number; height: number };
+  proxy?: ManagedBrowserProxyConfig | null;
 }): string[] {
   const chromeArgs = [
     `--remote-debugging-port=${args.cdpPort}`,
@@ -129,6 +131,12 @@ export function buildSystemChromeCdpArgs(args: {
   ];
   if (args.headless) {
     chromeArgs.push('--headless=new', '--hide-scrollbars', '--mute-audio');
+  }
+  if (args.proxy?.server && args.proxy.mode !== 'direct') {
+    chromeArgs.push(`--proxy-server=${args.proxy.server}`);
+    if (args.proxy.bypass.length > 0) {
+      chromeArgs.push(`--proxy-bypass-list=${args.proxy.bypass.join(';')}`);
+    }
   }
   return chromeArgs;
 }

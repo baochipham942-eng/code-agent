@@ -8,8 +8,11 @@ import type {
   DesktopSearchQuery,
   DesktopTimelineQuery,
   ManagedBrowserMode,
+  ManagedBrowserProfileMode,
+  ManagedBrowserProxyConfig,
   ManagedBrowserProviderPreference,
 } from '@shared/contract';
+import type { ManagedBrowserProxyInput } from '../services/infra/browserService';
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
@@ -43,13 +46,22 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             url?: string;
             mode?: ManagedBrowserMode;
             provider?: ManagedBrowserProviderPreference;
+            profileMode?: ManagedBrowserProfileMode;
+            leaseOwner?: string;
+            leaseTtlMs?: number;
+            proxy?: ManagedBrowserProxyInput | null;
           } | undefined;
+          const launchOptions = {
+            mode: payload?.mode,
+            provider: payload?.provider,
+            profileMode: payload?.profileMode,
+            leaseOwner: payload?.leaseOwner || 'desktop-ipc',
+            leaseTtlMs: payload?.leaseTtlMs,
+            proxy: payload?.proxy,
+          };
           return {
             success: true,
-            data: await browserService.ensureSession(payload?.url || 'about:blank', {
-              mode: payload?.mode,
-              provider: payload?.provider,
-            }),
+            data: await browserService.ensureSession(payload?.url || 'about:blank', launchOptions),
           } satisfies IPCResponse<unknown>;
         }
 
@@ -241,6 +253,14 @@ function summarizeManagedBrowserSession(value: unknown): Record<string, unknown>
     ? summarizeBrowserUrl(activeTab.url)
     : null;
   return {
+    sessionId: typeof session?.sessionId === 'string' ? session.sessionId : undefined,
+    profileId: typeof session?.profileId === 'string' ? session.profileId : undefined,
+    profileMode: typeof session?.profileMode === 'string' ? session.profileMode : undefined,
+    workspaceScope: typeof session?.workspaceScope === 'string' ? session.workspaceScope : undefined,
+    lease: summarizeLease(session?.lease),
+    proxy: summarizeProxy(session?.proxy),
+    externalBridge: summarizeExternalBridge(session?.externalBridge),
+    accountState: summarizeAccountState(session?.accountState),
     running: Boolean(session?.running),
     tabCount: typeof session?.tabCount === 'number' ? session.tabCount : undefined,
     mode: typeof session?.mode === 'string' ? session.mode : undefined,
@@ -254,6 +274,66 @@ function summarizeManagedBrowserSession(value: unknown): Record<string, unknown>
           url: activeTabUrl?.value,
         }
       : null,
+  };
+}
+
+function summarizeLease(value: unknown): Record<string, unknown> | null {
+  const lease = asRecord(value);
+  if (!lease) {
+    return null;
+  }
+  return {
+    leaseId: typeof lease.leaseId === 'string' ? lease.leaseId : undefined,
+    owner: typeof lease.owner === 'string' ? lease.owner : undefined,
+    acquiredAtMs: typeof lease.acquiredAtMs === 'number' ? lease.acquiredAtMs : undefined,
+    lastHeartbeatAtMs: typeof lease.lastHeartbeatAtMs === 'number' ? lease.lastHeartbeatAtMs : undefined,
+    expiresAtMs: typeof lease.expiresAtMs === 'number' ? lease.expiresAtMs : undefined,
+    ttlMs: typeof lease.ttlMs === 'number' ? lease.ttlMs : undefined,
+    status: typeof lease.status === 'string' ? lease.status : undefined,
+  };
+}
+
+function summarizeProxy(value: unknown): ManagedBrowserProxyConfig | null {
+  const proxy = asRecord(value);
+  if (!proxy) {
+    return null;
+  }
+  return {
+    mode: proxy.mode === 'http' || proxy.mode === 'socks' ? proxy.mode : 'direct',
+    server: typeof proxy.server === 'string' ? proxy.server : null,
+    bypass: Array.isArray(proxy.bypass) ? proxy.bypass.filter((item): item is string => typeof item === 'string') : [],
+    regionHint: typeof proxy.regionHint === 'string' ? proxy.regionHint : null,
+    source: proxy.source === 'env' || proxy.source === 'request' ? proxy.source : 'default',
+  };
+}
+
+function summarizeExternalBridge(value: unknown): Record<string, unknown> | null {
+  const bridge = asRecord(value);
+  if (!bridge) {
+    return null;
+  }
+  return {
+    enabled: false,
+    status: bridge.status === 'unsupported' ? 'unsupported' : undefined,
+    requiresExplicitAuthorization: bridge.requiresExplicitAuthorization === true,
+    reason: typeof bridge.reason === 'string' ? bridge.reason : undefined,
+  };
+}
+
+function summarizeAccountState(value: unknown): Record<string, unknown> | null {
+  const account = asRecord(value);
+  if (!account) {
+    return null;
+  }
+  return {
+    status: typeof account.status === 'string' ? account.status : 'empty',
+    cookieCount: typeof account.cookieCount === 'number' ? account.cookieCount : 0,
+    expiredCookieCount: typeof account.expiredCookieCount === 'number' ? account.expiredCookieCount : 0,
+    originCount: typeof account.originCount === 'number' ? account.originCount : 0,
+    localStorageEntryCount: typeof account.localStorageEntryCount === 'number' ? account.localStorageEntryCount : 0,
+    sessionStorageEntryCount: typeof account.sessionStorageEntryCount === 'number' ? account.sessionStorageEntryCount : 0,
+    cookieDomains: Array.isArray(account.cookieDomains) ? account.cookieDomains : [],
+    origins: Array.isArray(account.origins) ? account.origins : [],
   };
 }
 

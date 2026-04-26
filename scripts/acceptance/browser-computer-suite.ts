@@ -34,10 +34,11 @@ What it validates:
   - System Chrome CDP smoke: system Chrome headless + isolated page over CDP
   - Phase 2 smoke: managed browser + read-only Computer Surface
   - Phase 3 workflow smoke: isolated browser click + trace readback
+  - Phase 6 browser task benchmark: navigation, form, extract, login-like, download/upload, recovery, redaction, recipe rerun
   - Background AX smoke: native macOS target app + axPath type/click readback
   - Background CGEvent smoke: native macOS target app + pid/windowId/window-local click readback
   - Phase 4 UI smoke: real Chrome DOM rendering + input redaction
-  - App-host smoke: real webServer + renderer AbilityMenu state/repair flow`);
+  - App-host smoke: real webServer + renderer Browser/Computer recovery flow`);
 }
 
 function npmCommand(): string {
@@ -123,6 +124,12 @@ async function main(): Promise<void> {
       args: ['run', 'acceptance:browser-computer-workflow'],
       forwardsVisible: true,
     },
+    {
+      name: 'Phase 6 browser task benchmark',
+      command: npmCommand(),
+      args: ['run', 'acceptance:browser-task-benchmark'],
+      forwardsVisible: true,
+    },
     ...(includeBackgroundAx ? [{
       name: 'Background AX action smoke',
       command: npmCommand(),
@@ -139,7 +146,7 @@ async function main(): Promise<void> {
       args: ['run', 'acceptance:browser-computer-ui'],
     },
     {
-      name: 'App-host AbilityMenu smoke',
+      name: 'App-host Browser/Computer smoke',
       command: npmCommand(),
       args: ['run', 'acceptance:browser-computer-app-host'],
       forwardsVisible: true,

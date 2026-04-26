@@ -67,40 +67,53 @@ fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
+    let mut dev_roots = Vec::new();
+    let mut packaged_roots = Vec::new();
 
     // In dev mode, CARGO_MANIFEST_DIR points to src-tauri/; its parent is the project root
     // where dist/web/webServer.cjs lives. This is the highest-priority candidate for dev.
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     if let Some(project_root) = manifest_dir.parent() {
-        roots.push(project_root.to_path_buf());
+        dev_roots.push(project_root.to_path_buf());
     }
-    roots.push(manifest_dir.to_path_buf());
+    dev_roots.push(manifest_dir.to_path_buf());
 
     if let Ok(cwd) = env::current_dir() {
-        roots.push(cwd);
+        dev_roots.push(cwd);
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        roots.push(resource_dir.clone());
+        // Tauri preserves resources declared as "../dist/..." under
+        // Contents/Resources/_up_/dist/... inside the macOS app bundle.
+        packaged_roots.push(resource_dir.join("_up_"));
+        packaged_roots.push(resource_dir.clone());
 
         if let Some(parent) = resource_dir.parent() {
-            roots.push(parent.to_path_buf());
+            packaged_roots.push(parent.to_path_buf());
         }
     }
 
     if let Ok(exe_path) = env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            roots.push(exe_dir.to_path_buf());
+            packaged_roots.push(exe_dir.to_path_buf());
 
             if let Some(parent) = exe_dir.parent() {
-                roots.push(parent.to_path_buf());
+                packaged_roots.push(parent.to_path_buf());
 
                 if let Some(grandparent) = parent.parent() {
-                    roots.push(grandparent.to_path_buf());
+                    packaged_roots.push(grandparent.to_path_buf());
                 }
             }
         }
+    }
+
+    let mut roots = Vec::new();
+    if cfg!(debug_assertions) {
+        roots.extend(dev_roots);
+        roots.extend(packaged_roots);
+    } else {
+        roots.extend(packaged_roots);
+        roots.extend(dev_roots);
     }
 
     unique_paths(roots)
@@ -284,31 +297,29 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("Update check failed: {e}"))?;
 
-    if let Some(update) = update {
-        let mut started = false;
-        update
-            .download_and_install(
-                |chunk_length, content_length| {
-                    if !started {
-                        started = true;
-                        println!("Update download started, total size: {:?}", content_length);
-                    }
-                    println!("Downloaded {} bytes", chunk_length);
-                },
-                || {
-                    println!("Download finished, installing update...");
-                },
-            )
-            .await
-            .map_err(|e| format!("Failed to install update: {e}"))?;
-
-        // Restart the app after update
-        app.restart();
-    } else {
+    let Some(update) = update else {
         return Err("No update available".to_string());
-    }
+    };
 
-    Ok(())
+    let mut started = false;
+    update
+        .download_and_install(
+            |chunk_length, content_length| {
+                if !started {
+                    started = true;
+                    println!("Update download started, total size: {:?}", content_length);
+                }
+                println!("Downloaded {} bytes", chunk_length);
+            },
+            || {
+                println!("Download finished, installing update...");
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to install update: {e}"))?;
+
+    // Restart the app after update.
+    app.restart()
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {

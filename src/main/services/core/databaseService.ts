@@ -17,7 +17,8 @@ if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
   // Web/Tauri 模式: 系统 Node.js 运行，Electron ABI 的 .node 文件不兼容
   // 优先从 dist/native/ 加载为系统 Node 编译的版本
   const nativePaths = [
-    path.join(__dirname, '../../native/better-sqlite3'),    // dist/web/ → dist/native/
+    path.join(__dirname, '../native/better-sqlite3'),      // dist/web/ -> dist/native/
+    path.join(__dirname, '../../native/better-sqlite3'),   // legacy/resource fallback
     path.join(process.cwd(), 'dist/native/better-sqlite3'), // cwd fallback
   ];
   for (const nativePath of nativePaths) {

@@ -34,11 +34,13 @@ interface CaptureFulltext {
 }
 
 interface TimelineBlock {
-  start?: string;
-  end?: string;
+  start_time?: string;
+  end_time?: string;
+  // Each entry is a single line like "[Codex] user is continuing work on …"
+  entries?: string[];
+  // Backing fields (some OC versions emit these too — kept for forward compat)
   app_name?: string;
   summary?: string;
-  entries?: Array<{ summary?: string; app_name?: string }>;
 }
 
 interface CurrentContextResult {
@@ -51,19 +53,52 @@ interface CurrentContextResult {
 // MCP client: minimal JSON-RPC POST against streamable-http transport
 // ---------------------------------------------------------------------------
 
+function parseSseOrJson(text: string): unknown {
+  const dataLine = text.split('\n').find((l) => l.startsWith('data:'));
+  const payload = dataLine ? dataLine.slice(5).trim() : text.trim();
+  return JSON.parse(payload);
+}
+
+async function initializeMcpSession(signal: AbortSignal): Promise<string | null> {
+  const res = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json,text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'code-agent-screen-memory', version: '1' },
+      },
+    }),
+    signal,
+  });
+  if (!res.ok) return null;
+  return res.headers.get('mcp-session-id');
+}
+
 async function callMcpTool(toolName: string, args: Record<string, unknown> = {}): Promise<unknown> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
+    const sessionId = await initializeMcpSession(ctrl.signal);
+    if (!sessionId) return null;
+
     const res = await fetch(MCP_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json,text/event-stream',
+        'mcp-session-id': sessionId,
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
-        id: Date.now(),
+        id: 2,
         method: 'tools/call',
         params: { name: toolName, arguments: args },
       }),
@@ -71,20 +106,15 @@ async function callMcpTool(toolName: string, args: Record<string, unknown> = {})
     });
     if (!res.ok) return null;
 
-    // Streamable-http returns either JSON or SSE. Parse both.
-    const text = await res.text();
-    const jsonLine = text.split('\n').find((l) => l.startsWith('data:'))?.slice(5).trim() ?? text;
-    const parsed = JSON.parse(jsonLine);
-    const content = parsed?.result?.content;
-    if (Array.isArray(content)) {
-      // MCP tool/call returns content array; first text block is the JSON payload
-      const first = content[0];
-      if (first?.type === 'text' && typeof first.text === 'string') {
-        try {
-          return JSON.parse(first.text);
-        } catch {
-          return first.text;
-        }
+    const parsed = parseSseOrJson(await res.text()) as {
+      result?: { content?: Array<{ type?: string; text?: string }> };
+    };
+    const first = parsed?.result?.content?.[0];
+    if (first?.type === 'text' && typeof first.text === 'string') {
+      try {
+        return JSON.parse(first.text);
+      } catch {
+        return first.text;
       }
     }
     return parsed?.result ?? null;
@@ -122,13 +152,13 @@ function formatTimeline(blocks: TimelineBlock[]): string[] {
   return blocks
     .slice(-5)
     .map((b) => {
-      const start = formatTime(b.start);
-      const end = formatTime(b.end);
-      const app = b.app_name ?? '?';
-      const summary = b.summary ?? b.entries?.[0]?.summary ?? '';
-      return `[${start}-${end}, ${app}] ${summary}`.slice(0, 200);
+      const start = formatTime(b.start_time);
+      const end = formatTime(b.end_time);
+      // OC emits entries as strings already prefixed with "[App] ..."
+      const firstEntry = b.entries?.[0] ?? b.summary ?? '';
+      return `[${start}-${end}] ${firstEntry}`.slice(0, 200).trim();
     })
-    .filter((line) => line.length > 6);
+    .filter((line) => line.length > 8);
 }
 
 function formatContext(payload: CurrentContextResult, filter: CompiledFilter): string {

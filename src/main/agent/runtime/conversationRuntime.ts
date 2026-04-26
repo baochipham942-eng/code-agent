@@ -28,6 +28,7 @@ import { getDesktopActivityUnderstandingService } from '../../desktop/desktopAct
 import { buildWorkspaceActivityContextBlock } from '../../desktop/workspaceActivitySearchService';
 import { buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
+import { fetchOpenchronicleContext } from '../../services/external/openchronicleContextProvider';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -798,6 +799,17 @@ export class ConversationRuntime {
       }
     } catch {
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
+    }
+
+    // 屏幕记忆 (OpenChronicle) — cross-app context from external daemon
+    try {
+      const ocContext = await fetchOpenchronicleContext();
+      if (ocContext) {
+        this.contextAssembly.injectSystemMessage(`<screen-memory>\n${ocContext}\n</screen-memory>`);
+        logger.info('[AgentLoop] OpenChronicle context injected at session start');
+      }
+    } catch {
+      // graceful: never block session on OC failure
     }
 
     if (!isSimpleTask) {

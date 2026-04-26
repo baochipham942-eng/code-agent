@@ -15,9 +15,15 @@ interface Props {
 }
 
 export function ToolHeader({ toolCall, status }: Props) {
-  const displayName = getToolDisplayName(toolCall.name);
+  // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
+  // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
+  const hasShortDesc = typeof toolCall.shortDescription === 'string'
+    && toolCall.shortDescription.trim().length > 0;
+  const displayName = hasShortDesc
+    ? toolCall.shortDescription!.trim()
+    : getToolDisplayName(toolCall.name);
   const statusLabel = getToolStatusLabel(toolCall, status);
-  const params = formatParams(toolCall);
+  const params = hasShortDesc ? '' : formatParams(toolCall);
   const duration = toolCall.result?.duration;
   const isSandboxed = (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
     typeof toolCall.result?.output === 'string' &&

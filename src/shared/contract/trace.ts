@@ -25,6 +25,13 @@ export interface TraceNode {
     outputPath?: string;
     metadata?: Record<string, unknown>;
     _streaming?: boolean;
+    // ============================================================================
+    // 语义元数据（产品视角升级 — P0 内核）
+    // 由 main 进程在投影 trace 时从 ToolCall 复制过来。UI 优先消费。
+    // ============================================================================
+    shortDescription?: string;
+    targetContext?: import('./tool').ToolCallTargetContext;
+    expectedOutcome?: string;
   };
   reasoning?: string;
   thinking?: string;

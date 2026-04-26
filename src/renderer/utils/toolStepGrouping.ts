@@ -192,7 +192,16 @@ function buildActionPreview(toolLabel: string, args: Record<string, unknown>): s
   return target ? `${toolLabel} ${action} ${target}` : `${toolLabel} ${action}`;
 }
 
-export function buildSingleToolLabel(name: string, args: Record<string, unknown> | undefined): string {
+export function buildSingleToolLabel(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  shortDescription?: string,
+): string {
+  // 模型若提供了 shortDescription（产品视角语义标签），直接用它作为聚合行的标签，
+  // 比机械拼接的 "Ran ls src/" 更接近"在干什么"
+  if (typeof shortDescription === 'string' && shortDescription.trim().length > 0) {
+    return shortDescription.trim();
+  }
   const verb = SINGLE_TOOL_VERB[name];
   const a = args || {};
   let preview = '';

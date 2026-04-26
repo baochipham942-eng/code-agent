@@ -25,7 +25,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const label = useMemo(() => {
     if (nodes.length === 1) {
       const tc = nodes[0].toolCall;
-      if (tc) return buildSingleToolLabel(tc.name, tc.args as Record<string, unknown> | undefined);
+      if (tc) return buildSingleToolLabel(
+        tc.name,
+        tc.args as Record<string, unknown> | undefined,
+        tc.shortDescription,
+      );
     }
     const names = nodes
       .map((n) => n.toolCall?.name)
@@ -56,6 +60,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           name: tc.name,
           arguments: tc.args,
           _streaming: tc._streaming,
+          shortDescription: tc.shortDescription,
+          targetContext: tc.targetContext,
+          expectedOutcome: tc.expectedOutcome,
           result:
             tc.result !== undefined
               ? {

@@ -7,6 +7,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHookManager } from '../../../src/main/hooks';
 
+const activityMocks = vi.hoisted(() => ({
+  getCurrentActivityContext: vi.fn(),
+  formatActivityPromptContext: vi.fn(),
+}));
+
 // --------------------------------------------------------------------------
 // Mocks — must be declared before imports
 // --------------------------------------------------------------------------
@@ -97,6 +102,14 @@ vi.mock('../../../src/main/agent/sessionRecovery', () => ({
 
 vi.mock('../../../src/main/memory/seedMemoryInjector', () => ({
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock('../../../src/main/services/activity/activityContextProvider', () => ({
+  getCurrentActivityContext: activityMocks.getCurrentActivityContext,
+}));
+
+vi.mock('../../../src/main/services/activity/activityPromptFormatter', () => ({
+  formatActivityPromptContext: activityMocks.formatActivityPromptContext,
 }));
 
 vi.mock('../../../src/main/memory/desktopActivityUnderstandingService', () => ({
@@ -208,6 +221,7 @@ vi.mock('../../../src/shared/constants', () => ({
   MODEL_MAX_TOKENS: {},
   CONTEXT_WINDOWS: {},
   DEFAULT_CONTEXT_WINDOW: 128000,
+  getContextWindow: vi.fn().mockReturnValue(128000),
   TOOL_PROGRESS: {},
   TOOL_TIMEOUT_THRESHOLDS: {},
 }));
@@ -458,6 +472,18 @@ describe('ConversationRuntime', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    activityMocks.getCurrentActivityContext.mockResolvedValue({
+      generatedAtMs: 1_800_000,
+      maxChars: 1_000,
+      tokenBudgetHint: { maxChars: 1_000, targetTokens: 250 },
+      sources: [],
+      evidenceRefs: [],
+    });
+    activityMocks.formatActivityPromptContext.mockReturnValue({
+      mode: 'legacySeparate',
+      screenMemoryBlock: 'screen context from activity provider',
+      desktopActivityBlock: 'desktop context from activity provider',
+    });
     ctx = createMockContext();
     runtime = new ConversationRuntime(ctx);
     modules = createMockModules();
@@ -756,6 +782,33 @@ describe('ConversationRuntime', () => {
   // ==========================================================================
 
   describe('run', () => {
+    it('injects activity context through legacy screen-memory tag for simple tasks', async () => {
+      await runtime.initializeRun('hello');
+
+      expect(activityMocks.getCurrentActivityContext).toHaveBeenCalled();
+      expect(activityMocks.formatActivityPromptContext).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ mode: 'legacySeparate' }),
+      );
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<screen-memory>\nscreen context from activity provider\n</screen-memory>'
+      );
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>'
+      );
+    });
+
+    it('can inject desktop activity through the ActivityContext legacy formatter', async () => {
+      await (runtime as any).injectActivityContext({ includeDesktopActivity: true });
+
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<screen-memory>\nscreen context from activity provider\n</screen-memory>'
+      );
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>'
+      );
+    });
+
     it('should call initializeRun and finalizeRun on a simple task', async () => {
       // Mock inference returns text response that causes 'break'
       modules.contextAssembly.inference.mockResolvedValue({

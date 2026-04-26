@@ -52,6 +52,7 @@ import { registerVoicePasteHandlers } from './voicePaste.ipc';
 import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
 import { registerLivePreviewHandlers } from './livePreview.ipc';
+import { registerActivityHandlers } from './activity.ipc';
 
 export * from './types';
 
@@ -190,6 +191,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Desktop handlers (原生桌面活动)
   registerDesktopHandlers(ipcMain);
+
+  // Activity context handlers (统一活动上下文)
+  registerActivityHandlers(ipcMain);
 
   // Soul handlers (人格)
   registerSoulHandlers();

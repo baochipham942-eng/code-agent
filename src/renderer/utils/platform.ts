@@ -26,6 +26,14 @@ export function isElectronMode(): boolean {
   return !isWebMode() && !isTauriMode();
 }
 
+export function isDesktopShellMode(): boolean {
+  return isElectronMode() || isTauriMode();
+}
+
+export function isNativeAppMode(): boolean {
+  return isDesktopShellMode();
+}
+
 /** Copy text to clipboard with fallback */
 export async function copyPathToClipboard(text: string): Promise<boolean> {
   try {

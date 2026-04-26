@@ -26,7 +26,11 @@ const STATE_LABEL: Record<OpenchronicleStatus['state'], { dot: string; text: str
   error:    { dot: 'bg-red-500',    text: '异常' },
 };
 
-export const OpenchronicleSettings: React.FC = () => {
+interface OpenchronicleSettingsProps {
+  embedded?: boolean;
+}
+
+export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false }) => {
   const [settings, setSettings] = useState<OcSettings>(DEFAULT_OPENCHRONICLE_SETTINGS);
   const [status, setStatus] = useState<OpenchronicleStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,7 +83,7 @@ export const OpenchronicleSettings: React.FC = () => {
 
   if (isWebMode()) {
     return (
-      <div className="p-6">
+      <div className={embedded ? 'space-y-3' : 'p-6'}>
         <WebModeBanner />
         <p className="text-sm text-zinc-400 mt-4">
           屏幕记忆功能仅在 macOS 桌面版可用——它需要本地后台 daemon 监听系统活动。
@@ -91,8 +95,9 @@ export const OpenchronicleSettings: React.FC = () => {
   const stateUi = status ? STATE_LABEL[status.state] : STATE_LABEL.stopped;
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
+    <div className={embedded ? 'space-y-4' : 'p-6 space-y-6 max-w-3xl'}>
       {/* 标题 */}
+      {!embedded && (
       <header>
         <h2 className="text-xl font-semibold flex items-center gap-2">
           {settings.enabled ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
@@ -107,6 +112,7 @@ export const OpenchronicleSettings: React.FC = () => {
           开启后 OpenChronicle 会 7×24 在后台运行（即使关闭 code-agent），直到你在这里关掉它。
         </p>
       </header>
+      )}
 
       {/* 主开关 */}
       <section className="border border-zinc-700 rounded-lg p-4">

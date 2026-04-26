@@ -37,6 +37,8 @@ export * from './contract/memory';
 
 // Desktop activity types
 export * from './contract/desktop';
+export * from './contract/activityProvider';
+export * from './contract/activityContext';
 
 // Checkpoint types (文件检查点)
 export * from './contract/checkpoint';

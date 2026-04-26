@@ -75,6 +75,8 @@ export * from './capture';
 
 // Desktop activity types (原生桌面采集)
 export * from './desktop';
+export * from './activityProvider';
+export * from './activityContext';
 
 // Error types (ErrorCode, ErrorSeverity, SerializedError)
 export * from './error';

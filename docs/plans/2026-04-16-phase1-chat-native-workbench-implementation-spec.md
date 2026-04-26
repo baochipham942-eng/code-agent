@@ -1,7 +1,7 @@
 # Phase 1 Chat-Native Workbench 实施规格
 
 日期：2026-04-16  
-状态：已完成（已按 2026-04-18 代码/测试对齐）  
+状态：已完成（已按 2026-04-26 代码/测试对齐）
 关联设计：[2026-04-16-chat-native-agent-workbench-plan.md](/Users/linchen/Downloads/ai/code-agent/docs/plans/2026-04-16-chat-native-agent-workbench-plan.md)  
 关联分析：[2026-04-16-accio-vs-code-agent-core-differences.md](/Users/linchen/Downloads/ai/code-agent/docs/analysis/2026-04-16-accio-vs-code-agent-core-differences.md)
 
@@ -21,6 +21,15 @@
   5. 历史重载 / Replay / Eval Center 可通过持久化 metadata 与 replay fallback 重建这条链。
   - 证据：`src/renderer/hooks/useAgent.ts`、`src/main/ipc/swarm.ipc.ts`、`src/main/services/core/repositories/SessionRepository.ts`、`src/renderer/utils/turnTimelineProjection.ts`、`src/main/evaluation/telemetryQueryService.ts`、`tests/unit/ipc/swarm.ipc.test.ts`、`tests/unit/evaluation/telemetryQueryService.test.ts`、`tests/renderer/hooks/useTurnExecutionClarity.test.ts`
 - 因此下面凡是把 `routing` 写成“纯 UI 意图”的地方，都应理解为原始切边界；当前真实状态里，`Auto / Parallel` 仍以意图 + evidence 为主，但 `Direct` 已经是真发送链。
+
+## 0.1 2026-04-26 状态补丁
+
+Phase 1 的核心边界仍成立：聊天发送链以 `ConversationEnvelope` 携带工作台上下文。但上层入口已经被后续 B+ IA 调整，不应再把早期 UI 截面当成当前产品形态：
+
+- ChatInput 保留高频发送动作；低频动作进入 `InputAddMenu`，Code / Plan / Ask 也收进 `+`。
+- 模型与 effort 合并成一个胶囊；Routing / Browser 默认偏好进入 Settings “对话”tab。
+- Live Preview 不再由输入框承载；入口迁到 `SessionActionsMenu` / `DevServerLauncher`，并与当前 session、working directory 绑定。
+- Browser / Computer 显式接入心智已经从 early concept 推进到 in-app managed browser 的本地受控生产化基线，详见 `2026-04-26-browser-use-production-roadmap.md`。
 
 ## 1. 结论
 

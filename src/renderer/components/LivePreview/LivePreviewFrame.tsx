@@ -69,6 +69,13 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     const tab = s.previewTabs.find((t) => t.id === tabId);
     return tab?.selectedElement ?? null;
   });
+  // V2-A: 当前 tab 的 dev server session id，传给 resolveSourceLocation
+  // 让主进程用 manager.get(sessionId).projectPath 当 baseDir，不再依赖
+  // 用户手动设 working directory（V1 旧链路只能用 cwd 算 baseDir 经常错）
+  const devServerSessionId = useAppStore((s) => {
+    const tab = s.previewTabs.find((t) => t.id === tabId);
+    return tab?.devServerSessionId ?? null;
+  });
   const expectedOrigin = useMemo(() => getLivePreviewOrigin(devServerUrl), [devServerUrl]);
 
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -131,6 +138,9 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
         'resolveSourceLocation',
         {
           file: info.location.file,
+          // sessionId 优先（manager 自起的 dev server projectPath 最准）；
+          // 没 session 时 fallback 到用户的 working directory
+          devServerSessionId: devServerSessionId ?? undefined,
           projectRoot: workingDirectory || undefined,
         },
       );
@@ -152,7 +162,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     } catch (err) {
       setFrameError(`bridge 源码定位被拒绝：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [tabId, workingDirectory, setSelectedElement]);
+  }, [tabId, workingDirectory, setSelectedElement, devServerSessionId]);
 
   // 监听 iframe 发来的 bridge 消息
   useEffect(() => {

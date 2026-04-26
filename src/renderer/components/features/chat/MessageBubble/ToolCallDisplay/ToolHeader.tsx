@@ -10,6 +10,7 @@ import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import { TargetContextIcon } from './TargetContextIcon';
+import { useAppStore } from '../../../../../stores/appStore';
 
 interface Props {
   toolCall: ToolCall;
@@ -32,7 +33,24 @@ function buildToolHeaderTitle(toolCall: ToolCall, displayName: string): string {
   return displayName;
 }
 
+function getWriteFilePath(toolCall: ToolCall): string | null {
+  if (toolCall.name !== 'Write') return null;
+  if (toolCall.result && !toolCall.result.success) return null;
+
+  const output = toolCall.result?.output;
+  if (typeof output === 'string' && output) {
+    const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
+    if (match) return match[1].trim();
+  }
+
+  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
+  const filePath = args.file_path ?? args.path;
+  return typeof filePath === 'string' && filePath ? filePath : null;
+}
+
 export function ToolHeader({ toolCall, status }: Props) {
+  const openPreview = useAppStore((state) => state.openPreview);
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
   // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
   // feature flag 关闭时强制 fallback，便于 A/B 对比。
@@ -43,7 +61,8 @@ export function ToolHeader({ toolCall, status }: Props) {
     ? toolCall.shortDescription!.trim()
     : getToolDisplayName(toolCall.name);
   const statusLabel = getToolStatusLabel(toolCall, status);
-  const params = hasShortDesc ? '' : formatParams(toolCall);
+  const writeFilePath = getWriteFilePath(toolCall);
+  const params = hasShortDesc || writeFilePath ? '' : formatParams(toolCall);
   const duration = toolCall.result?.duration;
   const isSandboxed = (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
     typeof toolCall.result?.output === 'string' &&
@@ -51,6 +70,10 @@ export function ToolHeader({ toolCall, status }: Props) {
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
   const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
+  const writeFileName = writeFilePath?.split('/').pop() || writeFilePath;
+  const resolvedWritePath = writeFilePath && !writeFilePath.startsWith('/') && workingDirectory
+    ? `${workingDirectory}/${writeFilePath}`
+    : writeFilePath;
 
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -71,6 +94,20 @@ export function ToolHeader({ toolCall, status }: Props) {
       >
         {displayName}
       </span>
+
+      {writeFilePath && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (resolvedWritePath) openPreview(resolvedWritePath);
+          }}
+          className="min-w-0 max-w-[260px] truncate text-xs font-mono text-zinc-400 transition-colors hover:text-emerald-400"
+          title={writeFilePath}
+        >
+          {writeFileName}
+        </button>
+      )}
 
       {/* Sandbox badge */}
       {isSandboxed && (

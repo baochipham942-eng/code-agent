@@ -63,7 +63,8 @@ window.__startDevServer = async (projectPath: string) => {
       { sessionId: session.sessionId },
     );
     console.log('[LivePreview] ready URL:', ready.url, '(session', session.sessionId, ')');
-    useAppStore.getState().openLivePreview(ready.url);
+    // 传 sessionId 让 PreviewTab 记住，resolveSourceLocation 可以拿到 baseDir
+    useAppStore.getState().openLivePreview(ready.url, session.sessionId);
   } catch (err) {
     console.error('[LivePreview] startDevServer failed', err);
   }

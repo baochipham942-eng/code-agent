@@ -74,7 +74,9 @@ export const WorkbenchTabs: React.FC = () => {
   });
 
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1 border-b border-zinc-700 bg-zinc-900 overflow-x-auto scrollbar-none">
+    <div className="flex items-center px-2 py-1 border-b border-zinc-700 bg-zinc-900">
+      {/* tabs 自己滚动；[+] 不在滚动区里，popover 才能 escape overflow 弹出来 */}
+      <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
       {metas.map((meta) => {
         const isActive = meta.id === activeWorkbenchTab;
         return (
@@ -115,9 +117,11 @@ export const WorkbenchTabs: React.FC = () => {
         );
       })}
 
-      {/* "+" 按钮 — 关掉的 tab 从这里重新开 */}
+      </div>{/* end scroll inner */}
+
+      {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}
       {canAddAny && (
-        <div ref={addRef} className="relative flex-shrink-0">
+        <div ref={addRef} className="relative flex-shrink-0 ml-0.5">
           <button
             type="button"
             onClick={() => setAddOpen((v) => !v)}
@@ -128,7 +132,7 @@ export const WorkbenchTabs: React.FC = () => {
             <Plus className="w-3 h-3" />
           </button>
           {addOpen && (
-            <div className="absolute left-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
+            <div className="absolute right-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
               {!hasTask && (
                 <button
                   type="button"

@@ -16,6 +16,9 @@ import type { ClassMutation, TweakLocation } from '../../shared/livePreview/twea
 interface ResolveSourceLocationRequest {
   file: string;
   projectRoot?: string;
+  /** V2-A：dev server session 的 projectPath 是 baseDir 的优先源
+   *  （bridge 回传 relative path 是相对 vite 项目根，不是 code-agent cwd 也不是 user workspace） */
+  devServerSessionId?: string;
 }
 
 interface ResolveSourceLocationResponse {
@@ -26,11 +29,23 @@ interface ResolveSourceLocationResponse {
 
 /**
  * 把 bridge 回传的路径（相对或绝对）统一成绝对路径，并校验落在 projectRoot 之内（防路径逃逸）
+ *
+ * baseDir 优先级：
+ *   1. devServerSessionId → manager.get(sessionId).projectPath（V2-A 自动起的 dev server，最准）
+ *   2. 显式 projectRoot 参数（用户在 TitleBar 设的 working directory）
+ *   3. process.cwd()（兜底，通常是 code-agent 自己，bridge 路径肯定不存在）
  */
 export function resolveLivePreviewSourceLocation(
   req: ResolveSourceLocationRequest,
 ): ResolveSourceLocationResponse {
-  const root = req.projectRoot ? path.resolve(req.projectRoot) : process.cwd();
+  let baseDir: string;
+  if (req.devServerSessionId) {
+    const session = getDevServerManager().get(req.devServerSessionId);
+    baseDir = session?.projectPath || req.projectRoot || process.cwd();
+  } else {
+    baseDir = req.projectRoot || process.cwd();
+  }
+  const root = path.resolve(baseDir);
   const absolute = path.isAbsolute(req.file) ? path.resolve(req.file) : path.resolve(root, req.file);
 
   // 防路径逃逸：解析后的绝对路径必须以 projectRoot 开头

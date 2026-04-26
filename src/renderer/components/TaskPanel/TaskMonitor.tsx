@@ -157,64 +157,71 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
-      {/* ═══ Card 1: TodoCard ═══ */}
-      <Card title={t.taskPanel.sectionTodos} count={todoModel.total > 0 ? `${todoModel.completed}/${todoModel.total}` : undefined} isEmpty={todoModel.total === 0 && toolPhases.length === 0} emptyLabel="空闲">
-        {todoModel.total > 0 ? (
-          <div className="space-y-0.5">
-            {todoModel.items.map((todo, index) => (
-              <div key={index} className="flex items-center gap-2 py-0.5">
-                {todo.status === 'completed' ? (
+      {/* ═══ Card 1: Semantic task plan or current action trace ═══ */}
+      {todoModel.total > 0 ? (
+      <Card title={t.taskPanel.sectionTodos} count={`${todoModel.completed}/${todoModel.total}`}>
+        <div className="space-y-0.5">
+          {todoModel.items.map((todo, index) => (
+            <div key={index} className="flex items-center gap-2 py-0.5">
+              {todo.status === 'completed' ? (
+                <div className="w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
+                  <Check className="w-2.5 h-2.5 text-white" />
+                </div>
+              ) : todo.status === 'in_progress' ? (
+                <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                  <Loader2 className="w-2.5 h-2.5 text-primary-400 animate-spin" />
+                </div>
+              ) : (
+                <div className="w-4 h-4 rounded-full border border-zinc-600 flex-shrink-0" />
+              )}
+              <span className={`text-xs truncate ${
+                todo.status === 'completed' ? 'text-zinc-500 line-through'
+                  : todo.status === 'in_progress' ? 'text-zinc-200'
+                  : 'text-zinc-400'
+              }`}>
+                {todo.status === 'in_progress' ? todo.activeForm : todo.content}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+      ) : toolPhases.length > 0 ? (
+      <Card
+        title="本轮动作"
+        count={t.taskPanel.phaseOps.replace('{count}', String(toolPhases.reduce((sum, phase) => sum + phase.count, 0)))}
+      >
+        <div className="space-y-0.5">
+          {toolPhases.map((phase, index) => {
+            const PhaseIcon = PHASE_ICONS[phase.type];
+            return (
+              <div key={`${phase.type}-${index}`} className="flex items-center gap-2 py-0.5">
+                {phase.status === 'completed' ? (
                   <div className="w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
                     <Check className="w-2.5 h-2.5 text-white" />
                   </div>
-                ) : todo.status === 'in_progress' ? (
-                  <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
-                    <Loader2 className="w-2.5 h-2.5 text-primary-400 animate-spin" />
-                  </div>
                 ) : (
-                  <div className="w-4 h-4 rounded-full border border-zinc-600 flex-shrink-0" />
+                  <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                    <PhaseIcon className="w-2.5 h-2.5 text-primary-400" />
+                  </div>
                 )}
-                <span className={`text-xs truncate ${
-                  todo.status === 'completed' ? 'text-zinc-500 line-through'
-                    : todo.status === 'in_progress' ? 'text-zinc-200'
-                    : 'text-zinc-400'
+                <span className={`text-xs flex-1 ${
+                  phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
                 }`}>
-                  {todo.status === 'in_progress' ? todo.activeForm : todo.content}
+                  {phaseLabel(phase.type)}
+                </span>
+                <span className="text-xs text-zinc-600">
+                  {t.taskPanel.phaseOps.replace('{count}', String(phase.count))}
                 </span>
               </div>
-            ))}
-          </div>
-        ) : toolPhases.length > 0 ? (
-          <div className="space-y-0.5">
-            {toolPhases.map((phase, index) => {
-              const PhaseIcon = PHASE_ICONS[phase.type];
-              return (
-                <div key={`${phase.type}-${index}`} className="flex items-center gap-2 py-0.5">
-                  {phase.status === 'completed' ? (
-                    <div className="w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
-                      <Check className="w-2.5 h-2.5 text-white" />
-                    </div>
-                  ) : (
-                    <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
-                      <PhaseIcon className="w-2.5 h-2.5 text-primary-400" />
-                    </div>
-                  )}
-                  <span className={`text-xs flex-1 ${
-                    phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
-                  }`}>
-                    {phaseLabel(phase.type)}
-                  </span>
-                  <span className="text-xs text-zinc-600">
-                    {t.taskPanel.phaseOps.replace('{count}', String(phase.count))}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState text={t.taskPanel.todosEmpty} />
-        )}
+            );
+          })}
+        </div>
       </Card>
+      ) : (
+      <Card title={t.taskPanel.sectionTodos} isEmpty emptyLabel="暂无任务计划">
+        <EmptyState text="暂无任务计划" />
+      </Card>
+      )}
 
       {/* ═══ Card 2: ContextCard — 仅展示百分比（详情与 Compact 在 ChatInput 的 ContextUsagePill 里） ═══ */}
       <Card

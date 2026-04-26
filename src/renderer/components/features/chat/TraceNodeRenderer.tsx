@@ -264,11 +264,16 @@ const ToolCallNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   if (!node.toolCall) return null;
 
   // Reconstruct ToolCall object for ToolCallDisplay
+  // 必须把语义字段（shortDescription / targetContext / expectedOutcome）一起带回来，
+  // 否则 ToolCallDisplay / ToolHeader 拿不到，会 fallback 到机械路径并多渲染重复信息
   const toolCall: ToolCall = {
     id: node.toolCall.id,
     name: node.toolCall.name,
     arguments: node.toolCall.args,
     _streaming: node.toolCall._streaming,
+    shortDescription: node.toolCall.shortDescription,
+    targetContext: node.toolCall.targetContext,
+    expectedOutcome: node.toolCall.expectedOutcome,
     result: node.toolCall.result !== undefined ? {
       toolCallId: node.toolCall.id,
       success: node.toolCall.success ?? true,

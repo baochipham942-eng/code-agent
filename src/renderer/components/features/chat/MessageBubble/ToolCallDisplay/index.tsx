@@ -155,8 +155,9 @@ export function ToolCallDisplay({
       >
         <StatusIndicator status={status} />
         <ToolHeader toolCall={toolCall} status={status} />
-        {/* Inline file name for Write tool — plain clickable text opens preview */}
-        {!expanded && status === 'success' && toolCall.name === 'Write' && (
+        {/* Inline file name for Write tool — 仅在 shortDescription 缺失时兜底，
+            语义 UI 模式下 ToolHeader 已经把路径放进标题，再贴一次只会重复 */}
+        {!expanded && status === 'success' && toolCall.name === 'Write' && !toolCall.shortDescription && (
           <span className="ml-auto"><InlineWriteFileName filePath={extractWriteFilePath(toolCall)} /></span>
         )}
       </div>

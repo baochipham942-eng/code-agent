@@ -64,6 +64,48 @@ function getRulesForPrompt(): string[] {
 }
 
 // ----------------------------------------------------------------------------
+// Tool Call Envelope Conventions (产品视角语义元数据)
+// ----------------------------------------------------------------------------
+// 让模型在每次 tool_call 的 arguments 中嵌入 _meta envelope，frontend parser
+// 会自动剥离 _meta 并写入 ToolCall 顶层（不会进入工具真实执行参数），UI 用它
+// 把"在干什么 + 在操作什么"展示给用户，像看一段安静的工作录像。
+//
+// 设计文档：~/.claude/plans/dreamy-sniffing-lagoon.md
+// ----------------------------------------------------------------------------
+
+export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope (语义元数据)
+
+每次工具调用，在 arguments 中嵌入 _meta 字段（前端会自动剥离不进入工具执行）：
+
+\`\`\`json
+{
+  "selector": "#kw",
+  "_meta": {
+    "shortDescription": "Open Baidu search Claude",
+    "targetContext": { "kind": "browser", "label": "Baidu" },
+    "expectedOutcome": "页面跳转到搜索结果"
+  }
+}
+\`\`\`
+
+**shortDescription**（必填）一句话动词短语，用产品视角描述这次调用在干什么：
+- ✅ "Open Baidu search Claude" / "Read MEMORY.md for Clash Verge config"
+- ❌ "browser_click" / "Reading file"（不要用工具内部命名）
+
+**targetContext.kind**（适用时填）取值：
+- \`app\` — Computer Use 操作目标 app（label = "WeChat"，iconHint = bundle_id）
+- \`browser\` — Browser Use（label = page title 或 domain）
+- \`mcp_server\` — MCP 调用（label = "Exa"，iconHint = server slug）
+- \`file\` — 文件操作（label = filename）
+- \`memory\` — 引用 memory（label = "<file>:<lines>"）
+
+**expectedOutcome**（可选）一句话描述成功时大概看到什么。
+
+引用 memory 等结构化源时，citation 同步输出 \`rationale\`（一句话"为什么用这段"）和
+\`lineRange\`（\`[startLine, endLine]\`）。
+`;
+
+// ----------------------------------------------------------------------------
 // Prompt Builder
 // ----------------------------------------------------------------------------
 
@@ -75,7 +117,12 @@ export function buildPrompt(): string {
   }
 
   // Stable prefix (cacheable across turns)
-  const stablePrefix = [getSoul(), basePrompt, ...getToolDescriptions()].join('\n\n');
+  const stablePrefix = [
+    getSoul(),
+    basePrompt,
+    ...getToolDescriptions(),
+    TOOL_ENVELOPE_CONVENTIONS,
+  ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
   const dynamicSection = getRulesForPrompt().join('\n\n');
 
@@ -316,8 +363,13 @@ export function buildProfilePrompt(profile: PromptProfile, context: PromptContex
 
   const activeOverlays = getProfileOverlays(profile);
 
-  // L1: Base Substrate — identity + tools
-  const substrate = [getSoul(), TOOLS_PROMPT, ...getToolDescriptions()].join('\n\n');
+  // L1: Base Substrate — identity + tools + envelope conventions
+  const substrate = [
+    getSoul(),
+    TOOLS_PROMPT,
+    ...getToolDescriptions(),
+    TOOL_ENVELOPE_CONVENTIONS,
+  ].join('\n\n');
 
   // Build overlay configs for layers 2-5
   const overlays: OverlayConfig[] = [

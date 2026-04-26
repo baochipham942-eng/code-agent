@@ -10,6 +10,8 @@ import path from 'node:path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getDevServerManager } from '../services/infra/devServerManager';
+import { applyTweak, type TweakLocation } from '../tools/livePreview/tweakWriter';
+import type { ClassMutation } from '../tools/livePreview/tailwindCategories';
 
 interface ResolveSourceLocationRequest {
   file: string;
@@ -158,6 +160,22 @@ export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
 
         case 'listDevServers': {
           const data = getDevServerManager().list();
+          return { success: true, data };
+        }
+
+        // --------------------------------------------------------------------
+        // V2-B Tweak 面板
+        // --------------------------------------------------------------------
+        case 'applyTweak': {
+          const payload = req.payload as { location?: TweakLocation; mutation?: ClassMutation };
+          if (!payload?.location || !payload?.mutation) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'location + mutation required' } };
+          }
+          // 路径必须绝对，避免 cwd 漂移导致改错文件
+          if (!path.isAbsolute(payload.location.file)) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'file must be absolute' } };
+          }
+          const data = applyTweak(payload.location, payload.mutation);
           return { success: true, data };
         }
 

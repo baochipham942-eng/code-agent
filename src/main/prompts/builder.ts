@@ -73,36 +73,58 @@ function getRulesForPrompt(): string[] {
 // 设计文档：~/.claude/plans/dreamy-sniffing-lagoon.md
 // ----------------------------------------------------------------------------
 
-export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope (语义元数据)
+export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义元数据）
 
-每次工具调用，在 arguments 中嵌入 _meta 字段（前端会自动剥离不进入工具执行）：
+**每一次** 调用任何工具，你 **必须** 在 arguments 顶层加入 \`_meta\` 对象。
+前端会自动剥离 \`_meta\` 后再执行工具，所以不会污染真实参数；但 UI 用它向用户展示
+"你现在在干什么"。**没有 _meta 就等于没说话**——用户看不见你的意图。
+
+### 完整示例 1：Bash
 
 \`\`\`json
 {
-  "selector": "#kw",
+  "command": "echo hello world",
   "_meta": {
-    "shortDescription": "Open Baidu search Claude",
-    "targetContext": { "kind": "browser", "label": "Baidu" },
-    "expectedOutcome": "页面跳转到搜索结果"
+    "shortDescription": "Print hello world to verify shell setup",
+    "targetContext": { "kind": "app", "label": "Terminal" },
+    "expectedOutcome": "stdout 输出 hello world"
   }
 }
 \`\`\`
 
-**shortDescription**（必填）一句话动词短语，用产品视角描述这次调用在干什么：
-- ✅ "Open Baidu search Claude" / "Read MEMORY.md for Clash Verge config"
-- ❌ "browser_click" / "Reading file"（不要用工具内部命名）
+### 完整示例 2：MCP 工具
 
-**targetContext.kind**（适用时填）取值：
-- \`app\` — Computer Use 操作目标 app（label = "WeChat"，iconHint = bundle_id）
-- \`browser\` — Browser Use（label = page title 或 domain）
-- \`mcp_server\` — MCP 调用（label = "Exa"，iconHint = server slug）
-- \`file\` — 文件操作（label = filename）
-- \`memory\` — 引用 memory（label = "<file>:<lines>"）
+\`\`\`json
+{
+  "query": "claude code agent loop",
+  "_meta": {
+    "shortDescription": "Search Exa for Claude Code agent loop docs",
+    "targetContext": { "kind": "mcp_server", "label": "Exa", "iconHint": "exa" },
+    "expectedOutcome": "返回 5-10 个相关搜索结果"
+  }
+}
+\`\`\`
 
-**expectedOutcome**（可选）一句话描述成功时大概看到什么。
+### 字段约定
 
-引用 memory 等结构化源时，citation 同步输出 \`rationale\`（一句话"为什么用这段"）和
-\`lineRange\`（\`[startLine, endLine]\`）。
+- **shortDescription** —— 一句话动词短语，**用户视角的产品语义**：
+  - ✅ "Open Baidu search Claude" / "Read MEMORY.md for Clash Verge config"
+  - ❌ "browser_click" / "Reading file"（不要用工具内部命名）
+- **targetContext.kind** —— 取值：
+  - \`app\`（Computer Use，label = app 名，iconHint = bundle_id）
+  - \`browser\`（Browser Use，label = 页面标题/域名）
+  - \`mcp_server\`（MCP 调用，label = server 名，iconHint = server slug）
+  - \`file\`（文件操作，label = 文件名）
+  - \`memory\`（memory 引用，label = "<文件>:<行号>"）
+- **expectedOutcome** —— 一句话描述成功后大概看到什么（可选但推荐）
+
+### 引用约定
+
+输出 citation 引用 memory 等结构化源时，每条 citation 同步带：
+- \`rationale\` — 一句话"为什么用这段"
+- \`lineRange\` — \`[startLine, endLine]\` 结构化行号
+
+**这条规则没有例外。**调用工具前没想清楚 shortDescription，就停下来想清楚再调。
 `;
 
 // ----------------------------------------------------------------------------
@@ -117,11 +139,13 @@ export function buildPrompt(): string {
   }
 
   // Stable prefix (cacheable across turns)
+  // envelope 约定放在 tool descriptions 之前：让模型在了解每个工具签名前就吃下
+  // _meta 强制约定，避免它把工具描述读完后才被提醒还要补元数据。
   const stablePrefix = [
     getSoul(),
     basePrompt,
-    ...getToolDescriptions(),
     TOOL_ENVELOPE_CONVENTIONS,
+    ...getToolDescriptions(),
   ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
   const dynamicSection = getRulesForPrompt().join('\n\n');
@@ -363,12 +387,12 @@ export function buildProfilePrompt(profile: PromptProfile, context: PromptContex
 
   const activeOverlays = getProfileOverlays(profile);
 
-  // L1: Base Substrate — identity + tools + envelope conventions
+  // L1: Base Substrate — identity + envelope conventions + tools
   const substrate = [
     getSoul(),
     TOOLS_PROMPT,
-    ...getToolDescriptions(),
     TOOL_ENVELOPE_CONVENTIONS,
+    ...getToolDescriptions(),
   ].join('\n\n');
 
   // Build overlay configs for layers 2-5

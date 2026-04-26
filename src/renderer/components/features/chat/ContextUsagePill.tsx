@@ -29,8 +29,10 @@ function toneFromPercent(pct: number): Tone {
   return 'normal';
 }
 
+// 视觉简化：normal 走统一灰色（每条 turn 都看的高频元素，不需要装饰色抢注意）；
+// warning/critical 保留 functional color，因为这是上下文吃紧的告警信号
 const TONE_STYLES: Record<Tone, { ring: string; text: string; bg: string }> = {
-  normal: { ring: 'stroke-emerald-500', text: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+  normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', bg: 'bg-zinc-700/30' },
   warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', bg: 'bg-yellow-500/10' },
   critical: { ring: 'stroke-red-500', text: 'text-red-400', bg: 'bg-red-500/10' },
 };

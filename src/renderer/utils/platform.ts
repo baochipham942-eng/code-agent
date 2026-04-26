@@ -1,5 +1,5 @@
 /**
- * Platform detection utilities for Web/Electron/Tauri mode UI degradation.
+ * Platform detection utilities for Web/native desktop mode UI degradation.
  *
  * Web mode is determined by the Vite build target injected in vite.web.config.ts:
  *   'import.meta.env.VITE_BUILD_TARGET': JSON.stringify('web')
@@ -7,8 +7,8 @@
  * Tauri mode is detected by checking for the __TAURI_INTERNALS__ global that
  * Tauri 2.x injects into the webview at runtime.
  *
- * This is more reliable than checking window.electronAPI because the Web build
- * injects an HTTP polyfill for electronAPI.
+ * This is more reliable than checking bridge globals because the Web/Tauri build
+ * injects HTTP polyfills for compatibility APIs.
  */
 
 export function isTauriMode(): boolean {
@@ -22,16 +22,28 @@ export function isWebMode(): boolean {
   return import.meta.env.VITE_BUILD_TARGET === 'web';
 }
 
-export function isElectronMode(): boolean {
+export function isLegacyElectronMode(): boolean {
   return !isWebMode() && !isTauriMode();
 }
 
+/**
+ * @deprecated Use isLegacyElectronMode() only when checking the old desktop shell.
+ * Prefer isDesktopShellMode() for product capability gates.
+ */
+export const isElectronMode = isLegacyElectronMode;
+
 export function isDesktopShellMode(): boolean {
-  return isElectronMode() || isTauriMode();
+  return isLegacyElectronMode() || isTauriMode();
 }
 
 export function isNativeAppMode(): boolean {
   return isDesktopShellMode();
+}
+
+export function getDesktopShellLabel(): string {
+  if (isTauriMode()) return 'Tauri 桌面版';
+  if (isLegacyElectronMode()) return '桌面版';
+  return 'Web';
 }
 
 /** Copy text to clipboard with fallback */

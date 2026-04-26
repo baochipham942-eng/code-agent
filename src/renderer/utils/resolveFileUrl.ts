@@ -1,4 +1,4 @@
-import { isElectron } from '../api/transport';
+import { hasNativeBridge } from '../api/transport';
 
 export function resolveFileUrl(filePath: string): string {
   if (!filePath) return '';
@@ -13,7 +13,7 @@ export function resolveFileUrl(filePath: string): string {
   }
 
   const isWebMode = typeof window !== 'undefined'
-    && (!isElectron() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
+    && (!hasNativeBridge() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
 
   if (isWebMode) {
     return `/api/workspace/file?path=${encodeURIComponent(filePath)}`;

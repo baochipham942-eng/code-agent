@@ -3,26 +3,27 @@
 // ============================================================================
 //
 // 在 renderer 入口处调用 initTransport()：
-// - Electron 环境：无操作（preload 已注入 window.electronAPI）
-// - 浏览器环境：注入 HTTP polyfill 到 window.electronAPI / window.domainAPI
+// - Native bridge：使用 preload 注入的 window.codeAgentAPI
+// - HTTP bridge：注入 HTTP polyfill 到 window.codeAgentAPI / window.codeAgentDomainAPI
 //
-// 这样现有组件代码中的 window.electronAPI?.invoke(...) 无需修改。
+// 旧 window.electronAPI / window.domainAPI 会作为兼容别名保留。
 //
 // ============================================================================
 
 /// <reference path="../types/electron.d.ts" />
 
-import { isElectron, getApiBaseUrl } from './transport';
-import { createHttpElectronAPI, createHttpDomainAPI } from './httpTransport';
+import { hasNativeBridge, getApiBaseUrl } from './transport';
+import { createHttpCodeAgentAPI, createHttpDomainAPI } from './httpTransport';
 
 /**
  * 初始化通信层。
  * 必须在 React 渲染之前调用。
  */
 export function initTransport(): void {
-  if (isElectron()) {
-    // Electron 模式：preload 已经注入了 window.electronAPI 和 window.domainAPI
-    console.log('[Transport] Electron mode - using IPC');
+  if (hasNativeBridge()) {
+    window.codeAgentAPI = window.codeAgentAPI || window.electronAPI;
+    window.codeAgentDomainAPI = window.codeAgentDomainAPI || window.domainAPI;
+    console.log('[Transport] Native bridge mode');
     return;
   }
 
@@ -30,22 +31,27 @@ export function initTransport(): void {
   const apiUrl = getApiBaseUrl();
   console.log(`[Transport] HTTP mode - API: ${apiUrl}`);
 
-  // 注入 electronAPI polyfill
-  if (!window.electronAPI) {
-    window.electronAPI = createHttpElectronAPI(apiUrl);
+  window.__CODE_AGENT_HTTP_BRIDGE__ = true;
+
+  // 注入中性 Code Agent API polyfill
+  if (!window.codeAgentAPI) {
+    window.codeAgentAPI = createHttpCodeAgentAPI(apiUrl);
   }
 
-  // 注入 domainAPI polyfill
-  if (!window.domainAPI) {
-    window.domainAPI = createHttpDomainAPI(apiUrl);
+  if (!window.codeAgentDomainAPI) {
+    window.codeAgentDomainAPI = createHttpDomainAPI(apiUrl);
   }
+
+  // 兼容旧 renderer 模块，后续迁移组件时再逐步删除。
+  window.electronAPI = window.electronAPI || window.codeAgentAPI;
+  window.domainAPI = window.domainAPI || window.codeAgentDomainAPI;
 }
 
 /**
  * 获取当前运行模式
  */
-export function getTransportMode(): 'electron' | 'http' {
-  return isElectron() ? 'electron' : 'http';
+export function getTransportMode(): 'native' | 'http' {
+  return hasNativeBridge() ? 'native' : 'http';
 }
 
 /**
@@ -54,6 +60,9 @@ export function getTransportMode(): 'electron' | 'http' {
 export function setApiUrl(url: string): void {
   localStorage.setItem('code-agent-api-url', url);
   // 重新注入 polyfill
-  window.electronAPI = createHttpElectronAPI(url);
-  window.domainAPI = createHttpDomainAPI(url);
+  window.__CODE_AGENT_HTTP_BRIDGE__ = true;
+  window.codeAgentAPI = createHttpCodeAgentAPI(url);
+  window.codeAgentDomainAPI = createHttpDomainAPI(url);
+  window.electronAPI = window.codeAgentAPI;
+  window.domainAPI = window.codeAgentDomainAPI;
 }

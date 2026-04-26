@@ -144,7 +144,7 @@ export function useMemoryLearning() {
    */
   useEffect(() => {
     if (!ipcService.isAvailable()) {
-      logger.warn('electronAPI not available');
+      logger.warn('bridge API not available');
       return;
     }
 

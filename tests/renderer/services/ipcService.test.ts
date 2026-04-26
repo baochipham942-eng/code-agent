@@ -1,11 +1,11 @@
 // ============================================================================
-// ipcService.test.ts - IPC 服务测试（mock window.electronAPI）
+// ipcService.test.ts - IPC 服务测试（mock desktop bridge APIs）
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ipcService } from '../../../src/renderer/services/ipcService';
 
-// Setup window.electronAPI and window.domainAPI mocks
+// Setup legacy window.electronAPI and window.domainAPI mocks
 const mockInvoke = vi.fn();
 const mockOn = vi.fn(() => () => {});
 const mockOff = vi.fn();
@@ -40,7 +40,7 @@ beforeEach(() => {
 // ============================================================================
 
 describe('ipcService.invoke', () => {
-  it('should call window.electronAPI.invoke with channel and args', () => {
+  it('should call the legacy bridge invoke with channel and args', () => {
     mockInvoke.mockReturnValue(Promise.resolve({ sessions: [] }));
     ipcService.invoke('session:list' as any);
     expect(mockInvoke).toHaveBeenCalledWith('session:list');
@@ -52,11 +52,23 @@ describe('ipcService.invoke', () => {
     expect(mockInvoke).toHaveBeenCalledWith('session:load', { sessionId: 'abc' });
   });
 
-  it('should return the result from electronAPI', async () => {
+  it('should return the result from the bridge API', async () => {
     const expected = { id: '123', title: 'test' };
     mockInvoke.mockReturnValue(Promise.resolve(expected));
     const result = await ipcService.invoke('session:create' as any);
     expect(result).toEqual(expected);
+  });
+
+  it('should prefer codeAgentAPI over the legacy alias', () => {
+    const neutralInvoke = vi.fn().mockReturnValue(Promise.resolve({ neutral: true }));
+    (globalThis as Record<string, any>).window.codeAgentAPI = {
+      invoke: neutralInvoke,
+    };
+
+    ipcService.invoke('session:list' as any);
+
+    expect(neutralInvoke).toHaveBeenCalledWith('session:list');
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });
 
@@ -92,11 +104,17 @@ describe('ipcService.off', () => {
 // ============================================================================
 
 describe('ipcService.isAvailable', () => {
-  it('should return true when electronAPI exists', () => {
+  it('should return true when a legacy bridge exists', () => {
     expect(ipcService.isAvailable()).toBe(true);
   });
 
-  it('should return false when electronAPI is missing', () => {
+  it('should return true when codeAgentAPI exists', () => {
+    // @ts-expect-error: testing partial bridge
+    globalThis.window = { codeAgentAPI: { invoke: mockInvoke } };
+    expect(ipcService.isAvailable()).toBe(true);
+  });
+
+  it('should return false when bridge APIs are missing', () => {
     // @ts-expect-error: testing absence
     globalThis.window = {};
     expect(ipcService.isAvailable()).toBe(false);
@@ -113,6 +131,19 @@ describe('ipcService.invokeDomain', () => {
     const result = await ipcService.invokeDomain('session', 'list');
     expect(mockDomainInvoke).toHaveBeenCalledWith('session', 'list', undefined);
     expect(result).toEqual({ id: '1' });
+  });
+
+  it('should prefer codeAgentDomainAPI over the legacy alias', async () => {
+    const neutralDomainInvoke = vi.fn().mockResolvedValue({ success: true, data: { neutral: true } });
+    (globalThis as Record<string, any>).window.codeAgentDomainAPI = {
+      invoke: neutralDomainInvoke,
+    };
+
+    const result = await ipcService.invokeDomain('session', 'list');
+
+    expect(neutralDomainInvoke).toHaveBeenCalledWith('session', 'list', undefined);
+    expect(mockDomainInvoke).not.toHaveBeenCalled();
+    expect(result).toEqual({ neutral: true });
   });
 
   it('should pass payload to domainAPI', async () => {
@@ -142,7 +173,7 @@ describe('ipcService.invokeDomain', () => {
 // ============================================================================
 
 describe('ipcService.getPathForFile', () => {
-  it('should delegate to electronAPI', () => {
+  it('should delegate to the bridge API', () => {
     const file = new File(['content'], 'test.txt');
     mockGetPathForFile.mockReturnValue('/tmp/test.txt');
     const result = ipcService.getPathForFile(file);
@@ -156,7 +187,7 @@ describe('ipcService.getPathForFile', () => {
 // ============================================================================
 
 describe('ipcService.extractPdfText', () => {
-  it('should delegate to electronAPI', async () => {
+  it('should delegate to the bridge API', async () => {
     const expected = { text: 'Hello PDF', pageCount: 3 };
     mockExtractPdfText.mockResolvedValue(expected);
     const result = await ipcService.extractPdfText('/path/to/file.pdf');
@@ -170,7 +201,7 @@ describe('ipcService.extractPdfText', () => {
 // ============================================================================
 
 describe('ipcService.transcribeSpeech', () => {
-  it('should delegate to electronAPI', async () => {
+  it('should delegate to the bridge API', async () => {
     const expected = { success: true, text: 'Hello world' };
     mockTranscribeSpeech.mockResolvedValue(expected);
     const result = await ipcService.transcribeSpeech('base64data', 'audio/webm');

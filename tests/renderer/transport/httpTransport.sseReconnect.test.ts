@@ -34,7 +34,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
   __CODE_AGENT_TOKEN__: undefined,
 };
 
-import { createHttpElectronAPI } from '../../../src/renderer/api/httpTransport';
+import { createHttpCodeAgentAPI } from '../../../src/renderer/api/httpTransport';
 
 // ---------------------------------------------------------------------------
 // Fake EventSource — 只模拟 httpTransport 用到的那几个成员
@@ -126,7 +126,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('注册 listener 时会立即建立 SSE 连接', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     expect(fake.instances).toHaveLength(0);
 
     api.on('swarm:event', () => {});
@@ -135,7 +135,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('触发 error 后会关闭旧连接，并在 5 秒后新建一个 EventSource 实例', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     api.on('swarm:event', () => {});
     expect(fake.instances).toHaveLength(1);
 
@@ -155,7 +155,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('重连后的 EventSource 收到的消息能正常 dispatch 到 listener', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     const received: unknown[] = [];
     api.on('swarm:event', (payload) => { received.push(payload); });
 
@@ -172,7 +172,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('连续两次 error 不会把重连延迟变短，始终按 5 秒窗口排队', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     api.on('swarm:event', () => {});
 
     fake.instances[0]._triggerError();
@@ -185,7 +185,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('所有 listener 被移除后 ensureSSE 不会再重连', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     const unsubscribe = api.on('swarm:event', () => {});
     expect(fake.instances).toHaveLength(1);
 
@@ -217,7 +217,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   // tests/web/helpers/sse.replay.test.ts 单独测。
 
   it('从 SSE 消息解析 lastEventId，并在重连 URL 上传回', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     api.on('swarm:event', () => {});
     expect(fake.instances).toHaveLength(1);
     // 第一次连接没有 lastEventId 参数
@@ -247,7 +247,7 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('重连后的 EventSource 投递重放事件，listener 能正常收到', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     const received: Array<{ type?: string }> = [];
     api.on('swarm:event', (payload) => { received.push(payload as { type?: string }); });
 
@@ -269,13 +269,13 @@ describe('httpTransport SSE reconnect chaos', () => {
   });
 
   it('第一次连接且没有 lastEventId 时 URL 里不带该参数', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     api.on('swarm:event', () => {});
     expect(fake.instances[0].url).toBe('http://localhost:8180/api/events');
   });
 
   it('乱序到达的事件 id 不会让游标后退', () => {
-    const api = createHttpElectronAPI('http://localhost:8180');
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
     api.on('swarm:event', () => {});
 
     // 按顺序 5 -> 10 -> 7（乱序）

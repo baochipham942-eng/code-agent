@@ -31,7 +31,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
 
   const runEvaluation = useCallback(async () => {
     if (!ipcService.isAvailable()) {
-      setError('Electron API 不可用');
+      setError('桌面桥 API 不可用');
       return;
     }
     setStarted(true);

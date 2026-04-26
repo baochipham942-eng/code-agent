@@ -1,7 +1,7 @@
 // ============================================================================
 // Shell Environment Capture
 // Captures the user's full shell environment (PATH etc.) on startup
-// Solves: Electron apps launched from Finder don't inherit shell PATH
+// Solves: desktop apps launched from Finder don't inherit shell PATH
 // ============================================================================
 
 import { execSync } from 'child_process';
@@ -14,7 +14,7 @@ let shellPath: string | null = null;
 
 /**
  * Load the user's shell environment
- * Only runs on macOS/Linux in Electron mode (not CLI mode)
+ * Only runs on macOS/Linux in desktop mode (not CLI mode)
  */
 export function loadShellEnvironment(): void {
   // Skip in CLI mode — CLI inherits the shell environment naturally

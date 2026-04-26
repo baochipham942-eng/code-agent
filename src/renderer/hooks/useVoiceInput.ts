@@ -38,7 +38,7 @@ interface UseVoiceInputReturn {
 /**
  * 语音输入 Hook
  *
- * 使用 MediaRecorder API 录音，通过 Electron IPC 调用主进程
+ * 使用 MediaRecorder API 录音，通过 Code Agent 桥调用主进程
  * Groq Whisper API 进行语音转文字
  *
  * @example
@@ -69,7 +69,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     if (typeof window === 'undefined') return false;
     if (!navigator.mediaDevices?.getUserMedia) return false;
     if (!window.MediaRecorder) return false;
-    // 检查 Electron API 是否可用
+    // 检查桌面桥 API 是否可用
     if (!ipcService.isAvailable()) return false;
     return true;
   }, []);

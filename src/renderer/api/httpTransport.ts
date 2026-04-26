@@ -2,21 +2,27 @@
 // HTTP Transport - 通过 HTTP API 与后端通信
 // ============================================================================
 //
-// 在浏览器中（非 Electron）运行时，将 electronAPI/domainAPI 的调用
+// 在浏览器或 Tauri WebView 中运行时，将 codeAgentAPI/codeAgentDomainAPI 的调用
 // 转发到 HTTP API 端点。使用 EventSource (SSE) 处理流式事件。
 //
 // ============================================================================
 
 /// <reference path="../types/electron.d.ts" />
 
-import type { ElectronAPI, DomainAPI, IPCResponse, IpcInvokeHandlers, IpcEventHandlers } from '../../shared/ipc';
+import type {
+  ElectronAPI as CommandBridgeAPI,
+  DomainAPI,
+  IPCResponse,
+  IpcInvokeHandlers,
+  IpcEventHandlers,
+} from '../../shared/ipc';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 
 type EventCallback = (...args: unknown[]) => void;
 
 /**
- * 基于 HTTP API 的 ElectronAPI polyfill
+ * 基于 HTTP API 的 Code Agent API polyfill
  *
  * 将 IPC invoke 调用映射到 REST API 端点，
  * 将 IPC on/off 事件映射到 SSE EventSource。
@@ -83,7 +89,7 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
-export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
+export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
   // 事件监听器管理
   const listeners = new Map<string, Set<EventCallback>>();
   let eventSource: EventSource | null = null;
@@ -166,7 +172,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
     return { method: 'POST', path };
   }
 
-  const api: ElectronAPI = {
+  const api: CommandBridgeAPI = {
     invoke: (async <K extends keyof IpcInvokeHandlers>(
       channel: K & string,
       ...args: Parameters<IpcInvokeHandlers[K]>
@@ -365,7 +371,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
         console.warn(`[HttpTransport] ${channel} error:`, err);
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       }
-    }) as ElectronAPI['invoke'],
+    }) as CommandBridgeAPI['invoke'],
 
     on: (<K extends keyof IpcEventHandlers>(
       channel: K & string,
@@ -393,7 +399,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
           eventSource = null;
         }
       };
-    }) as ElectronAPI['on'],
+    }) as CommandBridgeAPI['on'],
 
     off: (<K extends keyof IpcEventHandlers>(
       channel: K & string,
@@ -404,7 +410,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
         set.delete(callback as EventCallback);
         if (set.size === 0) listeners.delete(channel);
       }
-    }) as ElectronAPI['off'],
+    }) as CommandBridgeAPI['off'],
 
     getPathForFile: async (_file: File) => {
       const formData = new FormData();
@@ -497,6 +503,11 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
 
   return api;
 }
+
+/**
+ * @deprecated Compatibility alias for older imports and tests.
+ */
+export const createHttpElectronAPI = createHttpCodeAgentAPI;
 
 /**
  * 基于 HTTP API 的 DomainAPI polyfill

@@ -87,7 +87,7 @@ GUI features (screenshot, browser_action) are unavailable.${appIdentity}
   }
 
   return `\n\n<runtime_mode>
-You are running inside a desktop GUI application (Electron).
+You are running inside a desktop GUI application.
 Users interact through a visual chat interface, not a terminal.
 When explaining solutions, frame them from the user's perspective — describe what you're doing, not internal tool names.${appIdentity}
 </runtime_mode>`;
@@ -152,4 +152,3 @@ export async function buildEnhancedSystemPrompt(
 ): Promise<string> {
   return basePrompt;
 }
-

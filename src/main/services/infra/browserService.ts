@@ -7,6 +7,7 @@
 import type { Browser, Page, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn, type ChildProcess } from 'child_process';
 import { app } from '../../platform';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
@@ -14,10 +15,22 @@ import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import type {
   ManagedBrowserMode,
+  ManagedBrowserProvider,
+  ManagedBrowserProviderPreference,
   ManagedBrowserSessionState,
   WorkbenchActionTrace,
   WorkbenchSnapshotRef,
 } from '../../../shared/contract/desktop';
+import {
+  redactBrowserComputerInputArgs,
+  redactBrowserComputerInputPayloadsInValue,
+} from '../../../shared/utils/browserComputerRedaction';
+import {
+  buildSystemChromeCdpArgs,
+  findAvailablePort,
+  resolveBrowserProvider,
+  type BrowserProviderResolution,
+} from './browserProvider';
 
 // Lazy-load playwright to avoid hard dependency at module load time
 // (e.g., when bundled for test runner where playwright is not installed)
@@ -111,11 +124,23 @@ export interface BrowserDomSnapshot {
 
 export interface ManagedBrowserLaunchOptions {
   mode?: ManagedBrowserMode;
+  provider?: ManagedBrowserProviderPreference;
+}
+
+interface BrowserProviderDiagnostics {
+  provider: ManagedBrowserProvider | null;
+  requestedProvider: ManagedBrowserProviderPreference | null;
+  executable: string | null;
+  cdpPort: number | null;
+  missingExecutable: boolean;
+  recommendedAction: string | null;
+  providerFallbackReason: string | null;
 }
 
 class BrowserService implements Disposable {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
+  private browserProcess: ChildProcess | null = null;
   private tabs: Map<string, BrowserTab> = new Map();
   private activeTabId: string | null = null;
   private disposed = false;
@@ -128,6 +153,7 @@ class BrowserService implements Disposable {
   private networkFailures: string[] = [];
   private allowedHosts: string[];
   private blockedHosts: string[];
+  private providerDiagnostics: BrowserProviderDiagnostics;
   public logger: BrowserLogger = new BrowserLogger();
 
   constructor() {
@@ -137,6 +163,7 @@ class BrowserService implements Disposable {
     this.mode = this.getDefaultMode();
     this.allowedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_ALLOWED_HOSTS);
     this.blockedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_BLOCKED_HOSTS);
+    this.providerDiagnostics = this.createInitialProviderDiagnostics();
     if (!fs.existsSync(this.screenshotDir)) {
       fs.mkdirSync(this.screenshotDir, { recursive: true });
     }
@@ -157,45 +184,42 @@ class BrowserService implements Disposable {
     }
 
     this.mode = options.mode || this.getDefaultMode();
-    this.logger.log('INFO', `Launching isolated Chromium browser (${this.mode})...`);
-    const pw = await getPlaywright();
-    this.context = await pw.chromium.launchPersistentContext(this.profileDir, {
-      headless: this.mode === 'headless',
-      viewport: this.viewport,
-      acceptDownloads: false,
-      ignoreHTTPSErrors: false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--no-first-run',
-        '--no-default-browser-check',
-      ],
-      env: buildBrowserEnvironment(),
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    const resolution = resolveBrowserProvider({ requestedProvider: options.provider });
+    this.updateProviderDiagnostics(resolution, {
+      executable: resolution.systemExecutable,
+      cdpPort: null,
     });
-    this.browser = this.context.browser();
 
-    await this.context.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (!this.isUrlAllowed(url)) {
-        this.logger.log('WARN', `Blocked browser request: ${url}`);
-        await route.abort('blockedbyclient');
-        return;
+    this.logger.log('INFO', `Launching managed browser via ${resolution.provider} (${this.mode})...`);
+    if (resolution.provider === 'system-chrome-cdp') {
+      try {
+        await this.launchSystemChromeCdp(resolution);
+      } catch (error) {
+        await this.cleanupFailedSystemChromeLaunch();
+        if (resolution.requestedProvider !== 'auto') {
+          throw error;
+        }
+        const fallbackReason = error instanceof Error ? error.message : String(error);
+        this.logger.log('WARN', `System Chrome CDP launch failed; falling back to Playwright bundled Chromium: ${fallbackReason}`);
+        await this.launchPlaywrightBundled(resolution, `System Chrome CDP launch failed: ${fallbackReason}`);
       }
-      await route.continue();
-    });
+    } else {
+      await this.launchPlaywrightBundled(resolution, resolution.providerFallbackReason);
+    }
 
-    this.logger.log('INFO', `Browser launched successfully (viewport: ${this.viewport.width}x${this.viewport.height})`);
+    await this.installContextGuards();
+    this.logger.log(
+      'INFO',
+      `Browser launched successfully via ${this.providerDiagnostics.provider} (viewport: ${this.viewport.width}x${this.viewport.height})`,
+    );
   }
 
   async close(): Promise<void> {
-    if (this.browser || this.context) {
+    if (this.browser || this.context || this.browserProcess) {
       this.logger.log('INFO', 'Closing browser...');
       await this.context?.close().catch(() => undefined);
       await this.browser?.close().catch(() => undefined);
+      await this.stopSystemChromeProcess();
       this.browser = null;
       this.context = null;
       this.tabs.clear();
@@ -225,6 +249,7 @@ class BrowserService implements Disposable {
 
     this.logger.log('INFO', `Creating new tab${url ? ` with URL: ${url}` : ''}`);
     const page = await this.context!.newPage();
+    await page.setViewportSize(this.viewport).catch(() => undefined);
     const tabId = `tab_${Date.now()}`;
 
     if (url) {
@@ -332,7 +357,14 @@ class BrowserService implements Disposable {
         }
         : null,
       mode: this.mode,
+      provider: this.providerDiagnostics.provider,
+      requestedProvider: this.providerDiagnostics.requestedProvider,
+      executable: this.providerDiagnostics.executable,
+      cdpPort: this.providerDiagnostics.cdpPort,
       profileDir: this.profileDir,
+      missingExecutable: this.providerDiagnostics.missingExecutable,
+      recommendedAction: this.providerDiagnostics.recommendedAction,
+      providerFallbackReason: this.providerDiagnostics.providerFallbackReason,
       viewport: this.viewport,
       allowedHosts: this.allowedHosts,
       blockedHosts: this.blockedHosts,
@@ -676,9 +708,15 @@ class BrowserService implements Disposable {
       toolName: args.toolName,
       action: args.action,
       mode: this.mode,
+      provider: this.providerDiagnostics.provider,
+      executable: this.providerDiagnostics.executable,
+      cdpPort: this.providerDiagnostics.cdpPort,
+      profileDir: this.profileDir,
+      missingExecutable: this.providerDiagnostics.missingExecutable,
+      recommendedAction: this.providerDiagnostics.recommendedAction,
       startedAtMs: Date.now(),
       before: this.snapshotActiveTab(),
-      params: redactTraceParams(args.params || {}),
+      params: redactBrowserWorkbenchTraceParams(args.toolName, args.params || {}),
       consoleErrors: [],
       networkFailures: [],
     };
@@ -710,6 +748,204 @@ class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
   // Private Helpers
   // --------------------------------------------------------------------------
+
+  private async launchSystemChromeCdp(resolution: BrowserProviderResolution): Promise<void> {
+    const executable = resolution.systemExecutable;
+    if (resolution.missingExecutable || !executable) {
+      throw new Error(resolution.recommendedAction || 'System Chrome executable is missing');
+    }
+
+    const cdpPort = await findAvailablePort();
+    this.updateProviderDiagnostics(resolution, { executable, cdpPort });
+    const chromeArgs = buildSystemChromeCdpArgs({
+      cdpPort,
+      profileDir: this.profileDir,
+      headless: this.mode === 'headless',
+      viewport: this.viewport,
+    });
+
+    const chromeProcess = spawn(executable, chromeArgs, {
+      env: buildBrowserEnvironment(),
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    this.browserProcess = chromeProcess;
+    chromeProcess.stderr?.on('data', (chunk) => {
+      const message = String(chunk).trim();
+      if (message) {
+        this.logger.log('DEBUG', `[System Chrome] ${message.slice(0, 500)}`);
+      }
+    });
+    chromeProcess.once('exit', (code, signal) => {
+      if (this.browserProcess === chromeProcess) {
+        this.logger.log('WARN', `System Chrome exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
+      }
+    });
+
+    await Promise.race([
+      this.waitForCdpEndpoint(cdpPort, chromeProcess),
+      new Promise<never>((_, reject) => {
+        chromeProcess.once('error', reject);
+      }),
+    ]);
+
+    const pw = await getPlaywright();
+    this.browser = await pw.chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+    this.context = this.browser.contexts()[0] || await this.browser.newContext({
+      viewport: this.viewport,
+      acceptDownloads: false,
+      ignoreHTTPSErrors: false,
+      userAgent: getDefaultUserAgent(),
+    });
+    this.updateProviderDiagnostics(resolution, { executable, cdpPort });
+  }
+
+  private async launchPlaywrightBundled(
+    resolution: BrowserProviderResolution,
+    fallbackReason: string | null = null,
+  ): Promise<void> {
+    const pw = await getPlaywright();
+    const executable = typeof pw.chromium.executablePath === 'function'
+      ? pw.chromium.executablePath()
+      : null;
+    const playwrightExecutableMissing = !executable || !fs.existsSync(executable);
+    this.updateProviderDiagnostics(
+      {
+        ...resolution,
+        provider: 'playwright-bundled',
+        providerFallbackReason: fallbackReason,
+      },
+      {
+        executable,
+        cdpPort: null,
+        missingExecutable: resolution.missingExecutable || playwrightExecutableMissing,
+        recommendedAction: playwrightExecutableMissing
+          ? 'Run npx playwright install chromium to enable the bundled fallback, or use CODE_AGENT_BROWSER_PROVIDER=system-chrome-cdp with a valid Chrome executable.'
+          : resolution.recommendedAction,
+      },
+    );
+    this.context = await pw.chromium.launchPersistentContext(this.profileDir, {
+      headless: this.mode === 'headless',
+      viewport: this.viewport,
+      acceptDownloads: false,
+      ignoreHTTPSErrors: false,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--no-first-run',
+        '--no-default-browser-check',
+      ],
+      env: buildBrowserEnvironment(),
+      userAgent: getDefaultUserAgent(),
+    });
+    this.browser = this.context.browser();
+  }
+
+  private async installContextGuards(): Promise<void> {
+    if (!this.context) {
+      throw new Error('Browser context was not created');
+    }
+    await this.context.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (!this.isUrlAllowed(url)) {
+        this.logger.log('WARN', `Blocked browser request: ${url}`);
+        await route.abort('blockedbyclient');
+        return;
+      }
+      await route.continue();
+    });
+  }
+
+  private async waitForCdpEndpoint(port: number, chromeProcess: ChildProcess): Promise<void> {
+    const startedAt = Date.now();
+    const endpoint = `http://127.0.0.1:${port}/json/version`;
+    while (Date.now() - startedAt < 10000) {
+      if (chromeProcess.exitCode !== null || chromeProcess.signalCode !== null) {
+        throw new Error(`System Chrome exited before CDP became ready (code=${chromeProcess.exitCode ?? 'null'}, signal=${chromeProcess.signalCode ?? 'null'})`);
+      }
+      try {
+        const response = await fetch(endpoint);
+        if (response.ok) {
+          return;
+        }
+      } catch {
+        // Chrome opens the debugging endpoint a moment after the process starts.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    throw new Error(`Timed out waiting for Chrome CDP endpoint on port ${port}`);
+  }
+
+  private async cleanupFailedSystemChromeLaunch(): Promise<void> {
+    await this.context?.close().catch(() => undefined);
+    await this.browser?.close().catch(() => undefined);
+    this.context = null;
+    this.browser = null;
+    await this.stopSystemChromeProcess();
+  }
+
+  private async stopSystemChromeProcess(): Promise<void> {
+    const chromeProcess = this.browserProcess;
+    this.browserProcess = null;
+    if (!chromeProcess || chromeProcess.exitCode !== null || chromeProcess.signalCode !== null) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 1000);
+      chromeProcess.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      chromeProcess.kill();
+    });
+  }
+
+  private updateProviderDiagnostics(
+    resolution: BrowserProviderResolution,
+    runtime: {
+      executable: string | null;
+      cdpPort: number | null;
+      missingExecutable?: boolean;
+      recommendedAction?: string | null;
+    },
+  ): void {
+    this.providerDiagnostics = {
+      provider: resolution.provider,
+      requestedProvider: resolution.requestedProvider,
+      executable: runtime.executable,
+      cdpPort: runtime.cdpPort,
+      missingExecutable: runtime.missingExecutable ?? resolution.missingExecutable,
+      recommendedAction: runtime.recommendedAction ?? resolution.recommendedAction,
+      providerFallbackReason: resolution.providerFallbackReason,
+    };
+  }
+
+  private createInitialProviderDiagnostics(): BrowserProviderDiagnostics {
+    try {
+      const resolution = resolveBrowserProvider();
+      return {
+        provider: resolution.provider,
+        requestedProvider: resolution.requestedProvider,
+        executable: resolution.provider === 'system-chrome-cdp' ? resolution.systemExecutable : null,
+        cdpPort: null,
+        missingExecutable: resolution.missingExecutable,
+        recommendedAction: resolution.recommendedAction,
+        providerFallbackReason: resolution.providerFallbackReason,
+      };
+    } catch (error) {
+      return {
+        provider: null,
+        requestedProvider: null,
+        executable: null,
+        cdpPort: null,
+        missingExecutable: false,
+        recommendedAction: error instanceof Error ? error.message : String(error),
+        providerFallbackReason: null,
+      };
+    }
+  }
 
   // --------------------------------------------------------------------------
   // Disposable
@@ -834,15 +1070,27 @@ function buildBrowserEnvironment(): Record<string, string> {
   return env;
 }
 
-function redactTraceParams(params: Record<string, unknown>): Record<string, unknown> {
+function getDefaultUserAgent(): string {
+  return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+}
+
+export function redactBrowserWorkbenchTraceParams(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+  const inputSafeParams = redactBrowserComputerInputArgs(toolName, params);
+  if (inputSafeParams) {
+    return inputSafeParams;
+  }
+
   const redacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(params)) {
     if (/password|token|secret|credential|cookie/i.test(key)) {
       redacted[key] = '[redacted]';
-    } else if (typeof value === 'string' && value.length > 500) {
-      redacted[key] = `${value.slice(0, 500)}...`;
+    } else if (typeof value === 'string') {
+      const sanitized = redactBrowserComputerInputPayloadsInValue(toolName, params, value);
+      redacted[key] = typeof sanitized === 'string' && sanitized.length > 500
+        ? `${sanitized.slice(0, 500)}...`
+        : sanitized;
     } else {
-      redacted[key] = value;
+      redacted[key] = redactBrowserComputerInputPayloadsInValue(toolName, params, value);
     }
   }
   return redacted;

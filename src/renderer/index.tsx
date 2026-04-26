@@ -21,6 +21,8 @@ declare global {
     // 自动跑探测 → 启动 → 等 ready → 把 URL 喂给 LivePreviewFrame
     __startDevServer?: (projectPath: string) => Promise<void>;
     __stopDevServer?: (sessionId: string) => Promise<void>;
+    /** D3: 弹出 DevServerLauncher 模态（带 UI 选目录） */
+    __openDevServerLauncher?: () => void;
   }
 }
 window.__openLivePreview = async (url: string) => {
@@ -74,6 +76,10 @@ window.__stopDevServer = async (sessionId: string) => {
   } catch (err) {
     console.error('[LivePreview] stopDevServer failed', err);
   }
+};
+
+window.__openDevServerLauncher = () => {
+  useAppStore.getState().openDevServerLauncher();
 };
 
 const container = document.getElementById('root');

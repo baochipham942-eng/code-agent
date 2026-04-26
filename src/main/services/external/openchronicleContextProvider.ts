@@ -8,6 +8,7 @@
 
 import { createLogger } from '../infra/logger';
 import { loadSettings } from './openchronicleSupervisor';
+import { compileFilter, filterCaptures, type CompiledFilter } from './openchronicleContextFilter';
 
 const logger = createLogger('OpenchronicleContextProvider');
 
@@ -130,15 +131,15 @@ function formatTimeline(blocks: TimelineBlock[]): string[] {
     .filter((line) => line.length > 6);
 }
 
-function formatContext(payload: CurrentContextResult): string {
+function formatContext(payload: CurrentContextResult, filter: CompiledFilter): string {
   const sections: string[] = [];
 
-  const headlines = payload.recent_captures_headline ?? [];
+  const headlines = filterCaptures(payload.recent_captures_headline, filter);
   if (headlines.length > 0) {
     sections.push('最近活动:\n' + formatHeadlines(headlines).join('\n'));
   }
 
-  const blocks = payload.recent_timeline_blocks ?? [];
+  const blocks = filterCaptures(payload.recent_timeline_blocks, filter);
   if (blocks.length > 0) {
     sections.push('近期时间线:\n' + formatTimeline(blocks).join('\n'));
   }
@@ -179,7 +180,8 @@ export async function fetchOpenchronicleContext(): Promise<string | null> {
   });
   if (!result || typeof result !== 'object') return null;
 
-  const formatted = formatContext(result as CurrentContextResult);
+  const filter = compileFilter(settings);
+  const formatted = formatContext(result as CurrentContextResult, filter);
   if (!formatted.trim()) return null;
   return formatted;
 }

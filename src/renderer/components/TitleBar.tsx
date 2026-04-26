@@ -4,34 +4,14 @@
 import React, { useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
-import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, FolderTree, GitBranch, FlaskConical, Monitor, Clock3, Sparkles } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen } from 'lucide-react';
 import { isWebMode, isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import { LivePreviewLauncher } from './TitleBar/LivePreviewLauncher';
-// 奶酪图标组件
-const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 12l10-9 10 9" />
-    <path d="M2 12h20v9H2z" />
-    <circle cx="7" cy="16" r="1.5" fill="currentColor" />
-    <circle cx="12" cy="14" r="1" fill="currentColor" />
-    <circle cx="16" cy="17" r="1.5" fill="currentColor" />
-  </svg>
-);
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
-    showDAGPanel,
-    setShowDAGPanel,
-    setShowLab,
-    setShowEvalCenter,
-    showDesktopPanel,
-    setShowDesktopPanel,
-    showCronCenter,
-    setShowCronCenter,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
     workbenchTabs,
@@ -39,15 +19,10 @@ export const TitleBar: React.FC = () => {
     closeWorkbenchTab,
   } = useAppStore();
   const isTaskTabOpen = workbenchTabs.includes('task');
-  const isSkillsTabOpen = workbenchTabs.includes('skills');
-  const isFilesTabOpen = workbenchTabs.includes('files');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
   const effectiveWorkingDirectory = composerWorkingDirectory ?? workingDirectory;
-  // 获取当前会话 ID
-  // DAG 面板权限检查
-  const { dagPanelEnabled, isStandard } = useDisclosure();
   // Get workspace name from path
   const getWorkspaceName = (path: string | null): string => {
     if (!path) return '';
@@ -100,86 +75,10 @@ export const TitleBar: React.FC = () => {
           <span className="max-w-[180px] truncate">{workspaceLabel}</span>
         </button>
         <SessionActionsMenu />
-        {/* Live Preview 入口（B+ IA：从 ChatInput 能力 popover 挪到顶栏，
-            跟工作目录绑定显示，不再每条 turn 都看到） */}
-        <LivePreviewLauncher />
       </div>
-      {/* Right: EvalCenter + Lab + DAG Panel Toggle + Task Panel Toggle */}
+      {/* Right: 仅保留 Task Panel toggle —— 顶栏布局对称，其余工具进左下 User Menu，
+          tab 重开走 WorkbenchTabs 的 + 按钮 */}
       <div className="flex items-center gap-1">
-        {/* EvalCenter Button (奶酪图标) — 合并了评测 + 遥测 */}
-        <IconButton
-          icon={<CheeseIcon className="w-4 h-4" />}
-          aria-label="评测中心"
-          onClick={() => setShowEvalCenter(true)}
-          variant="ghost"
-          size="md"
-          windowNoDrag
-          className="text-amber-400/70 hover:text-amber-400"
-        />
-        {/* Lab Button */}
-        <IconButton
-          icon={<FlaskConical className="w-4 h-4" />}
-          aria-label="实验室"
-          onClick={() => setShowLab(true)}
-          variant="ghost"
-          size="md"
-          windowNoDrag
-          className="text-emerald-400/70 hover:text-emerald-400"
-        />
-        <IconButton
-          icon={<Clock3 className="w-4 h-4" />}
-          aria-label={showCronCenter ? '隐藏定时任务中心' : '显示定时任务中心'}
-          onClick={() => setShowCronCenter(!showCronCenter)}
-          variant="ghost"
-          size="md"
-          windowNoDrag
-          className={showCronCenter ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
-        />
-        {/* DAG Panel Toggle (Advanced+ mode) */}
-        {dagPanelEnabled && (
-          <IconButton
-            icon={<GitBranch className="w-4 h-4" />}
-            aria-label={showDAGPanel ? '隐藏任务执行图' : '显示任务执行图'}
-            onClick={() => setShowDAGPanel(!showDAGPanel)}
-            variant="ghost"
-            size="md"
-            windowNoDrag
-            className={showDAGPanel ? 'text-blue-400' : ''}
-          />
-        )}
-        {/* Desktop Collector Toggle */}
-        <IconButton
-          icon={<Monitor className="w-4 h-4" />}
-          aria-label={showDesktopPanel ? '隐藏桌面采集' : '桌面采集'}
-          onClick={() => setShowDesktopPanel(!showDesktopPanel)}
-          variant="ghost"
-          size="md"
-          windowNoDrag
-          className={showDesktopPanel ? 'text-cyan-400' : ''}
-        />
-        {/* File Explorer Toggle — 统一成右侧 workbench tab */}
-        <IconButton
-          icon={<FolderTree className="w-4 h-4" />}
-          aria-label={isFilesTabOpen ? '隐藏文件浏览器' : '显示文件浏览器'}
-          onClick={() => (isFilesTabOpen ? closeWorkbenchTab('files') : openWorkbenchTab('files'))}
-          variant="ghost"
-          size="md"
-          windowNoDrag
-          className={isFilesTabOpen ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
-        />
-        {/* Skills Panel Toggle (Standard+ mode) */}
-        {isStandard && (
-          <IconButton
-            icon={<Sparkles className="w-4 h-4" />}
-            aria-label={isSkillsTabOpen ? '隐藏 Skills 面板' : '显示 Skills 面板'}
-            onClick={() => (isSkillsTabOpen ? closeWorkbenchTab('skills') : openWorkbenchTab('skills'))}
-            variant="ghost"
-            size="md"
-            windowNoDrag
-            className={isSkillsTabOpen ? 'text-purple-400' : 'text-purple-400/70 hover:text-purple-400'}
-          />
-        )}
-        {/* Task Panel Toggle */}
         <IconButton
           icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
           aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}

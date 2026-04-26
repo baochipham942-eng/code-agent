@@ -12,7 +12,9 @@
 import React, { useState } from 'react';
 import { Bot, ChevronUp, ChevronDown, Square, ExternalLink } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
+import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
+import ipcService from '../../../services/ipcService';
 
 const AGENT_COLORS = [
   'text-emerald-400',
@@ -55,11 +57,31 @@ export function SwarmInlineMonitor() {
   const agents = useSwarmStore((s) => s.agents);
   const isRunning = useSwarmStore((s) => s.isRunning);
   const [collapsed, setCollapsed] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const activeAgents = agents.filter((a) => isActive(a.status));
   // swarm 没跑或没活跃 agent 时不渲染
   if (!isRunning && activeAgents.length === 0) return null;
   if (agents.length === 0) return null;
+
+  const handleStopAll = async () => {
+    if (stopping || activeAgents.length === 0) return;
+    setStopping(true);
+    try {
+      // CA 没有"停止整个 swarm"的 IPC，遍历当前 active agents 各自 cancel
+      // 比"等 user 一个一个点 X"快得多。
+      await Promise.all(
+        activeAgents.map((agent) =>
+          ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id }).catch(() => {
+            // 单个 cancel 失败不阻塞其他 agent — swarm orchestrator 会通过 SwarmEvent
+            // 反映状态，UI 自动收敛
+          }),
+        ),
+      );
+    } finally {
+      setStopping(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
@@ -70,12 +92,16 @@ export function SwarmInlineMonitor() {
         </span>
         <span className="text-zinc-500">(@ to tag agents)</span>
         <div className="ml-auto flex items-center gap-2">
-          {/* 停止按钮预留位（实际停止逻辑后续接 IPC） */}
           <button
             type="button"
-            className="text-zinc-500 hover:text-red-400 transition-colors"
-            title="停止所有 agent（待接通）"
-            disabled
+            onClick={handleStopAll}
+            disabled={stopping || activeAgents.length === 0}
+            className={`transition-colors ${
+              stopping
+                ? 'text-zinc-600 cursor-wait'
+                : 'text-zinc-400 hover:text-red-400'
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+            title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
           >
             <Square size={12} />
           </button>

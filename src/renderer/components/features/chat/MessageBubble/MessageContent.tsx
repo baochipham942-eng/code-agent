@@ -21,6 +21,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 import { ChartBlock } from './ChartBlock';
+import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
@@ -806,7 +807,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           );
         }
 
-        // Regular links
+        // Raw URL（textNode === href）渲染为带 favicon 的预览 chip
+        if (href && isRawUrlLink(href, children)) {
+          return <LinkPreviewCard href={href} />;
+        }
+
+        // Regular links（带描述文字的内联链接）
         return (
           <a
             href={href}

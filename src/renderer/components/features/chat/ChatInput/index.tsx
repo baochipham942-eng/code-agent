@@ -32,6 +32,8 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import { InteractionModeIndicator } from '../../../StatusBar/InteractionModeIndicator';
+import { EffortLevelIndicator } from '../../../StatusBar/EffortLevelIndicator';
 import ipcService from '../../../../services/ipcService';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import {
@@ -670,6 +672,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <CostDisplay cost={sessionCost} isStreaming={statusStreaming} />
               </span>
             )}
+
+            {/* 交互模式 + 推理 effort 切换器（Codex 风格一等公民） */}
+            <div className="text-xs">
+              <InteractionModeIndicator />
+            </div>
+            <div className="text-xs">
+              <EffortLevelIndicator />
+            </div>
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />

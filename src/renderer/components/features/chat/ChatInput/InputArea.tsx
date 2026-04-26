@@ -239,7 +239,9 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       ask: { text: '问我任何问题...', colorClass: 'placeholder-emerald-500/50' },
     };
     const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;
-    const placeholderText = hasMessages ? '继续描述或追加调整...' : baseConfig.text;
+    // 续轮 placeholder 提示 @ 标记 agent 功能（对齐 Codex 风格，让用户发现 swarm
+    // 路由能力）。swarm 没跑时 @ 也是无害的，跑起来时是路由入口
+    const placeholderText = hasMessages ? '继续描述或 @ 标记 agent...' : baseConfig.text;
     const placeholderColor = baseConfig.colorClass;
 
     return (

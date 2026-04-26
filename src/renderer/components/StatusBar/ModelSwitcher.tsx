@@ -13,8 +13,10 @@ import {
   getModelDisplayLabel,
 } from '@shared/constants';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain, Sparkles } from 'lucide-react';
+import { Eye, Wrench, Brain, Sparkles, Zap } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
+import { useModeStore } from '../../stores/modeStore';
+import type { EffortLevel } from '../../../shared/contract/agent';
 
 interface ModelOption {
   provider: string;
@@ -125,6 +127,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
+  // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
+  const effortLevel = useModeStore((s) => s.effortLevel);
+  const setEffortLevel = useModeStore((s) => s.setEffortLevel);
 
   // 搜索过滤
   const filteredOptions = useMemo(() => {
@@ -277,6 +282,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const isOverridden = !!overrideModel;
   const displayLabel = overrideAdaptive ? '自动' : getModelDisplayLabel(displayModel);
 
+  const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> = [
+    { value: 'low', label: 'Low', color: 'text-zinc-400' },
+    { value: 'medium', label: 'Med', color: 'text-blue-400' },
+    { value: 'high', label: 'High', color: 'text-amber-400' },
+    { value: 'max', label: 'Max', color: 'text-pink-400' },
+  ];
+  const effortShort = EFFORT_OPTIONS.find((o) => o.value === effortLevel)?.label ?? 'High';
+
   const menu = open && menuPos && (
     <div
       ref={menuRef}
@@ -292,6 +305,32 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: 9999,
       }}
     >
+          {/* Reasoning effort 行（Codex 风格 Intelligence 子菜单的扁平化） */}
+          <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
+            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+              <Zap className="w-3 h-3" />
+              <span>Reasoning effort</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {EFFORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEffortLevel(opt.value)}
+                  className={`
+                    px-1.5 py-1 text-[10px] rounded transition-colors
+                    ${effortLevel === opt.value
+                      ? `${opt.color} bg-zinc-700 font-medium`
+                      : 'text-zinc-500 hover:bg-zinc-700/50'}
+                  `}
+                  title={`Reasoning effort: ${opt.value}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 搜索框 */}
           <div className="px-2 py-1.5">
             <input
@@ -394,7 +433,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         aria-label="切换模型"
         aria-expanded={open}
         className={`
-          font-medium cursor-pointer truncate max-w-[160px]
+          font-medium cursor-pointer truncate max-w-[200px]
           hover:text-purple-300 transition-colors
           ${isOverridden ? 'text-amber-400' : 'text-purple-400'}
         `}
@@ -407,6 +446,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         }
       >
         {displayLabel}
+        <span className="text-zinc-500 ml-1">·</span>
+        <span className="text-zinc-400 ml-0.5">{effortShort}</span>
         {isOverridden && <span className="text-[9px] ml-0.5">*</span>}
       </button>
       {menu && createPortal(menu, document.body)}

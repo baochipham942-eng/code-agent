@@ -9,6 +9,7 @@ import { formatParams, formatDuration, getToolDisplayName } from './utils';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
+import { TargetContextIcon } from './TargetContextIcon';
 
 interface Props {
   toolCall: ToolCall;
@@ -32,10 +33,18 @@ export function ToolHeader({ toolCall, status }: Props) {
     typeof toolCall.result?.output === 'string' &&
     toolCall.result.output.includes('[codex-sandbox]');
 
+  // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
+  const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
+
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
       {/* Status label - dynamic per-tool text */}
       <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
+
+      {/* Target context icon — 让用户一眼认出"在操作哪个 app/服务" */}
+      {showTargetIcon && (
+        <TargetContextIcon targetContext={toolCall.targetContext} className="flex-shrink-0" />
+      )}
 
       {/* Tool name - always semibold, neutral color */}
       {/* truncate + min-w-0 让长 shortDescription（如完整 Bash 命令）按 CSS 截断而不撑爆 layout */}

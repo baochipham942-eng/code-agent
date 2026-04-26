@@ -4,10 +4,11 @@
 // Mixes pinned tabs ('task', 'skills') with per-file preview tabs. Click to
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Plus, ListTodo, Sparkles, FolderTree } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
+import { useDisclosure } from '../hooks/useDisclosure';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -30,8 +31,31 @@ export const WorkbenchTabs: React.FC = () => {
   const previewTabs = useAppStore((s) => s.previewTabs);
   const setActiveWorkbenchTab = useAppStore((s) => s.setActiveWorkbenchTab);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
+  const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  const { isStandard } = useDisclosure();
 
-  if (workbenchTabs.length === 0) return null;
+  // "+" 按钮的 popover 状态：列出未打开的 Task/Skills/Files 让用户重开
+  const [addOpen, setAddOpen] = useState(false);
+  const addRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!addOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!addRef.current?.contains(e.target as Node)) setAddOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAddOpen(false); };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [addOpen]);
+
+  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个
+  const hasTask = workbenchTabs.includes('task');
+  const hasSkills = workbenchTabs.includes('skills');
+  const hasFiles = workbenchTabs.includes('files');
+  const canAddAny = !hasTask || (!hasSkills && isStandard) || !hasFiles;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'task') {
@@ -90,6 +114,55 @@ export const WorkbenchTabs: React.FC = () => {
           </div>
         );
       })}
+
+      {/* "+" 按钮 — 关掉的 tab 从这里重新开 */}
+      {canAddAny && (
+        <div ref={addRef} className="relative flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setAddOpen((v) => !v)}
+            className="flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors"
+            title="打开面板"
+            aria-label="打开面板"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          {addOpen && (
+            <div className="absolute left-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
+              {!hasTask && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('task'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <ListTodo className="w-3.5 h-3.5" />
+                  {t.taskPanel.title}
+                </button>
+              )}
+              {!hasSkills && isStandard && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('skills'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400/80" />
+                  Skills
+                </button>
+              )}
+              {!hasFiles && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('files'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <FolderTree className="w-3.5 h-3.5 text-amber-400/80" />
+                  文件
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

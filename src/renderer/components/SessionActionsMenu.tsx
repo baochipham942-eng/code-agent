@@ -10,7 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  MoreHorizontal, RotateCcw, TimerReset, Eye, ClipboardList, Download, FolderOpen,
+  MoreHorizontal, RotateCcw, TimerReset, Eye, ClipboardList, Download, FolderOpen, Play,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -27,6 +27,7 @@ export const SessionActionsMenu: React.FC = () => {
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const setAppWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
   const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
+  const openDevServerLauncher = useAppStore((s) => s.openDevServerLauncher);
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sessions = useSessionStore((s) => s.sessions);
@@ -169,6 +170,12 @@ export const SessionActionsMenu: React.FC = () => {
       onClick: handleMoveToBackground,
     });
   }
+  items.push({
+    key: 'live-preview',
+    label: 'Live Preview…',
+    icon: <Play className="h-3.5 w-3.5" />,
+    onClick: () => { close(); openDevServerLauncher(); },
+  });
   items.push({
     key: 'replay',
     label: '打开 Replay',

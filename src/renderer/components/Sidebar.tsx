@@ -31,8 +31,14 @@ import {
   Folder,
   MessageSquareText,
   ChevronRight,
+  FlaskConical,
+  Clock3,
+  Monitor,
+  GitBranch,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { useDisclosure } from '../hooks/useDisclosure';
+import { CheeseIcon } from './icons/CheeseIcon';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
@@ -120,7 +126,20 @@ function formatPresetMenuLabel(name: string): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings, setShowEvalCenter, setWorkingDirectory } = useAppStore();
+  const {
+    clearPlanningState,
+    setShowSettings,
+    setShowEvalCenter,
+    setWorkingDirectory,
+    setShowLab,
+    showCronCenter,
+    setShowCronCenter,
+    showDesktopPanel,
+    setShowDesktopPanel,
+    showDAGPanel,
+    setShowDAGPanel,
+  } = useAppStore();
+  const { dagPanelEnabled } = useDisclosure();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
@@ -854,24 +873,57 @@ export const Sidebar: React.FC = () => {
               </span>
               <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
-            {/* User Dropdown Menu */}
+            {/* User Dropdown Menu — 借鉴 Codex 左下垂直菜单 */}
             {showUserMenu && (
               <div className="absolute bottom-full left-2 right-2 mb-2 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-50">
+                {/* 全局工具入口（原顶栏右侧 5 个按钮挪过来） */}
                 <button
-                  onClick={() => {
-                    setShowSettings(true);
-                    setShowUserMenu(false);
-                  }}
+                  onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <CheeseIcon className="w-4 h-4 text-amber-400/80" />
+                  评测中心
+                </button>
+                <button
+                  onClick={() => { setShowLab(true); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <FlaskConical className="w-4 h-4 text-emerald-400/80" />
+                  实验室
+                </button>
+                <button
+                  onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />
+                  自动化
+                </button>
+                {dagPanelEnabled && (
+                  <button
+                    onClick={() => { setShowDAGPanel(!showDAGPanel); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                  >
+                    <GitBranch className={`w-4 h-4 ${showDAGPanel ? 'text-blue-400' : 'text-blue-400/80'}`} />
+                    Agent 流程
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
+                  桌面采集
+                </button>
+                <div className="border-t border-zinc-800 my-1" />
+                <button
+                  onClick={() => { setShowSettings(true); setShowUserMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
                 >
                   <Settings className="w-4 h-4" />
                   设置
                 </button>
                 <button
-                  onClick={() => {
-                    signOut();
-                    setShowUserMenu(false);
-                  }}
+                  onClick={() => { signOut(); setShowUserMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />

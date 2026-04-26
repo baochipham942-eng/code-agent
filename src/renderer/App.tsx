@@ -17,7 +17,7 @@ import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
-import { isElectronMode } from './utils/platform';
+import { isDesktopShellMode, isTauriMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
@@ -50,15 +50,12 @@ import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
+import { tauriCheckForUpdate } from './utils/tauriUpdater';
 
 const logger = createLogger('App');
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
-  const response = await window.domainAPI?.invoke<T>(domain, action, payload);
-  if (!response?.success) {
-    throw new Error(response?.error?.message || `${domain}:${action} failed`);
-  }
-  return response.data as T;
+  return ipcService.invokeDomain<T>(domain, action, payload);
 }
 
 // ── 响应式断点 hook ──
@@ -158,11 +155,11 @@ export const App: React.FC = () => {
     },
   });
 
-  // Debug: Check if electronAPI is available on mount
+  // Debug: Check if the bridge API is available on mount
   useEffect(() => {
-    logger.debug('Mount - electronAPI available', { available: ipcService.isAvailable() });
+    logger.debug('Mount - bridge API available', { available: ipcService.isAvailable() });
     if (ipcService.isAvailable()) {
-      logger.debug('electronAPI available');
+      logger.debug('bridge API available');
     }
   }, []);
 
@@ -220,14 +217,16 @@ export const App: React.FC = () => {
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
-    if (!isElectronMode()) return;
+    if (!isDesktopShellMode()) return;
 
     const checkForUpdates = async () => {
       try {
         logger.info('Checking for updates on startup');
-        const updateInfo = await invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
+        const updateInfo = isTauriMode()
+          ? await tauriCheckForUpdate()
+          : await invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
 
-        if (updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
+        if (!isTauriMode() && updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
           logger.info('Force update required', { latestVersion: updateInfo.latestVersion });
           setForceUpdateInfo(updateInfo);
         } else if (updateInfo?.hasUpdate) {
@@ -470,7 +469,7 @@ export const App: React.FC = () => {
       {showPasswordResetModal && <PasswordResetModal />}
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
-      {isElectronMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
+      {isDesktopShellMode() && !isTauriMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
 
       {/* API Key Setup Modal - 首次启动引导 */}
       {showApiKeySetup && (

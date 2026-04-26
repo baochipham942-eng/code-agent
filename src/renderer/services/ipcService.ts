@@ -1,44 +1,52 @@
 import type { IpcInvokeHandlers, IpcEventHandlers } from '@shared/ipc';
 
+function commandApi() {
+  return window.codeAgentAPI || window.electronAPI;
+}
+
+function domainApi() {
+  return window.codeAgentDomainAPI || window.domainAPI;
+}
+
 export function invoke<K extends keyof IpcInvokeHandlers>(
   channel: K,
   ...args: Parameters<IpcInvokeHandlers[K]>
 ): ReturnType<IpcInvokeHandlers[K]> {
-  return window.electronAPI?.invoke(channel, ...args) as ReturnType<IpcInvokeHandlers[K]>;
+  return commandApi()?.invoke(channel, ...args) as ReturnType<IpcInvokeHandlers[K]>;
 }
 
 export function on<K extends keyof IpcEventHandlers>(
   channel: K,
   callback: IpcEventHandlers[K]
 ): (() => void) | undefined {
-  return window.electronAPI?.on(channel, callback);
+  return commandApi()?.on(channel, callback);
 }
 
 export function off<K extends keyof IpcEventHandlers>(
   channel: K,
   callback: IpcEventHandlers[K]
 ): void {
-  window.electronAPI?.off(channel, callback);
+  commandApi()?.off(channel, callback);
 }
 
 export function getPathForFile(file: File): string | Promise<string> | undefined {
-  return window.electronAPI?.getPathForFile(file);
+  return commandApi()?.getPathForFile(file);
 }
 
 export function extractPdfText(filePath: string): Promise<{ text: string; pageCount: number }> | undefined {
-  return window.electronAPI?.extractPdfText(filePath);
+  return commandApi()?.extractPdfText(filePath);
 }
 
 export function extractExcelText(filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> | undefined {
-  return window.electronAPI?.extractExcelText(filePath);
+  return commandApi()?.extractExcelText(filePath);
 }
 
 export function extractExcelJson(filePath: string) {
-  return window.electronAPI?.extractExcelJson(filePath);
+  return commandApi()?.extractExcelJson(filePath);
 }
 
 export function extractDocxHtml(filePath: string) {
-  return window.electronAPI?.extractDocxHtml(filePath);
+  return commandApi()?.extractDocxHtml(filePath);
 }
 
 export function transcribeSpeech(audioData: string, mimeType: string): Promise<{
@@ -47,11 +55,11 @@ export function transcribeSpeech(audioData: string, mimeType: string): Promise<{
   error?: string;
   hallucination?: boolean;
 }> | undefined {
-  return window.electronAPI?.transcribeSpeech(audioData, mimeType);
+  return commandApi()?.transcribeSpeech(audioData, mimeType);
 }
 
 export function isAvailable(): boolean {
-  return !!window.electronAPI;
+  return !!commandApi();
 }
 
 export async function invokeDomain<T = unknown>(
@@ -59,7 +67,7 @@ export async function invokeDomain<T = unknown>(
   action: string,
   payload?: unknown
 ): Promise<T> {
-  const response = await window.domainAPI?.invoke<T>(domain, action, payload);
+  const response = await domainApi()?.invoke<T>(domain, action, payload);
   if (!response?.success) {
     throw new Error(response?.error?.message || `${domain}:${action} failed`);
   }

@@ -214,7 +214,7 @@ Features:
     // P2: Auto-extract content from top results
     if (autoExtract && searchResult.success) {
       if (context.modelCallback) {
-        // Electron mode: AI extraction via modelCallback
+        // Desktop/runtime mode: AI extraction via modelCallback
         const extractedContent = await autoExtractFromResults(
           searchResult,
           query,

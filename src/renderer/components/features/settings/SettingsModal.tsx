@@ -12,9 +12,10 @@ import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
-import { isDesktopShellMode, isElectronMode } from '../../../utils/platform';
+import { isDesktopShellMode, isTauriMode } from '../../../utils/platform';
 import { SettingsSearch } from './SettingsSearch';
 import type { SettingsTab as SearchSettingsTab } from '../../../utils/settingsIndex';
+import { tauriCheckForUpdate } from '../../../utils/tauriUpdater';
 
 const logger = createLogger('SettingsModal');
 
@@ -92,11 +93,13 @@ export const SettingsModal: React.FC = () => {
 
   // Check for updates on mount (for badge display)
   useEffect(() => {
-    if (!isElectronMode()) return;
+    if (!isDesktopShellMode()) return;
 
     const checkUpdate = async () => {
       try {
-        const info = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
+        const info = isTauriMode()
+          ? await tauriCheckForUpdate()
+          : await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
         // Only handle non-force updates here
         if (info?.hasUpdate && !info?.forceUpdate) {
           setOptionalUpdateInfo(info);
@@ -108,7 +111,7 @@ export const SettingsModal: React.FC = () => {
     checkUpdate();
   }, []);
 
-  const showUpdateTab = isElectronMode();
+  const showUpdateTab = isDesktopShellMode();
   const tabs = buildSettingsTabs({
     t,
     showScreenMemoryTab: isDesktopShellMode(),
@@ -188,7 +191,7 @@ export const SettingsModal: React.FC = () => {
       </div>
 
       {/* Optional Update Modal */}
-      {isElectronMode() && showUpdateModal && optionalUpdateInfo && (
+      {isDesktopShellMode() && !isTauriMode() && showUpdateModal && optionalUpdateInfo && (
         <UpdateNotification
           updateInfo={optionalUpdateInfo}
           onClose={() => setShowUpdateModal(false)}

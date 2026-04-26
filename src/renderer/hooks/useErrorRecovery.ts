@@ -17,7 +17,7 @@ export function useErrorRecovery(maxAlerts = 5) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
 
   useEffect(() => {
-    const api = (window as any).electronAPI;
+    const api = window.codeAgentAPI || window.electronAPI;
     if (!api?.on) return;
 
     const handler = (_event: any, data: ErrorRecoveryEvent) => {
@@ -45,7 +45,7 @@ export function useErrorRecovery(maxAlerts = 5) {
       }
     };
 
-    const cleanup = api.on('error:recovery', handler);
+    const cleanup = api.on('error:recovery' as never, handler as never);
     return () => { if (cleanup) cleanup(); };
   }, [maxAlerts]);
 

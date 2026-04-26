@@ -11,8 +11,8 @@ import type {
   ActivityProviderState,
 } from '@shared/contract/activityProvider';
 import {
+  getDesktopShellLabel,
   isDesktopShellMode,
-  isElectronMode,
   isTauriMode,
   isWebMode,
 } from '../../../../utils/platform';
@@ -65,9 +65,7 @@ const EMPTY_CONTEXT: ActivityContextPreview = {
 };
 
 function getShellLabel(): string {
-  if (isTauriMode()) return 'Tauri 桌面壳';
-  if (isElectronMode()) return 'Electron 桌面壳';
-  return 'Web';
+  return getDesktopShellLabel();
 }
 
 function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
@@ -306,7 +304,7 @@ export const ScreenMemorySettings: React.FC = () => {
             屏幕记忆
           </h2>
           <p className="text-sm text-zinc-400 mt-1">
-            Web 模式不直接控制本机屏幕记忆。请在 Electron 或 Tauri 桌面版里配置。
+            Web 模式不直接控制本机屏幕记忆。请在桌面版里配置。
           </p>
         </header>
         <WebModeBanner />
@@ -361,7 +359,7 @@ export const ScreenMemorySettings: React.FC = () => {
           <ProviderHeading
             icon={<Server className="w-4 h-4" />}
             title="自动屏幕记忆 / OpenChronicle 外部 provider"
-          description={openchronicleProvider?.summary || '通过现有 domainAPI 设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
+          description={openchronicleProvider?.summary || '通过 Code Agent 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
           provider={openchronicleProvider}
           fallbackKind="daemon"
         />

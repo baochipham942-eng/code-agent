@@ -8,7 +8,7 @@ import { isWebMode } from '../../../utils/platform';
 
 /**
  * Shows an info banner when running in web mode.
- * Renders nothing in Electron mode.
+ * Renders nothing in desktop mode.
  */
 export const WebModeBanner: React.FC = () => {
   if (!isWebMode()) return null;

@@ -180,7 +180,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 </div>
               </div>
 
-              {/* Update Now Button — Tauri uses direct install, Electron uses modal */}
+              {/* Update Now Button — Tauri uses direct install, legacy desktop uses modal */}
               {runningInTauri ? (
                 <Button
                   disabled={isDisabled || isInstalling}

@@ -56,7 +56,7 @@ export const AboutSettings: React.FC = () => {
       <div className="bg-zinc-800 rounded-lg p-4">
         <h4 className="text-sm font-medium text-zinc-200 mb-2">{t.about.technologies}</h4>
         <div className="flex flex-wrap gap-2">
-          {['Electron', 'React', 'TypeScript', 'Tailwind CSS', 'DeepSeek API'].map(
+          {['Tauri', 'React', 'TypeScript', 'Tailwind CSS', 'DeepSeek API'].map(
             (tech) => (
               <span
                 key={tech}

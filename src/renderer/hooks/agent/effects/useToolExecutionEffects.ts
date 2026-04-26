@@ -93,7 +93,26 @@ export const useToolExecutionEffects = ({
                   if (event.data.argumentsDelta) {
                     newTc._argumentsRaw = (tc._argumentsRaw || '') + event.data.argumentsDelta;
                     try {
-                      newTc.arguments = JSON.parse(newTc._argumentsRaw);
+                      const parsed = JSON.parse(newTc._argumentsRaw) as Record<string, unknown>;
+                      // 抽出模型在 arguments 里嵌入的 _meta envelope（产品视角语义元数据），
+                      // 写到 ToolCall 顶层并从 arguments 删除——跟 main 进程的
+                      // buildToolCallFromAccumulator 行为对齐，让 streaming 时 ToolHeader
+                      // 立即看到 shortDescription，而不是等持久化兜底。
+                      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                        const meta = (parsed as { _meta?: unknown })._meta;
+                        if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+                          const m = meta as Record<string, unknown>;
+                          if (typeof m.shortDescription === 'string') newTc.shortDescription = m.shortDescription;
+                          if (typeof m.expectedOutcome === 'string') newTc.expectedOutcome = m.expectedOutcome;
+                          if (m.targetContext && typeof m.targetContext === 'object' && !Array.isArray(m.targetContext)) {
+                            newTc.targetContext = m.targetContext as ToolCall['targetContext'];
+                          }
+                          delete (parsed as { _meta?: unknown })._meta;
+                        }
+                        newTc.arguments = parsed;
+                      } else {
+                        newTc.arguments = parsed;
+                      }
                     } catch {
                       // JSON is still incomplete.
                     }

@@ -14,6 +14,7 @@ import {
 import { IPC_DOMAINS } from '../../../shared/ipc';
 import { useAppStore, type LivePreviewSelectedElement } from '../../stores/appStore';
 import { invokeDomain } from '../../services/ipcService';
+import { TweakPanel } from './TweakPanel';
 
 interface Props {
   tabId: string;
@@ -78,6 +79,8 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   // Refresh nonce：受控 src 的真相源。改 DOM src 直接 mutate 会被 React
   // rerender 矫正回 devServerUrl 导致 iframe double-load + contentWindow race。
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // V2-B TweakPanel 折叠状态（默认展开，让用户立刻看到能力）
+  const [tweakCollapsed, setTweakCollapsed] = useState(false);
 
   const iframeSrc = useMemo(() => {
     if (refreshNonce === 0) return devServerUrl;
@@ -297,26 +300,35 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
         </div>
       )}
 
-      {/* iframe */}
-      <div className="flex-1 overflow-hidden bg-white relative">
-        <iframe
-          key={devServerUrl}
-          ref={iframeRef}
-          src={iframeSrc}
-          title="Live Preview"
-          className="w-full h-full border-0"
-          onLoad={() => {
-            setFrameLoaded(true);
-            setFrameError(null);
-          }}
-          onError={() => {
-            setFrameError('iframe onError 触发（可能 CSP 拒绝、URL 错误、或跨域阻塞）');
-          }}
-        />
-        {!frameLoaded && !frameError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white text-zinc-400 text-sm">
-            正在加载 {devServerUrl} ...
-          </div>
+      {/* iframe + TweakPanel 抽屉（V2-B） */}
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden bg-white relative">
+          <iframe
+            key={devServerUrl}
+            ref={iframeRef}
+            src={iframeSrc}
+            title="Live Preview"
+            className="w-full h-full border-0"
+            onLoad={() => {
+              setFrameLoaded(true);
+              setFrameError(null);
+            }}
+            onError={() => {
+              setFrameError('iframe onError 触发（可能 CSP 拒绝、URL 错误、或跨域阻塞）');
+            }}
+          />
+          {!frameLoaded && !frameError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white text-zinc-400 text-sm">
+              正在加载 {devServerUrl} ...
+            </div>
+          )}
+        </div>
+        {selectedElement && (
+          <TweakPanel
+            selected={selectedElement}
+            collapsed={tweakCollapsed}
+            onToggleCollapsed={() => setTweakCollapsed((v) => !v)}
+          />
         )}
       </div>
     </div>

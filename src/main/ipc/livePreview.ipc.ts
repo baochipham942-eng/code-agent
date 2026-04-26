@@ -10,8 +10,8 @@ import path from 'node:path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getDevServerManager } from '../services/infra/devServerManager';
-import { applyTweak, type TweakLocation } from '../tools/livePreview/tweakWriter';
-import type { ClassMutation } from '../tools/livePreview/tailwindCategories';
+import { applyTweak } from '../tools/livePreview/tweakWriter';
+import type { ClassMutation, TweakLocation } from '../../shared/livePreview/tweak';
 
 interface ResolveSourceLocationRequest {
   file: string;

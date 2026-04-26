@@ -20,6 +20,7 @@ import { registerWorkspaceHandlers } from './workspace.ipc';
 import { registerSettingsHandlers } from './settings.ipc';
 import { registerUpdateHandlers } from './update.ipc';
 import { registerMcpHandlers } from './mcp.ipc';
+import { registerOpenchronicleHandlers } from './openchronicle.ipc';
 import { registerConnectorHandlers } from './connector.ipc';
 import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
@@ -105,6 +106,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // MCP handlers
   registerMcpHandlers(ipcMain);
+
+  // OpenChronicle (屏幕记忆) handlers
+  registerOpenchronicleHandlers(ipcMain);
 
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);

@@ -35,6 +35,7 @@ export const IPC_DOMAINS = {
   SOUL: 'domain:soul',
   PROVIDER: 'domain:provider',
   LIVE_PREVIEW: 'domain:livePreview', // Live dev server 预览 + click-to-source bridge
+  OPENCHRONICLE: 'domain:openchronicle', // 屏幕记忆（外部 OpenChronicle daemon 集成）
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

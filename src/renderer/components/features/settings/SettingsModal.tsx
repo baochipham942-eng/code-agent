@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Cpu, Palette, Info, Database, Download, Plug, Settings, Brain, Sparkles } from 'lucide-react';
+import { X, Cpu, Palette, Info, Database, Download, Plug, Settings, Brain, Sparkles, Eye } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -29,13 +29,14 @@ import { MemoryTab } from './tabs/MemoryTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { AboutSettings } from './tabs/AboutSettings';
+import { OpenchronicleSettings } from './tabs/OpenchronicleSettings';
 import ipcService from '../../../services/ipcService';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -81,6 +82,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <Settings className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
+    ...(isElectronMode() ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
     ...(isElectronMode() ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -142,6 +144,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'memory' && <MemoryTab />}
+            {isElectronMode() && activeTab === 'openchronicle' && <OpenchronicleSettings />}
             {isElectronMode() && activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}

@@ -239,6 +239,61 @@ export function normalizeJsonSchema(schema: JsonSchemaNode | undefined | null): 
 // Tool Conversion
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// Tool Call Envelope Meta — Schema-level Enforcement
+// ----------------------------------------------------------------------------
+// envelope-only prompt 约定对 OpenAI tool calling 协议下的模型（GLM/Kimi 等）
+// 几乎无效——模型按 tool inputSchema 严格生成 arguments，不会主动加 schema
+// 之外的字段。把 _meta 注入每个 tool 的 inputSchema.properties，让它成为工具
+// argument 的一等公民，模型才会真的填。前端 parser（buildToolCallFromAccumulator）
+// 拿到后抽出 _meta 写到 ToolCall envelope 顶层，并从 arguments 删除避免污染
+// 工具执行参数。
+// ----------------------------------------------------------------------------
+
+const META_PROPERTY_SCHEMA = {
+  type: 'object',
+  description:
+    '【强制字段】产品视角语义元数据，给前端 UI 展示"在干什么"。前端会自动剥离这个字段，不进入工具真实执行参数。每次工具调用都必须填 _meta.shortDescription。',
+  properties: {
+    shortDescription: {
+      type: 'string',
+      description:
+        '一句话动词短语，描述当前这次调用做什么（用户视角的产品语义）。例：好 "Open Baidu search Claude"，差 "browser_click"。不要用工具内部命名。',
+    },
+    targetContext: {
+      type: 'object',
+      description: '操作目标的上下文',
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['app', 'browser', 'mcp_server', 'file', 'memory'],
+          description: 'app=Computer Use 操作目标 / browser / mcp_server=MCP 调用 / file / memory',
+        },
+        label: { type: 'string', description: '显示名（如 "WeChat" / "Exa" / "MEMORY.md"）' },
+        iconHint: { type: 'string', description: '可选：bundleId / domain / server slug' },
+      },
+    },
+    expectedOutcome: {
+      type: 'string',
+      description: '可选：成功后大致看到什么',
+    },
+  },
+  required: ['shortDescription'],
+} as const;
+
+/**
+ * 把 _meta 注入到 inputSchema.properties，让模型按 tool argument 一等公民方式 emit。
+ * 不修改原 schema（深拷贝），避免 ToolDefinition 状态污染。
+ */
+function injectMetaIntoInputSchema(rawSchema: unknown): Record<string, unknown> {
+  const cloned = JSON.parse(JSON.stringify(rawSchema || {})) as Record<string, unknown>;
+  if (!cloned.properties || typeof cloned.properties !== 'object') {
+    cloned.properties = {};
+  }
+  (cloned.properties as Record<string, unknown>)._meta = META_PROPERTY_SCHEMA;
+  return cloned;
+}
+
 /**
  * Convert tools to OpenAI format
  */
@@ -248,7 +303,9 @@ export function convertToolsToOpenAI(tools: ToolDefinition[], strict = false): O
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeJsonSchema(tool.inputSchema as unknown as JsonSchemaNode) as Record<string, unknown>,
+      parameters: normalizeJsonSchema(
+        injectMetaIntoInputSchema(tool.inputSchema) as unknown as JsonSchemaNode,
+      ) as Record<string, unknown>,
       ...(strict && { strict: true }),
     },
   }));
@@ -261,7 +318,7 @@ export function convertToolsToClaude(tools: ToolDefinition[]): ClaudeToolDefinit
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: tool.inputSchema as unknown as Record<string, unknown>,
+    input_schema: injectMetaIntoInputSchema(tool.inputSchema),
   }));
 }
 

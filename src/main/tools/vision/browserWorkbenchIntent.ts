@@ -149,6 +149,7 @@ export function evaluateBrowserWorkbenchPolicy(args: {
 
 export async function ensureManagedBrowserSessionForWorkbench(args: {
   url?: string;
+  executionIntent?: ConversationExecutionIntent;
 } = {}): Promise<string | null> {
   const before = browserService.getSessionState();
   if (before.running && before.activeTab) {

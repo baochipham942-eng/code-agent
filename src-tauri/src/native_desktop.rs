@@ -3,9 +3,9 @@ use std::{
     collections::VecDeque,
     env,
     fs,
-    io::{Read as StdRead, Write},
+    io::Write,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,

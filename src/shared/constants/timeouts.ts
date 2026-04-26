@@ -236,6 +236,16 @@ export const SKILL_TIMEOUTS = {
   INSTALL: 30_000,
 } as const;
 
+/** Live Preview dev server 管理超时 */
+export const LIVE_PREVIEW_TIMEOUTS = {
+  /** dev server 启动到 ready 的最长等待时间 */
+  STARTUP: 30_000,
+  /** SIGTERM 后等待进程退出，超时升级 SIGKILL */
+  STOP_GRACEFUL: 5_000,
+  /** ready 信号探测到 URL 后再 ping 一次确认可达 */
+  PING: 3_000,
+} as const;
+
 /** 工具执行进度报告配置 */
 export const TOOL_PROGRESS = {
   /** 进度报告间隔 (ms) */

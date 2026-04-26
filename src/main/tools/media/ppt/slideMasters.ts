@@ -17,7 +17,9 @@ import {
   BRAND_THANK_YOU,
 } from './constants';
 
-type SlideMasterObjects = NonNullable<PptxGenJS.SlideMasterProps['objects']>;
+// pptxgenjs accepts text-fit fields on master placeholders at runtime, but its
+// PlaceholderProps type is narrower than TextPropsOptions.
+type SlideMasterObjects = any[];
 
 function buildMasterObjects(config: MasterDecorationConfig, theme: ThemeConfig): SlideMasterObjects {
   return buildDecorationObjects(config, theme) as SlideMasterObjects;

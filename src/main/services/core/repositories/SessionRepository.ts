@@ -10,8 +10,10 @@ import type {
   Message,
   ModelProvider,
   TodoItem,
+  ToolCall,
 } from '../../../../shared/contract';
 import { createLogger } from '../../infra/logger';
+import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
 
 export type { StoredSession, StoredMessage };
@@ -22,6 +24,22 @@ const logger = createLogger('SessionRepository');
 type SQLiteRow = Record<string, unknown>;
 
 type SyncOrigin = 'local' | 'remote';
+
+/**
+ * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
+ * 语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /
+ * web mode persist / subagent 透传——丢字段时这里统一兜底，避免 UI 看到 stale
+ * 旧消息时 fallback 到机械拼接。
+ */
+function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
+  if (!toolCalls) return toolCalls;
+  return toolCalls.map((tc) => ({
+    ...tc,
+    shortDescription:
+      tc.shortDescription
+      ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {}),
+  }));
+}
 
 interface SessionWriteOptions {
   syncOrigin?: SyncOrigin;
@@ -258,13 +276,14 @@ export class SessionRepository {
 
     const thinkingContent = message.thinking || message.reasoning || null;
 
+    const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
     stmt.run(
       message.id,
       sessionId,
       message.role,
       message.content,
       message.timestamp,
-      message.toolCalls ? JSON.stringify(message.toolCalls) : null,
+      toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null,
       message.toolResults ? JSON.stringify(message.toolResults) : null,
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
       thinkingContent,
@@ -289,7 +308,7 @@ export class SessionRepository {
     }
     if (updates.toolCalls !== undefined) {
       setClauses.push('tool_calls = ?');
-      values.push(JSON.stringify(updates.toolCalls));
+      values.push(JSON.stringify(ensureToolCallShortDescription(updates.toolCalls)));
     }
     if (updates.toolResults !== undefined) {
       setClauses.push('tool_results = ?');

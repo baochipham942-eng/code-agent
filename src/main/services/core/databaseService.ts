@@ -301,13 +301,24 @@ export class DatabaseService {
       }
     }
 
-    // telemetry_tool_calls 新增 error_category 列（错误分类）
-    try {
-      this.db.exec('ALTER TABLE telemetry_tool_calls ADD COLUMN error_category TEXT');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
-        logger.warn('[DB] Migration unexpected error:', msg);
+    // telemetry_tool_calls 新增错误分类与 Computer Surface 可靠性字段
+    const toolCallMigrations = [
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN error_category TEXT',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_failure_kind TEXT',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_mode TEXT',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_target_app TEXT',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_action TEXT',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_ax_quality_score REAL',
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_ax_quality_grade TEXT',
+    ];
+    for (const sql of toolCallMigrations) {
+      try {
+        this.db.exec(sql);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+          logger.warn('[DB] Migration unexpected error:', msg);
+        }
       }
     }
   }
@@ -719,6 +730,12 @@ export class DatabaseService {
         success INTEGER DEFAULT 0,
         error TEXT,
         error_category TEXT,
+        computer_surface_failure_kind TEXT,
+        computer_surface_mode TEXT,
+        computer_surface_target_app TEXT,
+        computer_surface_action TEXT,
+        computer_surface_ax_quality_score REAL,
+        computer_surface_ax_quality_grade TEXT,
         duration_ms INTEGER DEFAULT 0,
         timestamp INTEGER NOT NULL,
         idx INTEGER DEFAULT 0,

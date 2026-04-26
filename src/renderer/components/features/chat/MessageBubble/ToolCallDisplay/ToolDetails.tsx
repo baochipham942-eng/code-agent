@@ -14,6 +14,7 @@ import {
   Download,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
@@ -72,6 +73,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
   const videoResult = extractVideoResult(toolCall);
   const generatedFileResult = extractGeneratedFile(toolCall);
   const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
+  const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall);
 
   const canPreviewCreated = isPreviewable(createdFilePath);
 
@@ -179,23 +181,149 @@ export function ToolDetails({ toolCall, compact }: Props) {
 
           {/* Standard result output */}
           {!imageResult && !videoResult && !generatedFileResult && !createdFilePath && (
-            <pre
-              className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
-                result.success
-                  ? 'text-gray-400 border-gray-800/50'
-                  : 'text-red-300 border-red-500/20'
-              }`}
-            >
-              {safeBrowserComputerResult
-                ? stripAnsiCodes(safeBrowserComputerResult)
-                : result.error
-                  ? stripAnsiCodes(result.error)
-                  : typeof result.output === 'string'
-                    ? stripAnsiCodes(result.output)
-                    : JSON.stringify(result.output, null, 2)}
-            </pre>
+            <>
+              {browserComputerNextSteps.length > 0 && (
+                <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
+              )}
+              <pre
+                className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
+                  result.success
+                    ? 'text-gray-400 border-gray-800/50'
+                    : 'text-red-300 border-red-500/20'
+                }`}
+              >
+                {safeBrowserComputerResult
+                  ? stripAnsiCodes(safeBrowserComputerResult)
+                  : result.error
+                    ? stripAnsiCodes(result.error)
+                    : typeof result.output === 'string'
+                      ? stripAnsiCodes(result.output)
+                      : JSON.stringify(result.output, null, 2)}
+              </pre>
+            </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+interface BrowserComputerNextStepAction {
+  id: 'launch_managed_browser' | 'refresh_browser_snapshot' | 'open_desktop_status';
+  title: string;
+  detail: string;
+  executable: boolean;
+  run?: () => Promise<string>;
+}
+
+function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputerNextStepAction[] {
+  if (!toolCall.result || toolCall.result.success) {
+    return [];
+  }
+  const action = typeof toolCall.arguments?.action === 'string' ? toolCall.arguments.action : '';
+  const error = `${toolCall.result.error || ''}`.toLowerCase();
+  const code = typeof toolCall.result.metadata?.code === 'string' ? toolCall.result.metadata.code : '';
+
+  if (toolCall.name === 'browser_action' && (error.includes('browser not running') || error.includes('managed browser'))) {
+    return [{
+      id: 'launch_managed_browser',
+      title: '启动隔离浏览器',
+      detail: '可执行；也可以从能力菜单 -> Browser -> Managed 手动切换。',
+      executable: true,
+      run: async () => {
+        const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession', {
+          url: 'about:blank',
+        });
+        if (response?.success) {
+          return 'success\nManaged browser 已启动';
+        }
+        return 'success\n已请求启动隔离浏览器';
+      },
+    }];
+  }
+
+  if (toolCall.name === 'computer_use' && action.startsWith('smart_') && toolCall.arguments?.selector) {
+    return [{
+      id: 'refresh_browser_snapshot',
+      title: '刷新页面证据',
+      detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用选择器或 AX 证据重试。',
+      executable: true,
+      run: async () => {
+        const response = await window.domainAPI?.invoke<Record<string, unknown>>(
+          IPC_DOMAINS.DESKTOP,
+          'getManagedBrowserRecoverySnapshot',
+          { includeAccessibility: true },
+        );
+        const data = response?.data;
+        const dom = data?.domSnapshot as Record<string, unknown> | undefined;
+        const accessibility = data?.accessibilitySnapshot as Record<string, unknown> | undefined;
+        const headingCount = typeof dom?.headingCount === 'number' ? dom.headingCount : 0;
+        const interactiveCount = typeof dom?.interactiveCount === 'number' ? dom.interactiveCount : 0;
+        const accessibilityStatus = accessibility?.available ? 'available' : 'unavailable';
+        return [
+          'success',
+          '页面证据已刷新',
+          `DOM headings: ${headingCount}`,
+          `Interactive elements: ${interactiveCount}`,
+          `Accessibility snapshot: ${accessibilityStatus}`,
+        ].join('\n');
+      },
+    }];
+  }
+
+  if (toolCall.name === 'computer_use' && code === 'COMPUTER_SURFACE_BLOCKED') {
+    return [{
+      id: 'open_desktop_status',
+      title: '打开 Desktop status',
+      detail: '不会执行点击或输入；只打开桌面状态检查。',
+      executable: false,
+    }];
+  }
+
+  return [];
+}
+
+function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerNextStepAction[] }) {
+  const [runningAction, setRunningAction] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<string | null>(null);
+
+  return (
+    <div className="mb-2 space-y-1.5">
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          data-testid={`browser-computer-next-step-action-${action.id}`}
+          disabled={!action.executable || !action.run || runningAction === action.id}
+          onClick={async (event) => {
+            event.stopPropagation();
+            if (!action.run) return;
+            setRunningAction(action.id);
+            try {
+              setOutcome(await action.run());
+            } catch (error) {
+              setOutcome(`error\n${error instanceof Error ? error.message : String(error)}`);
+            } finally {
+              setRunningAction(null);
+            }
+          }}
+          className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+            action.executable
+              ? 'border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15'
+              : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-300'
+          }`}
+        >
+          <Play className="mt-0.5 h-3 w-3 flex-shrink-0" />
+          <span className="min-w-0">
+            <span className="block font-medium">{action.title}</span>
+            <span className="block text-[11px] text-zinc-400">{action.detail}</span>
+          </span>
+        </button>
+      ))}
+      {outcome && (
+        <pre className="whitespace-pre-wrap rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-[11px] text-emerald-100">
+          {outcome}
+        </pre>
       )}
     </div>
   );

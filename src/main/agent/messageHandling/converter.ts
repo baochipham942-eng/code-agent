@@ -6,6 +6,10 @@ import type { Message, MessageAttachment, ToolCall, ToolResult } from '../../../
 import type { ModelMessage, MessageContent } from '../loopTypes';
 import { LARGE_DATA_FIELDS, LARGE_DATA_THRESHOLD } from '../loopTypes';
 import { createLogger } from '../../services/infra/logger';
+import {
+  sanitizeBrowserComputerToolArguments,
+  sanitizeBrowserComputerToolResult,
+} from '../../../shared/utils/browserComputerRedaction';
 import * as fs from 'fs';
 
 const logger = createLogger('MessageConverter');
@@ -20,6 +24,7 @@ const logger = createLogger('MessageConverter');
  */
 export function formatToolCallForHistory(tc: ToolCall): string {
   const { name, arguments: args } = tc;
+  const safeArgs = sanitizeBrowserComputerToolArguments(name, args) || args;
 
   switch (name) {
     case 'edit_file':
@@ -74,7 +79,7 @@ export function formatToolCallForHistory(tc: ToolCall): string {
       return `Fetched: ${args.url}`;
 
     default: {
-      const argsStr = JSON.stringify(args);
+      const argsStr = JSON.stringify(safeArgs);
       if (argsStr.length <= 150) {
         return `Called ${name}(${argsStr})`;
       }
@@ -89,6 +94,16 @@ export function formatToolCallForHistory(tc: ToolCall): string {
 // ----------------------------------------------------------------------------
 // Tool Result Sanitization
 // ----------------------------------------------------------------------------
+
+export function sanitizeToolCallsForHistory(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
+  if (!toolCalls) {
+    return toolCalls;
+  }
+  return toolCalls.map((toolCall) => ({
+    ...toolCall,
+    arguments: sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments,
+  }));
+}
 
 /**
  * Sanitize a single tool result for history storage
@@ -140,11 +155,30 @@ export function sanitizeToolResultForHistory(result: ToolResult): ToolResult {
   return sanitized;
 }
 
+export function sanitizeToolResultForHistoryWithCall(
+  result: ToolResult,
+  toolCall?: Pick<ToolCall, 'name' | 'arguments'>,
+): ToolResult {
+  const sizeSanitized = sanitizeToolResultForHistory(result);
+  if (!toolCall) {
+    return sizeSanitized;
+  }
+  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, sizeSanitized);
+}
+
 /**
  * Batch sanitize tool results
  */
 export function sanitizeToolResultsForHistory(results: ToolResult[]): ToolResult[] {
   return results.map(r => sanitizeToolResultForHistory(r));
+}
+
+export function sanitizeToolResultsForHistoryWithCalls(
+  results: ToolResult[],
+  toolCalls: Array<Pick<ToolCall, 'id' | 'name' | 'arguments'>>,
+): ToolResult[] {
+  const callsById = new Map(toolCalls.map((toolCall) => [toolCall.id, toolCall]));
+  return results.map((result) => sanitizeToolResultForHistoryWithCall(result, callsById.get(result.toolCallId)));
 }
 
 // ----------------------------------------------------------------------------

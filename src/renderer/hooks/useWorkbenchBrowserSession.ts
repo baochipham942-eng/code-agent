@@ -416,7 +416,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     if (screenCaptureStatus !== 'granted' && screenCaptureStatus !== 'unsupported') {
       actions.push({
         kind: 'open_screen_capture_settings',
-        label: screenCaptureStatus === 'denied' ? '授权屏幕录制' : '检查/授权屏幕录制',
+        label: '检查屏幕录制',
       });
     }
 
@@ -424,7 +424,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     if (accessibilityStatus !== 'granted' && accessibilityStatus !== 'unsupported') {
       actions.push({
         kind: 'open_accessibility_settings',
-        label: accessibilityStatus === 'denied' ? '授权辅助功能' : '检查/授权辅助功能',
+        label: '检查辅助功能',
       });
     }
 
@@ -437,7 +437,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
 
     actions.push({
       kind: 'open_desktop_panel',
-      label: '打开桌面面板',
+      label: '查看桌面状态',
     });
 
     return actions;

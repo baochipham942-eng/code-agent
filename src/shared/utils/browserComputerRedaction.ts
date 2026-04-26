@@ -4,13 +4,20 @@ const SENSITIVE_KEY_PATTERN =
   /password|token|secret|credential|cookie|authorization/i;
 const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "accessibilitySnapshot",
+  "analysis",
   "axTree",
+  "base64",
+  "data",
   "domSnapshot",
+  "elements",
   "html",
+  "imageBase64",
   "rawAccessibilitySnapshot",
   "rawAxTree",
   "rawDomSnapshot",
   "rawHtml",
+  "screenshotBase64",
+  "screenshotData",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
 
@@ -245,17 +252,19 @@ function sanitizeRecoveryOutcome(
   if (!isRecord(value)) {
     return value;
   }
+  const safeEvidence = Array.isArray(value.evidence)
+    ? value.evidence
+        .map((item) => sanitizeRecoveryEvidence(toolName, args, item))
+        .filter((item): item is string => typeof item === "string" && item.length > 0)
+    : undefined;
+
   return {
     status: value.status,
     title:
       typeof value.title === "string"
         ? redactBrowserComputerInputPayloadsInValue(toolName, args, value.title)
         : value.title,
-    evidence: Array.isArray(value.evidence)
-      ? value.evidence.map((item) =>
-          sanitizePotentiallySensitiveArgs(toolName, args, item),
-        )
-      : undefined,
+    evidence: safeEvidence,
     retryHint:
       typeof value.retryHint === "string"
         ? redactBrowserComputerInputPayloadsInValue(
@@ -266,6 +275,28 @@ function sanitizeRecoveryOutcome(
         : value.retryHint,
     noEvidence: value.noEvidence === true,
   };
+}
+
+function sanitizeRecoveryEvidence(
+  toolName: string,
+  args: Record<string, unknown>,
+  value: unknown,
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const redacted = redactBrowserComputerInputPayloadsInValue(toolName, args, value);
+  const text = typeof redacted === "string" ? redacted.trim() : "";
+  if (!text) {
+    return null;
+  }
+  if (/^(DOM headings|Interactive elements|Accessibility snapshot|Candidates|Target app|App|Mode|Status):/i.test(text)) {
+    return text;
+  }
+  if (/^只打开了状态面板/.test(text)) {
+    return text;
+  }
+  return null;
 }
 
 function sanitizeBrowserComputerMetadataValue(

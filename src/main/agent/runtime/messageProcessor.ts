@@ -11,7 +11,8 @@ import type {
 } from '../../../shared/contract';
 import type { ModelResponse, AgentLoopConfig } from '../../agent/loopTypes';
 import {
-  sanitizeToolResultsForHistory,
+  sanitizeToolCallsForHistory,
+  sanitizeToolResultsForHistoryWithCalls,
 } from '../../agent/messageHandling/converter';
 import {
   compressToolResult,
@@ -21,6 +22,10 @@ import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import { MODEL_MAX_TOKENS } from '../../../shared/constants';
+import {
+  sanitizeBrowserComputerToolArguments,
+  sanitizeBrowserComputerToolResult,
+} from '../../../shared/utils/browserComputerRedaction';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -30,6 +35,20 @@ import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 
 const logger = createLogger('MessageProcessor');
+
+function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> | undefined {
+  return sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
+}
+
+function sanitizeToolResultForObservation(
+  toolCall: Pick<ToolCall, 'name' | 'arguments'> | undefined,
+  result: ToolResult,
+): ToolResult {
+  if (!toolCall) {
+    return result;
+  }
+  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
+}
 
 /**
  * Extracts absolute file paths from text (e.g. user messages).
@@ -345,7 +364,7 @@ export class MessageProcessor {
             role: 'assistant',
             content: response.content || '',
             timestamp: Date.now(),
-            toolCalls: toolCalls,
+            toolCalls: sanitizeToolCallsForHistory(toolCalls),
             thinking: response.thinking,
             effortLevel: this.ctx.effortLevel,
             inputTokens: response.usage?.inputTokens,
@@ -394,7 +413,11 @@ export class MessageProcessor {
 
     toolCalls.forEach((tc: ToolCall, i: number) => {
       logger.debug(`   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
-      logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, phase: classifyExecutionPhase(tc.name), args: tc.arguments });
+      logCollector.tool('INFO', `Tool call: ${tc.name}`, {
+        toolId: tc.id,
+        phase: classifyExecutionPhase(tc.name),
+        args: sanitizeToolArgumentsForObservation(tc),
+      });
     });
 
     // 清理模型输出中模仿内部格式的文本
@@ -405,7 +428,7 @@ export class MessageProcessor {
       role: 'assistant',
       content: cleanedContent,
       timestamp: Date.now(),
-      toolCalls: toolCalls,
+      toolCalls: sanitizeToolCallsForHistory(toolCalls),
       thinking: response.thinking,
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
@@ -438,7 +461,7 @@ export class MessageProcessor {
       this.ctx.needsReinference = false;
       logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
       if (toolResults.length > 0) {
-        const partialResults = sanitizeToolResultsForHistory(toolResults);
+        const partialResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
         const partialToolMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'tool',
@@ -459,7 +482,8 @@ export class MessageProcessor {
     toolResults.forEach((r: ToolResult, i: number) => {
       const matchedToolCall = toolCalls.find((tc: ToolCall) => tc.id === r.toolCallId);
       const phase = matchedToolCall ? classifyExecutionPhase(matchedToolCall.name) : undefined;
-      logger.debug(`   Result ${i + 1}: success=${r.success}, phase=${phase || 'unknown'}, error=${r.error || 'none'}`);
+      const safeResult = sanitizeToolResultForObservation(matchedToolCall, r);
+      logger.debug(`   Result ${i + 1}: success=${r.success}, phase=${phase || 'unknown'}, error=${safeResult.error || 'none'}`);
       if (r.success) {
         logCollector.tool('INFO', `Tool result: success`, {
           toolCallId: r.toolCallId,
@@ -468,11 +492,11 @@ export class MessageProcessor {
           duration: r.duration,
         });
       } else {
-        logCollector.tool('ERROR', `Tool result: failed - ${r.error}`, { toolCallId: r.toolCallId, phase });
+        logCollector.tool('ERROR', `Tool result: failed - ${safeResult.error}`, { toolCallId: r.toolCallId, phase });
       }
     });
 
-    const sanitizedResults = sanitizeToolResultsForHistory(toolResults);
+    const sanitizedResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
 
     // Compress tool results to save tokens
     const compressedResults = sanitizedResults.map((result: ToolResult) => {

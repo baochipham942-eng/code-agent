@@ -1,4 +1,8 @@
 import type { ToolCall } from '@shared/contract';
+import {
+  redactBrowserComputerInputPayloadsInValue,
+  sanitizeBrowserComputerMetadata,
+} from '@shared/utils/browserComputerRedaction';
 
 export type BrowserComputerActionRisk = 'read' | 'browser_action' | 'desktop_input';
 
@@ -79,6 +83,11 @@ function formatSelector(args: Record<string, unknown>): string | null {
   return null;
 }
 
+function formatSelectorWithoutInputText(args: Record<string, unknown>): string | null {
+  const { text: _text, ...targetArgs } = args;
+  return formatSelector(targetArgs);
+}
+
 function formatDesktopElementTarget(args: Record<string, unknown>): string | null {
   const axPath = asString(args.axPath);
   if (axPath) return `axPath ${truncate(axPath, 40)}`;
@@ -152,7 +161,7 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>): {
     case 'click_text':
       return { summary: '点击页面文本', target: formatSelector(args) };
     case 'type':
-      return { summary: `输入 ${formatTypedText(args)}`, target: formatSelector(args) };
+      return { summary: `输入 ${formatTypedText(args)}`, target: formatSelectorWithoutInputText(args) };
     case 'press_key':
       return { summary: '按键', target: asString(args.key) };
     case 'scroll':
@@ -231,7 +240,7 @@ function buildComputerSummary(action: string, args: Record<string, unknown>): {
     case 'smart_click':
       return { summary: '智能点击浏览器元素', target: formatSelector(args) };
     case 'smart_type':
-      return { summary: `智能输入 ${formatTypedText(args)}`, target: formatSelector(args) };
+      return { summary: `智能输入 ${formatTypedText(args)}`, target: formatSelectorWithoutInputText(args) };
     case 'smart_hover':
       return { summary: '智能 hover 浏览器元素', target: formatSelector(args) };
     case 'get_elements':
@@ -298,6 +307,69 @@ function parseFoundCount(output: unknown): string | null {
 
 function joinResultSummary(preview: BrowserComputerActionPreview): string {
   return preview.target ? `${preview.summary} -> ${preview.target}` : preview.summary;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function redactForTool(toolName: string, args: Record<string, unknown>, value: unknown): string | null {
+  const redacted = redactBrowserComputerInputPayloadsInValue(toolName, args, value);
+  if (typeof redacted === 'string' && redacted.trim()) {
+    return redacted.trim();
+  }
+  return null;
+}
+
+function formatRecoveryOutcome(
+  toolName: string,
+  args: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+): string | null {
+  const safeMetadata = sanitizeBrowserComputerMetadata(toolName, args, metadata) || {};
+  const outcome = safeMetadata.browserComputerRecoveryActionOutcome;
+  if (!isRecord(outcome)) {
+    return null;
+  }
+
+  const lines: string[] = [];
+  const title = redactForTool(toolName, args, outcome.title);
+  if (title) {
+    lines.push(title);
+  }
+
+  if (Array.isArray(outcome.evidence)) {
+    for (const evidence of outcome.evidence) {
+      const safeEvidence = redactForTool(toolName, args, evidence);
+      if (safeEvidence) {
+        lines.push(safeEvidence);
+      }
+    }
+  }
+
+  const retryHint = redactForTool(toolName, args, outcome.retryHint);
+  if (retryHint) {
+    lines.push(`建议：${retryHint}`);
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+function formatInputFailureDetail(
+  toolName: string,
+  args: Record<string, unknown>,
+  preview: BrowserComputerActionPreview,
+  error: unknown,
+): string | null {
+  if (typeof error !== 'string') {
+    return null;
+  }
+  const safeError = redactForTool(toolName, args, error) || error;
+  const lower = error.toLowerCase();
+  if (lower.includes('no element found') || lower.includes('element not found') || lower.includes('target element')) {
+    return `${joinResultSummary(preview)} 没执行成功：目标元素未找到。${safeError ? ` ${safeError}` : ''}`;
+  }
+  return null;
 }
 
 export function summarizeBrowserComputerActionResult(
@@ -426,9 +498,24 @@ export function formatBrowserComputerActionArguments(
 export function formatBrowserComputerActionResultDetails(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
 ): string | null {
+  const metadata = toolCall.result?.metadata || {};
+  const args = toolCall.arguments || {};
+  const recovery = formatRecoveryOutcome(toolCall.name, args, metadata);
+  if (recovery) {
+    return recovery;
+  }
+
   const action = asString(toolCall.arguments?.action) || 'unknown';
   if (!isInputPayloadAction(action)) {
     return null;
+  }
+
+  const preview = buildBrowserComputerActionPreview(toolCall);
+  if (preview && toolCall.result && !toolCall.result.success) {
+    const failureDetail = formatInputFailureDetail(toolCall.name, args, preview, toolCall.result.error);
+    if (failureDetail) {
+      return failureDetail;
+    }
   }
 
   return summarizeBrowserComputerActionResult(toolCall);

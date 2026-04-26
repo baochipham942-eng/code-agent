@@ -33,12 +33,18 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { ToolCall } from '@shared/contract';
 import { ContextHealthPanel } from './ContextHealthPanel';
+import {
+  buildBrowserComputerActionPreview,
+  formatBrowserComputerActionArguments,
+  formatBrowserComputerActionResultDetails,
+  summarizeBrowserComputerActionResult,
+} from '../utils/browserComputerActionPreview';
 
 // 事件类型 - 7个核心分类（Gen4 新增 MCP 和 Skill）
-type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp' | 'skill';
+export type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp' | 'skill' | 'browserComputer';
 
 // 可观测事件
-interface ObservableEvent {
+export interface ObservableEvent {
   id: string;
   category: EventCategory;
   name: string;
@@ -108,6 +114,14 @@ const categoryConfig: Record<EventCategory, {
     borderColor: 'border-amber-500/30',
     tools: ['skill'],
   },
+  browserComputer: {
+    label: 'Browser / Computer',
+    icon: <Globe className="w-4 h-4" />,
+    color: 'text-cyan-400',
+    bgColor: 'bg-cyan-500/10',
+    borderColor: 'border-cyan-500/30',
+    tools: ['browser_action', 'computer_use'],
+  },
   memory: {
     label: 'Memory',
     icon: <Brain className="w-4 h-4" />,
@@ -147,6 +161,8 @@ const toolCategoryMap: Record<string, EventCategory> = {
 
   // Web
   web_fetch: 'tools',
+  browser_action: 'browserComputer',
+  computer_use: 'browserComputer',
 
   // MCP Tools (Gen 4+)
   mcp: 'mcp',
@@ -160,6 +176,49 @@ const toolCategoryMap: Record<string, EventCategory> = {
   memory_search: 'memory',
   code_index: 'memory',
 };
+
+export function getObservableToolSummary(toolCall: ToolCall): string {
+  const preview = buildBrowserComputerActionPreview(toolCall);
+  if (preview) {
+    const base = preview.target ? `${preview.summary} -> ${preview.target}` : preview.summary;
+    const mode = preview.mode || (preview.risk === 'desktop_input' ? '需确认' : null);
+    return [base, mode].filter(Boolean).join(' · ');
+  }
+  return getToolSummary(toolCall);
+}
+
+export function formatObservableArguments(event: ObservableEvent): string {
+  const args = event.details?.arguments as Record<string, unknown> | undefined;
+  if (!args) {
+    return '';
+  }
+  return formatBrowserComputerActionArguments(event.name, args) || JSON.stringify(args, null, 2);
+}
+
+export function formatObservableResult(event: ObservableEvent): string | null {
+  const result = event.details?.result as ToolCall['result'] | undefined;
+  if (!result) {
+    return null;
+  }
+  const args = (event.details?.arguments || {}) as Record<string, unknown>;
+  const browserComputerResult = formatBrowserComputerActionResultDetails({
+    name: event.name,
+    arguments: args,
+    result,
+  }) || summarizeBrowserComputerActionResult({
+    name: event.name,
+    arguments: args,
+    result,
+  });
+  if (browserComputerResult) {
+    return browserComputerResult;
+  }
+  if (result.error) return result.error;
+  if (typeof result.output === 'string') {
+    return result.output.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
+  }
+  return JSON.stringify(result.output, null, 2)?.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH) || null;
+}
 
 // 从工具调用生成摘要
 function getToolSummary(toolCall: ToolCall): string {
@@ -478,7 +537,7 @@ function formatMemoryDetails(event: ObservableEvent): {
 
 // 分类顺序 - 按任务执行的常规流程
 // Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → Skill(技能) → MCP(外部服务) → Memory(记忆)
-const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'skill', 'mcp', 'memory'];
+const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'browserComputer', 'skill', 'mcp', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
   const { contextHealth, contextHealthCollapsed, setContextHealthCollapsed } = useAppStore();
@@ -511,7 +570,7 @@ export const ObservabilityPanel: React.FC = () => {
             id: toolCall.id,
             category,
             name: toolCall.name,
-            summary: getToolSummary(toolCall),
+            summary: getObservableToolSummary(toolCall),
             timestamp: message.timestamp,
             duration: toolCall.result?.duration,
             status,
@@ -536,6 +595,7 @@ export const ObservabilityPanel: React.FC = () => {
       plan: [],
       agent: [],
       skill: [],
+      browserComputer: [],
       mcp: [],
       memory: [],
     };
@@ -731,7 +791,7 @@ export const ObservabilityPanel: React.FC = () => {
                                         <div className="mb-2">
                                           <div className="text-xs text-zinc-500 mb-1">参数</div>
                                           <pre className="text-xs text-zinc-400 bg-zinc-900 rounded p-2 overflow-x-auto max-h-24">
-                                            {JSON.stringify(event.details.arguments as object, null, 2)}
+                                            {formatObservableArguments(event)}
                                           </pre>
                                         </div>
                                       )}
@@ -744,14 +804,7 @@ export const ObservabilityPanel: React.FC = () => {
                                               ? 'text-red-300 bg-red-500/10'
                                               : 'text-zinc-400 bg-zinc-900'
                                           }`}>
-                                            {(() => {
-                                              const result = event.details.result as { error?: string; output?: unknown } | undefined;
-                                              if (result?.error) return result.error;
-                                              if (typeof result?.output === 'string') {
-                                                return result.output.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
-                                              }
-                                              return JSON.stringify(result?.output, null, 2)?.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
-                                            })()}
+                                            {formatObservableResult(event)}
                                           </pre>
                                         </div>
                                       )}

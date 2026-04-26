@@ -337,9 +337,12 @@ export class TelemetryStorage {
           const stmt = db.prepare(`
             INSERT OR IGNORE INTO telemetry_tool_calls (
               id, turn_id, session_id, tool_call_id, name, arguments,
-              result_summary, success, error, error_category, duration_ms,
-              timestamp, idx, parallel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              result_summary, success, error, error_category,
+              computer_surface_failure_kind, computer_surface_mode,
+              computer_surface_target_app, computer_surface_action,
+              computer_surface_ax_quality_score, computer_surface_ax_quality_grade,
+              duration_ms, timestamp, idx, parallel
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const tc of data.toolCalls) {
             stmt.run(
@@ -348,6 +351,12 @@ export class TelemetryStorage {
               truncate(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
               tc.success ? 1 : 0, tc.error ?? null,
               tc.errorCategory ?? null,
+              tc.computerSurfaceFailureKind ?? null,
+              tc.computerSurfaceMode ?? null,
+              tc.computerSurfaceTargetApp ?? null,
+              tc.computerSurfaceAction ?? null,
+              tc.computerSurfaceAxQualityScore ?? null,
+              tc.computerSurfaceAxQualityGrade ?? null,
               tc.durationMs,
               tc.timestamp, tc.index, tc.parallel ? 1 : 0
             );
@@ -581,6 +590,12 @@ export class TelemetryStorage {
       success: !!(row.success as number),
       error: row.error as string | undefined,
       errorCategory: row.error_category as TelemetryToolCall['errorCategory'],
+      computerSurfaceFailureKind: row.computer_surface_failure_kind as string | undefined,
+      computerSurfaceMode: row.computer_surface_mode as string | undefined,
+      computerSurfaceTargetApp: row.computer_surface_target_app as string | undefined,
+      computerSurfaceAction: row.computer_surface_action as string | undefined,
+      computerSurfaceAxQualityScore: row.computer_surface_ax_quality_score as number | undefined,
+      computerSurfaceAxQualityGrade: row.computer_surface_ax_quality_grade as string | undefined,
       durationMs: row.duration_ms as number,
       timestamp: row.timestamp as number,
       index: row.idx as number,

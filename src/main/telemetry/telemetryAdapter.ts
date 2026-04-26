@@ -6,6 +6,10 @@
 // ============================================================================
 
 import type { TelemetryAdapter, TelemetryModelCall } from '../../shared/contract/telemetry';
+import {
+  sanitizeBrowserComputerToolArguments,
+  sanitizeBrowserComputerToolResult,
+} from '../../shared/utils/browserComputerRedaction';
 import { getTelemetryService } from './telemetryService';
 import type { TelemetryService } from './telemetryService';
 
@@ -25,6 +29,7 @@ export function createTelemetryAdapter(
   // Track active span IDs for correlation
   const turnSpans = new Map<string, string>();        // turnId -> spanId
   const toolCallSpans = new Map<string, string>();    // toolCallId -> spanId
+  const toolCallContext = new Map<string, { name: string; args?: Record<string, unknown> }>();
   const modelCallSpans = new Map<string, string>();   // turnId -> latest model spanId
 
   return {
@@ -75,30 +80,42 @@ export function createTelemetryAdapter(
 
     onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, _index: number, parallel: boolean): void {
       const parentSpanId = turnSpans.get(turnId);
+      const rawArgs = args && typeof args === 'object' && !Array.isArray(args)
+        ? args as Record<string, unknown>
+        : undefined;
+      const safeArgs = rawArgs
+        ? sanitizeBrowserComputerToolArguments(name, rawArgs) || rawArgs
+        : undefined;
       const span = svc.startToolSpan(
         name,
-        args as Record<string, unknown> | undefined,
+        safeArgs,
         parentSpanId,
       );
       span.attributes['tool.parallel'] = parallel;
       span.attributes['tool.call_id'] = toolCallId;
       toolCallSpans.set(toolCallId, span.spanId);
+      toolCallContext.set(toolCallId, { name, args: rawArgs });
     },
 
-    onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined): void {
+    onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>): void {
       const spanId = toolCallSpans.get(toolCallId);
       if (!spanId) return;
       toolCallSpans.delete(toolCallId);
+      const context = toolCallContext.get(toolCallId);
+      toolCallContext.delete(toolCallId);
+      const safeResult = context
+        ? sanitizeBrowserComputerToolResult(context.name, context.args, { output, error, metadata })
+        : { output, error, metadata };
 
       const extraAttrs: Record<string, string | number | boolean> = {
         'tool.duration_ms': durationMs,
         'tool.success': success,
       };
-      if (error) {
-        extraAttrs['error.message'] = error.length > 256 ? error.substring(0, 256) + '...' : error;
+      if (safeResult.error) {
+        extraAttrs['error.message'] = safeResult.error.length > 256 ? safeResult.error.substring(0, 256) + '...' : safeResult.error;
       }
-      if (output) {
-        extraAttrs['tool.output_size'] = output.length;
+      if (safeResult.output) {
+        extraAttrs['tool.output_size'] = safeResult.output.length;
       }
 
       svc.endSpan(spanId, success ? 'ok' : 'error', extraAttrs);

@@ -12,6 +12,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import {
+  isBrowserComputerToolName,
+  sanitizeBrowserComputerToolArguments,
+  redactBrowserComputerInputPayloadsInValue,
+} from '../../shared/utils/browserComputerRedaction';
+import {
   SessionLocalCache,
   CachedSession,
   CachedMessage,
@@ -135,6 +140,31 @@ function truncateCodeBlocks(content: string, maxLength: number): string {
   });
 }
 
+function sanitizeToolExecutionForMarkdown(tool: {
+  tool?: string;
+  input?: unknown;
+  output?: unknown;
+}): {
+  tool?: string;
+  input?: unknown;
+  output?: unknown;
+} {
+  if (!isBrowserComputerToolName(tool.tool)) {
+    return tool;
+  }
+  const rawArgs = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
+    ? tool.input as Record<string, unknown>
+    : {};
+  const input = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
+    ? sanitizeBrowserComputerToolArguments(tool.tool, tool.input as Record<string, unknown>) || tool.input
+    : tool.input;
+  return {
+    ...tool,
+    input,
+    output: redactBrowserComputerInputPayloadsInValue(tool.tool, rawArgs, tool.output),
+  };
+}
+
 /**
  * Generate metadata header
  */
@@ -237,11 +267,11 @@ function exportChatStyle(
 
     // Tool execution details
     if (options.includeToolDetails && msg.metadata?.toolExecution) {
-      const tool = msg.metadata.toolExecution as {
+      const tool = sanitizeToolExecutionForMarkdown(msg.metadata.toolExecution as {
         tool?: string;
         input?: unknown;
         output?: unknown;
-      };
+      });
       lines.push('');
       lines.push('<details>');
       lines.push(`<summary>Tool: ${tool.tool || 'unknown'}</summary>`);

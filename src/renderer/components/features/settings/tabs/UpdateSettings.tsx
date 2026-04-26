@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
+import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -124,15 +125,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const isDisabled = isWebMode();
 
   return (
-    <div className="space-y-6">
+    <SettingsPage
+      title={t.update?.title || '版本更新'}
+      description={t.update?.description || '检查并下载最新版本的 Code Agent'}
+    >
       <WebModeBanner />
-      {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.update?.title || '版本更新'}</h3>
-        <p className="text-xs text-zinc-400 mb-4">
-          {t.update?.description || '检查并下载最新版本的 Code Agent'}
-        </p>
-      </div>
 
       {/* Current Version */}
       <div className="bg-zinc-800 rounded-lg p-4">
@@ -221,6 +218,6 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           <span className="text-sm">{error}</span>
         </div>
       )}
-    </div>
+    </SettingsPage>
   );
 };

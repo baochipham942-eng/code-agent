@@ -3,7 +3,8 @@
 // Static index of all settings entries for fuzzy search
 // ============================================================================
 
-export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'mcp' | 'skills' | 'channels' | 'memory' | 'openchronicle' | 'update' | 'about';
+import type { SettingsTab } from './settingsTabs';
+export type { SettingsTab } from './settingsTabs';
 
 export interface SettingsEntry {
   tab: SettingsTab;
@@ -18,7 +19,11 @@ export interface SettingsEntry {
  */
 export const SETTINGS_INDEX: SettingsEntry[] = [
   // General
-  { tab: 'general', tabLabel: '通用', label: '安全模式', keywords: ['permission', 'safety', '权限', '安全', 'YOLO', '自动编辑', 'bypassPermissions'] },
+  { tab: 'general', tabLabel: '权限与安全', label: '安全模式', keywords: ['permission', 'safety', '权限', '安全', 'YOLO', '自动编辑', 'bypassPermissions'] },
+
+  // Conversation
+  { tab: 'conversation', tabLabel: '对话', label: '模型路由策略', keywords: ['routing', 'route', '模型路由', '路由', 'auto', 'direct', 'parallel'] },
+  { tab: 'conversation', tabLabel: '对话', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
 
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
@@ -33,9 +38,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'appearance', tabLabel: '外观', label: '语言', keywords: ['language', '语言', '中文', 'English', '国际化', 'i18n'] },
 
   // Data
-  { tab: 'cache', tabLabel: '数据', label: '数据管理', keywords: ['data', '数据', '统计', '会话数', '消息数'] },
-  { tab: 'cache', tabLabel: '数据', label: '数据库大小', keywords: ['database', '数据库', '大小', '存储'] },
-  { tab: 'cache', tabLabel: '数据', label: '清空缓存', keywords: ['cache', 'clear', '缓存', '清理', '清空'] },
+  { tab: 'cache', tabLabel: '数据与存储', label: '数据管理', keywords: ['data', '数据', '统计', '会话数', '消息数'] },
+  { tab: 'cache', tabLabel: '数据与存储', label: '数据库大小', keywords: ['database', '数据库', '大小', '存储'] },
+  { tab: 'cache', tabLabel: '数据与存储', label: '清空缓存', keywords: ['cache', 'clear', '缓存', '清理', '清空'] },
 
   // MCP
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },

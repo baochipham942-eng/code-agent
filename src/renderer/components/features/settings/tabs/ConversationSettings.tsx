@@ -12,6 +12,7 @@ import type {
   ConversationRoutingMode,
 } from '@shared/contract/conversationEnvelope';
 import { useComposerStore } from '../../../../stores/composerStore';
+import { SettingsPage, SettingsSection } from '../SettingsLayout';
 
 const ROUTING_OPTIONS: Array<{ value: ConversationRoutingMode; label: string; hint: string }> = [
   { value: 'auto', label: 'Auto', hint: '路由器按任务复杂度自动选模型（默认）' },
@@ -32,14 +33,15 @@ export const ConversationSettings: React.FC = () => {
   const setBrowserSessionMode = useComposerStore((s) => s.setBrowserSessionMode);
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Routing */}
-      <section>
-        <div className="flex items-center gap-2 mb-2">
+    <SettingsPage
+      title="对话"
+      description="配置会话默认的模型路由和浏览器工具模式。"
+    >
+      <SettingsSection title="Routing" description="模型路由策略，决定每条消息怎么被分发给后端模型。">
+        <div className="flex items-center gap-2 mb-3">
           <GitBranch className="w-4 h-4 text-zinc-400" />
-          <h3 className="text-sm font-medium text-zinc-200">Routing</h3>
+          <span className="text-xs text-zinc-500">配一次后默认沿用</span>
         </div>
-        <p className="text-xs text-zinc-500 mb-3">模型路由策略 — 决定每条消息怎么被分发给后端模型</p>
         <div className="grid grid-cols-3 gap-2">
           {ROUTING_OPTIONS.map((opt) => {
             const selected = routingMode === opt.value;
@@ -60,15 +62,13 @@ export const ConversationSettings: React.FC = () => {
             );
           })}
         </div>
-      </section>
+      </SettingsSection>
 
-      {/* Browser */}
-      <section>
-        <div className="flex items-center gap-2 mb-2">
+      <SettingsSection title="Browser" description="浏览器工具集成模式，决定 agent 怎么操作浏览器。">
+        <div className="flex items-center gap-2 mb-3">
           <Globe className="w-4 h-4 text-zinc-400" />
-          <h3 className="text-sm font-medium text-zinc-200">Browser</h3>
+          <span className="text-xs text-zinc-500">运行状态在任务面板和顶栏呈现</span>
         </div>
-        <p className="text-xs text-zinc-500 mb-3">浏览器工具集成模式 — 决定 agent 怎么操作浏览器</p>
         <div className="grid grid-cols-3 gap-2">
           {BROWSER_OPTIONS.map((opt) => {
             const selected = browserSessionMode === opt.value;
@@ -89,7 +89,7 @@ export const ConversationSettings: React.FC = () => {
             );
           })}
         </div>
-      </section>
+      </SettingsSection>
 
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/40 border border-white/[0.06]">
         <Info className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 mt-0.5" />
@@ -98,6 +98,6 @@ export const ConversationSettings: React.FC = () => {
           Live Preview 已挪到顶栏 / 任务面板 / 命令面板，不再占 ChatInput 工具栏视觉。
         </p>
       </div>
-    </div>
+    </SettingsPage>
   );
 };

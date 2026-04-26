@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../../../primitives';
+import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -85,17 +86,13 @@ export const DataSettings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <SettingsPage
+      title="数据与存储"
+      description="查看应用数据使用情况。会话、消息和生成的文件不会被清理。"
+    >
       <WebModeBanner />
-      {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">数据管理</h3>
-        <p className="text-xs text-zinc-400 mb-4">
-          查看应用数据使用情况。会话、消息和生成的文件不会被清理。
-        </p>
-      </div>
 
-      {/* Data Stats Grid */}
+      <SettingsSection title="使用情况">
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="text-2xl font-bold text-zinc-200">{stats?.sessionCount || 0}</div>
@@ -114,6 +111,7 @@ export const DataSettings: React.FC = () => {
           <div className="text-xs text-zinc-400">内存缓存条目</div>
         </div>
       </div>
+      </SettingsSection>
 
       {/* Detailed Stats */}
       <div className="bg-zinc-800 rounded-lg p-4">
@@ -157,6 +155,6 @@ export const DataSettings: React.FC = () => {
           <span className="text-sm">{message.text}</span>
         </div>
       )}
-    </div>
+    </SettingsPage>
   );
 };

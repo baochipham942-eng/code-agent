@@ -1,9 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import { existsSync, mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import net from 'net';
-import { chromium, type Browser, type Page } from 'playwright';
+import { existsSync } from 'fs';
+import type { Page } from 'playwright';
 import {
   finishWithError,
   getNumberOption,
@@ -12,6 +9,13 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
+import {
+  closeSystemChromeSession,
+  formatAcceptanceError,
+  getFreePort,
+  launchSystemChromeSession,
+  SYSTEM_CHROME_CDP_PROVIDER,
+} from './browser-computer-system-chrome.ts';
 
 function usage(): void {
   console.log(`Browser / Computer app-host smoke
@@ -25,6 +29,7 @@ Options:
   --keep-browser  Keep the Chrome process open after the smoke.
   --keep-server   Keep the app-host server process open after the smoke.
   --port <port>   App-host port. Default: auto.
+  --provider <id> Browser provider for managed repair. Default: system-chrome-cdp.
   --json          Print JSON only.
   --help          Show this help.
 
@@ -40,35 +45,8 @@ function npmCommand(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
-function getChromeExecutable(): string {
-  if (process.env.CHROME_PATH) {
-    return process.env.CHROME_PATH;
-  }
-
-  if (process.platform === 'darwin') {
-    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  }
-
-  return 'google-chrome';
-}
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.on('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : null;
-      server.close(() => {
-        if (port) {
-          resolve(port);
-        } else {
-          reject(new Error('Failed to allocate a free port'));
-        }
-      });
-    });
-  });
-}
+const CHAT_FAILURE_SECRET = 'app-host-secret@example.com';
+const CHAT_FAILURE_PROMPT = 'Render the app-host computer_use failure smoke card.';
 
 function runCommand(command: string, args: string[], label: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -148,41 +126,6 @@ function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; ou
   child.stderr.on('data', append);
 
   return { child, output: () => logs };
-}
-
-function startChrome(port: number, profileDir: string): ChildProcessWithoutNullStreams {
-  return spawn(getChromeExecutable(), [
-    '--headless=new',
-    '--disable-gpu',
-    '--disable-background-networking',
-    '--disable-sync',
-    '--disable-extensions',
-    '--disable-component-update',
-    '--no-first-run',
-    '--no-default-browser-check',
-    `--user-data-dir=${profileDir}`,
-    '--remote-debugging-address=127.0.0.1',
-    `--remote-debugging-port=${port}`,
-    'about:blank',
-  ], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-}
-
-async function connectToChrome(port: number, timeoutMs = 10_000): Promise<Browser> {
-  const start = Date.now();
-  let lastError: unknown;
-
-  while (Date.now() - start < timeoutMs) {
-    try {
-      return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error('Failed to connect to Chrome over CDP');
 }
 
 async function expectTextIncludes(label: string, text: string, expected: string, failures: string[]): Promise<void> {
@@ -270,6 +213,7 @@ async function ensureBrowserModeSelected(
 async function activateRepairAction(page: Page, selector: string, label: string): Promise<'playwright-click' | 'dom-click'> {
   const deadline = Date.now() + 12_000;
   let lastError = '';
+  let reselectedManaged = false;
 
   while (Date.now() < deadline) {
     const button = page.locator(selector).first();
@@ -295,6 +239,11 @@ async function activateRepairAction(page: Page, selector: string, label: string)
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }
+    } else if (selector.includes('launch_managed_browser') && !reselectedManaged) {
+      reselectedManaged = true;
+      await page.locator('[data-testid="ability-menu-browser-managed"]').first().click({ timeout: 2_000 }).catch((error) => {
+        lastError = error instanceof Error ? error.message : String(error);
+      });
     }
 
     await page.waitForTimeout(250);
@@ -324,20 +273,355 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
   });
 }
 
-async function removeDirWithRetries(dir: string): Promise<void> {
-  let lastError: unknown;
+function getProviderOption(args: ReturnType<typeof parseArgs>): string {
+  const value = args.options.provider;
+  if (value === undefined || value === true) {
+    return SYSTEM_CHROME_CDP_PROVIDER;
+  }
+  return Array.isArray(value) ? value[value.length - 1] : value;
+}
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 200));
+async function installProviderInjection(page: Page, provider: string): Promise<void> {
+  await page.route('**/api/domain/desktop/ensureManagedBrowserSession', async (route) => {
+    const request = route.request();
+    const postData = request.postData();
+    let body: Record<string, unknown> = {};
+    if (postData) {
+      try {
+        body = JSON.parse(postData) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+    }
+    const payload = typeof body.payload === 'object' && body.payload !== null
+      ? body.payload as Record<string, unknown>
+      : {};
+
+    await route.continue({
+      headers: {
+        ...request.headers(),
+        'content-type': 'application/json',
+      },
+      postData: JSON.stringify({
+        ...body,
+        payload: {
+          ...payload,
+          provider,
+        },
+      }),
+    });
+  });
+}
+
+function formatSseEvent(event: string, data: Record<string, unknown>): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function buildComputerFailureSse(): string {
+  const turnId = 'turn-app-host-computer-failure';
+  const toolCallId = 'tool-app-host-computer-failure';
+  const toolArguments = {
+    action: 'smart_type',
+    selector: '#missing-email',
+    text: CHAT_FAILURE_SECRET,
+  };
+
+  return [
+    formatSseEvent('turn_start', {
+      turnId,
+      iteration: 1,
+    }),
+    formatSseEvent('stream_chunk', {
+      turnId,
+      content: 'Checking Computer surface failure rendering.\n',
+    }),
+    formatSseEvent('stream_tool_call_start', {
+      turnId,
+      index: 0,
+      id: toolCallId,
+      name: 'computer_use',
+    }),
+    formatSseEvent('stream_tool_call_delta', {
+      turnId,
+      index: 0,
+      argumentsDelta: JSON.stringify(toolArguments),
+    }),
+    formatSseEvent('tool_call_start', {
+      turnId,
+      _index: 0,
+      id: toolCallId,
+      name: 'computer_use',
+      arguments: toolArguments,
+    }),
+    formatSseEvent('tool_call_end', {
+      toolCallId,
+      success: false,
+      error: `No element found for selector #missing-email after trying ${CHAT_FAILURE_SECRET}`,
+      duration: 12,
+      metadata: {
+        traceId: 'trace-app-host-computer-failure',
+        computerSurfaceMode: 'foreground_fallback',
+      },
+    }),
+    formatSseEvent('turn_end', {
+      turnId,
+    }),
+    formatSseEvent('agent_complete', {}),
+  ].join('');
+}
+
+async function installRunSseInterception(
+  page: Page,
+  runRequests: Array<{ prompt: string; sessionId: string | null }>,
+): Promise<void> {
+  await page.exposeFunction('__recordAppHostSmokeRun', (request: { prompt: string; sessionId: string | null }) => {
+    runRequests.push(request);
+  });
+
+  await page.addInitScript(({ sseBody, expectedPrompt }: { sseBody: string; expectedPrompt: string }) => {
+    type SmokeWindow = Window & {
+      __recordAppHostSmokeRun?: (request: { prompt: string; sessionId: string | null }) => void;
+      __appHostSmokeRunRequests?: Array<{ prompt: string; sessionId: string | null; status: number }>;
+    };
+    const smokeWindow = window as SmokeWindow;
+    const originalFetch = window.fetch.bind(window);
+
+    smokeWindow.__appHostSmokeRunRequests = [];
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      let isRunEndpoint = false;
+      try {
+        const parsedUrl = new URL(url, window.location.href);
+        isRunEndpoint = parsedUrl.origin === window.location.origin && parsedUrl.pathname === '/api/run';
+      } catch {
+        isRunEndpoint = url === '/api/run';
+      }
+
+      if (isRunEndpoint && method === 'POST') {
+        let body: Record<string, unknown> = {};
+        if (typeof init?.body === 'string') {
+          try {
+            body = JSON.parse(init.body) as Record<string, unknown>;
+          } catch {
+            body = {};
+          }
+        }
+        if (body.prompt !== expectedPrompt) {
+          return originalFetch(input, init);
+        }
+
+        const request = {
+          prompt: typeof body.prompt === 'string' ? body.prompt : '',
+          sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
+          status: 200,
+        };
+        smokeWindow.__appHostSmokeRunRequests?.push(request);
+        void smokeWindow.__recordAppHostSmokeRun?.({
+          prompt: request.prompt,
+          sessionId: request.sessionId,
+        });
+
+        const encoder = new TextEncoder();
+        const chunks = sseBody
+          .split('\n\n')
+          .filter((chunk) => chunk.trim().length > 0)
+          .map((chunk) => `${chunk}\n\n`);
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(chunk));
+            }
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache',
+          },
+        });
+      }
+
+      return originalFetch(input, init);
+    };
+  }, { sseBody: buildComputerFailureSse(), expectedPrompt: CHAT_FAILURE_PROMPT });
+}
+
+async function getRunInterceptionStatus(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const smokeWindow = window as Window & {
+      __appHostSmokeRunRequests?: Array<{ status: number }>;
+    };
+    const requests = smokeWindow.__appHostSmokeRunRequests || [];
+    return requests[requests.length - 1]?.status ?? null;
+  });
+}
+
+async function closeDesktopPanelIfOpen(page: Page): Promise<void> {
+  const panel = page.locator('[data-testid="desktop-status-panel"]').first();
+  if (!(await panel.isVisible().catch(() => false))) {
+    return;
+  }
+
+  await page.locator('[data-testid="desktop-status-panel"] > div').first().click({
+    position: { x: 8, y: 8 },
+    timeout: 2_000,
+  }).catch(() => undefined);
+  await panel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
+}
+
+async function exerciseChatInputComputerFailure(
+  page: Page,
+  failures: string[],
+): Promise<{
+  runResponseStatus: number | null;
+  hasFailureCard: boolean;
+  hasRedaction: boolean;
+  hasExecutableSnapshotRecovery: boolean;
+  recoveryActionClicked: boolean;
+  recoveryRequestStatus: number | null;
+  recoveryActionSucceeded: boolean;
+  recoveryEvidenceVisible: boolean;
+  hasNoDesktopStatusAction: boolean;
+  leakedSecretInText: boolean;
+  leakedSecretInHtml: boolean;
+}> {
+  await closeDesktopPanelIfOpen(page);
+  await page.keyboard.press('Escape').catch(() => undefined);
+
+  const input = page.locator('[data-chat-input]').first();
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(CHAT_FAILURE_PROMPT);
+  await input.press('Enter');
+
+  const runSeen = await page.waitForFunction(
+    () => {
+      const smokeWindow = window as Window & {
+        __appHostSmokeRunRequests?: unknown[];
+      };
+      return (smokeWindow.__appHostSmokeRunRequests?.length || 0) > 0;
+    },
+    undefined,
+    { timeout: 10_000 },
+  ).then(() => true).catch(() => false);
+  const runResponseStatus = await getRunInterceptionStatus(page);
+  if (!runSeen) {
+    failures.push('ChatInput did not call /api/run.');
+  } else if (runResponseStatus !== 200) {
+    failures.push(`ChatInput /api/run returned ${runResponseStatus ?? 'unknown'}.`);
+  }
+
+  await page.waitForFunction(
+    () => document.body.innerText.includes('刷新页面证据'),
+    undefined,
+    { timeout: 15_000 },
+  ).catch(() => undefined);
+
+  const text = await page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
+  const html = await page.content().catch(() => '');
+  const snapshotAction = page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first();
+  const desktopStatusAction = page.locator('[data-testid="browser-computer-next-step-action-open_desktop_status"]').first();
+  const expectedRedaction = `[redacted ${CHAT_FAILURE_SECRET.length} chars]`;
+  const hasFailureCard = text.includes('Computer')
+    && text.includes('刷新页面证据')
+    && text.includes('trace-app-host-computer-failure');
+  const hasRedaction = text.includes(expectedRedaction);
+  const hasExecutableSnapshotRecovery = text.includes('读取 DOM / Accessibility snapshot')
+    && text.includes('可执行')
+    && (html.includes('browser-computer-next-step-action-refresh_browser_snapshot')
+      || await snapshotAction.isVisible().catch(() => false));
+  const hasDesktopStatusAction = html.includes('browser-computer-next-step-action-open_desktop_status')
+    || await desktopStatusAction.isVisible().catch(() => false);
+  const hasNoDesktopStatusAction = !hasDesktopStatusAction;
+  let leakedSecretInText = text.includes(CHAT_FAILURE_SECRET);
+  let leakedSecretInHtml = html.includes(CHAT_FAILURE_SECRET);
+  let recoveryActionClicked = false;
+  let recoveryRequestStatus: number | null = null;
+  let recoveryActionSucceeded = false;
+  let recoveryEvidenceVisible = false;
+
+  if (!hasFailureCard) {
+    failures.push('ChatInput computer_use failure card did not render expected snapshot recovery summary/trace.');
+  }
+  if (!hasRedaction) {
+    failures.push(`ChatInput computer_use failure card missing ${expectedRedaction}.`);
+  }
+  if (!hasExecutableSnapshotRecovery) {
+    failures.push('ChatInput computer_use failure card missing executable DOM/Accessibility snapshot recovery action.');
+  }
+  if (!hasNoDesktopStatusAction) {
+    failures.push('ChatInput browser-selector recovery unexpectedly rendered Desktop status action.');
+  }
+  if (leakedSecretInText || leakedSecretInHtml) {
+    failures.push('ChatInput computer_use failure leaked input payload secret into rendered DOM.');
+  }
+
+  if (hasExecutableSnapshotRecovery) {
+    const recoveryResponsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/domain/desktop/getManagedBrowserRecoverySnapshot')
+        && response.request().method() === 'POST',
+      { timeout: 15_000 },
+    ).catch(() => null);
+    await snapshotAction.click({ timeout: 5_000 });
+    recoveryActionClicked = true;
+    const recoveryResponse = await recoveryResponsePromise;
+    recoveryRequestStatus = recoveryResponse?.status() ?? null;
+    if (!recoveryResponse?.ok()) {
+      failures.push(`ChatInput snapshot recovery action returned ${recoveryRequestStatus ?? 'unknown'}.`);
+    }
+    await page.waitForFunction(
+      () => {
+        const bodyText = document.body.innerText;
+        return bodyText.includes('success')
+          && bodyText.includes('页面证据已刷新')
+          && bodyText.includes('DOM headings:')
+          && bodyText.includes('Interactive elements:')
+          && bodyText.includes('Accessibility snapshot:');
+      },
+      undefined,
+      { timeout: 15_000 },
+    ).catch(() => undefined);
+
+    const afterText = await page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
+    const afterHtml = await page.content().catch(() => '');
+    recoveryActionSucceeded = afterText.includes('success') && afterText.includes('页面证据已刷新');
+    recoveryEvidenceVisible = afterText.includes('DOM headings:')
+      && afterText.includes('Interactive elements:')
+      && afterText.includes('Accessibility snapshot:');
+    leakedSecretInText = leakedSecretInText || afterText.includes(CHAT_FAILURE_SECRET);
+    leakedSecretInHtml = leakedSecretInHtml || afterHtml.includes(CHAT_FAILURE_SECRET);
+
+    if (!recoveryActionSucceeded) {
+      failures.push('ChatInput snapshot recovery action did not render success status.');
+    }
+    if (!recoveryEvidenceVisible) {
+      failures.push('ChatInput snapshot recovery action did not render DOM/a11y evidence summary.');
+    }
+    if (leakedSecretInText || leakedSecretInHtml) {
+      failures.push('ChatInput snapshot recovery result leaked input payload secret into rendered DOM.');
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`Failed to remove ${dir}`);
+  return {
+    runResponseStatus,
+    hasFailureCard,
+    hasRedaction,
+    hasExecutableSnapshotRecovery,
+    recoveryActionClicked,
+    recoveryRequestStatus,
+    recoveryActionSucceeded,
+    recoveryEvidenceVisible,
+    hasNoDesktopStatusAction,
+    leakedSecretInText,
+    leakedSecretInHtml,
+  };
 }
 
 async function main(): Promise<void> {
@@ -352,21 +636,22 @@ async function main(): Promise<void> {
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const baseUrl = `http://127.0.0.1:${appPort}`;
   const appHost = startAppHost(appPort);
-
-  const chromePort = await getFreePort();
-  const profileDir = mkdtempSync(join(tmpdir(), 'code-agent-browser-computer-app-host-'));
-  const chrome = startChrome(chromePort, profileDir);
-
-  let browser: Browser | null = null;
+  const provider = getProviderOption(args);
+  let chromeSession: Awaited<ReturnType<typeof launchSystemChromeSession>> | null = null;
   const failures: string[] = [];
   const consoleErrors: string[] = [];
   const repairRequests: Array<{ action: string; status: number | null; ok: boolean }> = [];
+  const runRequests: Array<{ prompt: string; sessionId: string | null }> = [];
 
   try {
     await waitForHealth(baseUrl, appHost.child, appHost.output);
-    browser = await connectToChrome(chromePort);
-    const context = browser.contexts()[0] || await browser.newContext();
+    chromeSession = await launchSystemChromeSession({
+      profilePrefix: 'code-agent-browser-computer-app-host-',
+    });
+    const context = chromeSession.browser.contexts()[0] || await chromeSession.browser.newContext();
     const page = context.pages()[0] || await context.newPage();
+    await installProviderInjection(page, provider);
+    await installRunSseInterception(page, runRequests);
 
     page.on('pageerror', (error) => {
       consoleErrors.push(error.message);
@@ -405,6 +690,7 @@ async function main(): Promise<void> {
     let managedReadyText = managedInitialText;
     let repairActionClicked = false;
     let repairActivationMethod: 'playwright-click' | 'dom-click' | null = null;
+    let managedRepairReturnedProvider: string | null = null;
     if (!managedInitiallyReady) {
       await expectTextIncludes('managed initial', managedInitialText, 'Blocked', failures);
       await expectTextIncludes('managed initial', managedInitialText, 'Stopped', failures);
@@ -430,6 +716,13 @@ async function main(): Promise<void> {
         const body = await repairResponse.text().catch(() => '');
         throw new Error(`Managed repair action returned ${repairResponse.status()}.\n${body}`);
       }
+      const repairBody = await repairResponse.json().catch(() => null) as {
+        data?: { provider?: string | null };
+      } | null;
+      managedRepairReturnedProvider = repairBody?.data?.provider ?? null;
+      if (managedRepairReturnedProvider && managedRepairReturnedProvider !== provider) {
+        failures.push(`Managed repair provider mismatch: expected ${provider}, got ${managedRepairReturnedProvider}.`);
+      }
 
       await ensureBrowserModeSelected(page, 'managed', 'Managed browser');
       managedReadyText = await waitForBrowserStatusText(
@@ -451,9 +744,20 @@ async function main(): Promise<void> {
     await expectTextIncludes('desktop status', desktopText, 'Screen Capture', failures);
     await expectTextIncludes('desktop status', desktopText, 'Accessibility', failures);
     await expectTextIncludes('desktop status', desktopText, '未探测', failures);
-    await expectTextIncludes('desktop status', desktopText, '检查/授权屏幕录制', failures);
-    await expectTextIncludes('desktop status', desktopText, '检查/授权辅助功能', failures);
-    await expectTextIncludes('desktop status', desktopText, '打开桌面面板', failures);
+    await expectTextIncludes('desktop status', desktopText, '检查屏幕录制', failures);
+    await expectTextIncludes('desktop status', desktopText, '检查辅助功能', failures);
+    await expectTextIncludes('desktop status', desktopText, '查看桌面状态', failures);
+
+    const desktopPanelButton = page.locator('[data-testid="ability-menu-repair-open_desktop_panel"]').first();
+    if (await desktopPanelButton.count() === 0 || !(await desktopPanelButton.isVisible().catch(() => false))) {
+      throw new Error(`Desktop status repair action was not visible. Current AbilityMenu text:\n${await getAbilityMenuText(page) || desktopText}`);
+    }
+    await desktopPanelButton.click({ timeout: 5_000 });
+    const desktopPanel = page.locator('[data-testid="desktop-status-panel"]').first();
+    await desktopPanel.waitFor({ state: 'visible', timeout: 10_000 });
+    const desktopPanelText = await desktopPanel.innerText({ timeout: 2_000 }).catch(() => '');
+    await expectTextIncludes('desktop panel', desktopPanelText, '桌面活动', failures);
+    const chatInputFailure = await exerciseChatInputComputerFailure(page, failures);
 
     const result = {
       ok: failures.length === 0,
@@ -462,19 +766,22 @@ async function main(): Promise<void> {
         serverRunning: appHost.child.exitCode === null,
       },
       chrome: {
-        executable: getChromeExecutable(),
-        cdpPort: chromePort,
+        provider: chromeSession.provider,
+        executable: chromeSession.executable,
+        cdpPort: chromeSession.port,
       },
       ui: {
+        managedProvider: provider,
         managedInitial: {
           blocked: managedInitialText.includes('Blocked'),
-          hasHeadlessRepair: managedInitialText.includes('启动 Headless'),
-          hasVisibleRepair: managedInitialText.includes('启动 Visible'),
+          hasHeadlessRepair: managedInitialText.includes('启动隔离浏览器'),
+          hasVisibleRepair: managedInitialText.includes('打开可见浏览器'),
         },
         managedReady: {
           ready: managedReadyText.includes('Ready'),
           running: managedReadyText.includes('Running'),
           mode: hasFlag(args, 'visible') ? 'visible' : 'headless',
+          returnedProvider: managedRepairReturnedProvider,
           repairActionClicked,
           repairActivationMethod,
           repairRequests,
@@ -482,10 +789,13 @@ async function main(): Promise<void> {
         desktop: {
           blocked: desktopText.includes('Blocked'),
           unprobed: desktopText.includes('未探测'),
-          hasRepairActions: desktopText.includes('检查/授权屏幕录制')
-            && desktopText.includes('检查/授权辅助功能')
-            && desktopText.includes('打开桌面面板'),
+          hasRepairActions: desktopText.includes('检查屏幕录制')
+            && desktopText.includes('检查辅助功能')
+            && desktopText.includes('查看桌面状态'),
+          panelOpened: desktopPanelText.includes('桌面活动'),
         },
+        chatInputFailure,
+        runRequests,
         consoleErrors,
       },
       failures,
@@ -501,13 +811,28 @@ async function main(): Promise<void> {
     } else {
       printKeyValue('Browser / Computer App-Host Smoke Summary', [
         ['baseUrl', result.appHost.baseUrl],
+        ['chromeProvider', result.chrome.provider],
         ['chromeExecutable', result.chrome.executable],
+        ['managedRepairProvider', result.ui.managedProvider],
+        ['managedRepairReturnedProvider', result.ui.managedReady.returnedProvider],
         ['managedInitialBlocked', result.ui.managedInitial.blocked],
         ['managedReady', result.ui.managedReady.ready],
         ['managedMode', result.ui.managedReady.mode],
         ['desktopBlocked', result.ui.desktop.blocked],
         ['desktopUnprobed', result.ui.desktop.unprobed],
         ['desktopRepairActions', result.ui.desktop.hasRepairActions],
+        ['desktopPanelOpened', result.ui.desktop.panelOpened],
+        ['chatRunResponseStatus', result.ui.chatInputFailure.runResponseStatus],
+        ['chatFailureCard', result.ui.chatInputFailure.hasFailureCard],
+        ['chatRedaction', result.ui.chatInputFailure.hasRedaction],
+        ['chatSnapshotRecovery', result.ui.chatInputFailure.hasExecutableSnapshotRecovery],
+        ['chatRecoveryClicked', result.ui.chatInputFailure.recoveryActionClicked],
+        ['chatRecoveryStatus', result.ui.chatInputFailure.recoveryRequestStatus],
+        ['chatRecoverySucceeded', result.ui.chatInputFailure.recoveryActionSucceeded],
+        ['chatRecoveryEvidence', result.ui.chatInputFailure.recoveryEvidenceVisible],
+        ['chatNoDesktopStatusAction', result.ui.chatInputFailure.hasNoDesktopStatusAction],
+        ['chatSecretLeaked', result.ui.chatInputFailure.leakedSecretInText || result.ui.chatInputFailure.leakedSecretInHtml],
+        ['chatRunRequests', result.ui.runRequests.length],
         ['consoleErrors', consoleErrors.length],
       ]);
 
@@ -525,12 +850,11 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } finally {
-    if (browser && !hasFlag(args, 'keep-browser')) {
-      await browser.close().catch(() => undefined);
-    }
     if (!hasFlag(args, 'keep-browser')) {
-      await stopProcess(chrome);
-      await removeDirWithRetries(profileDir);
+      await chromeSession?.browser.close().catch(() => undefined);
+      if (chromeSession) {
+        await closeSystemChromeSession(chromeSession).catch(() => undefined);
+      }
     }
     if (!hasFlag(args, 'keep-server')) {
       await stopProcess(appHost.child);
@@ -538,4 +862,4 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(finishWithError);
+main().catch((error) => finishWithError(formatAcceptanceError(error)));

@@ -23,13 +23,19 @@ Usage:
 Options:
   --visible   Run managed-browser smokes in visible mode.
   --skip-build  Reuse existing app-host build artifacts.
-  --include-background-ax  Include the macOS background Accessibility action smoke.
+  --provider <id> Browser provider for managed-browser smokes. Default: system-chrome-cdp.
+  --include-background-ax  Include the macOS background Accessibility action smoke on non-macOS runs.
+  --skip-background-ax  Skip the macOS default background Accessibility action smoke.
+  --include-background-cgevent  Include the macOS background CGEvent action smoke on non-macOS runs.
+  --skip-background-cgevent  Skip the macOS default background CGEvent action smoke.
   --help      Show this help.
 
 What it validates:
+  - System Chrome CDP smoke: system Chrome headless + isolated page over CDP
   - Phase 2 smoke: managed browser + read-only Computer Surface
   - Phase 3 workflow smoke: isolated browser click + trace readback
-  - Background AX smoke: optional native macOS target app + axPath type/click readback
+  - Background AX smoke: native macOS target app + axPath type/click readback
+  - Background CGEvent smoke: native macOS target app + pid/windowId/window-local click readback
   - Phase 4 UI smoke: real Chrome DOM rendering + input redaction
   - App-host smoke: real webServer + renderer AbilityMenu state/repair flow`);
 }
@@ -38,7 +44,15 @@ function npmCommand(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
-function runPhase(phase: Phase, visible: boolean, skipBuild: boolean): Promise<number> {
+function getProvider(args: ReturnType<typeof parseArgs>): string {
+  const value = args.options.provider;
+  if (value === undefined || value === true) {
+    return 'system-chrome-cdp';
+  }
+  return Array.isArray(value) ? value[value.length - 1] : value;
+}
+
+function runPhase(phase: Phase, visible: boolean, skipBuild: boolean, provider: string): Promise<number> {
   const args = [...phase.args];
   const forwardedArgs: string[] = [];
   if (visible && phase.forwardsVisible) {
@@ -46,6 +60,16 @@ function runPhase(phase: Phase, visible: boolean, skipBuild: boolean): Promise<n
   }
   if (skipBuild && phase.forwardsSkipBuild) {
     forwardedArgs.push('--skip-build');
+  }
+  if (phase.name !== 'Background AX action smoke') {
+    if (phase.name === 'Background CGEvent action smoke') {
+      // no browser provider needed
+    } else {
+      forwardedArgs.push('--provider', provider);
+    }
+  }
+  if (phase.name === 'Background AX action smoke') {
+    // no browser provider needed
   }
   if (forwardedArgs.length > 0) {
     args.push('--', ...forwardedArgs);
@@ -72,10 +96,21 @@ async function main(): Promise<void> {
 
   const visible = hasFlag(args, 'visible');
   const skipBuild = hasFlag(args, 'skip-build');
+  const provider = getProvider(args);
   const includeBackgroundAx = hasFlag(args, 'include-background-ax')
-    || process.env.CODE_AGENT_ACCEPTANCE_BACKGROUND_AX === '1';
+    || process.env.CODE_AGENT_ACCEPTANCE_BACKGROUND_AX === '1'
+    || (process.platform === 'darwin' && !hasFlag(args, 'skip-background-ax'));
+  const includeBackgroundCgEvent = hasFlag(args, 'include-background-cgevent')
+    || process.env.CODE_AGENT_ACCEPTANCE_BACKGROUND_CGEVENT === '1'
+    || (process.platform === 'darwin' && !hasFlag(args, 'skip-background-cgevent'));
   const startedAt = Date.now();
   const phases: Phase[] = [
+    {
+      name: 'System Chrome CDP smoke',
+      command: 'npx',
+      args: ['tsx', 'scripts/acceptance/browser-computer-system-chrome-smoke.ts'],
+      forwardsVisible: true,
+    },
     {
       name: 'Phase 2 smoke',
       command: npmCommand(),
@@ -92,6 +127,11 @@ async function main(): Promise<void> {
       name: 'Background AX action smoke',
       command: npmCommand(),
       args: ['run', 'acceptance:browser-computer-background-ax'],
+    }] satisfies Phase[] : []),
+    ...(includeBackgroundCgEvent ? [{
+      name: 'Background CGEvent action smoke',
+      command: npmCommand(),
+      args: ['run', 'acceptance:browser-computer-background-cgevent'],
     }] satisfies Phase[] : []),
     {
       name: 'Phase 4 UI smoke',
@@ -111,7 +151,7 @@ async function main(): Promise<void> {
 
   for (const phase of phases) {
     console.log(`\n=== ${phase.name} ===`);
-    const code = await runPhase(phase, visible, skipBuild);
+    const code = await runPhase(phase, visible, skipBuild, provider);
     if (code !== 0) {
       throw new Error(`${phase.name} failed with exit code ${code}`);
     }
@@ -121,8 +161,10 @@ async function main(): Promise<void> {
   printKeyValue('Browser / Computer Acceptance Suite Summary', [
     ['passedPhases', passed.length],
     ['visibleMode', visible],
+    ['browserProvider', provider],
     ['skipBuild', skipBuild],
     ['backgroundAxIncluded', includeBackgroundAx],
+    ['backgroundCgEventIncluded', includeBackgroundCgEvent],
     ['durationMs', Date.now() - startedAt],
   ]);
 }

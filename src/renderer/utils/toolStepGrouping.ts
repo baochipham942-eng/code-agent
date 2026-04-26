@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { TraceNode } from '@shared/contract/trace';
+import { isSemanticToolUIEnabled } from './featureFlags';
 
 interface VerbNoun {
   verb: 'Explored' | 'Ran' | 'Searched' | 'Used';
@@ -198,8 +199,12 @@ export function buildSingleToolLabel(
   shortDescription?: string,
 ): string {
   // 模型若提供了 shortDescription（产品视角语义标签），直接用它作为聚合行的标签，
-  // 比机械拼接的 "Ran ls src/" 更接近"在干什么"
-  if (typeof shortDescription === 'string' && shortDescription.trim().length > 0) {
+  // 比机械拼接的 "Ran ls src/" 更接近"在干什么"。feature flag 关闭时强制 fallback。
+  if (
+    isSemanticToolUIEnabled()
+    && typeof shortDescription === 'string'
+    && shortDescription.trim().length > 0
+  ) {
     return shortDescription.trim();
   }
   const verb = SINGLE_TOOL_VERB[name];

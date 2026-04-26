@@ -5,12 +5,13 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Pause, Play, SlashSquare } from 'lucide-react';
+import { Image, FileText, Pause, Play } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
+import { InputAddMenu } from './InputAddMenu';
 import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
@@ -630,36 +631,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           />
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
-            {/* / 命令按钮 */}
-            <button
-              type="button"
-              onClick={() => { setShowSlashPopover(true); setSlashFilter(''); }}
-              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
-              aria-label="命令"
-              title="输入 / 命令"
-            >
-              <SlashSquare className="w-4 h-4" />
-            </button>
+            {/* "+" 二级菜单（Codex 风格）— 收纳 /命令 + 上传附件 */}
+            <InputAddMenu
+              onSlashCommand={() => { setShowSlashPopover(true); setSlashFilter(''); }}
+              onFileSelect={handleFileSelect}
+            />
 
-            {/* 附件按钮 */}
-            <label
-              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors cursor-pointer"
-              aria-label="添加图片或文件"
-              title="添加图片或文件"
-            >
-              <Image className="w-4 h-4" />
-              <input
-                type="file"
-                multiple
-                onChange={(e) => { if (e.target.files) handleFileSelect(e.target.files); e.target.value = ''; }}
-                className="hidden"
-              />
-            </label>
-
-            {/* 权限模式 chip — Default / Full Access */}
+            {/* 权限模式 chip — Default / Full Access（一等公民，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
-            {/* 能力 popover — Routing + Browser */}
+            {/* 能力 popover — Routing + Browser（一等公民，保留独立位置） */}
             <AbilityMenu disabled={disabled && !isProcessing} browserSession={browserSession} />
 
             {/* 弹性空白 */}

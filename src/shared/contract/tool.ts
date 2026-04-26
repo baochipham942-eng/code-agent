@@ -96,6 +96,29 @@ export interface ToolCall {
   // 流式工具调用的临时属性
   _streaming?: boolean; // 标记是否正在流式接收中
   _argumentsRaw?: string; // 累积的原始参数字符串（用于增量解析）
+
+  // ============================================================================
+  // 语义元数据（产品视角升级 — P0 内核）
+  // 模型在 tool_call envelope 中输出（不在 arguments 里），各 provider parser 提取
+  // 后写入。UI 优先消费这些字段，未提供时 fallback 到现有 hardcoded 渲染逻辑。
+  // ============================================================================
+
+  /** 一行自然语言动词短语（如 "Open Baidu search Claude"），UI 标题首选 */
+  shortDescription?: string;
+
+  /** 操作目标上下文，用于 UI 渲染目标 app logo / MCP server 名等 */
+  targetContext?: ToolCallTargetContext;
+
+  /** 可选的预期成果（用于失败诊断和未来 UI 增强） */
+  expectedOutcome?: string;
+}
+
+export interface ToolCallTargetContext {
+  kind?: 'app' | 'browser' | 'mcp_server' | 'file' | 'memory';
+  /** 显示用名称（如 "WeChat" / "Exa" / "MEMORY.md"） */
+  label?: string;
+  /** 图标提示：bundleId（app）/ domain（browser）/ server slug（mcp_server）等 */
+  iconHint?: string;
 }
 
 export interface ToolResult {

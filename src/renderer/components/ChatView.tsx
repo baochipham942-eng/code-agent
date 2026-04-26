@@ -15,6 +15,7 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
+import { SessionDiffSummary } from './features/chat/SessionDiffSummary';
 import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
@@ -445,6 +446,9 @@ export const ChatView: React.FC = () => {
 
         {/* Context inline strip - shows when > 50% */}
         <InlineStrip />
+
+        {/* 会话级 Diff 聚合卡（Codex 风格 X files changed +A -B / Review changes ↗）*/}
+        <SessionDiffSummary messages={messages} />
 
         {/* Pinned todo progress bar — visible above the input */}
         <PinnedTodoBar plan={plan} sessionId={currentSessionId} />

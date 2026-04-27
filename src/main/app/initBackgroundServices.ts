@@ -37,7 +37,7 @@ import { getMainWindow } from './window';
 import { detectCodexCLI } from '../services/codex/codexSandbox';
 import { SYNC, UPDATE, CLOUD, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
-import { initEventBridge } from '../protocol/events';
+import { initEventBridge } from '../services/eventing';
 // Event channel constants (post-IPC_CHANNELS deprecation)
 const EVENT_CHANNELS = {
   MCP: 'mcp:event',

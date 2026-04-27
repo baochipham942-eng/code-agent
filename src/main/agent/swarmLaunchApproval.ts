@@ -9,7 +9,7 @@ import type {
   SwarmLaunchRequest,
   SwarmLaunchTaskPreview,
 } from '../../shared/contract/swarm';
-import { getEventBus } from '../protocol/events/bus';
+import { getEventBus } from '../services/eventing/bus';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 
 /**

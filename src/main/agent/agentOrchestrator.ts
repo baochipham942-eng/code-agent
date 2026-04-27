@@ -37,7 +37,7 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
-import { getEventBus } from '../protocol/events';
+import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 
 // Sub-modules

@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import {
   InternalEventStore,
   resetInternalEventStore,
-} from '../../../src/main/protocol/events/internalStore';
+} from '../../../src/main/services/eventing/internalStore';
 
 describe('InternalEventStore', () => {
   let store: InternalEventStore;

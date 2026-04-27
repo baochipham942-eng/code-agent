@@ -13,7 +13,7 @@
 import { createLogger } from '../services/infra/logger';
 import { isDangerousCommand } from '../services/core/permissionPresets';
 import { getTeammateService } from './teammate/teammateService';
-import { getEventBus } from '../protocol/events/bus';
+import { getEventBus } from '../services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';

@@ -1,6 +1,7 @@
 // ============================================================================
 // ControlStream — 轻量级同步事件派发流
-// 原 src/main/events/controlStream.ts，P0-5 阶段 A 迁入 protocol 层
+// 原 src/main/events/controlStream.ts，P0-5 阶段 A 迁入 protocol 层；
+// 2026-04-27 从 protocol/events/ 搬到 services/eventing/（runtime class）
 // ============================================================================
 
 export class ControlStream {

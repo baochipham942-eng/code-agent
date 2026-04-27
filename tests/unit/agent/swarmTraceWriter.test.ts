@@ -19,7 +19,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
 import { SwarmTraceWriter } from '../../../src/main/agent/swarmTraceWriter';
 import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
-import { shutdownEventBus } from '../../../src/main/protocol/events/bus';
+import { shutdownEventBus } from '../../../src/main/services/eventing/bus';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`

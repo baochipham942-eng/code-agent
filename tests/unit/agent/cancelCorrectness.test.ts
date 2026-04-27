@@ -32,7 +32,7 @@ vi.mock('../../../src/main/agent/teammate/teammateService', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/protocol/events/bus', () => ({
+vi.mock('../../../src/main/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: vi.fn() }),
 }));
 

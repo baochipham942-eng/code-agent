@@ -6,7 +6,7 @@
 import type { Message, MessageAttachment, ModelConfig, ToolCall, ToolDefinition } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';

@@ -58,7 +58,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 const { ToolExecutor } = await import('../../../src/main/tools/toolExecutor');
-const { resetToolResolver } = await import('../../../src/main/protocol/dispatch/toolResolver');
+const { resetToolResolver } = await import('../../../src/main/tools/dispatch/toolResolver');
 
 describe('ToolExecutor protocol approval reuse', () => {
   beforeEach(() => {

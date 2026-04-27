@@ -15,7 +15,7 @@ import type {
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { notificationService } from '../services/infra/notificationService';
-import { getToolResolver } from '../protocol/dispatch/toolResolver';
+import { getToolResolver } from '../tools/dispatch/toolResolver';
 
 const execAsync = promisify(exec);
 

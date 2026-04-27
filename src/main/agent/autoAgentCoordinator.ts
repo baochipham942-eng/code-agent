@@ -51,7 +51,7 @@ import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
 import type { ModelConfig } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('AutoAgentCoordinator');

@@ -16,7 +16,7 @@ import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata'
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import { getPromptForTask, needsGenerativeUI, GENERATIVE_UI_PROMPT } from '../../../prompts/builder';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
-import { getDeferredToolsSummary } from '../../../protocol/dispatch/toolDefinitions';
+import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
 import { estimateModelMessageTokens, estimateTokens } from '../../../context/tokenOptimizer';
 import { compactModelSummarize } from '../../../context/compactModel';
 import { CompressionState } from '../../../context/compressionState';

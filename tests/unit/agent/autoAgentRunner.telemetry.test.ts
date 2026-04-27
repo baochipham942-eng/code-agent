@@ -54,7 +54,7 @@ vi.mock('../../../src/main/scheduler/dagEventBridge', () => ({
   sendDAGInitEvent: vi.fn(),
 }));
 
-vi.mock('../../../src/main/protocol/dispatch/toolResolver', () => ({
+vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ name: 'mock-tool-resolver' }),
 }));
 

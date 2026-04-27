@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Tool } from '../../../src/main/tools/types';
-import { buildProtocolContext } from '../../../src/main/protocol/dispatch/shadowAdapter';
+import { buildProtocolContext } from '../../../src/main/tools/dispatch/shadowAdapter';
 import { wrapLegacyTool } from '../../../src/main/tools/modules/_helpers/legacyAdapter';
 import type { CanUseToolFn } from '../../../src/main/protocol/tools';
 

@@ -24,7 +24,7 @@ import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
 import type { HookManager } from '../hooks/hookManager';
-import { getToolResolver } from '../protocol/dispatch/toolResolver';
+import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,

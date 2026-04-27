@@ -19,7 +19,7 @@ import type {
 import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
 import type { ToolContext } from '../tools/types';
-import type { ToolResolver } from '../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';

@@ -10,7 +10,7 @@ import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
-} from '../../../protocol/dispatch/toolDefinitions';
+} from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
 import {
   stripImagesFromMessages,

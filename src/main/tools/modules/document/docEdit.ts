@@ -17,7 +17,7 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
-import type { ToolResolver } from '../../../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../../../tools/dispatch/toolResolver';
 import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
 import { executeDocxEdit, type DocxEditParams } from '../../document/docxEdit';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';

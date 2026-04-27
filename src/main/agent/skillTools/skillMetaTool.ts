@@ -11,7 +11,7 @@ import type {
 } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSubagentExecutor } from '../subagentExecutor';
-import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../../tools/dispatch/toolResolver';
 import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';

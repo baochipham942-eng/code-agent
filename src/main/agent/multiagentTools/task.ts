@@ -7,7 +7,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
 import { getSubagentExecutor } from '../subagentExecutor';
-import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../../tools/dispatch/toolResolver';
 import {
   getPredefinedAgent,
   listPredefinedAgents,

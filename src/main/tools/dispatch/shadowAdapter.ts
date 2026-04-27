@@ -3,7 +3,8 @@
 //
 // 历史：原为 shadow-compare 适配层（P0-5 A 阶段），shadow 机制已退役，
 // 仅保留 protocol 执行入口（executePocToolViaProtocol）。
-// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
+// P0-6.3 抽出为独立模块；2026-04-27 从 protocol/dispatch/ 搬到 tools/dispatch/，
+// 因为 dispatch 全部是 runtime 逻辑，违反 protocol/ "只放类型和常量" 约束。
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
@@ -13,11 +14,11 @@ import type {
   CanUseToolResult,
   FileReadCache,
   PlanModeController,
-} from '../tools';
-import type { AgentEvent } from '../events';
-import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../../tools/types';
-import { getProtocolRegistry } from '../../tools/protocolRegistry';
-import { sameToolName } from '../../tools/toolNames';
+} from '../../protocol/tools';
+import type { AgentEvent } from '../../protocol/events';
+import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../types';
+import { getProtocolRegistry } from '../protocolRegistry';
+import { sameToolName } from '../toolNames';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存

@@ -2,7 +2,8 @@
 // Tool Deny Rules — 全局工具黑名单
 //
 // 原属 toolRegistry.ts（legacy 聚合入口），P0-6.2 抽出为独立模块。
-// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录。
+// 2026-04-27 从 protocol/dispatch/ 搬到 tools/dispatch/，因为 dispatch 全部是
+// runtime 逻辑，违反 protocol/ "只放类型和常量" 约束。
 // Registry 不应承担跨服务过滤职责：deny rules 的来源是 config/policy 层，
 // registry 的责任只是列 schema + 解析 handler。
 //

@@ -419,14 +419,89 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     app.restart()
 }
 
-#[tauri::command]
-fn open_update_url(url: String) -> Result<(), String> {
+// Block raw installer/binary suffixes. open_update_url is only for routing
+// the user to a release page (HTML); pulling unsigned binaries must go through
+// the native updater's pubkey-verified path.
+const BLOCKED_UPDATE_URL_SUFFIXES: &[&str] = &[
+    ".dmg", ".pkg", ".msi", ".exe", ".appimage", ".deb", ".rpm", ".zip", ".tar",
+    ".tar.gz", ".tgz",
+];
+
+fn validate_update_url(url: &str) -> Result<(), String> {
     if !url.starts_with("https://") {
-        return Err("Update download URL must use HTTPS".to_string());
+        return Err("Update URL must use HTTPS".to_string());
     }
 
+    // Strip query/fragment before suffix check so attackers can't bypass with
+    // "?download=1" or "#frag".
+    let path_only = url.split(['?', '#']).next().unwrap_or(url).to_lowercase();
+
+    if BLOCKED_UPDATE_URL_SUFFIXES
+        .iter()
+        .any(|suffix| path_only.ends_with(suffix))
+    {
+        return Err(
+            "Update URL points at a binary download; only release pages \
+             (HTML) are allowed here. Use the native updater for verified \
+             installers."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn open_update_url(url: String) -> Result<(), String> {
+    validate_update_url(&url)?;
     tauri_plugin_opener::open_url(url, None::<&str>)
         .map_err(|error| format!("Failed to open update URL: {error}"))
+}
+
+#[cfg(test)]
+mod update_url_tests {
+    use super::validate_update_url;
+
+    #[test]
+    fn allows_https_release_page() {
+        assert!(validate_update_url("https://github.com/owner/repo/releases/tag/v1.2.3").is_ok());
+        assert!(validate_update_url("https://code-agent-beta.vercel.app/releases").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_https() {
+        assert!(validate_update_url("http://github.com/foo").is_err());
+        assert!(validate_update_url("file:///tmp/evil.dmg").is_err());
+        assert!(validate_update_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn rejects_binary_suffixes() {
+        for suffix in [
+            ".dmg", ".DMG", ".pkg", ".msi", ".exe", ".AppImage", ".deb", ".rpm",
+            ".zip", ".tar", ".tar.gz", ".tgz",
+        ] {
+            let url = format!("https://example.com/foo/bar{}", suffix);
+            assert!(
+                validate_update_url(&url).is_err(),
+                "expected reject for {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_binary_with_query_or_fragment_bypass() {
+        // Attackers shouldn't be able to bypass with ?token=x or #anchor.
+        assert!(validate_update_url("https://example.com/foo.dmg?download=1").is_err());
+        assert!(validate_update_url("https://example.com/foo.exe#fragment").is_err());
+        assert!(validate_update_url("https://example.com/foo.tar.gz?v=1#a").is_err());
+    }
+
+    #[test]
+    fn allows_html_with_query_string() {
+        assert!(validate_update_url("https://example.com/release?id=v1").is_ok());
+        assert!(validate_update_url("https://example.com/page#section").is_ok());
+    }
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {

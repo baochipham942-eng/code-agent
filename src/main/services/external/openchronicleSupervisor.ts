@@ -22,7 +22,10 @@ import type {
   OpenchronicleStatus,
   OpenchronicleProcessState,
 } from '../../../shared/contract/openchronicle';
-import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../shared/contract/openchronicle';
+import {
+  DEFAULT_OPENCHRONICLE_SETTINGS,
+  OPENCHRONICLE_MCP_ENDPOINT,
+} from '../../../shared/contract/openchronicle';
 
 const logger = createLogger('OpenchronicleSupervisor');
 
@@ -33,7 +36,6 @@ const SHIM_PATHS = [
   '/usr/local/bin/openchronicle',
 ];
 const VENV_BIN = join(homedir(), '.openchronicle', 'venv', 'bin', 'openchronicle');
-const MCP_HEALTH_URL = 'http://127.0.0.1:8742/mcp';
 const MCP_SERVER_NAME = 'openchronicle';
 
 let cachedShim: string | null = null;
@@ -99,7 +101,7 @@ async function probeMcpHealthy(): Promise<boolean> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch(MCP_HEALTH_URL, {
+    const res = await fetch(OPENCHRONICLE_MCP_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json,text/event-stream' },
       body: JSON.stringify({
@@ -195,7 +197,7 @@ export async function getStatus(): Promise<OpenchronicleStatus> {
   return {
     state: currentState,
     pid,
-    mcpEndpoint: MCP_HEALTH_URL,
+    mcpEndpoint: OPENCHRONICLE_MCP_ENDPOINT,
     mcpHealthy,
     bufferFiles,
     memoryEntries,
@@ -240,7 +242,7 @@ async function registerMcpServer(): Promise<void> {
   client.addServer({
     name: MCP_SERVER_NAME,
     type: 'http-streamable',
-    serverUrl: MCP_HEALTH_URL,
+    serverUrl: OPENCHRONICLE_MCP_ENDPOINT,
     enabled: true,
   });
 }

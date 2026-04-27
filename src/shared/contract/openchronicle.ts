@@ -26,6 +26,10 @@ export const DEFAULT_OPENCHRONICLE_SETTINGS: OpenchronicleSettings = {
   ],
 };
 
+/** OpenChronicle daemon 的 MCP HTTP 端点（loopback only）。supervisor 健康探测和
+ * contextProvider 拉 current_context 都用这个。 */
+export const OPENCHRONICLE_MCP_ENDPOINT = 'http://127.0.0.1:8742/mcp';
+
 export type OpenchronicleProcessState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
 
 export interface OpenchronicleStatus {

@@ -9,10 +9,10 @@
 import { createLogger } from '../infra/logger';
 import { loadSettings } from './openchronicleSupervisor';
 import { compileFilter, filterCaptures, type CompiledFilter } from './openchronicleContextFilter';
+import { OPENCHRONICLE_MCP_ENDPOINT } from '../../../shared/contract/openchronicle';
 
 const logger = createLogger('OpenchronicleContextProvider');
 
-const MCP_URL = 'http://127.0.0.1:8742/mcp';
 const FETCH_TIMEOUT_MS = 3000;
 const MAX_INJECTED_CHARS = 2000;
 
@@ -60,7 +60,7 @@ function parseSseOrJson(text: string): unknown {
 }
 
 async function initializeMcpSession(signal: AbortSignal): Promise<string | null> {
-  const res = await fetch(MCP_URL, {
+  const res = await fetch(OPENCHRONICLE_MCP_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -89,7 +89,7 @@ async function callMcpTool(toolName: string, args: Record<string, unknown> = {})
     const sessionId = await initializeMcpSession(ctrl.signal);
     if (!sessionId) return null;
 
-    const res = await fetch(MCP_URL, {
+    const res = await fetch(OPENCHRONICLE_MCP_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

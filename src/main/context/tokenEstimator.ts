@@ -12,6 +12,7 @@ const logger = createLogger('TokenEstimator');
 
 // LRU cache for token counts (avoids re-encoding identical content)
 const TOKEN_CACHE_MAX = 200;
+const EXACT_TOKENIZATION_MAX_CHARS = 50_000;
 const tokenCache = new Map<number, number>();
 
 function simpleHash(str: string): number {
@@ -149,11 +150,12 @@ export function analyzeContent(text: string): ContentAnalysis {
 }
 
 /**
- * Count tokens for a text string using real BPE tokenization.
- * Uses gpt-tokenizer (cl100k_base) for accurate counts with LRU cache.
+ * Count tokens for a text string.
+ * Uses gpt-tokenizer (cl100k_base) for normal inputs with LRU cache.
+ * Very large strings use the fast analyzer to avoid pathological BPE costs.
  *
  * @param text - Text to count tokens for
- * @returns Exact BPE token count
+ * @returns Token count estimate
  */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
@@ -168,7 +170,9 @@ export function estimateTokens(text: string): number {
     return cached;
   }
 
-  const tokens = encode(text).length;
+  const tokens = text.length > EXACT_TOKENIZATION_MAX_CHARS
+    ? estimateTokensDetailed(text).total
+    : encode(text).length;
 
   // Store in LRU cache, evict oldest entry if at capacity
   if (tokenCache.size >= TOKEN_CACHE_MAX) {

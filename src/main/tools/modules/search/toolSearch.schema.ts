@@ -3,7 +3,7 @@
 // eager-imported by modules/index.ts without inflating the dependency graph.
 import type { ToolSchema } from '../../../protocol/tools';
 
-export const TOOL_SEARCH_DESCRIPTION = `Searches for or selects deferred tools to make them available. Use keyword search to discover tools or 'select:toolName' for direct selection. You MUST use this to load deferred tools before calling them.`;
+export const TOOL_SEARCH_DESCRIPTION = `Searches for or selects deferred tools. Callable deferred tools are loaded before use; search-only hits are returned with not-callable reasons and must be treated as context, not direct tool calls.`;
 
 export const TOOL_SEARCH_INPUT_SCHEMA = {
   type: 'object' as const,

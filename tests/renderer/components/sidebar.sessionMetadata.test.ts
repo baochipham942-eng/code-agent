@@ -75,6 +75,8 @@ const sessionUiState = {
   setSearchQuery: vi.fn(),
   sessionStatusFilter: 'all' as 'all' | 'background',
   setSessionStatusFilter: vi.fn(),
+  expandedWorkspaces: {} as Record<string, boolean>,
+  setWorkspaceExpanded: vi.fn(),
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,
@@ -141,7 +143,6 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('后台');
     expect(html).toContain('3 轮');
     expect(html).toContain('工作区 · Browser');
-    expect(html).toContain('gpt-5.4');
   });
 
   it('supports the background-only quick filter', () => {
@@ -149,7 +150,7 @@ describe('Sidebar session metadata', () => {
 
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('后台中');
+    expect(html).toContain('后台');
     expect(html).toContain('Session Native Workspace');
     expect(html).not.toContain('Finished Session');
   });

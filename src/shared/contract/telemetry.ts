@@ -102,6 +102,7 @@ export interface TelemetryToolCall {
   toolCallId: string;
   name: string;
   arguments: string; // JSON (truncated to 2KB)
+  actualArguments?: string; // JSON after hook mutation and telemetry redaction
   resultSummary: string; // first 500 chars
   success: boolean;
   error?: string;

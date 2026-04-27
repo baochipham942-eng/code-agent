@@ -156,8 +156,7 @@ export const sdkTaskTool: Tool = {
 
 Use this tool when you need a single agent to complete a task synchronously.
 
-Available agent types:
-${listPredefinedAgents().map(a => `- ${a.id}: ${a.description}`).join('\n')}
+Available agent types: coder, reviewer, explore, plan, awaiter
 
 For advanced features (parallel execution, background mode, custom prompts, budget control),
 use AgentSpawn instead.

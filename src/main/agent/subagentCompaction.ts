@@ -76,14 +76,6 @@ export function compactSubagentMessages(
   messages: SubagentMessage[],
   model: string
 ): boolean {
-  const contextWindow = getContextWindow(model);
-  const threshold = contextWindow * SUBAGENT_COMPACTION.THRESHOLD;
-  const currentTokens = estimateTotalTokens(messages);
-
-  if (currentTokens <= threshold) {
-    return false;
-  }
-
   // Head: system (0) + initial user (1)
   const headCount = 2;
   // Tail: recent N pairs (each pair = assistant + user)
@@ -91,6 +83,14 @@ export function compactSubagentMessages(
 
   // If not enough messages to truncate middle section, skip
   if (messages.length <= headCount + tailCount) {
+    return false;
+  }
+
+  const contextWindow = getContextWindow(model);
+  const threshold = contextWindow * SUBAGENT_COMPACTION.THRESHOLD;
+  const currentTokens = estimateTotalTokens(messages);
+
+  if (currentTokens <= threshold) {
     return false;
   }
 

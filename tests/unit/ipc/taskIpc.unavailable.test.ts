@@ -9,11 +9,16 @@
 // 轮询时触发空指针或额外特判。
 // ============================================================================
 
+import { EventEmitter } from 'events';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 const logState = vi.hoisted(() => ({
   errorLog: vi.fn(),
   debugLog: vi.fn(),
+}));
+
+const platformState = vi.hoisted(() => ({
+  rendererListeners: [] as Array<(channel: string, data: unknown) => void>,
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -25,8 +30,24 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
+vi.mock('../../../src/main/platform', () => ({
+  broadcastToRenderer: (channel: string, data: unknown) => {
+    for (const listener of platformState.rendererListeners) {
+      listener(channel, data);
+    }
+  },
+  onRendererPush: (listener: (channel: string, data: unknown) => void) => {
+    platformState.rendererListeners.push(listener);
+    return () => {
+      const index = platformState.rendererListeners.indexOf(listener);
+      if (index >= 0) platformState.rendererListeners.splice(index, 1);
+    };
+  },
+}));
+
 import { registerTaskHandlers } from '../../../src/main/ipc/task.ipc';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import { onRendererPush } from '../../../src/main/platform';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
@@ -49,6 +70,7 @@ describe('task.ipc — TaskManager unavailable', () => {
   beforeEach(() => {
     logState.errorLog.mockReset();
     logState.debugLog.mockReset();
+    platformState.rendererListeners.length = 0;
   });
 
   it('write 类动作返回结构化 unavailable，不触发 error 日志', async () => {
@@ -99,12 +121,12 @@ describe('task.ipc — TaskManager unavailable', () => {
   });
 
   it('TaskManager 可用时照常 dispatch 到下游方法', async () => {
-    const fakeManager = {
+    const fakeManager = Object.assign(new EventEmitter(), {
       getAllStates: vi.fn(() => new Map([['s1', { sessionId: 's1', status: 'idle' }]])),
       getStats: vi.fn(() => ({ running: 1, queued: 2, available: 3, maxConcurrent: 4 })),
       getWaitingQueue: vi.fn(() => ['s2']),
       startTask: vi.fn(async () => {}),
-    };
+    });
     const ipc = makeFakeIpc();
     registerTaskHandlers(ipc as never, () => fakeManager as never);
     const handler = ipc.getHandler();
@@ -118,5 +140,66 @@ describe('task.ipc — TaskManager unavailable', () => {
     const all = await handler({}, { action: 'getAllStates', payload: {} });
     expect(all.data).toEqual({ s1: { sessionId: 's1', status: 'idle' } });
     expect(logState.debugLog).not.toHaveBeenCalled();
+  });
+
+  it('TaskManager 可用后把运行状态事件推送到 renderer task:event', async () => {
+    const fakeManager = Object.assign(new EventEmitter(), {
+      getSessionState: vi.fn(() => ({ status: 'running', startTime: 123 })),
+      getAllStates: vi.fn(() => new Map([['s1', { status: 'running', startTime: 123 }]])),
+      getStats: vi.fn(() => ({ running: 1, queued: 1, available: 1, maxConcurrent: 3 })),
+      getWaitingQueue: vi.fn(() => ['s2']),
+    });
+    const ipc = makeFakeIpc();
+    const pushedEvents: Array<{ channel: string; data: unknown }> = [];
+    const unsubscribe = onRendererPush((channel, data) => {
+      pushedEvents.push({ channel, data });
+    });
+
+    try {
+      registerTaskHandlers(ipc as never, () => fakeManager as never);
+      const handler = ipc.getHandler();
+
+      await handler({}, { action: 'getStats', payload: {} });
+      await handler({}, { action: 'getStats', payload: {} });
+      fakeManager.emit('event', {
+        type: 'state_change',
+        sessionId: 's1',
+        data: { status: 'running', startTime: 123 },
+      });
+
+      expect(
+        pushedEvents.filter(
+          (event) =>
+            event.channel === IPC_CHANNELS.TASK_EVENT &&
+            (event.data as { type?: string }).type === 'state_change'
+        )
+      ).toEqual([
+        {
+          channel: IPC_CHANNELS.TASK_EVENT,
+          data: {
+            type: 'state_change',
+            sessionId: 's1',
+            data: { status: 'running', startTime: 123 },
+          },
+        },
+      ]);
+      expect(pushedEvents).toContainEqual({
+        channel: IPC_CHANNELS.TASK_EVENT,
+        data: {
+          type: 'stats_updated',
+          data: { running: 1, queued: 1, available: 1, maxConcurrent: 3 },
+        },
+      });
+
+      pushedEvents.length = 0;
+      fakeManager.emit('event', { type: 'queue_update', sessionId: 's2' });
+
+      expect(pushedEvents).toContainEqual({
+        channel: IPC_CHANNELS.TASK_EVENT,
+        data: { type: 'queue_update', sessionId: 's2', queue: ['s2'] },
+      });
+    } finally {
+      unsubscribe();
+    }
   });
 });

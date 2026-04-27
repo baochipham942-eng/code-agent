@@ -61,13 +61,10 @@ export function getSessionStatusPresentation(args: {
   }
 
   // P2: DB-persisted status survives restart
-  if (sessionStatus === 'error') {
+  if (sessionStatus === 'error' || sessionStatus === 'interrupted' || sessionStatus === 'orphaned') {
     return PRESENTATION.error;
   }
-  if (sessionStatus === 'running') {
-    // DB says the session was running. Either it genuinely still is (zombie
-    // because in-memory runtime is gone) or it crashed mid-turn. Either way,
-    // 'live' is more informative than 'done'.
+  if (sessionStatus === 'running' || sessionStatus === 'queued' || sessionStatus === 'paused' || sessionStatus === 'cancelling') {
     return PRESENTATION.live;
   }
   if (sessionStatus === 'completed') {

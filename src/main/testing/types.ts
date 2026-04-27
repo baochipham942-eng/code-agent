@@ -2,6 +2,8 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
+import type { TelemetryCompleteness } from '../../shared/contract/evaluation';
+
 /**
  * Test case types
  */
@@ -181,6 +183,12 @@ export interface ToolExecutionRecord {
   timestamp: number;
 }
 
+export interface RealAgentRunTelemetryGate {
+  name: 'real-agent-run';
+  passed: boolean;
+  failures: string[];
+}
+
 /**
  * Single test result
  */
@@ -224,7 +232,18 @@ export interface TestResult {
   /** Trajectory analysis data (P3) */
   trajectory?: Trajectory;
   /** Trial results when trialsPerCase > 1 */
-  trials?: Array<{ score: number; status: TestStatus; duration_ms: number }>;
+  trials?: Array<{
+    score: number;
+    status: TestStatus;
+    duration_ms: number;
+    sessionId?: string;
+    replayKey?: string;
+    telemetryCompleteness?: TelemetryCompleteness;
+    telemetryGate?: RealAgentRunTelemetryGate;
+    failureStage?: string;
+    failureReason?: string;
+    errors?: string[];
+  }>;
   /** Statistical variance of trial scores (when trialsPerCase > 1) */
   variance?: number;
   /** Standard deviation of trial scores (when trialsPerCase > 1) */
@@ -233,6 +252,12 @@ export interface TestResult {
   unstable?: boolean;
   /** Session ID from the agent that ran this test */
   sessionId?: string;
+  /** Replay key derived from the session trace identity */
+  replayKey?: string;
+  /** Telemetry/replay completeness gathered from structured replay */
+  telemetryCompleteness?: TelemetryCompleteness;
+  /** Hard gate used by real-agent-run eval cases */
+  telemetryGate?: RealAgentRunTelemetryGate;
 }
 
 /**

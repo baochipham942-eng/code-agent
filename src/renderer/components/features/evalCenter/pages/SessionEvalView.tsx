@@ -51,7 +51,9 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
   });
 
   // Load session info for header display
-  const { loadSession, sessionInfo } = useEvalCenterStore();
+  const { loadSession, sessionInfo, readFacade } = useEvalCenterStore();
+  const facade = readFacade?.traceIdentity.sessionId === sessionId ? readFacade : null;
+  const currentSessionInfo = facade?.sessionInfo ?? sessionInfo;
 
   useEffect(() => {
     loadSession(sessionId);
@@ -155,16 +157,16 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
             </button>
             <div className="h-3 w-px bg-zinc-700" />
             <span className="text-xs text-zinc-400 truncate max-w-[300px]">
-              {sessionInfo?.title || sessionId.slice(0, 12) + '...'}
+              {currentSessionInfo?.title || sessionId.slice(0, 12) + '...'}
             </span>
             <span className="text-[10px] text-zinc-600 font-mono">
               {sessionId.slice(0, 8)}
             </span>
-            {sessionInfo && (
+            {currentSessionInfo && (
               <>
                 <div className="h-3 w-px bg-zinc-700" />
                 <span className="text-[10px] text-zinc-500">
-                  {sessionInfo.modelProvider}/{sessionInfo.modelName}
+                  {currentSessionInfo.modelProvider}/{currentSessionInfo.modelName}
                 </span>
               </>
             )}

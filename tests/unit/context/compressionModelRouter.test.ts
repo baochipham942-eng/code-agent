@@ -49,7 +49,7 @@ describe('CompressionModelRouter', () => {
       router = new CompressionModelRouter();
     });
 
-    it('L4 (contextCollapse) returns zhipu/glm-4-flash', () => {
+    it('L4 (contextCollapse) returns zhipu/glm-4.7-flash', () => {
       expect(router.selectModel('contextCollapse')).toEqual({
         provider: 'zhipu',
         model: 'glm-4.7-flash',

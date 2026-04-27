@@ -223,6 +223,24 @@ describe('bashModule (native)', () => {
       }
     }, 10_000);
 
+    it('aborts a foreground command when the run signal fires', async () => {
+      const ctrl = new AbortController();
+      const handler = await bashModule.createHandler();
+      const resultPromise = handler.execute(
+        { command: 'sleep 5', timeout: 10_000 },
+        makeCtx({ abortSignal: ctrl.signal }),
+        allowAll,
+      );
+
+      setTimeout(() => ctrl.abort(), 30);
+      const result = await resultPromise;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+      }
+    }, 5_000);
+
     it('respects working_directory override', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(

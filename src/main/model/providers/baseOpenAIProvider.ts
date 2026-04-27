@@ -5,7 +5,7 @@
 import https from 'https';
 import http from 'http';
 import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/contract';
-import type { ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
+import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
@@ -107,7 +107,8 @@ export abstract class BaseOpenAIProvider implements Provider {
     tools: ToolDefinition[],
     config: ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const baseUrl = this.getBaseUrl(config);
     const apiKey = this.getApiKey(config);
@@ -128,6 +129,8 @@ export abstract class BaseOpenAIProvider implements Provider {
         requestBody,
         onStream,
         signal,
+        onSnapshot: options?.onSnapshot,
+        snapshotIntervalMs: options?.snapshotIntervalMs,
         agent: this.getAgent(),
         extraHeaders: this.getExtraHeaders(),
         endpoint: this.getEndpoint(),

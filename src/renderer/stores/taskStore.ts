@@ -13,7 +13,7 @@ const logger = createLogger('TaskStore');
 // Types
 // ============================================================================
 
-export type SessionStatus = 'idle' | 'running' | 'queued' | 'cancelling' | 'error';
+export type SessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'error';
 
 export interface SessionState {
   status: SessionStatus;
@@ -269,6 +269,8 @@ export function getStatusLabel(status: SessionStatus): string {
       return '空闲';
     case 'running':
       return '运行中';
+    case 'paused':
+      return '已暂停';
     case 'queued':
       return '排队中';
     case 'cancelling':
@@ -289,6 +291,8 @@ export function getStatusColor(status: SessionStatus): string {
       return 'text-gray-500';
     case 'running':
       return 'text-green-500';
+    case 'paused':
+      return 'text-yellow-500';
     case 'queued':
       return 'text-yellow-500';
     case 'cancelling':

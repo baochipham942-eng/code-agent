@@ -20,6 +20,7 @@ import { getProtocolRegistry } from '../../tools/protocolRegistry';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
 import { isToolNameAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
+import { getMCPClient } from '../../mcp';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -44,7 +45,7 @@ export interface ToolResolver {
 
 class ProtocolToolResolver implements ToolResolver {
   list(): string[] {
-    return getProtocolRegistry().getSchemas().map((s) => s.name);
+    return this.listDefinitions().map((definition) => definition.name);
   }
 
   getDefinition(name: string): ToolDefinition | undefined {
@@ -56,7 +57,7 @@ class ProtocolToolResolver implements ToolResolver {
   }
 
   has(name: string): boolean {
-    return getProtocolRegistry().has(name);
+    return this.getDefinition(name) !== undefined;
   }
 
   async execute(
@@ -65,27 +66,59 @@ class ProtocolToolResolver implements ToolResolver {
     ctx: ToolContext,
   ): Promise<ToolExecutionResult> {
     const registry = getProtocolRegistry();
-    if (!registry.has(name)) {
+    const definition = this.getDefinition(name);
+    if (!definition) {
       return { success: false, error: `tool not registered: ${name}` };
     }
+    const dispatchName = definition.name;
 
-    if (!isToolNameAllowedByWorkbenchScope(name, ctx.toolScope)) {
+    if (!isToolNameAllowedByWorkbenchScope(dispatchName, ctx.toolScope)) {
       return {
         success: false,
-        error: `tool blocked by current workbench scope: ${name}`,
+        error: `tool blocked by current workbench scope: ${dispatchName}`,
         metadata: { code: 'WORKBENCH_SCOPE_DENIED' },
       };
     }
 
     try {
-      const handler = await registry.resolve(name);
+      const mcpClient = getMCPClient();
+      const mcpToolName = mcpClient.parseMCPToolName(dispatchName);
+      if (mcpToolName) {
+        const result = await mcpClient.callTool(
+          ctx.currentToolCallId ?? `mcp-${Date.now()}`,
+          mcpToolName.serverName,
+          mcpToolName.toolName,
+          args,
+          { abortSignal: ctx.abortSignal },
+        );
+        return {
+          success: result.success,
+          output: result.output,
+          error: result.error,
+          outputPath: result.outputPath,
+          result: result.output,
+          metadata: {
+            ...(result.metadata ?? {}),
+            serverName: mcpToolName.serverName,
+            toolName: mcpToolName.toolName,
+            duration: result.duration,
+          },
+        };
+      }
+
+      if (!registry.has(dispatchName)) {
+        return { success: false, error: `tool not registered: ${dispatchName}` };
+      }
+
+      const handler = await registry.resolve(dispatchName);
       const protoCtx = buildProtocolContext({
         sessionId: (ctx as { sessionId?: string }).sessionId,
         workingDirectory: ctx.workingDirectory,
         legacyCtx: ctx,
+        abortSignal: ctx.abortSignal,
         resolver: this,
       });
-      const canUseTool = buildCanUseToolFromLegacy(ctx, name);
+      const canUseTool = buildCanUseToolFromLegacy(ctx, dispatchName);
 
       const protoResult = await handler.execute(args, protoCtx, canUseTool);
       if (protoResult.ok) {

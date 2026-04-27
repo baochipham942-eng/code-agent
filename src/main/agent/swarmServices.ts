@@ -32,6 +32,9 @@ import type { SwarmTraceRepository } from '../services/core/repositories/SwarmTr
  */
 export interface SpawnGuardLike {
   cancel(agentId: string): boolean;
+  cancelAll?(reason?: string): number;
+  get?(agentId: string): { status?: string } | undefined;
+  sendMessage?(agentId: string, message: string): boolean;
 }
 
 /**

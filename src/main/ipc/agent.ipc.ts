@@ -22,6 +22,7 @@ import type { ConversationEnvelope } from '../../shared/contract/conversationEnv
 
 interface SendMessagePayload {
   content: string;
+  clientMessageId?: string;
   sessionId?: string;
   attachments?: unknown[];
   options?: AppServiceRunOptions;
@@ -37,6 +38,7 @@ function normalizeEnvelope(
 
   return {
     content: payload.content,
+    ...('clientMessageId' in payload && payload.clientMessageId ? { clientMessageId: payload.clientMessageId } : {}),
     ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
     ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
     ...(payload.options ? { options: payload.options } : {}),
@@ -73,6 +75,7 @@ async function handlePermissionResponse(
 
 interface InterruptPayload {
   content: string;
+  clientMessageId?: string;
   sessionId?: string;
   attachments?: unknown[];
   options?: AppServiceRunOptions;

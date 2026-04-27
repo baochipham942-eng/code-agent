@@ -65,10 +65,49 @@ interface PendingToolCall {
   toolCallId: string;
   name: string;
   arguments: string;
+  actualArguments?: string;
   rawArguments?: Record<string, unknown>;
   timestamp: number;
   index: number;
   parallel: boolean;
+}
+
+interface DetachedToolCallInput {
+  toolCallId: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  resultSummary?: string;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+  timestamp: number;
+  index: number;
+  parallel?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+interface DetachedTimelineEventInput {
+  eventType: string;
+  summary: string;
+  data?: Record<string, unknown> | string;
+  durationMs?: number;
+  timestamp?: number;
+}
+
+interface DetachedTurnInput {
+  sessionId: string;
+  turnId: string;
+  turnNumber: number;
+  userPrompt: string;
+  assistantResponse: string;
+  thinking?: string;
+  agentId?: string;
+  parentTurnId?: string;
+  startTime: number;
+  endTime: number;
+  modelCalls?: TelemetryModelCall[];
+  toolCalls?: DetachedToolCallInput[];
+  events?: DetachedTimelineEventInput[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -119,14 +158,18 @@ function extractComputerSurfaceFields(
 
 function sanitizeToolArgsForTelemetry(name: string, args: unknown): {
   serialized: string;
+  actualArguments?: string;
   rawArguments?: Record<string, unknown>;
 } {
   if (!isRecord(args)) {
-    return { serialized: JSON.stringify(args ?? {}) };
+    const serialized = JSON.stringify(args ?? {});
+    return { serialized, actualArguments: serialized };
   }
   const safeArgs = sanitizeBrowserComputerToolArguments(name, args) || args;
+  const serialized = JSON.stringify(safeArgs);
   return {
-    serialized: JSON.stringify(safeArgs),
+    serialized,
+    actualArguments: serialized,
     rawArguments: args,
   };
 }
@@ -407,6 +450,140 @@ export class TelemetryCollector {
     this.activeTurn = null;
   }
 
+  /**
+   * Persist a complete turn without touching activeTurn state.
+   * Used by subagents, which may run concurrently with the main loop and cannot
+   * share the collector's single activeTurn buffer.
+   */
+  recordDetachedTurn(input: DetachedTurnInput): boolean {
+    if (this.activeSession?.id !== input.sessionId) {
+      return false;
+    }
+
+    const modelCalls = (input.modelCalls || []).map((call) => ({
+      ...call,
+      turnId: input.turnId,
+      sessionId: input.sessionId,
+    }));
+
+    const toolCalls = (input.toolCalls || []).map((call) => {
+      const safeArgs = sanitizeToolArgsForTelemetry(call.name, call.arguments);
+      const safeResult = sanitizeBrowserComputerToolResult(call.name, safeArgs.rawArguments, {
+        output: call.resultSummary,
+        error: call.error,
+        metadata: call.metadata,
+      });
+      const errorCategory = call.error ? classifyError(call.error) : undefined;
+      const computerSurfaceFields = extractComputerSurfaceFields(
+        call.name,
+        safeArgs.serialized,
+        call.metadata,
+      );
+      return {
+        id: generateMessageId(),
+        turnId: input.turnId,
+        sessionId: input.sessionId,
+        toolCallId: call.toolCallId,
+        name: call.name,
+        arguments: safeArgs.serialized,
+        actualArguments: safeArgs.actualArguments,
+        resultSummary: safeResult.output ?? safeResult.error ?? '',
+        success: call.success,
+        error: safeResult.error,
+        errorCategory,
+        durationMs: call.durationMs,
+        timestamp: call.timestamp,
+        index: call.index,
+        parallel: !!call.parallel,
+        ...computerSurfaceFields,
+      } satisfies TelemetryToolCall & { turnId: string; sessionId: string };
+    });
+
+    const events = (input.events || []).map((event) => ({
+      id: generateMessageId(),
+      turnId: input.turnId,
+      sessionId: input.sessionId,
+      timestamp: event.timestamp ?? Date.now(),
+      eventType: event.eventType,
+      summary: event.summary,
+      data: typeof event.data === 'string' ? event.data : event.data ? JSON.stringify(event.data) : undefined,
+      durationMs: event.durationMs,
+    } satisfies TelemetryTimelineEvent & { turnId: string; sessionId: string }));
+
+    const successCount = toolCalls.filter(tc => tc.success).length;
+    const totalToolCalls = toolCalls.length;
+    const signals: QualitySignals = {
+      toolSuccessRate: totalToolCalls > 0 ? successCount / totalToolCalls : 0,
+      toolCallCount: totalToolCalls,
+      retryCount: 0,
+      errorCount: toolCalls.length - successCount,
+      errorRecovered: 0,
+      compactionTriggered: events.some(event => event.eventType === 'context_compressed'),
+      circuitBreakerTripped: false,
+      nudgesInjected: 0,
+    };
+    const totalInput = modelCalls.reduce((sum, call) => sum + call.inputTokens, 0);
+    const totalOutput = modelCalls.reduce((sum, call) => sum + call.outputTokens, 0);
+    const turn: TelemetryTurn = {
+      id: input.turnId,
+      sessionId: input.sessionId,
+      turnNumber: input.turnNumber,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      durationMs: Math.max(0, input.endTime - input.startTime),
+      userPrompt: input.userPrompt,
+      userPromptTokens: Math.ceil(input.userPrompt.length / 3.5),
+      hasAttachments: false,
+      attachmentCount: 0,
+      agentMode: 'subagent',
+      effortLevel: 'high',
+      modelCalls: [],
+      toolCalls: [],
+      events: [],
+      assistantResponse: input.assistantResponse,
+      assistantResponseTokens: Math.ceil(input.assistantResponse.length / 3.5),
+      thinkingContent: input.thinking,
+      totalInputTokens: totalInput,
+      totalOutputTokens: totalOutput,
+      intent: classifyIntent(input.userPrompt, toolCalls.map(tc => tc.name)),
+      outcome: evaluateOutcome(signals),
+      compactionOccurred: signals.compactionTriggered,
+      iterationCount: input.turnNumber,
+      agentId: input.agentId || 'subagent',
+      turnType: 'iteration',
+      parentTurnId: input.parentTurnId,
+    };
+
+    getTelemetryStorage().insertTurn(turn);
+    getTelemetryStorage().batchInsert({ modelCalls, toolCalls, events });
+
+    if (this.activeSession) {
+      this.activeSession.turnCount++;
+      this.activeSession.totalInputTokens += totalInput;
+      this.activeSession.totalOutputTokens += totalOutput;
+      this.activeSession.totalTokens += totalInput + totalOutput;
+      this.activeSession.totalToolCalls += totalToolCalls;
+      this.activeSession.totalErrors += signals.errorCount;
+      const allToolCalls = this.activeSession.totalToolCalls;
+      const previousSuccessful = this.activeSession.toolSuccessRate * (allToolCalls - totalToolCalls);
+      this.activeSession.toolSuccessRate = allToolCalls > 0
+        ? (previousSuccessful + successCount) / allToolCalls
+        : 0;
+      getTelemetryStorage().updateSession(this.activeSession.id, {
+        turnCount: this.activeSession.turnCount,
+        totalInputTokens: this.activeSession.totalInputTokens,
+        totalOutputTokens: this.activeSession.totalOutputTokens,
+        totalTokens: this.activeSession.totalTokens,
+        totalToolCalls: this.activeSession.totalToolCalls,
+        toolSuccessRate: this.activeSession.toolSuccessRate,
+        totalErrors: this.activeSession.totalErrors,
+      });
+    }
+
+    this.pushEvent({ type: 'turn_end', sessionId: input.sessionId, data: { turnId: input.turnId, detached: true } });
+    return true;
+  }
+
   // --------------------------------------------------------------------------
   // Data Recording
   // --------------------------------------------------------------------------
@@ -446,6 +623,7 @@ export class TelemetryCollector {
       toolCallId,
       name,
       arguments: safeArgs.serialized,
+      actualArguments: safeArgs.actualArguments,
       rawArguments: safeArgs.rawArguments,
       timestamp: Date.now(),
       index,
@@ -485,6 +663,7 @@ export class TelemetryCollector {
       toolCallId,
       name: pending.name,
       arguments: pending.arguments,
+      actualArguments: pending.actualArguments,
       resultSummary: safeOutput ?? safeError ?? '',
       success,
       error: safeError,

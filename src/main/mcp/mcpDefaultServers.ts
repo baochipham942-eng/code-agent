@@ -29,6 +29,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   const configService = getConfigService();
   const braveApiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY || '';
   const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
+  const argusEnabled = process.env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
 
   return [
     // ========== SSE 远程服务器 ==========
@@ -130,7 +131,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       args: [
         `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
       ],
-      enabled: true, // 桌面自动化 24 工具，已构建
+      enabled: argusEnabled,
     },
   ];
 }

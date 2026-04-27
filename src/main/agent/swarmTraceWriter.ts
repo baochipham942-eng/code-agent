@@ -121,11 +121,13 @@ export class SwarmTraceWriter {
         this.onAgentEvent(event);
         break;
       case 'swarm:completed':
+        this.appendTimelineEvent(event);
         this.onCompleted(event);
-        break;
+        return;
       case 'swarm:cancelled':
+        this.appendTimelineEvent(event);
         this.onCancelled(event);
-        break;
+        return;
       default:
         // 其他事件（plan / message / launch）只写入 timeline，不动 agent 聚合
         break;
@@ -147,7 +149,7 @@ export class SwarmTraceWriter {
     }
 
     const totalAgents = event.data.statistics?.total ?? 0;
-    const sessionId = this.options.getSessionId();
+    const sessionId = event.sessionId ?? this.options.getSessionId();
 
     this.current = {
       runId,

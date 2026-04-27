@@ -44,6 +44,35 @@ async function checkFileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function resolveSkillReferencePath(skill: ParsedSkill, ref: string): Promise<string | null> {
+  const basePath = path.resolve(skill.basePath);
+  const refPath = path.resolve(basePath, ref);
+
+  if (!isPathInside(basePath, refPath)) {
+    return null;
+  }
+
+  try {
+    const [realBasePath, realRefPath] = await Promise.all([
+      fs.realpath(basePath),
+      fs.realpath(refPath),
+    ]);
+
+    if (!isPathInside(realBasePath, realRefPath)) {
+      return null;
+    }
+
+    return realRefPath;
+  } catch {
+    return refPath;
+  }
+}
+
 // Frontmatter 正则：匹配 --- 开头和结尾的 YAML 块
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
@@ -102,7 +131,11 @@ export async function checkSkillDependencies(
   // 检查引用文件
   if (skill.references && skill.references.length > 0) {
     for (const ref of skill.references) {
-      const refPath = path.join(skill.basePath, ref);
+      const refPath = await resolveSkillReferencePath(skill, ref);
+      if (!refPath) {
+        missingReferences.push(ref);
+        continue;
+      }
       if (!(await checkFileExists(refPath))) {
         missingReferences.push(ref);
       }
@@ -134,7 +167,15 @@ export async function loadSkillReferences(
   }
 
   for (const ref of skill.references) {
-    const refPath = path.join(skill.basePath, ref);
+    const refPath = await resolveSkillReferencePath(skill, ref);
+    if (!refPath) {
+      logger.warn('Blocked reference outside skill base path', {
+        skill: skill.name,
+        ref,
+      });
+      continue;
+    }
+
     try {
       const content = await fs.readFile(refPath, 'utf-8');
       contents.set(ref, content);

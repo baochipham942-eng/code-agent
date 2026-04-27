@@ -104,7 +104,7 @@ export const SessionActionsMenu: React.FC = () => {
       sessionId: currentSessionId,
       sessionTitle: currentSession.title,
       reason: 'manual_review',
-      source: 'current_session_bar',
+      enqueueSource: 'current_session_bar',
     });
   }, [currentSession, currentSessionId, enqueueReviewItem, close]);
 

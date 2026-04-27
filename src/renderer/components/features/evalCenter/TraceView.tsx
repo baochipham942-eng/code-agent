@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { getReplayDataSourceLabel } from '@shared/contract/evaluation';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { ReplayMessageBlock } from './ReplayMessageBlock';
 import { ReplayAnalyticsSidebar } from './ReplayAnalyticsSidebar';
@@ -17,8 +18,7 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
     replayData,
     replayLoading,
     objective,
-    reviewQueue,
-    sessionInfo,
+    readFacade,
     loadReplay,
     loadReviewQueue,
     enqueueFailureFollowup,
@@ -28,21 +28,30 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
 
   useEffect(() => {
     if (sessionId) {
+      setActiveTurn(0);
       loadReplay(sessionId);
       void loadReviewQueue();
     }
   }, [sessionId, loadReplay, loadReviewQueue]);
 
-  const queuedReviewItem = reviewQueue.find((item) => item.sessionId === sessionId) || null;
+  const facade = readFacade?.traceIdentity.sessionId === sessionId ? readFacade : null;
+  const fallbackReplay = replayData?.sessionId === sessionId ? replayData : null;
+  const structuredReplay = facade?.structuredReplay ?? fallbackReplay;
+  const queuedReviewItem = facade?.reviewQueueState.queuedItem ?? null;
   const failureFollowupState = queuedReviewItem?.reason === 'failure_followup'
     ? 'queued'
     : queuedReviewItem
       ? 'upgrade'
       : 'available';
+  const dataSource = facade?.dataSource ?? structuredReplay?.dataSource ?? null;
 
   const handleEnqueueFailureFollowup = useCallback(async () => {
-    await enqueueFailureFollowup(sessionId, sessionInfo?.title, replayData?.summary.failureAttribution);
-  }, [enqueueFailureFollowup, replayData?.summary.failureAttribution, sessionId, sessionInfo?.title]);
+    await enqueueFailureFollowup(
+      sessionId,
+      facade?.sessionInfo?.title,
+      structuredReplay?.summary.failureAttribution,
+    );
+  }, [enqueueFailureFollowup, facade?.sessionInfo?.title, sessionId, structuredReplay?.summary.failureAttribution]);
 
   const scrollToTurn = useCallback((turnIdx: number) => {
     setActiveTurn(turnIdx);
@@ -60,7 +69,7 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
     );
   }
 
-  if (!replayData || replayData.turns.length === 0) {
+  if (!structuredReplay || structuredReplay.turns.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
         No replay data available for this session
@@ -68,7 +77,7 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
     );
   }
 
-  const turns = replayData.turns;
+  const turns = structuredReplay.turns;
   const activeTurnData = turns[activeTurn];
 
   // Collect tool calls from the active turn
@@ -126,7 +135,8 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
           {/* Action bar */}
           <div className="flex items-center justify-between">
             <div className="text-[10px] text-zinc-500">
-              {turns.length} turns / {replayData.summary.totalTurns} total
+              {turns.length} turns / {structuredReplay.summary.totalTurns} total
+              {dataSource ? ` / ${getReplayDataSourceLabel(dataSource)}` : ''}
             </div>
             {onRunEvaluation && (
               <button
@@ -186,7 +196,7 @@ export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
       {/* Right: Analytics Sidebar + Enhanced Info Panels */}
       <div className="w-[220px] shrink-0 border-l border-zinc-800 overflow-y-auto">
         <ReplayAnalyticsSidebar
-          summary={replayData.summary}
+          summary={structuredReplay.summary}
           objective={objective}
           failureFollowupState={failureFollowupState}
           onEnqueueFailureFollowup={handleEnqueueFailureFollowup}

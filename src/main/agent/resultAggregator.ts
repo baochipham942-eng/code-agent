@@ -20,6 +20,9 @@ export interface AgentResultEntry {
   role: string;
   status: 'completed' | 'failed';
   resultPreview: string;
+  error?: string;
+  blocked?: boolean;
+  cancelled?: boolean;
   filesChanged: string[];
   stats: {
     toolCalls: number;
@@ -114,7 +117,10 @@ export function aggregateTeamResults(
       agentId: r.taskId,
       role: r.role,
       status: r.success ? 'completed' : 'failed',
-      resultPreview: r.output?.slice(0, 200) || '',
+      resultPreview: r.output?.slice(0, 200) || r.error?.slice(0, 200) || '',
+      error: r.error,
+      blocked: r.blocked || undefined,
+      cancelled: r.cancelled || undefined,
       filesChanged: files,
       stats: {
         toolCalls: r.toolsUsed.length,

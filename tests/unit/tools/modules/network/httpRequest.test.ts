@@ -298,6 +298,38 @@ describe('httpRequestModule (native)', () => {
         expect(result.code).toBe('TIMEOUT');
       }
     });
+
+    it('aborts an in-flight fetch when the run signal fires', async () => {
+      const ctrl = new AbortController();
+      let fetchStarted!: () => void;
+      const fetchStartedPromise = new Promise<void>((resolve) => {
+        fetchStarted = resolve;
+      });
+      fetchMock.mockImplementation((_url: string, options: RequestInit) => {
+        fetchStarted();
+        return new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => {
+            const abortErr = new Error('aborted');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          });
+        });
+      });
+
+      const resultPromise = run(
+        { url: 'https://example.com', timeout: 10_000 },
+        makeCtx({ abortSignal: ctrl.signal }),
+      );
+
+      await fetchStartedPromise;
+      ctrl.abort('run_cancelled');
+      const result = await resultPromise;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+      }
+    });
   });
 
   describe('onProgress', () => {

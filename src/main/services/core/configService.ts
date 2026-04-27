@@ -132,6 +132,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       moonshot: { enabled: true },  // Kimi K2.5 包月套餐
       minimax: { enabled: false },
       perplexity: { enabled: false },
+      grok: { enabled: false },
       openrouter: { enabled: false },
       volcengine: { enabled: false },
     },
@@ -460,6 +461,7 @@ export class ConfigService {
       moonshot: 'MOONSHOT_API_KEY',
       minimax: 'MINIMAX_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
+      grok: 'GROK_API_KEY',
       openrouter: 'OPENROUTER_API_KEY',
       volcengine: 'VOLCENGINE_API_KEY',
     };

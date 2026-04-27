@@ -99,7 +99,7 @@ import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
-import type { RunFinalizer } from './runFinalizer';
+import type { RunFinalizer, RunTerminalInfo } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
@@ -132,6 +132,7 @@ export class ConversationRuntime {
   learningPipeline!: LearningPipeline;
   private messageProcessor!: MessageProcessor;
   private streamHandler!: StreamHandler;
+  private pauseResolvers: Array<() => void> = [];
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -152,6 +153,19 @@ export class ConversationRuntime {
   // Convenience: emit event through context
   protected onEvent(event: AgentEvent): void {
     this.ctx.onEvent(event);
+  }
+
+  private releasePauseWaiters(): void {
+    const waiters = this.pauseResolvers.splice(0);
+    for (const resolve of waiters) resolve();
+  }
+
+  private async waitWhilePaused(): Promise<void> {
+    while (this.ctx.isPaused && !this.ctx.isCancelled && !this.ctx.isInterrupted) {
+      await new Promise<void>((resolve) => {
+        this.pauseResolvers.push(resolve);
+      });
+    }
   }
 
   async initializeUserHooks(): Promise<void> {
@@ -473,142 +487,157 @@ export class ConversationRuntime {
     if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
     const { langfuse, isSimpleTask, genNum } = initResult;
 
+    this.ctx.runAbortController = new AbortController();
+
     let iterations = 0;
     let userTurnId: string | undefined;
+    let terminal: RunTerminalInfo = { status: 'completed' };
+    let runError: unknown;
 
-    while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.isPaused && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
-      iterations++;
-      logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
+    try {
+      while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
+        await this.waitWhilePaused();
+        if (this.ctx.isCancelled || this.ctx.isInterrupted) break;
 
-      // Check for interrupt at the start of each iteration
-      if (this.ctx.isInterrupted && this.ctx.interruptMessage) {
-        logger.info('[AgentLoop] Interrupt detected, breaking loop');
-        this.ctx.onEvent({
-          type: 'interrupt_acknowledged',
-          data: { message: '已收到新指令，正在调整方向...' },
+        iterations++;
+        logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
+
+        // Check for interrupt at the start of each iteration
+        if (this.ctx.isInterrupted && this.ctx.interruptMessage) {
+          logger.info('[AgentLoop] Interrupt detected, breaking loop');
+          this.ctx.onEvent({
+            type: 'interrupt_acknowledged',
+            data: { message: '已收到新指令，正在调整方向...' },
+          });
+          break;
+        }
+
+        // Budget check
+        const budgetBlocked = this.runFinalizer.checkAndEmitBudgetStatus();
+        if (budgetBlocked) {
+          logger.warn('[AgentLoop] Budget exceeded, stopping execution');
+          logCollector.agent('WARN', 'Budget exceeded, execution blocked');
+          this.ctx.onEvent({
+            type: 'error',
+            data: { message: 'Budget exceeded. Please increase budget or wait for reset.', code: 'BUDGET_EXCEEDED' },
+          });
+          break;
+        }
+
+        // Setup iteration (turn ID, spans, events, goal checkpoints)
+        this.streamHandler.setupIteration(iterations, userMessage, langfuse);
+        if (iterations === 1) {
+          userTurnId = this.ctx.currentTurnId;
+        }
+
+        // Telemetry: record turn start (only first iteration has the real user prompt)
+        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
+
+        // Plan Feedback Loop
+        await this.streamHandler.injectPlanContext(iterations);
+
+        // Contextual Memory Retrieval — on first iteration
+        if (iterations === 1) {
+          await this.streamHandler.injectContextualMemory(userMessage);
+        }
+
+        // 1. Call model
+        logger.debug('[AgentLoop] Calling inference...');
+        const inferenceStartTime = Date.now();
+        let response = await this.contextAssembly.inference();
+        const inferenceDuration = Date.now() - inferenceStartTime;
+        logger.debug('[AgentLoop] Inference response type:', response.type);
+
+        // h2A 实时转向
+        if (this.ctx.needsReinference) {
+          this.ctx.needsReinference = false;
+          logger.info('[AgentLoop] Steer detected after inference — re-inferring with new user message');
+          this.ctx.onEvent({
+            type: 'interrupt_acknowledged',
+            data: { message: '已收到新指令，正在调整方向...' },
+          });
+          continue;
+        }
+
+        // Emit model_response and accumulate tokens
+        this.streamHandler.emitModelResponse(response, inferenceDuration);
+
+        langfuse.logEvent(this.ctx.traceId, 'inference_complete', {
+          iteration: iterations,
+          responseType: response.type,
+          duration: inferenceDuration,
         });
+
+        // Telemetry: record model call
+        this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
+
+        // M1: Loop decision engine. Only `continuation` is executed here;
+        // compact/fallback/terminate are advisory and handled by existing paths.
+        {
+          const loopState: LoopState = {
+            stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
+            tokenUsage: {
+              input: this.ctx.totalInputTokens,
+              output: this.ctx.totalOutputTokens,
+            },
+            maxTokens: getContextWindow(this.ctx.modelConfig.model),
+            errorType: null,
+            consecutiveErrors: this.ctx.consecutiveErrors,
+            budgetRemaining: 1.0, // TODO: wire to budgetService
+            iterationCount: iterations,
+            maxIterations: this.ctx.maxIterations,
+          };
+
+          const decision = decideNextAction(loopState);
+          logger.debug(`[AgentLoop] Loop decision: ${decision.action} (${decision.execution}) - ${decision.reason}`);
+
+          if (decision.execution === 'runtime' && decision.action === 'continuation' && decision.params?.continuationPrompt) {
+            this.contextAssembly.injectSystemMessage(decision.params.continuationPrompt as string);
+          }
+
+          if (decision.execution === 'advisory') {
+            logger.info(`[AgentLoop] Advisory loop decision: ${decision.action} - ${decision.reason}`);
+          }
+        }
+
+        // 2. Handle text response - check for text-described tool calls
+        const forceExecResult = this.messageProcessor.detectAndForceExecuteTextToolCall(response);
+        if (forceExecResult.shouldContinue) continue;
+        response = forceExecResult.response;
+        const wasForceExecuted = forceExecResult.wasForceExecuted;
+
+        // 2b. Handle actual text response
+        if (response.type === 'text' && response.content) {
+          const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
+          if (textAction === 'break') break;
+          if (textAction === 'continue') continue;
+        }
+
+        // 3. Handle tool calls
+        if (response.type === 'tool_use' && response.toolCalls) {
+          const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
+          if (toolAction === 'continue') continue;
+        }
+
         break;
       }
 
-      // Budget check
-      const budgetBlocked = this.runFinalizer.checkAndEmitBudgetStatus();
-      if (budgetBlocked) {
-        logger.warn('[AgentLoop] Budget exceeded, stopping execution');
-        logCollector.agent('WARN', 'Budget exceeded, execution blocked');
-        this.ctx.onEvent({
-          type: 'error',
-          data: { message: 'Budget exceeded. Please increase budget or wait for reset.', code: 'BUDGET_EXCEEDED' },
-        });
-        break;
+      await this.waitWhilePaused();
+
+      if (this.ctx.isCancelled) {
+        terminal = { status: 'cancelled' };
+      } else if (this.ctx.isInterrupted) {
+        terminal = { status: 'interrupted' };
       }
-
-      // Setup iteration (turn ID, spans, events, goal checkpoints)
-      this.streamHandler.setupIteration(iterations, userMessage, langfuse);
-      if (iterations === 1) {
-        userTurnId = this.ctx.currentTurnId;
-      }
-
-      // Telemetry: record turn start (only first iteration has the real user prompt)
-      this.ctx.telemetryAdapter?.onTurnStart(this.ctx.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
-
-      // Plan Feedback Loop
-      await this.streamHandler.injectPlanContext(iterations);
-
-      // Contextual Memory Retrieval — on first iteration
-      if (iterations === 1) {
-        await this.streamHandler.injectContextualMemory(userMessage);
-      }
-
-      // 1. Call model
-      logger.debug('[AgentLoop] Calling inference...');
-      const inferenceStartTime = Date.now();
-      let response = await this.contextAssembly.inference();
-      const inferenceDuration = Date.now() - inferenceStartTime;
-      logger.debug('[AgentLoop] Inference response type:', response.type);
-
-      // h2A 实时转向
-      if (this.ctx.needsReinference) {
-        this.ctx.needsReinference = false;
-        logger.info('[AgentLoop] Steer detected after inference — re-inferring with new user message');
-        this.ctx.onEvent({
-          type: 'interrupt_acknowledged',
-          data: { message: '已收到新指令，正在调整方向...' },
-        });
-        continue;
-      }
-
-      // Emit model_response and accumulate tokens
-      this.streamHandler.emitModelResponse(response, inferenceDuration);
-
-      langfuse.logEvent(this.ctx.traceId, 'inference_complete', {
-        iteration: iterations,
-        responseType: response.type,
-        duration: inferenceDuration,
-      });
-
-      // Telemetry: record model call
-      this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
-
-      // M1: Loop decision engine — augments existing loop control (does NOT replace it)
-      {
-        const loopState: LoopState = {
-          stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
-          tokenUsage: {
-            input: this.ctx.totalInputTokens,
-            output: this.ctx.totalOutputTokens,
-          },
-          maxTokens: getContextWindow(this.ctx.modelConfig.model),
-          errorType: null,
-          consecutiveErrors: this.ctx.consecutiveErrors,
-          budgetRemaining: 1.0, // TODO: wire to budgetService
-          iterationCount: iterations,
-          maxIterations: this.ctx.maxIterations,
-        };
-
-        const decision = decideNextAction(loopState);
-        logger.debug(`[AgentLoop] Loop decision: ${decision.action} — ${decision.reason}`);
-
-        // Handle continuation (most impactful new behavior)
-        if (decision.action === 'continuation' && decision.params?.continuationPrompt) {
-          this.contextAssembly.injectSystemMessage(decision.params.continuationPrompt as string);
-          // Don't break — let existing loop continue to next iteration
-        }
-
-        // Log other decisions for now — full handling will be refined incrementally
-        if (decision.action === 'terminate') {
-          logger.info(`[AgentLoop] Loop decision: terminate — ${decision.reason}`);
-        }
-        if (decision.action === 'compact') {
-          logger.info(`[AgentLoop] Loop decision: compression needed — ${decision.reason}`);
-        }
-        if (decision.action === 'fallback') {
-          logger.info(`[AgentLoop] Loop decision: fallback suggested — ${decision.reason}`);
-        }
-      }
-
-      // 2. Handle text response - check for text-described tool calls
-      const forceExecResult = this.messageProcessor.detectAndForceExecuteTextToolCall(response);
-      if (forceExecResult.shouldContinue) continue;
-      response = forceExecResult.response;
-      const wasForceExecuted = forceExecResult.wasForceExecuted;
-
-      // 2b. Handle actual text response
-      if (response.type === 'text' && response.content) {
-        const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
-        if (textAction === 'break') break;
-        if (textAction === 'continue') continue;
-      }
-
-      // 3. Handle tool calls
-      if (response.type === 'tool_use' && response.toolCalls) {
-        const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
-        if (toolAction === 'continue') continue;
-      }
-
-      break;
+    } catch (error) {
+      terminal = { status: 'failed', error };
+      runError = error;
+    } finally {
+      await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum, terminal);
+      this.ctx.runAbortController = null;
     }
 
-    await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum);
+    if (runError) throw runError;
   }
 
   // ========================================================================
@@ -779,7 +808,7 @@ export class ConversationRuntime {
     }
 
     // Record session start for usage tracking (Light Memory)
-    recordSessionStart().catch(() => { /* non-critical */ });
+    recordSessionStart(this.ctx.sessionId).catch(() => { /* non-critical */ });
 
     // Session start hooks
     if (this.ctx.hookManager && !isSimpleTask) {
@@ -844,15 +873,18 @@ export class ConversationRuntime {
     }
     this.ctx.isCancelled = true;
     this.ctx.abortController?.abort();
+    this.ctx.runAbortController?.abort();
+    this.releasePauseWaiters();
   }
 
   pause(): void {
     this.ctx.isPaused = true;
-    logger.info('[ConversationRuntime] Paused — will stop after current iteration');
+    logger.info('[ConversationRuntime] Paused');
   }
 
   resume(): void {
     this.ctx.isPaused = false;
+    this.releasePauseWaiters();
     logger.info('[ConversationRuntime] Resumed');
   }
 
@@ -860,12 +892,14 @@ export class ConversationRuntime {
     this.ctx.isInterrupted = true;
     this.ctx.interruptMessage = newMessage;
     this.ctx.abortController?.abort();
+    this.ctx.runAbortController?.abort();
+    this.releasePauseWaiters();
     logger.info('[AgentLoop] Interrupt requested with new message');
   }
 
-  steer(newMessage: string): void {
+  steer(newMessage: string, clientMessageId?: string): void {
     this.ctx.abortController?.abort();
-    this.messageProcessor.injectSteerMessage(newMessage);
+    this.messageProcessor.injectSteerMessage(newMessage, clientMessageId);
     this.ctx.needsReinference = true;
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }

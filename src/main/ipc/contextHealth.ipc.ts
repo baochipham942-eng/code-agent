@@ -6,12 +6,16 @@ import { ipcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAutoCompressor } from '../context/autoCompressor';
+import { CompressionState } from '../context/compressionState';
+import { getContextEventLedger } from '../context/contextEventLedger';
 import { estimateTokens } from '../context/tokenEstimator';
 import type { CompactResult } from '../../shared/contract/contextHealth';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { CompressedMessage } from '../context/tokenOptimizer';
 import type { TaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
+import { getSessionManager } from '../services';
+import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('ContextHealthIPC');
 
@@ -102,6 +106,8 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
       // Apply compacted messages back: rebuild as Message[] preserving original fields for kept messages
       const compactedMessages = compactResult.messages;
       const originalMessageMap = new Map(messages.map((m) => [m.id, m]));
+      const compactedAt = Date.now();
+      let summaryIndex = 0;
       const newMessages = compactedMessages.map((cm) => {
         // If this message exists in the original, preserve it
         if (cm.id) {
@@ -109,11 +115,19 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
           if (original) return original;
         }
         // Summary message created by compactFrom — build a minimal Message
+        const summaryId = `compact-summary-${compactedAt}-${summaryIndex++}`;
         return {
-          id: `compact-summary-${Date.now()}`,
+          id: summaryId,
           role: cm.role as import('../../shared/contract').MessageRole,
           content: cm.content,
-          timestamp: Date.now(),
+          timestamp: compactedAt,
+          compaction: {
+            type: 'compaction' as const,
+            content: cm.content,
+            timestamp: compactedAt,
+            compactedMessageCount: compactResult.compactedCount,
+            compactedTokenCount: savedTokens,
+          },
         };
       });
 
@@ -129,6 +143,38 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
         }
       } else {
         logger.warn('TaskManager not available — compact result not applied to runtime');
+      }
+
+      try {
+        await getSessionManager().replaceMessages(sessionId, newMessages);
+
+        const compactedMessageIds = newMessages
+          .filter((message) => message.compaction)
+          .map((message) => message.id);
+        if (compactedMessageIds.length > 0) {
+          const compressionState = new CompressionState();
+          compressionState.applyCommit({
+            layer: 'autocompact',
+            operation: 'compact',
+            targetMessageIds: compactedMessageIds,
+            timestamp: compactedAt,
+            metadata: {
+              kind: 'manual_compact',
+              compactedMessageCount: compactResult.compactedCount,
+              compactedTokenCount: savedTokens,
+            },
+          });
+          getContextEventLedger().upsertCompressionEvents(
+            sessionId,
+            undefined,
+            compressionState.getCommitLog(),
+          );
+          getDatabase().saveSessionRuntimeState(sessionId, {
+            compressionStateJson: compressionState.serialize(),
+          });
+        }
+      } catch (error) {
+        logger.warn('Manual compact completed in runtime but failed to persist compacted session', error);
       }
 
       const stats = compressor.getStats();

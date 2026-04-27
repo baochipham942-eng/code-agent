@@ -39,7 +39,7 @@ class SkillHandler implements ToolHandler<Record<string, unknown>, string> {
     const command = args.command as string | undefined;
     onProgress?.({ stage: 'starting', detail: command ? `skill ${command}` : 'skill' });
 
-    const legacyResult = await skillMetaTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+    const legacyResult = await skillMetaTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('Skill done', { command, ok: legacyResult.success });
     return adaptLegacyResult(legacyResult);

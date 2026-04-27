@@ -116,6 +116,18 @@ export function registerSwarmHandlers(
   // 用户发送消息给 Agent
   ipcMain.handle('swarm:send-user-message', async (_, payload: SwarmSendUserMessagePayload) => {
     try {
+      const services = getSwarmServices();
+      const canDeliverToParallel = services.parallelCoordinator.canReceiveMessage(payload.agentId);
+      const spawnGuardAgent = services.spawnGuard.get?.(payload.agentId);
+      const canDeliverToSpawnGuard = spawnGuardAgent?.status === 'running';
+
+      if (!canDeliverToParallel && !canDeliverToSpawnGuard) {
+        return {
+          delivered: false,
+          persisted: false,
+        };
+      }
+
       let persisted = false;
       const sessionMessage = buildPersistedUserMessage(payload);
       if (payload.sessionId && sessionMessage) {
@@ -131,11 +143,23 @@ export function registerSwarmHandlers(
         }
       }
 
-      const services = getSwarmServices();
+      const delivered =
+        services.parallelCoordinator.sendMessage(payload.agentId, payload.message) ||
+        Boolean(services.spawnGuard.sendMessage?.(payload.agentId, payload.message));
+
+      if (!delivered) {
+        return {
+          delivered: false,
+          persisted,
+        };
+      }
+
       services.teammateService.onUserMessage(payload.agentId, payload.message);
-      getSwarmEventEmitter().userMessage(payload.agentId, payload.message);
+      getSwarmEventEmitter().userMessage(payload.agentId, payload.message, {
+        sessionId: payload.sessionId,
+      });
       return {
-        delivered: true,
+        delivered,
         persisted,
       };
     } catch (error) {
@@ -206,6 +230,27 @@ export function registerSwarmHandlers(
     }
   });
 
+  ipcMain.handle('swarm:cancel-run', async (_, payload?: { sessionId?: string }) => {
+    try {
+      const appService = getAppService();
+      if (appService) {
+        await appService.cancel(payload?.sessionId);
+        return true;
+      }
+
+      const services = getSwarmServices();
+      services.planApproval.cancelAll('swarm_cancelled');
+      services.launchApproval.cancelAll('swarm_cancelled');
+      services.spawnGuard.cancelAll?.('swarm_cancelled');
+      services.parallelCoordinator.abortAllRunning('swarm_cancelled');
+      getSwarmEventEmitter().cancelled();
+      return true;
+    } catch (error) {
+      logger.error('swarm:cancel-run failed', { error: String(error) });
+      return false;
+    }
+  });
+
   ipcMain.handle('swarm:cancel-agent', async (_, payload: { agentId: string }) => {
     try {
       const services = getSwarmServices();
@@ -214,11 +259,7 @@ export function registerSwarmHandlers(
         services.parallelCoordinator.abortTask(payload.agentId);
 
       if (cancelled) {
-        getSwarmEventEmitter().agentUpdated(payload.agentId, {
-          status: 'cancelled',
-          endTime: Date.now(),
-          error: 'Cancelled by user',
-        });
+        getSwarmEventEmitter().agentCancelled(payload.agentId, 'Cancelled by user');
       }
 
       return cancelled;

@@ -4,6 +4,7 @@ import type { ModelResponse } from '../../../agent/loopTypes';
 import { getConfigService, getAuthService, getLangfuseService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
+import { createSnapshotHandler } from '../../../session/streamSnapshot';
 import { isProtocolExposeEnabled, getPocToolDefinitions } from '../../../tools/protocolRegistry';
 import {
   getCoreToolDefinitions,
@@ -304,7 +305,14 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           });
         }
       },
-      ctx.runtime.abortController.signal
+      ctx.runtime.abortController.signal,
+      {
+        onSnapshot: createSnapshotHandler(
+          ctx.runtime.sessionId,
+          ctx.runtime.currentTurnId,
+          ctx.runtime.workingDirectory,
+        ),
+      },
     );
 
     ctx.runtime.abortController = null;

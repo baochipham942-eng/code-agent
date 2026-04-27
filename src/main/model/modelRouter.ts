@@ -20,7 +20,7 @@ import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
 
 const logger = createLogger('ModelRouter');
-import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
+import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
 export { ContextLengthExceededError } from './types';
 
 // Import provider implementations
@@ -282,7 +282,8 @@ export class ModelRouter {
     tools: ToolDefinition[],
     config: ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     // Check for cancellation before starting
     if (signal?.aborted) {
@@ -292,7 +293,7 @@ export class ModelRouter {
     // 如果启用云端代理，走云端 model-proxy
     if (config.useCloudProxy) {
       const modelInfo = this.getModelInfo(config.provider, config.model);
-      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal);
+      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal, options);
     }
 
     // Inference cache (non-streaming only)
@@ -325,7 +326,7 @@ export class ModelRouter {
         }
         if (canUseFreeModel) {
           try {
-            const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal);
+            const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal, options);
             adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
             // Cache non-streaming text responses
             if (!onStream && result.type === 'text') {
@@ -350,7 +351,7 @@ export class ModelRouter {
     }
 
     try {
-      const result = await this._callProvider(messages, tools, config, onStream, signal);
+      const result = await this._callProvider(messages, tools, config, onStream, signal, options);
 
       // Cache non-streaming text responses
       if (!onStream && result.type === 'text') {
@@ -397,7 +398,7 @@ export class ModelRouter {
 
         try {
           logger.warn(`[ModelRouter] Fallback → ${fallback.provider}/${fallback.model}`);
-          const result = await this._callProvider(messages, tools, fallbackConfig, onStream, signal);
+          const result = await this._callProvider(messages, tools, fallbackConfig, onStream, signal, options);
 
           // Cache non-streaming text responses
           if (!onStream && result.type === 'text') {
@@ -437,13 +438,14 @@ export class ModelRouter {
     tools: ToolDefinition[],
     config: ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const provider = this.providers.get(config.provider);
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
-    return provider.inference(messages, tools, config, onStream, signal);
+    return provider.inference(messages, tools, config, onStream, signal, options);
   }
 
   /**

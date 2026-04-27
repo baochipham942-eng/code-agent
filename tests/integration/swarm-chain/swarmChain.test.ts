@@ -433,8 +433,8 @@ describe('Swarm Chain Integration', () => {
       expect(chain.spawnGuard.cancel).toHaveBeenCalledWith('a1');
       expect(abortSpy).not.toHaveBeenCalled();
 
-      const updates = chain.eventsByType('swarm:agent:updated');
-      expect(updates.some((e) =>
+      const failed = chain.eventsByType('swarm:agent:failed');
+      expect(failed.some((e) =>
         (e.data as { agentState: { status: string } }).agentState.status === 'cancelled'
       )).toBe(true);
     });
@@ -449,7 +449,7 @@ describe('Swarm Chain Integration', () => {
 
       expect(result).toBe(true);
       expect(abortSpy).toHaveBeenCalledWith('a1');
-      expect(chain.eventsByType('swarm:agent:updated')).toHaveLength(1);
+      expect(chain.eventsByType('swarm:agent:failed')).toHaveLength(1);
     });
 
     it('两个源都 miss 时返回 false 且不发事件', async () => {
@@ -461,7 +461,7 @@ describe('Swarm Chain Integration', () => {
       });
 
       expect(result).toBe(false);
-      expect(chain.eventsByType('swarm:agent:updated')).toHaveLength(0);
+      expect(chain.eventsByType('swarm:agent:failed')).toHaveLength(0);
     });
   });
 

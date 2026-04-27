@@ -370,9 +370,11 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     isCancelled: false,
     _isRunning: false,
     isInterrupted: false,
+    isPaused: false,
     interruptMessage: null,
     needsReinference: false,
     abortController: null,
+    runAbortController: null,
 
     isPlanModeActive: false,
     planModeActive: false,
@@ -415,6 +417,7 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     effortLevel: 'normal' as any,
     thinkingStepCount: 0,
+    interactionMode: 'code' as any,
 
     runStartTime: 0,
     totalIterations: 0,
@@ -450,6 +453,7 @@ function createMockModules() {
       inference: vi.fn().mockResolvedValue({ type: 'text', content: 'Hello!' }),
       injectSystemMessage: vi.fn(),
       injectResearchModePrompt: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
     } as any,
     runFinalizer: {
       finalizeRun: vi.fn(),
@@ -609,6 +613,29 @@ describe('ConversationRuntime', () => {
       runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
     });
+
+    it('should abort the run-level controller', () => {
+      const controller = new AbortController();
+      ctx.runAbortController = controller;
+
+      runtime.cancel();
+      expect(controller.signal.aborted).toBe(true);
+    });
+
+    it('persists partial streamed assistant content as cancelled marker', () => {
+      const persistMessage = vi.fn();
+      ctx.lastStreamedContent = 'partial response';
+      ctx.persistMessage = persistMessage;
+
+      runtime.cancel();
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: 'partial response\n\n[cancelled]',
+      });
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+      expect(ctx.lastStreamedContent).toBe('');
+    });
   });
 
   describe('interrupt', () => {
@@ -645,6 +672,15 @@ describe('ConversationRuntime', () => {
 
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.needsReinference).toBe(true);
+    });
+
+    it('passes the renderer optimistic message id to the steer injector', () => {
+      runtime.steer('new direction', 'client-message-1');
+
+      expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
+        'new direction',
+        'client-message-1',
+      );
     });
   });
 
@@ -822,6 +858,58 @@ describe('ConversationRuntime', () => {
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
     });
 
+    it('executes only runtime loop decisions by injecting the continuation prompt', async () => {
+      activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'Truncated answer',
+        finishReason: 'max_tokens',
+      });
+
+      await runtime.run('continue after truncation');
+
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        'Continue from where you stopped. Do not restate or apologize.',
+      );
+    });
+
+    it('keeps compact loop decisions advisory under context pressure', async () => {
+      activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
+      ctx.totalInputTokens = 120_000;
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'Done!',
+        finishReason: 'end_turn',
+      });
+
+      await runtime.run('context pressure');
+
+      expect(modules.contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+        'Continue from where you stopped. Do not restate or apologize.',
+      );
+    });
+
+    it('keeps terminate loop decisions advisory when the response otherwise completes', async () => {
+      activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
+      ctx.consecutiveErrors = 3;
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'Recovered response',
+        finishReason: 'end_turn',
+      });
+
+      await runtime.run('terminate advisory');
+
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'terminate advisory',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
     it('should stop on cancel during loop', async () => {
       ctx.isCancelled = true;
       await runtime.run('test');
@@ -834,6 +922,49 @@ describe('ConversationRuntime', () => {
       (ctx.circuitBreaker.isTripped as any).mockReturnValue(true);
       await runtime.run('test');
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalled();
+    });
+
+    it('keeps pause in waiting state without finalizing until resume', async () => {
+      runtime.pause();
+
+      let settled = false;
+      const runPromise = runtime.run('pause test').then(() => {
+        settled = true;
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      expect(settled).toBe(false);
+      expect(modules.contextAssembly.inference).not.toHaveBeenCalled();
+      expect(modules.runFinalizer.finalizeRun).not.toHaveBeenCalled();
+
+      runtime.resume();
+      await runPromise;
+
+      expect(modules.contextAssembly.inference).toHaveBeenCalled();
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'pause test',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
+    it('finalizes as failed and rethrows when inference throws', async () => {
+      const error = new Error('model exploded');
+      modules.contextAssembly.inference.mockRejectedValueOnce(error);
+
+      await expect(runtime.run('boom')).rejects.toThrow('model exploded');
+
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'boom',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'failed', error }),
+      );
+      expect(ctx.runAbortController).toBeNull();
     });
   });
 });

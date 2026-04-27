@@ -92,7 +92,7 @@ export class PlanApprovalGate {
     this.persistRepo = repo;
     let hydrated = 0;
     try {
-      const orphans = repo.markAllPendingAsOrphaned(now);
+      const orphans = repo.markPendingAsOrphaned('plan', now);
       for (const row of orphans) {
         if (row.kind !== 'plan') continue;
         try {

@@ -78,6 +78,7 @@ export const useSessionLifecycleEffects = ({
           break;
 
         case 'agent_complete':
+        case 'agent_cancelled':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (isCurrentSessionEvent) {

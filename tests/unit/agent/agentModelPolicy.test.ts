@@ -19,10 +19,10 @@ describe('selectAgentModel', () => {
       expect(result.reason).toBeTruthy();
     });
 
-    it('Code Reviewer → deepseek / deepseek-reasoner', () => {
+    it('Code Reviewer → deepseek / deepseek-v4-pro', () => {
       const result = selectAgentModel('Code Reviewer');
       expect(result.provider).toBe('deepseek');
-      expect(result.model).toBe('deepseek-reasoner');
+      expect(result.model).toBe('deepseek-v4-pro');
     });
 
     it('Web Search → perplexity / sonar-pro', () => {
@@ -31,7 +31,7 @@ describe('selectAgentModel', () => {
       expect(result.model).toBe('sonar-pro');
     });
 
-    it('Document Reader → zhipu / glm-4-flash', () => {
+    it('Document Reader → zhipu / glm-4.7-flash', () => {
       const result = selectAgentModel('Document Reader');
       expect(result.provider).toBe('zhipu');
       expect(result.model).toBe('glm-4.7-flash');
@@ -43,10 +43,10 @@ describe('selectAgentModel', () => {
       expect(result.model).toBe('kimi-k2.5');
     });
 
-    it('Debugger → deepseek / deepseek-reasoner', () => {
+    it('Debugger → deepseek / deepseek-v4-pro', () => {
       const result = selectAgentModel('Debugger');
       expect(result.provider).toBe('deepseek');
-      expect(result.model).toBe('deepseek-reasoner');
+      expect(result.model).toBe('deepseek-v4-pro');
     });
   });
 
@@ -99,7 +99,7 @@ describe('selectAgentModel', () => {
         userOverride: { 'Code Explorer': { provider: 'openai', model: 'gpt-4o' } },
       });
       expect(result.provider).toBe('deepseek');
-      expect(result.model).toBe('deepseek-reasoner');
+      expect(result.model).toBe('deepseek-v4-pro');
     });
   });
 

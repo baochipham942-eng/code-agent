@@ -75,6 +75,7 @@ export interface RuntimeContext {
   interruptMessage: string | null;
   needsReinference: boolean;
   abortController: AbortController | null;
+  runAbortController: AbortController | null;
 
   // --- Plan mode ---
   isPlanModeActive: boolean;

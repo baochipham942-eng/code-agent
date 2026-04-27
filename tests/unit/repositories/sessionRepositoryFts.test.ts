@@ -52,7 +52,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       effort_level TEXT,
       synced_at INTEGER,
       content_parts TEXT,
-      metadata TEXT
+      metadata TEXT,
+      compaction TEXT
     );
   `);
   db.exec(`

@@ -98,6 +98,18 @@ const logger = createLogger('AgentLoop');
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
 
+export type RunTerminalStatus = 'completed' | 'cancelled' | 'interrupted' | 'failed';
+
+export interface RunTerminalInfo {
+  status?: RunTerminalStatus;
+  error?: unknown;
+}
+
+function formatTerminalError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return error === undefined ? 'Unknown runtime error' : String(error);
+}
+
 // ----------------------------------------------------------------------------
 // Agent Loop
 // ----------------------------------------------------------------------------
@@ -137,9 +149,41 @@ export class RunFinalizer {
     userMessage: string,
     langfuse: ReturnType<typeof getLangfuseService>,
     genNum: number,
+    terminal: RunTerminalInfo = {},
   ): Promise<void> {
+    const terminalStatus = terminal.status
+      ?? (this.ctx.isCancelled
+        ? 'cancelled'
+        : this.ctx.isInterrupted
+          ? 'interrupted'
+          : 'completed');
+
     // Handle loop exit conditions
-    if (this.ctx.circuitBreaker.isTripped()) {
+    if (terminalStatus === 'failed') {
+      const errorMessage = formatTerminalError(terminal.error);
+      logger.error('[AgentLoop] Loop exited due to runtime error', terminal.error);
+      logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
+      this.ctx.onEvent({
+        type: 'error',
+        data: { message: errorMessage, code: 'RUN_FAILED' },
+      });
+
+      this.ctx.hookManager?.triggerStopFailure(
+        errorMessage,
+        'runtime_error',
+        this.ctx.sessionId,
+      ).catch(() => {});
+
+      langfuse.endTrace(this.ctx.traceId, errorMessage, 'ERROR');
+    } else if (terminalStatus === 'cancelled') {
+      logger.info('[AgentLoop] Loop exited due to cancellation');
+      logCollector.agent('INFO', `Agent run cancelled after ${iterations} iterations`);
+      langfuse.endTrace(this.ctx.traceId, `Cancelled after ${iterations} iterations`, 'WARNING');
+    } else if (terminalStatus === 'interrupted') {
+      logger.info('[AgentLoop] Loop exited due to interrupt');
+      logCollector.agent('INFO', `Agent run interrupted after ${iterations} iterations`);
+      langfuse.endTrace(this.ctx.traceId, `Interrupted after ${iterations} iterations`, 'WARNING');
+    } else if (this.ctx.circuitBreaker.isTripped()) {
       logger.info('[AgentLoop] Loop exited due to circuit breaker');
       logCollector.agent('WARN', `Circuit breaker stopped agent after ${iterations} iterations`);
 
@@ -183,9 +227,10 @@ export class RunFinalizer {
 
     // 先通知前端关闭 "组织回复中" loading — 核心生成已结束
     // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI
-    logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
-    logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
-    this.ctx.onEvent({ type: 'agent_complete', data: null });
+    const terminalEventType = terminalStatus === 'cancelled' ? 'agent_cancelled' : 'agent_complete';
+    logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
+    logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
+    this.ctx.onEvent({ type: terminalEventType, data: null });
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
@@ -209,7 +254,8 @@ export class RunFinalizer {
 
     // Light Memory: Record session stats + conversation summary
     const messageCount = this.ctx.messages.length;
-    recordSessionEnd(messageCount).catch(() => { /* non-critical */ });
+    recordSessionEnd(messageCount, this.ctx.modelConfig.model, this.ctx.sessionId)
+      .catch(() => { /* non-critical */ });
 
     // Extract conversation summary from user messages
     this.extractAndSaveConversationSummary().catch((err) => {

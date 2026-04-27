@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
-import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
+import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
@@ -163,7 +163,8 @@ export class ZhipuProvider extends BaseOpenAIProvider {
     tools: ToolDefinition[],
     config: ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     if (signal?.aborted) {
       throw new Error('Request was cancelled before starting');
@@ -173,7 +174,7 @@ export class ZhipuProvider extends BaseOpenAIProvider {
     await zhipuLimiter.acquire(signal);
 
     try {
-      const result = await super.inference(messages, tools, config, onStream, signal);
+      const result = await super.inference(messages, tools, config, onStream, signal, options);
       zhipuLimiter.onSuccess();
       return result;
     } catch (err: unknown) {

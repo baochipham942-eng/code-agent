@@ -205,6 +205,68 @@ describe('SessionRepository', () => {
     });
   });
 
+  describe('updateMessage', () => {
+    it('persists structured message fields used by idempotent duplicate writes', () => {
+      repo.updateMessage('message-1', {
+        content: 'updated content',
+        role: 'assistant',
+        timestamp: 1234,
+        attachments: [{
+          id: 'att-1',
+          type: 'file',
+          category: 'text',
+          name: 'note.md',
+          size: 42,
+          mimeType: 'text/markdown',
+          data: 'heavy extracted content should not be stored in metadata',
+          path: '/tmp/note.md',
+        }],
+        thinking: 'thinking trace',
+        effortLevel: 'medium',
+        contentParts: [{ type: 'text', text: 'part text' }],
+        metadata: {
+          workbench: {
+            routingMode: 'broadcast',
+          },
+        } as any,
+      });
+
+      const updateResult = mockDb._getRunResults().find((result) => (
+        result.sql.includes('UPDATE messages SET')
+      ));
+
+      expect(updateResult).toBeDefined();
+      expect(updateResult!.sql).toContain('role = ?');
+      expect(updateResult!.sql).toContain('timestamp = ?');
+      expect(updateResult!.sql).toContain('attachments = ?');
+      expect(updateResult!.sql).toContain('thinking = ?');
+      expect(updateResult!.sql).toContain('effort_level = ?');
+      expect(updateResult!.sql).toContain('content_parts = ?');
+      expect(updateResult!.sql).toContain('metadata = ?');
+      expect(updateResult!.params).toContain('updated content');
+      expect(updateResult!.params).toContain('assistant');
+      expect(updateResult!.params).toContain(1234);
+      expect(updateResult!.params).toContain('thinking trace');
+      expect(updateResult!.params).toContain('medium');
+      expect(updateResult!.params[updateResult!.params.length - 1]).toBe('message-1');
+
+      const attachmentParam = updateResult!.params.find((param) => (
+        typeof param === 'string' && param.includes('note.md')
+      )) as string;
+      expect(JSON.parse(attachmentParam)).toEqual([expect.objectContaining({
+        id: 'att-1',
+        name: 'note.md',
+        path: '/tmp/note.md',
+      })]);
+      expect(attachmentParam).not.toContain('heavy extracted content');
+
+      const partsParam = updateResult!.params.find((param) => (
+        typeof param === 'string' && param.includes('part text')
+      )) as string;
+      expect(JSON.parse(partsParam)).toEqual([{ type: 'text', text: 'part text' }]);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // saveTodos with transaction (Sprint 3 optimization)
   // --------------------------------------------------------------------------

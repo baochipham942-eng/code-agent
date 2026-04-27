@@ -66,6 +66,13 @@ function buildSkillDescription(): string {
   return desc;
 }
 
+function canSkillAutoPreApproveTools(skill: ParsedSkill): boolean {
+  // Local project/user/library skills are editable content and cannot escalate
+  // directly into no-approval tool grants. Builtin/plugin skills are shipped as
+  // trusted capabilities in this runtime.
+  return skill.source === 'builtin' || skill.source === 'plugin';
+}
+
 /**
  * 处理 inline 执行模式
  */
@@ -102,9 +109,10 @@ function handleInlineExecution(skill: ParsedSkill, args?: string, workingDirecto
   ];
 
   // 构建上下文修改器
-  const contextModifier: SkillContextModifier = {
-    preApprovedTools: skill.allowedTools,
-  };
+  const contextModifier: SkillContextModifier = {};
+  if (skill.allowedTools.length > 0 && canSkillAutoPreApproveTools(skill)) {
+    contextModifier.preApprovedTools = skill.allowedTools;
+  }
 
   if (skill.model) {
     contextModifier.modelOverride = skill.model;

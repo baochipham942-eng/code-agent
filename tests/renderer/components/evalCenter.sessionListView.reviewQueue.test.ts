@@ -35,6 +35,7 @@ const storeState = {
       id: 'review:session:session-1',
       trace: {
         traceId: 'session:session-1',
+        traceSource: 'session_replay' as const,
         source: 'session_replay' as const,
         sessionId: 'session-1',
         replayKey: 'session-1',
@@ -42,6 +43,7 @@ const storeState = {
       sessionId: 'session-1',
       sessionTitle: 'Queued Session',
       reason: 'failure_followup' as const,
+      enqueueSource: 'session_list' as const,
       source: 'replay_failure' as const,
       failureCapability: {
         sink: 'prompt_policy' as const,
@@ -103,6 +105,7 @@ describe('SessionListView review queue', () => {
     expect(html).toContain('Queued Session');
     expect(html).toContain('Replay');
     expect(html).toContain('失败回看');
+    expect(html).toContain('会话列表');
     expect(html).toContain('Prompt Policy · 循环卡住');
     expect(html).toContain('Asset');
     expect(html).toContain('草稿');

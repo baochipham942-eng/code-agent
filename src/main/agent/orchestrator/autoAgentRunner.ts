@@ -148,6 +148,7 @@ export async function runAutoAgentMode(
     toolContext: {
       workingDirectory: deps.workingDirectory,
       requestPermission: async () => true,
+      sessionId: sessionId || deps.sessionId || undefined,
       toolScope: deps.toolScope,
       executionIntent: deps.executionIntent,
     },

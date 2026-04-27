@@ -4,6 +4,7 @@ import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import type { TestRunReport, TestCaseResult } from '@shared/ipc';
 import { CaseDetailPage } from './CaseDetailPage';
 import ipcService from '../../../../services/ipcService';
+import { useAppStore } from '../../../../stores/appStore';
 
 type DetailTab = 'overview' | 'cases' | 'trace' | 'scoring' | 'ai-analysis';
 
@@ -47,6 +48,7 @@ interface ExperimentDetailPageProps {
 }
 
 export const ExperimentDetailPage: React.FC<ExperimentDetailPageProps> = ({ experimentId }) => {
+  const setShowEvalCenter = useAppStore((state) => state.setShowEvalCenter);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [report, setReport] = useState<TestRunReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -333,8 +335,7 @@ export const ExperimentDetailPage: React.FC<ExperimentDetailPageProps> = ({ expe
                           {ec.session_id ? (
                             <button
                               onClick={() => {
-                                // Navigate to session replay
-                                window.dispatchEvent(new CustomEvent('navigate-session', { detail: { sessionId: ec.session_id } }));
+                                setShowEvalCenter(true, undefined, ec.session_id);
                               }}
                               className="text-[10px] text-purple-400 hover:text-purple-300 transition"
                               title={ec.session_id}

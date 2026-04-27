@@ -44,6 +44,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'error',
   'permission_request',
   'agent_complete',
+  'agent_cancelled',
   'turn_start',
   'turn_end',
   'tool_call_start',
@@ -89,7 +90,7 @@ export function isCompactionEvent(type: AgentEventType): boolean {
 
 /** 是否为 Turn 生命周期事件 */
 export function isTurnLifecycleEvent(type: AgentEventType): boolean {
-  return type === 'turn_start' || type === 'turn_end' || type === 'agent_complete';
+  return type === 'turn_start' || type === 'turn_end' || type === 'agent_complete' || type === 'agent_cancelled';
 }
 
 /** 是否为中断相关事件（Claude Code interrupt 语义） */

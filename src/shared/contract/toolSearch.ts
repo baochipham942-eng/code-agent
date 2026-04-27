@@ -26,6 +26,15 @@ export interface ToolSearchItem {
 
   /** 分类标签 */
   tags: ToolTag[];
+
+  /** 是否会在下一轮作为可直接调用的工具暴露给模型 */
+  loadable?: boolean;
+
+  /** 不可直接调用时的原因 */
+  notCallableReason?: string;
+
+  /** 稳定调用入口。不可直接调用的虚拟能力可指向其真实入口。 */
+  canonicalInvocation?: string;
 }
 
 /**

@@ -67,13 +67,23 @@ describe('sessionMetadata', () => {
       expect(stats.lastSessionStart).toBeTruthy();
     });
 
-    it('should increment totalSessions on each call', async () => {
-      await recordSessionStart();
-      await recordSessionStart();
-      await recordSessionStart();
+    it('should increment totalSessions for different session ids', async () => {
+      await recordSessionStart('session-1');
+      await recordSessionStart('session-2');
+      await recordSessionStart('session-3');
 
       const stats = await readStats();
       expect(stats.totalSessions).toBe(3);
+    });
+
+    it('should not increment totalSessions for repeated turns in the same session', async () => {
+      await recordSessionStart('session-1');
+      await recordSessionStart('session-1');
+      await recordSessionStart('session-1');
+
+      const stats = await readStats();
+      expect(stats.totalSessions).toBe(1);
+      expect(stats.lastSessionId).toBe('session-1');
     });
 
     it('should add today to activeDays (deduplicated)', async () => {
@@ -101,7 +111,7 @@ describe('sessionMetadata', () => {
         lastSessionStart: '',
       }), 'utf-8');
 
-      await recordSessionStart();
+      await recordSessionStart('session-trim');
 
       const stats = await readStats();
       expect(stats.activeDays).not.toContain(oldDateStr);
@@ -148,6 +158,24 @@ describe('sessionMetadata', () => {
 
       const stats = await readStats();
       expect(Object.keys(stats.modelUsage).length).toBe(0);
+    });
+
+    it('should update depth and model for repeated ends in the same session without double-counting', async () => {
+      await recordSessionEnd(10, 'model-a', 'session-1');
+      await recordSessionEnd(25, 'model-a', 'session-1');
+
+      let stats = await readStats();
+      expect(stats.recentSessionDepths).toEqual([25]);
+      expect(stats.modelUsage['model-a']).toBe(1);
+
+      await recordSessionEnd(30, 'model-b', 'session-1');
+
+      stats = await readStats();
+      expect(stats.recentSessionDepths).toEqual([30]);
+      expect(stats.modelUsage['model-a']).toBeUndefined();
+      expect(stats.modelUsage['model-b']).toBe(1);
+      expect(stats.lastEndedSessionId).toBe('session-1');
+      expect(stats.lastEndedModel).toBe('model-b');
     });
   });
 

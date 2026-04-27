@@ -189,6 +189,25 @@ export class SwarmEventEmitter {
     });
   }
 
+  agentCancelled(agentId: string, reason = 'Cancelled by user'): void {
+    this.publish({
+      type: 'swarm:agent:failed',
+      timestamp: Date.now(),
+      data: {
+        agentId,
+        agentState: {
+          id: agentId,
+          name: '',
+          role: '',
+          status: 'cancelled',
+          iterations: 0,
+          endTime: Date.now(),
+          error: reason,
+        },
+      },
+    });
+  }
+
   completed(statistics: {
     total: number;
     completed: number;
@@ -304,9 +323,15 @@ export class SwarmEventEmitter {
     });
   }
 
-  userMessage(agentId: string, message: string): void {
+  userMessage(
+    agentId: string,
+    message: string,
+    options: { sessionId?: string; runId?: string } = {},
+  ): void {
     this.publish({
       type: 'swarm:user:message',
+      runId: options.runId,
+      sessionId: options.sessionId,
       timestamp: Date.now(),
       data: {
         agentId,

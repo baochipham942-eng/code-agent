@@ -40,9 +40,10 @@ function buildConversation(rounds: number, resultSize = 2000): SubagentMessage[]
       content: `Calling read_file({"file_path":"src/main/agent/agentLoop.ts","offset":${i * 100},"limit":100})`,
     });
     // User: tool result (simulating large output)
+    const tokenDenseResult = '测试内容'.repeat(Math.ceil(resultSize / 4)).slice(0, resultSize);
     messages.push({
       role: 'user',
-      content: `Tool read_file: Success\n${'x'.repeat(resultSize)}`,
+      content: `Tool read_file: Success\n${tokenDenseResult}`,
     });
   }
 
@@ -58,10 +59,8 @@ describe('compactSubagentMessages', () => {
   });
 
   it('should compact when token count exceeds threshold', () => {
-    // Use deepseek-chat (64K context) so threshold = 51.2K tokens
-    // With BPE tokenization, 'x'.repeat(N) is much more compact than heuristic estimated.
-    // 30 rounds × 25KB → ~95K BPE tokens > 51.2K → triggers compaction
-    const messages = buildConversation(30, 25000);
+    // Use token-dense CJK text so the fixture reliably exceeds the 128K legacy window threshold.
+    const messages = buildConversation(30, 8000);
     const originalLength = messages.length;
 
     const result = compactSubagentMessages(messages, 'deepseek-chat');
@@ -89,8 +88,7 @@ describe('compactSubagentMessages', () => {
   });
 
   it('should preserve head (system + initial user) and tail messages', () => {
-    // Use deepseek-chat (64K) to ensure compaction triggers
-    const messages = buildConversation(30, 25000);
+    const messages = buildConversation(30, 8000);
 
     const systemContent = messages[0].content;
     const userContent = messages[1].content;
@@ -130,8 +128,7 @@ describe('compactSubagentMessages', () => {
   });
 
   it('should truncate assistant messages to ASSISTANT_MAX_CHARS', () => {
-    // Use deepseek-chat (64K) to ensure compaction triggers
-    const messages = buildConversation(30, 25000);
+    const messages = buildConversation(30, 8000);
 
     // Make a middle assistant message very long
     messages[2].content = 'Calling tool_with_very_long_args(' + 'a'.repeat(1000) + ')';

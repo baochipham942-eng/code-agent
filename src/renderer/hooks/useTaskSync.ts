@@ -4,9 +4,10 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useTaskStore, type SessionState, type TaskStats } from '../stores/taskStore';
+import { useTaskStore } from '../stores/taskStore';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import { IPC_CHANNELS, type TaskRuntimeEvent } from '@shared/ipc';
 
 const logger = createLogger('useTaskSync');
 
@@ -30,32 +31,17 @@ export interface UseTaskSyncReturn {
   lastSyncTime: number | null;
 }
 
-// IPC event types for task state changes
-interface TaskStateChangedEvent {
-  type: 'state_change';
-  sessionId: string;
-  data: SessionState;
-}
-
-interface TaskStatsUpdatedEvent {
-  type: 'stats_updated';
-  data: TaskStats;
-}
-
-interface TaskQueueUpdateEvent {
-  type: 'queue_update';
-  sessionId: string;
-  queue: string[];
-}
-
-type TaskEvent = TaskStateChangedEvent | TaskStatsUpdatedEvent | TaskQueueUpdateEvent;
+type TaskEvent = TaskRuntimeEvent;
+type TaskStateChangedEvent = Extract<TaskEvent, { type: 'state_change' }>;
+type TaskStatsUpdatedEvent = Extract<TaskEvent, { type: 'stats_updated' }>;
+type TaskQueueUpdateEvent = Extract<TaskEvent, { type: 'queue_update' }>;
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const DEFAULT_POLL_INTERVAL = 5000;
-const IPC_TASK_EVENT = 'task:event' as const;
+const IPC_TASK_EVENT = IPC_CHANNELS.TASK_EVENT;
 
 // ============================================================================
 // Hook Implementation
@@ -215,8 +201,8 @@ export function useTaskSync(options: UseTaskSyncOptions = {}): UseTaskSyncReturn
       // We attempt to listen, but fall back to polling if events aren't received
       try {
         const unsubscribe = ipcService.on(
-          IPC_TASK_EVENT as keyof import('@shared/ipc').IpcEventHandlers,
-          handleTaskEvent as never
+          IPC_TASK_EVENT,
+          handleTaskEvent
         );
 
         return () => {

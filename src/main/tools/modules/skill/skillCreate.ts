@@ -35,7 +35,7 @@ class SkillCreateHandler implements ToolHandler<Record<string, unknown>, string>
     }
 
     onProgress?.({ stage: 'starting', detail: 'create skill' });
-    const legacyResult = await skillCreateTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+    const legacyResult = await skillCreateTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('SkillCreate done', { ok: legacyResult.success });
     return adaptLegacyResult(legacyResult);

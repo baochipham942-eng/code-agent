@@ -74,6 +74,11 @@ export class SessionManager implements Disposable {
     session.workbenchSnapshot = this.buildWorkbenchSnapshot(session, session.messages);
   }
 
+  private isDuplicateMessageError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('UNIQUE constraint failed: messages.id');
+  }
+
   private maybePersistWorkbenchProvenance(sessionId: string, message: Message): Session['workbenchProvenance'] | undefined {
     const provenance = toSessionWorkbenchProvenance(message.metadata?.workbench, message.timestamp);
     if (!provenance) {
@@ -86,6 +91,17 @@ export class SessionManager implements Disposable {
       updatedAt: message.timestamp || Date.now(),
     });
     return provenance;
+  }
+
+  private extractWorkbenchProvenance(messages: Message[]): Session['workbenchProvenance'] | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const provenance = toSessionWorkbenchProvenance(
+        messages[i].metadata?.workbench,
+        messages[i].timestamp,
+      );
+      if (provenance) return provenance;
+    }
+    return undefined;
   }
 
   // --------------------------------------------------------------------------
@@ -569,14 +585,36 @@ export class SessionManager implements Disposable {
    */
   async addMessageToSession(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase();
-    db.addMessage(sessionId, message);
+    let inserted = false;
+    try {
+      db.addMessage(sessionId, message);
+      inserted = true;
+    } catch (error) {
+      if (!this.isDuplicateMessageError(error)) {
+        throw error;
+      }
+
+      logger.debug('Message already exists; treating addMessageToSession as idempotent', {
+        sessionId,
+        messageId: message.id,
+      });
+      db.updateMessage(message.id, message);
+    }
+
     const provenance = this.maybePersistWorkbenchProvenance(sessionId, message);
 
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
-      cached.messages.push(message);
-      cached.messageCount++;
+      const existingIndex = cached.messages.findIndex((cachedMessage) => cachedMessage.id === message.id);
+      if (existingIndex >= 0) {
+        cached.messages[existingIndex] = { ...cached.messages[existingIndex], ...message };
+      } else {
+        cached.messages.push(message);
+        if (inserted) {
+          cached.messageCount++;
+        }
+      }
       cached.updatedAt = Date.now();
       if (provenance) {
         cached.workbenchProvenance = provenance;
@@ -592,13 +630,12 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     db.updateMessage(messageId, updates);
 
-    // 更新缓存中的消息
-    if (this.currentSessionId && this.sessionCache.has(this.currentSessionId)) {
-      const cached = this.sessionCache.get(this.currentSessionId)!;
+    // 更新缓存中的消息：多会话并发时，被更新的消息不一定属于 currentSessionId。
+    for (const [cachedSessionId, cached] of this.sessionCache.entries()) {
       const msgIndex = cached.messages.findIndex((m) => m.id === messageId);
       if (msgIndex !== -1) {
         cached.messages[msgIndex] = { ...cached.messages[msgIndex], ...updates };
-        const provenance = this.maybePersistWorkbenchProvenance(this.currentSessionId, cached.messages[msgIndex]);
+        const provenance = this.maybePersistWorkbenchProvenance(cachedSessionId, cached.messages[msgIndex]);
         if (provenance) {
           cached.workbenchProvenance = provenance;
         }
@@ -613,6 +650,25 @@ export class SessionManager implements Disposable {
   async getMessages(sessionId: string, limit?: number): Promise<Message[]> {
     const db = getDatabase();
     return db.getMessages(sessionId, limit);
+  }
+
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const db = getDatabase();
+    db.replaceMessages(sessionId, messages);
+
+    if (this.sessionCache.has(sessionId)) {
+      const cached = this.sessionCache.get(sessionId)!;
+      cached.messages = [...messages];
+      cached.messageCount = messages.length;
+      cached.updatedAt = Date.now();
+      cached.workbenchProvenance = this.extractWorkbenchProvenance(messages);
+      this.updateCachedWorkbenchState(cached);
+    }
+  }
+
+  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+    const db = getDatabase();
+    return db.getSessionRuntimeState(sessionId);
   }
 
   /**

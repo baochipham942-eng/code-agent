@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/contract/toolSearch';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName } from './deferredTools';
 import { createLogger } from '../infra/logger';
+import { isProtocolToolName } from '../../tools/protocolRegistry';
 
 const logger = createLogger('ToolSearchService');
 
@@ -119,9 +120,16 @@ export class ToolSearchService {
     const loadedTools: string[] = [];
 
     const tools: ToolSearchItem[] = topResults.map(({ meta, score }) => {
-      // 标记为已加载
-      this.loadedDeferredTools.add(meta.name);
-      loadedTools.push(meta.name);
+      const loadable = this.canExposeLoadedTool(meta);
+      const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
+      const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
+
+      if (loadable) {
+        this.loadedDeferredTools.add(meta.name);
+        loadedTools.push(meta.name);
+      } else {
+        logger.debug(`ToolSearch match is not loadable as a callable tool: ${meta.name}: ${notCallableReason}`);
+      }
 
       return {
         name: meta.name,
@@ -130,6 +138,9 @@ export class ToolSearchService {
         source: meta.source,
         mcpServer: meta.mcpServer,
         tags: meta.tags,
+        loadable,
+        ...(notCallableReason ? { notCallableReason } : {}),
+        ...(canonicalInvocation ? { canonicalInvocation } : {}),
       };
     });
 
@@ -160,9 +171,16 @@ export class ToolSearchService {
     }
 
 
-    // 标记为已加载
-    this.loadedDeferredTools.add(meta.name);
-    logger.info(`Selected and loaded tool: ${toolName}`);
+    const loadable = this.canExposeLoadedTool(meta);
+    const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
+    const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
+    const loadedTools = loadable ? [meta.name] : [];
+    if (loadedTools.length > 0) {
+      this.loadedDeferredTools.add(meta.name);
+      logger.info(`Selected and loaded tool: ${toolName}`);
+    } else {
+      logger.info(`Selected tool is searchable but not loadable as a callable tool: ${toolName}`);
+    }
 
     return {
       tools: [{
@@ -172,10 +190,13 @@ export class ToolSearchService {
         source: meta.source,
         mcpServer: meta.mcpServer,
         tags: meta.tags,
+        loadable,
+        ...(notCallableReason ? { notCallableReason } : {}),
+        ...(canonicalInvocation ? { canonicalInvocation } : {}),
       }],
       hasMore: false,
       totalCount: 1,
-      loadedTools: [meta.name],
+      loadedTools,
     };
   }
 
@@ -291,6 +312,43 @@ export class ToolSearchService {
     }
 
     return result;
+  }
+
+  /**
+   * ToolSearch 只能把下一轮真的能进入 tool definitions 的工具标为 loaded。
+   * - builtin 必须有 protocol schema
+   * - MCP 动态工具由 MCPToolRegistry 提供真实 ToolDefinition
+   * - skill 等虚拟搜索项只返回结果，不制造可调用假象
+   */
+  private canExposeLoadedTool(meta: DeferredToolMeta): boolean {
+    if (isCoreToolName(meta.name)) return true;
+    if (meta.source === 'mcp') return this.mcpToolsMeta.has(meta.name);
+    if (meta.source === 'builtin') return isProtocolToolName(meta.name);
+    return false;
+  }
+
+  private getNotCallableReason(meta: DeferredToolMeta): string {
+    if (meta.source === 'builtin') {
+      return 'searchable metadata has no registered protocol tool';
+    }
+    if (meta.source === 'dynamic' && meta.name.startsWith('skill:')) {
+      return 'skill search result; invoke through the Skill tool';
+    }
+    if (meta.source === 'mcp') {
+      return 'MCP tool metadata is not registered with MCPClient';
+    }
+    return 'search-only result; no direct tool definition is available';
+  }
+
+  private getCanonicalInvocation(meta: DeferredToolMeta, loadable: boolean): string | undefined {
+    if (meta.source === 'dynamic' && meta.name.startsWith('skill:')) {
+      const skillName = meta.name.slice('skill:'.length);
+      return `Skill({"command":"${skillName}"})`;
+    }
+    if (loadable) {
+      return meta.name;
+    }
+    return undefined;
   }
 
   /**

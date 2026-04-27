@@ -20,8 +20,10 @@ interface EvalDashboardProps {
 }
 
 export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnterReplay }) => {
-  const { sessionInfo, objective, latestEvaluation, loadSession } =
+  const { sessionInfo, objective, latestEvaluation, loadSession, readFacade } =
     useEvalCenterStore();
+  const facade = readFacade?.traceIdentity.sessionId === sessionId ? readFacade : null;
+  const currentSessionInfo = facade?.sessionInfo ?? sessionInfo;
 
   // Extract typed evaluation result
   const evaluation = extractEvaluation(latestEvaluation);
@@ -71,8 +73,8 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
       {/* User Prompt — from first turn's actual userPrompt (hidden if duplicate of title) */}
       {(() => {
         const shouldShowUserPrompt = firstTurn?.userPrompt &&
-          sessionInfo?.title &&
-          !sessionInfo.title.startsWith(firstTurn.userPrompt.substring(0, 60));
+          currentSessionInfo?.title &&
+          !currentSessionInfo.title.startsWith(firstTurn.userPrompt.substring(0, 60));
         return shouldShowUserPrompt ? (
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-700/20">
             <div className="text-[10px] text-zinc-500 mb-1">USER PROMPT</div>
@@ -105,7 +107,7 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
       {/* Score Summary + Eval CTA */}
       <ScoreSummary
         evaluation={evaluation}
-        sessionInfo={sessionInfo}
+        sessionInfo={currentSessionInfo}
         sessionId={sessionId}
         onEvaluationComplete={handleEvaluationComplete}
       />

@@ -84,6 +84,42 @@ function classifyFailureStage(failureReason: string, status: string): FailureSta
   return null;
 }
 
+export function mergeExperimentSummaryJson(
+  currentSummaryJson: string | null | undefined,
+  patch: Record<string, unknown>
+): string {
+  let current: Record<string, unknown> = {};
+  if (currentSummaryJson) {
+    try {
+      const parsed = JSON.parse(currentSummaryJson);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        current = parsed as Record<string, unknown>;
+      }
+    } catch {
+      current = {};
+    }
+  }
+
+  return JSON.stringify({
+    ...current,
+    ...patch,
+  });
+}
+
+type ExperimentSummaryDb = {
+  loadExperiment(id: string): { experiment: { summary_json: string } } | undefined;
+  updateExperimentSummary(id: string, summaryJson: string): void;
+};
+
+function updateExperimentSummaryMerged(
+  db: ExperimentSummaryDb,
+  experimentId: string,
+  patch: Record<string, unknown>
+): void {
+  const existing = db.loadExperiment(experimentId)?.experiment.summary_json;
+  db.updateExperimentSummary(experimentId, mergeExperimentSummaryJson(existing, patch));
+}
+
 /**
  * 注册评测相关的 IPC handlers
  */
@@ -536,10 +572,10 @@ export function registerEvaluationHandlers(): void {
       (async () => {
         try {
           // 1. Update status to 'running'
-          db.updateExperimentSummary(experimentId, JSON.stringify({
+          updateExperimentSummaryMerged(db, experimentId, {
             total: 0, passed: 0, failed: 0, partial: 0, skipped: 0,
             passRate: 0, avgScore: 0, duration: 0, status: 'running',
-          }));
+          });
 
           // 2. Load test suites
           const { loadAllTestSuites } = await import('../testing/testCaseLoader');
@@ -654,7 +690,7 @@ export function registerEvaluationHandlers(): void {
           // 5. Update status: aborted（如余额不足熔断）→ failed，让 UI 明确显示
           //    失败而非"看起来像没运行"；正常跑完 → completed。
           const finalStatus = summary.aborted ? 'failed' : 'completed';
-          db.updateExperimentSummary(experimentId, JSON.stringify({
+          updateExperimentSummaryMerged(db, experimentId, {
             total: summary.total,
             passed: summary.passed,
             failed: summary.failed,
@@ -665,7 +701,7 @@ export function registerEvaluationHandlers(): void {
             duration: summary.duration,
             status: finalStatus,
             ...(summary.abortReason ? { error: summary.abortReason } : {}),
-          }));
+          });
 
           logger.info('Experiment run finished', {
             experimentId,
@@ -693,12 +729,12 @@ export function registerEvaluationHandlers(): void {
 
           // Update status to 'failed'
           try {
-            db.updateExperimentSummary(experimentId, JSON.stringify({
+            updateExperimentSummaryMerged(db, experimentId, {
               total: 0, passed: 0, failed: 0, partial: 0, skipped: 0,
               passRate: 0, avgScore: 0, duration: 0,
               status: 'failed',
               error: errMsg,
-            }));
+            });
           } catch (dbError) {
             logger.error('Failed to update experiment status to failed', { experimentId, error: dbError });
           }

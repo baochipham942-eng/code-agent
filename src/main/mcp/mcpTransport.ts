@@ -9,6 +9,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createLogger } from '../services/infra/logger';
+import { sanitizeEnv } from '../utils/sanitizeEnv';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import type {
   MCPServerConfig,
@@ -22,6 +23,69 @@ const logger = createLogger('MCPTransport');
 export const SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
 export const STDIO_CONNECT_TIMEOUT = MCP_TIMEOUTS.STDIO_CONNECT;
 export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
+
+export const MCP_STDIO_ENV_ALLOWLIST = [
+  'ALL_PROXY',
+  'APPDATA',
+  'COMSPEC',
+  'ComSpec',
+  'HOME',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LOCALAPPDATA',
+  'LOGNAME',
+  'NODE_EXTRA_CA_CERTS',
+  'NO_PROXY',
+  'NPM_CONFIG_CACHE',
+  'NPM_CONFIG_PREFIX',
+  'NPM_CONFIG_REGISTRY',
+  'PATH',
+  'Path',
+  'ProgramData',
+  'REQUESTS_CA_BUNDLE',
+  'SHELL',
+  'SSL_CERT_DIR',
+  'SSL_CERT_FILE',
+  'SYSTEMROOT',
+  'SystemRoot',
+  'TEMP',
+  'TERM',
+  'TMP',
+  'TMPDIR',
+  'USER',
+  'USERNAME',
+  'USERPROFILE',
+  'WINDIR',
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'all_proxy',
+  'https_proxy',
+  'http_proxy',
+  'no_proxy',
+  'npm_config_cache',
+  'npm_config_prefix',
+  'npm_config_registry',
+] as const;
+
+export function createStdioMCPEnv(
+  extra?: Record<string, string | undefined>,
+  sourceEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const allowed: Record<string, string | undefined> = {};
+
+  for (const key of MCP_STDIO_ENV_ALLOWLIST) {
+    allowed[key] = sourceEnv[key];
+  }
+
+  return sanitizeEnv({
+    ...allowed,
+    ...extra,
+  });
+}
 
 /**
  * 根据配置类型创建传输层和连接超时
@@ -59,10 +123,7 @@ export function createTransport(config: MCPServerConfig): { transport: Transport
     const transport = new StdioClientTransport({
       command: stdioConfig.command,
       args: stdioConfig.args || [],
-      env: {
-        ...process.env,
-        ...stdioConfig.env,
-      } as Record<string, string>,
+      env: createStdioMCPEnv(stdioConfig.env),
     });
 
     // 首次连接使用更长超时（npx 可能需要下载包）

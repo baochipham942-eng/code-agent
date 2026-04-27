@@ -55,7 +55,7 @@ export const mcpTool: Tool = {
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext
   ): Promise<ToolExecutionResult> {
     const { server, tool, arguments: toolArgs } = params as {
       server: string;
@@ -87,7 +87,8 @@ export const mcpTool: Tool = {
         toolCallId,
         server,
         tool,
-        toolArgs || {}
+        toolArgs || {},
+        { abortSignal: context.abortSignal },
       );
 
       if (result.success) {

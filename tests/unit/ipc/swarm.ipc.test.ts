@@ -18,8 +18,32 @@ const teammateState = vi.hoisted(() => ({
   onUserMessage: vi.fn(),
 }));
 
+const planApprovalState = vi.hoisted(() => ({
+  cancelAll: vi.fn(),
+}));
+
+const launchApprovalState = vi.hoisted(() => ({
+  cancelAll: vi.fn(),
+}));
+
+const parallelCoordinatorState = vi.hoisted(() => ({
+  canReceiveMessage: vi.fn(),
+  sendMessage: vi.fn(),
+  abortTask: vi.fn(),
+  abortAllRunning: vi.fn(),
+}));
+
+const spawnGuardState = vi.hoisted(() => ({
+  get: vi.fn(),
+  sendMessage: vi.fn(),
+  cancel: vi.fn(),
+  cancelAll: vi.fn(),
+}));
+
 const swarmEmitterState = vi.hoisted(() => ({
   userMessage: vi.fn(),
+  cancelled: vi.fn(),
+  agentCancelled: vi.fn(),
 }));
 
 const eventBusState = vi.hoisted(() => ({
@@ -46,6 +70,10 @@ vi.mock('../../../src/main/services', () => ({
 
 vi.mock('../../../src/main/agent/swarmServices', () => ({
   getSwarmServices: () => ({
+    planApproval: planApprovalState,
+    launchApproval: launchApprovalState,
+    parallelCoordinator: parallelCoordinatorState,
+    spawnGuard: spawnGuardState,
     teammateService: teammateState,
   }),
 }));
@@ -74,8 +102,26 @@ describe('swarm.ipc send-user-message', () => {
     platformState.reset();
     sessionManagerState.addMessageToSession.mockReset();
     teammateState.onUserMessage.mockReset();
+    planApprovalState.cancelAll.mockReset();
+    launchApprovalState.cancelAll.mockReset();
+    parallelCoordinatorState.canReceiveMessage.mockReset();
+    parallelCoordinatorState.sendMessage.mockReset();
+    parallelCoordinatorState.abortTask.mockReset();
+    parallelCoordinatorState.abortAllRunning.mockReset();
+    spawnGuardState.get.mockReset();
+    spawnGuardState.sendMessage.mockReset();
+    spawnGuardState.cancel.mockReset();
+    spawnGuardState.cancelAll.mockReset();
     swarmEmitterState.userMessage.mockReset();
+    swarmEmitterState.cancelled.mockReset();
+    swarmEmitterState.agentCancelled.mockReset();
     eventBusState.subscribe.mockReset();
+
+    parallelCoordinatorState.canReceiveMessage.mockReturnValue(true);
+    parallelCoordinatorState.sendMessage.mockReturnValue(true);
+    spawnGuardState.get.mockReturnValue(undefined);
+    spawnGuardState.sendMessage.mockReturnValue(false);
+    parallelCoordinatorState.abortTask.mockReturnValue(false);
 
     registerSwarmHandlers(() => null);
   });
@@ -119,8 +165,11 @@ describe('swarm.ipc send-user-message', () => {
       timestamp: 123456,
       metadata,
     });
+    expect(parallelCoordinatorState.sendMessage).toHaveBeenCalledWith('agent-reviewer', '只发给 reviewer');
     expect(teammateState.onUserMessage).toHaveBeenCalledWith('agent-reviewer', '只发给 reviewer');
-    expect(swarmEmitterState.userMessage).toHaveBeenCalledWith('agent-reviewer', '只发给 reviewer');
+    expect(swarmEmitterState.userMessage).toHaveBeenCalledWith('agent-reviewer', '只发给 reviewer', {
+      sessionId: 'session-1',
+    });
   });
 
   it('treats duplicate message persistence as already persisted so fanout can stay idempotent', async () => {
@@ -138,8 +187,11 @@ describe('swarm.ipc send-user-message', () => {
       delivered: true,
       persisted: true,
     });
+    expect(parallelCoordinatorState.sendMessage).toHaveBeenCalledWith('agent-reviewer', '重复投递也只保留一条');
     expect(teammateState.onUserMessage).toHaveBeenCalledWith('agent-reviewer', '重复投递也只保留一条');
-    expect(swarmEmitterState.userMessage).toHaveBeenCalledWith('agent-reviewer', '重复投递也只保留一条');
+    expect(swarmEmitterState.userMessage).toHaveBeenCalledWith('agent-reviewer', '重复投递也只保留一条', {
+      sessionId: 'session-1',
+    });
   });
 
   it('fails the send when the session persistence step fails for a non-duplicate error', async () => {
@@ -157,7 +209,81 @@ describe('swarm.ipc send-user-message', () => {
       delivered: false,
       persisted: false,
     });
+    expect(parallelCoordinatorState.sendMessage).not.toHaveBeenCalled();
     expect(teammateState.onUserMessage).not.toHaveBeenCalled();
     expect(swarmEmitterState.userMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns delivered=false for an unknown agent without persisting a phantom direct message', async () => {
+    parallelCoordinatorState.canReceiveMessage.mockReturnValue(false);
+    spawnGuardState.get.mockReturnValue(undefined);
+
+    const handler = platformState.handlers.get('swarm:send-user-message');
+    const result = await handler?.({}, {
+      agentId: 'agent-missing',
+      message: '没有这个 agent',
+      sessionId: 'session-1',
+      messageId: 'msg-missing',
+    });
+
+    expect(result).toEqual({
+      delivered: false,
+      persisted: false,
+    });
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(parallelCoordinatorState.sendMessage).not.toHaveBeenCalled();
+    expect(teammateState.onUserMessage).not.toHaveBeenCalled();
+    expect(swarmEmitterState.userMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes stop-all through the app run-level cancellation path when available', async () => {
+    const appService = {
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    registerSwarmHandlers(() => appService as never);
+
+    const handler = platformState.handlers.get('swarm:cancel-run');
+    const result = await handler?.({}, { sessionId: 'session-1' });
+
+    expect(result).toBe(true);
+    expect(appService.cancel).toHaveBeenCalledWith('session-1');
+    expect(parallelCoordinatorState.abortAllRunning).not.toHaveBeenCalled();
+    expect(swarmEmitterState.cancelled).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct swarm run cancellation when app service is unavailable', async () => {
+    const handler = platformState.handlers.get('swarm:cancel-run');
+    const result = await handler?.({}, { sessionId: 'session-1' });
+
+    expect(result).toBe(true);
+    expect(planApprovalState.cancelAll).toHaveBeenCalledWith('swarm_cancelled');
+    expect(launchApprovalState.cancelAll).toHaveBeenCalledWith('swarm_cancelled');
+    expect(spawnGuardState.cancelAll).toHaveBeenCalledWith('swarm_cancelled');
+    expect(parallelCoordinatorState.abortAllRunning).toHaveBeenCalledWith('swarm_cancelled');
+    expect(swarmEmitterState.cancelled).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a single spawnGuard agent with terminal cancelled event semantics', async () => {
+    spawnGuardState.cancel.mockReturnValueOnce(true);
+
+    const handler = platformState.handlers.get('swarm:cancel-agent');
+    const result = await handler?.({}, { agentId: 'agent-reviewer' });
+
+    expect(result).toBe(true);
+    expect(spawnGuardState.cancel).toHaveBeenCalledWith('agent-reviewer');
+    expect(parallelCoordinatorState.abortTask).not.toHaveBeenCalled();
+    expect(swarmEmitterState.agentCancelled).toHaveBeenCalledWith('agent-reviewer', 'Cancelled by user');
+  });
+
+  it('falls back to coordinator abort for single-agent cancellation and still emits cancelled terminal event', async () => {
+    spawnGuardState.cancel.mockReturnValueOnce(false);
+    parallelCoordinatorState.abortTask.mockReturnValueOnce(true);
+
+    const handler = platformState.handlers.get('swarm:cancel-agent');
+    const result = await handler?.({}, { agentId: 'agent-reviewer' });
+
+    expect(result).toBe(true);
+    expect(parallelCoordinatorState.abortTask).toHaveBeenCalledWith('agent-reviewer');
+    expect(swarmEmitterState.agentCancelled).toHaveBeenCalledWith('agent-reviewer', 'Cancelled by user');
   });
 });

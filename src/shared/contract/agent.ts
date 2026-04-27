@@ -189,6 +189,7 @@ export type AgentEvent =
       timestamp?: number;
     } }
   | { type: 'agent_complete'; data: null }
+  | { type: 'agent_cancelled'; data: null }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)

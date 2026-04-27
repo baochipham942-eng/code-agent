@@ -99,4 +99,59 @@ describe('TelemetryCollector computer surface reliability fields', () => {
     expect(json).toContain('[redacted 28 chars]');
     expect(json).not.toContain(secret);
   });
+
+  it('records detached subagent turns without requiring the active turn buffer', () => {
+    collector = new TelemetryCollector();
+    const events: TelemetryPushEvent[] = [];
+    collector.addEventListener((event) => events.push(event));
+    collector.startSession('session-subagent-telemetry', {
+      title: 'Subagent telemetry',
+      modelProvider: 'test',
+      modelName: 'test-model',
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const recorded = collector.recordDetachedTurn({
+      sessionId: 'session-subagent-telemetry',
+      turnId: 'turn-subagent-1',
+      turnNumber: 1,
+      userPrompt: 'Inspect file',
+      assistantResponse: 'Calling read_file',
+      agentId: 'agent-reviewer',
+      startTime: 100,
+      endTime: 150,
+      modelCalls: [{
+        id: 'mc-1',
+        timestamp: 110,
+        provider: 'test',
+        model: 'test-model',
+        inputTokens: 5,
+        outputTokens: 7,
+        latencyMs: 12,
+        responseType: 'tool_use',
+        toolCallCount: 1,
+        truncated: false,
+      }],
+      toolCalls: [{
+        toolCallId: 'tool-1',
+        name: 'read_file',
+        arguments: { file_path: 'src/main.ts' },
+        resultSummary: 'ok',
+        success: true,
+        durationMs: 8,
+        timestamp: 120,
+        index: 0,
+      }],
+    });
+
+    expect(recorded).toBe(true);
+    expect(collector.getSessionData('session-subagent-telemetry')).toMatchObject({
+      turnCount: 1,
+      totalInputTokens: 5,
+      totalOutputTokens: 7,
+      totalToolCalls: 1,
+      toolSuccessRate: 1,
+    });
+    expect(events.some((event) => event.type === 'turn_end' && (event.data as { detached?: boolean }).detached)).toBe(true);
+  });
 });

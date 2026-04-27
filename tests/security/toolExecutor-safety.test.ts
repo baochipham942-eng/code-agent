@@ -108,6 +108,11 @@ describe('ToolExecutor safety integration', () => {
       expect(permissionRequested).toBe(false);
     });
 
+    it('Bash git status uses the same safe path without permission', async () => {
+      await executor.execute('Bash', { command: 'git status' }, execOptions);
+      expect(permissionRequested).toBe(false);
+    });
+
     it('cat file.txt does not request permission', async () => {
       await executor.execute('bash', { command: 'cat /etc/hostname' }, execOptions);
       expect(permissionRequested).toBe(false);
@@ -127,6 +132,30 @@ describe('ToolExecutor safety integration', () => {
   describe('unsafe commands still request permission', () => {
     it('npm install requests permission', async () => {
       await executor.execute('bash', { command: 'npm install lodash' }, execOptions);
+      expect(permissionRequested).toBe(true);
+    });
+
+    it('scoped pre-approval can skip permission for a valid command prefix', async () => {
+      await executor.execute('bash', { command: 'npm install lodash' }, {
+        ...execOptions,
+        preApprovedTools: new Set(['Bash(npm:*)']),
+      });
+      expect(permissionRequested).toBe(false);
+    });
+
+    it('scoped pre-approval requires a command token boundary', async () => {
+      await executor.execute('bash', { command: 'npmlink install lodash' }, {
+        ...execOptions,
+        preApprovedTools: new Set(['Bash(npm:*)']),
+      });
+      expect(permissionRequested).toBe(true);
+    });
+
+    it('malformed scoped pre-approval patterns do not skip permission', async () => {
+      await executor.execute('bash', { command: 'npm install lodash' }, {
+        ...execOptions,
+        preApprovedTools: new Set(['Bash(npm install:*)']),
+      });
       expect(permissionRequested).toBe(true);
     });
 
@@ -160,6 +189,16 @@ describe('ToolExecutor safety integration', () => {
     it('safe && unsafe requests permission', async () => {
       await executor.execute('bash', { command: 'ls && npm install' }, execOptions);
       expect(permissionRequested).toBe(true);
+    });
+  });
+
+  describe('dangerous command pre-validation', () => {
+    it('Bash rm -rf / is blocked before permission', async () => {
+      const result = await executor.execute('Bash', { command: 'rm -rf /' }, execOptions);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Security: Command blocked');
+      expect(permissionRequested).toBe(false);
     });
   });
 });

@@ -48,7 +48,9 @@ import type {
   ToolResult,
   ModelProvider,
   TodoItem,
+  SessionTask,
 } from '../../../shared/contract';
+import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 
 // Re-export types from repositories（保持外部调用方零修改）
@@ -201,6 +203,13 @@ export class DatabaseService {
       this.swarmTraceRepo = new SwarmTraceRepository(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
 
+      const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
+      if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
+        logger.warn(
+          `[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`,
+        );
+      }
+
       // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
       this.sessionRepo.backfillSessionMessagesFts();
     } catch (err) {
@@ -304,6 +313,7 @@ export class DatabaseService {
 
     // telemetry_tool_calls 新增错误分类与 Computer Surface 可靠性字段
     const toolCallMigrations = [
+      'ALTER TABLE telemetry_tool_calls ADD COLUMN actual_arguments TEXT',
       'ALTER TABLE telemetry_tool_calls ADD COLUMN error_category TEXT',
       'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_failure_kind TEXT',
       'ALTER TABLE telemetry_tool_calls ADD COLUMN computer_surface_mode TEXT',
@@ -356,6 +366,7 @@ export class DatabaseService {
         tool_calls TEXT,
         tool_results TEXT,
         attachments TEXT,
+        compaction TEXT,
         metadata TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
@@ -411,6 +422,14 @@ export class DatabaseService {
 
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN compaction TEXT`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
@@ -510,6 +529,51 @@ export class DatabaseService {
         status TEXT NOT NULL,
         active_form TEXT NOT NULL,
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Session Tasks 表 (Task tool / planning taskStore 持久化)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_tasks (
+        session_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        description TEXT NOT NULL,
+        active_form TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        owner TEXT,
+        blocks_json TEXT NOT NULL DEFAULT '[]',
+        blocked_by_json TEXT NOT NULL DEFAULT '[]',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, task_id),
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Context Interventions 表 (pin/exclude/retain 手动上下文选择)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS context_interventions (
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL DEFAULT 'global',
+        message_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, agent_id, message_id),
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Session runtime state 表 (compression state / persistent system context 恢复)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_runtime_state (
+        session_id TEXT PRIMARY KEY,
+        compression_state_json TEXT,
+        persistent_system_context_json TEXT NOT NULL DEFAULT '[]',
         updated_at INTEGER NOT NULL,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
@@ -724,10 +788,11 @@ export class DatabaseService {
         id TEXT PRIMARY KEY,
         turn_id TEXT NOT NULL,
         session_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        arguments TEXT,
-        result_summary TEXT,
+	        tool_call_id TEXT NOT NULL,
+	        name TEXT NOT NULL,
+	        arguments TEXT,
+	        actual_arguments TEXT,
+	        result_summary TEXT,
         success INTEGER DEFAULT 0,
         error TEXT,
         error_category TEXT,
@@ -981,6 +1046,9 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_tool_executions_expires ON tool_executions(expires_at);
       CREATE INDEX IF NOT EXISTS idx_project_knowledge_path ON project_knowledge(project_path);
       CREATE INDEX IF NOT EXISTS idx_todos_session ON todos(session_id);
+      CREATE INDEX IF NOT EXISTS idx_session_tasks_session ON session_tasks(session_id);
+      CREATE INDEX IF NOT EXISTS idx_context_interventions_session_agent ON context_interventions(session_id, agent_id);
+      CREATE INDEX IF NOT EXISTS idx_session_runtime_state_updated ON session_runtime_state(updated_at);
       CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type);
       CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
@@ -1159,10 +1227,12 @@ export class DatabaseService {
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }
   deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId, options); }
   clearAllSessions(): number { this.ensureDb(); return this.sessionRepo.clearAllSessions(); }
+  markCrashedActiveSessions(now?: number): { interrupted: number; orphaned: number } { this.ensureDb(); return this.sessionRepo.markCrashedActiveSessions(now); }
   clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }
   hasMessages(sessionId: string): boolean { this.ensureDb(); return this.sessionRepo.hasMessages(sessionId); }
   getLocalCacheStats(): { sessionCount: number; messageCount: number } { this.ensureDb(); return this.sessionRepo.getLocalCacheStats(); }
   addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean; syncOrigin?: 'local' | 'remote'; syncedAt?: number | null }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
+  replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.replaceMessages(sessionId, messages, updatedAt); }
   updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
   getMessages(sessionId: string, limit?: number, offset?: number): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset); }
   getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }
@@ -1175,6 +1245,28 @@ export class DatabaseService {
   truncateMessagesAfter(sessionId: string, messageId: string): number { this.ensureDb(); return this.sessionRepo.truncateMessagesAfter(sessionId, messageId); }
   saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos, updatedAt); }
   getTodos(sessionId: string): TodoItem[] { this.ensureDb(); return this.sessionRepo.getTodos(sessionId); }
+  saveSessionTasks(sessionId: string, tasks: SessionTask[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.saveSessionTasks(sessionId, tasks, updatedAt); }
+  getSessionTasks(sessionId: string): SessionTask[] { this.ensureDb(); return this.sessionRepo.getSessionTasks(sessionId); }
+  saveContextIntervention(sessionId: string, agentId: string | null | undefined, messageId: string, action: ContextInterventionAction | null, updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.saveContextIntervention(sessionId, agentId, messageId, action, updatedAt);
+  }
+  getContextInterventions(sessionId: string, agentId?: string | null): ContextInterventionSnapshot {
+    this.ensureDb();
+    return this.sessionRepo.getContextInterventions(sessionId, agentId);
+  }
+  saveSessionRuntimeState(
+    sessionId: string,
+    state: { compressionStateJson?: string | null; persistentSystemContext?: string[] },
+    updatedAt?: number,
+  ): void {
+    this.ensureDb();
+    this.sessionRepo.saveSessionRuntimeState(sessionId, state, updatedAt);
+  }
+  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+    this.ensureDb();
+    return this.sessionRepo.getSessionRuntimeState(sessionId);
+  }
   listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }
   archiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.archiveSession(sessionId); }
   unarchiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.unarchiveSession(sessionId); }

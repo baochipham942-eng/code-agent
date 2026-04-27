@@ -46,6 +46,8 @@ export class CLIAgent {
   private metricsCollector: MetricsCollector | null = null;
   /** Current AgentLoop instance (for cancel/interrupt/hooks) */
   private currentAgentLoop: { cancel(): void; interrupt(msg: string): void; getHookManager?(): unknown } | null = null;
+  /** Last completed AgentLoop hook manager, kept so /hooks works between turns. */
+  private lastHookManager: unknown = null;
   /** Real token usage from stream_usage events */
   private realInputTokens: number = 0;
   private realOutputTokens: number = 0;
@@ -188,6 +190,7 @@ export class CLIAgent {
       this.metricsCollector || undefined
     );
     this.currentAgentLoop = agentLoop;
+    this.lastHookManager = agentLoop.getHookManager?.() ?? this.lastHookManager;
 
     return new Promise<CLIRunResult>((resolve) => {
       this.resolveRun = resolve;
@@ -449,7 +452,7 @@ export class CLIAgent {
    * 获取 HookManager（供 /hooks 命令使用）
    */
   getHookManager(): unknown {
-    return this.currentAgentLoop?.getHookManager?.() ?? null;
+    return this.currentAgentLoop?.getHookManager?.() ?? this.lastHookManager;
   }
 
   /**

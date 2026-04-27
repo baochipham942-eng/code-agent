@@ -36,7 +36,7 @@ import { isWebMode } from '../utils/platform';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
-import type { MessageAttachment, TaskPlan } from '../../shared/contract';
+import type { MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -48,6 +48,7 @@ import {
   Sparkles,
   Terminal,
   Keyboard,
+  AlertTriangle,
 } from 'lucide-react';
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
@@ -57,6 +58,7 @@ export const ChatView: React.FC = () => {
     hasOlderMessages,
     isLoadingOlder,
     loadOlderMessages,
+    streamSnapshot,
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
@@ -388,6 +390,10 @@ export const ChatView: React.FC = () => {
           onActiveMatchChange={handleActiveMatchChange}
         />
 
+        {streamSnapshot && (
+          <StreamRecoveryBanner snapshot={streamSnapshot} />
+        )}
+
         {/* Messages - Turn-based trace view */}
         <div className="flex-1 overflow-hidden">
           {projection.turns.length === 0 ? (
@@ -533,6 +539,37 @@ const shortcuts = [
   { keys: ['⌘', '⇧', 'P'], label: '命令面板' },
   { keys: ['Esc', 'Esc'], label: '回溯' },
 ];
+
+const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ snapshot }) => {
+  const toolNames = snapshot.toolCalls
+    .map((toolCall) => toolCall.name || toolCall.id)
+    .filter(Boolean)
+    .slice(0, 3);
+  const extraCount = Math.max(0, snapshot.toolCalls.length - toolNames.length);
+  const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return (
+    <div className="px-4 pt-3">
+      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
+        <div className="min-w-0">
+          <div className="font-medium">上次回复在流式输出中断</div>
+          <div className="mt-1 text-amber-100/80">
+            {snapshot.toolCalls.length > 0
+              ? `${snapshot.toolCalls.length} 个 tool call 只保留为恢复快照，未执行：${toolNames.join(', ')}${extraCount ? ` +${extraCount}` : ''}`
+              : '部分文本已保留为恢复快照。'}
+          </div>
+          <div className="mt-1 text-xs text-amber-100/60">
+            turn {snapshot.turnId.slice(0, 8)} - {timeLabel}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Empty state component with enhanced design
 const EmptyState: React.FC<{

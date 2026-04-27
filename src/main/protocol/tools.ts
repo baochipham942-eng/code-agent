@@ -201,10 +201,22 @@ export interface ToolDecision {
 // 权限闭包 — 独立参数，非 ctx 字段
 // ----------------------------------------------------------------------------
 
+export interface CanUseToolRequestHint {
+  readonly sessionId?: string;
+  readonly forceConfirm?: boolean;
+  readonly type?: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command';
+  readonly tool?: string;
+  readonly details?: Record<string, unknown>;
+  readonly reason?: string;
+  readonly dangerLevel?: 'normal' | 'warning' | 'danger';
+  readonly decisionTrace?: unknown;
+}
+
 export type CanUseToolFn = (
   toolName: string,
   input: Record<string, unknown>,
   reason?: string,
+  requestHint?: CanUseToolRequestHint,
 ) => Promise<CanUseToolResult>;
 
 export type CanUseToolResult =

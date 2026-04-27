@@ -4,8 +4,15 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { TaskManager, SessionState } from '../task';
+import { broadcastToRenderer } from '../platform';
+import {
+  IPC_CHANNELS,
+  IPC_DOMAINS,
+  type IPCRequest,
+  type IPCResponse,
+  type TaskRuntimeEvent,
+} from '../../shared/ipc';
+import type { TaskManager, SessionState, TaskManagerEvent } from '../task';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('TaskIPC');
@@ -30,6 +37,8 @@ export interface StartTaskPayload {
 export interface TaskIdPayload {
   sessionId: string;
 }
+
+const bridgedTaskManagers = new WeakSet<TaskManager>();
 
 // ============================================================================
 // Internal Handlers
@@ -94,6 +103,44 @@ function handleCleanup(
   taskManager.cleanup(payload.sessionId);
 }
 
+function publishTaskEvent(event: TaskRuntimeEvent): void {
+  broadcastToRenderer(IPC_CHANNELS.TASK_EVENT, event);
+}
+
+function publishStats(taskManager: TaskManager): void {
+  publishTaskEvent({
+    type: 'stats_updated',
+    data: handleGetStats(taskManager),
+  });
+}
+
+function ensureTaskEventBridge(taskManager: TaskManager): void {
+  if (bridgedTaskManagers.has(taskManager)) return;
+  bridgedTaskManagers.add(taskManager);
+
+  taskManager.on('event', (event: TaskManagerEvent) => {
+    switch (event.type) {
+      case 'state_change':
+        publishTaskEvent({
+          type: 'state_change',
+          sessionId: event.sessionId,
+          data: handleGetState(taskManager, { sessionId: event.sessionId }),
+        });
+        break;
+
+      case 'queue_update':
+        publishTaskEvent({
+          type: 'queue_update',
+          sessionId: event.sessionId,
+          queue: handleGetQueue(taskManager),
+        });
+        break;
+    }
+
+    publishStats(taskManager);
+  });
+}
+
 // ============================================================================
 // Public Registration
 // ============================================================================
@@ -136,6 +183,8 @@ export function registerTaskHandlers(
           };
       }
     }
+
+    ensureTaskEventBridge(taskManager);
 
     try {
       switch (action) {

@@ -4,16 +4,23 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { AgentEvent, Message, ToolCall } from '../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata, ToolCall } from '../../shared/contract';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
+import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
 import { app, BrowserWindow } from '../platform';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 
 const logger = createLogger('TaskManager');
+const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
+
+function wasMessagePersistedByContextAssembly(message: Message): boolean {
+  return Boolean((message as any)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
+}
 
 // ============================================================================
 // Types
@@ -22,7 +29,7 @@ const logger = createLogger('TaskManager');
 /**
  * 会话运行状态
  */
-export type SessionStatus = 'idle' | 'running' | 'queued' | 'cancelling' | 'error';
+export type SessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'error';
 
 /**
  * 会话状态信息
@@ -122,6 +129,8 @@ export class TaskManager extends EventEmitter {
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
   private queueTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private cancellingSessions: Set<string> = new Set();
+  private cancelledEventEmitted: Set<string> = new Set();
 
   // 依赖注入
   private configService: ConfigService | null = null;
@@ -193,7 +202,9 @@ export class TaskManager extends EventEmitter {
   async startTask(
     sessionId: string,
     message: string,
-    attachments?: unknown[]
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
@@ -201,7 +212,12 @@ export class TaskManager extends EventEmitter {
 
     // 检查是否已经在运行或排队
     const currentState = this.sessionStates.get(sessionId);
-    if (currentState?.status === 'running' || currentState?.status === 'queued') {
+    if (
+      currentState?.status === 'running'
+      || currentState?.status === 'paused'
+      || currentState?.status === 'queued'
+      || currentState?.status === 'cancelling'
+    ) {
       logger.warn(`Session ${sessionId} is already ${currentState.status}`);
       throw new Error(`Session ${sessionId} is already ${currentState.status}`);
     }
@@ -209,11 +225,52 @@ export class TaskManager extends EventEmitter {
     // 尝试获取信号量
     if (this.semaphore.tryAcquire()) {
       // 立即执行
-      await this.executeTask(sessionId, message, attachments);
+      await this.executeTask(sessionId, message, attachments, options, messageMetadata);
     } else {
       // 加入队列
-      await this.enqueueTask(sessionId, message, attachments);
+      await this.enqueueTask(sessionId, message, attachments, options, messageMetadata);
     }
+  }
+
+  /**
+   * 中断并继续当前会话；如果当前没有 TaskManager-owned run，则作为新任务启动。
+   */
+  async interruptAndContinue(
+    sessionId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
+  ): Promise<void> {
+    const state = this.getSessionState(sessionId);
+
+    if (state.status === 'queued') {
+      await this.cancelTask(sessionId);
+      await this.startTask(sessionId, message, attachments, options, messageMetadata);
+      return;
+    }
+
+    if (state.status === 'running' || state.status === 'paused' || state.status === 'cancelling') {
+      const wrapper = this.activeOrchestrators.get(sessionId);
+      if (!wrapper) {
+        logger.warn(`No orchestrator found for session ${sessionId}; starting a fresh task for interrupt`);
+        this.cleanupSession(sessionId);
+        await this.startTask(sessionId, message, attachments, options, messageMetadata);
+        return;
+      }
+
+      await wrapper.orchestrator.interruptAndContinue(
+        message,
+        attachments,
+        options,
+        messageMetadata,
+        clientMessageId,
+      );
+      return;
+    }
+
+    await this.startTask(sessionId, message, attachments, options, messageMetadata);
   }
 
   /**
@@ -232,11 +289,13 @@ export class TaskManager extends EventEmitter {
     }
 
     logger.info(`Interrupting session ${sessionId} (soft interrupt)`);
+    this.cancellingSessions.add(sessionId);
     this.updateSessionState(sessionId, { status: 'cancelling' });
 
     const wrapper = this.activeOrchestrators.get(sessionId);
     if (!wrapper) {
       logger.warn(`No orchestrator found for session ${sessionId}`);
+      this.finishCancelledSession(sessionId, { clearMarker: true });
       return;
     }
 
@@ -253,9 +312,7 @@ export class TaskManager extends EventEmitter {
 
     await Promise.race([cancelPromise, timeoutPromise]);
 
-    // 清理资源
-    this.cleanupSession(sessionId);
-    this.emitEvent('task_cancelled', sessionId);
+    // executeTask owns the terminal state transition once sendMessage unwinds.
   }
 
   /**
@@ -280,17 +337,61 @@ export class TaskManager extends EventEmitter {
       return;
     }
 
-    if (state.status === 'running' || state.status === 'cancelling') {
+    if (state.status === 'running' || state.status === 'paused' || state.status === 'cancelling') {
       logger.info(`Cancelling session ${sessionId} (hard cancel)`);
+      this.cancellingSessions.add(sessionId);
+      this.updateSessionState(sessionId, { status: 'cancelling' });
 
       const wrapper = this.activeOrchestrators.get(sessionId);
       if (wrapper) {
         await wrapper.orchestrator.cancel();
+      } else {
+        this.finishCancelledSession(sessionId, { clearMarker: true });
       }
-
-      this.cleanupSession(sessionId);
-      this.emitEvent('task_cancelled', sessionId);
+      // executeTask owns the terminal state transition once sendMessage unwinds.
     }
+  }
+
+  /**
+   * 暂停任务。
+   */
+  pauseTask(sessionId: string): boolean {
+    const state = this.sessionStates.get(sessionId);
+    if (state?.status !== 'running') {
+      logger.warn(`Cannot pause session ${sessionId}: not running`);
+      return false;
+    }
+
+    const wrapper = this.activeOrchestrators.get(sessionId);
+    if (!wrapper) {
+      logger.warn(`No orchestrator found for session ${sessionId}`);
+      return false;
+    }
+
+    wrapper.orchestrator.pause();
+    this.updateSessionState(sessionId, { status: 'paused' });
+    return true;
+  }
+
+  /**
+   * 恢复任务。
+   */
+  resumeTask(sessionId: string): boolean {
+    const state = this.sessionStates.get(sessionId);
+    if (state?.status !== 'paused') {
+      logger.warn(`Cannot resume session ${sessionId}: not paused`);
+      return false;
+    }
+
+    const wrapper = this.activeOrchestrators.get(sessionId);
+    if (!wrapper) {
+      logger.warn(`No orchestrator found for session ${sessionId}`);
+      return false;
+    }
+
+    wrapper.orchestrator.resume();
+    this.updateSessionState(sessionId, { status: 'running' });
+    return true;
   }
 
   /**
@@ -474,7 +575,9 @@ export class TaskManager extends EventEmitter {
   private async executeTask(
     sessionId: string,
     message: string,
-    attachments?: unknown[]
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
   ): Promise<void> {
     logger.info(`Executing task for session ${sessionId}`);
 
@@ -489,12 +592,22 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
 
     try {
-      await wrapper.orchestrator.sendMessage(message, attachments);
+      await wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata);
+
+      if (this.cancellingSessions.has(sessionId)) {
+        this.finishCancelledSession(sessionId, { clearMarker: true });
+        return;
+      }
 
       // 任务完成
       this.updateSessionState(sessionId, { status: 'idle' });
       this.emitEvent('task_completed', sessionId);
     } catch (error) {
+      if (this.cancellingSessions.has(sessionId)) {
+        this.finishCancelledSession(sessionId, { clearMarker: true });
+        return;
+      }
+
       logger.error(`Task error for session ${sessionId}:`, error);
       this.updateSessionState(sessionId, {
         status: 'error',
@@ -516,7 +629,9 @@ export class TaskManager extends EventEmitter {
   private async enqueueTask(
     sessionId: string,
     message: string,
-    attachments?: unknown[]
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
   ): Promise<void> {
     logger.info(`Enqueueing task for session ${sessionId}`);
 
@@ -555,7 +670,7 @@ export class TaskManager extends EventEmitter {
       this.removeFromQueue(sessionId);
 
       // 执行任务
-      await this.executeTask(sessionId, message, attachments);
+      await this.executeTask(sessionId, message, attachments, options, messageMetadata);
     } catch (error) {
       logger.error(`Failed to acquire semaphore for session ${sessionId}:`, error);
       this.removeFromQueue(sessionId);
@@ -687,11 +802,13 @@ export class TaskManager extends EventEmitter {
 
         if (!turnState.messageId) {
           turnState.messageId = message.id;
-          await sessionManager.addMessageToSession(sessionId, {
-            ...message,
-            toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
-            content: turnState.content,
-          });
+          if (!wasMessagePersistedByContextAssembly(message)) {
+            await sessionManager.addMessageToSession(sessionId, {
+              ...message,
+              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+              content: turnState.content,
+            });
+          }
         } else {
           await sessionManager.updateMessage(turnState.messageId, {
             toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
@@ -717,7 +834,7 @@ export class TaskManager extends EventEmitter {
       }
 
       // Reset turn state when turn ends or agent completes
-      if (event.type === 'turn_end' || event.type === 'agent_complete') {
+      if (event.type === 'turn_end' || event.type === 'agent_complete' || event.type === 'agent_cancelled') {
         this.turnStateBySession.delete(sessionId);
       }
 
@@ -758,7 +875,7 @@ export class TaskManager extends EventEmitter {
   canStartTask(sessionId: string): { canStart: boolean; reason?: string } {
     const state = this.sessionStates.get(sessionId);
 
-    if (state?.status === 'running') {
+    if (state?.status === 'running' || state?.status === 'paused') {
       return { canStart: false, reason: 'Session already has a running task' };
     }
 
@@ -792,6 +909,18 @@ export class TaskManager extends EventEmitter {
     this.updateSessionState(sessionId, { status: 'idle' });
   }
 
+  private finishCancelledSession(sessionId: string, options: { clearMarker: boolean }): void {
+    this.cleanupSession(sessionId);
+    if (!this.cancelledEventEmitted.has(sessionId)) {
+      this.cancelledEventEmitted.add(sessionId);
+      this.emitEvent('task_cancelled', sessionId);
+    }
+    if (options.clearMarker) {
+      this.cancellingSessions.delete(sessionId);
+      this.cancelledEventEmitted.delete(sessionId);
+    }
+  }
+
   /**
    * 更新会话状态
    */
@@ -799,7 +928,21 @@ export class TaskManager extends EventEmitter {
     const current = this.sessionStates.get(sessionId) || { status: 'idle' as const };
     const newState = { ...current, ...state };
     this.sessionStates.set(sessionId, newState);
+    this.persistSessionState(sessionId, newState);
     this.emitEvent('state_change', sessionId, newState);
+  }
+
+  private persistSessionState(sessionId: string, state: SessionState): void {
+    try {
+      const db = getDatabase();
+      if (!db.isReady) return;
+      db.updateSession(sessionId, {
+        status: state.status,
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      logger.debug(`Failed to persist task state for session ${sessionId}`, error);
+    }
   }
 
   /**

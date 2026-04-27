@@ -24,6 +24,7 @@ describe('TelemetryStorage computer surface fields', () => {
         tool_call_id TEXT NOT NULL,
         name TEXT NOT NULL,
         arguments TEXT,
+        actual_arguments TEXT,
         result_summary TEXT,
         success INTEGER DEFAULT 0,
         error TEXT,
@@ -64,6 +65,7 @@ describe('TelemetryStorage computer surface fields', () => {
         toolCallId: 'tool-1',
         name: 'computer_use',
         arguments: '{"action":"click","targetApp":"Finder"}',
+        actualArguments: '{"action":"click","targetApp":"Finder"}',
         resultSummary: 'Background action failed',
         success: false,
         error: 'Background action failed',
@@ -82,6 +84,7 @@ describe('TelemetryStorage computer surface fields', () => {
     });
 
     expect(storage.getToolCallsBySession('session-1')[0]).toMatchObject({
+      actualArguments: '{"action":"click","targetApp":"Finder"}',
       computerSurfaceFailureKind: 'locator_missing',
       computerSurfaceMode: 'background_ax',
       computerSurfaceTargetApp: 'Finder',

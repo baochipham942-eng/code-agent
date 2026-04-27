@@ -99,14 +99,10 @@ export class PendingApprovalRepository {
       .run(input.status, input.feedback, input.resolvedAt, input.id);
   }
 
-  /**
-   * 上次进程崩溃后还卡在 pending 的行：启动 hydrate 时一次性标 orphaned
-   * 并返回，让 gate 回填到内存 Map 但不重新挂 resolver。
-   */
-  markAllPendingAsOrphaned(now: number): PendingApprovalRecord[] {
+  private markPendingRowsAsOrphaned(whereClause: string, params: unknown[], now: number): PendingApprovalRecord[] {
     const before = this.db
-      .prepare(`SELECT * FROM pending_approvals WHERE status = 'pending'`)
-      .all() as SQLiteRow[];
+      .prepare(`SELECT * FROM pending_approvals WHERE ${whereClause}`)
+      .all(...params) as SQLiteRow[];
 
     if (before.length === 0) return [];
 
@@ -114,9 +110,9 @@ export class PendingApprovalRepository {
       .prepare(
         `UPDATE pending_approvals
            SET status = 'orphaned', resolved_at = ?, feedback = 'Orphaned by process restart'
-         WHERE status = 'pending'`,
+         WHERE ${whereClause}`,
       )
-      .run(now);
+      .run(now, ...params);
 
     return before.map((row) =>
       rowToRecord({
@@ -126,6 +122,21 @@ export class PendingApprovalRepository {
         feedback: 'Orphaned by process restart',
       }),
     );
+  }
+
+  /**
+   * 上次进程崩溃后还卡在 pending 的行：启动 hydrate 时按 kind 标 orphaned
+   * 并返回，避免 plan / launch 两类 gate 互相抢走对方的待决请求。
+   */
+  markPendingAsOrphaned(kind: PendingApprovalKind, now: number): PendingApprovalRecord[] {
+    return this.markPendingRowsAsOrphaned(`kind = ? AND status = 'pending'`, [kind], now);
+  }
+
+  /**
+   * 仅保留给维护工具 / 旧测试路径。业务 hydrate 必须使用 markPendingAsOrphaned。
+   */
+  markAllPendingAsOrphaned(now: number): PendingApprovalRecord[] {
+    return this.markPendingRowsAsOrphaned(`status = 'pending'`, [], now);
   }
 
   listByKindAndStatus(

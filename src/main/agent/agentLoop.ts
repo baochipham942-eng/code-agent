@@ -117,6 +117,7 @@ import { ToolExecutionEngine } from './runtime/toolExecutionEngine';
 import { ContextAssembly } from './runtime/contextAssembly';
 import { RunFinalizer } from './runtime/runFinalizer';
 import { LearningPipeline } from './runtime/learningPipeline';
+import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -130,6 +131,16 @@ export class AgentLoop {
   constructor(config: AgentLoopConfig) {
     const contextWindow = getContextWindow(config.modelConfig.model);
     const lightCompressionThreshold = Math.max(8000, Math.round(contextWindow * 0.50));
+    const resolvedSessionId = config.sessionId || `session-${Date.now()}`;
+    const persistedRuntimeState = loadPersistedRuntimeState(resolvedSessionId);
+    let compressionState = new CompressionState();
+    if (persistedRuntimeState?.compressionStateJson) {
+      try {
+        compressionState = CompressionState.deserialize(persistedRuntimeState.compressionStateJson);
+      } catch (err) {
+        logger.warn('[AgentLoop] Failed to restore persisted compression state', err);
+      }
+    }
 
     this.ctx = {
       systemPrompt: config.systemPrompt || '',
@@ -141,7 +152,7 @@ export class AgentLoop {
       maxIterations: getMaxIterations(),
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
-      sessionId: config.sessionId || `session-${Date.now()}`,
+      sessionId: resolvedSessionId,
       agentId: config.agentId,
       userId: config.userId,
       persistMessage: config.persistMessage,
@@ -164,7 +175,7 @@ export class AgentLoop {
         preserveUserMessages: true,
       }),
       autoCompressor: getAutoCompressor(),
-      compressionState: new CompressionState(),
+      compressionState,
       compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: config.telemetryAdapter,
 
@@ -177,6 +188,7 @@ export class AgentLoop {
       interruptMessage: null,
       needsReinference: false,
       abortController: null,
+      runAbortController: null,
 
       // Plan mode
       isPlanModeActive: false,
@@ -235,7 +247,7 @@ export class AgentLoop {
       interactionMode: 'code' as any,
 
       // Persistent system context
-      persistentSystemContext: [],
+      persistentSystemContext: persistedRuntimeState?.persistentSystemContext ?? [],
 
       // Task stats
       runStartTime: 0,
@@ -334,8 +346,8 @@ export class AgentLoop {
     this.conversationRuntime.interrupt(newMessage);
   }
 
-  steer(newMessage: string): void {
-    this.conversationRuntime.steer(newMessage);
+  steer(newMessage: string, clientMessageId?: string): void {
+    this.conversationRuntime.steer(newMessage, clientMessageId);
   }
 
   wasInterrupted(): boolean {

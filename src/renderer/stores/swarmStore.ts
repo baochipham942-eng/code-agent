@@ -44,12 +44,29 @@ export interface SwarmConversationMessage {
 export interface SwarmTimelineEvent {
   id: string;
   sessionId?: string;
+  runId?: string;
   type: SwarmEvent['type'];
   timestamp: number;
   title: string;
   summary: string;
   tone: 'neutral' | 'success' | 'warning' | 'error';
   agentId?: string;
+}
+
+export interface SwarmRunSnapshot {
+  key: string;
+  sessionId?: string;
+  runId?: string;
+  updatedAt?: number;
+  statistics: SwarmExecutionState['statistics'];
+  isRunning: boolean;
+  executionPhase: SwarmExecutionPhase;
+  verification?: SwarmVerificationResult;
+  aggregation?: SwarmAggregation;
+  agents: SwarmAgentState[];
+  messages: SwarmConversationMessage[];
+  eventLog: SwarmTimelineEvent[];
+  completedRuns: CompletedAgentRun[];
 }
 
 export interface SwarmStore extends SwarmExecutionState {
@@ -61,6 +78,9 @@ export interface SwarmStore extends SwarmExecutionState {
   messages: SwarmConversationMessage[];
   eventLog: SwarmTimelineEvent[];
   completedRuns: CompletedAgentRun[];
+  runSnapshots: Record<string, SwarmRunSnapshot>;
+  activeSessionId?: string;
+  activeRunId?: string;
   lastEventAt?: number;
   handleEvent: (event: SwarmEvent) => void;
   reset: () => void;
@@ -86,6 +106,9 @@ const initialState: Pick<
   | 'messages'
   | 'eventLog'
   | 'completedRuns'
+  | 'runSnapshots'
+  | 'activeSessionId'
+  | 'activeRunId'
   | 'startTime'
   | 'lastEventAt'
 > = {
@@ -111,6 +134,9 @@ const initialState: Pick<
   messages: [],
   eventLog: [],
   completedRuns: [],
+  runSnapshots: {},
+  activeSessionId: undefined,
+  activeRunId: undefined,
 };
 
 function mergeAgentState(
@@ -230,6 +256,193 @@ function appendEventLog(
   return [...eventLog, entry].slice(-MAX_EVENT_LOG);
 }
 
+function getCompletedRunStatus(
+  eventType: SwarmEvent['type'],
+  agentStatus: SwarmAgentState['status'],
+): CompletedAgentRun['status'] {
+  if (eventType === 'swarm:agent:completed') return 'completed';
+  return agentStatus === 'cancelled' ? 'cancelled' : 'failed';
+}
+
+function getEventSessionId(event: SwarmEvent): string | undefined {
+  return event.sessionId ?? event.data.launchRequest?.sessionId;
+}
+
+function getRunSnapshotKey(sessionId?: string, runId?: string): string | undefined {
+  if (!sessionId && !runId) return undefined;
+  return `${sessionId ?? 'unknown-session'}::${runId ?? 'unknown-run'}`;
+}
+
+function findRunSnapshotKey(
+  snapshots: Record<string, SwarmRunSnapshot>,
+  sessionId?: string,
+  runId?: string,
+): string | undefined {
+  const exact = getRunSnapshotKey(sessionId, runId);
+  if (exact && snapshots[exact]) return exact;
+
+  const entries = Object.entries(snapshots);
+  if (sessionId && runId) {
+    const match = entries.find(([, snapshot]) => snapshot.sessionId === sessionId && snapshot.runId === runId);
+    if (match) return match[0];
+  }
+  if (runId) {
+    const match = entries.find(([, snapshot]) => snapshot.runId === runId);
+    if (match) return match[0];
+  }
+  if (sessionId) {
+    const match = entries.find(([, snapshot]) => snapshot.sessionId === sessionId);
+    if (match) return match[0];
+  }
+  return undefined;
+}
+
+function upsertRunSnapshot(
+  snapshots: Record<string, SwarmRunSnapshot>,
+  state: SwarmStateSnapshot,
+): Record<string, SwarmRunSnapshot> {
+  const key = getRunSnapshotKey(state.activeSessionId, state.activeRunId);
+  if (!key) return snapshots;
+
+  return {
+    ...snapshots,
+    [key]: {
+      key,
+      sessionId: state.activeSessionId,
+      runId: state.activeRunId,
+      updatedAt: state.lastEventAt,
+      statistics: state.statistics,
+      isRunning: state.isRunning,
+      executionPhase: state.executionPhase,
+      verification: state.verification,
+      aggregation: state.aggregation,
+      agents: state.agents,
+      messages: state.messages,
+      eventLog: state.eventLog,
+      completedRuns: state.completedRuns,
+    },
+  };
+}
+
+function updateForeignRunSnapshot(
+  snapshots: Record<string, SwarmRunSnapshot>,
+  event: SwarmEvent,
+): Record<string, SwarmRunSnapshot> {
+  const eventSessionId = getEventSessionId(event);
+  const key = findRunSnapshotKey(snapshots, eventSessionId, event.runId);
+  if (!key) return snapshots;
+
+  const snapshot = snapshots[key];
+  let agents = snapshot.agents;
+  let completedRuns = snapshot.completedRuns;
+  let messages = snapshot.messages;
+  let statistics = snapshot.statistics;
+  let isRunning = snapshot.isRunning;
+  let verification = snapshot.verification;
+  let aggregation = snapshot.aggregation;
+
+  switch (event.type) {
+    case 'swarm:agent:added':
+    case 'swarm:agent:updated':
+    case 'swarm:agent:completed':
+    case 'swarm:agent:failed':
+      if (event.data.agentState) {
+        agents = updateAgentCollection(snapshot.agents, event.data.agentState);
+        if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
+          const mergedAgent = agents.find((agent) => agent.id === event.data.agentState!.id);
+          if (mergedAgent && !completedRuns.some((run) => run.id === mergedAgent.id)) {
+            completedRuns = [
+              ...completedRuns,
+              buildCompletedRun(
+                mergedAgent,
+                getCompletedRunStatus(event.type, mergedAgent.status),
+                eventSessionId ?? snapshot.sessionId,
+              ),
+            ].slice(-MAX_COMPLETED_RUNS);
+          }
+        }
+        statistics = calculateStatistics(agents, snapshot.statistics, event.data.statistics || undefined);
+      }
+      break;
+    case 'swarm:agent:message':
+    case 'swarm:user:message':
+      messages = appendMessage(snapshot.messages, event);
+      break;
+    case 'swarm:completed':
+    case 'swarm:cancelled':
+      isRunning = false;
+      verification = event.data.result?.verification || snapshot.verification;
+      aggregation = event.data.result?.aggregation || snapshot.aggregation;
+      statistics = calculateStatistics(agents, snapshot.statistics, event.data.statistics || undefined);
+      break;
+    default:
+      break;
+  }
+
+  const executionPhase = deriveExecutionPhase({
+    isRunning,
+    agents,
+    statistics,
+    planReviews: [],
+    launchRequests: [],
+  });
+  const eventLog = appendEventLog(
+    snapshot.eventLog,
+    buildTimelineEntry(event, agents),
+  );
+
+  return {
+    ...snapshots,
+    [key]: {
+      ...snapshot,
+      updatedAt: event.timestamp,
+      statistics,
+      isRunning,
+      executionPhase,
+      verification,
+      aggregation,
+      agents,
+      messages,
+      eventLog,
+      completedRuns,
+    },
+  };
+}
+
+function isRootEvent(event: SwarmEvent): boolean {
+  return event.type === 'swarm:launch:requested' || event.type === 'swarm:started';
+}
+
+function shouldIgnoreForeignEvent(state: SwarmStateSnapshot, event: SwarmEvent): boolean {
+  if (isRootEvent(event)) return false;
+
+  const eventSessionId = getEventSessionId(event);
+  if (eventSessionId && state.activeSessionId && eventSessionId !== state.activeSessionId) {
+    return true;
+  }
+
+  if (event.runId && state.activeRunId && event.runId !== state.activeRunId) {
+    return true;
+  }
+
+  return false;
+}
+
+function startsNewIdentity(state: SwarmStateSnapshot, event: SwarmEvent): boolean {
+  if (!isRootEvent(event)) return false;
+
+  const eventSessionId = getEventSessionId(event);
+  if (eventSessionId && state.activeSessionId && eventSessionId !== state.activeSessionId) {
+    return true;
+  }
+
+  if (event.runId && state.activeRunId && event.runId !== state.activeRunId) {
+    return true;
+  }
+
+  return false;
+}
+
 function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): SwarmTimelineEvent | null {
   // agent 相关事件大部分通过 agentState 携带 id，而不是 event.data.agentId；
   // fallback 到 agentState.id 保证 timeline entry id 带上 agent 后缀，避免
@@ -239,12 +452,15 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
   const agentName = agentId
     ? agents.find((agent) => agent.id === agentId)?.name ?? agentId
     : undefined;
+  const sessionId = getEventSessionId(event);
+  const runId = event.runId;
 
   switch (event.type) {
     case 'swarm:launch:requested':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '等待启动确认',
@@ -254,7 +470,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:launch:approved':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '启动已确认',
@@ -264,7 +481,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:launch:rejected':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '启动已取消',
@@ -274,7 +492,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:started':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排开始',
@@ -284,7 +503,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:added':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 已加入`,
@@ -295,7 +515,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:updated':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} ${event.data.agentState?.status ?? 'updated'}`,
@@ -306,7 +527,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:completed':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 已完成`,
@@ -317,7 +539,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:failed':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 失败`,
@@ -328,7 +551,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_review':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 请求审批`,
@@ -339,7 +563,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_approved':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 审批通过`,
@@ -350,7 +575,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:agent:plan_rejected':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: `${agentName ?? 'Agent'} 审批驳回`,
@@ -362,7 +588,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:user:message':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId ?? 'msg'}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: event.type === 'swarm:user:message' ? '用户介入' : 'Agent 协作消息',
@@ -373,7 +600,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:completed':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排完成',
@@ -383,7 +611,8 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
     case 'swarm:cancelled':
       return {
         id: `evt-${event.timestamp}-${event.type}`,
-        sessionId: event.sessionId,
+        sessionId,
+        runId,
         type: event.type,
         timestamp: event.timestamp,
         title: '编排已取消',
@@ -534,6 +763,7 @@ function appendMessage(
 function buildCompletedRun(
   agent: SwarmAgentState,
   status: 'completed' | 'failed' | 'cancelled',
+  sessionId?: string,
 ): CompletedAgentRun {
   const endTime = agent.endTime ?? Date.now();
   const startTime = agent.startTime ?? endTime;
@@ -549,7 +779,7 @@ function buildCompletedRun(
     toolCalls: agent.toolCalls ?? 0,
     resultPreview: (agent.resultPreview || agent.lastReport || agent.error || '')
       .slice(0, 200) || undefined,
-    sessionId: '',  // 由调用方填充
+    sessionId: sessionId ?? '',
   };
 }
 
@@ -569,13 +799,25 @@ function persistRunViaIPC(_run: CompletedAgentRun): void {
 export const useSwarmStore = create<SwarmStore>((set) => ({
   ...initialState,
 
-  handleEvent: (event: SwarmEvent) => {
+	handleEvent: (event: SwarmEvent) => {
     // 跟踪本次事件是否新增了 completedRun；仅当新增时才触发 IPC 持久化，
     // 避免重放同一个 agent:completed 时调用两次 persist。见 ADR-010 #6。
-    let newlyAddedRun: CompletedAgentRun | null = null;
-    set((state) => {
+	    let newlyAddedRun: CompletedAgentRun | null = null;
+	    set((state) => {
+	      if (shouldIgnoreForeignEvent(state, event)) {
+	        return {
+	          ...state,
+	          runSnapshots: updateForeignRunSnapshot(state.runSnapshots, event),
+	        };
+	      }
+
+      const baseState = startsNewIdentity(state, event)
+        ? { ...initialState, runSnapshots: state.runSnapshots }
+        : state;
+      const eventSessionId = getEventSessionId(event);
+      const eventRunId = event.runId;
       let nextState: SwarmStateSnapshot = {
-        ...state,
+        ...baseState,
         lastEventAt: event.timestamp,
       };
 
@@ -583,6 +825,7 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         case 'swarm:launch:requested':
           nextState = {
             ...initialState,
+            runSnapshots: baseState.runSnapshots,
             lastEventAt: event.timestamp,
             launchRequests: upsertLaunchRequest([], event),
           };
@@ -591,9 +834,9 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         case 'swarm:launch:approved':
         case 'swarm:launch:rejected':
           nextState = {
-            ...state,
+            ...baseState,
             lastEventAt: event.timestamp,
-            launchRequests: upsertLaunchRequest(state.launchRequests, event),
+            launchRequests: upsertLaunchRequest(baseState.launchRequests, event),
           };
           break;
 
@@ -603,19 +846,19 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
           // state 没有任何活动数据时才做全量 reset（新 run 的首次 started）。
           // 见 ADR-010 item #6。
           const hasActivity =
-            state.agents.length > 0
-            || state.completedRuns.length > 0
-            || state.planReviews.length > 0
-            || state.messages.length > 0;
+            baseState.agents.length > 0
+            || baseState.completedRuns.length > 0
+            || baseState.planReviews.length > 0
+            || baseState.messages.length > 0;
           if (hasActivity) {
             nextState = {
-              ...state,
+              ...baseState,
               isRunning: true,
-              startTime: state.startTime ?? event.timestamp,
+              startTime: baseState.startTime ?? event.timestamp,
               lastEventAt: event.timestamp,
               statistics: calculateStatistics(
-                state.agents,
-                state.statistics,
+                baseState.agents,
+                baseState.statistics,
                 event.data.statistics || undefined,
               ),
             };
@@ -623,6 +866,7 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
             nextState = {
               ...state,
               ...initialState,
+              runSnapshots: baseState.runSnapshots,
               isRunning: true,
               startTime: event.timestamp,
               lastEventAt: event.timestamp,
@@ -640,8 +884,8 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         case 'swarm:agent:completed':
         case 'swarm:agent:failed': {
           if (event.data.agentState) {
-            const agents = updateAgentCollection(state.agents, event.data.agentState);
-            let { completedRuns } = state;
+            const agents = updateAgentCollection(baseState.agents, event.data.agentState);
+            let { completedRuns } = baseState;
 
             // 在 completed/failed 事件时构建 run 记录并追加到本地列表。
             // 幂等：如果同 id 的 run 已存在，不再重复 push，也不标记需要 persist。
@@ -649,19 +893,22 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
             if (event.type === 'swarm:agent:completed' || event.type === 'swarm:agent:failed') {
               const mergedAgent = agents.find((a) => a.id === event.data.agentState!.id);
               if (mergedAgent && !completedRuns.some((r) => r.id === mergedAgent.id)) {
-                const runStatus = event.type === 'swarm:agent:completed' ? 'completed' : 'failed';
-                const run = buildCompletedRun(mergedAgent, runStatus);
+                const run = buildCompletedRun(
+                  mergedAgent,
+                  getCompletedRunStatus(event.type, mergedAgent.status),
+                  eventSessionId ?? baseState.activeSessionId,
+                );
                 completedRuns = [...completedRuns, run].slice(-MAX_COMPLETED_RUNS);
                 newlyAddedRun = run;
               }
             }
 
             nextState = {
-              ...state,
+              ...baseState,
               agents,
               completedRuns,
               lastEventAt: event.timestamp,
-              statistics: calculateStatistics(agents, state.statistics),
+              statistics: calculateStatistics(agents, baseState.statistics),
             };
           }
           break;
@@ -671,32 +918,32 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         case 'swarm:agent:plan_approved':
         case 'swarm:agent:plan_rejected':
           nextState = {
-            ...state,
+            ...baseState,
             lastEventAt: event.timestamp,
-            planReviews: upsertPlanReview(state.planReviews, event),
+            planReviews: upsertPlanReview(baseState.planReviews, event),
           };
           break;
 
         case 'swarm:agent:message':
         case 'swarm:user:message':
           nextState = {
-            ...state,
+            ...baseState,
             lastEventAt: event.timestamp,
-            messages: appendMessage(state.messages, event),
+            messages: appendMessage(baseState.messages, event),
           };
           break;
 
         case 'swarm:completed':
         case 'swarm:cancelled':
           nextState = {
-            ...state,
+            ...baseState,
             isRunning: false,
             lastEventAt: event.timestamp,
-            verification: event.data.result?.verification || state.verification,
-            aggregation: event.data.result?.aggregation || state.aggregation,
+            verification: event.data.result?.verification || baseState.verification,
+            aggregation: event.data.result?.aggregation || baseState.aggregation,
             statistics: calculateStatistics(
-              state.agents,
-              state.statistics,
+              baseState.agents,
+              baseState.statistics,
               event.data.statistics || undefined,
             ),
           };
@@ -708,11 +955,17 @@ export const useSwarmStore = create<SwarmStore>((set) => ({
         nextState.eventLog,
         buildTimelineEntry(event, nextState.agents),
       );
-
-      return {
+      const snapshotState: SwarmStateSnapshot = {
         ...nextState,
+        activeSessionId: eventSessionId ?? nextState.activeSessionId,
+        activeRunId: eventRunId ?? nextState.activeRunId,
         executionPhase,
         eventLog,
+      };
+
+      return {
+        ...snapshotState,
+        runSnapshots: upsertRunSnapshot(nextState.runSnapshots, snapshotState),
       };
     });
 

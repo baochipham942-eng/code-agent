@@ -257,6 +257,53 @@ describe('PendingApprovalRepository', () => {
     });
   });
 
+  describe('markPendingAsOrphaned', () => {
+    it('orphans only pending rows for the requested kind', () => {
+      repo.insert({
+        id: 'plan_pending',
+        kind: 'plan',
+        agentId: 'a1',
+        agentName: 'A1',
+        coordinatorId: 'c',
+        payload: {},
+        submittedAt: 100,
+      });
+      repo.insert({
+        id: 'launch_pending',
+        kind: 'launch',
+        agentId: null,
+        agentName: null,
+        coordinatorId: null,
+        payload: {},
+        submittedAt: 200,
+      });
+      repo.insert({
+        id: 'plan_done',
+        kind: 'plan',
+        agentId: 'a2',
+        agentName: 'A2',
+        coordinatorId: 'c',
+        payload: {},
+        submittedAt: 50,
+      });
+      repo.resolve({ id: 'plan_done', status: 'approved', feedback: 'ok', resolvedAt: 80 });
+
+      const planOrphans = repo.markPendingAsOrphaned('plan', 1234);
+      expect(planOrphans).toHaveLength(1);
+      expect(planOrphans[0].id).toBe('plan_pending');
+      expect(planOrphans[0].status).toBe('orphaned');
+      expect(planOrphans[0].resolvedAt).toBe(1234);
+
+      expect(repo.getById('launch_pending')!.status).toBe('pending');
+      expect(repo.getById('plan_done')!.status).toBe('approved');
+
+      const launchOrphans = repo.markPendingAsOrphaned('launch', 2345);
+      expect(launchOrphans).toHaveLength(1);
+      expect(launchOrphans[0].id).toBe('launch_pending');
+      expect(launchOrphans[0].resolvedAt).toBe(2345);
+    });
+  });
+
   describe('listByKindAndStatus', () => {
     beforeEach(() => {
       repo.insert({ id: 'p1', kind: 'plan', agentId: 'a', agentName: 'A', coordinatorId: 'c', payload: {}, submittedAt: 100 });

@@ -20,13 +20,22 @@ import type { ToolDefinition } from '../../../shared/contract';
 import type { ToolSchema, PermissionLevel } from '../tools';
 import { getProtocolRegistry } from '../../tools/protocolRegistry';
 import { getCloudConfigService } from '../../services/cloud';
+import { getMCPClient } from '../../mcp';
 import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../../tools/search';
+import { isBashToolName } from '../../tools/toolNames';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
 function mapPermissionLevel(level: PermissionLevel): LegacyPermissionLevel {
   if (level === 'dangerous') return 'execute';
   return level;
+}
+
+function findSchemaByName(schemas: readonly ToolSchema[], name: string): ToolSchema | undefined {
+  return schemas.find((schema) => schema.name === name)
+    ?? (isBashToolName(name)
+      ? schemas.find((schema) => isBashToolName(schema.name))
+      : undefined);
 }
 
 /**
@@ -93,10 +102,16 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
   const loadedNames = new Set(toolSearchService.getLoadedDeferredTools());
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-  return registry
+  const protocolDefinitions = registry
     .getSchemas()
     .filter((schema) => loadedNames.has(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
+
+  const mcpDefinitions = getMCPClient()
+    .getToolDefinitions()
+    .filter((definition) => loadedNames.has(definition.name));
+
+  return [...protocolDefinitions, ...mcpDefinitions];
 }
 
 /**
@@ -127,8 +142,10 @@ export function getDeferredToolsSummary(): string {
 export function getToolDefinitionWithCloudMeta(name: string): ToolDefinition | undefined {
   const registry = getProtocolRegistry();
   const schemas = registry.getSchemas();
-  const schema = schemas.find((s) => s.name === name);
-  if (!schema) return undefined;
+  const schema = findSchemaByName(schemas, name);
+  if (!schema) {
+    return getMCPClient().getToolDefinitions().find((definition) => definition.name === name);
+  }
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   return schemaToDefinition(schema, cloudToolMeta);
 }
@@ -139,5 +156,8 @@ export function getToolDefinitionWithCloudMeta(name: string): ToolDefinition | u
 export function getAllToolDefinitions(): ToolDefinition[] {
   const registry = getProtocolRegistry();
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
-  return registry.getSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta));
+  return [
+    ...registry.getSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta)),
+    ...getMCPClient().getToolDefinitions(),
+  ];
 }

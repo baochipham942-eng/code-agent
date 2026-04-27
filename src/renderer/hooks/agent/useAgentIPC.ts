@@ -308,6 +308,7 @@ export function useAgentIPC({
           // 调用 interrupt action，后端会中断当前任务并继续新消息
           await ipcService.invokeDomain<void>('agent', 'interrupt', {
             ...envelope,
+            clientMessageId: userMessage.id,
             sessionId: effectiveSessionId,
           });
           logger.debug('interrupt invoke returned');

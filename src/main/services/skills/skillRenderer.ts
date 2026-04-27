@@ -1,22 +1,20 @@
 // ============================================================================
 // Skill Renderer
-// Process !cmd and $ARGUMENTS in skill content
+// Process $ARGUMENTS in skill content
 // ============================================================================
-
-import { execSync } from 'child_process';
 
 export interface SkillRenderOptions {
   /** Arguments passed to the skill invocation */
   arguments?: string;
-  /** Working directory for !cmd execution */
+  /** Retained for caller compatibility; shell commands are not executed here. */
   workingDirectory?: string;
 }
 
 /**
- * Render skill content: process !cmd lines and $ARGUMENTS substitution
+ * Render skill content: process $ARGUMENTS substitution
  *
  * - $ARGUMENTS is replaced with the actual arguments (or empty string)
- * - Lines starting with ! are executed as shell commands and replaced with output
+ * - Lines starting with ! are preserved as blocked text, not executed
  */
 export function renderSkillContent(content: string, options: SkillRenderOptions = {}): string {
   let rendered = content;
@@ -28,18 +26,9 @@ export function renderSkillContent(content: string, options: SkillRenderOptions 
     rendered = rendered.replace(/\$ARGUMENTS/g, '');
   }
 
-  // Process !cmd lines (execute shell commands and replace with output)
+  // Do not execute shell from Skill rendering. Shell work must go through tools.
   rendered = rendered.replace(/^!(.+)$/gm, (_, cmd) => {
-    try {
-      const output = execSync(cmd.trim(), {
-        timeout: 5000,
-        cwd: options.workingDirectory,
-        encoding: 'utf-8',
-      });
-      return output.trim();
-    } catch {
-      return `[Command failed: ${cmd.trim()}]`;
-    }
+    return `[Skill shell command blocked: ${cmd.trim()}]`;
   });
 
   return rendered;

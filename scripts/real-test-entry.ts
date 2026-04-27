@@ -125,6 +125,7 @@ async function main() {
     stopOnFailure: args.stopOnFailure,
     verbose: args.verbose,
     ...(args.timeout > 0 ? { defaultTimeout: args.timeout } : {}),
+    trialsPerCase: args.runs > 1 ? args.runs : undefined,
   });
 
   try {
@@ -141,98 +142,45 @@ async function main() {
   });
 
   if (args.runs > 1) {
-    // Statistical mode
-    console.log(`📊 Statistical mode: running each case ${args.runs} times\n`);
-    const statsRunner = new testing.StatisticalRunner(config, agent, { runs: args.runs });
-    const statsSummary = await statsRunner.runAll();
-
-    const agg = statsSummary.aggregate;
-    console.log('');
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('           Statistical Summary                         ');
-    console.log('═══════════════════════════════════════════════════════');
-    console.log(`  Total Cases:     ${agg.totalCases}`);
-    console.log(`  Total Runs:      ${agg.totalRuns}`);
-    console.log(`  pass@1:          ${(agg.overallPassAt1 * 100).toFixed(1)}%`);
-    console.log(`  pass@k:          ${(agg.overallPassAtK * 100).toFixed(1)}%`);
-    console.log(`  pass^k:          ${(agg.overallPassCaretK * 100).toFixed(1)}%`);
-    console.log(`  Mean Score:      ${(agg.meanScore * 100).toFixed(1)}%`);
-    console.log(`  Score Stddev:    ${(agg.scoreStddev * 100).toFixed(1)}%`);
-    console.log('');
-
-    if (agg.flakyCases.length > 0) {
-      console.log(`  Flaky Cases (${agg.flakyCases.length}):`);
-      for (const id of agg.flakyCases) {
-        console.log(`    ⚠️  ${id}`);
-      }
-      console.log('');
-    }
-
-    if (agg.stableCases.length > 0) {
-      console.log(`  Stable Cases (${agg.stableCases.length}):`);
-      for (const id of agg.stableCases) {
-        console.log(`    ✅ ${id}`);
-      }
-      console.log('');
-    }
-
-    if (args.verbose) {
-      console.log('───────────────────────────────────────────────────────');
-      console.log('  Per-Case Detail');
-      console.log('───────────────────────────────────────────────────────');
-      for (const cr of statsSummary.caseResults) {
-        const flakyTag = cr.isFlaky ? ' [FLAKY]' : '';
-        console.log(`  ${cr.testId}${flakyTag}`);
-        console.log(`    pass@1=${(cr.passAt1 * 100).toFixed(0)}%  pass@k=${(cr.passAtK * 100).toFixed(0)}%  pass^k=${(cr.passCaretK * 100).toFixed(0)}%`);
-        console.log(`    score: mean=${(cr.scoreStats.mean * 100).toFixed(0)}% stddev=${(cr.scoreStats.stddev * 100).toFixed(0)}% [${(cr.scoreStats.min * 100).toFixed(0)}%-${(cr.scoreStats.max * 100).toFixed(0)}%]`);
-        console.log(`    status: passed=${cr.statusDistribution.passed} failed=${cr.statusDistribution.failed} partial=${cr.statusDistribution.partial} skipped=${cr.statusDistribution.skipped}`);
-        console.log(`    avg duration: ${cr.avgDuration.toFixed(0)}ms`);
-        console.log('');
-      }
-    }
-
-    console.log('═══════════════════════════════════════════════════════');
-    process.exit(agg.overallPassAt1 < 0.5 ? 1 : 0);
-
-  } else {
-    // Single-run mode
-    const runner = new testing.TestRunner(config, agent);
-
-    runner.addEventListener((event) => {
-      switch (event.type) {
-        case 'suite_start':
-          console.log(`\n🧪 Starting tests (${event.totalCases} cases)\n`);
-          break;
-        case 'case_start':
-          if (args.verbose) {
-            console.log(`  ▶️  ${event.testId}: ${event.description}`);
-          }
-          break;
-        case 'case_end': {
-          const icon = event.result.status === 'passed' ? '✅'
-            : event.result.status === 'failed' ? '❌' : '⏭️';
-          console.log(`  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`);
-          if (event.result.failureReason && args.verbose) {
-            console.log(`     └─ ${event.result.failureReason}`);
-          }
-          break;
-        }
-        case 'suite_end':
-          console.log(testing.generateConsoleReport(event.summary));
-          break;
-      }
-    });
-
-    const summary = await runner.runAll();
-
-    const savedFiles = await testing.saveReport(summary, config.resultsDir);
-    console.log(`\n📄 Reports saved:`);
-    for (const file of savedFiles) {
-      console.log(`   ${file}`);
-    }
-
-    process.exit(summary.failed > 0 ? 1 : 0);
+    console.log(`📊 Repeated-trial mode: running each case ${args.runs} times via TestRunner\n`);
   }
+
+  const runner = new testing.TestRunner(config, agent);
+
+  runner.addEventListener((event) => {
+    switch (event.type) {
+      case 'suite_start':
+        console.log(`\n🧪 Starting tests (${event.totalCases} cases)\n`);
+        break;
+      case 'case_start':
+        if (args.verbose) {
+          console.log(`  ▶️  ${event.testId}: ${event.description}`);
+        }
+        break;
+      case 'case_end': {
+        const icon = event.result.status === 'passed' ? '✅'
+          : event.result.status === 'failed' ? '❌' : '⏭️';
+        console.log(`  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`);
+        if (event.result.failureReason && args.verbose) {
+          console.log(`     └─ ${event.result.failureReason}`);
+        }
+        break;
+      }
+      case 'suite_end':
+        console.log(testing.generateConsoleReport(event.summary));
+        break;
+    }
+  });
+
+  const summary = await runner.runAll();
+
+  const savedFiles = await testing.saveReport(summary, config.resultsDir);
+  console.log(`\n📄 Reports saved:`);
+  for (const file of savedFiles) {
+    console.log(`   ${file}`);
+  }
+
+  process.exit(summary.failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

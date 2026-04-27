@@ -95,6 +95,11 @@ export interface StreamChunk {
 
 export type StreamCallback = (chunk: string | StreamChunk) => void;
 
+export interface InferenceOptions {
+  onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;
+  snapshotIntervalMs?: number;
+}
+
 // ----------------------------------------------------------------------------
 // Tool Call Accumulator (for streaming)
 // ----------------------------------------------------------------------------
@@ -116,7 +121,8 @@ export interface Provider {
     tools: import('../../shared/contract').ToolDefinition[],
     config: import('../../shared/contract').ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse>;
 }
 

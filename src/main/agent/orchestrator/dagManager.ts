@@ -27,6 +27,14 @@ export function mapAgentEventToDAGStatus(event: AgentEvent): TaskStatusEventData
         completedAt: Date.now(),
       };
 
+    case 'agent_cancelled':
+      return {
+        type: 'task:status',
+        taskId: 'main',
+        status: 'cancelled',
+        completedAt: Date.now(),
+      };
+
     case 'error':
       return {
         type: 'task:status',

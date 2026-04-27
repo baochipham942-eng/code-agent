@@ -12,7 +12,7 @@ export interface SkillFrontmatter {
   license?: string;
   compatibility?: string;
   metadata?: Record<string, string>;
-  'allowed-tools'?: string;
+  'allowed-tools'?: string | string[];
 
   // Claude Code 扩展字段
   'disable-model-invocation'?: boolean;

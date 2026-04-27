@@ -11,6 +11,7 @@ import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useEvalCenterStore } from '../stores/evalCenterStore';
 import {
   MessageSquare,
   Plus,
@@ -140,6 +141,7 @@ export const Sidebar: React.FC = () => {
     setShowDAGPanel,
   } = useAppStore();
   const { dagPanelEnabled } = useDisclosure();
+  const enqueueReviewItem = useEvalCenterStore((state) => state.enqueueReviewItem);
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
@@ -407,11 +409,11 @@ export const Sidebar: React.FC = () => {
         icon: '📋',
         onClick: async () => {
           try {
-            await ipcService.invoke(IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE, {
+            await enqueueReviewItem({
               sessionId: session.id,
               sessionTitle: session.title,
               reason: 'manual_review',
-              source: 'session_list',
+              enqueueSource: 'session_list',
             });
           } catch (error) {
             logger.error('Failed to enqueue session review', error);

@@ -17,6 +17,7 @@ import type {
 import type { AgentEvent } from '../events';
 import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../../tools/types';
 import { getProtocolRegistry } from '../../tools/protocolRegistry';
+import { sameToolName } from '../../tools/toolNames';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存
@@ -35,6 +36,20 @@ class InMemoryFileCache implements FileReadCache {
 }
 
 const sharedFileCache = new InMemoryFileCache();
+
+function isSameTopLevelInput(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  if (left === right) return true;
+
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) return false;
+
+  for (const [key, value] of leftEntries) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+    if (right[key] !== value) return false;
+  }
+  return true;
+}
 
 // ----------------------------------------------------------------------------
 // Protocol ToolContext 构造
@@ -127,26 +142,44 @@ export function buildCanUseToolFromLegacy(
   legacyCtx: LegacyToolContext,
   toolName: string,
 ): CanUseToolFn {
-  return async (_name, input, reason): Promise<CanUseToolResult> => {
+  return async (name, input, reason, requestHint): Promise<CanUseToolResult> => {
     const DANGEROUS_PREFIX = 'dangerous:';
     const isDangerous = typeof reason === 'string' && reason.startsWith(DANGEROUS_PREFIX);
     const cleanReason = isDangerous ? reason.slice(DANGEROUS_PREFIX.length).trimStart() : reason;
+    const requestedToolName = requestHint?.tool || name || toolName;
+    const details = requestHint?.details ?? input;
+
+    const approvedTopLevelCall = legacyCtx.approvedToolCall;
+    if (
+      approvedTopLevelCall &&
+      !requestHint &&
+      !reason &&
+      sameToolName(requestedToolName, approvedTopLevelCall.toolName) &&
+      isSameTopLevelInput(input, approvedTopLevelCall.args)
+    ) {
+      return { allow: true };
+    }
 
     const type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' =
-      isDangerous
+      requestHint?.type ??
+      (isDangerous
         ? 'dangerous_command'
         : ('file_path' in input || 'path' in input)
           ? 'file_read'
           : 'url' in input
             ? 'network'
-            : 'command';
+            : 'command');
 
     try {
       const allowed = await legacyCtx.requestPermission({
+        sessionId: requestHint?.sessionId,
+        forceConfirm: requestHint?.forceConfirm,
         type,
-        tool: toolName,
-        details: input,
-        reason: cleanReason ?? `protocol tool ${toolName}`,
+        tool: requestedToolName,
+        details,
+        reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
+        dangerLevel: requestHint?.dangerLevel,
+        decisionTrace: requestHint?.decisionTrace as never,
       });
       return allowed
         ? { allow: true }

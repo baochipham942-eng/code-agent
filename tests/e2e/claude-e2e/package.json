@@ -1,7 +1,8 @@
 {
   "name": "claude-agent-e2e-tests",
   "version": "1.0.0",
-  "description": "End-to-end testing framework for Claude Code Agent",
+  "private": true,
+  "description": "LEGACY manual Claude/code-agent CLI benchmark harness; not current CI/product eval",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

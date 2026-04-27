@@ -11,7 +11,12 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
-import { tauriCheckForUpdate, tauriInstallUpdate } from '../../../../utils/tauriUpdater';
+import {
+  tauriCheckForUpdate,
+  tauriGetCurrentVersion,
+  tauriInstallUpdate,
+  tauriOpenUpdateUrl,
+} from '../../../../utils/tauriUpdater';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 
@@ -49,8 +54,10 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     const loadLocalVersion = async () => {
       try {
         if (runningInTauri) {
-          // In Tauri mode, version comes from the update check itself
-          // (tauri.conf.json version). We'll populate it on first check.
+          const version = await tauriGetCurrentVersion();
+          if (version) {
+            setLocalVersion(version);
+          }
           return;
         }
         const version = await ipcService.invoke(IPC_CHANNELS.APP_GET_VERSION);
@@ -95,9 +102,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     setIsInstalling(true);
     setError(null);
     try {
-      await tauriInstallUpdate();
-      // If we reach here, the app should have restarted.
-      // In case it doesn't, reset the state.
+      if (updateInfo?.downloadUrl) {
+        await tauriOpenUpdateUrl(updateInfo.downloadUrl);
+      } else {
+        await tauriInstallUpdate();
+      }
       setIsInstalling(false);
     } catch (err) {
       setError('更新安装失败，请稍后重试');

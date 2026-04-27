@@ -4,7 +4,7 @@
 > - `src/main/agent/autoAgentCoordinator.ts` — 唯一的多 Agent 协调器
 > - `src/main/agent/parallelAgentCoordinator.ts` — 并行 Agent 协调器（含 SharedContext）
 > - `src/main/agent/taskDag.ts` — DAG 依赖调度
-> - `src/main/tools/multiagent/` — spawnAgent 等工具
+> - `src/main/agent/multiagentTools/` — spawnAgent / sendInput / waitAgent 等工具
 
 ## 0. 通信级别模型 (Communication Levels)
 
@@ -42,6 +42,24 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 1. **不做 L3** — Agent 间直接对话引入非确定性交互，调试成本极高。需要交叉验证时走 MCP P2
 2. **L2 仅 coordinator 中转** — 不暴露自由读写 KV，避免共享可变状态的一致性问题
 3. **升级需显式** — 默认走 L0/L1，只有 `enableSharedContext: true` 时才升到 L2
+
+## 0.0 2026-04-27 产品化加固状态
+
+这轮把 Agent Team 的几个“不可靠但看起来能用”的点补成了明确 contract。当前还没有完成全量 swarm runtime 收敛，但 P1 blocker 已不再成立。
+
+| 能力 | 当前状态 | 关键文件 / 测试 |
+|------|----------|----------------|
+| parallel executor inbox | `send_input` 先写 SpawnGuard agent queue；找不到时会退到 `ParallelAgentCoordinator` 的 task inbox，executor 迭代前可 drain | `src/main/agent/multiagentTools/sendInput.ts`、`tests/unit/agent/sendInput.test.ts` |
+| dependsOn gate | 下游只在所有依赖成功后启动；上游失败时下游标 `blocked`，不再继续跑 | `parallelAgentCoordinator.ts`、`tests/unit/agent/parallelAgentCoordinator.test.ts` |
+| aggregation shape | 成功、失败、blocked、cancelled agent 都进入结果结构；`successRate` 按总任务数计算 | `src/main/agent/resultAggregator.ts`、`tests/unit/agent/resultAggregator.test.ts` |
+| run-level cancel | `abortAllRunning()` 会中止 running task，并把 pending task 标 cancelled；`swarm:cancel-run` 同时取消 plan/launch approval、SpawnGuard 和 parallel coordinator | `parallelAgentCoordinator.ts`、`src/main/ipc/swarm.ipc.ts` |
+| send_input interrupt | schema 已移除未实现的 `interrupt` 参数，避免承诺抢占式中断 | `src/main/agent/multiagentTools/sendInput.ts` |
+
+当前边界：
+
+- UI 上仍可能看到 Agent Team、SpawnGuard、hybrid swarm、parallel coordinator 多条历史路径并存；工程债文档把这条列为长期收敛项。
+- 本轮闭环主要是 unit 级和 IPC 级；真实多 agent 端到端 smoke 仍应单独补。
+- 生产口径里，parallel executor 才是 dependsOn / inbox / aggregation 的主要事实源，legacy/hybrid 只按兼容路径理解。
 
 ## 0.1 节点级 Checkpoint（断点恢复）
 

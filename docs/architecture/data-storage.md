@@ -30,6 +30,27 @@ CREATE TABLE messages (
 );
 ```
 
+上面的 SQL 是最小会话模型。2026-04-27 之后，真实本地库已经把 agent runtime 的恢复面也纳入 SQLite，不再只持久化 sessions/messages。
+
+### 2026-04-27 runtime durable state
+
+| 表 / 字段 | 用途 | 主要写入路径 |
+|-----------|------|--------------|
+| `sessions.status` | session 级运行终态，支持 `idle/running/paused/interrupted/orphaned` 等状态 | `SessionRepository` / `TaskManager` |
+| `sessions.workbench_provenance` | Workbench 能力选择、direct routing、session-backed reuse 的会话级投影 | `lightMemory/sessionMetadata.ts` / workbench provenance |
+| `messages.metadata` | user message 的 `metadata.workbench`、direct routing delivery 等消息级上下文 | `SessionRepository.addMessage()` |
+| `messages.compaction` | manual compact / autocompact 的 compaction survivor 信息 | `contextHealth.ipc.ts` / `contextAssembly/compression.ts` |
+| `todos` | auto todo 与 finalizer 消费的 session-scoped todo 状态 | `src/main/agent/todoParser.ts` |
+| `session_tasks` | Task tool / planning taskStore 的 durable task graph | `src/main/services/planning/taskStore.ts` |
+| `context_interventions` | pin / exclude / retain 等手动上下文干预，按 session + agent 持久化 | `src/main/context/contextInterventionState.ts` |
+| `session_runtime_state` | `compression_state_json` 与 `persistent_system_context_json`，供 reload 后恢复 ContextAssembly 状态 | `src/main/agent/runtime/runtimeStatePersistence.ts` |
+| `pending_approvals.kind` | plan approval 与 swarm launch approval 共用表但按 kind hydrate/orphan，避免互相抢状态 | `PendingApprovalRepository` |
+| `swarm_runs / swarm_run_agents / swarm_run_events` | Agent Team run、agent rollup、timeline event | `SwarmTraceWriter` |
+| `review_queue_items / review_queue_failure_assets` | Review Queue 与 failure-to-capability asset draft | `ReviewQueueService` |
+| `telemetry_sessions / telemetry_turns / telemetry_model_calls / telemetry_tool_calls / telemetry_events` | structured replay 与 eval completeness gate 的事实来源 | `TelemetryCollector` / `TelemetryStorage` |
+
+当前边界：unit 级恢复链已经覆盖 todos、session_tasks、context interventions、runtime state、pending approvals、structured replay；完整 app restart / reload smoke 仍按对应计划文档里的延后风险处理。
+
 ## 云端存储 (Supabase)
 
 **表结构**:

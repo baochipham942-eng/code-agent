@@ -8,6 +8,17 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // 配置 - 最新版本信息
 // ----------------------------------------------------------------------------
 
+interface DownloadAsset {
+  url: string;
+  size: number;
+  /**
+   * SHA-256 hex digest of the artifact at `url`. When set, clients carrying
+   * 74f14749+ will refuse to install if the local hash doesn't match. Leave
+   * undefined for backward-compat with older clients.
+   */
+  sha256?: string;
+}
+
 interface ReleaseInfo {
   version: string;
   publishedAt: string;
@@ -17,9 +28,9 @@ interface ReleaseInfo {
   /** 强制更新的最低版本 - 低于此版本的用户必须更新 */
   minRequiredVersion?: string;
   downloads: {
-    darwin: { url: string; size: number };
-    win32?: { url: string; size: number };
-    linux?: { url: string; size: number };
+    darwin: DownloadAsset;
+    win32?: DownloadAsset;
+    linux?: DownloadAsset;
   };
 }
 
@@ -121,6 +132,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       releaseNotes: hasUpdate ? LATEST_RELEASE.releaseNotes : undefined,
       downloadUrl: hasUpdate && downloadInfo ? downloadInfo.url : undefined,
       fileSize: hasUpdate && downloadInfo ? downloadInfo.size : undefined,
+      // sha256 of the dmg/exe at downloadUrl. Clients with the M6.a fix
+      // (commit 74f14749+) will refuse to install if local hash mismatches.
+      sha256: hasUpdate && downloadInfo ? downloadInfo.sha256 : undefined,
     });
   }
 

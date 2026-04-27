@@ -82,7 +82,7 @@ vi.mock('../../../src/main/agent/swarmEventPublisher', () => ({
   getSwarmEventEmitter: () => swarmEmitterState,
 }));
 
-vi.mock('../../../src/main/protocol/events/bus', () => ({
+vi.mock('../../../src/main/services/eventing/bus', () => ({
   getEventBus: () => eventBusState,
 }));
 

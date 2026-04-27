@@ -27,7 +27,7 @@ const busState = vi.hoisted(() => ({
   publishMock: vi.fn(),
 }));
 
-vi.mock('../../../src/main/protocol/events/bus', () => ({
+vi.mock('../../../src/main/services/eventing/bus', () => ({
   getEventBus: () => ({
     publish: busState.publishMock,
   }),

@@ -234,6 +234,7 @@ export class DevServerManager {
     const handleChunk = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       for (const line of text.split('\n')) {
+        // eslint-disable-next-line no-control-regex -- intentional ANSI color stripping
         const trimmed = line.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
         if (!trimmed) continue;
         session.logs.push({ ts: Date.now(), stream, line: trimmed });

@@ -2,12 +2,15 @@
 // EventBus - 全局事件总线
 // 轻量级事件总线，基于 EventEmitter
 // 支持 domain:type、domain、* 三级匹配
-// 原 src/main/events/eventBus.ts，P0-5 阶段 A 迁入 protocol 层
+// 原 src/main/events/eventBus.ts，P0-5 阶段 A 迁入 protocol 层；
+// 2026-04-27 从 protocol/events/ 搬到 services/eventing/，因为 EventBus 是
+// runtime singleton，违反 protocol/ "只放类型和常量" 约束。busTypes 留在
+// protocol/events/ 作为类型契约。
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { EventDomain, BusEvent, EventHandler, EventPattern } from './busTypes';
-import { createLogger } from '../../services/infra/logger';
+import type { EventDomain, BusEvent, EventHandler, EventPattern } from '../../protocol/events/busTypes';
+import { createLogger } from '../infra/logger';
 import { getInternalEventStore } from './internalStore';
 
 const logger = createLogger('EventBus');

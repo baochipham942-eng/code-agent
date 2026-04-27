@@ -11,7 +11,7 @@ import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
-import { getEventBus } from '../protocol/events/bus';
+import { getEventBus } from '../services/eventing/bus';
 import { SWARM_TRACE } from '../../shared/constants/storage';
 
 const logger = createLogger('SwarmIPC');

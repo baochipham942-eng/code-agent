@@ -1,6 +1,8 @@
 // ============================================================================
 // InternalEventStore — 持久化事件存储
-// 原 src/main/events/internalEventStore.ts，P0-5 阶段 A 迁入 protocol 层
+// 原 src/main/events/internalEventStore.ts，P0-5 阶段 A 迁入 protocol 层；
+// 2026-04-27 从 protocol/events/ 搬到 services/eventing/，因为有内存状态 + fs IO
+// + singleton，违反 protocol/ "只放类型和常量" 约束。
 // ============================================================================
 
 import { writeFile, readFile } from 'fs/promises';

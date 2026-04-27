@@ -7,7 +7,8 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getEventBus, type BusEvent } from '../../protocol/events';
+import { getEventBus } from '../eventing';
+import type { BusEvent } from '../../protocol/events';
 import type { ToolResult } from '@shared/contract';
 import { getSkillsDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';

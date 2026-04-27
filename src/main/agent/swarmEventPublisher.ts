@@ -17,7 +17,7 @@ import type {
   SwarmAggregation,
   SwarmLaunchRequest,
 } from '../../shared/contract/swarm';
-import { getEventBus } from '../protocol/events/bus';
+import { getEventBus } from '../services/eventing/bus';
 
 /**
  * Swarm 事件发射器

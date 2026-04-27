@@ -1,6 +1,7 @@
 // ============================================================================
 // EventReplay — 基于 InternalEventStore 的事件回放
-// 原 src/main/events/eventReplay.ts，P0-5 阶段 A 迁入 protocol 层
+// 原 src/main/events/eventReplay.ts，P0-5 阶段 A 迁入 protocol 层；
+// 2026-04-27 从 protocol/events/ 搬到 services/eventing/（runtime class）
 // ============================================================================
 
 import { InternalEventStore, StoredEvent } from './internalStore';

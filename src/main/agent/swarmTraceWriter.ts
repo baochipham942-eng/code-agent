@@ -23,7 +23,7 @@ import type {
   SwarmRunAgentRecord,
 } from '../../shared/contract/swarmTrace';
 import type { SwarmTraceRepository } from '../services/core/repositories/SwarmTraceRepository';
-import { getEventBus } from '../protocol/events/bus';
+import { getEventBus } from '../services/eventing/bus';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SwarmTraceWriter');

@@ -11,7 +11,7 @@ import { generatePermissionRequestId } from '../../shared/utils/id';
 import { sseClients, broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
-import { getEventBus } from '../../main/protocol/events/bus';
+import { getEventBus } from '../../main/services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 
 // ── Types ─────────────────────────────────────────────────────────────────

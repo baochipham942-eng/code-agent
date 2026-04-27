@@ -21,7 +21,7 @@ import { getNativeDesktopService } from '../services/desktop/nativeDesktopServic
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import type { MemoryRecord } from '../protocol/types';
-import { getEventBus } from '../protocol/events';
+import { getEventBus } from '../services/eventing';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { createTask, listTasks, updateTask } from '../services/planning/taskStore';

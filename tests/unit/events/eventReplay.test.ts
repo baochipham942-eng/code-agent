@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InternalEventStore } from '../../../src/main/protocol/events/internalStore';
-import { EventReplay } from '../../../src/main/protocol/events/replay';
+import { InternalEventStore } from '../../../src/main/services/eventing/internalStore';
+import { EventReplay } from '../../../src/main/services/eventing/replay';
 
 describe('EventReplay', () => {
   let store: InternalEventStore;

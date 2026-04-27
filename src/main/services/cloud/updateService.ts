@@ -7,6 +7,7 @@ import https from 'https';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { createLogger } from '../infra/logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
@@ -23,6 +24,8 @@ export interface UpdateInfo {
   currentVersion: string;
   latestVersion?: string;
   downloadUrl?: string;
+  /** SHA-256 hex digest of the downloadUrl artifact (M6.a) */
+  sha256?: string;
   releaseNotes?: string;
   fileSize?: number;
   publishedAt?: string;
@@ -47,6 +50,21 @@ export interface UpdateServiceConfig {
 type ProgressCallback = (progress: DownloadProgress) => void;
 type CompleteCallback = (filePath: string) => void;
 type ErrorCallback = (error: Error) => void;
+
+/**
+ * Compare two sha256 hex digests (case-insensitive). Pure function — exposed
+ * so unit tests can cover the comparison logic without mocking fs/network.
+ * Returns ok=true on match; ok=false with a human-readable reason on mismatch.
+ */
+export function verifyDigestMatch(
+  actual: string,
+  expected: string,
+): { ok: true } | { ok: false; reason: string } {
+  const a = actual.toLowerCase();
+  const e = expected.toLowerCase();
+  if (a === e) return { ok: true };
+  return { ok: false, reason: `expected ${e}, got ${a}` };
+}
 
 // ----------------------------------------------------------------------------
 // UpdateService Class
@@ -146,6 +164,7 @@ export class UpdateService implements Disposable {
             currentVersion,
             latestVersion: data.latestVersion,
             downloadUrl: data.downloadUrl,
+            sha256: typeof data.sha256 === 'string' ? data.sha256.toLowerCase() : undefined,
             releaseNotes: data.releaseNotes,
             fileSize: data.fileSize,
             publishedAt: data.publishedAt,
@@ -275,7 +294,14 @@ export class UpdateService implements Disposable {
   }
 
   /**
-   * Download the update file
+   * Download the update file. If the cached UpdateInfo carries a sha256, the
+   * downloaded artifact's hash must match — mismatched files are deleted and
+   * the call rejects. Missing sha256 emits a warning but still resolves
+   * (backwards-compat with cloud APIs that haven't started serving the field).
+   *
+   * Note: sha256 is read from this.cachedUpdateInfo, NOT from the caller. This
+   * prevents a compromised renderer/IPC path from supplying its own expected
+   * hash. The contract is: cloud → main → main-side state → main-side check.
    */
   async downloadUpdate(downloadUrl: string): Promise<string> {
     if (this.isDownloading) {
@@ -285,13 +311,32 @@ export class UpdateService implements Disposable {
     this.isDownloading = true;
     logger.info(` Starting download: ${downloadUrl}`);
 
+    const expectedSha256 = this.cachedUpdateInfo?.sha256;
+
     try {
       const downloadsPath = app.getPath('downloads');
       // 解码 URL 编码的文件名（如 %20 -> 空格）
       const fileName = decodeURIComponent(path.basename(new URL(downloadUrl).pathname));
       const filePath = path.join(downloadsPath, fileName);
 
-      await this.downloadFile(downloadUrl, filePath);
+      const actualSha256 = await this.downloadFile(downloadUrl, filePath);
+
+      if (expectedSha256) {
+        const verdict = verifyDigestMatch(actualSha256, expectedSha256);
+        if (!verdict.ok) {
+          try { fs.unlinkSync(filePath); } catch {}
+          throw new Error(
+            `Update sha256 mismatch — refusing to install (${verdict.reason}). ` +
+              `File at ${filePath} has been deleted. Re-check the cloud update API.`,
+          );
+        }
+        logger.info(` sha256 verified: ${actualSha256.toLowerCase()}`);
+      } else {
+        logger.warn(
+          'Update artifact has no expected sha256 from cloud API; proceeding without integrity check. ' +
+            'This is backwards-compat — cloud should start serving sha256 ASAP.',
+        );
+      }
 
       logger.info(` Download complete: ${filePath}`);
       this.isDownloading = false;
@@ -445,11 +490,16 @@ export class UpdateService implements Disposable {
     });
   }
 
-  private downloadFile(url: string, destPath: string): Promise<void> {
+  /**
+   * Download a URL to destPath, streaming through a sha256 hasher.
+   * Returns the hex digest of the downloaded bytes for caller-side verification.
+   */
+  private downloadFile(url: string, destPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol === 'https:' ? https : http;
       const file = fs.createWriteStream(destPath);
+      const hasher = createHash('sha256');
 
       const startTime = Date.now();
       let downloadedBytes = 0;
@@ -494,6 +544,7 @@ export class UpdateService implements Disposable {
 
         res.on('data', (chunk: Buffer) => {
           downloadedBytes += chunk.length;
+          hasher.update(chunk);
 
           if (this.onProgress && totalBytes > 0) {
             const elapsed = (Date.now() - startTime) / 1000;
@@ -512,8 +563,9 @@ export class UpdateService implements Disposable {
 
         file.on('finish', () => {
           file.close();
-          logger.info(` Download finished: ${downloadedBytes} bytes`);
-          resolve();
+          const digest = hasher.digest('hex');
+          logger.info(` Download finished: ${downloadedBytes} bytes, sha256=${digest}`);
+          resolve(digest);
         });
 
         file.on('error', (err) => {

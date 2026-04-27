@@ -38,23 +38,26 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.16.8',
-  publishedAt: '2026-01-26T08:30:00.000Z',
+  version: '0.16.65',
+  publishedAt: '2026-04-28T00:50:00.000Z',
   releaseNotes: `
-## Code Agent v0.16.7
+## Code Agent v0.16.65
 
-### Bug 修复
-- 修复流式传输中文乱码问题（SSE 边界截断导致 Unicode 替换字符）
-- 修复图片标注坐标不准确问题，改用百度 OCR API 获取精确坐标
+### Update path safety
+- 客户端下载完毕后会用 cloud 提供的 sha256 本地校验，hash 不一致直接拒绝安装并删除文件（防 MITM / DNS 劫持 / CDN 投毒）。
+- Tauri 设置页的"前往下载"按钮收紧，只能打开 HTML 发布页，不能直接打开 .dmg / .exe 等二进制（防绕过签名链）。
+
+### Architecture
+- protocol/ 层彻底符合"只放类型和常量"约束：dispatch/ 搬到 tools/dispatch/、events runtime 搬到 services/eventing/。
+- OpenChronicle Phase 1–3、_meta envelope、Live Preview V2、Tauri sidecar 修复、browser-computer 隐私加固。
   `.trim(),
-  forceUpdate: false, // 可选更新
+  forceUpdate: false, // 可选更新（先观察客户端校验路径稳定性，再考虑 force）
   minRequiredVersion: '0.10.0',
   downloads: {
     darwin: {
-      // 注意: 文件名中的空格需要 URL 编码为 %20
-      // GitHub 会将文件名中的空格替换为点
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.3/Code.Agent-0.10.3-arm64.dmg',
-      size: 136000000, // ~130MB
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.16.65/Code-Agent-0.16.65-arm64.dmg',
+      size: 147695869, // ~141MB
+      sha256: 'fd726aaa27013928c5943576074384379ab8beede5b6b73071e493fa1dfd0cc4',
     },
   },
 };

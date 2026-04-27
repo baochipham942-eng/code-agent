@@ -78,13 +78,13 @@ export async function saveSettings(settings: OpenchronicleSettings): Promise<voi
 // Daemon lifecycle
 // ---------------------------------------------------------------------------
 
-function runShim(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise(async (resolve) => {
-    const shim = await resolveShim();
-    if (!shim) {
-      resolve({ code: -1, stdout: '', stderr: 'openchronicle CLI not found' });
-      return;
-    }
+async function runShim(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  const shim = await resolveShim();
+  if (!shim) {
+    return { code: -1, stdout: '', stderr: 'openchronicle CLI not found' };
+  }
+
+  return new Promise((resolve) => {
     const proc = spawn(shim, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';

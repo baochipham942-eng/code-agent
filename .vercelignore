@@ -1,0 +1,7 @@
+# Vercel project root directory is vercel-api/, but `vercel deploy` from repo
+# root would still upload the whole monorepo (24k+ files). Reverse-allowlist
+# so only vercel-api/ ships.
+
+*
+!vercel-api
+!vercel-api/**

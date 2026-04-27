@@ -230,7 +230,7 @@ const CodeBlock = memo(function CodeBlock({
   // Auto-collapse long blocks on mount
   useEffect(() => {
     if (isLong) setCollapsed(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(code);

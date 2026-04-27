@@ -148,7 +148,6 @@ export const DAGViewer = memo(({
       selected: node.data.taskId === activeSelectedTaskId,
     })));
     setEdges(layoutedEdges);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dagState, getLayoutedElements, activeSelectedTaskId]);
 
   // 处理节点选择

@@ -120,7 +120,6 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     if (!updateInfo) {
       checkForUpdates();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Format file size

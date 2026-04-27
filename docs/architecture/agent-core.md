@@ -179,6 +179,73 @@ class AgentLoop {
 
 ---
 
+## 2026-04-27 运行时加固状态
+
+这轮加固把 agent loop 从“能跑通”推进到“关键终态可解释、可中断、可恢复”。它仍不等于全量真实 app smoke 已覆盖，但 P1/P2 中的 active path blocker 已经有代码和定向测试闭环。
+
+### Run lifecycle
+
+`ConversationRuntime.run()` 现在有统一 terminal path。正常完成、异常失败、cancel、interrupt 都会形成 `RunTerminalInfo`，再交给 `RunFinalizer.finalizeRun()` 统一处理 trace、hooks、TODO、telemetry 和 terminal event。
+
+| 状态 | 行为 |
+|------|------|
+| `completed` | 走普通 finalizer，发 `agent_complete` |
+| `failed` | 带 error 进入 finalizer，保留 failure summary / trace end |
+| `cancelled` | 走 cancel terminal，发 `agent_cancelled`，不再假装 complete |
+| `interrupted` | 进入 finalizer，但保留 interrupt 语义，避免和自然完成混淆 |
+
+`pause()` / `resume()` 保留在同一个 live loop 的等待与恢复路径里；这部分已有 unit 级约束，真实长 run pause/resume 仍列为 smoke 风险。
+
+### TaskManager-owned chat run
+
+desktop chat 的 `sendMessage` 和 `interruptAndContinue` 优先走 TaskManager-owned run。这样 renderer 看到的 task/session 状态更接近同一个 owner，减少“一边 running、一边 idle”的漂移。
+
+关键文件：
+
+- `src/main/app/agentAppService.ts`
+- `src/main/task/TaskManager.ts`
+- `tests/unit/app/agentAppService.lifecycle.test.ts`
+- `tests/unit/task/TaskManager.persistence.test.ts`
+
+### Run-level abort
+
+cancel 从 inference controller 下沉到了工具层：
+
+```
+ConversationRuntime.cancel()
+  -> ToolExecutionEngine.executeToolCalls(... abortSignal)
+  -> ToolExecutor.execute(... abortSignal)
+  -> ToolResolver.execute(... ProtocolToolContext.signal)
+  -> Bash / http_request / protocol module
+```
+
+这条链路解决的是长工具执行已经开始后仍继续跑的问题。当前 unit/security 测试覆盖 Bash、http_request、ToolExecutor safety 和 protocol approval；真实 UI cancel 长命令还属于手工 smoke 项。
+
+### Runtime state persistence
+
+ContextAssembly 里的 compression state、persistent system context，以及 manual compact 生成的 compacted messages 都有 session-scoped 持久化路径：
+
+- `src/main/agent/runtime/runtimeStatePersistence.ts`
+- `src/main/agent/runtime/contextAssembly/compression.ts`
+- `src/main/agent/runtime/contextAssembly/systemContextStack.ts`
+- `src/main/ipc/contextHealth.ipc.ts`
+- `src/main/services/core/repositories/SessionRepository.ts`
+
+这让 reload 后的 context view 不再只依赖 live singleton。持久化对象的具体表结构见 [data-storage.md](./data-storage.md)。
+
+### Replay / eval completeness
+
+Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured replay，把 session trace identity、model calls、tool calls、events、permission/context evidence 组织成可读对象。`real-agent-run` eval gate 需要 `sessionId + replayKey + telemetryCompleteness`，缺 model decision、tool schema、tool call 或 replay key 会 fail/degraded。
+
+关键文件：
+
+- `src/main/evaluation/telemetryQueryService.ts`
+- `src/main/testing/testRunner.ts`
+- `packages/eval-harness/src/runner/ExperimentRunner.ts`
+- `src/shared/contract/evaluation.ts`
+
+---
+
 ## 子代理上下文注入（v0.16.55+）
 
 **位置**: `src/main/agent/activeAgentContext.ts`

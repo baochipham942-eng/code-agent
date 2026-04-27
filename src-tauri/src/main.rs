@@ -1,5 +1,5 @@
 use reqwest::blocking::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     env,
@@ -9,30 +9,26 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{
-    Manager, RunEvent, Emitter,
-    menu::MenuBuilder,
-    tray::TrayIconBuilder,
-};
+use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
-mod native_desktop;
 mod native_app_icon;
+mod native_desktop;
 
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
     desktop_get_frontmost_context, desktop_get_permission_status, desktop_list_recent_events,
-    desktop_open_system_settings, desktop_request_microphone_permission,
-    desktop_start_audio_rec, desktop_start_collector, desktop_stop_audio_rec,
-    desktop_stop_collector, desktop_update_analyze_text,
-    NativeDesktopState,
+    desktop_open_system_settings, desktop_request_microphone_permission, desktop_start_audio_rec,
+    desktop_start_collector, desktop_stop_audio_rec, desktop_stop_collector,
+    desktop_update_analyze_text, NativeDesktopState,
 };
 
 const SERVER_URL: &str = "http://localhost:8180";
 const HEALTH_URL: &str = "http://localhost:8180/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
+const DEFAULT_CLOUD_API_URL: &str = "https://code-agent-beta.vercel.app";
 
 #[derive(Default)]
 struct AppState {
@@ -153,8 +149,8 @@ fn resolve_node_binary() -> String {
     // macOS GUI apps launched from Finder have a minimal PATH that excludes
     // common Node.js installation directories. Search them explicitly.
     let candidates = [
-        "/usr/local/bin/node",      // Homebrew (Intel Mac)
-        "/opt/homebrew/bin/node",    // Homebrew (Apple Silicon)
+        "/usr/local/bin/node",    // Homebrew (Intel Mac)
+        "/opt/homebrew/bin/node", // Homebrew (Apple Silicon)
     ];
 
     for candidate in &candidates {
@@ -255,13 +251,92 @@ struct TauriUpdateInfo {
     latest_version: Option<String>,
     release_notes: Option<String>,
     date: Option<String>,
+    force_update: Option<bool>,
+    download_url: Option<String>,
+    file_size: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudUpdateResponse {
+    success: Option<bool>,
+    has_update: Option<bool>,
+    force_update: Option<bool>,
+    current_version: Option<String>,
+    latest_version: Option<String>,
+    download_url: Option<String>,
+    release_notes: Option<String>,
+    file_size: Option<u64>,
+    published_at: Option<String>,
 }
 
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, String> {
-    use tauri_plugin_updater::UpdaterExt;
+fn get_app_version(app: tauri::AppHandle) -> String {
+    app.config().version.clone().unwrap_or_default()
+}
 
-    let current_version = app.config().version.clone().unwrap_or_default();
+fn update_api_url(current_version: &str) -> String {
+    let base_url = env::var("CLOUD_API_URL").unwrap_or_else(|_| DEFAULT_CLOUD_API_URL.to_string());
+    let platform = match env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        "linux" => "linux",
+        other => other,
+    };
+    format!(
+        "{}/api/update?action=check&version={}&platform={}",
+        base_url.trim_end_matches('/'),
+        current_version,
+        platform
+    )
+}
+
+fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent(format!("Code Agent Tauri/{}", current_version))
+        .build()
+        .map_err(|error| format!("Failed to build update HTTP client: {error}"))?;
+
+    let response = client
+        .get(update_api_url(&current_version))
+        .send()
+        .map_err(|error| format!("Cloud update check failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Cloud update check failed with HTTP {}",
+            response.status()
+        ));
+    }
+
+    let body = response
+        .text()
+        .map_err(|error| format!("Failed to read cloud update response: {error}"))?;
+    let payload = serde_json::from_str::<CloudUpdateResponse>(&body)
+        .map_err(|error| format!("Failed to parse cloud update response: {error}"))?;
+
+    if payload.success == Some(false) {
+        return Err("Cloud update API returned success=false".to_string());
+    }
+
+    Ok(TauriUpdateInfo {
+        has_update: payload.has_update.unwrap_or(false),
+        current_version: payload.current_version.unwrap_or(current_version),
+        latest_version: payload.latest_version,
+        release_notes: payload.release_notes,
+        date: payload.published_at,
+        force_update: payload.force_update,
+        download_url: payload.download_url,
+        file_size: payload.file_size,
+    })
+}
+
+async fn check_native_update(
+    app: tauri::AppHandle,
+    current_version: String,
+) -> Result<TauriUpdateInfo, String> {
+    use tauri_plugin_updater::UpdaterExt;
 
     let update = app
         .updater()
@@ -277,6 +352,9 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, Stri
             latest_version: Some(update.version.clone()),
             release_notes: update.body.clone(),
             date: update.date.map(|d| d.to_string()),
+            force_update: None,
+            download_url: None,
+            file_size: None,
         }),
         None => Ok(TauriUpdateInfo {
             has_update: false,
@@ -284,8 +362,25 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, Stri
             latest_version: None,
             release_notes: None,
             date: None,
+            force_update: None,
+            download_url: None,
+            file_size: None,
         }),
     }
+}
+
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, String> {
+    let current_version = get_app_version(app.clone());
+    let cloud_version = current_version.clone();
+
+    match tauri::async_runtime::spawn_blocking(move || check_cloud_update(cloud_version)).await {
+        Ok(Ok(info)) => return Ok(info),
+        Ok(Err(error)) => eprintln!("Cloud update check failed, trying native updater: {error}"),
+        Err(error) => eprintln!("Cloud update check task failed, trying native updater: {error}"),
+    }
+
+    check_native_update(app, current_version).await
 }
 
 #[tauri::command]
@@ -322,6 +417,16 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 
     // Restart the app after update.
     app.restart()
+}
+
+#[tauri::command]
+fn open_update_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("Update download URL must use HTTPS".to_string());
+    }
+
+    tauri_plugin_opener::open_url(url, None::<&str>)
+        .map_err(|error| format!("Failed to open update URL: {error}"))
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -394,8 +499,10 @@ fn main() {
         .manage(AppState::default())
         .manage(NativeDesktopState::default())
         .invoke_handler(tauri::generate_handler![
+            get_app_version,
             check_for_update,
             install_update,
+            open_update_url,
             desktop_get_capabilities,
             desktop_get_permission_status,
             desktop_get_frontmost_context,

@@ -8,13 +8,38 @@
 
 当前 agent 能力已经不是 demo：标准 chat loop、context assembly、核心 tools、message/tool result 落库、MCP lifecycle、Skill 激活、swarm UI/IPC/trace、standard telemetry 都进了生产链路。
 
-但还不能说是产品级闭环。主要缺口集中在五类：
+这份总纲最初记录的是 2026-04-27 audit 发现的硬缺口；同日后续迭代已经把 P1/P2 的代码与定向测试推进到最小闭环。现在需要分清两层：unit/renderer/security 层 blocker 已关，真实 app smoke 和结构性工程债仍不能混说成完整产品验收。
+
+原始缺口集中在五类：
 
 - 权限边界：legacy wrapper、Skill shell、Bash/native tool、MCP 权限语义没有完全统一。
 - 执行断链：MCP dynamic tool 可见但 direct execute 走不到 `MCPClient.callTool`。
 - 生命周期：pause/resume/cancel/error 没有统一 terminal state，工具执行也缺 run-level abort。
 - multiagent：消息路由、依赖门控、结果归并、run-level cancel 还不可靠。
 - 可恢复与可解释：task/todo/context intervention/compact 状态跨重启不完整，auto-agent telemetry 和 replay explainability 不够。
+
+## 当前执行状态
+
+状态日期：2026-04-27
+
+| 阶段 | 当前状态 | 说明 |
+|------|----------|------|
+| 阶段 1：P0 安全与 MCP direct execute | closed at unit/security level | legacy permission、Skill `!cmd` 风险、MCP dynamic direct execute 已有最小修复和定向测试。 |
+| 阶段 2：tool 权限模型收口 | closed at unit/security level | `Bash/bash` 归一、`approvedToolCall` 传递、project skill `allowed-tools` trust gate、MCP permission metadata 已覆盖。 |
+| 阶段 3：run lifecycle 单一状态机 | closed at unit level | terminal path、failure finalizer、`agent_cancelled`、run-level abort、TaskManager-owned chat send 已接通。 |
+| 阶段 4：multiagent / swarm 产品化补洞 | closed at unit level | parallel inbox、dependsOn success gate、failed/blocked/cancelled aggregation、run-level cancel 已覆盖。 |
+| 阶段 5：持久化与恢复 | closed at unit level | `todos/session_tasks/context_interventions/session_runtime_state/pending_approvals(kind)` 已有 durable path。 |
+| 阶段 6：observability / replay / eval 闭环 | closed at unit/eval level | auto/subagent telemetry、structured replay join、`real-agent-run` gate、stream snapshot/incomplete semantics 已接入。 |
+
+真实运行层剩余风险：
+
+- 长 run pause/resume 的真实 app smoke。
+- UI cancel 长 Bash/http_request 的真实执行终止 smoke。
+- Agent Team 多 agent 端到端消息、取消、依赖 smoke。
+- app restart / reload 后 task、todo、context intervention、manual compact 恢复 smoke。
+- auto-agent + replay + eval 的真实链路 smoke。
+
+对应细项以 `docs/plans/2026-04-27-agent-capability-p1-plan.md` 和 `docs/plans/2026-04-27-agent-capability-p2-plan.md` 的 Closing 状态为准；结构性收敛看 `docs/plans/2026-04-27-agent-architecture-debt.md`。
 
 ## 优先级
 

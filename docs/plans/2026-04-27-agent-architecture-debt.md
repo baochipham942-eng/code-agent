@@ -8,13 +8,28 @@
 
 仍然存在明显的多代 agent 架构叠加债。
 
-它不是“代码风格不统一”这种低优先级问题，而是已经影响到：
+它已经超出“代码风格不统一”这种低优先级问题，影响到：
 
 - 权限是否真的生效。
 - 工具是否可见即可执行。
 - run 是否有唯一 owner 和唯一终态。
 - multiagent 的消息、取消、依赖、归并是否可信。
 - replay 是否能解释一次真实 agent run。
+
+## 2026-04-27 迭代后的状态
+
+同日 capability hardening 已经把一批 P1/P2 症状修到 unit / renderer / security / eval 定向测试闭环，但这些修复不等于工程债消失。当前要把“已止血的 blocker”和“仍需收敛的结构问题”分开看。
+
+| 债务 | 已经缓解 | 仍需收敛 |
+|------|----------|----------|
+| tool execution 三代并存 | legacy permission 转发、native protocol approval 复用、Bash name 归一、Skill trust gate 已补 | ToolExecutor / ToolResolver / legacy adapter 仍不是完全单一实现，wrapper 工具还需要逐步 native 化 |
+| discoverability 与 executability 分裂 | MCP dynamic direct execute、ToolSearch `loadable/notCallableReason`、lazy MCP discover 已补 | 搜索结果、Skill virtual entry、protocol definitions 仍需要长期保持同一 contract |
+| run lifecycle 多 owner | TaskManager-owned chat send、terminal path、run-level abort、`agent_cancelled` 已补 | 唯一 run owner 的代码边界还没彻底瘦身，真实 app smoke 未完整覆盖 |
+| multiagent / swarm 多实现并存 | parallel inbox、dependsOn gate、aggregation shape、run-level cancel 已补 | hybrid / SpawnGuard / parallel / teammate 多路径仍需要决定生产主线和 adapter 边界 |
+| persistence 粒度不一致 | todos、session tasks、context interventions、session runtime state、pending approvals kind hydrate 已补 | durable/ephemeral 的产品合同仍要写进统一恢复策略，并补真实 reload/restart smoke |
+| observability / replay 不同构 | structured replay join、auto/subagent telemetry、`real-agent-run` gate 已补 | 所有 runtime path 写同一种 run artifact 仍是长期目标 |
+
+所以这份文档现在的用途转为后续“架构收敛”开题。功能修复优先看 P1/P2 Closing；架构瘦身和统一 contract 才回到这里。
 
 ## 债务 1：tool execution 三代并存
 

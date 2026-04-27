@@ -27,8 +27,8 @@
 │  │  ┌──────────────────────────────────────────────────────────────────┐ │  │
 │  │  │                      Agent Orchestrator                          │ │  │
 │  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
-│  │  │  │ Generation │ │   Model    │ │   Tool     │ │  Session    │  │ │  │
-│  │  │  │  Manager   │ │  Router    │ │  Registry  │ │  Manager    │  │ │  │
+│  │  │  │Runtime     │ │   Model    │ │ToolExec /  │ │TaskManager  │  │ │  │
+│  │  │  │Lifecycle   │ │  Router    │ │MCP Resolver│ │Run Owner    │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  └──────────────────────────────────────────────────────────────────┘ │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐ │  │
@@ -36,6 +36,10 @@
 │  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
 │  │  │  │   Light    │ │   Skills   │ │  Platform  │ │  System     │  │ │  │
 │  │  │  │  Memory    │ │   System   │ │ Abstraction│ │   Tray      │  │ │  │
+│  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
+│  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
+│  │  │  │Durable Run │ │Structured  │ │Telemetry / │ │Review Queue │  │ │  │
+│  │  │  │State       │ │Replay      │ │Eval Gate   │ │             │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  └──────────────────────────────────────────────────────────────────┘ │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
@@ -110,6 +114,17 @@
 | **本地存储** | SQLite (better-sqlite3) | 会话/配置持久化 |
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
 | **AI 模型** | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由 |
+
+## 2026-04-27 当前架构增量
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Agent run lifecycle | `ConversationRuntime` 统一 terminal path，failure/cancel/interrupted 都经 `RunFinalizer`；`agent_cancelled` 不再伪装成 complete | [agent-core.md](./agent-core.md) |
+| TaskManager-owned chat run | `AgentAppService.sendMessage` 走 TaskManager-owned send，pause/resume/cancel/interrupt 尽量对齐同一个 run owner | [agent-core.md](./agent-core.md) |
+| Tool/MCP 权限合同 | ToolExecutor 顶层审批结果向 resolver 传递，MCP dynamic tool 可 direct execute，ToolSearch 对不可调用项返回 `loadable:false` 和原因 | [tool-system.md](./tool-system.md) |
+| Durable runtime state | todos、session tasks、context interventions、compression state、persistent system context、pending approvals 按 session 落 SQLite | [data-storage.md](./data-storage.md) |
+| Multiagent reliability | parallel inbox、success-only dependency gate、failed/blocked/cancelled aggregation、run-level cancel 已有定向测试 | [multiagent-system.md](./multiagent-system.md) |
+| Replay / eval completeness | structured replay 关联 model/tool/event evidence；`real-agent-run` eval gate 校验 `telemetryCompleteness` | [agent-core.md](./agent-core.md) |
 
 ## 2026-04-26 当前架构增量
 

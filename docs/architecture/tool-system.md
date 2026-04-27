@@ -70,6 +70,74 @@ FOR EACH toolCall:
 
 ---
 
+## 2026-04-27 工具执行与搜索加固
+
+这轮修的是工具系统里最容易造成产品误导的几条链路：看得见但跑不了、审批结果不一致、搜索结果像工具但不可调用、Skill 配置自动扩权。
+
+### 权限合同
+
+`ToolExecutor` 是当前唯一的顶层审批入口。顶层审批结果会通过 `approvedToolCall` 放进 execution context，再传给 `ToolResolver` / protocol handler，避免同一 tool+args 在 native protocol path 里重复审批或绕开审批。
+
+当前约束：
+
+- `Bash` / `bash` 在安全校验里归一，危险命令走同一 pre-validation。
+- legacy wrapper 的 `requestPermission` 不再固定放行，Browser/Computer 这类二级审批必须转发真实 permission path。
+- project/user skill 的 `allowed-tools` 不自动变成 runtime preapproval；只有 builtin/plugin skill 可以进入自动扩权路径。
+- MCP annotations 映射到统一 permission model，read-only / destructive / token 泄漏风险不再只靠工具名猜。
+
+测试锚点：
+
+- `tests/security/toolExecutor-safety.test.ts`
+- `tests/unit/tools/toolExecutor.protocolApproval.test.ts`
+- `tests/unit/tools/legacyAdapter.permission.test.ts`
+- `tests/unit/tools/skillMetaTool.security.test.ts`
+
+### MCP dynamic direct execute
+
+MCP tool 的模型可见名称仍沿用 Claude Code 风格：`mcp__<server>__<tool>`。2026-04-27 之后，`ToolResolver` 能识别这类 dynamic tool，并把调用落到 `MCPClient.callTool(serverName, toolName, args)`，不再停在 ToolSearch 可见、execute unknown 的半截状态。
+
+```
+ToolSearch("github search")
+  -> mcp__github__search_code loaded
+  -> ToolExecutor.execute("mcp__github__search_code", args)
+  -> ToolResolver.parseMCPToolName()
+  -> MCPClient.callTool("github", "search_code", args)
+```
+
+关键文件：
+
+- `src/main/mcp/mcpToolRegistry.ts`
+- `src/main/mcp/mcpClient.ts`
+- `src/main/protocol/dispatch/toolResolver.ts`
+- `tests/unit/protocol/toolResolver.mcpDirect.test.ts`
+- `tests/unit/tools/toolExecutor.mcpDirect.test.ts`
+
+### ToolSearch loadable 语义
+
+`ToolSearchService` 的结果现在区分“搜索命中”和“下一轮可调用”。
+
+| 字段 | 含义 |
+|------|------|
+| `loadable: true` | 结果会进入 loaded deferred tools，模型下一轮能用 `canonicalInvocation` 调用 |
+| `loadable: false` | 只是概念/文档/Skill search 命中，不会伪装成可调用工具 |
+| `notCallableReason` | 给模型和 UI 的原因，比如没有注册 protocol tool、Skill 需要走 `Skill(command=...)` |
+| `canonicalInvocation` | 可调用时给出真实工具名；不可调用时保持空或给出替代调用建议 |
+
+lazy stdio MCP server 不会在启动时全量拉起；ToolSearch 遇到相关 query 时，会只 discover 匹配的 lazy server，并把 server-level discovery success/error 写回结果 metadata。这样能发现 `sequential-thinking` 这类启用但未连接的 server，又不会把所有 lazy stdio 进程都启动。
+
+测试锚点：
+
+- `tests/unit/services/toolSearchService.test.ts`
+- `tests/unit/mcp/mcpToolRegistry.test.ts`
+
+### Semantic tool metadata
+
+工具调用可以带 `_meta.shortDescription / targetContext / expectedOutcome`。Provider shared schema 会把 `_meta` 注入每个 tool 的 `inputSchema.properties`，parser 抽出后写到 `ToolCall` 顶层，并从真实 arguments 中删除，避免污染工具执行参数。模型漏填时，fallback generator 会补 `shortDescription`，保证 UI 不再退回裸工具名。
+
+对应展示路径见 [workbench.md](./workbench.md#46-semantic-tool-ui)。
+
+---
+
 ## Core / Deferred 双层架构
 
 工具分为 **核心工具**（始终发送给模型）和 **延迟工具**（按需通过 ToolSearch 发现加载）。

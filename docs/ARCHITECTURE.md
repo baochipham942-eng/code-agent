@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.4 (对应 v0.16.65+)
-> 日期: 2026-04-26
+> 版本: 9.5 (对应 v0.16.66+)
+> 日期: 2026-04-27
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -15,12 +15,12 @@
 | 文档 | 描述 |
 |------|------|
 | [系统概览](./architecture/overview.md) | 整体架构图、技术栈、分层设计 |
-| [Agent 核心](./architecture/agent-core.md) | AgentLoop、消息流、规划系统、Nudge 机制、Checkpoint |
-| [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、8 代工具演进 |
+| [Agent 核心](./architecture/agent-core.md) | AgentLoop、运行时状态机、run-level abort、TaskManager-owned chat send、ContextAssembly |
+| [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、Core/Deferred、MCP dynamic tools、权限合同 |
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
-| [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、SecureStorage |
+| [数据存储](./architecture/data-storage.md) | SQLite、Supabase、session runtime state、telemetry/replay、SecureStorage |
 | [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
-| [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、SpawnGuard、异步通知（历史设计 + 实现指引） |
+| [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline），与 TaskPanel(sidecar) 分工 |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
@@ -166,6 +166,23 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### v0.16.66 Agent Runtime Capability Hardening (2026-04-27)
+
+这一轮把 2026-04-27 的 P1/P2 capability audit 从计划推进到代码和定向测试闭环。范围集中在 agent runtime、tool、MCP、persistence、swarm、eval/replay 的生产链路。
+
+| 模块 | 当前闭环 | 关键文件 |
+|------|---------|---------|
+| Run lifecycle | `ConversationRuntime.run` 统一 terminal path；`completed / failed / cancelled / interrupted` 都进入 `RunFinalizer`；cancel 发 `agent_cancelled`，failure 不绕过 finalizer | `src/main/agent/runtime/conversationRuntime.ts`、`runFinalizer.ts` |
+| Run-level abort | `abortSignal` 贯穿 `ToolExecutionEngine -> ToolExecutor -> ToolResolver -> ProtocolToolContext`，长 Bash/http 等工具可被 run cancel | `src/main/agent/runtime/toolExecutionEngine.ts`、`src/main/tools/toolExecutor.ts`、`src/main/protocol/dispatch/toolResolver.ts` |
+| Chat run owner | desktop chat send/interrupt 走 TaskManager-owned path，避免 chat status 与 task state 两套 owner 漂移 | `src/main/app/agentAppService.ts`、`src/main/task/TaskManager.ts` |
+| Tool 权限与 MCP | `Bash/bash` 归一；顶层审批结果通过 `approvedToolCall` 传给 resolver；MCP dynamic tool 可 direct execute 到 `MCPClient.callTool`；ToolSearch 标记 `loadable/notCallableReason` | `toolExecutor.ts`、`toolResolver.ts`、`mcpToolRegistry.ts`、`toolSearchService.ts` |
+| Skill 安全边界 | project/user skill 的 `allowed-tools` 不再自动扩权；只有 builtin/plugin skill 可进入自动 preapproval | `src/main/agent/skillTools/skillMetaTool.ts`、`src/main/services/skills/skillParser.ts` |
+| Multiagent | parallel executor 有真实 inbox；`dependsOn` 按成功依赖门控；失败/blocked/cancelled 都进入 aggregation；run-level cancel 阻止 pending agent 启动 | `parallelAgentCoordinator.ts`、`sendInput.ts`、`resultAggregator.ts` |
+| 持久化恢复 | todo、Task tool task、context intervention、compression state、persistent system context、pending approval kind hydrate 都有 session-scoped durable path | `SessionRepository.ts`、`taskStore.ts`、`contextInterventionState.ts`、`runtimeStatePersistence.ts` |
+| Replay / Eval | structured replay join model/tool/event evidence；`real-agent-run` gate 校验 `sessionId + replayKey + telemetryCompleteness`，缺关键证据会 fail/degraded | `telemetryQueryService.ts`、`testRunner.ts`、`ExperimentRunner.ts` |
+
+验证口径：P1/P2 计划文档列出的 blocker 已在 unit/renderer/security 定向测试和 `npm run typecheck` 层面闭环；真实 app 长 run pause/resume、UI cancel 长命令、Agent Team 多 agent、reload recovery 仍按 smoke 风险列在对应文档里，不写成已完成的产品验收。
 
 ### v0.16.59 竞品追赶 (2026-04-11)
 

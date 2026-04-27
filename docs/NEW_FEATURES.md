@@ -2,13 +2,14 @@
 
 ## 概览
 
-截至 2026-04-26，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 workbench、live preview、browser/computer 和 activity context 四条主线：
+截至 2026-04-27，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context 和 eval/model protocol 六条主线：
 
-1. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
-2. **Live Preview V2** - Vite-only devServerManager、click-to-source、TweakPanel、bridge protocol 0.3.0、Next.js 支持延期
-3. **Browser / Computer Workbench** - in-app managed browser 的 session/profile/account/artifact/lease/proxy/TargetRef，Computer Surface background AX / CGEvent
-4. **Activity Providers** - OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 统一成 ActivityContext
-5. **评测与模型协议修复** - experiment progress SSE、fatal error 熔断、multi-turn adapter 修复、thinking-mode `reasoning_content` 协议修复
+1. **Agent Runtime Capability Hardening** - run lifecycle、run-level abort、Tool/MCP 权限合同、durable runtime state、multiagent reliability、real-agent-run eval gate
+2. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
+3. **Live Preview V2** - Vite-only devServerManager、click-to-source、TweakPanel、bridge protocol 0.3.0、Next.js 支持延期
+4. **Browser / Computer Workbench** - in-app managed browser 的 session/profile/account/artifact/lease/proxy/TargetRef，Computer Surface background AX / CGEvent
+5. **Activity Providers** - OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 统一成 ActivityContext
+6. **评测与模型协议修复** - experiment progress SSE、fatal error 熔断、multi-turn adapter 修复、thinking-mode `reasoning_content` 协议修复
 
 早期更新增加了以下核心功能：
 
@@ -18,6 +19,21 @@
 4. **macOS 签名打包** - 完整的代码签名和公证配置
 
 ---
+
+## 2026-04-27 当前新增能力
+
+### Agent Runtime Capability Hardening
+
+| 能力 | 说明 |
+|------|------|
+| Run lifecycle | `ConversationRuntime` 统一 terminal path，failure/cancel/interrupted 都进入 `RunFinalizer`；cancel 发 `agent_cancelled` |
+| Run-level abort | cancel signal 贯穿 ToolExecutionEngine、ToolExecutor、ToolResolver 和长工具执行链 |
+| TaskManager-owned chat run | desktop chat send/interrupt 优先走 TaskManager-owned path，减少 session/task 状态漂移 |
+| Tool/MCP 权限合同 | `Bash/bash` 归一、`approvedToolCall` 传递、MCP dynamic direct execute、project skill `allowed-tools` trust gate |
+| ToolSearch loadable 语义 | 搜索命中但不可调用的项返回 `loadable:false` 和 `notCallableReason`，lazy MCP server 按 query discover |
+| Runtime durable state | todos、session tasks、context interventions、compression state、persistent system context、pending approvals kind hydrate 落 SQLite |
+| Multiagent reliability | parallel inbox、dependsOn success gate、failed/blocked/cancelled aggregation、run-level cancel |
+| Replay / Eval gate | structured replay join model/tool/event evidence；`real-agent-run` gate 绑定 `telemetryCompleteness` |
 
 ## 2026-04-26 当前新增能力
 

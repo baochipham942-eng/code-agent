@@ -19,6 +19,9 @@ const SNAPSHOT_FILE = 'stream-snapshot.json';
 interface PersistedSnapshot extends StreamSnapshot {
   sessionId: string;
   turnId: string;
+  streamStatus: 'incomplete' | 'complete';
+  stableForExecution: boolean;
+  incompleteToolCallIds: string[];
 }
 
 /**
@@ -27,6 +30,25 @@ interface PersistedSnapshot extends StreamSnapshot {
 function getSnapshotPath(workingDir?: string): string {
   const base = workingDir || process.cwd();
   return path.join(base, CONFIG_DIR_NEW, SNAPSHOT_FILE);
+}
+
+export function getIncompleteToolCallIds(snapshot: Pick<StreamSnapshot, 'toolCalls' | 'isFinal'>): string[] {
+  if (snapshot.isFinal) {
+    return [];
+  }
+  const incompleteIds: string[] = [];
+  for (const toolCall of snapshot.toolCalls || []) {
+    if (!toolCall.name || !toolCall.arguments) {
+      incompleteIds.push(toolCall.id);
+      continue;
+    }
+    try {
+      JSON.parse(toolCall.arguments);
+    } catch {
+      incompleteIds.push(toolCall.id);
+    }
+  }
+  return incompleteIds;
 }
 
 /**
@@ -45,10 +67,14 @@ export function saveStreamSnapshot(
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    const incompleteToolCallIds = getIncompleteToolCallIds(snapshot);
     const data: PersistedSnapshot = {
       ...snapshot,
       sessionId,
       turnId,
+      streamStatus: snapshot.isFinal ? 'complete' : 'incomplete',
+      stableForExecution: snapshot.isFinal && incompleteToolCallIds.length === 0,
+      incompleteToolCallIds,
     };
 
     // Atomic write: write to temp file, then rename
@@ -84,10 +110,17 @@ export function loadStreamSnapshot(workingDir?: string): PersistedSnapshot | nul
       sessionId: data.sessionId,
       contentLength: data.content.length,
       toolCallCount: data.toolCalls.length,
+      incompleteToolCallIds: data.incompleteToolCallIds ?? getIncompleteToolCallIds(data),
       timestamp: new Date(data.timestamp).toISOString(),
     });
 
-    return data;
+    const incompleteToolCallIds = getIncompleteToolCallIds(data);
+    return {
+      ...data,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds,
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     logger.debug(`Failed to load stream snapshot: ${message}`);

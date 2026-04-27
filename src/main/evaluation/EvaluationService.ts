@@ -160,9 +160,12 @@ export class EvaluationService {
       allSuggestions = ruleResult.suggestions;
     }
 
+    const replay = await getTelemetryQueryService().getStructuredReplay(sessionId).catch(() => null);
+
     const result: EvaluationResult = {
       id: uuidv4(),
       sessionId,
+      replayKey: replay?.traceIdentity.replayKey || sessionId,
       timestamp: Date.now(),
       overallScore,
       grade: scoreToGrade(overallScore),
@@ -177,6 +180,7 @@ export class EvaluationService {
       },
       topSuggestions: allSuggestions.slice(0, 5),
       aiSummary,
+      telemetryCompleteness: replay?.summary.telemetryCompleteness,
       // 版本化字段
       snapshotId: evalSnapshot?.snapshot_id,
       evalVersion: evalSnapshot ? 'v1' : 'legacy',

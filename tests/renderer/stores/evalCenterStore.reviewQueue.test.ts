@@ -12,11 +12,14 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { useEvalCenterStore } from '../../../src/renderer/stores/evalCenterStore';
 import { EVALUATION_CHANNELS } from '../../../src/shared/ipc/channels';
+import { buildSessionTraceIdentity } from '../../../src/shared/contract/reviewQueue';
+import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
 
 const reviewItem = {
   id: 'review:session:session-1',
   trace: {
     traceId: 'session:session-1',
+    traceSource: 'session_replay',
     source: 'session_replay',
     sessionId: 'session-1',
     replayKey: 'session-1',
@@ -24,6 +27,7 @@ const reviewItem = {
   sessionId: 'session-1',
   sessionTitle: 'Review Session',
   reason: 'manual_review' as const,
+  enqueueSource: 'session_list' as const,
   source: 'session_list' as const,
   createdAt: 100,
   updatedAt: 100,
@@ -32,6 +36,7 @@ const reviewItem = {
 const failureReviewItem = {
   ...reviewItem,
   reason: 'failure_followup' as const,
+  enqueueSource: 'replay_failure' as const,
   source: 'replay_failure' as const,
   failureAsset: {
     id: 'failure-asset:review:session:session-1',
@@ -45,6 +50,37 @@ const failureReviewItem = {
     body: 'Missing context',
     createdAt: 100,
     updatedAt: 100,
+  },
+};
+
+const replayData: StructuredReplay = {
+  sessionId: 'session-1',
+  traceIdentity: buildSessionTraceIdentity('session-1'),
+  traceSource: 'session_replay',
+  dataSource: 'telemetry',
+  turns: [],
+  summary: {
+    totalTurns: 0,
+    toolDistribution: {
+      Read: 0,
+      Edit: 0,
+      Write: 0,
+      Bash: 0,
+      Search: 0,
+      Web: 0,
+      Agent: 0,
+      Skill: 0,
+      Other: 0,
+    },
+    thinkingRatio: 0,
+    selfRepairChains: 0,
+    totalDurationMs: 0,
+    metricAvailability: {
+      dataSource: 'telemetry',
+      toolDistribution: 'telemetry',
+      selfRepair: 'telemetry',
+      actualArgs: 'unavailable',
+    },
   },
 };
 
@@ -62,6 +98,38 @@ describe('evalCenterStore review queue', () => {
     expect(invokeMock).toHaveBeenCalledWith(EVALUATION_CHANNELS.REVIEW_QUEUE_LIST);
     expect(useEvalCenterStore.getState().reviewQueue).toEqual([reviewItem]);
     expect(useEvalCenterStore.getState().reviewQueueLoading).toBe(false);
+  });
+
+  it('builds the read facade from replay and review queue state', async () => {
+    invokeMock.mockResolvedValueOnce(replayData);
+
+    await useEvalCenterStore.getState().loadReplay('session-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('replay:get-structured-data', 'session-1');
+    expect(useEvalCenterStore.getState().readFacade).toMatchObject({
+      traceIdentity: {
+        traceId: 'session:session-1',
+        traceSource: 'session_replay',
+      },
+      traceSource: 'session_replay',
+      dataSource: 'telemetry',
+      metricAvailability: {
+        dataSource: 'telemetry',
+      },
+      structuredReplay: replayData,
+      reviewQueueState: {
+        isQueued: false,
+      },
+    });
+
+    invokeMock.mockResolvedValueOnce([reviewItem]);
+    await useEvalCenterStore.getState().loadReviewQueue();
+
+    expect(useEvalCenterStore.getState().readFacade?.reviewQueueState).toMatchObject({
+      isQueued: true,
+      enqueueSource: 'session_list',
+      queuedItem: reviewItem,
+    });
   });
 
   it('upserts an enqueued review item into the queue state', async () => {
@@ -82,14 +150,14 @@ describe('evalCenterStore review queue', () => {
       sessionId: 'session-1',
       sessionTitle: 'Fresh Title',
       reason: 'manual_review',
-      source: 'current_session_bar',
+      enqueueSource: 'current_session_bar',
     });
 
     expect(invokeMock).toHaveBeenCalledWith(EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE, {
       sessionId: 'session-1',
       sessionTitle: 'Fresh Title',
       reason: 'manual_review',
-      source: 'current_session_bar',
+      enqueueSource: 'current_session_bar',
     });
     expect(result?.sessionTitle).toBe('Fresh Title');
     expect(useEvalCenterStore.getState().reviewQueue).toEqual([
@@ -101,10 +169,11 @@ describe('evalCenterStore review queue', () => {
     ]);
   });
 
-  it('enqueues a failure follow-up item from replay with the dedicated reason and source', async () => {
+  it('enqueues a failure follow-up item from replay with the dedicated reason and enqueue source', async () => {
     invokeMock.mockResolvedValueOnce({
       ...reviewItem,
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
       updatedAt: 300,
     });
@@ -118,14 +187,16 @@ describe('evalCenterStore review queue', () => {
       sessionId: 'session-1',
       sessionTitle: 'Replay Failure Session',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
     });
     expect(result).toEqual(expect.objectContaining({
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
     }));
     expect(useEvalCenterStore.getState().reviewQueue[0]).toEqual(expect.objectContaining({
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
       updatedAt: 300,
     }));
@@ -135,6 +206,7 @@ describe('evalCenterStore review queue', () => {
     invokeMock.mockResolvedValueOnce({
       ...reviewItem,
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
       failureCapability: {
         sink: 'capability_health',
@@ -165,7 +237,7 @@ describe('evalCenterStore review queue', () => {
       sessionId: 'session-1',
       sessionTitle: 'Replay Failure Session',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
       failureCapability: {
         sink: 'capability_health',
         category: 'tool_error',

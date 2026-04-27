@@ -135,11 +135,11 @@ describe('AdaptiveRouter.selectFallback', () => {
   });
 
   it('context_overflow returns null when no model has a larger window than current', () => {
-    // kimi-k2.5 has 256_000 — largest in CONTEXT_WINDOWS; no model should be larger
+    // Grok 4.1 Fast has a 2M window, currently the largest in CONTEXT_WINDOWS.
     const result = router.selectFallback(makeContext({
       reason: 'context_overflow',
-      currentProvider: 'moonshot',
-      currentModel: 'kimi-k2.5',
+      currentProvider: 'grok',
+      currentModel: 'grok-4-1-fast-reasoning',
     }));
     expect(result).toBeNull();
   });

@@ -35,7 +35,7 @@ class DiagnosticsHandler implements ToolHandler<Record<string, unknown>, string>
     }
 
     onProgress?.({ stage: 'starting', detail: 'lsp diagnostics' });
-    const legacyResult = await diagnosticsTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+    const legacyResult = await diagnosticsTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     return adaptLegacyResult(legacyResult);
   }

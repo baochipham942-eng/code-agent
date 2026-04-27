@@ -73,6 +73,7 @@ import {
   type AgentTask,
   type CoordinatorEvent,
 } from '../../../src/main/agent/parallelAgentCoordinator';
+import { aggregateTeamResults } from '../../../src/main/agent/resultAggregator';
 
 function makeFakeContext() {
   return {
@@ -248,6 +249,130 @@ describe('ParallelAgentCoordinator', () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].taskId).toBe('b');
       expect(result.errors[0].error).toBe('assertion failed');
+    });
+
+    it('上游失败时 downstream 标记 blocked 且不会启动', async () => {
+      executorState.executeMock.mockImplementation(
+        async (_t: string, spec: { name: string }) => {
+          if (spec.name === 'coder') {
+            return {
+              success: false,
+              output: '',
+              error: 'compile failed',
+              iterations: 1,
+              toolsUsed: [],
+              cost: 0,
+            };
+          }
+          return {
+            success: true,
+            output: 'should not run',
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        }
+      );
+
+      const result = await coordinator.executeParallel([
+        makeTask('parent', { role: 'coder' }),
+        makeTask('child', { role: 'tester', dependsOn: ['parent'] }),
+      ]);
+
+      expect(result.success).toBe(false);
+      expect(executorState.executeMock).toHaveBeenCalledTimes(1);
+      const child = result.results.find((entry) => entry.taskId === 'child');
+      expect(child?.blocked).toBe(true);
+      expect(child?.error).toContain('Blocked by failed dependencies: parent');
+    });
+
+    it('aggregation 按总任务数计算 successRate，失败 agent 也进入结果结构', async () => {
+      executorState.executeMock.mockImplementation(
+        async (_t: string, spec: { name: string }) => ({
+          success: spec.name === 'coder',
+          output: spec.name === 'coder' ? 'ok' : '',
+          error: spec.name === 'coder' ? undefined : 'test failed',
+          iterations: 1,
+          toolsUsed: [],
+          cost: 0,
+        })
+      );
+
+      const result = await coordinator.executeParallel([
+        makeTask('a', { role: 'coder' }),
+        makeTask('b', { role: 'tester' }),
+      ]);
+      const aggregation = aggregateTeamResults(result.results, result.totalDuration);
+
+      expect(result.results).toHaveLength(2);
+      expect(aggregation.agentResults).toHaveLength(2);
+      expect(aggregation.successRate).toBe(0.5);
+    });
+
+    it('direct user messages queued on the parallel executor inbox can be drained by the executor', async () => {
+      let release!: () => void;
+      let drainMessages: (() => Array<{ payload: string }>) | undefined;
+
+      executorState.executeMock.mockImplementation(
+        async (_t: string, _spec: { name: string }, context: { messageDrain?: () => Array<{ payload: string }> }) => {
+          drainMessages = context.messageDrain;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return {
+            success: true,
+            output: 'ok',
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        }
+      );
+
+      const run = coordinator.executeParallel([makeTask('a', { role: 'coder' })]);
+      await vi.waitFor(() => expect(drainMessages).toBeTypeOf('function'));
+
+      expect(coordinator.sendMessage('a', 'hello from user')).toBe(true);
+      expect(drainMessages?.().map((message) => message.payload)).toEqual(['hello from user']);
+
+      release();
+      await run;
+    });
+
+    it('run-level cancel aborts running task and prevents pending task from starting', async () => {
+      coordinator.updateConfig({ maxParallelTasks: 1 });
+      const started: string[] = [];
+
+      executorState.executeMock.mockImplementation(
+        async (_t: string, spec: { name: string }, context: { abortSignal?: AbortSignal }) => {
+          started.push(spec.name);
+          await new Promise<void>((resolve) => {
+            context.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+          return {
+            success: false,
+            output: '',
+            error: 'cancelled',
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        }
+      );
+
+      const run = coordinator.executeParallel([
+        makeTask('a', { role: 'coder' }),
+        makeTask('b', { role: 'tester' }),
+      ]);
+
+      await vi.waitFor(() => expect(started).toEqual(['coder']));
+      coordinator.abortAllRunning('run_cancelled');
+      const result = await run;
+
+      expect(started).toEqual(['coder']);
+      const pending = result.results.find((entry) => entry.taskId === 'b');
+      expect(pending?.cancelled).toBe(true);
+      expect(pending?.error).toContain('Cancelled before start');
     });
 
   });

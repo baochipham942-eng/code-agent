@@ -26,6 +26,7 @@ import { getSwarmEventEmitter, type SwarmEventEmitter } from '../swarmEventPubli
 import { getPlanApprovalGate } from '../planApproval';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import { getSpawnGuard } from '../spawnGuard';
+import { getParallelAgentCoordinator } from '../parallelAgentCoordinator';
 import { getTeammateService } from '../teammate/teammateService';
 import { getTaskListManager } from '../taskList';
 import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentWorkerManager';
@@ -261,7 +262,8 @@ export class AgentSwarm {
    *   2) PlanApprovalGate.cancelAll 排干 pendingResolvers（高风险 plan 审批）
    *   3) SwarmLaunchApprovalGate.cancelAll 排干 pendingResolvers（启动 launch 审批）
    *   4) SpawnGuard.cancelAll 释放 subagent 配额 + 取消底层 AbortController
-   *   5) 派发 swarm:cancelled 事件，renderer 翻转 isRunning
+   *   5) ParallelAgentCoordinator.abortAllRunning 停掉显式并行 agent 队列
+   *   6) 派发 swarm:cancelled 事件，renderer 翻转 isRunning
    */
   cancel(): void {
     this.cancelled = true;
@@ -283,6 +285,11 @@ export class AgentSwarm {
       getSpawnGuard().cancelAll('swarm_cancelled');
     } catch (err) {
       logger.warn('[AgentSwarm] Failed to drain spawnGuard on cancel', err);
+    }
+    try {
+      getParallelAgentCoordinator().abortAllRunning('swarm_cancelled');
+    } catch (err) {
+      logger.warn('[AgentSwarm] Failed to abort parallel coordinator on cancel', err);
     }
 
     this.eventEmitter.cancelled();

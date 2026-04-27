@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
+import { isBashToolName, normalizeToolName } from './toolNames';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -285,7 +286,7 @@ export class PermissionClassifier {
     }
 
     // R4: Bash 命令分类
-    if ((toolName === 'bash' || toolName === 'Bash') && typeof args.command === 'string') {
+    if (isBashToolName(toolName) && typeof args.command === 'string') {
       return this.classifyBashCommand(args.command, context, startTime);
     }
 
@@ -514,7 +515,7 @@ export class PermissionClassifier {
   // --------------------------------------------------------------------------
 
   private buildCacheKey(toolName: string, args: Record<string, unknown>): string {
-    if (toolName === 'bash' || toolName === 'Bash') {
+    if (isBashToolName(toolName)) {
       // Bash 命令：取前两个 token 作为 pattern
       const command = (args.command as string) || '';
       const tokens = command.trim().split(/\s+/).slice(0, 2).join(' ');
@@ -523,7 +524,7 @@ export class PermissionClassifier {
 
     // 其他工具：标准化参数后 hash
     const argsPattern = this.normalizeArgs(args);
-    return crypto.createHash('md5').update(`${toolName}:${JSON.stringify(argsPattern)}`).digest('hex');
+    return crypto.createHash('md5').update(`${normalizeToolName(toolName)}:${JSON.stringify(argsPattern)}`).digest('hex');
   }
 
   /**

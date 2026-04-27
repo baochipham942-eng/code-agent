@@ -6,6 +6,7 @@ import type { ToolCall } from '../../../shared/contract';
 import type { AntiPatternState, FailedToolCallMatch, ToolFailureEntry } from '../loopTypes';
 import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
 import { cleanXmlResidues } from './cleanXml';
+import { isBashToolName } from '../../tools/toolNames';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
 
@@ -597,7 +598,7 @@ export class AntiPatternDetector {
         const sanitizedArgs = cleanXmlResidues(parsedArgs) as Record<string, unknown>;
 
         // bash 命令专项清理：防止 markdown/中文解释文字混入
-        if (toolName === 'bash' && typeof sanitizedArgs.command === 'string') {
+        if (isBashToolName(toolName) && typeof sanitizedArgs.command === 'string') {
           let cmd = sanitizedArgs.command;
           // heredoc 命令：检测是否被截断/省略，只拒绝不完整的 heredoc
           const isHeredoc = /<<-?\s*['"]?\w+['"]?\s*$/m.test(cmd.split('\n')[0]);

@@ -20,6 +20,8 @@ const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
 // Skill name 格式验证：小写字母开头，只包含小写字母、数字和单个连字符
 const SKILL_NAME_REGEX = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
+const TOOL_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
+const TOOL_SCOPED_PREFIX_REGEX = /^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/;
 
 /**
  * 解析 SKILL.md 文件
@@ -161,23 +163,45 @@ function validateSkillName(name: string): void {
 
 /**
  * 解析 allowed-tools 字段
- * 支持数组格式或空格分隔的字符串格式
+ * 支持数组格式，或空格/逗号分隔的字符串格式
  */
 function parseAllowedTools(allowedTools: string | string[] | undefined): string[] {
   if (!allowedTools) {
     return [];
   }
 
-  // 如果是数组，直接返回（过滤空值）
-  if (Array.isArray(allowedTools)) {
-    return allowedTools.filter((tool) => typeof tool === 'string' && tool.length > 0);
+  const entries = Array.isArray(allowedTools)
+    ? allowedTools
+    : allowedTools.split(/[\s,]+/);
+
+  return entries
+    .map((tool) => {
+      if (typeof tool !== 'string') {
+        throw new SkillValidationError(
+          'allowed-tools entries must be strings',
+          'allowed-tools',
+          tool
+        );
+      }
+      return tool.trim();
+    })
+    .filter((tool) => tool.length > 0)
+    .map((tool) => {
+      validateAllowedToolSpecifier(tool);
+      return tool;
+    });
+}
+
+function validateAllowedToolSpecifier(tool: string): void {
+  if (TOOL_NAME_REGEX.test(tool) || TOOL_SCOPED_PREFIX_REGEX.test(tool)) {
+    return;
   }
 
-  // 如果是字符串，按空格分隔
-  return allowedTools
-    .split(/\s+/)
-    .map((tool) => tool.trim())
-    .filter((tool) => tool.length > 0);
+  throw new SkillValidationError(
+    'allowed-tools entries must be tool names or scoped prefixes like Bash(git:*)',
+    'allowed-tools',
+    tool
+  );
 }
 
 /**

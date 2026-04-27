@@ -55,6 +55,11 @@ export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
 
+interface PendingSteerMessage {
+  content: string;
+  clientMessageId?: string;
+}
+
 // ----------------------------------------------------------------------------
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
@@ -85,12 +90,13 @@ export class AgentOrchestrator {
 
   // Real-time steering: 中断排队
   private isInterrupting: boolean = false;
-  private pendingSteerMessages: string[] = [];
+  private pendingSteerMessages: PendingSteerMessage[] = [];
 
   // TaskList: 可视化任务管理
   private taskListManager: TaskListManager;
   private sessionId: string | null = null;
   private lastSerializedCompressionState: string | null = null;
+  private activeRunPromise: Promise<void> | null = null;
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
@@ -257,7 +263,23 @@ export class AgentOrchestrator {
 
     if (this.agentLoop) {
       this.agentLoop.cancel();
-      this.agentLoop = null;
+      if (this.activeRunPromise) {
+        try {
+          await this.activeRunPromise;
+        } catch (error) {
+          logger.debug('[AgentOrchestrator] Agent loop finished after cancel with error', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } else {
+        this.agentLoop = null;
+        this.onEvent({
+          type: 'agent_cancelled',
+          data: null,
+          sessionId,
+        } as AgentEvent & { sessionId?: string });
+      }
+      return;
     }
     if (this.deepResearchMode) {
       this.deepResearchMode.cancel();
@@ -269,7 +291,7 @@ export class AgentOrchestrator {
     }
 
     this.onEvent({
-      type: 'agent_complete',
+      type: 'agent_cancelled',
       data: null,
       sessionId,
     } as AgentEvent & { sessionId?: string });
@@ -280,6 +302,7 @@ export class AgentOrchestrator {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
   ): Promise<void> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
@@ -288,7 +311,7 @@ export class AgentOrchestrator {
 
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
-      this.pendingSteerMessages.push(effectiveMessage);
+      this.pendingSteerMessages.push({ content: effectiveMessage, clientMessageId });
       return;
     }
 
@@ -301,11 +324,11 @@ export class AgentOrchestrator {
     } as AgentEvent & { sessionId?: string });
 
     if (this.agentLoop) {
-      this.agentLoop.steer(effectiveMessage);
+      this.agentLoop.steer(effectiveMessage, clientMessageId);
 
       while (this.pendingSteerMessages.length > 0) {
         const queued = this.pendingSteerMessages.shift()!;
-        this.agentLoop.steer(queued);
+        this.agentLoop.steer(queued.content, queued.clientMessageId);
         logger.info('[AgentOrchestrator] Processed queued steer message');
       }
 
@@ -336,7 +359,7 @@ export class AgentOrchestrator {
 
     this.isInterrupting = false;
 
-    const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0)];
+    const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0).map((queued) => queued.content)];
     await this.sendMessage(allMessages[allMessages.length - 1], attachments, options, messageMetadata);
   }
 
@@ -570,6 +593,7 @@ export class AgentOrchestrator {
       });
     }
 
+    let terminalError: unknown;
     try {
       const requirementsAnalyzer = getAgentRequirementsAnalyzer();
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
@@ -620,6 +644,7 @@ export class AgentOrchestrator {
           message: error instanceof Error ? error.message : 'Unknown error',
         },
       });
+      terminalError = error;
     } finally {
       if (sessionId) {
         sessionStateManager.updateStatus(sessionId, 'idle');
@@ -646,6 +671,8 @@ export class AgentOrchestrator {
         getTelemetryCollector().endSession(sessionId);
       }
     }
+
+    if (terminalError) throw terminalError;
   }
 
   private async runStandardAgentLoop(
@@ -757,6 +784,11 @@ export class AgentOrchestrator {
       toolScope,
       executionIntent,
       telemetryAdapter,
+      persistMessage: sessionId
+        ? async (message: Message) => {
+            await getSessionManager().addMessageToSession(sessionId, message);
+          }
+        : undefined,
       onToolExecutionLog: (log) => {
         try {
           const recorder = getComboRecorder();
@@ -779,7 +811,9 @@ export class AgentOrchestrator {
 
     try {
       logger.info('========== Starting agent loop ==========');
-      await this.agentLoop.run(effectiveContent);
+      const runPromise = this.agentLoop.run(effectiveContent);
+      this.activeRunPromise = runPromise;
+      await runPromise;
       logger.info('========== Agent loop completed normally ==========');
 
       // Check for combo skill suggestion after loop completes
@@ -798,6 +832,7 @@ export class AgentOrchestrator {
         ?? this.lastSerializedCompressionState;
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
+      this.activeRunPromise = null;
     }
   }
 

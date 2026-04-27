@@ -44,6 +44,7 @@ import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../protocol/dispatch/toolResolver';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
+import { createTextMessage, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
@@ -73,6 +74,8 @@ export interface AgentTaskResult extends SubagentResult {
   startTime: number;
   endTime: number;
   duration: number;
+  blocked?: boolean;
+  cancelled?: boolean;
 }
 
 export interface ParallelExecutionResult {
@@ -166,6 +169,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private completedTasks: Map<string, AgentTaskResult> = new Map();
   private abortControllers: Map<string, AbortController> = new Map();
   private taskDefinitions: Map<string, AgentTask> = new Map();
+  private messageQueues: Map<string, AgentMessage[]> = new Map();
+  private cancelled = false;
+  private cancelReason = 'cancelled';
   private sharedContext: SharedContext;
   private modelConfig?: ModelConfig;
   private toolResolver?: ToolResolver;
@@ -209,34 +215,110 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const results: AgentTaskResult[] = [];
     const errors: Array<{ taskId: string; error: string }> = [];
     let maxConcurrent = 0;
+    const successful = new Set<string>();
+    const failedOrBlocked = new Set<string>();
+    const remaining = new Map<string, AgentTask>();
 
+    this.cancelled = Boolean(this.toolContext.abortSignal?.aborted);
+    this.cancelReason = this.cancelled ? 'run_cancelled' : 'cancelled';
     this.taskDefinitions.clear();
+    this.messageQueues.clear();
     for (const task of tasks) {
       this.taskDefinitions.set(task.id, { ...task });
+      this.messageQueues.set(task.id, []);
+      remaining.set(task.id, { ...task });
     }
 
-    // Sort tasks by priority and dependencies
-    const sortedTasks = this.sortTasksByDependencies(tasks);
+    while (remaining.size > 0) {
+      if (this.cancelled) {
+        for (const task of Array.from(remaining.values())) {
+          const cancelled = this.createSkippedResult(
+            task,
+            `Cancelled before start (${this.cancelReason})`,
+            'cancelled'
+          );
+          remaining.delete(task.id);
+          results.push(cancelled);
+          errors.push({ taskId: cancelled.taskId, error: cancelled.error || 'Cancelled' });
+          failedOrBlocked.add(task.id);
+          this.completedTasks.set(task.id, cancelled);
+          this.emit('task:complete', { taskId: task.id, result: cancelled });
+        }
+        break;
+      }
 
-    // Execute tasks respecting dependencies
-    for (const taskGroup of sortedTasks) {
-      // Track concurrent execution
+      const blocked = Array.from(remaining.values()).filter((task) => {
+        const deps = task.dependsOn || [];
+        return deps.some((dep) => failedOrBlocked.has(dep))
+          || deps.some((dep) => !this.taskDefinitions.has(dep) && !successful.has(dep));
+      });
+
+      for (const task of blocked) {
+        const deps = task.dependsOn || [];
+        const missing = deps.filter((dep) => !this.taskDefinitions.has(dep) && !successful.has(dep));
+        const failed = deps.filter((dep) => failedOrBlocked.has(dep));
+        const reason = missing.length > 0
+          ? `Blocked by missing dependencies: ${missing.join(', ')}`
+          : `Blocked by failed dependencies: ${failed.join(', ')}`;
+        const blockedResult = this.createSkippedResult(task, reason, 'blocked');
+        remaining.delete(task.id);
+        results.push(blockedResult);
+        errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
+        failedOrBlocked.add(task.id);
+        this.completedTasks.set(task.id, blockedResult);
+        if (this.config.enableSharedContext) {
+          this.updateSharedContext(blockedResult);
+        }
+        this.emit('task:complete', { taskId: task.id, result: blockedResult });
+      }
+
+      if (remaining.size === 0) break;
+
+      const ready = Array.from(remaining.values())
+        .filter((task) => (task.dependsOn || []).every((dep) => successful.has(dep)))
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+      if (ready.length === 0) {
+        logger.warn('Circular or unsatisfied dependency detected');
+        for (const task of Array.from(remaining.values())) {
+          const reason = `Blocked by unsatisfied dependencies: ${(task.dependsOn || []).join(', ') || 'unknown'}`;
+          const blockedResult = this.createSkippedResult(task, reason, 'blocked');
+          remaining.delete(task.id);
+          results.push(blockedResult);
+          errors.push({ taskId: blockedResult.taskId, error: blockedResult.error || reason });
+          failedOrBlocked.add(task.id);
+          this.completedTasks.set(task.id, blockedResult);
+          if (this.config.enableSharedContext) {
+            this.updateSharedContext(blockedResult);
+          }
+          this.emit('task:complete', { taskId: task.id, result: blockedResult });
+        }
+        break;
+      }
+
+      const taskGroup = ready.slice(0, this.config.maxParallelTasks);
+      for (const task of taskGroup) {
+        remaining.delete(task.id);
+      }
       maxConcurrent = Math.max(maxConcurrent, taskGroup.length);
 
-      // Execute group in parallel
       const groupResults = await this.executeTaskGroup(taskGroup);
 
       for (const result of groupResults) {
-        if (result.success) {
-          results.push(result);
-          this.completedTasks.set(result.taskId, result);
+        results.push(result);
+        this.completedTasks.set(result.taskId, result);
 
-          // Share discoveries with other agents
+        if (result.success) {
+          successful.add(result.taskId);
           if (this.config.enableSharedContext) {
             this.updateSharedContext(result);
           }
         } else {
           errors.push({ taskId: result.taskId, error: result.error || 'Unknown error' });
+          failedOrBlocked.add(result.taskId);
+          if (this.config.enableSharedContext) {
+            this.updateSharedContext(result);
+          }
         }
       }
     }
@@ -266,47 +348,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       parallelism: maxConcurrent,
       errors,
     };
-  }
-
-  /**
-   * Sort tasks into groups based on dependencies
-   * Tasks in the same group can run in parallel
-   */
-  private sortTasksByDependencies(tasks: AgentTask[]): AgentTask[][] {
-    const groups: AgentTask[][] = [];
-    const completed = new Set<string>();
-    const remaining = [...tasks];
-
-    while (remaining.length > 0) {
-      // Find tasks with all dependencies satisfied
-      const ready = remaining.filter(task =>
-        !task.dependsOn || task.dependsOn.every(dep => completed.has(dep))
-      );
-
-      if (ready.length === 0) {
-        // Circular dependency or missing dependency
-        logger.warn(' Circular or missing dependency detected');
-        // Add remaining tasks as a single group
-        groups.push(remaining);
-        break;
-      }
-
-      // Sort by priority within the group
-      ready.sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-      // Limit parallel tasks
-      const group = ready.slice(0, this.config.maxParallelTasks);
-      groups.push(group);
-
-      // Mark as completed and remove from remaining
-      for (const task of group) {
-        completed.add(task.id);
-        const idx = remaining.indexOf(task);
-        if (idx !== -1) remaining.splice(idx, 1);
-      }
-    }
-
-    return groups;
   }
 
   /**
@@ -371,6 +412,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           parentToolUseId: toolContext.currentToolCallId,
           executionAgentId: task.id,
           abortSignal: taskAbortController.signal,
+          messageDrain: () => this.drainMessages(task.id),
           onContextSnapshot: (snapshot) => {
             this.emit('task:progress', {
               taskId: task.id,
@@ -407,6 +449,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
         startTime,
         endTime,
         duration: endTime - startTime,
+        cancelled: this.isCancellationError(result.error),
       };
 
       this.emit('task:complete', { taskId: task.id, result: taskResult });
@@ -436,6 +479,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
         startTime,
         endTime,
         duration: endTime - startTime,
+        cancelled: this.isCancellationError(errorMessage),
       };
       this.completedTasks.set(task.id, failedResult);
 
@@ -620,6 +664,61 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return task ? { ...task } : undefined;
   }
 
+  canReceiveMessage(taskId: string): boolean {
+    return this.taskDefinitions.has(taskId) && !this.completedTasks.has(taskId);
+  }
+
+  sendMessage(taskId: string, message: string): boolean {
+    if (!this.canReceiveMessage(taskId)) {
+      return false;
+    }
+
+    const queue = this.messageQueues.get(taskId);
+    if (!queue) {
+      return false;
+    }
+
+    queue.push(createTextMessage('user', message));
+    logger.info(`[${taskId}] Parallel message queued (queue size: ${queue.length})`);
+    return true;
+  }
+
+  private drainMessages(taskId: string): AgentMessage[] {
+    const queue = this.messageQueues.get(taskId);
+    if (!queue || queue.length === 0) return [];
+    const messages = [...queue];
+    queue.length = 0;
+    return messages;
+  }
+
+  private isCancellationError(errorMessage?: string): boolean {
+    if (!errorMessage) return false;
+    const normalized = errorMessage.toLowerCase();
+    return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
+  }
+
+  private createSkippedResult(
+    task: AgentTask,
+    reason: string,
+    type: 'blocked' | 'cancelled'
+  ): AgentTaskResult {
+    const now = Date.now();
+    return {
+      success: false,
+      output: '',
+      error: reason,
+      toolsUsed: [],
+      iterations: 0,
+      taskId: task.id,
+      role: task.role,
+      startTime: now,
+      endTime: now,
+      duration: 0,
+      blocked: type === 'blocked',
+      cancelled: type === 'cancelled',
+    };
+  }
+
   abortTask(taskId: string, reason = 'user_cancelled'): boolean {
     const controller = this.abortControllers.get(taskId);
     if (!controller || controller.signal.aborted) {
@@ -665,6 +764,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
    * Abort all running tasks (graceful shutdown trigger)
    */
   abortAllRunning(reason = 'coordinator_shutdown'): void {
+    this.cancelled = true;
+    this.cancelReason = reason;
     for (const [taskId, controller] of this.abortControllers) {
       if (!controller.signal.aborted) {
         logger.info(`Aborting task ${taskId}: ${reason}`);
@@ -682,6 +783,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.completedTasks.clear();
     this.abortControllers.clear();
     this.taskDefinitions.clear();
+    this.messageQueues.clear();
+    this.cancelled = false;
+    this.cancelReason = 'cancelled';
     this.clearSharedContext();
     this.removeAllListeners();
   }
@@ -808,6 +912,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
           this.updateSharedContext(taskResult);
         }
       } else if (task.failure) {
+        results.push(taskResult);
+        this.completedTasks.set(task.id, taskResult);
         errors.push({ taskId: task.id, error: task.failure.message });
       }
     }

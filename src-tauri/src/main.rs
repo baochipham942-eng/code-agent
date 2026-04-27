@@ -412,8 +412,10 @@ fn main() {
             desktop_get_app_icon
         ])
         .setup(|app| {
-            if is_server_running() {
-                // Server already running (e.g. started by Tauri beforeDevCommand in dev mode)
+            if cfg!(debug_assertions) && is_server_running() {
+                // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
+                // Release builds must not trust an arbitrary healthy localhost:8180 process:
+                // a stale dev server can serve mismatched renderer assets and leave the app white.
                 println!("Web server already running on {SERVER_URL}, skipping spawn");
             } else {
                 let child = spawn_web_server(&app.handle())?;

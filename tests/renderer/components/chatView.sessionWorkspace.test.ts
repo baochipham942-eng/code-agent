@@ -177,14 +177,12 @@ vi.mock('../../../src/renderer/utils/platform', () => ({
 
 import { ChatView } from '../../../src/renderer/components/ChatView';
 
-describe('ChatView session workspace bar', () => {
-  it('mounts current-session workspace actions in the chat shell', () => {
+describe('ChatView session shell', () => {
+  it('keeps session actions out of the chat body', () => {
     const html = renderToStaticMarkup(React.createElement(ChatView));
 
-    expect(html).toContain('继续推进 Phase 5');
-    expect(html).toContain('暂停');
-    expect(html).toContain('2 轮');
-    expect(html).toContain('导出 Markdown');
-    expect(html).toContain('恢复工作区');
+    expect(html).toContain('task-status-bar');
+    expect(html).toContain('chat-input');
+    expect(html).not.toContain('继续推进 Phase 5');
   });
 });

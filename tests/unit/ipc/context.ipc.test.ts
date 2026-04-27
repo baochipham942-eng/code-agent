@@ -26,6 +26,41 @@ function makeMsg(
   return { id, role, content };
 }
 
+function makeAppService(
+  sessionId: string,
+  messages: Message[],
+  serializedCompressionState: string | null = null,
+): AgentApplicationService {
+  return {
+    getMessages: async () => messages,
+    getSerializedCompressionState: () => serializedCompressionState,
+    getCurrentSessionId: () => sessionId,
+    sendMessage: async () => {},
+    cancel: async () => {},
+    handlePermissionResponse: () => {},
+    interruptAndContinue: async () => {},
+    getWorkingDirectory: () => undefined,
+    setWorkingDirectory: () => {},
+    createSession: async () => { throw new Error('not implemented'); },
+    loadSession: async () => { throw new Error('not implemented'); },
+    deleteSession: async () => { throw new Error('not implemented'); },
+    listSessions: async () => [],
+    updateSession: async () => {},
+    archiveSession: async () => null,
+    unarchiveSession: async () => null,
+    loadOlderMessages: async () => ({ messages: [], hasMore: false }),
+    exportSession: async () => null,
+    importSession: async () => sessionId,
+    setCurrentSessionId: () => {},
+    getMemoryContext: async () => null,
+    switchModel: () => {},
+    getModelOverride: () => undefined,
+    clearModelOverride: () => {},
+    setDelegateMode: () => {},
+    isDelegateMode: () => false,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -495,6 +530,78 @@ describe('buildContextViewFromSession()', () => {
 
     subagentStore.clearSession(fallbackSessionId);
     eventLedger.clearSession(fallbackSessionId);
+  });
+
+  it('rebuilds manual compact provenance from persisted session state after reload', async () => {
+    const compactSessionId = `${sessionId}-manual-compact`;
+    const compactMessageId = 'compact-summary-reload';
+    const compactedAt = Date.now();
+    const sessionMessages: Message[] = [
+      {
+        id: compactMessageId,
+        role: 'system',
+        content: '[Compaction] compacted earlier turns\n\nsummary of previous work',
+        timestamp: compactedAt,
+        compaction: {
+          type: 'compaction',
+          content: 'summary of previous work',
+          timestamp: compactedAt,
+          compactedMessageCount: 4,
+          compactedTokenCount: 120,
+        },
+      },
+      {
+        id: 'recent-user',
+        role: 'user',
+        content: 'continue from compacted context',
+        timestamp: compactedAt + 1,
+      },
+    ];
+    const compressionState = new CompressionState();
+    compressionState.applyCommit({
+      layer: 'autocompact',
+      operation: 'compact',
+      targetMessageIds: [compactMessageId],
+      timestamp: compactedAt,
+      metadata: {
+        kind: 'manual_compact',
+        compactedMessageCount: 4,
+        compactedTokenCount: 120,
+      },
+    });
+    eventLedger.upsertCompressionEvents(
+      compactSessionId,
+      undefined,
+      compressionState.getCommitLog(),
+    );
+
+    const result = await buildContextViewFromSession(
+      { sessionId: compactSessionId },
+      { getAppService: () => makeAppService(compactSessionId, sessionMessages, compressionState.serialize()) },
+    );
+
+    expect(result.sessionId).toBe(compactSessionId);
+    expect(result.compressionStatus.layersTriggered).toContain('autocompact');
+    expect(result.compressionStatus.totalCommits).toBe(1);
+    const compactItem = result.contextItems.find((item) => item.id === compactMessageId);
+    expect(compactItem?.provenance.categories).toContain('compression_survivor');
+    expect(compactItem?.provenance.sourceDetail).toBe('autocompact:compact');
+    expect(compactItem?.provenance.reasons).toEqual(
+      expect.arrayContaining(['compact via autocompact', 'runtime compression survivor (autocompact)']),
+    );
+
+    expect(result.provenanceEntries?.find((entry) => entry.id === `${compactMessageId}:compressed`)).toMatchObject({
+      action: 'compressed',
+      category: 'compression_survivor',
+      source: 'autocompact:compact',
+    });
+    expect(result.provenance.find((entry) => entry.messageId === compactMessageId)).toMatchObject({
+      category: 'compression_survivor',
+      layer: 'autocompact',
+      modifications: ['microcompact'],
+    });
+
+    eventLedger.clearSession(compactSessionId);
   });
 
   it('preserves multiple runtime provenance categories for the same message', async () => {

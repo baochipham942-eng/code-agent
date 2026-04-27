@@ -20,7 +20,7 @@ import type {
   PermissionResponse,
   Session,
 } from '../../shared/contract';
-import type { TaskManager } from '../task';
+import type { SessionStatus, TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { getModelSessionState } from '../session/modelSessionState';
@@ -36,6 +36,14 @@ import {
   suggestExportFilename,
 } from '../session/exportMarkdown';
 import type { CachedMessage, CachedSession } from '../session/localCache';
+import { loadStreamSnapshot } from '../session/streamSnapshot';
+
+function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
+  return status === 'running'
+    || status === 'paused'
+    || status === 'queued'
+    || status === 'cancelling';
+}
 
 export class AgentAppServiceImpl implements AgentApplicationService {
   constructor(
@@ -149,8 +157,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   // === Agent Operations ===
 
   async sendMessage(envelope: ConversationEnvelope): Promise<void> {
+    const tm = this.getTaskManager();
     const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
     if (envelope.context?.workingDirectory) {
       orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
     }
@@ -159,8 +169,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    // Cast to concrete AgentRunOptions — AppServiceRunOptions is a superset via index signature
-    await orchestrator.sendMessage(
+    await tm.startTask(
+      resolvedSessionId,
       envelope.content,
       envelope.attachments,
       options as any,
@@ -169,7 +179,17 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async cancel(sessionId?: string): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow(sessionId);
+    const tm = this.getTaskManager();
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
+
+    const state = tm.getSessionState(resolvedSessionId);
+    if (isTaskManagerOwnedRunState(state.status)) {
+      await tm.cancelTask(resolvedSessionId);
+      return;
+    }
+
+    const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
     await orchestrator.cancel();
   }
 
@@ -179,8 +199,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async interruptAndContinue(envelope: ConversationEnvelope): Promise<void> {
+    const tm = this.getTaskManager();
     const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
     if (envelope.context?.workingDirectory) {
       orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
     }
@@ -189,11 +211,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    await orchestrator.interruptAndContinue(
+    await tm.interruptAndContinue(
+      resolvedSessionId,
       envelope.content,
       envelope.attachments,
       options as any,
       this.getMessageMetadata(envelope),
+      envelope.clientMessageId,
     );
   }
 
@@ -263,6 +287,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
     // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
 
+    const streamSnapshot = loadStreamSnapshot(session.workingDirectory);
+    if (streamSnapshot?.sessionId === session.id) {
+      return { ...session, streamSnapshot };
+    }
+
     return session;
   }
 
@@ -316,7 +345,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!resolvedSessionId) return null;
 
     const orchestrator = this.getTaskManager().getOrchestrator(resolvedSessionId);
-    return orchestrator?.getSerializedCompressionState() ?? null;
+    const liveState = orchestrator?.getSerializedCompressionState() ?? null;
+    if (liveState) return liveState;
+
+    try {
+      return getSessionManager().getSessionRuntimeState(resolvedSessionId)?.compressionStateJson ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }> {
@@ -432,12 +468,22 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   // === Pause / Resume ===
 
   pause(sessionId?: string): void {
-    const orchestrator = this.getOrchestratorOrThrow(sessionId);
-    orchestrator.pause();
+    const tm = this.getTaskManager();
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
+    if (!tm.pauseTask(resolvedSessionId)) {
+      const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
+      orchestrator.pause();
+    }
   }
 
   resume(sessionId?: string): void {
-    const orchestrator = this.getOrchestratorOrThrow(sessionId);
-    orchestrator.resume();
+    const tm = this.getTaskManager();
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
+    if (!tm.resumeTask(resolvedSessionId)) {
+      const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
+      orchestrator.resume();
+    }
   }
 }

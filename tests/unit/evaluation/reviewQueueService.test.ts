@@ -47,16 +47,18 @@ describe('ReviewQueueService', () => {
       sessionId: 'session-1',
       sessionTitle: 'Fallback Title',
       reason: 'manual_review',
-      source: 'current_session_bar',
+      enqueueSource: 'current_session_bar',
     });
 
     expect(item.id).toBe('review:session:session-1');
     expect(item.trace).toEqual({
       traceId: 'session:session-1',
+      traceSource: 'session_replay',
       source: 'session_replay',
       sessionId: 'session-1',
       replayKey: 'session-1',
     });
+    expect(item.enqueueSource).toBe('current_session_bar');
     expect(item.sessionTitle).toBe('Resolved Session Title');
     expect(service.listItems()).toHaveLength(1);
   });
@@ -71,14 +73,14 @@ describe('ReviewQueueService', () => {
       sessionId: 'session-2',
       sessionTitle: 'First Title',
       reason: 'manual_review',
-      source: 'current_session_bar',
+      enqueueSource: 'current_session_bar',
     });
 
     const second = service.enqueueSession({
       sessionId: 'session-2',
       sessionTitle: 'Updated Title',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
       failureCapability: {
         sink: 'prompt_policy',
         category: 'loop',
@@ -97,6 +99,7 @@ describe('ReviewQueueService', () => {
     expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
     expect(second.sessionTitle).toBe('Updated Title');
     expect(second.reason).toBe('failure_followup');
+    expect(second.enqueueSource).toBe('replay_failure');
     expect(second.source).toBe('replay_failure');
     expect(second.failureCapability).toEqual({
       sink: 'prompt_policy',
@@ -154,7 +157,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'persisted-session',
       sessionTitle: 'Persisted Review Session',
       reason: 'manual_review',
-      source: 'session_list',
+      enqueueSource: 'session_list',
     });
 
     dbState.sqlite.close();
@@ -169,9 +172,11 @@ describe('ReviewQueueService', () => {
       sessionId: 'persisted-session',
       sessionTitle: 'Persisted Review Session',
       reason: 'manual_review',
+      enqueueSource: 'session_list',
       source: 'session_list',
       trace: {
         traceId: 'session:persisted-session',
+        traceSource: 'session_replay',
         source: 'session_replay',
         sessionId: 'persisted-session',
         replayKey: 'persisted-session',
@@ -190,7 +195,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'session-with-routing',
       sessionTitle: 'Failure Routing Session',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
       failureCapability: {
         sink: 'dataset',
         category: 'missing_context',
@@ -206,6 +211,7 @@ describe('ReviewQueueService', () => {
     expect(items[0]).toMatchObject({
       sessionId: 'session-with-routing',
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
       failureCapability: {
         sink: 'dataset',
@@ -252,6 +258,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'persisted-failure-session',
       sessionTitle: 'Persisted Failure Session',
       reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
       source: 'replay_failure',
       failureCapability: {
         sink: 'capability_health',
@@ -275,7 +282,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'persisted-failure-session',
       sessionTitle: 'Persisted Failure Session',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
       failureCapability: {
         sink: 'capability_health',
         category: 'tool_error',
@@ -319,7 +326,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'status-session',
       sessionTitle: 'Status Session',
       reason: 'failure_followup',
-      source: 'replay_failure',
+      enqueueSource: 'replay_failure',
       failureCapability: {
         sink: 'skill',
         category: 'bad_decision',

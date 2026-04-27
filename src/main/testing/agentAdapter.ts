@@ -224,6 +224,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private generation: string;
   private toolMode: 'all' | 'deferred';
   private currentSessionId?: string;
+  private telemetrySessionActive = false;
   private modelConfig: {
     provider: string;
     model: string;
@@ -274,6 +275,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const { AgentLoop } = await import('../agent/agentLoop');
       const { SYSTEM_PROMPT } = await import('../prompts/builder');
       const { ToolExecutor } = await import('../tools/toolExecutor');
+      const { getTelemetryCollector } = await import('../telemetry');
 
       // 1. System prompt
 
@@ -291,6 +293,17 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // 4. Create AgentLoop with correct event handlers
       // Reuse session id across follow-ups so AgentLoop's session-scoped state stays consistent.
       if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
+      const telemetryCollector = getTelemetryCollector();
+      if (!this.telemetrySessionActive) {
+        telemetryCollector.startSession(this.currentSessionId, {
+          title: prompt.substring(0, 80),
+          modelProvider: this.modelConfig.provider,
+          modelName: this.modelConfig.model,
+          workingDirectory: this.workingDirectory,
+        });
+        this.telemetrySessionActive = true;
+      }
+      const telemetryAdapter = telemetryCollector.createAdapter(this.currentSessionId, 'main');
       const loop = new AgentLoop({
         sessionId: this.currentSessionId,
         workingDirectory: this.workingDirectory,
@@ -307,6 +320,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         enableHooks: false,
         enableToolDeferredLoading: this.toolMode === 'deferred',
         autoApprovePlan: true,
+        telemetryAdapter,
         onEvent: (event) => {
           switch (event.type) {
             case 'message':
@@ -367,8 +381,19 @@ export class StandaloneAgentAdapter implements AgentInterface {
   async reset(): Promise<void> {
     // Clear conversation history and session id between cases so each case starts fresh.
     // Within a case, sendMessage() reuses this.messages so follow-ups share history.
+    await this.finalizeSession();
     this.messages = [];
     this.currentSessionId = undefined;
+  }
+
+  async finalizeSession(): Promise<void> {
+    if (!this.currentSessionId || !this.telemetrySessionActive) return;
+    try {
+      const { getTelemetryCollector } = await import('../telemetry');
+      getTelemetryCollector().endSession(this.currentSessionId);
+    } finally {
+      this.telemetrySessionActive = false;
+    }
   }
 
   getAgentInfo(): { name: string; model: string; provider: string } {

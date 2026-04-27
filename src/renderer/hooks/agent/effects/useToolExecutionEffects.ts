@@ -38,6 +38,7 @@ export const useToolExecutionEffects = ({
 
       switch (event.type) {
         case 'agent_complete':
+        case 'agent_cancelled':
         case 'error':
         case 'stream_end':
           return;

@@ -1,5 +1,5 @@
 // ============================================================================
-// Loop Decision Engine - Multi-branch decision logic for the agent loop
+// Loop Decision Engine - advisory loop hints for the agent runtime
 // ============================================================================
 
 import type { ErrorClass } from '../model/errorClassifier';
@@ -9,6 +9,7 @@ import type { ErrorClass } from '../model/errorClassifier';
 // --------------------------------------------------------------------------
 
 export type LoopAction = 'continue' | 'compact' | 'continuation' | 'fallback' | 'terminate';
+export type LoopDecisionExecution = 'none' | 'runtime' | 'advisory';
 
 export interface LoopState {
   /** Stop reason reported by the model (e.g. 'end_turn', 'max_tokens') */
@@ -32,6 +33,15 @@ export interface LoopState {
 export interface LoopDecision {
   action: LoopAction;
   reason: string;
+  /**
+   * How the runtime currently handles this decision.
+   *
+   * `runtime` means ConversationRuntime has a direct implementation.
+   * `advisory` means this engine records a recommendation only; the actual
+   * behavior lives in another path, such as inference context recovery or
+   * ModelRouter provider fallback.
+   */
+  execution: LoopDecisionExecution;
   params?: Record<string, unknown>;
 }
 
@@ -51,6 +61,18 @@ export interface FallbackStrategy {
 // Decision engine
 // --------------------------------------------------------------------------
 
+function noOp(action: LoopAction, reason: string, params?: Record<string, unknown>): LoopDecision {
+  return { action, reason, execution: 'none', ...(params ? { params } : {}) };
+}
+
+function runtime(action: LoopAction, reason: string, params?: Record<string, unknown>): LoopDecision {
+  return { action, reason, execution: 'runtime', ...(params ? { params } : {}) };
+}
+
+function advisory(action: LoopAction, reason: string, params?: Record<string, unknown>): LoopDecision {
+  return { action, reason, execution: 'advisory', ...(params ? { params } : {}) };
+}
+
 /**
  * Given the current loop state, return the next action the loop should take.
  *
@@ -67,18 +89,18 @@ export function decideNextAction(state: LoopState): LoopDecision {
   // -------------------------------------------------------------------------
 
   if (state.budgetRemaining <= 0) {
-    return { action: 'terminate', reason: 'budget exhausted' };
+    return advisory('terminate', 'budget exhausted');
   }
 
   if (state.iterationCount >= state.maxIterations) {
-    return { action: 'terminate', reason: 'max iterations reached' };
+    return advisory('terminate', 'max iterations reached');
   }
 
   if (state.consecutiveErrors >= 3) {
-    return {
-      action: 'terminate',
-      reason: `${state.consecutiveErrors} consecutive errors (${state.errorType ?? 'unknown'})`,
-    };
+    return advisory(
+      'terminate',
+      `${state.consecutiveErrors} consecutive errors (${state.errorType ?? 'unknown'})`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -89,39 +111,39 @@ export function decideNextAction(state: LoopState): LoopDecision {
     switch (state.errorType) {
       case 'overflow':
         if (state.consecutiveErrors <= 1) {
-          return { action: 'compact', reason: 'context overflow' };
+          return advisory('compact', 'context overflow');
         }
-        return { action: 'fallback', reason: 'overflow persists after compression' };
+        return advisory('fallback', 'overflow persists after compression');
 
       case 'rate_limit':
-        return { action: 'fallback', reason: 'rate limited' };
+        return advisory('fallback', 'rate limited');
 
       case 'unavailable':
-        return { action: 'fallback', reason: 'provider unavailable' };
+        return advisory('fallback', 'provider unavailable');
 
       case 'auth':
-        return { action: 'terminate', reason: 'authentication error' };
+        return advisory('terminate', 'authentication error');
 
       case 'network':
         if (state.consecutiveErrors >= 2) {
-          return { action: 'fallback', reason: 'repeated network errors' };
+          return advisory('fallback', 'repeated network errors');
         }
-        return { action: 'continue', reason: 'will retry' };
+        return noOp('continue', 'will retry');
 
       case 'quota_exhaustion':
-        return { action: 'fallback', reason: 'quota exhausted, switching provider' };
+        return advisory('fallback', 'quota exhausted, switching provider');
 
       case 'content_policy':
-        return { action: 'terminate', reason: 'content policy violation, user must modify prompt' };
+        return advisory('terminate', 'content policy violation, user must modify prompt');
 
       case 'malformed_response':
         if (state.consecutiveErrors <= 1) {
-          return { action: 'continue', reason: 'malformed response, retrying once' };
+          return noOp('continue', 'malformed response, retrying once');
         }
-        return { action: 'fallback', reason: 'repeated malformed responses' };
+        return advisory('fallback', 'repeated malformed responses');
 
       case 'model_deprecated':
-        return { action: 'fallback', reason: 'model deprecated, switching to alternative' };
+        return advisory('fallback', 'model deprecated, switching to alternative');
 
       default:
         // 'unknown' – fall through to normal handling below
@@ -134,14 +156,14 @@ export function decideNextAction(state: LoopState): LoopDecision {
   // -------------------------------------------------------------------------
 
   if (state.stopReason === 'max_tokens') {
-    return {
-      action: 'continuation',
-      reason: 'output truncated by token limit',
-      params: {
+    return runtime(
+      'continuation',
+      'output truncated by token limit',
+      {
         continuationPrompt:
           'Continue from where you stopped. Do not restate or apologize.',
       },
-    };
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -152,7 +174,7 @@ export function decideNextAction(state: LoopState): LoopDecision {
     const contextRatio = state.tokenUsage.input / state.maxTokens;
     if (contextRatio >= 0.85) {
       const pct = Math.round(contextRatio * 100);
-      return { action: 'compact', reason: `context pressure at ${pct}%` };
+      return advisory('compact', `context pressure at ${pct}%`);
     }
   }
 
@@ -160,5 +182,5 @@ export function decideNextAction(state: LoopState): LoopDecision {
   // 5. Default
   // -------------------------------------------------------------------------
 
-  return { action: 'continue', reason: 'normal' };
+  return noOp('continue', 'normal');
 }

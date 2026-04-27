@@ -114,7 +114,7 @@ export class ReviewQueueService {
     const id = buildReviewQueueItemId(trace);
     const sessionTitle = this.resolveSessionTitle(input);
     const reason = input.reason || 'manual_review';
-    const source = input.source || 'current_session_bar';
+    const enqueueSource = input.enqueueSource || input.source || 'current_session_bar';
     const failureCapability = reason === 'failure_followup'
       ? this.serializeFailureCapability(input.failureCapability)
       : null;
@@ -143,12 +143,12 @@ export class ReviewQueueService {
     `).run(
       id,
       trace.traceId,
-      trace.source,
+      trace.traceSource,
       trace.sessionId,
       trace.replayKey,
       sessionTitle,
       reason,
-      source,
+      enqueueSource,
       failureCapability,
       now,
       now,
@@ -240,6 +240,7 @@ export class ReviewQueueService {
       id: row.id as string,
       trace: {
         traceId: row.trace_id as string,
+        traceSource: row.trace_source as ReviewQueueItem['trace']['traceSource'],
         source: row.trace_source as ReviewQueueItem['trace']['source'],
         sessionId: row.session_id as string,
         replayKey: row.replay_key as string,
@@ -247,6 +248,7 @@ export class ReviewQueueService {
       sessionId: row.session_id as string,
       sessionTitle: row.session_title as string,
       reason: row.reason as ReviewQueueItem['reason'],
+      enqueueSource: row.source as ReviewQueueItem['enqueueSource'],
       source: row.source as ReviewQueueItem['source'],
       failureCapability: this.parseFailureCapability(row.failure_capability),
       failureAsset: this.parseFailureAsset(row),

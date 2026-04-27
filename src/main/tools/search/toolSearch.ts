@@ -4,6 +4,7 @@
 
 import type { Tool, ToolExecutionResult, ToolContext } from '../types';
 import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
+import { getMCPClient } from '../../mcp/mcpClient';
 import { createLogger } from '../../services/infra/logger';
 import {
   TOOL_SEARCH_DESCRIPTION,
@@ -21,7 +22,7 @@ const logger = createLogger('tool_search');
  * 2. 直接选择：`tool_search("select:WebFetch")` → 直接加载 web_fetch
  * 3. 必须前缀：`tool_search("+mcp search")` → 只搜索 MCP 相关工具
  *
- * 搜索结果中的工具会自动加载，下次模型请求时可直接使用。
+ * 可调用的搜索结果会自动加载；不可直接调用的结果只作为搜索线索返回。
  */
 export const toolSearchTool: Tool = {
   name: 'ToolSearch',
@@ -53,6 +54,14 @@ export const toolSearchTool: Tool = {
 
     try {
       const service = getToolSearchService();
+      let mcpDiscovery: Array<{ serverName: string; connected: boolean; toolCount: number; error?: string }> = [];
+      try {
+        mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query);
+      } catch (discoveryError) {
+        logger.warn('Lazy MCP discovery during tool search failed', {
+          error: discoveryError instanceof Error ? discoveryError.message : String(discoveryError),
+        });
+      }
 
       const result = await service.searchTools(query, {
         maxResults,
@@ -61,9 +70,21 @@ export const toolSearchTool: Tool = {
 
       // 格式化输出
       if (result.tools.length === 0) {
+        const discoveryFailures = mcpDiscovery
+          .filter((discovery) => !discovery.connected || discovery.error)
+          .map((discovery) => `- ${discovery.serverName}: ${discovery.error || 'not connected'}`);
+        const discoveryHint = discoveryFailures.length > 0
+          ? `\n\nMCP 懒加载发现失败：\n${discoveryFailures.join('\n')}`
+          : '';
         return {
           success: true,
-          output: `未找到匹配 "${query}" 的工具。\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+          output: `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+          metadata: {
+            loadedTools: result.loadedTools,
+            totalCount: result.totalCount,
+            hasMore: result.hasMore,
+            mcpDiscovery,
+          },
         };
       }
 
@@ -77,8 +98,15 @@ export const toolSearchTool: Tool = {
           ? ` [MCP: ${tool.mcpServer}]`
           : '';
         const tags = tool.tags.length > 0 ? ` (${tool.tags.join(', ')})` : '';
+        const availability = tool.loadable === false
+          ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
+          : '已加载，可直接调用';
         lines.push(`• **${tool.name}**${sourceInfo}`);
         lines.push(`  ${tool.description}${tags}`);
+        lines.push(`  ${availability}`);
+        if (tool.canonicalInvocation) {
+          lines.push(`  调用入口：${tool.canonicalInvocation}`);
+        }
         lines.push('');
       }
 
@@ -87,7 +115,11 @@ export const toolSearchTool: Tool = {
       }
 
       lines.push('');
-      lines.push('这些工具现在可以直接使用。');
+      if (result.loadedTools.length > 0) {
+        lines.push('已加载的工具现在可以直接使用；不可直接调用的结果只作为搜索线索。');
+      } else {
+        lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
+      }
 
       logger.info(`Search "${query}" loaded tools: ${result.loadedTools.join(', ')}`);
 
@@ -98,6 +130,7 @@ export const toolSearchTool: Tool = {
           loadedTools: result.loadedTools,
           totalCount: result.totalCount,
           hasMore: result.hasMore,
+          mcpDiscovery,
         },
       };
     } catch (error) {

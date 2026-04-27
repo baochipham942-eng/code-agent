@@ -29,6 +29,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
+import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
 
 const logger = createLogger('ToolExecutor');
 
@@ -42,6 +43,13 @@ function recordDecision(
     timestamp: Date.now(), toolName, summary, outcome, reason,
     durationMs: Date.now() - startTime,
   });
+}
+
+function commandMatchesScopedPrefix(command: string, prefix: string): boolean {
+  const trimmedCommand = command.trimStart();
+  return trimmedCommand === prefix
+    || trimmedCommand.startsWith(`${prefix} `)
+    || trimmedCommand.startsWith(`${prefix}\t`);
 }
 
 // ----------------------------------------------------------------------------
@@ -92,6 +100,8 @@ export interface ExecuteOptions {
   toolScope?: WorkbenchToolScope;
   // 当前 turn 的结构化执行意图
   executionIntent?: ConversationExecutionIntent;
+  // Run-level cancellation signal propagated from the agent loop.
+  abortSignal?: AbortSignal;
 }
 
 // ----------------------------------------------------------------------------
@@ -168,20 +178,32 @@ export class ToolExecutor {
     params: Record<string, unknown>,
     options: ExecuteOptions
   ): Promise<ToolExecutionResult> {
-    logger.debug('Executing tool', { toolName, params: JSON.stringify(params).substring(0, 200) });
+    const requestedToolName = toolName;
+    const normalizedRequestedToolName = normalizeToolName(requestedToolName);
+    logger.debug('Executing tool', {
+      toolName: requestedToolName,
+      normalizedToolName: normalizedRequestedToolName,
+      params: JSON.stringify(params).substring(0, 200),
+    });
 
     const resolver = getToolResolver();
-    const toolDef = resolver.getDefinition(toolName);
+    const toolDef = resolver.getDefinition(requestedToolName)
+      ?? (normalizedRequestedToolName !== requestedToolName
+        ? resolver.getDefinition(normalizedRequestedToolName)
+        : undefined);
 
     if (!toolDef) {
-      logger.debug('Tool not found', { toolName });
+      logger.debug('Tool not found', { toolName: requestedToolName });
       return {
         success: false,
-        error: `Unknown tool: ${toolName}`,
+        error: `Unknown tool: ${requestedToolName}`,
       };
     }
 
-    logger.debug('Tool found', { toolName });
+    const executionToolName = toolDef.name;
+    const policyToolName = normalizeToolName(executionToolName);
+
+    logger.debug('Tool found', { toolName: executionToolName, requestedToolName });
 
     // Required-field guardrail: 在执行前校验 schema 里声明的 required 字段是否都提供了。
     // 模型经常幻觉工具名并传空参数，护栏把错误往前移到 executor 入口，避免下游 handler 炸。
@@ -191,16 +213,16 @@ export class ToolExecutor {
       return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
     });
     if (missing.length > 0) {
-      logger.warn('Tool call missing required fields', { toolName, missing });
+      logger.warn('Tool call missing required fields', { toolName: executionToolName, requestedToolName, missing });
       return {
         success: false,
-        error: `工具 "${toolName}" 缺少必填参数: ${missing.join(', ')}。请检查工具 schema 并重新调用。`,
+        error: `工具 "${executionToolName}" 缺少必填参数: ${missing.join(', ')}。请检查工具 schema 并重新调用。`,
       };
     }
 
 
     // 文件检查点：在写入工具执行前保存原文件
-    await createFileCheckpointIfNeeded(toolName, params, () => {
+    await createFileCheckpointIfNeeded(executionToolName, params, () => {
       if (!options.sessionId) return null;
       // messageId 从 context 中获取，如果没有则使用工具调用 ID
       const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -211,6 +233,7 @@ export class ToolExecutor {
     const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
       requestPermission: this.requestPermission,
+      abortSignal: options.abortSignal,
       planningService: options.planningService,
       modelConfig: options.modelConfig,
       // Plan Mode support (borrowed from Claude Code v2.0)
@@ -236,7 +259,7 @@ export class ToolExecutor {
     // Security: Pre-execution validation for bash commands
     const permStartTime = Date.now();
     let commandValidation: ValidationResult | undefined;
-    if (toolName === 'bash' && params.command) {
+    if (isBashToolName(policyToolName) && params.command) {
       commandValidation = validateCommand(params.command as string);
 
       // Block critical risk commands
@@ -252,7 +275,7 @@ export class ToolExecutor {
           const auditLogger = getAuditLogger();
           auditLogger.logSecurityIncident({
             sessionId: options.sessionId || 'unknown',
-            toolName: 'bash',
+            toolName: executionToolName,
             incident: `Blocked command: ${commandValidation.reason}`,
             details: {
               command: maskSensitiveData((params.command as string).substring(0, 200)),
@@ -264,10 +287,10 @@ export class ToolExecutor {
 
         // Fire-and-forget: emit PermissionDenied hook
         options.hookManager?.triggerPermissionDenied(
-          toolName, commandValidation.reason || 'security policy', 'policy',
+          executionToolName, commandValidation.reason || 'security policy', 'policy',
           options.sessionId || 'unknown',
         ).catch(() => {});
-        recordDecision(toolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime);
+        recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime);
 
         return {
           success: false,
@@ -286,15 +309,15 @@ export class ToolExecutor {
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查
-    const isPreApproved = this.isToolPreApproved(toolName, params, options.preApprovedTools);
+    const isPreApproved = this.isToolPreApproved(executionToolName, params, options.preApprovedTools);
     if (isPreApproved) {
-      logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName });
-      recordDecision(toolName, params, 'auto-approve', 'pre-approved', permStartTime);
+      logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
+      recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime);
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (toolName === 'bash' && params.command && !isPreApproved) {
+    if (isBashToolName(policyToolName) && params.command && !isPreApproved) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -303,9 +326,9 @@ export class ToolExecutor {
         if (policyDecision === 'allow') {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
-          recordDecision(toolName, params, 'policy-allow', 'exec-policy', permStartTime);
+          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime);
         } else if (policyDecision === 'forbidden') {
-          recordDecision(toolName, params, 'policy-deny', 'exec-policy', permStartTime);
+          recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime);
           return {
             success: false,
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
@@ -319,7 +342,7 @@ export class ToolExecutor {
       if (!isSafeCommand && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
-        recordDecision(toolName, params, 'auto-approve', 'safe-command', permStartTime);
+        recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime);
       }
     }
 
@@ -327,21 +350,21 @@ export class ToolExecutor {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
-      const traceBuilder = createTraceBuilder(toolName);
+      const traceBuilder = createTraceBuilder(executionToolName);
       try {
-        const classification = await classifyPermission(toolName, params, {
+        const classification = await classifyPermission(policyToolName, params, {
           workingDirectory: this.workingDirectory,
           permissionLevel: toolDef.permissionLevel,
         });
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
-            tool: toolName,
+            tool: executionToolName,
             reason: classification.reason,
             confidence: classification.confidence,
             cached: classification.cached,
           });
           needsUserApproval = false;
-          recordDecision(toolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime);
+          recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime);
         } else if (classification.decision === 'deny') {
           // Collect trace step from classifier
           if (classification.traceStep) {
@@ -353,15 +376,15 @@ export class ToolExecutor {
             );
           }
           logger.warn('Denied by classifier', {
-            tool: toolName,
+            tool: executionToolName,
             reason: classification.reason,
           });
           // Fire-and-forget: emit PermissionDenied hook
           options.hookManager?.triggerPermissionDenied(
-            toolName, classification.reason || 'classifier deny', 'classifier',
+            executionToolName, classification.reason || 'classifier deny', 'classifier',
             options.sessionId || 'unknown',
           ).catch(() => {});
-          recordDecision(toolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime);
+          recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime);
           return {
             success: false,
             error: `Denied: ${classification.reason}`,
@@ -391,11 +414,11 @@ export class ToolExecutor {
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       try {
         const gate = getConfirmationGate();
-        const preview = gate.buildPreview(toolName, params);
-        const riskLevel = gate.assessRiskLevel(toolName, params);
+        const preview = gate.buildPreview(executionToolName, params);
+        const riskLevel = gate.assessRiskLevel(executionToolName, params);
         const shouldForceConfirm = gate.shouldConfirm(
           {
-            toolName,
+            toolName: executionToolName,
             params,
             preview,
             riskLevel,
@@ -429,22 +452,22 @@ export class ToolExecutor {
             permissionRequest.details.path
             || permissionRequest.details.command
             || permissionRequest.details.url
-            || toolName,
+            || executionToolName,
           );
           const hookResult = await options.hookManager.triggerPermissionRequest(
             permType,
             resource,
-            toolName,
+            executionToolName,
             options.sessionId || 'unknown',
             permissionRequest.reason,
           );
           if (!hookResult.shouldProceed) {
             // Fire-and-forget: emit PermissionDenied hook
             options.hookManager?.triggerPermissionDenied(
-              toolName, hookResult.message || 'blocked', 'hook',
+              executionToolName, hookResult.message || 'blocked', 'hook',
               options.sessionId || 'unknown',
             ).catch(() => {});
-            recordDecision(toolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime);
+            recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime);
             return {
               success: false,
               error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
@@ -458,11 +481,11 @@ export class ToolExecutor {
       const approved = await this.requestPermission(permissionRequest);
 
       if (approved) {
-        recordDecision(toolName, params, 'ask-approved', 'user', permStartTime);
+        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime);
       }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
-      if (approved && toolName === 'bash' && params.command) {
+      if (approved && isBashToolName(policyToolName) && params.command) {
         try {
           getExecPolicyStore().learnFromApproval(params.command as string);
         } catch {
@@ -477,7 +500,7 @@ export class ToolExecutor {
           auditLogger.log({
             eventType: 'permission_check',
             sessionId: options.sessionId || 'unknown',
-            toolName,
+            toolName: executionToolName,
             input: this.sanitizeParams(params),
             duration: 0,
             success: false,
@@ -486,10 +509,10 @@ export class ToolExecutor {
         }
         // Fire-and-forget: emit PermissionDenied hook
         options.hookManager?.triggerPermissionDenied(
-          toolName, 'Permission denied by user', 'user',
+          executionToolName, 'Permission denied by user', 'user',
           options.sessionId || 'unknown',
         ).catch(() => {});
-        recordDecision(toolName, params, 'ask-denied', 'user', permStartTime);
+        recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime);
 
         return {
           success: false,
@@ -503,32 +526,36 @@ export class ToolExecutor {
     const toolCache = getToolCache();
 
     // Check cache for cacheable tools
-    if (toolCache.isCacheable(toolName)) {
-      const cached = toolCache.get(toolName, params);
+    if (toolCache.isCacheable(executionToolName)) {
+      const cached = toolCache.get(executionToolName, params);
       if (cached) {
-        logger.debug('Cache HIT', { toolName });
+        logger.debug('Cache HIT', { toolName: executionToolName });
         return {
           success: true,
           result: cached,
           fromCache: true,
         };
       }
-      logger.debug('Cache MISS', { toolName });
+      logger.debug('Cache MISS', { toolName: executionToolName });
     }
 
     const startTime = Date.now();
     try {
       // Execute the tool via protocol resolver
-      logger.debug('Dispatching to protocol resolver', { toolName });
-      const result = await resolver.execute(toolName, params, context);
+      context.approvedToolCall = {
+        toolName: executionToolName,
+        args: params,
+      };
+      logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
+      const result = await resolver.execute(executionToolName, params, context);
       const duration = Date.now() - startTime;
 
-      logger.debug('Tool result', { toolName, success: result.success, error: result.error });
+      logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
 
       // Cache successful results for cacheable tools
-      if (result.success && toolCache.isCacheable(toolName) && result.result !== undefined) {
-        toolCache.set(toolName, params, result.result as import('../../shared/contract').ToolResult);
-        logger.debug('Cached result', { toolName });
+      if (result.success && toolCache.isCacheable(executionToolName) && result.result !== undefined) {
+        toolCache.set(executionToolName, params, result.result as import('../../shared/contract').ToolResult);
+        logger.debug('Cached result', { toolName: executionToolName });
       }
 
       // Audit logging
@@ -536,7 +563,7 @@ export class ToolExecutor {
         const auditLogger = getAuditLogger();
         auditLogger.logToolUsage({
           sessionId: options.sessionId || 'unknown',
-          toolName,
+          toolName: executionToolName,
           input: this.sanitizeParams(params),
           output: result.result ? this.truncateOutput(String(result.result)) : undefined,
           duration,
@@ -550,14 +577,14 @@ export class ToolExecutor {
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      logger.error('Tool threw error', error, { toolName });
+      logger.error('Tool threw error', error, { toolName: executionToolName });
 
       // Audit logging for errors
       if (this.auditEnabled) {
         const auditLogger = getAuditLogger();
         auditLogger.logToolUsage({
           sessionId: options.sessionId || 'unknown',
-          toolName,
+          toolName: executionToolName,
           input: this.sanitizeParams(params),
           duration,
           success: false,
@@ -681,7 +708,7 @@ export class ToolExecutor {
         return {
           type: typeMap[tool.permissionLevel] || 'file_read',
           tool: tool.name,
-          details: params,
+          details: { ...params },
         };
       }
     }
@@ -726,10 +753,10 @@ export class ToolExecutor {
       return false;
     }
 
-    // 1. 精确匹配（大小写不敏感）
-    const toolNameLower = toolName.toLowerCase();
+    // 1. 精确匹配（Bash/bash 语义归一）
+    const normalizedToolName = normalizeToolName(toolName);
     for (const approved of preApprovedTools) {
-      if (approved.toLowerCase() === toolNameLower) {
+      if (sameToolName(approved, normalizedToolName)) {
         return true;
       }
     }
@@ -737,20 +764,18 @@ export class ToolExecutor {
     // 2. 通配符匹配（如 Bash(git:*)）
     for (const pattern of preApprovedTools) {
       // 匹配格式: ToolName(prefix:*)
-      const match = pattern.match(/^(\w+)\(([^:]+):\*\)$/);
+      const match = pattern.match(/^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/);
       if (!match) continue;
 
       const [, patternTool, prefix] = match;
 
       // 检查工具名是否匹配
-      if (patternTool.toLowerCase() !== toolNameLower) continue;
+      if (!sameToolName(patternTool, normalizedToolName)) continue;
 
       // 对于 bash 命令，检查命令前缀
-      if (toolNameLower === 'bash') {
+      if (isBashToolName(normalizedToolName)) {
         const command = (params.command as string) || '';
-        // 去除前导空格后检查前缀
-        const trimmedCommand = command.trimStart();
-        if (trimmedCommand.startsWith(prefix)) {
+        if (commandMatchesScopedPrefix(command, prefix)) {
           return true;
         }
       }

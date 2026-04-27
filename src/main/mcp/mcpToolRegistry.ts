@@ -5,6 +5,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { maskSensitiveData } from '../security';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import { getToolSearchService } from '../services/toolSearch';
 import type {
@@ -16,6 +17,56 @@ import type {
 } from './types';
 
 const logger = createLogger('MCPToolRegistry');
+
+interface MCPToolRegistryCallOptions {
+  timeoutMs?: number;
+  abortSignal?: AbortSignal;
+}
+
+function buildCancelledToolResult(toolCallId: string, startTime: number): ToolResult {
+  return {
+    toolCallId,
+    success: false,
+    error: 'cancelled',
+    duration: Date.now() - startTime,
+    metadata: {
+      cancelledByRun: true,
+    },
+  };
+}
+
+function mapMCPAnnotationsToPermission(
+  annotations?: MCPToolAnnotations,
+): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel'> {
+  if (annotations?.destructiveHint) {
+    return { requiresPermission: true, permissionLevel: 'execute' };
+  }
+
+  if (annotations?.readOnlyHint && !annotations.openWorldHint) {
+    return { requiresPermission: false, permissionLevel: 'read' };
+  }
+
+  return { requiresPermission: true, permissionLevel: 'network' };
+}
+
+function redactLogArgs(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactLogArgs);
+  }
+  if (!value || typeof value !== 'object') {
+    return typeof value === 'string' ? maskSensitiveData(value) : value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (/(token|password|passwd|secret|api[_-]?key|authorization|auth|credential)/i.test(key)) {
+      redacted[key] = '[REDACTED]';
+    } else {
+      redacted[key] = redactLogArgs(nested);
+    }
+  }
+  return redacted;
+}
 
 /**
  * MCP 工具/资源/提示注册表
@@ -106,6 +157,7 @@ export class MCPToolRegistry {
       for (const tool of tools) {
         this.tools.push(tool);
       }
+      this.registerMCPToolsToSearch(serverName);
     } catch {
       logger.debug(`In-process server ${serverName} does not support tools`);
     }
@@ -185,12 +237,12 @@ export class MCPToolRegistry {
    */
   getToolDefinitions(): ToolDefinition[] {
     return this.tools.map((tool) => {
+      const permission = mapMCPAnnotationsToPermission(tool.annotations);
       const def: ToolDefinition & { metadata?: { annotations?: MCPToolAnnotations } } = {
         name: `mcp__${tool.serverName}__${tool.name}`,
         description: `[MCP:${tool.serverName}] ${tool.description}`,
         inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
-        requiresPermission: true,
-        permissionLevel: 'network' as const,
+        ...permission,
       };
       if (tool.annotations) {
         def.metadata = { annotations: tool.annotations };
@@ -232,11 +284,21 @@ export class MCPToolRegistry {
    * 解析 MCP 工具名称
    */
   parseMCPToolName(fullName: string): { serverName: string; toolName: string } | null {
-    const match = fullName.match(/^mcp_([^_]+)_(.+)$/);
-    if (!match) return null;
+    if (fullName.startsWith('mcp__')) {
+      const rest = fullName.slice('mcp__'.length);
+      const separator = rest.indexOf('__');
+      if (separator <= 0 || separator + 2 >= rest.length) return null;
+      return {
+        serverName: rest.slice(0, separator),
+        toolName: rest.slice(separator + 2),
+      };
+    }
+
+    const legacyMatch = fullName.match(/^mcp_([^_]+)_(.+)$/);
+    if (!legacyMatch) return null;
     return {
-      serverName: match[1],
-      toolName: match[2],
+      serverName: legacyMatch[1],
+      toolName: legacyMatch[2],
     };
   }
 
@@ -253,10 +315,16 @@ export class MCPToolRegistry {
     toolName: string,
     args: Record<string, unknown>,
     client: Client,
-    timeoutMs: number = 60000,
+    options: MCPToolRegistryCallOptions = {},
   ): Promise<ToolResult> {
     const startTime = Date.now();
-    logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args, timeoutMs });
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const abortSignal = options.abortSignal;
+    if (abortSignal?.aborted) {
+      return buildCancelledToolResult(toolCallId, startTime);
+    }
+
+    logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args: redactLogArgs(args), timeoutMs });
 
     try {
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -269,7 +337,7 @@ export class MCPToolRegistry {
         client.callTool({
           name: toolName,
           arguments: args,
-        }),
+        }, undefined, { timeout: timeoutMs, signal: abortSignal }),
         timeoutPromise,
       ]);
 
@@ -315,7 +383,12 @@ export class MCPToolRegistry {
     args: Record<string, unknown>,
     client: Client,
     startTime: number,
+    abortSignal?: AbortSignal,
   ): Promise<ToolResult | null> {
+    if (abortSignal?.aborted) {
+      return buildCancelledToolResult(toolCallId, startTime);
+    }
+
     try {
       const retryTimeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
@@ -324,7 +397,11 @@ export class MCPToolRegistry {
       });
 
       const retryResult = await Promise.race([
-        client.callTool({ name: toolName, arguments: args }),
+        client.callTool(
+          { name: toolName, arguments: args },
+          undefined,
+          { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
+        ),
         retryTimeoutPromise,
       ]);
 
@@ -360,12 +437,20 @@ export class MCPToolRegistry {
     toolName: string,
     args: Record<string, unknown>,
     server: InProcessMCPServerInterface,
+    abortSignal?: AbortSignal,
   ): Promise<ToolResult> {
-    logger.info(`Calling in-process MCP tool: ${serverName}/${toolName}`, { args });
+    logger.info(`Calling in-process MCP tool: ${serverName}/${toolName}`, { args: redactLogArgs(args) });
 
     try {
+      const startTime = Date.now();
+      if (abortSignal?.aborted) {
+        return buildCancelledToolResult(toolCallId, startTime);
+      }
       const result = await server.callTool(toolName, args, toolCallId);
       logger.info(`In-process MCP tool completed: ${serverName}/${toolName}`, { duration: result.duration });
+      if (abortSignal?.aborted) {
+        return buildCancelledToolResult(toolCallId, Date.now() - (result.duration ?? 0));
+      }
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'In-process tool call failed';

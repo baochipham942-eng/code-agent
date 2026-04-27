@@ -68,6 +68,7 @@ export interface ConversationEnvelopeContext {
 
 export interface ConversationEnvelope {
   content: string;
+  clientMessageId?: string;
   sessionId?: string;
   attachments?: MessageAttachment[];
   options?: AppServiceRunOptions;

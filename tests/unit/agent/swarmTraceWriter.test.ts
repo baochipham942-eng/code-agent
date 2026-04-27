@@ -118,6 +118,15 @@ describe('SwarmTraceWriter', () => {
     expect(detail!.run.coordinator).toBe('hybrid');
   });
 
+  it('uses sessionId from swarm:started event when present', async () => {
+    emitter.started(1, 'sess-event');
+    const runId = emitter.getCurrentRunId();
+    await writer.drain();
+
+    const detail = repo.getRunDetail(runId!);
+    expect(detail?.run.sessionId).toBe('sess-event');
+  });
+
   it('agent lifecycle 写入 rollup', async () => {
     emitter.started(1);
     const runId = emitter.getCurrentRunId()!;
@@ -157,6 +166,7 @@ describe('SwarmTraceWriter', () => {
     expect(detail.agents[0].toolCalls).toBe(3);
     // timeline 至少包含 started / added / updated / completed
     expect(detail.events.length).toBeGreaterThanOrEqual(4);
+    expect(detail.events.map((event) => event.eventType)).toContain('swarm:completed');
     expect(detail.events.every((e) => e.runId === runId)).toBe(true);
   });
 
@@ -188,6 +198,7 @@ describe('SwarmTraceWriter', () => {
     const detail = repo.getRunDetail(runId)!;
     expect(detail.run.status).toBe('cancelled');
     expect(detail.run.endedAt).not.toBeNull();
+    expect(detail.events.map((event) => event.eventType)).toContain('swarm:cancelled');
   });
 
   it('两次 started 产生两个独立 run', async () => {

@@ -5,6 +5,7 @@ import { getSessionManager } from '../../../services';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import type { ContextAssemblyCtx } from '../contextAssembly';
+import { persistRuntimeState } from '../runtimeStatePersistence';
 import {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS,
@@ -12,6 +13,20 @@ import {
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   normalizePersistentSystemContextKey,
 } from '../contextAssembly';
+
+const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
+
+function markMessagePersistedByContextAssembly(message: Message): void {
+  Object.defineProperty(message, CONTEXT_ASSEMBLY_PERSISTED_MESSAGE, {
+    value: true,
+    enumerable: false,
+    configurable: true,
+  });
+}
+
+export function wasMessagePersistedByContextAssembly(message: Message): boolean {
+  return Boolean((message as any)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
+}
 
 export function injectSystemMessage(ctx: ContextAssemblyCtx, content: string, category?: string): void {
   const inferredCategory = category || ctx.inferBufferedSystemMessageCategory(content);
@@ -58,6 +73,7 @@ export function pushPersistentSystemContext(ctx: ContextAssemblyCtx, content: st
   if (existingIndex >= 0) {
     const [existing] = ctx.runtime.persistentSystemContext.splice(existingIndex, 1);
     ctx.runtime.persistentSystemContext.push(existing);
+    persistRuntimeState(ctx.runtime, { compressionState: false, persistentSystemContext: true });
     return;
   }
 
@@ -88,6 +104,7 @@ export function getBudgetedPersistentSystemContext(ctx: ContextAssemblyCtx): str
 export function trimPersistentSystemContext(ctx: ContextAssemblyCtx): void {
   const selected = ctx.getBudgetedPersistentSystemContext();
   ctx.runtime.persistentSystemContext.splice(0, ctx.runtime.persistentSystemContext.length, ...selected);
+  persistRuntimeState(ctx.runtime, { compressionState: false, persistentSystemContext: true });
 }
 
 export function truncatePersistentSystemContext(ctx: ContextAssemblyCtx, content: string, maxTokens: number): string {
@@ -133,6 +150,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
     if (ctx.runtime.persistMessage) {
       try {
         await ctx.runtime.persistMessage(message);
+        markMessagePersistedByContextAssembly(message);
       } catch (error) {
         logger.error('Failed to persist message (CLI):', error);
       }
@@ -142,7 +160,8 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
 
   try {
     const sessionManager = getSessionManager();
-    await sessionManager.addMessage(message);
+    await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
+    markMessagePersistedByContextAssembly(message);
   } catch (error) {
     logger.error('Failed to persist message:', error);
   }

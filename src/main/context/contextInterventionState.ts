@@ -2,7 +2,14 @@
 // Context Intervention State - Tracks pin/exclude/retain selections per session/agent
 // ============================================================================
 
-import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
+import type {
+  ContextInterventionAction,
+  ContextInterventionSnapshot,
+} from '../../shared/contract/contextView';
+import { createLogger } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
+
+const logger = createLogger('ContextInterventionState');
 
 type InterventionKey = string;
 
@@ -14,6 +21,7 @@ interface InterventionRecord {
 
 export class ContextInterventionState {
   private readonly store = new Map<InterventionKey, InterventionRecord>();
+  private readonly hydratedKeys = new Set<InterventionKey>();
 
   private buildKey(sessionId?: string, agentId?: string): InterventionKey {
     const resolvedSession = sessionId?.trim() || 'global';
@@ -34,7 +42,68 @@ export class ContextInterventionState {
     return record;
   }
 
+  private getReadyDatabase():
+    | Pick<
+        import('../services/core/databaseService').DatabaseService,
+        'isReady' | 'saveContextIntervention' | 'getContextInterventions'
+      >
+    | null {
+    try {
+      const db = getDatabase();
+      return db.isReady ? db : null;
+    } catch (err) {
+      logger.debug('[ContextInterventionState] Database unavailable for context interventions', err);
+      return null;
+    }
+  }
+
+  private hydrateRecord(sessionId?: string, agentId?: string): void {
+    const resolvedSession = sessionId?.trim();
+    if (!resolvedSession) return;
+
+    const key = this.buildKey(sessionId, agentId);
+    if (this.hydratedKeys.has(key)) return;
+
+    const db = this.getReadyDatabase();
+    if (!db) return;
+
+    try {
+      const snapshot = db.getContextInterventions(resolvedSession, agentId);
+      this.hydratedKeys.add(key);
+      this.store.set(key, {
+        pinned: new Set(snapshot.pinned),
+        excluded: new Set(snapshot.excluded),
+        retained: new Set(snapshot.retained),
+      });
+    } catch (err) {
+      logger.warn(`[ContextInterventionState] Failed to hydrate context interventions for ${key}`, err);
+    }
+  }
+
+  private persistIntervention(
+    sessionId: string | undefined,
+    agentId: string | undefined,
+    messageId: string,
+    action: ContextInterventionAction | null,
+  ): void {
+    const resolvedSession = sessionId?.trim();
+    if (!resolvedSession) return;
+
+    const db = this.getReadyDatabase();
+    if (!db) return;
+
+    try {
+      db.saveContextIntervention(resolvedSession, agentId, messageId, action);
+    } catch (err) {
+      logger.warn(
+        `[ContextInterventionState] Failed to persist context intervention ${messageId}`,
+        err,
+      );
+    }
+  }
+
   getSnapshot(sessionId?: string, agentId?: string): ContextInterventionSnapshot {
+    this.hydrateRecord(sessionId, agentId);
     const record = this.ensureRecord(this.buildKey(sessionId, agentId));
     return {
       pinned: Array.from(record.pinned),
@@ -59,6 +128,7 @@ export class ContextInterventionState {
     action: 'pin' | 'exclude' | 'retain',
     enabled: boolean,
   ): ContextInterventionSnapshot {
+    this.hydrateRecord(sessionId, agentId);
     const record = this.ensureRecord(this.buildKey(sessionId, agentId));
     record.pinned.delete(messageId);
     record.excluded.delete(messageId);
@@ -69,6 +139,7 @@ export class ContextInterventionState {
       target.add(messageId);
     }
 
+    this.persistIntervention(sessionId, agentId, messageId, enabled ? action : null);
     return this.getSnapshot(sessionId, agentId);
   }
 
@@ -146,4 +217,3 @@ export function getContextInterventionState(): ContextInterventionState {
   }
   return contextInterventionStateSingleton;
 }
-

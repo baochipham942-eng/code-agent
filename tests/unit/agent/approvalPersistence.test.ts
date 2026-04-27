@@ -327,13 +327,29 @@ describe('SwarmLaunchApprovalGate persistence', () => {
     const planGate = new PlanApprovalGate();
     const launchGate = new SwarmLaunchApprovalGate();
     expect(planGate.attachPersistence(repo)).toBe(1);
-    // 第二次 hydrate：上面 markAllPendingAsOrphaned 已把所有 pending 排干，
-    // launch row 已被 plan gate 的 hydrate 调用一并 mark orphaned，
-    // 因此 launchGate.attachPersistence 看到的是 0 个新 orphan
-    expect(launchGate.attachPersistence(repo)).toBe(0);
+    expect(launchGate.attachPersistence(repo)).toBe(1);
 
-    // 但两类 row 都已落 orphaned 状态
-    expect(repo.listByKindAndStatus('plan', 'orphaned')).toHaveLength(1);
-    expect(repo.listByKindAndStatus('launch', 'orphaned')).toHaveLength(1);
+    const hydratedPlan = planGate.getPlan('cross_plan');
+    expect(hydratedPlan).toBeDefined();
+    expect(hydratedPlan!.status).toBe('rejected');
+    expect(hydratedPlan!.feedback).toContain('Orphaned by process restart');
+    expect(hydratedPlan!.resolvedAt).toBeTruthy();
+
+    const hydratedLaunch = launchGate.getRequest('cross_launch');
+    expect(hydratedLaunch).toBeDefined();
+    expect(hydratedLaunch!.status).toBe('rejected');
+    expect(hydratedLaunch!.feedback).toContain('Orphaned by process restart');
+    expect(hydratedLaunch!.resolvedAt).toBeTruthy();
+
+    expect(planGate.getPlan('cross_launch')).toBeUndefined();
+    expect(launchGate.getRequest('cross_plan')).toBeUndefined();
+
+    const orphanedPlans = repo.listByKindAndStatus('plan', 'orphaned');
+    expect(orphanedPlans).toHaveLength(1);
+    expect(orphanedPlans[0].id).toBe('cross_plan');
+
+    const orphanedLaunches = repo.listByKindAndStatus('launch', 'orphaned');
+    expect(orphanedLaunches).toHaveLength(1);
+    expect(orphanedLaunches[0].id).toBe('cross_launch');
   });
 });

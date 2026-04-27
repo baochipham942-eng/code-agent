@@ -34,7 +34,7 @@ import { compactSubagentMessages } from './subagentCompaction';
 import { getContextWindow, SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
-import { getSpawnGuard } from './spawnGuard';
+import { getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { buildChildContext, type ParentContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { estimateTokens } from '../context/tokenEstimator';
@@ -45,6 +45,8 @@ import { applyInterventionsToMessages } from '../context/contextInterventionHelp
 import { getContextInterventionState } from '../context/contextInterventionState';
 import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
 import type { HookManager } from '../hooks/hookManager';
+import { getTelemetryCollector } from '../telemetry/telemetryCollector';
+import type { TelemetryModelCall } from '../../shared/contract/telemetry';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -138,6 +140,8 @@ interface SubagentContext {
   abortSignal?: AbortSignal;
   /** SpawnGuard agent ID — used to drain message queue for send_input */
   spawnGuardId?: string;
+  /** Optional external message queue drain, used by parallel executor inboxes. */
+  messageDrain?: () => AgentMessage[];
   /** External task agent ID (e.g. DAG task ID) for context observability */
   executionAgentId?: string;
   /** Parent context for child context inheritance */
@@ -324,6 +328,39 @@ function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessag
   }));
 }
 
+function stringifyModelContent(content: ProviderModelMessage['content']): string {
+  if (typeof content === 'string') return content;
+  return content
+    .map((part) => {
+      if (part.type === 'text') return part.text || '';
+      if (part.type === 'image') return '[image]';
+      if (part.type === 'thinking') return part.thinking || part.text || '';
+      if (part.type === 'compaction') return part.compaction || part.text || '';
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildModelPromptSummary(messages: ProviderModelMessage[]): string {
+  return messages
+    .slice(-3)
+    .map((message) => `[${message.role}] ${stringifyModelContent(message.content)}`)
+    .join('\n---\n')
+    .slice(0, 8000);
+}
+
+function buildModelCompletionSummary(response: Awaited<ReturnType<ModelRouter['inference']>>): string {
+  let completion = response.content || response.thinking || '';
+  if (response.toolCalls?.length) {
+    const toolsSummary = response.toolCalls
+      .map((toolCall) => `${toolCall.name}(${JSON.stringify(toolCall.arguments).slice(0, 200)})`)
+      .join('; ');
+    completion += `${completion ? '\n' : ''}[tools: ${toolsSummary}]`;
+  }
+  return completion.slice(0, 4000);
+}
+
 // ----------------------------------------------------------------------------
 // Subagent Executor
 // ----------------------------------------------------------------------------
@@ -481,6 +518,8 @@ export class SubagentExecutor {
 
     const subagentContextStore = getSubagentContextStore();
     const observabilityAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    const telemetryCollector = getTelemetryCollector();
+    let telemetryTurnNumber = 0;
 
     // Build messages with multimodal support for images
     const messages: RuntimeMessage[] = [
@@ -701,8 +740,11 @@ export class SubagentExecutor {
         }
 
         // Drain structured message queue (mid-loop injection)
-        if (context.spawnGuardId) {
-          const pendingMessages = getSpawnGuard().drainMessages(context.spawnGuardId);
+        {
+          const pendingMessages = [
+            ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
+            ...(context.messageDrain ? context.messageDrain() : []),
+          ];
           if (pendingMessages.length > 0) {
             for (const msg of pendingMessages) {
               if (msg.type === 'shutdown_request') {
@@ -760,17 +802,86 @@ export class SubagentExecutor {
           observabilityAgentId,
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
+        const providerMessages = buildInferenceMessages(inferenceMessages);
+        const telemetryTurnId = generateMessageId();
+        const telemetryTurnStartedAt = Date.now();
+        const currentTelemetryTurnNumber = ++telemetryTurnNumber;
+        const telemetryToolCalls: Array<{
+          toolCallId: string;
+          name: string;
+          arguments: Record<string, unknown>;
+          resultSummary?: string;
+          success: boolean;
+          error?: string;
+          durationMs: number;
+          timestamp: number;
+          index: number;
+          parallel?: boolean;
+          metadata?: Record<string, unknown>;
+        }> = [];
 
+        const inferenceStartedAt = Date.now();
         const response = await this.modelRouter.inference(
-          buildInferenceMessages(inferenceMessages),
+          providerMessages,
           toolDefinitions,
           context.modelConfig,
           () => {} // No streaming for subagents
         );
+        const inferenceDuration = Date.now() - inferenceStartedAt;
 
-        // Note: Token usage tracking would require ModelResponse to include usage data
-        // For now, we skip token usage recording as the ModelRouter doesn't expose it
-        // TODO: Enhance ModelRouter to return token usage for budget tracking
+        const responseTextForTokens = [
+          response.content,
+          response.thinking,
+          response.toolCalls?.map((toolCall) => JSON.stringify(toolCall.arguments || {})).join(''),
+        ].filter(Boolean).join('\n');
+        const modelCall: TelemetryModelCall = {
+          id: `mc-${telemetryTurnId}-${currentTelemetryTurnNumber}`,
+          timestamp: Date.now(),
+          provider: context.modelConfig.provider,
+          model: context.modelConfig.model,
+          temperature: context.modelConfig.temperature,
+          maxTokens: context.modelConfig.maxTokens,
+          inputTokens: response.usage?.inputTokens ?? estimateTokens(
+            providerMessages.map((message) => stringifyModelContent(message.content)).join('\n'),
+          ),
+          outputTokens: response.usage?.outputTokens ?? estimateTokens(responseTextForTokens),
+          latencyMs: inferenceDuration,
+          responseType: response.type,
+          toolCallCount: response.toolCalls?.length ?? 0,
+          truncated: !!response.truncated,
+          prompt: buildModelPromptSummary(providerMessages),
+          completion: buildModelCompletionSummary(response),
+        };
+
+        const persistTelemetryTurn = (assistantResponse: string, thinking?: string): void => {
+          telemetryCollector.recordDetachedTurn({
+            sessionId,
+            turnId: telemetryTurnId,
+            turnNumber: currentTelemetryTurnNumber,
+            userPrompt: currentTelemetryTurnNumber === 1 ? prompt : `Subagent iteration ${currentTelemetryTurnNumber}`,
+            assistantResponse,
+            thinking,
+            agentId: observabilityAgentId,
+            parentTurnId: context.parentToolUseId,
+            startTime: telemetryTurnStartedAt,
+            endTime: Date.now(),
+            modelCalls: [modelCall],
+            toolCalls: telemetryToolCalls,
+            events: [{
+              eventType: 'tool_schema_snapshot',
+              summary: `${toolDefinitions.length} tool schemas available`,
+              data: {
+                tools: toolDefinitions.map((tool) => ({
+                  name: tool.name,
+                  inputSchema: tool.inputSchema,
+                  requiresPermission: tool.requiresPermission,
+                  permissionLevel: tool.permissionLevel,
+                })),
+              },
+              timestamp: telemetryTurnStartedAt,
+            }],
+          });
+        };
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
@@ -790,6 +901,7 @@ export class SubagentExecutor {
             timestamp: Date.now(),
           });
           emitContextSnapshot();
+          persistTelemetryTurn(response.content, response.thinking);
           break;
         }
 
@@ -811,20 +923,31 @@ export class SubagentExecutor {
             timestamp: Date.now(),
           });
 
-          for (const toolCall of response.toolCalls) {
+          for (const [toolIndex, toolCall] of response.toolCalls.entries()) {
             const toolDef = allowedNames.has(toolCall.name)
               ? context.toolResolver.getDefinition(toolCall.name)
               : undefined;
             if (!toolDef) {
-              toolResults.push(`Error: Tool ${toolCall.name} not available`);
+              const error = `Tool ${toolCall.name} not available`;
+              toolResults.push(`Error: ${error}`);
+              telemetryToolCalls.push({
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                success: false,
+                error,
+                durationMs: 0,
+                timestamp: Date.now(),
+                index: toolIndex,
+              });
               pushObservabilityMessage({
                 id: generateMessageId(),
                 role: 'tool',
-                content: `Error: Tool ${toolCall.name} not available`,
+                content: `Error: ${error}`,
                 toolResults: [{
                   toolCallId: toolCall.id,
                   success: false,
-                  error: `Tool ${toolCall.name} not available`,
+                  error,
                 }],
                 timestamp: Date.now(),
               });
@@ -844,16 +967,28 @@ export class SubagentExecutor {
             // Check permission via pipeline
             const permCheck = pipeline.preExecutionCheck(pipelineContext, toolRequest);
             if (!permCheck.allowed) {
-              toolResults.push(`Error: Permission denied for ${toolCall.name}: ${permCheck.reason}`);
+              const error = `Permission denied for ${toolCall.name}: ${permCheck.reason}`;
+              toolResults.push(`Error: ${error}`);
               logger.warn(`[${config.name}] Tool ${toolCall.name} denied: ${permCheck.reason}`);
+              telemetryToolCalls.push({
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                success: false,
+                error,
+                durationMs: 0,
+                timestamp: Date.now(),
+                index: toolIndex,
+                metadata: { permissionTrace: 'pipeline_denied', reason: permCheck.reason },
+              });
               pushObservabilityMessage({
                 id: generateMessageId(),
                 role: 'tool',
-                content: `Error: Permission denied for ${toolCall.name}: ${permCheck.reason}`,
+                content: `Error: ${error}`,
                 toolResults: [{
                   toolCallId: toolCall.id,
                   success: false,
-                  error: `Permission denied for ${toolCall.name}: ${permCheck.reason}`,
+                  error,
                 }],
                 timestamp: Date.now(),
               });
@@ -878,16 +1013,28 @@ export class SubagentExecutor {
                   risk,
                 });
                 if (!approval.approved) {
-                  toolResults.push(`Tool ${toolCall.name}: Blocked by plan approval — ${approval.feedback || 'rejected'}`);
+                  const error = `Blocked by plan approval: ${approval.feedback || 'rejected'}`;
+                  toolResults.push(`Tool ${toolCall.name}: ${error}`);
                   logger.info(`[${config.name}] Tool ${toolCall.name} blocked by plan approval`);
+                  telemetryToolCalls.push({
+                    toolCallId: toolCall.id,
+                    name: toolCall.name,
+                    arguments: toolCall.arguments,
+                    success: false,
+                    error,
+                    durationMs: 0,
+                    timestamp: Date.now(),
+                    index: toolIndex,
+                    metadata: { permissionTrace: 'plan_approval_denied', risk },
+                  });
                   pushObservabilityMessage({
                     id: generateMessageId(),
                     role: 'tool',
-                    content: `Tool ${toolCall.name}: Blocked by plan approval — ${approval.feedback || 'rejected'}`,
+                    content: `Tool ${toolCall.name}: ${error}`,
                     toolResults: [{
                       toolCallId: toolCall.id,
                       success: false,
-                      error: `Blocked by plan approval: ${approval.feedback || 'rejected'}`,
+                      error,
                     }],
                     timestamp: Date.now(),
                   });
@@ -921,6 +1068,18 @@ export class SubagentExecutor {
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
               );
+              telemetryToolCalls.push({
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                resultSummary: result.output || result.error,
+                success: result.success,
+                error: result.error,
+                durationMs: toolDuration,
+                timestamp: toolStartTime,
+                index: toolIndex,
+                metadata: result.metadata,
+              });
               pushObservabilityMessage({
                 id: generateMessageId(),
                 role: 'tool',
@@ -954,6 +1113,16 @@ export class SubagentExecutor {
               toolResults.push(
                 `Tool ${toolCall.name}: Error - ${errorMessage}`
               );
+              telemetryToolCalls.push({
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                success: false,
+                error: errorMessage,
+                durationMs: toolDuration,
+                timestamp: toolStartTime,
+                index: toolIndex,
+              });
               pushObservabilityMessage({
                 id: generateMessageId(),
                 role: 'tool',
@@ -1015,6 +1184,12 @@ export class SubagentExecutor {
             timestamp: Date.now(),
           });
           emitContextSnapshot();
+          persistTelemetryTurn(
+            response.toolCalls
+              .map((tc) => `Calling ${tc.name}(${JSON.stringify(tc.arguments)})`)
+              .join('\n'),
+            response.thinking,
+          );
 
           continue;
         }

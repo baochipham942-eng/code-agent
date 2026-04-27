@@ -404,10 +404,21 @@ describe('convertToolsToClaude', () => {
     const result = convertToolsToClaude(tools);
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({
+    expect(result[0]).toMatchObject({
       name: 'search',
       description: 'Search the web',
-      input_schema: inputSchema,
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          _meta: expect.objectContaining({
+            type: 'object',
+            required: ['shortDescription'],
+          }),
+        },
+        required: ['query'],
+      },
     });
+    expect(inputSchema.properties).not.toHaveProperty('_meta');
   });
 });

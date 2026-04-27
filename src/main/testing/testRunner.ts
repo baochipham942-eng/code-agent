@@ -23,6 +23,9 @@ import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
 import { isNonRetryableError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
+import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
+import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
+import type { ReplayBlock, StructuredReplay } from '../../shared/contract/evaluation';
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
@@ -51,6 +54,8 @@ export interface AgentInterface {
   getAgentInfo(): { name: string; model: string; provider: string };
   /** Get the current session ID (optional) */
   getSessionId?(): string | undefined;
+  /** Flush/end the current telemetry session after a case completes (optional) */
+  finalizeSession?(): Promise<void>;
 }
 
 /**
@@ -103,6 +108,121 @@ export class TestRunner {
    */
   abort(): void {
     this.aborted = true;
+  }
+
+  private isRealAgentRunCase(testCase: TestCase): boolean {
+    return testCase.tags?.includes('real-agent-run') ?? false;
+  }
+
+  private getReplayBlocks(replay: StructuredReplay): ReplayBlock[] {
+    return replay.turns.flatMap((turn) => turn.blocks);
+  }
+
+  private validateRealAgentRunReplay(replay: StructuredReplay | null): string[] {
+    if (!replay) return ['missing_structured_replay'];
+
+    const completeness = replay.summary.telemetryCompleteness;
+    const failures: string[] = [];
+    if (!completeness) {
+      failures.push('missing_telemetry_completeness');
+      failures.push(...getReplayCompletenessReasons({
+        sessionId: replay.sessionId,
+        replayKey: replay.traceIdentity?.replayKey,
+        dataSource: replay.dataSource ?? replay.summary.metricAvailability?.dataSource,
+        turnCount: replay.turns.length,
+        modelCallCount: 0,
+        toolCallCount: 0,
+        eventCount: 0,
+        hasModelDecisions: false,
+        hasToolSchemas: false,
+      }));
+      return Array.from(new Set(failures));
+    }
+
+    const blocks = this.getReplayBlocks(replay);
+    const modelBlocks = blocks.filter((block) => block.type === 'model_call');
+    const toolBlocks = blocks.filter((block) => block.type === 'tool_call' && block.toolCall);
+    failures.push(...getReplayCompletenessReasons({
+      sessionId: completeness.sessionId ?? replay.sessionId,
+      replayKey: completeness.replayKey ?? replay.traceIdentity?.replayKey,
+      dataSource: completeness.dataSource ?? replay.dataSource ?? replay.summary.metricAvailability?.dataSource,
+      turnCount: completeness.turnCount,
+      modelCallCount: completeness.modelCallCount,
+      toolCallCount: completeness.toolCallCount,
+      eventCount: completeness.eventCount,
+      hasModelDecisions: completeness.hasModelDecisions,
+      hasToolSchemas: completeness.hasToolSchemas,
+      hasReplayExplanation: modelBlocks.some((block) => block.modelDecision?.prompt || block.modelDecision?.completion),
+      hasToolArgs: toolBlocks.some((block) => Object.keys(block.toolCall?.args || {}).length > 0),
+      hasToolResult: toolBlocks.some((block) => block.toolCall?.successKnown || block.toolCall?.result),
+    }));
+    if (completeness.hasRealAgentTrace !== true) {
+      failures.push('missing_real_agent_trace');
+    }
+
+    return Array.from(new Set(failures));
+  }
+
+  private async attachTelemetryReplay(testCase: TestCase, result: TestResult): Promise<void> {
+    const requiresRealAgentRun = this.isRealAgentRunCase(testCase);
+    if (result.sessionId) {
+      result.replayKey = buildSessionTraceIdentity(result.sessionId).replayKey;
+    }
+
+    await this.agent.finalizeSession?.();
+
+    let replay: StructuredReplay | null = null;
+    if (result.sessionId) {
+      try {
+        const { getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+        replay = await getTelemetryQueryService().getStructuredReplay(result.sessionId);
+        if (replay) {
+          result.replayKey = replay.traceIdentity.replayKey;
+          result.telemetryCompleteness = replay.summary.telemetryCompleteness;
+        }
+      } catch (error) {
+        logger.warn('Failed to attach structured replay telemetry', {
+          testId: testCase.id,
+          sessionId: result.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (!requiresRealAgentRun) return;
+
+    const failures = this.validateRealAgentRunReplay(replay);
+    result.telemetryGate = {
+      name: 'real-agent-run',
+      passed: failures.length === 0,
+      failures,
+    };
+
+    if (failures.length === 0) return;
+
+    const gateReason = `real-agent-run gate failed: ${failures.join(', ')}`;
+    result.status = 'failed';
+    result.score = 0;
+    result.failureStage = 'telemetry_replay_gate';
+    result.failureReason = result.failureReason
+      ? `${result.failureReason}; ${gateReason}`
+      : gateReason;
+    result.errors.push(gateReason);
+  }
+
+  private toTrialSummary(result: TestResult): NonNullable<TestResult['trials']>[number] {
+    return {
+      score: result.score,
+      status: result.status,
+      duration_ms: result.duration,
+      sessionId: result.sessionId,
+      replayKey: result.replayKey,
+      telemetryCompleteness: result.telemetryCompleteness,
+      telemetryGate: result.telemetryGate,
+      failureStage: result.failureStage,
+      failureReason: result.failureReason,
+      errors: result.errors.length > 0 ? [...result.errors] : undefined,
+    };
   }
 
   /**
@@ -170,15 +290,20 @@ export class TestRunner {
           passedTests.add(testCase.id);
         }
       } else {
-        // Multiple trials: run each case trialsPerCase times, take best score (pass@k)
-        const trialResults: Array<{ score: number; status: TestResult['status']; duration_ms: number }> = [];
+        // Multiple trials: pass@k, with real-agent-run telemetry as a hard gate.
+        const trialResults: NonNullable<TestResult['trials']> = [];
         let bestResult: TestResult | null = null;
+        let telemetryGateFailureResult: TestResult | null = null;
 
         for (let trial = 0; trial < trialsPerCase; trial++) {
           if (this.aborted) break;
           logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
           const result = await this.runSingleTest(testCase);
-          trialResults.push({ score: result.score, status: result.status, duration_ms: result.duration });
+          trialResults.push(this.toTrialSummary(result));
+
+          if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+            telemetryGateFailureResult ??= result;
+          }
 
           if (!bestResult || result.score > bestResult.score) {
             bestResult = result;
@@ -186,6 +311,10 @@ export class TestRunner {
         }
 
         if (bestResult) {
+          if (telemetryGateFailureResult) {
+            bestResult = telemetryGateFailureResult;
+          }
+
           // Attach trial data to best result
           bestResult.trials = trialResults;
 
@@ -428,6 +557,8 @@ export class TestRunner {
             .join('; ');
         }
       }
+
+      await this.attachTelemetryReplay(testCase, result);
 
       // P3: Trajectory analysis (when enabled)
       if (this.config.enableTrajectoryAnalysis) {

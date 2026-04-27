@@ -126,7 +126,7 @@ async function executeDocEdit(
 
   try {
     if (format === 'xlsx') {
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx);
+      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
       const result = await executeExcelEdit(
         { file_path: filePath, operations: operations as ExcelEditParams['operations'], dry_run: dryRun },
         legacyCtx,
@@ -178,7 +178,7 @@ async function executeDocEdit(
         code: 'NOT_INITIALIZED',
       };
     }
-    const legacyCtx = buildLegacyCtxFromProtocol(ctx);
+    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
     const results: string[] = [];
     for (const op of operations) {
       if (ctx.abortSignal.aborted) {

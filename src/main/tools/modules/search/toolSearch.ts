@@ -35,7 +35,7 @@ class ToolSearchHandler implements ToolHandler<Record<string, unknown>, string> 
     }
 
     onProgress?.({ stage: 'starting', detail: 'tool search' });
-    const legacyResult = await toolSearchTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+    const legacyResult = await toolSearchTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('ToolSearch done', { ok: legacyResult.success });
     return adaptLegacyResult(legacyResult);

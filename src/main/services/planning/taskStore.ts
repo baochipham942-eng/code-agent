@@ -9,12 +9,78 @@ import type {
   CreateTaskInput,
   UpdateTaskInput,
 } from '../../../shared/contract/planning';
+import { createLogger } from '../infra/logger';
+import { getDatabase } from '../core/databaseService';
+
+const logger = createLogger('TaskStore');
 
 // Session-scoped task storage: Map<sessionId, Map<taskId, SessionTask>>
 const sessionTasks: Map<string, Map<string, SessionTask>> = new Map();
 
 // Auto-incrementing task ID counter per session
 const sessionTaskCounters: Map<string, number> = new Map();
+
+// Tracks sessions that were actually hydrated from the durable store. A DB that
+// is not ready yet should not permanently turn an empty in-memory map into the
+// source of truth.
+const hydratedSessions: Set<string> = new Set();
+
+function getReadyDatabase():
+  | Pick<import('../core/databaseService').DatabaseService, 'isReady' | 'saveSessionTasks' | 'getSessionTasks'>
+  | null {
+  try {
+    const db = getDatabase();
+    return db.isReady ? db : null;
+  } catch (err) {
+    logger.debug('[TaskStore] Database unavailable for task persistence', err);
+    return null;
+  }
+}
+
+function inferCounter(tasks: SessionTask[]): number {
+  let counter = 0;
+  for (const task of tasks) {
+    if (/^\d+$/.test(task.id)) {
+      counter = Math.max(counter, Number(task.id));
+    }
+  }
+  return counter;
+}
+
+function hydrateTasks(sessionId: string): void {
+  if (hydratedSessions.has(sessionId)) return;
+  const db = getReadyDatabase();
+  if (!db) return;
+  try {
+    const tasks = db.getSessionTasks(sessionId);
+    const existingTasks = sessionTasks.get(sessionId);
+    const taskMap = new Map<string, SessionTask>();
+    for (const task of tasks) {
+      taskMap.set(task.id, { ...task, blocks: [...task.blocks], blockedBy: [...task.blockedBy], metadata: { ...task.metadata } });
+    }
+    if (existingTasks) {
+      for (const task of existingTasks.values()) {
+        taskMap.set(task.id, { ...task, blocks: [...task.blocks], blockedBy: [...task.blockedBy], metadata: { ...task.metadata } });
+      }
+    }
+    sessionTasks.set(sessionId, taskMap);
+    sessionTaskCounters.set(sessionId, inferCounter(Array.from(taskMap.values())));
+    hydratedSessions.add(sessionId);
+  } catch (err) {
+    logger.warn(`[TaskStore] Failed to hydrate tasks for session ${sessionId}`, err);
+  }
+}
+
+function persistTasks(sessionId: string): void {
+  const db = getReadyDatabase();
+  if (!db) return;
+  try {
+    const taskMap = sessionTasks.get(sessionId);
+    db.saveSessionTasks(sessionId, taskMap ? Array.from(taskMap.values()) : []);
+  } catch (err) {
+    logger.warn(`[TaskStore] Failed to persist tasks for session ${sessionId}`, err);
+  }
+}
 
 /**
  * 生成唯一任务 ID
@@ -29,6 +95,7 @@ function generateTaskId(sessionId: string): string {
  * 获取 session 的任务 Map（不存在则创建）
  */
 function getSessionTaskMap(sessionId: string): Map<string, SessionTask> {
+  hydrateTasks(sessionId);
   if (!sessionTasks.has(sessionId)) {
     sessionTasks.set(sessionId, new Map());
   }
@@ -57,6 +124,7 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
   };
 
   taskMap.set(task.id, task);
+  persistTasks(sessionId);
   return task;
 }
 
@@ -64,8 +132,7 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
  * 获取任务详情
  */
 export function getTask(sessionId: string, taskId: string): SessionTask | null {
-  const taskMap = sessionTasks.get(sessionId);
-  if (!taskMap) return null;
+  const taskMap = getSessionTaskMap(sessionId);
   return taskMap.get(taskId) || null;
 }
 
@@ -77,8 +144,7 @@ export function updateTask(
   taskId: string,
   updates: UpdateTaskInput
 ): SessionTask | null {
-  const taskMap = sessionTasks.get(sessionId);
-  if (!taskMap) return null;
+  const taskMap = getSessionTaskMap(sessionId);
 
   const task = taskMap.get(taskId);
   if (!task) return null;
@@ -91,6 +157,7 @@ export function updateTask(
       otherTask.blocks = otherTask.blocks.filter((id) => id !== taskId);
     }
     taskMap.delete(taskId);
+    persistTasks(sessionId);
     return task;
   }
 
@@ -140,6 +207,7 @@ export function updateTask(
   }
 
   task.updatedAt = Date.now();
+  persistTasks(sessionId);
   return task;
 }
 
@@ -154,8 +222,7 @@ export function deleteTask(sessionId: string, taskId: string): boolean {
  * 列出所有任务
  */
 export function listTasks(sessionId: string): SessionTask[] {
-  const taskMap = sessionTasks.get(sessionId);
-  if (!taskMap) return [];
+  const taskMap = getSessionTaskMap(sessionId);
   return Array.from(taskMap.values());
 }
 
@@ -172,12 +239,15 @@ export function getIncompleteTasks(sessionId: string): SessionTask[] {
 export function clearTasks(sessionId: string): void {
   sessionTasks.delete(sessionId);
   sessionTaskCounters.delete(sessionId);
+  hydratedSessions.delete(sessionId);
+  persistTasks(sessionId);
 }
 
 /**
  * 导出 session 的所有任务和计数器（用于持久化）
  */
 export function exportTasks(sessionId: string): { tasks: SessionTask[]; counter: number } {
+  hydrateTasks(sessionId);
   const taskMap = sessionTasks.get(sessionId);
   const counter = sessionTaskCounters.get(sessionId) || 0;
   return {
@@ -196,6 +266,7 @@ export function importTasks(sessionId: string, tasks: SessionTask[], counter: nu
   }
   sessionTasks.set(sessionId, taskMap);
   sessionTaskCounters.set(sessionId, counter);
+  hydratedSessions.add(sessionId);
 }
 
 /**

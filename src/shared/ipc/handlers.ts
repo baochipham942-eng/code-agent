@@ -451,6 +451,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
+  [IPC_CHANNELS.SWARM_CANCEL_RUN]: (payload?: { sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_APPROVE_PLAN]: (payload: { planId: string; feedback?: string }) => Promise<boolean>;
@@ -594,6 +595,27 @@ export interface ConfirmActionRequest {
   timestamp: number;
 }
 
+export type TaskRuntimeSessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'error';
+
+export interface TaskRuntimeSessionState {
+  status: TaskRuntimeSessionStatus;
+  queuePosition?: number;
+  startTime?: number;
+  error?: string;
+}
+
+export interface TaskRuntimeStats {
+  running: number;
+  queued: number;
+  available: number;
+  maxConcurrent: number;
+}
+
+export type TaskRuntimeEvent =
+  | { type: 'state_change'; sessionId: string; data: TaskRuntimeSessionState }
+  | { type: 'stats_updated'; data: TaskRuntimeStats }
+  | { type: 'queue_update'; sessionId: string; queue: string[] };
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
@@ -623,6 +645,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.STATUS_GIT_UPDATE]: (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
+  // TaskManager runtime events
+  [IPC_CHANNELS.TASK_EVENT]: (event: TaskRuntimeEvent) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events

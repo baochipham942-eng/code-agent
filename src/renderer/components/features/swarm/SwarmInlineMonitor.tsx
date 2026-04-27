@@ -54,9 +54,25 @@ function isActive(s: AgentStatus): boolean {
   return s === 'pending' || s === 'ready' || s === 'running';
 }
 
+export async function cancelSwarmRunOrFallback(activeAgents: Array<Pick<SwarmAgentState, 'id'>>): Promise<void> {
+  const cancelledRun = await ipcService
+    .invoke(IPC_CHANNELS.SWARM_CANCEL_RUN)
+    .catch(() => false);
+
+  if (cancelledRun) return;
+
+  await Promise.all(
+    activeAgents.map((agent) =>
+      ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id }).catch(() => {
+        // 单个 cancel 失败不阻塞其他 agent，swarm event 会让 UI 自动收敛。
+      }),
+    ),
+  );
+}
+
 export function SwarmInlineMonitor() {
-  const agents = useSwarmStore((s) => s.agents);
-  const isRunning = useSwarmStore((s) => s.isRunning);
+  const agents = useSwarmStore((s) => s.agents ?? []);
+  const isRunning = useSwarmStore((s) => s.isRunning ?? false);
   const [collapsed, setCollapsed] = useState(false);
   const [stopping, setStopping] = useState(false);
 
@@ -69,16 +85,7 @@ export function SwarmInlineMonitor() {
     if (stopping || activeAgents.length === 0) return;
     setStopping(true);
     try {
-      // CA 没有"停止整个 swarm"的 IPC，遍历当前 active agents 各自 cancel
-      // 比"等 user 一个一个点 X"快得多。
-      await Promise.all(
-        activeAgents.map((agent) =>
-          ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id }).catch(() => {
-            // 单个 cancel 失败不阻塞其他 agent — swarm orchestrator 会通过 SwarmEvent
-            // 反映状态，UI 自动收敛
-          }),
-        ),
-      );
+      await cancelSwarmRunOrFallback(activeAgents);
     } finally {
       setStopping(false);
     }

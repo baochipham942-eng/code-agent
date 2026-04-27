@@ -8,10 +8,12 @@ import { estimateTokens } from '../../../context/tokenOptimizer';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { fileReadTracker } from '../../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../../tools/dataFingerprint';
+import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
 import { getSessionTodos } from '../../../agent/todoParser';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { cachedReaddirSync, logger } from '../contextAssembly';
+import { persistRuntimeState } from '../runtimeStatePersistence';
 
 export function updateContextHealth(ctx: ContextAssemblyCtx): void {
   try {
@@ -171,6 +173,12 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
           ctx.runtime.messages.push(compactionMessage);
         }
         ctx.recordContextEventsForMessage(compactionMessage);
+        try {
+          await getSessionManager().replaceMessages(ctx.runtime.sessionId, ctx.runtime.messages);
+        } catch (error) {
+          logger.warn('[AgentLoop] Hard compaction updated runtime but failed to persist compacted messages', error);
+        }
+
         const nextCompressionState = new CompressionState();
         nextCompressionState.applyCommit({
           layer: 'autocompact',
@@ -184,6 +192,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
           },
         });
         ctx.runtime.compressionState = nextCompressionState;
+        persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
         getContextEventLedger().upsertCompressionEvents(
           ctx.runtime.sessionId,
           ctx.runtime.agentId,

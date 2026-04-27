@@ -21,6 +21,7 @@ export interface ToolContext {
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
+  abortSignal?: AbortSignal;
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
   planningService?: unknown; // PlanningService instance for persistent planning
@@ -92,6 +93,14 @@ export interface ToolContext {
    * `(ctx.resolver as import('../protocol/dispatch/toolResolver').ToolResolver).execute(...)`
    */
   resolver?: unknown;
+  /**
+   * ToolExecutor 已经完成顶层权限决策的原始调用。
+   * protocol handler 的首个同参 canUseTool 可复用该结果，子操作仍需重新请求。
+   */
+  approvedToolCall?: {
+    toolName: string;
+    args: Record<string, unknown>;
+  };
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */

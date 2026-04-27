@@ -22,15 +22,45 @@ import type {
   ToolCategory,
   PermissionLevel,
   CanUseToolFn,
+  CanUseToolResult,
   ToolProgressFn,
 } from '../../../protocol/tools';
-import type { Tool, ToolContext as LegacyToolContext, ToolExecutionResult } from '../../types';
+import type {
+  Tool,
+  ToolContext as LegacyToolContext,
+  ToolExecutionResult,
+  PermissionRequestData,
+} from '../../types';
 
 /**
  * 构造 legacy ToolContext，把新 ctx 字段映射回旧字段
  * legacyToolRegistry/planningService/modelConfig 等 opaque 字段从 ctx 直传
  */
-export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyToolContext {
+async function forwardLegacyPermissionRequest(
+  request: PermissionRequestData,
+  canUseTool?: CanUseToolFn,
+): Promise<boolean> {
+  if (!canUseTool) {
+    return false;
+  }
+
+  const reason = request.type === 'dangerous_command' && request.reason
+    ? `dangerous:${request.reason}`
+    : request.reason;
+
+  const result: CanUseToolResult = await canUseTool(
+    request.tool,
+    request.details ?? {},
+    reason,
+    request,
+  );
+  return result.allow;
+}
+
+export function buildLegacyCtxFromProtocol(
+  ctx: ProtocolToolContext,
+  canUseTool?: CanUseToolFn,
+): LegacyToolContext {
   // 把 protocol AgentEvent 透传成 legacy emitEvent (string, data)
   const wrapEmit = (event: string, data: unknown) => {
     ctx.emit({ type: event, ...((data && typeof data === 'object') ? data : { data }) } as never);
@@ -38,7 +68,8 @@ export function buildLegacyCtxFromProtocol(ctx: ProtocolToolContext): LegacyTool
 
   return {
     workingDirectory: ctx.workingDir,
-    requestPermission: async () => true, // wrapper 已经过 canUseTool 闸门，这里直放行
+    requestPermission: (request) => forwardLegacyPermissionRequest(request, canUseTool),
+    abortSignal: ctx.abortSignal,
     sessionId: ctx.sessionId,
     emit: wrapEmit,
     emitEvent: wrapEmit,
@@ -127,7 +158,7 @@ export function wrapLegacyTool(legacyTool: Tool, opts: WrapOptions): ToolModule 
       }
 
       onProgress?.({ stage: 'starting', detail: legacyTool.name });
-      const legacyResult = await legacyTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+      const legacyResult = await legacyTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug(`${legacyTool.name} done`, { ok: legacyResult.success });
       return adaptLegacyResult(legacyResult);

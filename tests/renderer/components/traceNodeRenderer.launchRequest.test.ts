@@ -71,7 +71,7 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('并行编排启动确认');
+    expect(html).toContain('准备 spawn 3 个 agent');
     expect(html).toContain('待确认');
     expect(html).toContain('准备启动 3 个 agent');
     expect(html).toContain('开始执行');
@@ -136,7 +136,7 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('Browser Managed');
   });
 
-  it('renders turn timeline cards for browser snapshot, capability scope, and outputs', () => {
+  it('renders turn timeline cards for capability scope and outputs', () => {
     const snapshotTimeline: TurnTimelineNode = {
       id: 'timeline-snapshot',
       kind: 'workbench_snapshot',
@@ -251,13 +251,8 @@ describe('TraceNodeRenderer launch request', () => {
       ),
     );
 
-    expect(html).toContain('本轮执行快照');
-    expect(html).toContain('Browser Desktop');
-    expect(html).toContain('Browser Blocked');
-    expect(html).toContain('Browser 预览：ChatGPT · https://chatgpt.com');
-    expect(html).toContain('Frontmost App：Google Chrome');
-    expect(html).toContain('未就绪：当前桌面浏览器上下文未就绪：屏幕录制未授权。');
-    expect(html).toContain('先去授权屏幕录制。');
+    expect(html).not.toContain('本轮执行快照');
+    expect(html).not.toContain('Browser Blocked');
     expect(html).toContain('Scope Inspector Lite');
     expect(html).toContain('User Selected');
     expect(html).toContain('Runtime Blocked');
@@ -267,6 +262,5 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('send');
     expect(html).toContain('本轮输出');
     expect(html).toContain('report.md');
-    expect(html).toContain('reviewer · Write');
   });
 });

@@ -4,7 +4,8 @@
 
 import axios from 'axios';
 import type { ModelConfig, ToolDefinition, ToolCall, ModelInfo } from '../../../shared/contract';
-import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
+import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback } from '../types';
+import type { StreamSnapshot } from './sseStream';
 import { ContextLengthExceededError } from '../types';
 import {
   logger,
@@ -15,15 +16,7 @@ import {
   parseContextLengthError,
   normalizeJsonSchema,
 } from './shared';
-import { getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
-
-/**
- * Get cloud API URL
- */
-function getCloudApiUrl(): string {
-  const { getCloudApiUrl: getUrl } = require('../../../shared/constants');
-  return getUrl();
-}
+import { getCloudApiUrl, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
  * Call via Cloud Proxy (admin-only, server-side API key injection)
@@ -35,7 +28,8 @@ export async function callViaCloudProxy(
   config: ModelConfig,
   modelInfo: ModelInfo | null,
   onStream?: StreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: InferenceOptions,
 ): Promise<ModelResponse> {
   const cloudUrl = getCloudApiUrl();
   // Map internal provider names to cloud proxy expected names
@@ -93,7 +87,7 @@ export async function callViaCloudProxy(
 
   try {
     if (useStream) {
-      return await callViaCloudProxyStreaming(cloudUrl, providerName, requestBody, onStream, signal);
+      return await callViaCloudProxyStreaming(cloudUrl, providerName, requestBody, onStream, signal, options);
     }
 
     const response = await axios.post(`${cloudUrl}/api/model-proxy`, {
@@ -153,7 +147,8 @@ async function callViaCloudProxyStreaming(
   providerName: string,
   requestBody: Record<string, unknown>,
   onStream: StreamCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: InferenceOptions,
 ): Promise<ModelResponse> {
   // Check for cancellation before starting
   if (signal?.aborted) {
@@ -188,6 +183,38 @@ async function callViaCloudProxyStreaming(
   let fullContent = '';
   const toolCalls: ToolCall[] = [];
   const toolCallsInProgress: Map<number, { id: string; name: string; arguments: string }> = new Map();
+  let doneReceived = false;
+  let lastSnapshotTime = 0;
+  const snapshotInterval = options?.snapshotIntervalMs ?? 500;
+
+  const buildSnapshot = (isFinal: boolean): StreamSnapshot => ({
+    content: fullContent,
+    reasoning: '',
+    toolCalls: Array.from(toolCallsInProgress.values()).map((toolCall) => ({ ...toolCall })),
+    estimatedTokens: Math.ceil(fullContent.length / 4),
+    timestamp: Date.now(),
+    isFinal,
+  });
+
+  const emitSnapshot = (isFinal: boolean): void => {
+    options?.onSnapshot?.(buildSnapshot(isFinal));
+  };
+
+  const getIncompleteToolCallIds = (): string[] => {
+    const incompleteIds: string[] = [];
+    for (const toolCall of toolCallsInProgress.values()) {
+      if (!toolCall.name || !toolCall.arguments) {
+        incompleteIds.push(toolCall.id);
+        continue;
+      }
+      try {
+        JSON.parse(toolCall.arguments);
+      } catch {
+        incompleteIds.push(toolCall.id);
+      }
+    }
+    return incompleteIds;
+  };
 
   try {
     let buffer = '';
@@ -212,6 +239,7 @@ async function callViaCloudProxyStreaming(
         const data = line.slice(6).trim();
         if (data === '[DONE]') {
           logger.debug('[云端代理] 收到 [DONE] 标记');
+          doneReceived = true;
           continue;
         }
 
@@ -267,30 +295,41 @@ async function callViaCloudProxyStreaming(
           // 忽略解析错误
         }
       }
+
+      if (options?.onSnapshot && Date.now() - lastSnapshotTime > snapshotInterval) {
+        lastSnapshotTime = Date.now();
+        emitSnapshot(false);
+      }
+    }
+
+    emitSnapshot(doneReceived);
+    const incompleteToolCallIds = getIncompleteToolCallIds();
+    if (!doneReceived && toolCallsInProgress.size > 0) {
+      throw new Error(
+        `[云端代理] stream ended before [DONE] with tool calls; refusing to execute incomplete tool arguments`
+        + (incompleteToolCallIds.length > 0 ? ` (${incompleteToolCallIds.join(', ')})` : ''),
+      );
+    }
+    if (incompleteToolCallIds.length > 0) {
+      throw new Error(
+        `[云端代理] invalid streamed tool arguments; refusing to execute incomplete tool arguments (${incompleteToolCallIds.join(', ')})`,
+      );
     }
 
     // 完成工具调用
     for (const [, tc] of toolCallsInProgress) {
-      try {
-        toolCalls.push({
-          id: tc.id,
-          name: tc.name,
-          arguments: JSON.parse(tc.arguments || '{}'),
-        });
-      } catch {
-        toolCalls.push({
-          id: tc.id,
-          name: tc.name,
-          arguments: {},
-        });
-      }
+      toolCalls.push({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.parse(tc.arguments || '{}'),
+      });
     }
 
     if (toolCalls.length > 0) {
       return { type: 'tool_use', toolCalls };
     }
 
-    return { type: 'text', content: fullContent };
+    return { type: 'text', content: fullContent, truncated: !doneReceived };
   } finally {
     reader.releaseLock();
   }

@@ -268,6 +268,8 @@ export class SessionEventService {
         return `错误: ${data?.message || 'unknown'}`;
       case 'agent_complete':
         return '完成';
+      case 'agent_cancelled':
+        return '已取消';
       default:
         return event.eventType;
     }

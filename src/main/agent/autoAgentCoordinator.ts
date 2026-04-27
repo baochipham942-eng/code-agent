@@ -491,6 +491,7 @@ export class AutoAgentCoordinator {
           modelConfig: context.modelConfig,
           toolResolver: context.toolResolver,
           toolContext: context.toolContext,
+          executionAgentId: agent.id,
         }
       );
 

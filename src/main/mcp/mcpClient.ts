@@ -66,6 +66,29 @@ export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
 
+export interface MCPToolCallOptions {
+  timeoutMs?: number;
+  abortSignal?: AbortSignal;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.name === 'AbortError' || error.message.toLowerCase().includes('abort');
+}
+
+function buildCancelledToolResult(toolCallId: string): ToolResult {
+  return {
+    toolCallId,
+    success: false,
+    error: 'cancelled',
+    metadata: {
+      cancelledByRun: true,
+    },
+  };
+}
+
 export class MCPClient {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, Transport> = new Map();
@@ -481,6 +504,57 @@ export class MCPClient {
     return false;
   }
 
+  /**
+   * Discover lazy stdio servers that are likely relevant to a ToolSearch query.
+   * This avoids starting every lazy server while making enabled servers like
+   * sequential-thinking searchable before their first direct tool call.
+   */
+  async discoverLazyServersForSearch(query: string): Promise<Array<{
+    serverName: string;
+    connected: boolean;
+    toolCount: number;
+    error?: string;
+  }>> {
+    const keywords = extractMcpSearchKeywords(query);
+    if (keywords.length === 0) return [];
+
+    const candidates = Array.from(this.serverConfigs.values()).filter((config) => {
+      if (!config.enabled) return false;
+      if (!isStdioConfig(config) || config.lazyLoad === false) return false;
+
+      const state = this.serverStates.get(config.name);
+      if (!state || !['lazy', 'disconnected', 'error'].includes(state.status)) return false;
+
+      const haystack = [
+        config.name,
+        config.command,
+        ...(config.args || []),
+      ].join(' ').toLowerCase();
+
+      return keywords.some((keyword) => haystack.includes(keyword));
+    });
+
+    const results: Array<{
+      serverName: string;
+      connected: boolean;
+      toolCount: number;
+      error?: string;
+    }> = [];
+
+    for (const config of candidates) {
+      const connected = await this.ensureConnected(config.name);
+      const state = this.serverStates.get(config.name);
+      results.push({
+        serverName: config.name,
+        connected,
+        toolCount: this.registry.getToolCount(config.name),
+        ...(state?.error ? { error: state.error } : {}),
+      });
+    }
+
+    return results;
+  }
+
   // --------------------------------------------------------------------------
   // Tool Operations (delegated to registry)
   // --------------------------------------------------------------------------
@@ -509,12 +583,18 @@ export class MCPClient {
     serverName: string,
     toolName: string,
     args: Record<string, unknown>,
-    timeoutMs: number = 60000,
+    options: MCPToolCallOptions | number = {},
   ): Promise<ToolResult> {
+    const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? 60000;
+    const abortSignal = typeof options === 'number' ? undefined : options.abortSignal;
+    if (abortSignal?.aborted) {
+      return buildCancelledToolResult(toolCallId);
+    }
+
     // 优先检查进程内服务器
     const inProcessServer = this.inProcessServers.get(serverName);
     if (inProcessServer) {
-      return this.registry.callInProcessTool(toolCallId, serverName, toolName, args, inProcessServer);
+      return this.registry.callInProcessTool(toolCallId, serverName, toolName, args, inProcessServer, abortSignal);
     }
 
     // 懒加载
@@ -547,8 +627,18 @@ export class MCPClient {
     const startTime = Date.now();
 
     try {
-      return await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, timeoutMs);
+      return await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
+        timeoutMs,
+        abortSignal,
+      });
     } catch (error: unknown) {
+      if (isAbortError(error) || abortSignal?.aborted) {
+        return {
+          ...buildCancelledToolResult(toolCallId),
+          duration: Date.now() - startTime,
+        };
+      }
+
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
 
       // 会话过期检测 (JSON-RPC -32001 "Session not found")
@@ -576,7 +666,7 @@ export class MCPClient {
           const retryClient = this.clients.get(serverName);
           if (retryClient) {
             const retryResult = await this.registry.retryToolCall(
-              toolCallId, serverName, toolName, args, retryClient, startTime,
+              toolCallId, serverName, toolName, args, retryClient, startTime, abortSignal,
             );
             if (retryResult) return retryResult;
           }
@@ -707,6 +797,28 @@ export class MCPClient {
     logger.info(`Registered in-process MCP server: ${server.name}`);
   }
 
+}
+
+function extractMcpSearchKeywords(query: string): string[] {
+  const normalized = query
+    .replace(/^select:/i, '')
+    .replace(/^mcp__/i, '')
+    .toLowerCase();
+
+  const rawTokens = normalized
+    .split(/[^a-z0-9_-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && token !== 'mcp');
+
+  const expanded = new Set<string>();
+  for (const token of rawTokens) {
+    expanded.add(token);
+    for (const part of token.split(/[-_]+/)) {
+      if (part.length >= 3) expanded.add(part);
+    }
+  }
+
+  return Array.from(expanded);
 }
 
 /** Process items in batches with concurrency control. */

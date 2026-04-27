@@ -28,12 +28,86 @@ import { logCollector } from '../../../mcp/logCollector.js';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from '../contextAssembly';
+import { persistRuntimeState } from '../runtimeStatePersistence';
 
-export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessage[]> {
-  ctx.flushHookMessageBuffer();
+const DYNAMIC_PROMPT_CACHE_TTL_MS = 2 * 60 * 1000;
+const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 
-  const modelMessages: ModelMessage[] = [];
-  const modelMessageSourceIds: string[] = [];
+const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
+const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
+const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
+
+type RuntimeAssemblyCache = {
+  dynamicPrompt?: {
+    key: string;
+    createdAt: number;
+    prompt: string;
+    tokens: number;
+  };
+  compression?: {
+    key: string;
+    createdAt: number;
+    apiView: ContextTranscriptEntry[];
+    state: string;
+  };
+};
+
+const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
+
+function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache {
+  let cache = runtimeAssemblyCaches.get(ctx.runtime as unknown as object);
+  if (!cache) {
+    cache = {};
+    runtimeAssemblyCaches.set(ctx.runtime as unknown as object, cache);
+  }
+  return cache;
+}
+
+function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
+  return [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
+}
+
+function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string): string {
+  return [
+    ctx.runtime.sessionId,
+    ctx.runtime.agentId || '',
+    ctx.runtime.workingDirectory || '',
+    String(ctx.runtime.isDefaultWorkingDirectory),
+    String(ctx.runtime.isSimpleTaskMode),
+    String(ctx.runtime.enableToolDeferredLoading),
+    ctx.runtime.modelConfig.model || '',
+    getLastUserMessage(ctx)?.id || '',
+    userQuery,
+  ].join('\u0000');
+}
+
+function appendPromptBlockWithinBudget(
+  prompt: string,
+  block: string | null | undefined,
+  label: string,
+): string {
+  if (!block) return prompt;
+  const nextPrompt = `${prompt}\n\n${block}`;
+  const nextTokens = estimateTokens(nextPrompt);
+  if (nextTokens > MAX_SYSTEM_PROMPT_TOKENS) {
+    logger.warn(`[ContextAssembly] Skipping ${label}: system prompt budget would be ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`);
+    return prompt;
+  }
+  return nextPrompt;
+}
+
+async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<string> {
+  const lastUserMessage = getLastUserMessage(ctx);
+  const userQuery = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+  const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery);
+  const cache = getRuntimeAssemblyCache(ctx);
+  const cached = cache.dynamicPrompt;
+  const now = Date.now();
+
+  if (cached && cached.key === cacheKey && now - cached.createdAt < DYNAMIC_PROMPT_CACHE_TTL_MS) {
+    logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
+    return cached.prompt;
+  }
 
   // Use optimized prompt based on task complexity
   let systemPrompt = getPromptForTask();
@@ -41,8 +115,6 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   const genNum = 8;
   if (genNum >= 3 && !ctx.runtime.isSimpleTaskMode) {
     // Only enhance with RAG for non-simple tasks
-    const lastUserMessage = [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
-    const userQuery = lastUserMessage?.content || '';
     systemPrompt = await buildEnhancedSystemPrompt(systemPrompt, userQuery, ctx.runtime.isSimpleTaskMode);
   }
 
@@ -50,45 +122,43 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   systemPrompt += buildRuntimeModeBlock();
 
   // 注入 Session Metadata（使用频率/行为模式，借鉴 ChatGPT Layer 2）
-  const sessionMeta = await buildSessionMetadataBlock();
-  if (sessionMeta) {
-    systemPrompt += `\n\n${sessionMeta}`;
-  }
+  systemPrompt = appendPromptBlockWithinBudget(
+    systemPrompt,
+    await buildSessionMetadataBlock(),
+    'session metadata',
+  );
 
   // 注入轻量记忆索引（File-as-Memory）
-  // 默认只放短提示（~30 tok），实际索引按意图注入——检测到用户查询跟记忆/过往有关时才塞全量
-  const memoryIndex = await loadMemoryIndex();
-  if (memoryIndex) {
-    const lastUserForMem = [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
-    const userQueryForMem = (lastUserForMem?.content || '') as string;
-    const memIntentPattern = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
-    if (typeof userQueryForMem === 'string' && memIntentPattern.test(userQueryForMem)) {
-      // 用户查询涉及过往记忆，注入完整索引
-      systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+  // 先做意图判断，避免每轮无条件读 INDEX.md。
+  if (typeof userQuery === 'string' && MEMORY_INTENT_PATTERN.test(userQuery)) {
+    const memoryIndex = await loadMemoryIndex();
+    if (memoryIndex) {
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        `<memory_index>\n${memoryIndex}\n</memory_index>`,
+        'memory index',
+      );
       logger.debug('[ContextAssembly] memory_index injected (intent matched)');
-    } else {
-      // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查
-      systemPrompt += `\n\n<memory_hint>Memory files available via MemoryRead tool (see ~/.claude/memory/ and ~/.code-agent/memory/).</memory_hint>`;
     }
+  } else {
+    // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查，不读取索引文件。
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      '<memory_hint>Memory files available via MemoryRead tool (see ~/.code-agent/memory/).</memory_hint>',
+      'memory hint',
+    );
   }
 
   // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配
-  // 命中 skill_*.md 文件并追加到 dynamic section
-  if (!ctx.runtime.isSimpleTaskMode) {
+  if (!ctx.runtime.isSimpleTaskMode && userQuery) {
     try {
-      const lastUserMessage = [...ctx.runtime.messages]
-        .reverse()
-        .find((m: any) => m.role === 'user');
-      const userQueryForSkills = lastUserMessage?.content || '';
-      if (userQueryForSkills) {
-        const skills = await loadRelevantSkills(userQueryForSkills);
-        const skillBlock = buildSkillInjectionBlock(skills);
-        if (skillBlock) {
-          systemPrompt += `\n\n${skillBlock}`;
-          logger.debug(
-            `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
-          );
-        }
+      const skills = await loadRelevantSkills(userQuery);
+      const skillBlock = buildSkillInjectionBlock(skills);
+      if (skillBlock) {
+        systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills');
+        logger.debug(
+          `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
+        );
       }
     } catch (err) {
       logger.debug(
@@ -98,15 +168,26 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   }
 
   // 注入 Repo Map（代码结构索引，借鉴 Aider）
-  if (ctx.runtime.workingDirectory && !ctx.runtime.isSimpleTaskMode) {
+  if (
+    ctx.runtime.workingDirectory &&
+    !ctx.runtime.isSimpleTaskMode &&
+    REPO_MAP_INTENT_PATTERN.test(userQuery)
+  ) {
     try {
       const repoMapResult = await getRepoMap({
         rootDir: ctx.runtime.workingDirectory,
         tokenBudget: 1500,
       });
       if (repoMapResult.text) {
-        systemPrompt += `\n\n<repo_map>\n${repoMapResult.text}\n</repo_map>`;
-        logger.debug(`[ContextAssembly] RepoMap injected: ${repoMapResult.fileCount} files, ${repoMapResult.symbolCount} symbols, ~${repoMapResult.estimatedTokens} tokens`);
+        const before = systemPrompt;
+        systemPrompt = appendPromptBlockWithinBudget(
+          systemPrompt,
+          `<repo_map>\n${repoMapResult.text}\n</repo_map>`,
+          'repo map',
+        );
+        if (systemPrompt !== before) {
+          logger.debug(`[ContextAssembly] RepoMap injected: ${repoMapResult.fileCount} files, ${repoMapResult.symbolCount} symbols, ~${repoMapResult.estimatedTokens} tokens`);
+        }
       }
     } catch (err) {
       logger.debug(`[ContextAssembly] RepoMap skipped: ${err instanceof Error ? err.message : 'unknown'}`);
@@ -114,17 +195,17 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   }
 
   // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）
-  const recentConvs = await buildRecentConversationsBlock();
-  if (recentConvs) {
-    systemPrompt += `\n\n${recentConvs}`;
+  if (RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery)) {
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      await buildRecentConversationsBlock(),
+      'recent conversations',
+    );
   }
 
   // 按意图注入 Generative UI 能力说明（~700 tok）
-  // 日常对话不需要这段，只有用户要画图/做表/生成 HTML 时才注入
-  const lastUserMsgForGenUI = [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
-  const userQueryForGenUI = lastUserMsgForGenUI?.content || '';
-  if (typeof userQueryForGenUI === 'string' && needsGenerativeUI(userQueryForGenUI)) {
-    systemPrompt += `\n\n${GENERATIVE_UI_PROMPT}`;
+  if (typeof userQuery === 'string' && needsGenerativeUI(userQuery)) {
+    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, GENERATIVE_UI_PROMPT, 'generative UI');
     logger.debug('[ContextAssembly] GenerativeUI prompt injected (intent matched)');
   }
 
@@ -132,17 +213,103 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   if (ctx.runtime.enableToolDeferredLoading) {
     const deferredToolsSummary = getDeferredToolsSummary();
     if (deferredToolsSummary) {
-      systemPrompt += `
-
-<deferred-tools>
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        `<deferred-tools>
 除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
 
 ${deferredToolsSummary}
 
 用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
-</deferred-tools>`;
+</deferred-tools>`,
+        'deferred tools',
+      );
     }
   }
+
+  const tokens = estimateTokens(systemPrompt);
+  if (tokens <= MAX_SYSTEM_PROMPT_TOKENS) {
+    cache.dynamicPrompt = {
+      key: cacheKey,
+      createdAt: now,
+      prompt: systemPrompt,
+      tokens,
+    };
+  } else {
+    cache.dynamicPrompt = undefined;
+  }
+
+  return systemPrompt;
+}
+
+function buildCompressionCacheKey(
+  ctx: ContextAssemblyCtx,
+  entries: ContextTranscriptEntry[],
+  interventions: ContextInterventionSnapshot,
+  contextWindowSize: number,
+): string {
+  const hash = createHash('sha256');
+  hash.update(ctx.runtime.sessionId);
+  hash.update('\u0000');
+  hash.update(ctx.runtime.agentId || '');
+  hash.update('\u0000');
+  hash.update(String(contextWindowSize));
+  hash.update('\u0000');
+  hash.update(JSON.stringify(interventions));
+  for (const entry of entries) {
+    hash.update('\u0000');
+    hash.update(entry.id);
+    hash.update('\u0001');
+    hash.update(entry.originMessageId);
+    hash.update('\u0001');
+    hash.update(entry.role);
+    hash.update('\u0001');
+    hash.update(String(entry.timestamp));
+    hash.update('\u0001');
+    hash.update(entry.content || '');
+    hash.update('\u0001');
+    hash.update(entry.toolCallId || '');
+    hash.update('\u0001');
+    hash.update(String(entry.toolError || false));
+    if (entry.attachments?.length) {
+      hash.update(JSON.stringify(entry.attachments.map((attachment) => ({
+        type: attachment.type,
+        name: attachment.name,
+        path: attachment.path,
+        mimeType: attachment.mimeType,
+        dataLength: attachment.data?.length || 0,
+      }))));
+    }
+    if (entry.toolCalls?.length) {
+      hash.update(JSON.stringify(entry.toolCalls.map((toolCall) => ({
+        id: toolCall.id,
+        name: toolCall.name,
+        arguments: toolCall.arguments || {},
+      }))));
+    }
+  }
+  return hash.digest('hex');
+}
+
+function cloneTranscriptEntries(entries: ContextTranscriptEntry[]): ContextTranscriptEntry[] {
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function cloneCompressionState(state: CompressionState): CompressionState {
+  try {
+    return CompressionState.deserialize(state.serialize());
+  } catch {
+    return new CompressionState();
+  }
+}
+
+export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessage[]> {
+  ctx.flushHookMessageBuffer();
+
+  const modelMessages: ModelMessage[] = [];
+  const modelMessageSourceIds: string[] = [];
+
+  let systemPrompt = await buildCachedDynamicSystemPrompt(ctx);
 
   // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
   const activeAgentBlock = buildActiveAgentContext();
@@ -205,50 +372,81 @@ ${deferredToolsSummary}
   let contextApiView = interventionAdjustedEntries;
   const contextWindowSize = getContextWindow(ctx.runtime.modelConfig.model);
   try {
-    const nextCompressionState = new CompressionState();
-    const lastActivityAt = interventionAdjustedEntries.at(-1)?.timestamp ?? Date.now();
-    const idleMinutes = Math.max(0, (Date.now() - lastActivityAt) / 60_000);
-    const currentTurnIndex = interventionAdjustedEntries.reduce(
-      (maxTurnIndex, entry) => Math.max(maxTurnIndex, entry.turnIndex),
-      0,
+    const cache = getRuntimeAssemblyCache(ctx);
+    const compressionCacheKey = buildCompressionCacheKey(
+      ctx,
+      interventionAdjustedEntries,
+      transcriptInterventions,
+      contextWindowSize,
     );
+    const cachedCompression = cache.compression;
+    const now = Date.now();
 
-    const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-      interventionAdjustedEntries.map((entry) => ({ ...entry })),
-      nextCompressionState,
-      {
-        maxTokens: contextWindowSize,
-        currentTurnIndex,
-        isMainThread: !ctx.runtime.agentId,
-        cacheHot: idleMinutes < 2,
-        idleMinutes,
-        summarize: (messages) => ctx.summarizeCollapsedContext(messages),
-        enableSnip: true,
-        enableMicrocompact: true,
-        enableContextCollapse: true,
-        toolResultBudget: 2000,
-        interventions: transcriptInterventions,
-      },
-    );
-
-    ctx.runtime.compressionState = nextCompressionState;
-    contextApiView = pipelineResult.apiView as ContextTranscriptEntry[];
-    const entryIdToOriginMessageId = new Map(
-      interventionAdjustedEntries.map((entry) => [entry.id, entry.originMessageId]),
-    );
-    getContextEventLedger().upsertCompressionEvents(
-      ctx.runtime.sessionId,
-      ctx.runtime.agentId,
-      nextCompressionState.getCommitLog(),
-      (messageId) => entryIdToOriginMessageId.get(messageId) ?? messageId,
-    );
-
-    if (nextCompressionState.getCommitLog().length > 0) {
-      logger.debug('[ContextAssembly] Compression pipeline applied', {
-        layersTriggered: pipelineResult.layersTriggered,
-        commitCount: nextCompressionState.getCommitLog().length,
-        apiViewMessages: pipelineResult.apiView.length,
+    if (
+      cachedCompression &&
+      cachedCompression.key === compressionCacheKey &&
+      now - cachedCompression.createdAt < COMPRESSION_CACHE_TTL_MS
+    ) {
+      ctx.runtime.compressionState = CompressionState.deserialize(cachedCompression.state);
+      persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
+      contextApiView = cloneTranscriptEntries(cachedCompression.apiView);
+      logger.debug('[ContextAssembly] compression projection cache hit', {
+        apiViewMessages: contextApiView.length,
       });
+    } else {
+      const nextCompressionState = cloneCompressionState(ctx.runtime.compressionState);
+      const lastActivityAt = interventionAdjustedEntries.at(-1)?.timestamp ?? Date.now();
+      const idleMinutes = Math.max(0, (Date.now() - lastActivityAt) / 60_000);
+      const currentTurnIndex = interventionAdjustedEntries.reduce(
+        (maxTurnIndex, entry) => Math.max(maxTurnIndex, entry.turnIndex),
+        0,
+      );
+
+      const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
+        interventionAdjustedEntries.map((entry) => ({ ...entry })),
+        nextCompressionState,
+        {
+          maxTokens: contextWindowSize,
+          currentTurnIndex,
+          isMainThread: !ctx.runtime.agentId,
+          cacheHot: idleMinutes < 2,
+          idleMinutes,
+          summarize: (messages) => ctx.summarizeCollapsedContext(messages),
+          enableSnip: true,
+          enableMicrocompact: true,
+          enableContextCollapse: true,
+          toolResultBudget: 2000,
+          interventions: transcriptInterventions,
+        },
+      );
+
+      ctx.runtime.compressionState = nextCompressionState;
+      persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
+      contextApiView = pipelineResult.apiView as ContextTranscriptEntry[];
+      cache.compression = {
+        key: compressionCacheKey,
+        createdAt: now,
+        apiView: cloneTranscriptEntries(contextApiView),
+        state: nextCompressionState.serialize(),
+      };
+
+      const entryIdToOriginMessageId = new Map(
+        interventionAdjustedEntries.map((entry) => [entry.id, entry.originMessageId]),
+      );
+      getContextEventLedger().upsertCompressionEvents(
+        ctx.runtime.sessionId,
+        ctx.runtime.agentId,
+        nextCompressionState.getCommitLog(),
+        (messageId) => entryIdToOriginMessageId.get(messageId) ?? messageId,
+      );
+
+      if (nextCompressionState.getCommitLog().length > 0) {
+        logger.debug('[ContextAssembly] Compression pipeline applied', {
+          layersTriggered: pipelineResult.layersTriggered,
+          commitCount: nextCompressionState.getCommitLog().length,
+          apiViewMessages: pipelineResult.apiView.length,
+        });
+      }
     }
   } catch (error) {
     logger.error('[ContextAssembly] Compression pipeline evaluation failed, falling back to uncompressed transcript:', error);

@@ -7,16 +7,53 @@
 
 import type { TodoItem, TodoStatus } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('TodoParser');
 
 // 会话级任务存储（替代 todoWrite 中的 sessionTodos）
 const sessionTodos: Map<string, TodoItem[]> = new Map();
 
+function getReadyDatabase():
+  | Pick<import('../services/core/databaseService').DatabaseService, 'isReady' | 'saveTodos' | 'getTodos'>
+  | null {
+  try {
+    const db = getDatabase();
+    return db.isReady ? db : null;
+  } catch (err) {
+    logger.debug('[TodoParser] Database unavailable for todo persistence', err);
+    return null;
+  }
+}
+
+function hydrateSessionTodos(sessionId: string): void {
+  if (sessionTodos.has(sessionId)) return;
+  const db = getReadyDatabase();
+  if (!db) return;
+  try {
+    sessionTodos.set(sessionId, db.getTodos(sessionId));
+  } catch (err) {
+    logger.warn(`[TodoParser] Failed to hydrate todos for session ${sessionId}`, err);
+  }
+}
+
+function persistSessionTodos(sessionId: string, todos: TodoItem[]): void {
+  const db = getReadyDatabase();
+  if (!db) return;
+  try {
+    db.saveTodos(sessionId, todos);
+  } catch (err) {
+    logger.warn(`[TodoParser] Failed to persist todos for session ${sessionId}`, err);
+  }
+}
+
 /**
  * 获取指定会话的任务列表
  */
 export function getSessionTodos(sessionId?: string): TodoItem[] {
+  if (sessionId) {
+    hydrateSessionTodos(sessionId);
+  }
   if (sessionId && sessionTodos.has(sessionId)) {
     return [...sessionTodos.get(sessionId)!];
   }
@@ -28,7 +65,9 @@ export function getSessionTodos(sessionId?: string): TodoItem[] {
  */
 export function setSessionTodos(sessionId: string | undefined, todos: TodoItem[]): void {
   if (sessionId) {
-    sessionTodos.set(sessionId, todos);
+    const snapshot = todos.map((todo) => ({ ...todo }));
+    sessionTodos.set(sessionId, snapshot);
+    persistSessionTodos(sessionId, snapshot);
   }
 }
 
@@ -38,6 +77,7 @@ export function setSessionTodos(sessionId: string | undefined, todos: TodoItem[]
 export function clearSessionTodos(sessionId?: string): void {
   if (sessionId) {
     sessionTodos.delete(sessionId);
+    persistSessionTodos(sessionId, []);
   } else {
     sessionTodos.clear();
   }

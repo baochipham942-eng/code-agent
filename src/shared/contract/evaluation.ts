@@ -2,6 +2,13 @@
 // Evaluation Types - 会话评测类型定义
 // ============================================================================
 
+import type {
+  ReviewQueueItem,
+  ReviewQueueSource,
+  UnifiedTraceIdentity,
+  UnifiedTraceSource,
+} from './reviewQueue';
+
 /**
  * 评测维度 (v3: 7 计分 + 3 信息)
  */
@@ -234,6 +241,7 @@ export interface TranscriptMetrics {
 export interface EvaluationResult {
   id: string;
   sessionId: string;
+  replayKey?: string;
   timestamp: number;
   overallScore: number; // 加权平均 0-100
   grade: EvaluationGrade;
@@ -242,6 +250,7 @@ export interface EvaluationResult {
   topSuggestions: string[];
   aiSummary?: string;
   transcriptMetrics?: TranscriptMetrics;
+  telemetryCompleteness?: TelemetryCompleteness;
   baselineComparison?: BaselineComparison;
   // 版本化追溯 (Phase 2)
   snapshotId?: string;
@@ -296,6 +305,405 @@ export interface EvaluationResult {
       llmUsed: boolean;
       durationMs: number;
     };
+  };
+}
+
+// ============================================================================
+// Canonical Eval Harness Run - runner-independent result contract
+// ============================================================================
+
+export type EvalHarnessSource =
+  | 'test-runner'
+  | 'eval-harness'
+  | 'regression'
+  // Legacy manual benchmark import only; not a current product/CI runner.
+  | 'claude-e2e'
+  | 'unknown';
+
+export type EvalRunAggregation =
+  | 'single'
+  | 'best_score_pass_at_k'
+  | 'median_threshold'
+  | 'regression_gate'
+  // Legacy manual benchmark import only; not a current product/CI runner.
+  | 'legacy_e2e_retry'
+  | 'unknown';
+
+export type EvalCaseStatus =
+  | 'passed'
+  | 'failed'
+  | 'partial'
+  | 'skipped'
+  | 'error';
+
+export interface CanonicalEvalTrial {
+  trialIndex: number;
+  status: EvalCaseStatus;
+  score: number; // normalized 0-100
+  durationMs: number;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CanonicalEvalCase {
+  id?: string;
+  caseId: string;
+  sessionId?: string;
+  replayKey?: string;
+  telemetryCompleteness?: TelemetryCompleteness;
+  status: EvalCaseStatus;
+  score: number; // normalized 0-100
+  durationMs: number;
+  failureReason?: string;
+  failureStage?: string;
+  trials?: CanonicalEvalTrial[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface CanonicalEvalRunTotals {
+  total: number;
+  passed: number;
+  failed: number;
+  partial: number;
+  skipped: number;
+  errored: number;
+  passRate: number;
+  averageScore: number;
+}
+
+export interface CanonicalEvalRun {
+  schemaVersion: 1;
+  runId: string;
+  source: EvalHarnessSource;
+  aggregation: EvalRunAggregation;
+  startTime: number;
+  endTime?: number;
+  durationMs?: number;
+  name?: string;
+  scope?: string;
+  environment?: {
+    generation?: string;
+    model?: string;
+    provider?: string;
+    workingDirectory?: string;
+  };
+  totals: CanonicalEvalRunTotals;
+  cases: CanonicalEvalCase[];
+  gitCommit?: string;
+  config?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Structured Replay - shared contract for telemetry/replay consumers
+// ============================================================================
+
+export type ReplayToolCategory =
+  | 'Read'
+  | 'Edit'
+  | 'Write'
+  | 'Bash'
+  | 'Search'
+  | 'Web'
+  | 'Agent'
+  | 'Skill'
+  | 'Other';
+
+export type ReplayDataSource = 'telemetry' | 'transcript_fallback';
+export type ReplayMetricSource = 'telemetry' | 'transcript' | 'partial' | 'unavailable';
+
+export type ReplayMetricAvailability = {
+  dataSource: ReplayDataSource;
+  /** @deprecated Use dataSource. */
+  replaySource?: ReplayDataSource;
+  toolDistribution: ReplayMetricSource;
+  selfRepair: ReplayMetricSource;
+  actualArgs: ReplayMetricSource;
+};
+
+export type RealAgentRunGateFailure =
+  | 'missing_session_id'
+  | 'missing_replay_key'
+  | 'missing_telemetry_completeness'
+  | 'missing_telemetry_data_source'
+  | 'transcript_fallback_replay'
+  | 'missing_real_agent_trace'
+  | 'missing_turns'
+  | 'missing_model_decisions'
+  | 'missing_tool_calls'
+  | 'missing_event_trace'
+  | 'missing_tool_schemas'
+  | 'missing_replay_explanation'
+  | 'missing_tool_args'
+  | 'missing_tool_result';
+
+export interface ReplayCompletenessGateInput {
+  sessionId?: string | null;
+  replayKey?: string | null;
+  dataSource?: ReplayDataSource | string | null;
+  turnCount?: number | null;
+  modelCallCount?: number | null;
+  toolCallCount?: number | null;
+  eventCount?: number | null;
+  hasModelDecisions?: boolean | null;
+  hasToolSchemas?: boolean | null;
+  hasReplayExplanation?: boolean | null;
+  hasToolArgs?: boolean | null;
+  hasToolResult?: boolean | null;
+}
+
+export function getReplayCompletenessReasons(
+  input: ReplayCompletenessGateInput
+): RealAgentRunGateFailure[] {
+  const failures: RealAgentRunGateFailure[] = [];
+
+  if (!input.sessionId) failures.push('missing_session_id');
+  if (!input.replayKey) failures.push('missing_replay_key');
+
+  if (!input.dataSource) {
+    failures.push('missing_telemetry_data_source');
+  } else if (input.dataSource !== 'telemetry') {
+    failures.push(input.dataSource === 'transcript_fallback'
+      ? 'transcript_fallback_replay'
+      : 'missing_telemetry_data_source');
+  }
+
+  if ((input.turnCount ?? 0) <= 0) failures.push('missing_turns');
+  if ((input.modelCallCount ?? 0) <= 0 || input.hasModelDecisions !== true) {
+    failures.push('missing_model_decisions');
+  }
+  if ((input.toolCallCount ?? 0) <= 0) failures.push('missing_tool_calls');
+  if ((input.eventCount ?? 0) <= 0) failures.push('missing_event_trace');
+  if (input.hasToolSchemas !== true) failures.push('missing_tool_schemas');
+  if (input.hasReplayExplanation === false) failures.push('missing_replay_explanation');
+  if (input.hasToolArgs === false) failures.push('missing_tool_args');
+  if (input.hasToolResult === false) failures.push('missing_tool_result');
+
+  return Array.from(new Set(failures));
+}
+
+const REPLAY_DATA_SOURCE_LABELS: Record<ReplayDataSource, string> = {
+  telemetry: 'Telemetry',
+  transcript_fallback: 'Transcript fallback',
+};
+
+const REPLAY_ARGS_SOURCE_LABELS: Record<ReplayToolCall['argsSource'] & string, string> = {
+  telemetry_actual: 'actual telemetry',
+  telemetry_sanitized: 'sanitized telemetry',
+  transcript: 'transcript',
+};
+
+export function getReplayDataSourceLabel(source: ReplayDataSource): string {
+  return REPLAY_DATA_SOURCE_LABELS[source];
+}
+
+export function getReplayArgsSourceLabel(source: ReplayToolCall['argsSource']): string {
+  return source ? REPLAY_ARGS_SOURCE_LABELS[source] : 'unknown';
+}
+
+export interface TelemetryCompleteness {
+  sessionId?: string;
+  replayKey?: string;
+  turnCount: number;
+  modelCallCount: number;
+  toolCallCount: number;
+  eventCount: number;
+  hasSessionId?: boolean;
+  hasModelDecisions: boolean;
+  hasToolSchemas: boolean;
+  hasPermissionTrace: boolean;
+  hasContextCompressionEvents: boolean;
+  hasSubagentTelemetry: boolean;
+  hasRealAgentTrace?: boolean;
+  dataSource?: ReplayDataSource;
+  incompleteReasons?: RealAgentRunGateFailure[];
+  /** @deprecated Use dataSource. */
+  source?: string;
+}
+
+export interface ReplayToolSchema {
+  name: string;
+  inputSchema?: Record<string, unknown>;
+  requiresPermission?: boolean;
+  permissionLevel?: string;
+}
+
+export interface ReplayPermissionTrace {
+  eventType: string;
+  summary: string;
+  data?: Record<string, unknown> | string;
+  timestamp: number;
+}
+
+export interface ReplayModelDecision {
+  id: string;
+  provider: string;
+  model: string;
+  responseType?: string;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  prompt?: string;
+  completion?: string;
+  toolSchemas?: ReplayToolSchema[];
+}
+
+export interface ReplayTimelineEvent {
+  eventType: string;
+  summary: string;
+  data?: Record<string, unknown> | string;
+  durationMs?: number;
+}
+
+export interface ReplayToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  actualArgs?: Record<string, unknown>;
+  argsSource?: 'telemetry_sanitized' | 'telemetry_actual' | 'transcript';
+  toolSchema?: ReplayToolSchema;
+  permissionTrace?: ReplayPermissionTrace[];
+  result?: string;
+  resultMetadata?: Record<string, unknown>;
+  success: boolean;
+  successKnown?: boolean;
+  duration: number;
+  category: ReplayToolCategory;
+}
+
+export interface ReplayBlock {
+  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error' | 'model_call' | 'event' | 'context_event';
+  content: string;
+  toolCall?: ReplayToolCall;
+  modelDecision?: ReplayModelDecision;
+  event?: ReplayTimelineEvent;
+  timestamp: number;
+}
+
+export interface ReplayTurn {
+  turnNumber: number;
+  agentId?: string;
+  turnType?: 'user' | 'iteration';
+  parentTurnId?: string;
+  blocks: ReplayBlock[];
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  startTime: number;
+}
+
+export interface ReplayFailureAttribution {
+  rootCause?: {
+    stepIndex: number;
+    category: string;
+    summary: string;
+    evidence: number[];
+    confidence: number;
+  };
+  causalChain: Array<{ stepIndex: number; role: string; note: string }>;
+  relatedRegressionCases: string[];
+  llmUsed: boolean;
+  durationMs: number;
+}
+
+export interface StructuredReplay {
+  sessionId: string;
+  traceIdentity: UnifiedTraceIdentity;
+  traceSource: UnifiedTraceSource;
+  dataSource: ReplayDataSource;
+  turns: ReplayTurn[];
+  summary: {
+    totalTurns: number;
+    toolDistribution: Record<ReplayToolCategory, number>;
+    thinkingRatio: number;
+    selfRepairChains: number;
+    totalDurationMs: number;
+    metricAvailability?: ReplayMetricAvailability;
+    telemetryCompleteness?: TelemetryCompleteness;
+    deviations?: Array<{
+      stepIndex: number;
+      type: string;
+      description: string;
+      severity: string;
+      suggestedFix?: string;
+    }>;
+    failureAttribution?: ReplayFailureAttribution;
+  };
+}
+
+export interface EvalCenterSessionInfo {
+  title: string;
+  modelProvider: string;
+  modelName: string;
+  startTime: number;
+  endTime?: number;
+  generationId?: string;
+  workingDirectory: string;
+  status: string;
+  turnCount: number;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
+export interface EvalCenterReviewQueueState {
+  items: ReviewQueueItem[];
+  queuedItem: ReviewQueueItem | null;
+  isQueued: boolean;
+  enqueueSource: ReviewQueueSource | null;
+}
+
+export interface EvalCenterReadFacade {
+  traceIdentity: UnifiedTraceIdentity;
+  traceSource: UnifiedTraceSource;
+  dataSource: ReplayDataSource | null;
+  enqueueSource: ReviewQueueSource | null;
+  metricAvailability: ReplayMetricAvailability | null;
+  sessionInfo: EvalCenterSessionInfo | null;
+  reviewQueueState: EvalCenterReviewQueueState;
+  structuredReplay: StructuredReplay | null;
+}
+
+export interface BuildEvalCenterReadFacadeInput {
+  sessionId: string;
+  sessionInfo?: EvalCenterSessionInfo | null;
+  structuredReplay?: StructuredReplay | null;
+  reviewQueueItems?: ReviewQueueItem[];
+}
+
+function buildFallbackSessionTraceIdentity(sessionId: string): UnifiedTraceIdentity {
+  return {
+    traceId: `session:${sessionId}`,
+    traceSource: 'session_replay',
+    source: 'session_replay',
+    sessionId,
+    replayKey: sessionId,
+  };
+}
+
+export function buildEvalCenterReadFacade(input: BuildEvalCenterReadFacadeInput): EvalCenterReadFacade {
+  const structuredReplay = input.structuredReplay ?? null;
+  const traceIdentity = structuredReplay?.traceIdentity ?? buildFallbackSessionTraceIdentity(input.sessionId);
+  const traceSource = traceIdentity.traceSource ?? traceIdentity.source;
+  const reviewQueueItems = input.reviewQueueItems ?? [];
+  const queuedItem = reviewQueueItems.find((item) => item.sessionId === input.sessionId) ?? null;
+  const enqueueSource = queuedItem?.enqueueSource ?? queuedItem?.source ?? null;
+  const metricAvailability = structuredReplay?.summary.metricAvailability ?? null;
+
+  return {
+    traceIdentity,
+    traceSource,
+    dataSource: structuredReplay?.dataSource ?? metricAvailability?.dataSource ?? metricAvailability?.replaySource ?? null,
+    enqueueSource,
+    metricAvailability,
+    sessionInfo: input.sessionInfo ?? null,
+    reviewQueueState: {
+      items: reviewQueueItems,
+      queuedItem,
+      isQueued: Boolean(queuedItem),
+      enqueueSource,
+    },
+    structuredReplay,
   };
 }
 

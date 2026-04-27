@@ -46,6 +46,7 @@ export function useToolProgress(currentSessionId: string | null): UseToolProgres
         }
         break;
       case 'agent_complete':
+      case 'agent_cancelled':
         setToolProgress(null);
         setToolTimeout(null);
         break;

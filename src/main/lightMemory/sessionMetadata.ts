@@ -22,6 +22,12 @@ interface SessionStats {
   modelUsage: Record<string, number>;
   /** Last session start time (ISO) */
   lastSessionStart: string;
+  /** Last app/session id counted toward totalSessions */
+  lastSessionId?: string;
+  /** Last app/session id written to recentSessionDepths/modelUsage */
+  lastEndedSessionId?: string;
+  /** Model counted for lastEndedSessionId */
+  lastEndedModel?: string;
 }
 
 const STATS_FILE = 'session-stats.json';
@@ -61,7 +67,7 @@ async function saveStats(stats: SessionStats): Promise<void> {
 /**
  * Record a new session start. Call this once at session initialization.
  */
-export async function recordSessionStart(): Promise<void> {
+export async function recordSessionStart(sessionId?: string): Promise<void> {
   try {
     const stats = await loadStats();
     const today = new Date().toISOString().split('T')[0];
@@ -77,8 +83,14 @@ export async function recordSessionStart(): Promise<void> {
     const cutoffStr = cutoff.toISOString().split('T')[0];
     stats.activeDays = stats.activeDays.filter(d => d >= cutoffStr);
 
-    stats.totalSessions += 1;
-    stats.lastSessionStart = new Date().toISOString();
+    const shouldCountSession = !sessionId || stats.lastSessionId !== sessionId;
+    if (shouldCountSession) {
+      stats.totalSessions += 1;
+      stats.lastSessionStart = new Date().toISOString();
+      if (sessionId) {
+        stats.lastSessionId = sessionId;
+      }
+    }
 
     await saveStats(stats);
   } catch (err) {
@@ -89,19 +101,47 @@ export async function recordSessionStart(): Promise<void> {
 /**
  * Record session end with message count and model used.
  */
-export async function recordSessionEnd(messageCount: number, model?: string): Promise<void> {
+export async function recordSessionEnd(
+  messageCount: number,
+  model?: string,
+  sessionId?: string,
+): Promise<void> {
   try {
     const stats = await loadStats();
+    const updatingSameSession = Boolean(sessionId && stats.lastEndedSessionId === sessionId);
 
     // Track conversation depth
-    stats.recentSessionDepths.push(messageCount);
+    if (updatingSameSession && stats.recentSessionDepths.length > 0) {
+      stats.recentSessionDepths[stats.recentSessionDepths.length - 1] = messageCount;
+    } else {
+      stats.recentSessionDepths.push(messageCount);
+    }
     if (stats.recentSessionDepths.length > MAX_SESSION_DEPTHS) {
       stats.recentSessionDepths = stats.recentSessionDepths.slice(-MAX_SESSION_DEPTHS);
     }
 
     // Track model usage
     if (model) {
-      stats.modelUsage[model] = (stats.modelUsage[model] || 0) + 1;
+      if (updatingSameSession && stats.lastEndedModel && stats.lastEndedModel !== model) {
+        const previous = stats.modelUsage[stats.lastEndedModel] ?? 0;
+        if (previous <= 1) {
+          delete stats.modelUsage[stats.lastEndedModel];
+        } else {
+          stats.modelUsage[stats.lastEndedModel] = previous - 1;
+        }
+        stats.modelUsage[model] = (stats.modelUsage[model] || 0) + 1;
+      } else if (!updatingSameSession) {
+        stats.modelUsage[model] = (stats.modelUsage[model] || 0) + 1;
+      }
+      if (sessionId) {
+        stats.lastEndedModel = model;
+      }
+    } else if (sessionId && !updatingSameSession) {
+      stats.lastEndedModel = undefined;
+    }
+
+    if (sessionId) {
+      stats.lastEndedSessionId = sessionId;
     }
 
     await saveStats(stats);

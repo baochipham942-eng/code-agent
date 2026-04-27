@@ -319,7 +319,7 @@ export class MessageProcessor {
     wasForceExecuted: boolean,
     iterations: number,
     langfuse: any,
-  ): Promise<'continue'> {
+  ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls!;
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
@@ -455,6 +455,11 @@ export class MessageProcessor {
     logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
     const toolResults = await this.toolEngine.executeToolsWithHooks(toolCalls);
     logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
+
+    if (this.ctx.isCancelled || this.ctx.isInterrupted || this.ctx.runAbortController?.signal.aborted) {
+      logger.info('[AgentLoop] Run stop detected after tool execution; suppressing tool results');
+      return 'break';
+    }
 
     // h2A 实时转向
     if (this.ctx.needsReinference) {
@@ -632,9 +637,9 @@ export class MessageProcessor {
   /**
    * Inject steer message into conversation history.
    */
-  injectSteerMessage(newMessage: string): void {
+  injectSteerMessage(newMessage: string, clientMessageId?: string): void {
     const steerMessage: Message = {
-      id: generateMessageId(),
+      id: clientMessageId ?? generateMessageId(),
       role: 'user',
       content: newMessage,
       timestamp: Date.now(),
@@ -643,7 +648,7 @@ export class MessageProcessor {
 
     if (process.env.CODE_AGENT_CLI_MODE !== 'true') {
       const sessionManager = getSessionManager();
-      sessionManager.addMessage(steerMessage).catch((err: unknown) => {
+      sessionManager.addMessageToSession(this.ctx.sessionId, steerMessage).catch((err: unknown) => {
         logger.error('[AgentLoop] Failed to persist steer message:', err);
       });
     }

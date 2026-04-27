@@ -335,6 +335,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         timeout,
         cwd: workingDirectory,
         maxBuffer: BASH.MAX_BUFFER,
+        signal: ctx.abortSignal,
         env: createSanitizedEnv({
           PATH: getShellPath(),
         }),
@@ -375,6 +376,15 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       }
 
       // 超时：child_process 超时会 killed + SIGTERM
+      if (ctx.abortSignal.aborted || errObj.name === 'AbortError' || errObj.code === 'ABORT_ERR') {
+        return {
+          ok: false,
+          error: 'aborted',
+          code: 'ABORTED',
+          meta: errorOutput ? { output: errorOutput } : undefined,
+        };
+      }
+
       if (errObj.killed && errObj.signal === 'SIGTERM') {
         return {
           ok: false,

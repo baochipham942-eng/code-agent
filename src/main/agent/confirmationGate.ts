@@ -13,6 +13,7 @@ import type {
   ConfirmationContext,
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
+import { isBashToolName } from '../tools/toolNames';
 
 const logger = createLogger('ConfirmationGate');
 
@@ -252,7 +253,7 @@ export class ConfirmationGate {
       return 'low';
     }
 
-    if (toolName === 'bash' || toolName === 'Bash') {
+    if (isBashToolName(toolName)) {
       const command = (params.command as string) || '';
       if (HIGH_RISK_PATTERNS.some(p => p.test(command))) {
         return 'high';

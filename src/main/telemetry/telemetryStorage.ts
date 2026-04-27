@@ -336,18 +336,19 @@ export class TelemetryStorage {
         if (data.toolCalls?.length) {
           const stmt = db.prepare(`
             INSERT OR IGNORE INTO telemetry_tool_calls (
-              id, turn_id, session_id, tool_call_id, name, arguments,
+              id, turn_id, session_id, tool_call_id, name, arguments, actual_arguments,
               result_summary, success, error, error_category,
               computer_surface_failure_kind, computer_surface_mode,
               computer_surface_target_app, computer_surface_action,
               computer_surface_ax_quality_score, computer_surface_ax_quality_grade,
               duration_ms, timestamp, idx, parallel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const tc of data.toolCalls) {
             stmt.run(
               tc.id, tc.turnId, tc.sessionId, tc.toolCallId,
               tc.name, truncate(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
+              truncate(tc.actualArguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
               truncate(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
               tc.success ? 1 : 0, tc.error ?? null,
               tc.errorCategory ?? null,
@@ -586,6 +587,7 @@ export class TelemetryStorage {
       toolCallId: row.tool_call_id as string,
       name: row.name as string,
       arguments: row.arguments as string,
+      actualArguments: row.actual_arguments as string | undefined,
       resultSummary: row.result_summary as string,
       success: !!(row.success as number),
       error: row.error as string | undefined,

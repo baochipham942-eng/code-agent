@@ -25,7 +25,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/graphStore.test.ts', // Kuzu 原生模块需要单独运行
       '**/telemetry.test.ts', // API 签名不匹配（classifyIntent 接收 string 非 object），需重写
-      '**/e2e/claude-e2e/fixtures/**', // 故意含 bug 的 E2E 夹具，不参与单元测试
+      '**/e2e/claude-e2e/fixtures/**', // legacy manual harness fixtures, not root unit/e2e suite
     ],
     coverage: {
       provider: 'v8',

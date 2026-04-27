@@ -15,6 +15,7 @@ describe('review queue trace identity', () => {
 
     expect(trace).toEqual({
       traceId: 'session:session-42',
+      traceSource: 'session_replay',
       source: 'session_replay',
       sessionId: 'session-42',
       replayKey: 'session-42',

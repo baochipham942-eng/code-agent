@@ -6,6 +6,8 @@ export type UnifiedTraceSource = 'session_replay';
 
 export interface UnifiedTraceIdentity {
   traceId: string;
+  traceSource: UnifiedTraceSource;
+  /** @deprecated Use traceSource. */
   source: UnifiedTraceSource;
   sessionId: string;
   replayKey: string;
@@ -101,6 +103,8 @@ export interface ReviewQueueItem {
   sessionId: string;
   sessionTitle: string;
   reason: ReviewQueueReason;
+  enqueueSource: ReviewQueueSource;
+  /** @deprecated Use enqueueSource. */
   source: ReviewQueueSource;
   failureCapability?: ReviewQueueFailureCapabilityMetadata;
   failureAsset?: ReviewQueueFailureCapabilityAsset;
@@ -112,6 +116,8 @@ export interface EnqueueReviewItemInput {
   sessionId: string;
   sessionTitle?: string;
   reason?: ReviewQueueReason;
+  enqueueSource?: ReviewQueueSource;
+  /** @deprecated Use enqueueSource. */
   source?: ReviewQueueSource;
   failureCapability?: ReviewQueueFailureCapabilityMetadata;
 }
@@ -119,6 +125,7 @@ export interface EnqueueReviewItemInput {
 export function buildSessionTraceIdentity(sessionId: string): UnifiedTraceIdentity {
   return {
     traceId: `session:${sessionId}`,
+    traceSource: 'session_replay',
     source: 'session_replay',
     sessionId,
     replayKey: sessionId,
@@ -178,6 +185,24 @@ const FAILURE_CAPABILITY_ASSET_STATUS_LABELS: Record<ReviewQueueFailureCapabilit
   applied: '已应用',
   dismissed: '已忽略',
 };
+
+const REVIEW_QUEUE_SOURCE_LABELS: Record<ReviewQueueSource, string> = {
+  current_session_bar: '当前会话',
+  session_list: '会话列表',
+  replay_failure: '失败回看',
+};
+
+const TRACE_SOURCE_LABELS: Record<UnifiedTraceSource, string> = {
+  session_replay: 'Session Replay',
+};
+
+export function getReviewQueueSourceLabel(source: ReviewQueueSource): string {
+  return REVIEW_QUEUE_SOURCE_LABELS[source];
+}
+
+export function getUnifiedTraceSourceLabel(source: UnifiedTraceSource): string {
+  return TRACE_SOURCE_LABELS[source];
+}
 
 export function getReviewQueueFailureCapabilitySinkLabel(sink: ReviewQueueFailureCapabilitySink): string {
   return FAILURE_CAPABILITY_SINK_LABELS[sink];

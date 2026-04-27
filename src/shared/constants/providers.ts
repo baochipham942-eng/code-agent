@@ -31,6 +31,8 @@ export const MODEL_API_ENDPOINTS = {
   minimax: 'https://api.minimax.chat/v1',
   /** Perplexity */
   perplexity: 'https://api.perplexity.ai',
+  /** xAI Grok */
+  grok: 'https://api.x.ai/v1',
   /** OpenRouter */
   openrouter: 'https://openrouter.ai/api/v1',
   /** Google Gemini */
@@ -130,6 +132,13 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
     endpoint: MODEL_API_ENDPOINTS.perplexity,
     cloudProxySupported: false,
     displayName: 'Perplexity',
+  },
+  grok: {
+    aliases: ['grok'],
+    defaultModel: 'grok-4-1-fast-non-reasoning',
+    endpoint: MODEL_API_ENDPOINTS.grok,
+    cloudProxySupported: false,
+    displayName: 'Grok',
   },
   openrouter: {
     aliases: ['openrouter'],

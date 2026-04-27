@@ -184,7 +184,7 @@ export async function* createAgentIterator(
     eventQueue.push({ type: 'agent_event', event });
 
     // 检测完成事件
-    if (event.type === 'agent_complete') {
+    if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
       eventQueue.push({ type: 'agent_complete' });
       eventQueue.close();
     }
@@ -279,7 +279,7 @@ export function createAgentIteratorWithBridge(config?: {
   const bridge: EventBridge = (event: AgentEvent): void => {
     eventQueue.push({ type: 'agent_event', event });
 
-    if (event.type === 'agent_complete') {
+    if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
       eventQueue.push({ type: 'agent_complete' });
       eventQueue.close();
     }

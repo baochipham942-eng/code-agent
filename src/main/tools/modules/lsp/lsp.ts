@@ -39,7 +39,7 @@ class LspHandler implements ToolHandler<Record<string, unknown>, string> {
     const operation = args.operation as string | undefined;
     onProgress?.({ stage: 'starting', detail: `lsp ${operation ?? 'op'}` });
 
-    const legacyResult = await lspTool.execute(args, buildLegacyCtxFromProtocol(ctx));
+    const legacyResult = await lspTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     return adaptLegacyResult(legacyResult);
   }

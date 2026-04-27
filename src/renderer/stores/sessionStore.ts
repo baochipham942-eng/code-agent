@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TodoItem } from '@shared/contract';
+import type { Session, Message, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
@@ -63,6 +63,7 @@ interface SessionState {
   currentSessionId: string | null;
   messages: Message[];
   todos: TodoItem[];
+  streamSnapshot: StreamRecoverySnapshot | null;
   isLoading: boolean;
   error: string | null;
   unreadSessionIds: Set<string>;
@@ -107,6 +108,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     currentSessionId: null,
     messages: [],
     todos: [],
+    streamSnapshot: null,
     isLoading: false,
     error: null,
     unreadSessionIds: new Set<string>(),
@@ -158,6 +160,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: session.id,
             messages: [],
             todos: [],
+            streamSnapshot: null,
             isLoading: false,
           }));
           return session;
@@ -206,6 +209,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: sessionId,
             messages: loadedMessages,
             todos: session.todos || [],
+            streamSnapshot: session.streamSnapshot || null,
             isLoading: false,
             unreadSessionIds: newUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
@@ -222,6 +226,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: sessionId,
             messages: [],
             todos: [],
+            streamSnapshot: null,
             isLoading: false,
           });
         }
@@ -248,7 +253,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             set({ sessions: newSessions });
             await get().switchSession(newSessions[0].id);
           } else {
-            set({ sessions: newSessions, currentSessionId: null, messages: [] });
+            set({ sessions: newSessions, currentSessionId: null, messages: [], streamSnapshot: null });
           }
         } else {
           set({ sessions: newSessions });
@@ -276,7 +281,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               set({ sessions: newSessions });
               await get().switchSession(newSessions[0].id);
             } else {
-              set({ sessions: newSessions, currentSessionId: null, messages: [] });
+              set({ sessions: newSessions, currentSessionId: null, messages: [], streamSnapshot: null });
             }
           } else {
             set({ sessions: newSessions });
@@ -329,6 +334,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     addMessage: (message: Message) => {
       set((state) => ({
         messages: [...state.messages, message],
+        streamSnapshot: null,
       }));
 
       const { currentSessionId, sessions } = get();
@@ -417,6 +423,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({
         messages: [],
         todos: [],
+        streamSnapshot: null,
       });
     },
 

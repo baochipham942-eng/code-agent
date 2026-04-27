@@ -214,3 +214,37 @@ describe('decideNextAction – default', () => {
     expect(decision.action).toBe('continue');
   });
 });
+
+describe('decideNextAction – runtime contract', () => {
+  it('marks continuation as runtime-executable', () => {
+    const decision = decideNextAction(makeState({ stopReason: 'max_tokens' }));
+    expect(decision.action).toBe('continuation');
+    expect(decision.execution).toBe('runtime');
+  });
+
+  it('marks compact as advisory', () => {
+    const decision = decideNextAction(
+      makeState({ tokenUsage: { input: 90_000, output: 1000 }, maxTokens: 100_000 }),
+    );
+    expect(decision.action).toBe('compact');
+    expect(decision.execution).toBe('advisory');
+  });
+
+  it('marks fallback as advisory', () => {
+    const decision = decideNextAction(makeState({ errorType: 'rate_limit' }));
+    expect(decision.action).toBe('fallback');
+    expect(decision.execution).toBe('advisory');
+  });
+
+  it('marks terminate as advisory', () => {
+    const decision = decideNextAction(makeState({ budgetRemaining: 0 }));
+    expect(decision.action).toBe('terminate');
+    expect(decision.execution).toBe('advisory');
+  });
+
+  it('marks plain continue as no-op', () => {
+    const decision = decideNextAction(makeState());
+    expect(decision.action).toBe('continue');
+    expect(decision.execution).toBe('none');
+  });
+});

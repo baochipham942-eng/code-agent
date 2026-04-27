@@ -291,6 +291,9 @@ export const IPC_CHANNELS = {
   BACKGROUND_GET_COUNT: BACKGROUND_CHANNELS.GET_COUNT,
   BACKGROUND_TASK_UPDATE: BACKGROUND_CHANNELS.TASK_UPDATE,
 
+  // TaskManager runtime channels
+  TASK_EVENT: 'task:event',
+
   // Swarm channels (Agent Swarm 监控)
   SWARM_EVENT: 'swarm:event',
   SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',
@@ -299,6 +302,7 @@ export const IPC_CHANNELS = {
   SWARM_GET_DELEGATE_MODE: 'swarm:get-delegate-mode',
   SWARM_APPROVE_LAUNCH: 'swarm:approve-launch',
   SWARM_REJECT_LAUNCH: 'swarm:reject-launch',
+  SWARM_CANCEL_RUN: 'swarm:cancel-run',
   SWARM_CANCEL_AGENT: 'swarm:cancel-agent',
   SWARM_RETRY_AGENT: 'swarm:retry-agent',
   SWARM_APPROVE_PLAN: 'swarm:approve-plan',

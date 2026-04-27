@@ -269,7 +269,7 @@ describe('ModelRouter', () => {
       ).rejects.toThrow('cancelled');
     });
 
-    it('should route to cloud proxy when useCloudProxy is enabled', async () => {
+    it('should route to cloud proxy with inference options when useCloudProxy is enabled', async () => {
       const { callViaCloudProxy } = await import('../../../src/main/model/providers');
       const config: ModelConfig = {
         provider: 'deepseek',
@@ -278,9 +278,18 @@ describe('ModelRouter', () => {
         maxTokens: 1000,
         useCloudProxy: true,
       };
+      const options = { onSnapshot: vi.fn(), snapshotIntervalMs: 0 };
 
-      await router.inference([{ role: 'user', content: 'test' }], [], config);
-      expect(callViaCloudProxy).toHaveBeenCalled();
+      await router.inference([{ role: 'user', content: 'test' }], [], config, undefined, undefined, options);
+      expect(callViaCloudProxy).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        expect.any(Object),
+        undefined,
+        undefined,
+        options,
+      );
     });
 
     it('should throw for unsupported provider', async () => {

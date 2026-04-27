@@ -14,6 +14,7 @@ export type ModelProvider =
   | 'moonshot'   // Kimi
   | 'minimax'    // MiniMax
   | 'perplexity' // 联网搜索
+  | 'grok'       // xAI Grok
   | 'openrouter' // OpenRouter 中转（Gemini、Claude、GPT 等）
   | 'volcengine'; // 火山引擎 (豆包)
 

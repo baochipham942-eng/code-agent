@@ -548,7 +548,7 @@ async function executeParallelAgents(
   const isCancelledTaskError = (errorMessage?: string): boolean => {
     if (!errorMessage) return false;
     const normalized = errorMessage.toLowerCase();
-    return normalized.includes('cancel') || normalized.includes('abort');
+    return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
   };
 
   const coordinator = getParallelAgentCoordinator();
@@ -812,24 +812,55 @@ async function executeParallelAgents(
   coordinator.on('task:complete', onTaskComplete);
   coordinator.on('task:error', onTaskError);
 
+  const onRunAbort = () => coordinator.abortAllRunning('run_cancelled');
+  if (context.abortSignal?.aborted) {
+    onRunAbort();
+  } else {
+    context.abortSignal?.addEventListener('abort', onRunAbort, { once: true });
+  }
+
   try {
     const result = await coordinator.executeParallel(tasks);
 
     // Aggregate results
     const aggregation = aggregateTeamResults(result.results, result.totalDuration);
+    const resultByTaskId = new Map(result.results.map((taskResult) => [taskResult.taskId, taskResult]));
+    const wasCancelled = Boolean(context.abortSignal?.aborted)
+      || result.results.some((taskResult) => taskResult.cancelled || isCancelledTaskError(taskResult.error))
+      || result.errors.some((error) => isCancelledTaskError(error.error));
 
     // Emit per-agent completion with aggregation data (cost, files, preview)
     for (const entry of aggregation.agentResults) {
+      const taskResult = resultByTaskId.get(entry.agentId);
       emitter.agentUpdated(entry.agentId, {
-        status: entry.status === 'completed' ? 'completed' : 'failed',
+        status: entry.status === 'completed'
+          ? 'completed'
+          : taskResult?.cancelled || isCancelledTaskError(taskResult?.error)
+            ? 'cancelled'
+            : 'failed',
       });
+    }
+
+    if (wasCancelled) {
+      emitter.cancelled();
+      return {
+        success: false,
+        error: `Parallel execution cancelled: ${result.errors.length} tasks did not complete.`,
+        output: aggregation.agentResults.length > 0 ? aggregation.agentResults.map((entry) => {
+          const taskResult = resultByTaskId.get(entry.agentId);
+          const status = taskResult?.cancelled || isCancelledTaskError(taskResult?.error)
+            ? 'cancelled'
+            : entry.status;
+          return `[${entry.role}] ${status}\n${entry.resultPreview || taskResult?.error || ''}`;
+        }).join('\n\n---\n\n') : undefined,
+      };
     }
 
     // Emit swarm:completed with aggregation
     emitter.completedWithAggregation({
       total: tasks.length,
       completed: result.results.filter(r => r.success).length,
-      failed: result.errors.length,
+      failed: result.results.filter(r => !r.success).length,
       parallelPeak: result.parallelism,
       totalTime: result.totalDuration,
     }, {
@@ -896,5 +927,6 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     coordinator.off('task:progress', onTaskProgress);
     coordinator.off('task:complete', onTaskComplete);
     coordinator.off('task:error', onTaskError);
+    context.abortSignal?.removeEventListener('abort', onRunAbort);
   }
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 
 const reactState = vi.hoisted(() => ({
   forcedContextMenuSession: null as any,
@@ -16,6 +16,7 @@ const invokeMock = vi.hoisted(() => vi.fn());
 const domainInvokeMock = vi.hoisted(() => vi.fn());
 const setShowEvalCenterMock = vi.hoisted(() => vi.fn());
 const setWorkingDirectoryMock = vi.hoisted(() => vi.fn());
+const enqueueReviewItemMock = vi.hoisted(() => vi.fn());
 const applySessionWorkbenchPresetMock = vi.hoisted(() => vi.fn());
 const applyWorkbenchPresetMock = vi.hoisted(() => vi.fn());
 const applyWorkbenchRecipeMock = vi.hoisted(() => vi.fn());
@@ -183,6 +184,11 @@ vi.mock('../../../src/renderer/stores/taskStore', () => ({
     selector ? selector({ sessionStates: {} }) : { sessionStates: {} },
 }));
 
+vi.mock('../../../src/renderer/stores/evalCenterStore', () => ({
+  useEvalCenterStore: (selector?: (state: { enqueueReviewItem: typeof enqueueReviewItemMock }) => unknown) =>
+    selector ? selector({ enqueueReviewItem: enqueueReviewItemMock }) : { enqueueReviewItem: enqueueReviewItemMock },
+}));
+
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: invokeMock,
@@ -217,6 +223,7 @@ describe('Sidebar review actions', () => {
     domainInvokeMock.mockResolvedValue({ success: true, data: '/repo/code-agent' });
     setShowEvalCenterMock.mockReset();
     setWorkingDirectoryMock.mockReset();
+    enqueueReviewItemMock.mockReset();
     applySessionWorkbenchPresetMock.mockReset();
     applyWorkbenchPresetMock.mockReset();
     applyWorkbenchRecipeMock.mockReset();
@@ -240,11 +247,11 @@ describe('Sidebar review actions', () => {
 
     await queueAction?.onClick();
 
-    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE, {
+    expect(enqueueReviewItemMock).toHaveBeenCalledWith({
       sessionId: 'session-1',
       sessionTitle: 'Reviewable Session',
       reason: 'manual_review',
-      source: 'session_list',
+      enqueueSource: 'session_list',
     });
   });
 

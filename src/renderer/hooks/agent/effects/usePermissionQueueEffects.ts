@@ -63,6 +63,7 @@ export const usePermissionQueueEffects = ({
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       switch (event.type) {
         case 'agent_complete':
+        case 'agent_cancelled':
         case 'error':
         case 'stream_end':
           return;

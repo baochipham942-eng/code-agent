@@ -43,7 +43,7 @@ import type {
   ModelResponse,
   ModelMessage,
 } from '../../agent/loopTypes';
-import { isParallelSafeTool, classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
+import { classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
 import { CircuitBreaker } from '../../agent/toolExecution/circuitBreaker';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import {
@@ -150,6 +150,27 @@ export class ToolExecutionEngine {
     this.ctx.onEvent(event);
   }
 
+  private isRunCancelled(): boolean {
+    return this.ctx.isCancelled || Boolean(this.ctx.runAbortController?.signal.aborted);
+  }
+
+  private buildSuppressedCancelledResult(toolCall: ToolCall, startTime: number): ToolResult {
+    return {
+      toolCallId: toolCall.id,
+      success: false,
+      error: 'cancelled',
+      duration: Date.now() - startTime,
+      metadata: {
+        cancelledByRun: true,
+        suppressObservation: true,
+      },
+    };
+  }
+
+  private shouldSuppressResult(result: ToolResult): boolean {
+    return result.metadata?.cancelledByRun === true && result.metadata?.suppressObservation === true;
+  }
+
   async runSessionStartHook(): Promise<void> {
     if (!this.ctx.planningService) return;
 
@@ -225,12 +246,10 @@ export class ToolExecutionEngine {
             toolTotal: toolCalls.length,
             parallel: true,
           });
-          this.ctx.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.ctx.currentTurnId } });
-          this.ctx.telemetryAdapter?.onToolCallStart(this.ctx.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, true);
         }
 
         const batchPromises = batch.map(async ({ index, toolCall }) => {
-          const result = await this.executeSingleTool(toolCall, index, toolCalls.length);
+          const result = await this.executeSingleTool(toolCall, index, toolCalls.length, true);
           return { index, result };
         });
 
@@ -252,9 +271,7 @@ export class ToolExecutionEngine {
         toolIndex: index,
         toolTotal: toolCalls.length,
       });
-      this.ctx.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.ctx.currentTurnId } });
-      this.ctx.telemetryAdapter?.onToolCallStart(this.ctx.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, false);
-      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
+      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
     }
 
     // Execute sequential tools one by one
@@ -276,25 +293,32 @@ export class ToolExecutionEngine {
         toolTotal: toolCalls.length,
         progress,
       });
-      this.ctx.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.ctx.currentTurnId } });
-      this.ctx.telemetryAdapter?.onToolCallStart(this.ctx.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, false);
-      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
+      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
     }
 
-    return results.filter((r): r is ToolResult => r !== undefined);
+    return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 
   async executeSingleTool(
     toolCall_: ToolCall,
     index: number,
-    total: number
+    total: number,
+    parallel = false,
   ): Promise<ToolResult> {
     // Mutable copy: hooks may replace arguments via updatedInput
     let toolCall = toolCall_;
     logger.debug(` [${index + 1}/${total}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
 
     // User-configurable Pre-Tool Hook
-    if (this.ctx.hookManager && !isParallelSafeTool(toolCall.name)) {
+    let toolCallStarted = false;
+    const emitToolCallStart = () => {
+      if (toolCallStarted) return;
+      toolCallStarted = true;
+      this.ctx.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.ctx.currentTurnId } });
+      this.ctx.telemetryAdapter?.onToolCallStart(this.ctx.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, parallel);
+    };
+
+    if (this.ctx.hookManager) {
       try {
         const toolInput = JSON.stringify(toolCall.arguments);
         const userHookResult = await this.ctx.hookManager.triggerPreToolUse(
@@ -324,6 +348,7 @@ export class ToolExecutionEngine {
             `</tool-blocked-by-hook>`
           );
 
+          emitToolCallStart();
           this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
           this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, blockedResult) });
           return blockedResult;
@@ -349,7 +374,7 @@ export class ToolExecutionEngine {
     }
 
     // Planning Pre-Tool Hook
-    if (this.ctx.enableHooks && this.ctx.planningService && !isParallelSafeTool(toolCall.name)) {
+    if (this.ctx.enableHooks && this.ctx.planningService) {
       try {
         const preResult = await this.ctx.planningService.hooks.preToolUse({
           toolName: toolCall.name,
@@ -363,15 +388,6 @@ export class ToolExecutionEngine {
         logger.error('Pre-tool hook error:', error);
       }
     }
-
-    // Langfuse: Start tool span
-    const langfuse = getLangfuseService();
-    const toolSpanId = `tool-${toolCall.id}`;
-    langfuse.startNestedSpan(this.ctx.currentIterationSpanId, toolSpanId, {
-      name: `Tool: ${toolCall.name}`,
-      input: sanitizeToolArgumentsForObservation(toolCall),
-      metadata: { toolId: toolCall.id, toolName: toolCall.name },
-    });
 
     const startTime = Date.now();
 
@@ -403,6 +419,7 @@ export class ToolExecutionEngine {
         `</tool-arguments-parse-error>`
       );
 
+      emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       // Tool execution logging (non-blocking)
@@ -426,6 +443,19 @@ export class ToolExecutionEngine {
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
     toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
+    if (this.isRunCancelled()) {
+      return this.buildSuppressedCancelledResult(toolCall, startTime);
+    }
+    emitToolCallStart();
+
+    // Langfuse: Start tool span
+    const langfuse = getLangfuseService();
+    const toolSpanId = `tool-${toolCall.id}`;
+    langfuse.startNestedSpan(this.ctx.currentIterationSpanId, toolSpanId, {
+      name: `Tool: ${toolCall.name}`,
+      input: sanitizeToolArgumentsForObservation(toolCall),
+      metadata: { toolId: toolCall.id, toolName: toolCall.name },
+    });
 
     // Tool progress & timeout tracking
     const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
@@ -471,10 +501,21 @@ export class ToolExecutionEngine {
           hookManager: this.ctx.hookManager,
           toolScope: this.ctx.toolScope,
           executionIntent: this.ctx.executionIntent,
+          abortSignal: this.ctx.runAbortController?.signal,
         }
       );
       clearInterval(progressInterval);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
+
+      if (this.isRunCancelled()) {
+        const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
+        langfuse.endSpan(toolSpanId, {
+          success: false,
+          error: suppressedResult.error,
+          duration: suppressedResult.duration,
+        }, 'WARNING', 'cancelled');
+        return suppressedResult;
+      }
 
       const structuredFailure = result.success
         ? detectStructuredToolFailure(result.output)
@@ -691,12 +732,20 @@ export class ToolExecutionEngine {
       // Track read vs write operations
       const readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
       if (readWriteWarning === 'HARD_LIMIT') {
-        return {
+        const hardLimitResult: ToolResult = {
           toolCallId: toolCall.id,
           success: false,
           error: this.ctx.antiPatternDetector.generateHardLimitError(),
           duration: Date.now() - startTime,
         };
+        langfuse.endSpan(toolSpanId, {
+          success: false,
+          error: hardLimitResult.error,
+          duration: hardLimitResult.duration,
+        }, 'ERROR', hardLimitResult.error);
+        this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, hardLimitResult.error, hardLimitResult.duration || 0, undefined);
+        this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, hardLimitResult) });
+        return hardLimitResult;
       } else if (readWriteWarning) {
         this.contextAssembly.injectSystemMessage(readWriteWarning);
       }
@@ -818,6 +867,16 @@ export class ToolExecutionEngine {
       return toolResult;
     } catch (error) {
       clearInterval(progressInterval);
+      if (this.isRunCancelled()) {
+        const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
+        langfuse.endSpan(toolSpanId, {
+          success: false,
+          error: suppressedResult.error,
+          duration: suppressedResult.duration,
+        }, 'WARNING', 'cancelled');
+        return suppressedResult;
+      }
+
       logger.error(`Tool ${toolCall.name} threw exception:`, error);
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,

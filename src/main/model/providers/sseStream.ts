@@ -63,6 +63,24 @@ export interface SSEStreamOptions {
   snapshotIntervalMs?: number;
 }
 
+function getIncompleteToolCallIds(
+  toolCalls: Iterable<{ id: string; name: string; arguments: string }>,
+): string[] {
+  const incompleteIds: string[] = [];
+  for (const toolCall of toolCalls) {
+    if (!toolCall.name || !toolCall.arguments) {
+      incompleteIds.push(toolCall.id);
+      continue;
+    }
+    try {
+      JSON.parse(toolCall.arguments);
+    } catch {
+      incompleteIds.push(toolCall.id);
+    }
+  }
+  return incompleteIds;
+}
+
 /**
  * 通用 OpenAI 兼容 SSE 流式请求处理
  *
@@ -420,17 +438,24 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
         if (content || toolCalls.size > 0) {
+          emitSnapshot(false);
+          const incompleteToolCallIds = getIncompleteToolCallIds(toolCalls.values());
+          if (toolCalls.size > 0) {
+            reject(new Error(
+              `[${providerName}] stream ended before [DONE] with tool calls; refusing to execute incomplete tool arguments`
+              + (incompleteToolCallIds.length > 0 ? ` (${incompleteToolCallIds.join(', ')})` : ''),
+            ));
+            return;
+          }
+
           const result: ModelResponse = {
-            type: toolCalls.size > 0 ? 'tool_use' : 'text',
+            type: 'text',
             content: content || undefined,
+            truncated: true,
             finishReason,
             thinking: reasoning || undefined,
             usage: usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) },
           };
-
-          if (toolCalls.size > 0) {
-            result.toolCalls = Array.from(toolCalls.values()).map(buildToolCallFromAccumulator);
-          }
 
           resolve(result);
         } else {

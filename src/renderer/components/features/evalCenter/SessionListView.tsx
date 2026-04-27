@@ -8,6 +8,7 @@ import {
   getReviewQueueFailureAssetStatusLabel,
   getReviewQueueFailureCapabilityLabel,
   getReviewQueueReasonLabel,
+  getReviewQueueSourceLabel,
   type ReviewQueueFailureCapabilityAssetStatus,
 } from '@shared/contract/reviewQueue';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
@@ -50,7 +51,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
       sessionId,
       sessionTitle,
       reason: 'manual_review',
-      source: 'session_list',
+      enqueueSource: 'session_list',
     });
   };
 
@@ -252,6 +253,8 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-600">
                             <span>{getReviewQueueReasonLabel(item.reason)}</span>
+                            <span>·</span>
+                            <span>{getReviewQueueSourceLabel(item.enqueueSource ?? item.source)}</span>
                             {item.failureCapability && (
                               <>
                                 <span>·</span>

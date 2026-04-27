@@ -2,13 +2,30 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import { classifyError } from '../telemetry/telemetryCollector';
+import { getToolDefinitionWithCloudMeta } from '../protocol/dispatch/toolDefinitions';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
-import type { Message } from '../../shared/contract';
+import type { Message, ToolCall, ToolResult } from '../../shared/contract';
+import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
+import type {
+  ReplayBlock,
+  ReplayMetricAvailability,
+  ReplayPermissionTrace,
+  ReplayToolSchema,
+  ReplayToolCategory,
+  ReplayTurn,
+  StructuredReplay,
+  TelemetryCompleteness,
+} from '../../shared/contract/evaluation';
 import type { SessionSnapshot, TurnSnapshot, QualitySignals as EvaluationQualitySignals } from './types';
 
 const logger = createLogger('TelemetryQueryService');
 
 type SQLiteRow = Record<string, unknown>;
+type ReplayToolDistribution = Record<ReplayToolCategory, number>;
+type ToolSchemaSnapshot = {
+  timestamp: number;
+  schemas: ReplayToolSchema[];
+};
 
 const TOOL_CATEGORY_MAP = {
   read: 'Read',
@@ -58,10 +75,7 @@ class TelemetryQueryService {
 
   private hasTelemetryData(sessionId: string): boolean {
     const db = this.getDb();
-    const tableExists = db
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='telemetry_turns'`)
-      .get();
-    if (!tableExists) return false;
+    if (!this.tableExists('telemetry_turns')) return false;
 
     const turnCount = db
       .prepare(`SELECT COUNT(*) as cnt FROM telemetry_turns WHERE session_id = ?`)
@@ -70,10 +84,20 @@ class TelemetryQueryService {
     return !!turnCount && turnCount.cnt > 0;
   }
 
+  private tableExists(name: string): boolean {
+    const db = this.getDb();
+    const row = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name);
+    return !!row;
+  }
+
   private loadTelemetryRows(sessionId: string): {
     sessionRow?: SQLiteRow;
     turnRows: SQLiteRow[];
+    modelCallRows: SQLiteRow[];
     toolCallRows: SQLiteRow[];
+    eventRows: SQLiteRow[];
   } | null {
     if (!this.hasTelemetryData(sessionId)) {
       return null;
@@ -84,13 +108,23 @@ class TelemetryQueryService {
       .prepare(`SELECT * FROM telemetry_sessions WHERE id = ?`)
       .get(sessionId) as SQLiteRow | undefined;
     const turnRows = db
-      .prepare(`SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY turn_number ASC`)
+      .prepare(`SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY start_time ASC, turn_number ASC`)
       .all(sessionId) as SQLiteRow[];
+    const modelCallRows = this.tableExists('telemetry_model_calls')
+      ? db
+        .prepare(`SELECT * FROM telemetry_model_calls WHERE session_id = ? ORDER BY timestamp ASC`)
+        .all(sessionId) as SQLiteRow[]
+      : [];
     const toolCallRows = db
       .prepare(`SELECT * FROM telemetry_tool_calls WHERE session_id = ? ORDER BY timestamp ASC, idx ASC`)
       .all(sessionId) as SQLiteRow[];
+    const eventRows = this.tableExists('telemetry_events')
+      ? db
+        .prepare(`SELECT * FROM telemetry_events WHERE session_id = ? ORDER BY timestamp ASC`)
+        .all(sessionId) as SQLiteRow[]
+      : [];
 
-    return { sessionRow, turnRows, toolCallRows };
+    return { sessionRow, turnRows, modelCallRows, toolCallRows, eventRows };
   }
 
   private parseToolArgs(value: unknown): Record<string, unknown> {
@@ -100,6 +134,275 @@ class TelemetryQueryService {
     } catch {
       return { raw: value };
     }
+  }
+
+  private parseOptionalToolArgs(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value !== 'string' || value.length === 0) return undefined;
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : { value: parsed };
+    } catch {
+      return { raw: value };
+    }
+  }
+
+  private createEmptyToolDistribution(): ReplayToolDistribution {
+    return {
+      Read: 0,
+      Edit: 0,
+      Write: 0,
+      Bash: 0,
+      Search: 0,
+      Web: 0,
+      Agent: 0,
+      Skill: 0,
+      Other: 0,
+    };
+  }
+
+  private parseEventData(value: unknown): Record<string, unknown> | string | undefined {
+    if (typeof value !== 'string' || value.length === 0) return undefined;
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object'
+        ? parsed as Record<string, unknown>
+        : String(parsed);
+    } catch {
+      return value;
+    }
+  }
+
+  private getToolSchema(name: string): ReplayToolSchema | undefined {
+    try {
+      const definition = getToolDefinitionWithCloudMeta(name);
+      if (!definition) return undefined;
+      return {
+        name: definition.name,
+        inputSchema: definition.inputSchema as unknown as Record<string, unknown> | undefined,
+        requiresPermission: definition.requiresPermission,
+        permissionLevel: definition.permissionLevel,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private isPermissionEvent(row: SQLiteRow): boolean {
+    if (row.event_type === 'tool_schema_snapshot') return false;
+    const haystack = [
+      row.event_type,
+      row.summary,
+      row.data,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes('permission')
+      || haystack.includes('approval')
+      || haystack.includes('blocked')
+      || haystack.includes('denied');
+  }
+
+  private buildPermissionTrace(eventRows: SQLiteRow[]): ReplayPermissionTrace[] | undefined {
+    const traces = eventRows
+      .filter(row => this.isPermissionEvent(row))
+      .map((row) => ({
+        eventType: row.event_type as string,
+        summary: (row.summary as string) || '',
+        data: this.parseEventData(row.data),
+        timestamp: row.timestamp as number,
+      }));
+    return traces.length > 0 ? traces : undefined;
+  }
+
+  private parseToolSchemasFromEvent(row: SQLiteRow): ReplayToolSchema[] {
+    const data = this.parseEventData(row.data);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+    const tools = (data as { tools?: unknown }).tools;
+    if (!Array.isArray(tools)) return [];
+    return tools
+      .filter((tool): tool is Record<string, unknown> => !!tool && typeof tool === 'object' && !Array.isArray(tool))
+      .map((tool) => ({
+        name: String(tool.name || 'unknown'),
+        inputSchema: tool.inputSchema && typeof tool.inputSchema === 'object'
+          ? tool.inputSchema as Record<string, unknown>
+          : undefined,
+        requiresPermission: typeof tool.requiresPermission === 'boolean' ? tool.requiresPermission : undefined,
+        permissionLevel: typeof tool.permissionLevel === 'string' ? tool.permissionLevel : undefined,
+      }));
+  }
+
+  private extractToolSchemaSnapshots(eventRows: SQLiteRow[]): ToolSchemaSnapshot[] {
+    const snapshots: ToolSchemaSnapshot[] = [];
+    for (const row of eventRows) {
+      if (row.event_type !== 'tool_schema_snapshot') continue;
+      const schemas = this.parseToolSchemasFromEvent(row);
+      if (schemas.length > 0) {
+        snapshots.push({
+          timestamp: Number(row.timestamp) || 0,
+          schemas,
+        });
+      }
+    }
+    return snapshots.sort((left, right) => left.timestamp - right.timestamp);
+  }
+
+  private getToolSchemasAt(
+    snapshots: ToolSchemaSnapshot[],
+    timestamp: number,
+  ): ReplayToolSchema[] | undefined {
+    if (snapshots.length === 0) return undefined;
+    let selected: ToolSchemaSnapshot | undefined;
+    for (const snapshot of snapshots) {
+      if (snapshot.timestamp <= timestamp) {
+        selected = snapshot;
+        continue;
+      }
+      break;
+    }
+    return selected?.schemas ?? snapshots[0]?.schemas;
+  }
+
+  private getToolSchemaMapAt(
+    snapshots: ToolSchemaSnapshot[],
+    timestamp: number,
+    fallbackToolNames: string[],
+  ): Map<string, ReplayToolSchema> {
+    const schemaMap = new Map<string, ReplayToolSchema>();
+    for (const schema of this.getToolSchemasAt(snapshots, timestamp) || []) {
+      schemaMap.set(schema.name, schema);
+    }
+    for (const name of fallbackToolNames) {
+      const schema = this.getToolSchema(name);
+      if (schema && !schemaMap.has(name)) {
+        schemaMap.set(name, schema);
+      }
+    }
+    return schemaMap;
+  }
+
+  private getToolTraceValue(data: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = data[key];
+      if (typeof value === 'string' && value.length > 0) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private eventMatchesTool(
+    row: SQLiteRow,
+    data: Record<string, unknown> | string | undefined,
+    toolName: string,
+    toolCallId: string,
+  ): boolean {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return true;
+    }
+
+    const dataObj = data as Record<string, unknown>;
+    const eventToolCallId = this.getToolTraceValue(dataObj, ['toolCallId', 'tool_call_id', 'callId', 'id']);
+    if (eventToolCallId) {
+      return eventToolCallId === toolCallId;
+    }
+
+    const eventToolName = this.getToolTraceValue(dataObj, ['toolName', 'tool_name', 'tool', 'name']);
+    if (eventToolName) {
+      return eventToolName === toolName;
+    }
+
+    return true;
+  }
+
+  private buildPermissionTraceForTool(
+    eventRows: SQLiteRow[],
+    toolName: string,
+    toolCallId: string,
+  ): ReplayPermissionTrace[] | undefined {
+    const traces = eventRows
+      .filter(row => this.isPermissionEvent(row))
+      .map((row) => {
+        const data = this.parseEventData(row.data);
+        return {
+          row,
+          data,
+          trace: {
+            eventType: row.event_type as string,
+            summary: (row.summary as string) || '',
+            data,
+            timestamp: row.timestamp as number,
+          } satisfies ReplayPermissionTrace,
+        };
+      })
+      .filter(({ row, data }) => this.eventMatchesTool(row, data, toolName, toolCallId))
+      .map(({ trace }) => trace);
+    return traces.length > 0 ? traces : undefined;
+  }
+
+  private buildTelemetryCompleteness(
+    sessionId: string,
+    turnRows: SQLiteRow[],
+    modelCallRows: SQLiteRow[],
+    toolCallRows: SQLiteRow[],
+    eventRows: SQLiteRow[],
+    hasToolSchemas: boolean,
+  ): TelemetryCompleteness {
+    const traceIdentity = buildSessionTraceIdentity(sessionId);
+    const base = {
+      sessionId,
+      replayKey: traceIdentity.replayKey,
+      turnCount: turnRows.length,
+      modelCallCount: modelCallRows.length,
+      toolCallCount: toolCallRows.length,
+      eventCount: eventRows.length,
+      hasSessionId: true,
+      hasModelDecisions: modelCallRows.length > 0,
+      hasToolSchemas,
+      hasPermissionTrace: eventRows.some(row => this.isPermissionEvent(row)),
+      hasContextCompressionEvents: eventRows.some(row => row.event_type === 'context_compressed')
+        || turnRows.some(row => Boolean(row.compaction_occurred)),
+      hasSubagentTelemetry: turnRows.some(row => {
+        const agentId = (row.agent_id as string | undefined) || 'main';
+        return agentId !== 'main';
+      }),
+      dataSource: 'telemetry',
+      source: 'telemetry',
+    } satisfies Omit<TelemetryCompleteness, 'hasRealAgentTrace' | 'incompleteReasons'>;
+    const incompleteReasons = getReplayCompletenessReasons(base);
+    return {
+      ...base,
+      hasRealAgentTrace: incompleteReasons.length === 0,
+      incompleteReasons,
+    };
+  }
+
+  private buildTranscriptTelemetryCompleteness(
+    sessionId: string,
+    turns: ReplayTurn[],
+    toolCallCount: number,
+  ): TelemetryCompleteness {
+    const traceIdentity = buildSessionTraceIdentity(sessionId);
+    const base = {
+      sessionId,
+      replayKey: traceIdentity.replayKey,
+      turnCount: turns.length,
+      modelCallCount: 0,
+      toolCallCount,
+      eventCount: 0,
+      hasSessionId: true,
+      hasModelDecisions: false,
+      hasToolSchemas: false,
+      hasPermissionTrace: false,
+      hasContextCompressionEvents: false,
+      hasSubagentTelemetry: false,
+      dataSource: 'transcript_fallback',
+      source: 'transcript_fallback',
+    } satisfies Omit<TelemetryCompleteness, 'hasRealAgentTrace' | 'incompleteReasons'>;
+    return {
+      ...base,
+      hasRealAgentTrace: false,
+      incompleteReasons: getReplayCompletenessReasons(base),
+    };
   }
 
   private aggregateQualitySignals(turnRows: SQLiteRow[]): EvaluationQualitySignals {
@@ -136,18 +439,40 @@ class TelemetryQueryService {
   private buildTurnToolCalls(toolCallRows: SQLiteRow[], turnId: string) {
     return toolCallRows
       .filter(tc => tc.turn_id === turnId)
-      .map(tc => ({
-        id: tc.id as string,
-        name: tc.name as string,
-        args: this.parseToolArgs(tc.arguments),
-        result: (tc.result_summary as string) || undefined,
-        success: (tc.success as number) === 1,
-        duration: (tc.duration_ms as number) || 0,
-        timestamp: tc.timestamp as number,
-        turnId: tc.turn_id as string,
-        index: (tc.idx as number) || 0,
-        parallel: (tc.parallel as number) === 1,
-      }));
+      .map(tc => this.buildToolCallRecord(tc));
+  }
+
+  private buildToolCallRecord(tc: SQLiteRow) {
+    const actualArgs = this.parseOptionalToolArgs(tc.actual_arguments);
+    const argsSource: 'telemetry_actual' | 'telemetry_sanitized' = actualArgs
+      ? 'telemetry_actual'
+      : 'telemetry_sanitized';
+    return {
+      id: tc.id as string,
+      name: tc.name as string,
+      args: actualArgs ?? this.parseToolArgs(tc.arguments),
+      actualArgs,
+      argsSource,
+      result: (tc.result_summary as string) || undefined,
+      success: (tc.success as number) === 1,
+      duration: (tc.duration_ms as number) || 0,
+      timestamp: tc.timestamp as number,
+      turnId: tc.turn_id as string,
+      index: (tc.idx as number) || 0,
+      parallel: (tc.parallel as number) === 1,
+    };
+  }
+
+  private getActualArgsAvailability(toolCallRows: SQLiteRow[]): ReplayMetricAvailability['actualArgs'] {
+    if (toolCallRows.length === 0) {
+      return 'unavailable';
+    }
+    const availableCount = toolCallRows.filter(row => (
+      typeof row.actual_arguments === 'string' && row.actual_arguments.length > 0
+    )).length;
+    if (availableCount === 0) return 'unavailable';
+    if (availableCount === toolCallRows.length) return 'telemetry';
+    return 'partial';
   }
 
   getSessionSnapshot(sessionId: string): SessionSnapshot | null {
@@ -190,18 +515,7 @@ class TelemetryQueryService {
         return result;
       });
 
-      const toolCalls = data.toolCallRows.map(tc => ({
-        id: tc.id as string,
-        name: tc.name as string,
-        args: this.parseToolArgs(tc.arguments),
-        result: (tc.result_summary as string) || undefined,
-        success: (tc.success as number) === 1,
-        duration: (tc.duration_ms as number) || 0,
-        timestamp: tc.timestamp as number,
-        turnId: tc.turn_id as string,
-        index: (tc.idx as number) || 0,
-        parallel: (tc.parallel as number) === 1,
-      }));
+      const toolCalls = data.toolCallRows.map(tc => this.buildToolCallRecord(tc));
 
       const inputTokens = (data.sessionRow?.total_input_tokens as number) || turns.reduce((sum, turn) => sum + turn.inputTokens, 0);
       const outputTokens = (data.sessionRow?.total_output_tokens as number) || turns.reduce((sum, turn) => sum + turn.outputTokens, 0);
@@ -341,7 +655,7 @@ class TelemetryQueryService {
     }
   }
 
-  private normalizeToolCategory(toolName: string) {
+  private normalizeToolCategory(toolName: string): ReplayToolCategory {
     const fromMap = TOOL_CATEGORY_MAP[toolName as keyof typeof TOOL_CATEGORY_MAP];
     if (fromMap) return fromMap;
 
@@ -357,19 +671,164 @@ class TelemetryQueryService {
     return 'Other';
   }
 
-  private toTranscriptReplayBlock(message: Message): {
-    type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
-    content: string;
-    timestamp: number;
-  } {
+  private getToolResultContent(result: ToolResult): string {
+    return result.output
+      || result.error
+      || result.outputPath
+      || (result.metadata ? JSON.stringify(result.metadata) : '');
+  }
+
+  private collectTranscriptToolResults(messages: Message[]): Map<string, ToolResult> {
+    const results = new Map<string, ToolResult>();
+    for (const message of messages) {
+      for (const result of message.toolResults || []) {
+        results.set(result.toolCallId, result);
+      }
+      for (const call of message.toolCalls || []) {
+        if (call.result) {
+          results.set(call.id, call.result);
+        }
+      }
+    }
+    return results;
+  }
+
+  private collectTranscriptToolCalls(messages: Message[]): Map<string, ToolCall> {
+    const calls = new Map<string, ToolCall>();
+    for (const message of messages) {
+      for (const call of message.toolCalls || []) {
+        calls.set(call.id, call);
+      }
+    }
+    return calls;
+  }
+
+  private buildTranscriptToolCallBlock(
+    toolCall: ToolCall,
+    resultByCallId: Map<string, ToolResult>,
+    timestamp: number,
+  ): ReplayBlock {
+    const result = toolCall.result || resultByCallId.get(toolCall.id);
+    const args = toolCall.arguments || {};
+    const category = this.normalizeToolCategory(toolCall.name);
     return {
-      type: message.role === 'user' ? 'user' : 'text',
-      content: message.content,
-      timestamp: message.timestamp,
+      type: 'tool_call',
+      content: toolCall.name,
+      toolCall: {
+        id: toolCall.id,
+        name: toolCall.name,
+        args,
+        actualArgs: args,
+        argsSource: 'transcript',
+        result: result ? this.getToolResultContent(result) || undefined : undefined,
+        resultMetadata: result?.metadata,
+        success: result?.success ?? true,
+        successKnown: Boolean(result),
+        duration: result?.duration ?? 0,
+        category,
+      },
+      timestamp,
     };
   }
 
-  private buildTranscriptReplay(sessionId: string) {
+  private toTranscriptReplayBlocks(
+    message: Message,
+    resultByCallId: Map<string, ToolResult>,
+    callById: Map<string, ToolCall>,
+  ): ReplayBlock[] {
+    const blocks: ReplayBlock[] = [];
+    const emittedToolCallIds = new Set<string>();
+    const textType: ReplayBlock['type'] = message.role === 'user' ? 'user' : 'text';
+
+    if (message.thinking) {
+      blocks.push({
+        type: 'thinking',
+        content: message.thinking,
+        timestamp: message.timestamp,
+      });
+    }
+
+    if (message.contentParts?.length) {
+      for (const part of message.contentParts) {
+        if (part.type === 'text') {
+          if (part.text) {
+            blocks.push({
+              type: textType,
+              content: part.text,
+              timestamp: message.timestamp,
+            });
+          }
+          continue;
+        }
+
+        const toolCall = message.toolCalls?.find(call => call.id === part.toolCallId);
+        if (toolCall) {
+          blocks.push(this.buildTranscriptToolCallBlock(toolCall, resultByCallId, message.timestamp));
+          emittedToolCallIds.add(toolCall.id);
+        }
+      }
+    } else if (message.content && !(message.role === 'tool' && message.toolResults?.length)) {
+      blocks.push({
+        type: message.role === 'tool' ? 'tool_result' : textType,
+        content: message.content,
+        timestamp: message.timestamp,
+      });
+    }
+
+    for (const toolCall of message.toolCalls || []) {
+      if (emittedToolCallIds.has(toolCall.id)) continue;
+      blocks.push(this.buildTranscriptToolCallBlock(toolCall, resultByCallId, message.timestamp));
+      emittedToolCallIds.add(toolCall.id);
+    }
+
+    for (const result of message.toolResults || []) {
+      const matchingCall = callById.get(result.toolCallId);
+      const args = matchingCall?.arguments || {};
+      blocks.push({
+        type: 'tool_result',
+        content: this.getToolResultContent(result),
+        timestamp: message.timestamp,
+        toolCall: {
+          id: result.toolCallId,
+          name: matchingCall?.name || 'unknown',
+          args,
+          actualArgs: matchingCall ? args : undefined,
+          argsSource: matchingCall ? 'transcript' : undefined,
+          result: this.getToolResultContent(result) || undefined,
+          resultMetadata: result.metadata,
+          success: result.success,
+          successKnown: true,
+          duration: result.duration ?? 0,
+          category: this.normalizeToolCategory(matchingCall?.name || 'unknown'),
+        },
+      });
+    }
+
+    return blocks;
+  }
+
+  private calculateTranscriptSelfRepair(turns: ReplayTurn[]): number {
+    let chains = 0;
+
+    for (const turn of turns) {
+      const failedTools = new Set<string>();
+      for (const block of turn.blocks) {
+        if (block.type !== 'tool_call' || !block.toolCall?.successKnown) continue;
+        if (!block.toolCall.success) {
+          failedTools.add(block.toolCall.name);
+          continue;
+        }
+        if (failedTools.has(block.toolCall.name)) {
+          chains++;
+          failedTools.delete(block.toolCall.name);
+        }
+      }
+    }
+
+    return chains;
+  }
+
+  private buildTranscriptReplay(sessionId: string): StructuredReplay | null {
     const database = getDatabase();
     const session = database.getSession(sessionId, { includeDeleted: true });
     if (!session) {
@@ -385,39 +844,15 @@ class TelemetryQueryService {
       return null;
     }
 
-    const toolDistribution = {
-      Read: 0,
-      Edit: 0,
-      Write: 0,
-      Bash: 0,
-      Search: 0,
-      Web: 0,
-      Agent: 0,
-      Skill: 0,
-      Other: 0,
-    };
-
-    const turns: Array<{
-      turnNumber: number;
-      blocks: Array<{
-        type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
-        content: string;
-        timestamp: number;
-      }>;
-      inputTokens: number;
-      outputTokens: number;
-      durationMs: number;
-      startTime: number;
-    }> = [];
+    const resultByCallId = this.collectTranscriptToolResults(messages);
+    const callById = this.collectTranscriptToolCalls(messages);
+    const toolDistribution = this.createEmptyToolDistribution();
+    const turns: ReplayTurn[] = [];
 
     let currentTurn:
       | {
           turnNumber: number;
-          blocks: Array<{
-            type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
-            content: string;
-            timestamp: number;
-          }>;
+          blocks: ReplayBlock[];
           inputTokens: number;
           outputTokens: number;
           startTime: number;
@@ -437,12 +872,26 @@ class TelemetryQueryService {
     };
 
     messages.forEach((message) => {
-      const block = this.toTranscriptReplayBlock(message);
-      if (message.role === 'user' || !currentTurn) {
+      const blocks = this.toTranscriptReplayBlocks(message, resultByCallId, callById);
+      if (blocks.length === 0) {
+        return;
+      }
+
+      for (const block of blocks) {
+        if (block.type === 'tool_call' && block.toolCall) {
+          toolDistribution[block.toolCall.category]++;
+        }
+      }
+
+      const isHumanUserMessage = message.role === 'user'
+        && (!message.toolResults || message.toolResults.length === 0)
+        && (!message.toolCalls || message.toolCalls.length === 0);
+
+      if (isHumanUserMessage || !currentTurn) {
         finalizeCurrentTurn();
         currentTurn = {
           turnNumber: turns.length + 1,
-          blocks: [block],
+          blocks,
           inputTokens: message.inputTokens || 0,
           outputTokens: message.outputTokens || 0,
           startTime: message.timestamp,
@@ -450,67 +899,70 @@ class TelemetryQueryService {
         return;
       }
 
-      currentTurn.blocks.push(block);
+      currentTurn.blocks.push(...blocks);
       currentTurn.inputTokens += message.inputTokens || 0;
       currentTurn.outputTokens += message.outputTokens || 0;
     });
 
     finalizeCurrentTurn();
+    const transcriptToolCallCount = Object.values(toolDistribution).reduce((sum, count) => sum + count, 0);
+    const knownToolOutcomeCount = turns.reduce((sum, turn) => (
+      sum + turn.blocks.filter(block => block.type === 'tool_call' && block.toolCall?.successKnown).length
+    ), 0);
 
     return {
       sessionId,
       traceIdentity: buildSessionTraceIdentity(sessionId),
+      traceSource: 'session_replay',
+      dataSource: 'transcript_fallback',
       turns,
       summary: {
         totalTurns: turns.length,
         toolDistribution,
         thinkingRatio: 0,
-        selfRepairChains: 0,
+        selfRepairChains: this.calculateTranscriptSelfRepair(turns),
         totalDurationMs: turns.reduce((sum, turn) => sum + turn.durationMs, 0),
+        metricAvailability: {
+          dataSource: 'transcript_fallback',
+          replaySource: 'transcript_fallback',
+          toolDistribution: 'transcript',
+          selfRepair: transcriptToolCallCount === 0 || knownToolOutcomeCount > 0 ? 'transcript' : 'unavailable',
+          actualArgs: transcriptToolCallCount > 0 ? 'transcript' : 'unavailable',
+        } satisfies ReplayMetricAvailability,
+        telemetryCompleteness: this.buildTranscriptTelemetryCompleteness(
+          sessionId,
+          turns,
+          transcriptToolCallCount,
+        ),
       },
     };
   }
 
-  async getStructuredReplay(sessionId: string) {
+  async getStructuredReplay(sessionId: string): Promise<StructuredReplay | null> {
     try {
       const data = this.loadTelemetryRows(sessionId);
       if (!data) {
         return this.buildTranscriptReplay(sessionId);
       }
 
-      const toolDistribution = {
-        Read: 0,
-        Edit: 0,
-        Write: 0,
-        Bash: 0,
-        Search: 0,
-        Web: 0,
-        Agent: 0,
-        Skill: 0,
-        Other: 0,
-      };
+      const toolDistribution = this.createEmptyToolDistribution();
       let totalThinkingTokens = 0;
       let totalAllTokens = 0;
       let totalDurationMs = 0;
 
       const turns = data.turnRows.map(row => {
-        const blocks: Array<{
-          type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
-          content: string;
-          toolCall?: {
-            id: string;
-            name: string;
-            args: Record<string, unknown>;
-            result?: string;
-            success: boolean;
-            duration: number;
-            category: keyof typeof toolDistribution;
-          };
-          timestamp: number;
-        }> = [];
+        const leadingBlocks: ReplayBlock[] = [];
+        const timelineBlocks: ReplayBlock[] = [];
+        const trailingBlocks: ReplayBlock[] = [];
+        const turnId = row.id as string;
+        const turnModelCalls = data.modelCallRows.filter(mc => mc.turn_id === turnId);
+        const turnToolCalls = data.toolCallRows.filter(tc => tc.turn_id === turnId);
+        const turnEvents = data.eventRows.filter(ev => ev.turn_id === turnId);
+        const turnToolNames = turnToolCalls.map(tc => tc.name as string);
+        const toolSchemaSnapshots = this.extractToolSchemaSnapshots(turnEvents);
 
         if (row.user_prompt) {
-          blocks.push({
+          leadingBlocks.push({
             type: 'user',
             content: row.user_prompt as string,
             timestamp: row.start_time as number,
@@ -518,7 +970,7 @@ class TelemetryQueryService {
         }
 
         if (row.thinking_content) {
-          blocks.push({
+          leadingBlocks.push({
             type: 'thinking',
             content: row.thinking_content as string,
             timestamp: row.start_time as number,
@@ -526,20 +978,63 @@ class TelemetryQueryService {
           totalThinkingTokens += Math.ceil(String(row.thinking_content).length / 4);
         }
 
-        const turnToolCalls = data.toolCallRows.filter(tc => tc.turn_id === row.id);
+        for (const mc of turnModelCalls) {
+          const schemas = [
+            ...this.getToolSchemaMapAt(
+              toolSchemaSnapshots,
+              (mc.timestamp as number) || (row.start_time as number) || 0,
+              turnToolNames,
+            ).values(),
+          ];
+          timelineBlocks.push({
+            type: 'model_call',
+            content: `${mc.provider as string}/${mc.model as string}: ${mc.response_type as string || 'unknown'}`,
+            timestamp: mc.timestamp as number,
+            modelDecision: {
+              id: mc.id as string,
+              provider: mc.provider as string,
+              model: mc.model as string,
+              responseType: mc.response_type as string | undefined,
+              toolCallCount: (mc.tool_call_count as number) || 0,
+              inputTokens: (mc.input_tokens as number) || 0,
+              outputTokens: (mc.output_tokens as number) || 0,
+              latencyMs: (mc.latency_ms as number) || 0,
+              prompt: mc.prompt as string | undefined,
+              completion: mc.completion as string | undefined,
+              toolSchemas: schemas.length > 0 ? schemas : undefined,
+            },
+          });
+        }
+
         for (const tc of turnToolCalls) {
-          const category = this.normalizeToolCategory(tc.name as string) as keyof typeof toolDistribution;
+          const category = this.normalizeToolCategory(tc.name as string);
+          const actualArgs = this.parseOptionalToolArgs(tc.actual_arguments);
+          const toolSchema = this.getToolSchemaMapAt(
+            toolSchemaSnapshots,
+            (tc.timestamp as number) || (row.start_time as number) || 0,
+            [tc.name as string],
+          ).get(tc.name as string);
+          const permissionTrace = this.buildPermissionTraceForTool(
+            turnEvents,
+            tc.name as string,
+            tc.tool_call_id as string,
+          );
           toolDistribution[category]++;
 
-          blocks.push({
+          timelineBlocks.push({
             type: 'tool_call',
             content: tc.name as string,
             toolCall: {
               id: tc.tool_call_id as string,
               name: tc.name as string,
-              args: this.parseToolArgs(tc.arguments),
+              args: actualArgs ?? this.parseToolArgs(tc.arguments),
+              actualArgs,
+              argsSource: actualArgs ? 'telemetry_actual' : 'telemetry_sanitized',
+              toolSchema,
+              permissionTrace,
               result: (tc.result_summary as string) || undefined,
               success: (tc.success as number) === 1,
+              successKnown: true,
               duration: (tc.duration_ms as number) || 0,
               category,
             },
@@ -547,7 +1042,7 @@ class TelemetryQueryService {
           });
 
           if (tc.error) {
-            blocks.push({
+            timelineBlocks.push({
               type: 'error',
               content: tc.error as string,
               timestamp: tc.timestamp as number,
@@ -555,19 +1050,69 @@ class TelemetryQueryService {
           }
         }
 
+        for (const ev of turnEvents) {
+          const isContextEvent = ev.event_type === 'context_compressed';
+          timelineBlocks.push({
+            type: isContextEvent ? 'context_event' : 'event',
+            content: (ev.summary as string) || (ev.event_type as string),
+            timestamp: ev.timestamp as number,
+            event: {
+              eventType: ev.event_type as string,
+              summary: (ev.summary as string) || '',
+              data: this.parseEventData(ev.data),
+              durationMs: ev.duration_ms as number | undefined,
+            },
+          });
+        }
+
+        if (row.compaction_occurred && !turnEvents.some(ev => ev.event_type === 'context_compressed')) {
+          timelineBlocks.push({
+            type: 'context_event',
+            content: 'Context compaction occurred',
+            timestamp: (row.end_time as number) || (row.start_time as number),
+            event: {
+              eventType: 'context_compressed',
+              summary: 'Context compaction occurred',
+              data: row.compaction_saved_tokens
+                ? { savedTokens: row.compaction_saved_tokens }
+                : undefined,
+            },
+          });
+        }
+
         if (row.assistant_response) {
-          blocks.push({
+          trailingBlocks.push({
             type: 'text',
             content: row.assistant_response as string,
             timestamp: (row.end_time as number) || (row.start_time as number),
           });
         }
 
+        const timelineOrder: Record<ReplayBlock['type'], number> = {
+          user: 0,
+          thinking: 1,
+          model_call: 2,
+          event: 3,
+          context_event: 3,
+          tool_call: 4,
+          tool_result: 5,
+          error: 6,
+          text: 7,
+        };
+        timelineBlocks.sort((left, right) => (
+          left.timestamp - right.timestamp
+          || timelineOrder[left.type] - timelineOrder[right.type]
+        ));
+        const blocks = [...leadingBlocks, ...timelineBlocks, ...trailingBlocks];
+
         totalAllTokens += ((row.total_input_tokens as number) || 0) + ((row.total_output_tokens as number) || 0);
         totalDurationMs += (row.duration_ms as number) || 0;
 
         return {
           turnNumber: row.turn_number as number,
+          agentId: (row.agent_id as string | undefined) || 'main',
+          turnType: (row.turn_type as ReplayTurn['turnType']) || 'user',
+          parentTurnId: row.parent_turn_id as string | undefined,
           blocks,
           inputTokens: (row.total_input_tokens as number) || 0,
           outputTokens: (row.total_output_tokens as number) || 0,
@@ -679,10 +1224,16 @@ class TelemetryQueryService {
       } catch {}
 
       const selfRepair = this.calculateSelfRepairStats(data.toolCallRows);
+      const hasToolSchemas = turns.some(turn => turn.blocks.some(block => (
+        block.type === 'tool_call' && Boolean(block.toolCall?.toolSchema)
+        || block.type === 'model_call' && Boolean(block.modelDecision?.toolSchemas?.length)
+      )));
 
       return {
         sessionId,
         traceIdentity: buildSessionTraceIdentity(sessionId),
+        traceSource: 'session_replay',
+        dataSource: 'telemetry',
         turns,
         summary: {
           totalTurns: turns.length,
@@ -690,6 +1241,21 @@ class TelemetryQueryService {
           thinkingRatio: totalAllTokens > 0 ? totalThinkingTokens / totalAllTokens : 0,
           selfRepairChains: selfRepair.successes,
           totalDurationMs,
+          metricAvailability: {
+            dataSource: 'telemetry',
+            replaySource: 'telemetry',
+            toolDistribution: 'telemetry',
+            selfRepair: 'telemetry',
+            actualArgs: this.getActualArgsAvailability(data.toolCallRows),
+          } satisfies ReplayMetricAvailability,
+          telemetryCompleteness: this.buildTelemetryCompleteness(
+            sessionId,
+            data.turnRows,
+            data.modelCallRows,
+            data.toolCallRows,
+            data.eventRows,
+            hasToolSchemas,
+          ),
           deviations,
           failureAttribution,
         },

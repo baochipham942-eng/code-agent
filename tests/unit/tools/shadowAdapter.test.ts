@@ -154,6 +154,85 @@ describe('protocolAdapter — buildProtocolContext', () => {
     });
   });
 
+  it('protocol ctx -> legacy ctx forwards inline legacy permission requests through canUseTool', async () => {
+    const ctx = buildProtocolContext({
+      sessionId: 'sess_permission',
+      workingDirectory: '/tmp',
+      legacyCtx: {
+        workingDirectory: '/tmp',
+        requestPermission: async () => true,
+      } as unknown as LegacyToolContext,
+    });
+    const calls: Array<{ name: string; input: Record<string, unknown>; reason?: string }> = [];
+    const legacy = buildLegacyCtxFromProtocol(ctx, async (name, input, reason) => {
+      calls.push({ name, input, reason });
+      return { allow: false, reason: 'blocked by test' };
+    });
+
+    const approved = await legacy.requestPermission({
+      type: 'file_read',
+      tool: 'browser_action.upload_file',
+      details: { action: 'upload_file', file: 'secret.env' },
+      reason: 'upload sensitive local file',
+    });
+
+    expect(approved).toBe(false);
+    expect(calls).toEqual([{
+      name: 'browser_action.upload_file',
+      input: { action: 'upload_file', file: 'secret.env' },
+      reason: 'upload sensitive local file',
+    }]);
+  });
+
+  it('protocol ctx -> legacy ctx preserves dangerous inline permission intent', async () => {
+    const ctx = buildProtocolContext({
+      workingDirectory: '/tmp',
+      legacyCtx: {
+        workingDirectory: '/tmp',
+        requestPermission: async () => true,
+      } as unknown as LegacyToolContext,
+    });
+    let capturedReason: string | undefined;
+    const legacy = buildLegacyCtxFromProtocol(ctx, async (_name, _input, reason) => {
+      capturedReason = reason;
+      return { allow: true };
+    });
+
+    const approved = await legacy.requestPermission({
+      type: 'dangerous_command',
+      tool: 'computer_use',
+      details: { action: 'type_text', targetApp: 'Safari' },
+      reason: 'Sensitive Computer Use action requires explicit confirmation.',
+    });
+
+    expect(approved).toBe(true);
+    expect(capturedReason).toBe('dangerous:Sensitive Computer Use action requires explicit confirmation.');
+  });
+
+  it('reuses ToolExecutor top-level grant only for the same unhinted handler call', async () => {
+    const topLevelArgs = { command: 'git status' };
+    const requestPermissionCalls: unknown[] = [];
+    const legacy = {
+      workingDirectory: '/tmp',
+      requestPermission: async (request: unknown) => {
+        requestPermissionCalls.push(request);
+        return true;
+      },
+      approvedToolCall: {
+        toolName: 'Bash',
+        args: topLevelArgs,
+      },
+    } as unknown as LegacyToolContext;
+
+    const canUseTool = buildCanUseToolFromLegacy(legacy, 'Bash');
+
+    await expect(canUseTool('bash', topLevelArgs)).resolves.toEqual({ allow: true });
+    expect(requestPermissionCalls).toHaveLength(0);
+
+    await expect(canUseTool('bash', topLevelArgs, 'dangerous:push to remote')).resolves.toEqual({ allow: true });
+    expect(requestPermissionCalls).toHaveLength(1);
+  });
+
   it('planMode 从 legacy setPlanMode/isPlanMode 桥接', () => {
     let active = false;
     const legacy = {

@@ -90,6 +90,7 @@ export class CLIConfigService {
           moonshot: { enabled: true, model: DEFAULT_MODELS.chat },  // 启用 moonshot
           minimax: { enabled: false },
           perplexity: { enabled: false },
+          grok: { enabled: false },
           openrouter: { enabled: false },
           volcengine: { enabled: false },
         },

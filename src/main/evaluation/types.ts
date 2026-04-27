@@ -74,6 +74,8 @@ export interface ToolCallRecord {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  actualArgs?: Record<string, unknown>;
+  argsSource?: 'telemetry_sanitized' | 'telemetry_actual' | 'transcript';
   result?: string;
   success: boolean;
   duration: number;

@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { getReplayArgsSourceLabel, type ReplayToolCall } from '@shared/contract/evaluation';
 import {
   buildBrowserComputerActionPreview,
   formatBrowserComputerActionArguments,
@@ -15,6 +16,9 @@ export interface ToolCallData {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  argsSource?: ReplayToolCall['argsSource'];
+  toolSchema?: unknown;
+  permissionTrace?: unknown[];
   result?: string;
   resultMetadata?: Record<string, unknown>;
   success: boolean;
@@ -23,9 +27,21 @@ export interface ToolCallData {
 }
 
 export interface ReplayBlockData {
-  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
+  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error' | 'model_call' | 'event' | 'context_event';
   content: string;
   toolCall?: ToolCallData;
+  modelDecision?: {
+    provider?: string;
+    model?: string;
+    responseType?: string;
+    toolCallCount?: number;
+    latencyMs?: number;
+    toolSchemas?: unknown[];
+  };
+  event?: {
+    eventType?: string;
+    summary?: string;
+  };
   timestamp: number;
 }
 
@@ -57,6 +73,12 @@ export const ReplayMessageBlock: React.FC<Props> = ({ block }) => {
       return <ToolCallBlock toolCall={block.toolCall!} />;
     case 'error':
       return <ErrorBlock content={block.content} />;
+    case 'model_call':
+      return <MetaBlock label="MODEL" content={formatModelDecision(block)} />;
+    case 'event':
+      return <MetaBlock label={block.event?.eventType || 'EVENT'} content={block.content} />;
+    case 'context_event':
+      return <MetaBlock label="CONTEXT" content={block.content} tone="amber" />;
     default:
       return null;
   }
@@ -115,6 +137,7 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
   // Format args preview
   const argsPreview = formatArgsPreview(toolCall.name, toolCall.args);
   const resultDetails = formatResultDetails(toolCall);
+  const metaSummary = formatToolCallMetaSummary(toolCall);
 
   return (
     <div className={`border rounded-lg overflow-hidden ${colorClass.split(' ').slice(1).join(' ')}`}>
@@ -132,9 +155,10 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
           className={`w-3 h-3 text-zinc-600 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
         />
       </button>
-      {resultDetails && (
-        <div className="px-3 pb-2 text-[10px] text-zinc-500 whitespace-pre-wrap break-words">
-          {resultDetails}
+      {(resultDetails || metaSummary) && (
+        <div className="px-3 pb-2 text-[10px] text-zinc-500 whitespace-pre-wrap break-words space-y-1">
+          {metaSummary && <div>{metaSummary}</div>}
+          {resultDetails && <div>{resultDetails}</div>}
         </div>
       )}
       {expanded && (
@@ -155,6 +179,22 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
               </pre>
             </div>
           )}
+          {toolCall.toolSchema ? (
+            <div>
+              <div className="text-[10px] text-zinc-600 mb-0.5">SCHEMA</div>
+              <pre className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
+                {formatToolSchemaDetails(toolCall.toolSchema)}
+              </pre>
+            </div>
+          ) : null}
+          {toolCall.permissionTrace?.length ? (
+            <div>
+              <div className="text-[10px] text-zinc-600 mb-0.5">PERMISSION</div>
+              <pre className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
+                {formatPermissionTraceDetails(toolCall.permissionTrace)}
+              </pre>
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -169,6 +209,38 @@ const ErrorBlock: React.FC<{ content: string }> = ({ content }) => (
     </div>
   </div>
 );
+
+const MetaBlock: React.FC<{ label: string; content: string; tone?: 'zinc' | 'amber' }> = ({
+  label,
+  content,
+  tone = 'zinc',
+}) => (
+  <div className={`border rounded-lg px-3 py-2 ${
+    tone === 'amber'
+      ? 'border-amber-500/20 bg-amber-500/5'
+      : 'border-zinc-800 bg-zinc-900/30'
+  }`}>
+    <div className={`text-[10px] font-medium mb-0.5 uppercase tracking-wider ${
+      tone === 'amber' ? 'text-amber-400/70' : 'text-zinc-500'
+    }`}>{label}</div>
+    <div className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words">
+      {content}
+    </div>
+  </div>
+);
+
+function formatModelDecision(block: ReplayBlockData): string {
+  const decision = block.modelDecision;
+  if (!decision) return block.content;
+  const parts = [
+    `${decision.provider || 'model'}/${decision.model || 'unknown'}`,
+    decision.responseType ? `response: ${decision.responseType}` : undefined,
+    typeof decision.toolCallCount === 'number' ? `tools: ${decision.toolCallCount}` : undefined,
+    Array.isArray(decision.toolSchemas) ? `schemas: ${decision.toolSchemas.length}` : undefined,
+    typeof decision.latencyMs === 'number' ? `${decision.latencyMs}ms` : undefined,
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
 
 function formatArgsPreview(toolName: string, args: Record<string, unknown>): string {
   const browserComputerPreview = buildBrowserComputerActionPreview({
@@ -245,4 +317,44 @@ export function formatResultDetails(toolCall: ToolCallData): string | null {
     return browserComputerResult;
   }
   return toolCall.result || null;
+}
+
+export function formatToolCallMetaSummary(toolCall: ToolCallData): string | null {
+  const parts: string[] = [];
+  if (toolCall.argsSource) {
+    parts.push(`args: ${getReplayArgsSourceLabel(toolCall.argsSource)}`);
+  }
+
+  const schema = toolCall.toolSchema as { name?: unknown; permissionLevel?: unknown; requiresPermission?: unknown } | undefined;
+  if (schema) {
+    const schemaName = typeof schema.name === 'string' ? schema.name : toolCall.name;
+    const permissionLevel = typeof schema.permissionLevel === 'string' ? `/${schema.permissionLevel}` : '';
+    const permissionFlag = typeof schema.requiresPermission === 'boolean'
+      ? schema.requiresPermission ? '/permission' : '/no-permission'
+      : '';
+    parts.push(`schema: ${schemaName}${permissionLevel}${permissionFlag}`);
+  }
+
+  if (toolCall.permissionTrace?.length) {
+    const summaries = toolCall.permissionTrace
+      .map((trace) => {
+        const item = trace as { eventType?: unknown; summary?: unknown };
+        const eventType = typeof item.eventType === 'string' ? item.eventType : 'permission';
+        const summary = typeof item.summary === 'string' && item.summary.length > 0 ? ` ${item.summary}` : '';
+        return `${eventType}${summary}`;
+      })
+      .slice(0, 2)
+      .join(' | ');
+    parts.push(`permission: ${summaries}`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+export function formatToolSchemaDetails(schema: unknown): string {
+  return JSON.stringify(schema, null, 2);
+}
+
+export function formatPermissionTraceDetails(trace: unknown[]): string {
+  return JSON.stringify(trace, null, 2);
 }

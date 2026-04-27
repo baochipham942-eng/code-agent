@@ -55,7 +55,7 @@ export class SwarmLaunchApprovalGate {
     this.persistRepo = repo;
     let hydrated = 0;
     try {
-      const orphans = repo.markAllPendingAsOrphaned(now);
+      const orphans = repo.markPendingAsOrphaned('launch', now);
       for (const row of orphans) {
         if (row.kind !== 'launch') continue;
         try {

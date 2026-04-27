@@ -10,8 +10,13 @@ import type {
   Message,
   ModelProvider,
   TodoItem,
+  SessionTask,
   ToolCall,
 } from '../../../../shared/contract';
+import type {
+  ContextInterventionAction,
+  ContextInterventionSnapshot,
+} from '../../../../shared/contract/contextView';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
@@ -39,6 +44,50 @@ function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): Tool
       tc.shortDescription
       ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {}),
   }));
+}
+
+function buildAttachmentMetadata(attachments: Message['attachments']): Message['attachments'] | undefined {
+  return attachments?.map(a => ({
+    id: a.id,
+    type: a.type,
+    category: a.category,
+    name: a.name,
+    size: a.size,
+    mimeType: a.mimeType,
+    path: a.path,
+    pageCount: a.pageCount,
+    language: a.language,
+  }));
+}
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return 'null';
+  }
+}
+
+function parseJsonArray(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 interface SessionWriteOptions {
@@ -227,6 +276,26 @@ export class SessionRepository {
     `).run(deletedAt, this.resolveSyncedAt(options), sessionId);
   }
 
+  markCrashedActiveSessions(now: number = Date.now()): { interrupted: number; orphaned: number } {
+    const interrupted = this.db
+      .prepare(
+        `UPDATE sessions
+           SET status = 'interrupted', updated_at = ?, synced_at = NULL
+         WHERE status IN ('running', 'paused', 'cancelling') AND is_deleted = 0`,
+      )
+      .run(now).changes;
+
+    const orphaned = this.db
+      .prepare(
+        `UPDATE sessions
+           SET status = 'orphaned', updated_at = ?, synced_at = NULL
+         WHERE status = 'queued' AND is_deleted = 0`,
+      )
+      .run(now).changes;
+
+    return { interrupted, orphaned };
+  }
+
   clearAllSessions(): number {
     const stmt = this.db.prepare('DELETE FROM sessions');
     const result = stmt.run();
@@ -258,22 +327,11 @@ export class SessionRepository {
 
   addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts, metadata, compaction)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const attachmentsMeta = message.attachments?.map(a => ({
-      id: a.id,
-      type: a.type,
-      category: a.category,
-      name: a.name,
-      size: a.size,
-      mimeType: a.mimeType,
-      path: a.path,
-      pageCount: a.pageCount,
-      language: a.language,
-    }));
-
+    const attachmentsMeta = buildAttachmentMetadata(message.attachments);
     const thinkingContent = message.thinking || message.reasoning || null;
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
@@ -291,11 +349,24 @@ export class SessionRepository {
       this.resolveSyncedAt(options),
       message.contentParts ? JSON.stringify(message.contentParts) : null,
       message.metadata ? JSON.stringify(message.metadata) : null,
+      message.compaction ? JSON.stringify(message.compaction) : null,
     );
 
     if (!options?.skipTimestampUpdate) {
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(options?.updatedAt ?? Date.now(), sessionId);
     }
+  }
+
+  replaceMessages(sessionId: string, messages: Message[], updatedAt: number = Date.now()): void {
+    const replaceFn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
+      for (const message of messages) {
+        this.addMessage(sessionId, message, { skipTimestampUpdate: true, updatedAt });
+      }
+      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(updatedAt, sessionId);
+    });
+
+    replaceFn();
   }
 
   updateMessage(messageId: string, updates: Partial<Message>): void {
@@ -306,6 +377,14 @@ export class SessionRepository {
       setClauses.push('content = ?');
       values.push(updates.content);
     }
+    if (updates.role !== undefined) {
+      setClauses.push('role = ?');
+      values.push(updates.role);
+    }
+    if (updates.timestamp !== undefined) {
+      setClauses.push('timestamp = ?');
+      values.push(updates.timestamp);
+    }
     if (updates.toolCalls !== undefined) {
       setClauses.push('tool_calls = ?');
       values.push(JSON.stringify(ensureToolCallShortDescription(updates.toolCalls)));
@@ -314,9 +393,30 @@ export class SessionRepository {
       setClauses.push('tool_results = ?');
       values.push(JSON.stringify(updates.toolResults));
     }
+    if (updates.attachments !== undefined) {
+      setClauses.push('attachments = ?');
+      const attachmentsMeta = buildAttachmentMetadata(updates.attachments);
+      values.push(attachmentsMeta ? JSON.stringify(attachmentsMeta) : null);
+    }
+    if (updates.thinking !== undefined || updates.reasoning !== undefined) {
+      setClauses.push('thinking = ?');
+      values.push(updates.thinking || updates.reasoning || null);
+    }
+    if (updates.effortLevel !== undefined) {
+      setClauses.push('effort_level = ?');
+      values.push(updates.effortLevel || null);
+    }
+    if (updates.contentParts !== undefined) {
+      setClauses.push('content_parts = ?');
+      values.push(updates.contentParts ? JSON.stringify(updates.contentParts) : null);
+    }
     if (updates.metadata !== undefined) {
       setClauses.push('metadata = ?');
       values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
+    }
+    if (updates.compaction !== undefined) {
+      setClauses.push('compaction = ?');
+      values.push(updates.compaction ? JSON.stringify(updates.compaction) : null);
     }
 
     if (setClauses.length === 0) return;
@@ -549,6 +649,7 @@ export class SessionRepository {
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: row.content_parts ? JSON.parse(row.content_parts as string) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
+      compaction: row.compaction ? JSON.parse(row.compaction as string) : undefined,
     };
   }
 
@@ -611,6 +712,180 @@ export class SessionRepository {
       status: row.status as TodoItem['status'],
       activeForm: row.active_form as string,
     }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Session Tasks
+  // --------------------------------------------------------------------------
+
+  saveSessionTasks(sessionId: string, tasks: SessionTask[], updatedAt?: number): void {
+    const now = updatedAt ?? Date.now();
+
+    const saveFn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM session_tasks WHERE session_id = ?').run(sessionId);
+
+      const stmt = this.db.prepare(`
+        INSERT INTO session_tasks (
+          session_id, task_id, subject, description, active_form, status, priority, owner,
+          blocks_json, blocked_by_json, metadata_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const task of tasks) {
+        stmt.run(
+          sessionId,
+          task.id,
+          task.subject,
+          task.description,
+          task.activeForm,
+          task.status,
+          task.priority,
+          task.owner ?? null,
+          safeJsonStringify(task.blocks ?? []),
+          safeJsonStringify(task.blockedBy ?? []),
+          safeJsonStringify(task.metadata ?? {}),
+          task.createdAt,
+          task.updatedAt || now,
+        );
+      }
+    });
+
+    saveFn();
+  }
+
+  getSessionTasks(sessionId: string): SessionTask[] {
+    const stmt = this.db.prepare(`
+      SELECT task_id, subject, description, active_form, status, priority, owner,
+             blocks_json, blocked_by_json, metadata_json, created_at, updated_at
+      FROM session_tasks
+      WHERE session_id = ?
+      ORDER BY created_at ASC, task_id ASC
+    `);
+
+    const rows = stmt.all(sessionId) as SQLiteRow[];
+
+    return rows.map((row): SessionTask => ({
+      id: String(row.task_id),
+      subject: String(row.subject ?? ''),
+      description: String(row.description ?? ''),
+      activeForm: String(row.active_form ?? ''),
+      status: row.status as SessionTask['status'],
+      priority: row.priority as SessionTask['priority'],
+      owner: row.owner == null ? undefined : String(row.owner),
+      blocks: parseJsonArray(row.blocks_json),
+      blockedBy: parseJsonArray(row.blocked_by_json),
+      metadata: parseJsonObject(row.metadata_json),
+      createdAt: Number(row.created_at) || 0,
+      updatedAt: Number(row.updated_at) || 0,
+    }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Context Interventions
+  // --------------------------------------------------------------------------
+
+  saveContextIntervention(
+    sessionId: string,
+    agentId: string | null | undefined,
+    messageId: string,
+    action: ContextInterventionAction | null,
+    updatedAt?: number,
+  ): void {
+    const scopedAgentId = agentId?.trim() || 'global';
+    if (!action) {
+      this.db
+        .prepare(
+          `DELETE FROM context_interventions
+            WHERE session_id = ? AND agent_id = ? AND message_id = ?`,
+        )
+        .run(sessionId, scopedAgentId, messageId);
+      return;
+    }
+
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO context_interventions (
+          session_id, agent_id, message_id, action, updated_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(sessionId, scopedAgentId, messageId, action, updatedAt ?? Date.now());
+  }
+
+  getContextInterventions(sessionId: string, agentId?: string | null): ContextInterventionSnapshot {
+    const scopedAgentId = agentId?.trim() || 'global';
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, action FROM context_interventions
+          WHERE session_id = ? AND agent_id = ?
+          ORDER BY updated_at ASC`,
+      )
+      .all(sessionId, scopedAgentId) as SQLiteRow[];
+
+    const snapshot: ContextInterventionSnapshot = {
+      pinned: [],
+      excluded: [],
+      retained: [],
+    };
+
+    for (const row of rows) {
+      const id = String(row.message_id);
+      if (row.action === 'pin') snapshot.pinned.push(id);
+      if (row.action === 'exclude') snapshot.excluded.push(id);
+      if (row.action === 'retain') snapshot.retained.push(id);
+    }
+
+    return snapshot;
+  }
+
+  // --------------------------------------------------------------------------
+  // Session Runtime State
+  // --------------------------------------------------------------------------
+
+  saveSessionRuntimeState(
+    sessionId: string,
+    state: { compressionStateJson?: string | null; persistentSystemContext?: string[] },
+    updatedAt?: number,
+  ): void {
+    const existing = this.getSessionRuntimeState(sessionId);
+    const compressionStateJson =
+      state.compressionStateJson !== undefined
+        ? state.compressionStateJson
+        : existing?.compressionStateJson ?? null;
+    const persistentSystemContext =
+      state.persistentSystemContext !== undefined
+        ? state.persistentSystemContext
+        : existing?.persistentSystemContext ?? [];
+
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO session_runtime_state (
+          session_id, compression_state_json, persistent_system_context_json, updated_at
+        ) VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        compressionStateJson,
+        safeJsonStringify(persistentSystemContext),
+        updatedAt ?? Date.now(),
+      );
+  }
+
+  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+    const row = this.db
+      .prepare(
+        `SELECT compression_state_json, persistent_system_context_json
+          FROM session_runtime_state
+          WHERE session_id = ?`,
+      )
+      .get(sessionId) as SQLiteRow | undefined;
+
+    if (!row) return null;
+
+    return {
+      compressionStateJson:
+        row.compression_state_json == null ? null : String(row.compression_state_json),
+      persistentSystemContext: parseJsonArray(row.persistent_system_context_json),
+    };
   }
 
   // --------------------------------------------------------------------------

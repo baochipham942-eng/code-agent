@@ -85,6 +85,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
+import { sdkTaskTool, spawnAgentTool, agentSpawnTool, sendInputTool } from '../../agent/multiagentTools';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -96,7 +97,7 @@ import { planModeFacadeSchema } from './planning/planModeFacade.schema';
 import { enterPlanModeSchema } from './planning/enterPlanMode.schema';
 import { exitPlanModeSchema } from './planning/exitPlanMode.schema';
 
-function legacyVisionSchema(
+function legacyToolSchema(
   tool: Pick<Tool, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
   options: Omit<ToolSchema, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
 ): ToolSchema {
@@ -189,42 +190,42 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   // 注：register 要求 schema 立即提供（getSchemas 用），所以这里复用 legacy tool 的真实 schema。
   // loader 内 lazy 拉 wrappers.ts 拿对应 module
   registry.register(
-    legacyVisionSchema(BrowserTool, {
+    legacyToolSchema(BrowserTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
     async () => (await import('./vision/wrappers')).browserModule,
   );
   registry.register(
-    legacyVisionSchema(ComputerTool, {
+    legacyToolSchema(ComputerTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
     async () => (await import('./vision/wrappers')).computerModule,
   );
   registry.register(
-    legacyVisionSchema(browserActionTool, {
+    legacyToolSchema(browserActionTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
     async () => (await import('./vision/wrappers')).browserActionModule,
   );
   registry.register(
-    legacyVisionSchema(browserNavigateTool, {
+    legacyToolSchema(browserNavigateTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
     async () => (await import('./vision/wrappers')).browserNavigateModule,
   );
   registry.register(
-    legacyVisionSchema(computerUseTool, {
+    legacyToolSchema(computerUseTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
     async () => (await import('./vision/wrappers')).computerUseModule,
   );
   registry.register(
-    legacyVisionSchema(screenshotTool, {
+    legacyToolSchema(screenshotTool, {
       category: 'vision',
       permissionLevel: 'read',
       readOnly: true,
@@ -233,7 +234,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./vision/wrappers')).screenshotModule,
   );
   registry.register(
-    legacyVisionSchema(guiAgentTool, {
+    legacyToolSchema(guiAgentTool, {
       category: 'vision',
       permissionLevel: 'execute',
     }),
@@ -300,13 +301,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   });
 
   registry.register(
-    {
-      name: 'Task',
-      description: 'Spawn a sub-agent to handle a focused task with its own tool loop.',
-      inputSchema: minimalMASchema({ description: { type: 'string' }, prompt: { type: 'string' } }, ['description', 'prompt']),
+    legacyToolSchema(sdkTaskTool, {
       category: 'multiagent',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./multiagent/wrappers')).taskModule,
   );
   registry.register(
@@ -320,23 +318,17 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).teammateModule,
   );
   registry.register(
-    {
-      name: 'spawn_agent',
-      description: 'Spawn a long-running background agent (CLI subprocess).',
-      inputSchema: minimalMASchema({ command: { type: 'string' } }, ['command']),
+    legacyToolSchema(spawnAgentTool, {
       category: 'multiagent',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./multiagent/wrappers')).spawnAgentModule,
   );
   registry.register(
-    {
-      name: 'AgentSpawn',
-      description: 'Advanced agent creation with full control (PascalCase alias for SDK compatibility).',
-      inputSchema: minimalMASchema({ command: { type: 'string' } }, ['command']),
+    legacyToolSchema(agentSpawnTool, {
       category: 'multiagent',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./multiagent/wrappers')).agentSpawnModule,
   );
   registry.register(
@@ -362,13 +354,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).closeAgentModule,
   );
   registry.register(
-    {
-      name: 'send_input',
-      description: 'Send input to a running spawned agent.',
-      inputSchema: minimalMASchema({ agent_id: { type: 'string' }, input: { type: 'string' } }, ['agent_id', 'input']),
+    legacyToolSchema(sendInputTool, {
       category: 'multiagent',
       permissionLevel: 'execute',
-    },
+    }),
     async () => (await import('./multiagent/wrappers')).sendInputModule,
   );
   registry.register(

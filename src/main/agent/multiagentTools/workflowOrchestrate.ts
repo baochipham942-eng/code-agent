@@ -19,7 +19,7 @@ import {
   listBuiltInWorkflows,
 } from '../../../shared/contract/workflow';
 import { getSubagentExecutor } from '../subagentExecutor';
-import type { ToolResolver } from '../../protocol/dispatch/toolResolver';
+import type { ToolResolver } from '../../tools/dispatch/toolResolver';
 import {
   getPredefinedAgent,
   getAgentPrompt,

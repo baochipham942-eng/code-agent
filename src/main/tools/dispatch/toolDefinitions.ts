@@ -3,7 +3,8 @@
 //
 // 原属 toolRegistry.ts 的 getCoreToolDefinitions / getLoadedDeferredToolDefinitions
 // / getDeferredToolsSummary / cloud meta 合并，P0-6.2 抽出为独立模块。
-// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
+// 2026-04-27 从 protocol/dispatch/ 搬到 tools/dispatch/，因为 dispatch 全部是
+// runtime 逻辑，违反 protocol/ "只放类型和常量" 约束。
 //
 // 职责定位：
 //   - protocol registry 只管 schema + handler 解析（tools/registry.ts / tools/protocolRegistry.ts）
@@ -17,12 +18,12 @@
 // ============================================================================
 
 import type { ToolDefinition } from '../../../shared/contract';
-import type { ToolSchema, PermissionLevel } from '../tools';
-import { getProtocolRegistry } from '../../tools/protocolRegistry';
+import type { ToolSchema, PermissionLevel } from '../../protocol/tools';
+import { getProtocolRegistry } from '../protocolRegistry';
 import { getCloudConfigService } from '../../services/cloud';
 import { getMCPClient } from '../../mcp';
-import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../../tools/search';
-import { isBashToolName } from '../../tools/toolNames';
+import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../search';
+import { isBashToolName } from '../toolNames';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 

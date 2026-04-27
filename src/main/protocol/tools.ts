@@ -142,8 +142,8 @@ export interface ToolContext {
   /**
    * ToolResolver 引用（用 cast: `ctx.resolver as ToolResolver`）。
    * 工具内需要调度兄弟工具（例如 DocEdit → ppt_edit）或 spawn subagent 时，
-   * 走 ctx.resolver 而不是 import 单例——避免 tools/* → protocol/dispatch/*
-   * 的反向静态引用闭环。
+   * 走 ctx.resolver 而不是 import 单例——避免硬耦合到 dispatch 单例并方便测试
+   * 注入 mock。
    */
   readonly resolver?: unknown;
   /** 当前 turn 的显式工具作用域 */

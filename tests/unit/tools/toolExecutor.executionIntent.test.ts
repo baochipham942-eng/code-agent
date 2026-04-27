@@ -6,7 +6,7 @@ const resolverState = vi.hoisted(() => {
   return { getDefinition, execute };
 });
 
-vi.mock('../../../src/main/protocol/dispatch/toolResolver', () => ({
+vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
     execute: resolverState.execute,

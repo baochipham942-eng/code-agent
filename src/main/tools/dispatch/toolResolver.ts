@@ -11,15 +11,16 @@
 // subagentExecutor / multiagent task / skill / planning.task 拿 resolver 替代
 // 原来的 Map<string, Tool>。
 //
-// P0-6.3 搬到 protocol/dispatch/ 下，彻底脱离 tools/ 目录，消除 madge phantom cycle。
+// 2026-04-27 从 protocol/dispatch/ 搬到 tools/dispatch/，因为 dispatch 全部是
+// runtime 逻辑，违反 protocol/ "只放类型和常量" 约束。
 // ============================================================================
 
 import type { ToolDefinition } from '../../../shared/contract';
-import type { ToolContext, ToolExecutionResult } from '../../tools/types';
-import { getProtocolRegistry } from '../../tools/protocolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
+import { getProtocolRegistry } from '../protocolRegistry';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
-import { isToolNameAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
+import { isToolNameAllowedByWorkbenchScope } from '../workbenchToolScope';
 import { getMCPClient } from '../../mcp';
 
 export interface ToolResolver {

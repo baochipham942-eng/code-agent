@@ -88,9 +88,9 @@ export interface ToolContext {
 
   /**
    * ToolResolver 引用。工具内需要调度兄弟工具（DocEdit → ppt_edit）或 spawn
-   * subagent 时，用 ctx.resolver 而不是 import 单例，避免 tools/* 反向静态引用
-   * protocol/dispatch/* 形成静态闭环。使用点 cast：
-   * `(ctx.resolver as import('../protocol/dispatch/toolResolver').ToolResolver).execute(...)`
+   * subagent 时，用 ctx.resolver 而不是 import 单例，避免硬耦合到 dispatch
+   * 单例并方便测试注入 mock。使用点 cast：
+   * `(ctx.resolver as import('./dispatch/toolResolver').ToolResolver).execute(...)`
    */
   resolver?: unknown;
   /**

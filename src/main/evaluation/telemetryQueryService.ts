@@ -2,7 +2,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import { classifyError } from '../telemetry/telemetryCollector';
-import { getToolDefinitionWithCloudMeta } from '../protocol/dispatch/toolDefinitions';
+import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
 import type { Message, ToolCall, ToolResult } from '../../shared/contract';
 import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';

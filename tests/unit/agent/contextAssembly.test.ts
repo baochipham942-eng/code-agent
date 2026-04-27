@@ -80,7 +80,7 @@ vi.mock('../../../src/main/context/repoMap', () => ({
   }),
 }));
 
-vi.mock('../../../src/main/protocol/dispatch/toolDefinitions', () => ({
+vi.mock('../../../src/main/tools/dispatch/toolDefinitions', () => ({
   getDeferredToolsSummary: vi.fn().mockReturnValue(''),
 }));
 

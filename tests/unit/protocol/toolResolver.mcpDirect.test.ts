@@ -57,7 +57,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-const { getToolResolver, resetToolResolver } = await import('../../../src/main/protocol/dispatch/toolResolver');
+const { getToolResolver, resetToolResolver } = await import('../../../src/main/tools/dispatch/toolResolver');
 
 function makeCtx(scope?: ToolContext['toolScope']): ToolContext {
   const controller = new AbortController();

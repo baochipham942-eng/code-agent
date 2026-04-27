@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLoadedDeferredToolDefinitions } from '../../../src/main/protocol/dispatch/toolDefinitions';
+import { getLoadedDeferredToolDefinitions } from '../../../src/main/tools/dispatch/toolDefinitions';
 import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
 import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 

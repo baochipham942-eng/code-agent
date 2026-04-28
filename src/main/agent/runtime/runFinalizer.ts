@@ -29,6 +29,7 @@ import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
+import { silence } from '../../utils/errorHandling';
 import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
@@ -172,7 +173,7 @@ export class RunFinalizer {
         errorMessage,
         'runtime_error',
         this.ctx.sessionId,
-      ).catch(() => {});
+      ).catch(silence(logger, 'triggerStopFailure:runtime_error', 'error'));
 
       langfuse.endTrace(this.ctx.traceId, errorMessage, 'ERROR');
     } else if (terminalStatus === 'cancelled') {
@@ -201,7 +202,7 @@ export class RunFinalizer {
         `Circuit breaker tripped after ${iterations} iterations`,
         'circuit_breaker',
         this.ctx.sessionId,
-      ).catch(() => {});
+      ).catch(silence(logger, 'triggerStopFailure:circuit_breaker', 'error'));
 
       langfuse.endTrace(this.ctx.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
       this.ctx.circuitBreaker.reset();
@@ -218,7 +219,7 @@ export class RunFinalizer {
         `Max iterations reached (${this.ctx.maxIterations})`,
         'max_iterations',
         this.ctx.sessionId,
-      ).catch(() => {});
+      ).catch(silence(logger, 'triggerStopFailure:max_iterations', 'error'));
 
       langfuse.endTrace(this.ctx.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {

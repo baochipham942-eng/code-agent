@@ -11,6 +11,7 @@ import {
   PROVIDER_MODELS_MAP,
   getProviderDisplayName,
   getModelDisplayLabel,
+  MODEL_FEATURES,
 } from '@shared/constants';
 import { toast } from '../../hooks/useToast';
 import { Eye, Wrench, Brain, Sparkles, Zap } from 'lucide-react';
@@ -41,52 +42,7 @@ const MODEL_OPTIONS: ModelOption[] = QUICK_SWITCH_PROVIDERS.flatMap((providerId)
   }));
 });
 
-// 模型能力标签（来源: providerRegistry.ts）
-const MODEL_CAPABILITIES: Record<string, string[]> = {
-  // moonshot
-  'kimi-k2.5': ['tool', 'reasoning'],
-  'moonshot-v1-8k': ['tool'],
-  'moonshot-v1-32k': ['tool'],
-  'moonshot-v1-128k': ['tool'],
-  // deepseek
-  'deepseek-chat': ['tool'],
-  'deepseek-coder': ['tool'],
-  'deepseek-reasoner': ['reasoning'],
-  // zhipu
-  'glm-5': ['tool', 'reasoning'],
-  'glm-4.7': ['tool', 'reasoning'],
-  'glm-4.6v': ['vision', 'reasoning'],
-  'glm-4.7-flash': ['tool'],
-  'glm-4.6v-flash': ['vision'],
-  'codegeex-4': ['tool'],
-  // openai
-  'gpt-4o': ['tool', 'vision'],
-  'gpt-4o-mini': ['tool', 'vision'],
-  // claude
-  'claude-opus-4-7': ['tool', 'vision', 'reasoning'],
-  'claude-sonnet-4-6': ['tool', 'vision', 'reasoning'],
-  'claude-haiku-4-5-20251001': ['tool', 'vision'],
-  // moonshot 新增
-  'kimi-k2.6': ['tool', 'vision', 'reasoning'],
-  // 智谱 新增
-  'glm-5.1': ['tool', 'reasoning'],
-  'glm-4.7-flashx': ['tool'],
-  // volcengine — 1.6 系列
-  'doubao-seed-1-6': ['tool', 'vision'],
-  'doubao-seed-1-6-thinking': ['reasoning', 'vision'],
-  'doubao-seed-1-6-flash': ['tool'],
-  'doubao-seed-1-6-lite': ['tool'],
-  // local
-  'qwen2.5-coder:7b': ['tool'],
-  'qwen3:8b': ['tool'],
-  'qwen3:32b': ['tool', 'reasoning'],
-  'gemma4:12b': ['tool'],
-  'gemma4:27b': ['tool', 'reasoning'],
-  'deepseek-r1:7b': ['reasoning'],
-  'deepseek-r1:32b': ['reasoning'],
-  'llama4-scout:17b': ['tool', 'vision'],
-  'codestral:22b': ['tool'],
-};
+// MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
 const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
   vision: {
@@ -384,7 +340,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="font-medium">{opt.label}</span>
                     {/* 能力标签 */}
-                    {(MODEL_CAPABILITIES[opt.model] ?? []).map((cap) => {
+                    {(MODEL_FEATURES[opt.model] ?? []).map((cap) => {
                       const cfg = CAPABILITY_CONFIG[cap];
                       if (!cfg) return null;
                       return (

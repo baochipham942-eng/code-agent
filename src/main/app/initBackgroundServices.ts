@@ -576,6 +576,26 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     if (count > 0) logger.info('Cleaned up expired file checkpoints', { count });
   }).catch(err => logger.warn('Failed to cleanup file checkpoints', { error: err }));
 
+  // 清理过期 turn snapshots（启动时执行一次，按用户配置的保留天数）
+  try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    const db = getDatabase();
+    if (db?.isReady) {
+      const retentionDays = db.getPreference<number>('debugSnapshotRetentionDays', 1) ?? 1;
+      // -1 = 永久保留，跳过清理
+      if (retentionDays > 0) {
+        const olderThanMs = retentionDays * 24 * 60 * 60 * 1000;
+        const turnCleared = db.clearSnapshots({ olderThanMs });
+        const compactCleared = db.clearCompactionSnapshots({ olderThanMs });
+        if (turnCleared + compactCleared > 0) {
+          logger.info('Cleaned up expired debug snapshots', { turnCleared, compactCleared, retentionDays });
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to cleanup turn snapshots', { error: err });
+  }
+
   // Setup LogBridge command handler
   await setupLogBridge();
 

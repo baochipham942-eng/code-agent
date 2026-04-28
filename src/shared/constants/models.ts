@@ -58,8 +58,8 @@ export interface ProviderInfo {
 
 /**
  * 所有 Provider 及其可选模型 — Settings 页面的唯一数据源
- * 数据来源: ~/Downloads/ai/model-catalog.json（中央模型目录）
- * 更新模型后运行 ~/Downloads/ai/sync-models.sh 同步
+ * 数据源: src/shared/model-catalog.json（项目内即真理源）
+ * 直接编辑该 JSON 文件，不要走外部同步脚本
  */
 const SUPPORTED_PROVIDERS = new Set<string>([
   'openai', 'claude', 'gemini', 'deepseek', 'zhipu',

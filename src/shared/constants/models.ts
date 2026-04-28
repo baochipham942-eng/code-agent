@@ -62,6 +62,7 @@ export interface ProviderInfo {
 const SUPPORTED_PROVIDERS = new Set<string>([
   'openai', 'claude', 'gemini', 'deepseek', 'zhipu',
   'qwen', 'moonshot', 'minimax', 'openrouter', 'perplexity',
+  'local',  // Ollama 本地模型（toy provider + 评测 baseline）
 ]);
 
 export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers

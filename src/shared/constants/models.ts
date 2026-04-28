@@ -45,6 +45,8 @@ export interface ProviderModelEntry {
   id: string;
   label: string;
   group?: string; // optgroup label（同一 provider 内分组）
+  /** 是否进入评测候选（默认 true）。false：搜索特化 / legacy / 视觉 / 中转重复等不该跑代码评测的模型 */
+  evalEligible?: boolean;
 }
 
 export interface ProviderInfo {
@@ -76,6 +78,7 @@ export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers
       id: m.id,
       label: m.label,
       ...('group' in m && m.group ? { group: m.group } : {}),
+      ...('evalEligible' in m && m.evalEligible === false ? { evalEligible: false as const } : {}),
     })),
   }));
 

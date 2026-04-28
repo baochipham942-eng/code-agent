@@ -236,6 +236,42 @@ export class CLIDatabaseService {
       )
     `);
 
+    // Turn Snapshots — 调试快照（每个 agent turn 落一行，给 debug session/context 用）
+    // CLI 与 Electron 都指向同一张表（共享 ~/.code-agent/code-agent.db）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS turn_snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        turn_index INTEGER NOT NULL,
+        context_chunks TEXT,
+        token_breakdown TEXT,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Compaction Snapshots — 上下文压缩前后快照（CLI ↔ Electron 共用）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS compaction_snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        strategy TEXT,
+        pre_message_count INTEGER NOT NULL,
+        post_message_count INTEGER NOT NULL,
+        pre_tokens INTEGER NOT NULL,
+        post_tokens INTEGER NOT NULL,
+        saved_tokens INTEGER NOT NULL,
+        usage_percent REAL,
+        pre_messages_summary TEXT,
+        post_messages_summary TEXT,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
     // Episodic FTS5 index — 与 Electron DatabaseService 的 schema 保持一致，
     // 使 CLI 与桌面应用共享同一张 FTS 虚拟表（两者都指向 ~/.code-agent/code-agent.db）
     // CREATE VIRTUAL TABLE IF NOT EXISTS 幂等，谁先跑都行
@@ -295,7 +331,219 @@ export class CLIDatabaseService {
       CREATE INDEX IF NOT EXISTS idx_todos_session ON todos(session_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_turn_snapshots_session ON turn_snapshots(session_id);
+      CREATE INDEX IF NOT EXISTS idx_turn_snapshots_created ON turn_snapshots(created_at);
+      CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_session ON compaction_snapshots(session_id);
+      CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_created ON compaction_snapshots(created_at);
     `);
+  }
+
+  // --------------------------------------------------------------------------
+  // Turn Snapshots — 调试快照（CLI ↔ Electron 共享同一张表）
+  // --------------------------------------------------------------------------
+
+  insertTurnSnapshot(input: {
+    sessionId: string;
+    turnId?: string | null;
+    turnIndex: number;
+    contextChunks?: unknown;
+    tokenBreakdown?: unknown;
+    createdAt?: number;
+  }): { id: string; createdAt: number; byteSize: number } {
+    if (!this.db) throw new Error('Database not initialized');
+    const id = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const createdAt = input.createdAt ?? Date.now();
+    const contextJson = input.contextChunks ? JSON.stringify(input.contextChunks) : null;
+    const tokenJson = input.tokenBreakdown ? JSON.stringify(input.tokenBreakdown) : null;
+    // byte_size 用 utf-8 字节数估算，给设置页统计用
+    const byteSize =
+      (contextJson ? Buffer.byteLength(contextJson, 'utf8') : 0) +
+      (tokenJson ? Buffer.byteLength(tokenJson, 'utf8') : 0);
+
+    this.db
+      .prepare(
+        `INSERT INTO turn_snapshots (id, session_id, turn_id, turn_index, context_chunks, token_breakdown, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, input.sessionId, input.turnId ?? null, input.turnIndex, contextJson, tokenJson, byteSize, createdAt);
+    return { id, createdAt, byteSize };
+  }
+
+  getSnapshotStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+    if (!this.db) throw new Error('Database not initialized');
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM turn_snapshots`,
+      )
+      .get() as { c: number; sc: number; bytes: number } | undefined;
+    return {
+      snapshotCount: row?.c ?? 0,
+      sessionCount: row?.sc ?? 0,
+      totalBytes: row?.bytes ?? 0,
+    };
+  }
+
+  clearSnapshots(opts: { olderThanMs?: number; sessionId?: string } = {}): number {
+    if (!this.db) throw new Error('Database not initialized');
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (opts.olderThanMs !== undefined) {
+      conditions.push('created_at < ?');
+      params.push(Date.now() - opts.olderThanMs);
+    }
+    if (opts.sessionId) {
+      conditions.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = this.db.prepare(`DELETE FROM turn_snapshots ${where}`).run(...params);
+    return result.changes;
+  }
+
+  // --------------------------------------------------------------------------
+  // Compaction Snapshots
+  // --------------------------------------------------------------------------
+
+  insertCompactionSnapshot(input: {
+    sessionId: string;
+    strategy?: string | null;
+    preMessageCount: number;
+    postMessageCount: number;
+    preTokens: number;
+    postTokens: number;
+    savedTokens: number;
+    usagePercent?: number | null;
+    preMessagesSummary?: unknown;
+    postMessagesSummary?: unknown;
+    createdAt?: number;
+  }): { id: string; createdAt: number; byteSize: number } {
+    if (!this.db) throw new Error('Database not initialized');
+    const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const createdAt = input.createdAt ?? Date.now();
+    const preJson = input.preMessagesSummary ? JSON.stringify(input.preMessagesSummary) : null;
+    const postJson = input.postMessagesSummary ? JSON.stringify(input.postMessagesSummary) : null;
+    const byteSize =
+      (preJson ? Buffer.byteLength(preJson, 'utf8') : 0) +
+      (postJson ? Buffer.byteLength(postJson, 'utf8') : 0);
+
+    this.db
+      .prepare(
+        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.sessionId,
+        input.strategy ?? null,
+        input.preMessageCount,
+        input.postMessageCount,
+        input.preTokens,
+        input.postTokens,
+        input.savedTokens,
+        input.usagePercent ?? null,
+        preJson,
+        postJson,
+        byteSize,
+        createdAt,
+      );
+    return { id, createdAt, byteSize };
+  }
+
+  listCompactionSnapshots(sessionId: string, limit: number = 100): Array<{
+    id: string;
+    sessionId: string;
+    strategy: string | null;
+    preMessageCount: number;
+    postMessageCount: number;
+    preTokens: number;
+    postTokens: number;
+    savedTokens: number;
+    usagePercent: number | null;
+    preMessagesSummary: unknown;
+    postMessagesSummary: unknown;
+    byteSize: number;
+    createdAt: number;
+  }> {
+    if (!this.db) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM compaction_snapshots WHERE session_id = ? ORDER BY created_at ASC LIMIT ?`,
+      )
+      .all(sessionId, limit) as SQLiteRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      strategy: row.strategy == null ? null : String(row.strategy),
+      preMessageCount: Number(row.pre_message_count ?? 0),
+      postMessageCount: Number(row.post_message_count ?? 0),
+      preTokens: Number(row.pre_tokens ?? 0),
+      postTokens: Number(row.post_tokens ?? 0),
+      savedTokens: Number(row.saved_tokens ?? 0),
+      usagePercent: row.usage_percent == null ? null : Number(row.usage_percent),
+      preMessagesSummary: row.pre_messages_summary ? JSON.parse(String(row.pre_messages_summary)) : null,
+      postMessagesSummary: row.post_messages_summary ? JSON.parse(String(row.post_messages_summary)) : null,
+      byteSize: Number(row.byte_size ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+    }));
+  }
+
+  getCompactionStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+    if (!this.db) throw new Error('Database not initialized');
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM compaction_snapshots`,
+      )
+      .get() as { c: number; sc: number; bytes: number } | undefined;
+    return {
+      snapshotCount: row?.c ?? 0,
+      sessionCount: row?.sc ?? 0,
+      totalBytes: row?.bytes ?? 0,
+    };
+  }
+
+  clearCompactionSnapshots(opts: { olderThanMs?: number; sessionId?: string } = {}): number {
+    if (!this.db) throw new Error('Database not initialized');
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (opts.olderThanMs !== undefined) {
+      conditions.push('created_at < ?');
+      params.push(Date.now() - opts.olderThanMs);
+    }
+    if (opts.sessionId) {
+      conditions.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = this.db.prepare(`DELETE FROM compaction_snapshots ${where}`).run(...params);
+    return result.changes;
+  }
+
+  listTurnSnapshots(sessionId: string, limit: number = 100): Array<{
+    id: string;
+    sessionId: string;
+    turnId: string | null;
+    turnIndex: number;
+    contextChunks: unknown;
+    tokenBreakdown: unknown;
+    byteSize: number;
+    createdAt: number;
+  }> {
+    if (!this.db) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM turn_snapshots WHERE session_id = ? ORDER BY turn_index ASC, created_at ASC LIMIT ?`,
+      )
+      .all(sessionId, limit) as SQLiteRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      turnId: row.turn_id == null ? null : String(row.turn_id),
+      turnIndex: Number(row.turn_index ?? 0),
+      contextChunks: row.context_chunks ? JSON.parse(String(row.context_chunks)) : null,
+      tokenBreakdown: row.token_breakdown ? JSON.parse(String(row.token_breakdown)) : null,
+      byteSize: Number(row.byte_size ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+    }));
   }
 
   // --------------------------------------------------------------------------
@@ -772,6 +1020,37 @@ export class CLIDatabaseService {
     if (!row) return null;
 
     return JSON.parse(row.result as string);
+  }
+
+  listToolExecutions(sessionId: string, limit: number = 500): Array<{
+    id: string;
+    sessionId: string;
+    messageId: string | null;
+    toolName: string;
+    arguments: Record<string, unknown>;
+    result: ToolResult;
+    success: boolean;
+    duration: number;
+    createdAt: number;
+  }> {
+    if (!this.db) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, message_id, tool_name, arguments, result, success, duration, created_at
+         FROM tool_executions WHERE session_id = ? ORDER BY created_at ASC LIMIT ?`,
+      )
+      .all(sessionId, limit) as SQLiteRow[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      messageId: row.message_id == null ? null : String(row.message_id),
+      toolName: String(row.tool_name),
+      arguments: row.arguments ? JSON.parse(String(row.arguments)) : {},
+      result: row.result ? JSON.parse(String(row.result)) : { success: false },
+      success: Number(row.success ?? 0) === 1,
+      duration: Number(row.duration ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+    }));
   }
 
   cleanExpiredCache(): number {

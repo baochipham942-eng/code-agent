@@ -1032,6 +1032,41 @@ export class DatabaseService {
         VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
       END
     `);
+
+    // Turn Snapshots — 调试快照（与 CLIDatabaseService 共用同一张表）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS turn_snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        turn_index INTEGER NOT NULL,
+        context_chunks TEXT,
+        token_breakdown TEXT,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Compaction Snapshots — 上下文压缩前后快照
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS compaction_snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        strategy TEXT,
+        pre_message_count INTEGER NOT NULL,
+        post_message_count INTEGER NOT NULL,
+        pre_tokens INTEGER NOT NULL,
+        post_tokens INTEGER NOT NULL,
+        saved_tokens INTEGER NOT NULL,
+        usage_percent REAL,
+        pre_messages_summary TEXT,
+        post_messages_summary TEXT,
+        byte_size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -1090,6 +1125,12 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_type ON session_events(event_type)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_timestamp ON session_events(session_id, timestamp)`);
+
+    // Turn Snapshots indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_snapshots_session ON turn_snapshots(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_snapshots_created ON turn_snapshots(created_at)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_session ON compaction_snapshots(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_created ON compaction_snapshots(created_at)`);
 
     // File Checkpoints indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id)`);
@@ -1192,6 +1233,170 @@ export class DatabaseService {
       toolExecutionCount: toolRow.c as number,
       knowledgeCount: knowledgeRow.c as number,
     };
+  }
+
+  // ==========================================================================
+  // Turn Snapshots — 调试快照（CLI ↔ Electron 共享同一张表）
+  // ==========================================================================
+
+  insertTurnSnapshot(input: {
+    sessionId: string;
+    turnId?: string | null;
+    turnIndex: number;
+    contextChunks?: unknown;
+    tokenBreakdown?: unknown;
+    createdAt?: number;
+  }): { id: string; createdAt: number; byteSize: number } {
+    this.ensureDb();
+    const id = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const createdAt = input.createdAt ?? Date.now();
+    const contextJson = input.contextChunks ? JSON.stringify(input.contextChunks) : null;
+    const tokenJson = input.tokenBreakdown ? JSON.stringify(input.tokenBreakdown) : null;
+    const byteSize =
+      (contextJson ? Buffer.byteLength(contextJson, 'utf8') : 0) +
+      (tokenJson ? Buffer.byteLength(tokenJson, 'utf8') : 0);
+    this.db!
+      .prepare(
+        `INSERT INTO turn_snapshots (id, session_id, turn_id, turn_index, context_chunks, token_breakdown, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, input.sessionId, input.turnId ?? null, input.turnIndex, contextJson, tokenJson, byteSize, createdAt);
+    return { id, createdAt, byteSize };
+  }
+
+  getSnapshotStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+    this.ensureDb();
+    const row = this.db!
+      .prepare(
+        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM turn_snapshots`,
+      )
+      .get() as { c: number; sc: number; bytes: number } | undefined;
+    return {
+      snapshotCount: row?.c ?? 0,
+      sessionCount: row?.sc ?? 0,
+      totalBytes: row?.bytes ?? 0,
+    };
+  }
+
+  clearSnapshots(opts: { olderThanMs?: number; sessionId?: string } = {}): number {
+    this.ensureDb();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (opts.olderThanMs !== undefined) {
+      conditions.push('created_at < ?');
+      params.push(Date.now() - opts.olderThanMs);
+    }
+    if (opts.sessionId) {
+      conditions.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = this.db!.prepare(`DELETE FROM turn_snapshots ${where}`).run(...params);
+    return result.changes;
+  }
+
+  // -- Compaction Snapshots --
+  insertCompactionSnapshot(input: {
+    sessionId: string;
+    strategy?: string | null;
+    preMessageCount: number;
+    postMessageCount: number;
+    preTokens: number;
+    postTokens: number;
+    savedTokens: number;
+    usagePercent?: number | null;
+    preMessagesSummary?: unknown;
+    postMessagesSummary?: unknown;
+    createdAt?: number;
+  }): { id: string; createdAt: number; byteSize: number } {
+    this.ensureDb();
+    const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const createdAt = input.createdAt ?? Date.now();
+    const preJson = input.preMessagesSummary ? JSON.stringify(input.preMessagesSummary) : null;
+    const postJson = input.postMessagesSummary ? JSON.stringify(input.postMessagesSummary) : null;
+    const byteSize =
+      (preJson ? Buffer.byteLength(preJson, 'utf8') : 0) +
+      (postJson ? Buffer.byteLength(postJson, 'utf8') : 0);
+    this.db!
+      .prepare(
+        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.sessionId,
+        input.strategy ?? null,
+        input.preMessageCount,
+        input.postMessageCount,
+        input.preTokens,
+        input.postTokens,
+        input.savedTokens,
+        input.usagePercent ?? null,
+        preJson,
+        postJson,
+        byteSize,
+        createdAt,
+      );
+    return { id, createdAt, byteSize };
+  }
+
+  getCompactionStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+    this.ensureDb();
+    const row = this.db!
+      .prepare(
+        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM compaction_snapshots`,
+      )
+      .get() as { c: number; sc: number; bytes: number } | undefined;
+    return {
+      snapshotCount: row?.c ?? 0,
+      sessionCount: row?.sc ?? 0,
+      totalBytes: row?.bytes ?? 0,
+    };
+  }
+
+  clearCompactionSnapshots(opts: { olderThanMs?: number; sessionId?: string } = {}): number {
+    this.ensureDb();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (opts.olderThanMs !== undefined) {
+      conditions.push('created_at < ?');
+      params.push(Date.now() - opts.olderThanMs);
+    }
+    if (opts.sessionId) {
+      conditions.push('session_id = ?');
+      params.push(opts.sessionId);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = this.db!.prepare(`DELETE FROM compaction_snapshots ${where}`).run(...params);
+    return result.changes;
+  }
+
+  listTurnSnapshots(sessionId: string, limit: number = 100): Array<{
+    id: string;
+    sessionId: string;
+    turnId: string | null;
+    turnIndex: number;
+    contextChunks: unknown;
+    tokenBreakdown: unknown;
+    byteSize: number;
+    createdAt: number;
+  }> {
+    this.ensureDb();
+    const rows = this.db!
+      .prepare(
+        `SELECT * FROM turn_snapshots WHERE session_id = ? ORDER BY turn_index ASC, created_at ASC LIMIT ?`,
+      )
+      .all(sessionId, limit) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      turnId: row.turn_id == null ? null : String(row.turn_id),
+      turnIndex: Number(row.turn_index ?? 0),
+      contextChunks: row.context_chunks ? JSON.parse(String(row.context_chunks)) : null,
+      tokenBreakdown: row.token_breakdown ? JSON.parse(String(row.token_breakdown)) : null,
+      byteSize: Number(row.byte_size ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+    }));
   }
 
   // ==========================================================================

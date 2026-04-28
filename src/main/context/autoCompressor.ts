@@ -199,6 +199,10 @@ export class AutoContextCompressor {
     // 选择压缩策略
     const strategy = this.selectStrategy(usageRatio);
 
+    // Capture pre-compression state for debug snapshot
+    const preMessages = messages.slice();
+    const preTokens = preMessages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
+
     // 执行压缩
     const result = await this.applyStrategy(sessionId, strategy, messages, systemPrompt, health, hookManager);
 
@@ -216,6 +220,24 @@ export class AutoContextCompressor {
       logger.info(
         `[AutoCompressor] Compressed using ${strategy}: saved ${result.savedTokens} tokens`
       );
+
+      // Debug: 落一条 compaction snapshot
+      try {
+        const { writeCompactionSnapshot } = await import('./compactionSnapshotWriter');
+        const postTokens = result.messages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
+        writeCompactionSnapshot({
+          sessionId,
+          strategy,
+          preMessages,
+          postMessages: result.messages,
+          preTokens,
+          postTokens,
+          savedTokens: result.savedTokens,
+          usagePercent: health.usagePercent,
+        });
+      } catch {
+        // 写快照失败不阻塞压缩
+      }
 
       // Fire-and-forget: emit PostCompact hook
       hookManager?.triggerPostCompact(

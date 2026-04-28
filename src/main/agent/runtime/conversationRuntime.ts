@@ -44,6 +44,9 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
+import { writeTurnSnapshot } from './turnSnapshotWriter';
+import { maybePauseForStep } from './stepPause';
+
 // Import refactored modules
 import type {
   AgentLoopConfig,
@@ -533,6 +536,9 @@ export class ConversationRuntime {
         // Telemetry: record turn start (only first iteration has the real user prompt)
         this.ctx.telemetryAdapter?.onTurnStart(this.ctx.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
 
+        // Debug snapshot: 记录 turn 起始时的 messages 快照，post-inference 直接从 response.usage 取 token
+        const turnStartMessageSnapshot = this.ctx.messages.slice();
+
         // Plan Feedback Loop
         await this.streamHandler.injectPlanContext(iterations);
 
@@ -570,6 +576,22 @@ export class ConversationRuntime {
 
         // Telemetry: record model call
         this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
+
+        // Debug snapshot: 落一条 turn 快照（给设置页 / debug session 用）
+        // 在 post-inference 写入，token 字段反映本轮实际消耗（直接取 response.usage）
+        writeTurnSnapshot({
+          sessionId: this.ctx.sessionId,
+          turnId: this.ctx.currentTurnId,
+          turnIndex: iterations,
+          systemPrompt: this.ctx.systemPrompt,
+          messages: turnStartMessageSnapshot,
+          inputTokens: response.usage?.inputTokens ?? 0,
+          outputTokens: response.usage?.outputTokens ?? 0,
+          inferenceDurationMs: inferenceDuration,
+        });
+
+        // Debug step mode: CODE_AGENT_STEP_MODE=true 时阻塞等用户回车
+        await maybePauseForStep(iterations);
 
         // M1: Loop decision engine. Only `continuation` is executed here;
         // compact/fallback/terminate are advisory and handled by existing paths.

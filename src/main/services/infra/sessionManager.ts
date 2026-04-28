@@ -48,6 +48,15 @@ export interface SessionListOptions {
   includeArchived?: boolean;
 }
 
+// SessionRepository 持久化只存 provider+model（apiKey 不入库）；剥离后让
+// SessionManager 返回的内存 session 与 DB 读回（fromRow）语义一致，避免
+// res.json(session) 在 webServer 路径把 apiKey 透传给客户端。
+function sanitizeModelConfigForSession(config: ModelConfig): ModelConfig {
+  const { apiKey: _omitted, ...rest } = config;
+  void _omitted;
+  return rest;
+}
+
 // ----------------------------------------------------------------------------
 // Session Manager
 // ----------------------------------------------------------------------------
@@ -131,7 +140,7 @@ export class SessionManager implements Disposable {
     const session: Session = {
       id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       title: options.title || this.generateSessionTitle(),
-      modelConfig: options.modelConfig,
+      modelConfig: sanitizeModelConfigForSession(options.modelConfig),
       workingDirectory: options.workingDirectory,
       createdAt: now,
       updatedAt: now,
@@ -867,7 +876,7 @@ export class SessionManager implements Disposable {
     const session: Session = {
       id: newId,
       title: data.title,
-      modelConfig: data.modelConfig,
+      modelConfig: sanitizeModelConfigForSession(data.modelConfig),
       workingDirectory: data.workingDirectory,
       createdAt: now,
       updatedAt: now,

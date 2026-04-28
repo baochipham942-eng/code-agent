@@ -218,18 +218,18 @@ export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; m
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   deepseek: [
-    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
   ],
   claude: [
-    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   openai: [
-    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   zhipu: [
-    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
 };

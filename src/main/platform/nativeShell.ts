@@ -2,43 +2,54 @@
 // Platform: Native Shell - 替代 Electron shell 模块
 // ============================================================================
 
-import { exec } from 'child_process';
+import * as path from 'node:path';
+import {
+  safeExecDetached,
+  assertSafeUrl,
+  assertExistingAbsolutePath,
+} from '../utils/safeShell';
 
 /**
- * 在默认浏览器中打开 URL
+ * 在默认浏览器中打开 URL（仅允许 http/https/mailto scheme）
  */
 export async function openExternal(url: string): Promise<void> {
-  const cmd = process.platform === 'darwin'
-    ? `open "${url}"`
-    : process.platform === 'win32'
-      ? `start "" "${url}"`
-      : `xdg-open "${url}"`;
-  exec(cmd);
+  assertSafeUrl(url);
+  if (process.platform === 'darwin') {
+    safeExecDetached('open', [url]);
+  } else if (process.platform === 'win32') {
+    safeExecDetached('rundll32', ['url.dll,FileProtocolHandler', url]);
+  } else {
+    safeExecDetached('xdg-open', [url]);
+  }
 }
 
 /**
- * 打开文件或目录
+ * 打开文件或目录（必须为存在的绝对路径）
  */
 export async function openPath(filePath: string): Promise<string> {
-  const cmd = process.platform === 'darwin'
-    ? `open "${filePath}"`
-    : process.platform === 'win32'
-      ? `start "" "${filePath}"`
-      : `xdg-open "${filePath}"`;
-  exec(cmd);
+  assertExistingAbsolutePath(filePath);
+  if (process.platform === 'darwin') {
+    safeExecDetached('open', [filePath]);
+  } else if (process.platform === 'win32') {
+    safeExecDetached('explorer.exe', [filePath]);
+  } else {
+    safeExecDetached('xdg-open', [filePath]);
+  }
   return '';
 }
 
 /**
- * 在文件管理器中显示文件
+ * 在文件管理器中显示文件（必须为存在的绝对路径）
  */
 export function showItemInFolder(filePath: string): void {
-  const cmd = process.platform === 'darwin'
-    ? `open -R "${filePath}"`
-    : process.platform === 'win32'
-      ? `explorer /select,"${filePath}"`
-      : `xdg-open "${filePath}"`;
-  exec(cmd);
+  assertExistingAbsolutePath(filePath);
+  if (process.platform === 'darwin') {
+    safeExecDetached('open', ['-R', filePath]);
+  } else if (process.platform === 'win32') {
+    safeExecDetached('explorer.exe', [`/select,${filePath}`]);
+  } else {
+    safeExecDetached('xdg-open', [path.dirname(filePath)]);
+  }
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { safeExecDetached } from '../../utils/safeShell';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { getAuthService } from '../../services/auth/authService';
@@ -713,10 +713,10 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
         logger.info('Image saved', { path: imagePath });
 
         // CLI 模式下自动打开图片（macOS: open, Linux: xdg-open）
-        if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+        if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(resolvedPath)) {
           const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-          exec(`${openCmd} "${resolvedPath}"`, (err) => {
-            if (err) logger.warn('Failed to open image', { error: err.message });
+          safeExecDetached(openCmd, [resolvedPath], (err) => {
+            logger.warn('Failed to open image', { error: err.message });
           });
         }
       }

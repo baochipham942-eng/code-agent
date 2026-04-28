@@ -197,27 +197,9 @@ export const dialog = {
 };
 
 // ── shell ────────────────────────────────────────────────────────────
-
-export const shell = {
-  openExternal: async (url: string) => {
-    const { exec } = await import('child_process');
-    exec(`open "${url}"`);
-  },
-  openPath: async (path: string) => {
-    const { exec } = await import('child_process');
-    exec(`open "${path}"`);
-    return '';
-  },
-  showItemInFolder: (path: string) => {
-    import('child_process').then(({ exec }) => {
-      exec(`open -R "${path}"`);
-    });
-  },
-  beep: () => {},
-  moveItemToTrash: (..._args: any[]) => false,
-  readShortcutLink: (..._args: any[]) => ({}),
-  writeShortcutLink: (..._args: any[]) => false,
-};
+// 复用 main/platform/nativeShell 的安全实现（execFile + URL/path 校验）
+import { shell as _shell } from '../main/platform/nativeShell';
+export const shell = _shell;
 
 // ── clipboard ────────────────────────────────────────────────────────
 

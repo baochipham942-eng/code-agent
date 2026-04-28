@@ -10,3 +10,4 @@ export { listToolsCommand } from './listTools';
 export { listAgentsCommand } from './listAgents';
 export { execToolCommand } from './execTool';
 export { openchronicleCommand } from './openchronicleCmd';
+export { debugCommand } from './debug';

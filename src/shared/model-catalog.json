@@ -269,6 +269,36 @@
       ]
     },
     {
+      "id": "xiaomi",
+      "name": "小米 MiMo",
+      "description": "小米 Token Plan 包月套餐（OpenAI 兼容）",
+      "apiUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
+      "apiKeyHint": "tp-...",
+      "default": "mimo-v2.5-pro",
+      "models": [
+        {
+          "id": "mimo-v2.5-pro",
+          "label": "MiMo v2.5 Pro (推荐)",
+          "desc": "1M · thinking + tool call 旗舰"
+        },
+        {
+          "id": "mimo-v2.5",
+          "label": "MiMo v2.5",
+          "desc": "1M · thinking + tool call 标准"
+        },
+        {
+          "id": "mimo-v2-pro",
+          "label": "MiMo v2 Pro",
+          "desc": "1M · 上一代旗舰"
+        },
+        {
+          "id": "mimo-v2-omni",
+          "label": "MiMo v2 Omni",
+          "desc": "256K · 多模态"
+        }
+      ]
+    },
+    {
       "id": "openrouter",
       "name": "OpenRouter",
       "description": "中转服务",

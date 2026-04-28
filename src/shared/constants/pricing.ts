@@ -25,6 +25,11 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'moonshot-v1-8k': { input: 0.12, output: 0.12 },
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },
   'moonshot-v1-128k': { input: 0.6, output: 0.6 },
+  // 小米 MiMo（Token Plan Max 包月，配额内不计费）
+  'mimo-v2.5-pro': { input: 0, output: 0 },
+  'mimo-v2.5': { input: 0, output: 0 },
+  'mimo-v2-pro': { input: 0, output: 0 },
+  'mimo-v2-omni': { input: 0, output: 0 },
   // Fallback
   'default': { input: 1, output: 3 },
 };

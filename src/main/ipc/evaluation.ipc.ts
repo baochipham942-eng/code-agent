@@ -523,6 +523,7 @@ export function registerEvaluationHandlers(): void {
       moonshot: process.env.MOONSHOT_API_KEY,
       deepseek: process.env.DEEPSEEK_API_KEY,
       gemini: process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY,
+      xiaomi: process.env.XIAOMI_API_KEY,
       local: undefined, // Ollama 不需要 apiKey
     };
     const resolvedApiKey = apiKeyByProvider[resolvedProvider];

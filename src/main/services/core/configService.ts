@@ -135,6 +135,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       grok: { enabled: false },
       openrouter: { enabled: false },
       volcengine: { enabled: false },
+      xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
     },
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
@@ -464,6 +465,7 @@ export class ConfigService {
       grok: 'GROK_API_KEY',
       openrouter: 'OPENROUTER_API_KEY',
       volcengine: 'VOLCENGINE_API_KEY',
+      xiaomi: 'XIAOMI_API_KEY',
     };
 
     const envKey = envKeyMap[provider];

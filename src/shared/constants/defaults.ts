@@ -1,8 +1,8 @@
 /** Provider HTTP request timeout (ms) */
 export const PROVIDER_TIMEOUT = 300000;
 
-/** 默认 Provider */
-export const DEFAULT_PROVIDER = 'claude' as const;
+/** 默认 Provider — 小米 MiMo Token Plan 包月（fresh user 默认） */
+export const DEFAULT_PROVIDER = 'xiaomi' as const;
 
 /** 默认模型（主力对话） */
 export const DEFAULT_MODEL = 'claude-opus-4-7' as const;

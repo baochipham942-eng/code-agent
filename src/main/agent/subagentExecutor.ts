@@ -10,6 +10,7 @@ import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
+import { silence } from '../utils/errorHandling';
 import {
   getSubagentPipeline,
   type SubagentExecutionContext,
@@ -700,7 +701,7 @@ export class SubagentExecutor {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
         // Fire SubagentStop on early budget failure
-        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(() => {});
+        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:budget', 'error'));
         return {
           success: false,
           output: '',
@@ -727,7 +728,7 @@ export class SubagentExecutor {
             : '任务已取消';
           agentTask.fail(errorMsg);
           // Fire SubagentStop on abort/timeout
-          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(() => {});
+          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:abort', 'error'));
           return {
             success: false,
             output: finalOutput || '',

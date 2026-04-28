@@ -39,6 +39,8 @@ export const MODEL_API_ENDPOINTS = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   /** 火山引擎 Ark (豆包 GUI 自动化) */
   volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
+  /** 小米 MiMo Token Plan (新加坡节点，OpenAI 兼容) */
+  xiaomi: 'https://token-plan-sgp.xiaomimimo.com/v1',
   /** Local Ollama */
   ollama: 'http://localhost:11434/v1',
 } as const;
@@ -153,6 +155,13 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
     endpoint: MODEL_API_ENDPOINTS.volcengine,
     cloudProxySupported: false,
     displayName: '火山引擎 (豆包)',
+  },
+  xiaomi: {
+    aliases: ['xiaomi'],
+    defaultModel: 'mimo-v2.5-pro',
+    endpoint: MODEL_API_ENDPOINTS.xiaomi,
+    cloudProxySupported: false,
+    displayName: '小米 MiMo',
   },
 };
 

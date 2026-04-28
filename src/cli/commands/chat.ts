@@ -34,6 +34,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   perplexity: 'PERPLEXITY_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
   qwen: 'QWEN_API_KEY',
+  xiaomi: 'XIAOMI_API_KEY',
 };
 
 /** Mask API key: show prefix + last 4 chars */

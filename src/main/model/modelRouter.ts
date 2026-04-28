@@ -39,6 +39,7 @@ import { ZhipuProvider } from './providers/zhipuProvider';
 import { ClaudeProvider } from './providers/claudeProvider';
 import { GeminiProvider } from './providers/geminiProvider';
 import { VolcengineProvider } from './providers/volcengineProvider';
+import { XiaomiProvider } from './providers/xiaomiProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -67,6 +68,7 @@ export class ModelRouter {
     ['anthropic', new ClaudeProvider()],
     ['gemini', new GeminiProvider()],
     ['volcengine', new VolcengineProvider()],
+    ['xiaomi', new XiaomiProvider()],
   ]);
 
   // --------------------------------------------------------------------------

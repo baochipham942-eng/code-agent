@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, ModalFooter } from '../../primitives';
 import { IPC_CHANNELS, SUBSET_CHANNELS } from '@shared/ipc';
+import { PROVIDER_MODELS, getModelDisplayLabel } from '@shared/constants';
 import ipcService from '../../../services/ipcService';
 
 interface TestCaseInfo {
@@ -36,18 +37,15 @@ interface CreateExperimentDialogProps {
   onSubmit: (config: ExperimentConfig) => Promise<void>;
 }
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7', provider: 'anthropic' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'anthropic' },
-  { value: 'kimi-k2.6', label: 'Kimi K2.6', provider: 'moonshot' },
-  { value: 'deepseek-chat', label: 'DeepSeek Chat', provider: 'deepseek' },
-  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'gemini' },
-  // 本地 Ollama 模型（toy provider + 评测 baseline）
-  { value: 'qwen3.5:9b', label: '[本地] Qwen3.5 9B 原版', provider: 'local' },
-  { value: 'huihui_ai/qwen3.5-abliterated:9b-Qwopus-q4_K', label: '[本地] Qwen3.5 9B Qwopus (agent 调优)', provider: 'local' },
-  { value: 'gemma4-e4b-uncensored:q4km', label: '[本地] Gemma4 E4B Uncensored', provider: 'local' },
-];
+// 从 PROVIDER_MODELS（model-catalog.json 派生）拉取所有可用模型，
+// 单一数据源；新加 provider/model 时自动同步到这里，不会再像 PR #83 那样漏接 UI 白名单。
+const MODEL_OPTIONS = PROVIDER_MODELS.flatMap((p) =>
+  p.models.map((m) => ({
+    value: m.id,
+    label: getModelDisplayLabel(m.id),
+    provider: p.id,
+  }))
+);
 
 const getProviderForModel = (modelValue: string): string => {
   return MODEL_OPTIONS.find((opt) => opt.value === modelValue)?.provider ?? 'anthropic';

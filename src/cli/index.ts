@@ -17,6 +17,7 @@ import { listAgentsCommand } from './commands/listAgents';
 import { execToolCommand } from './commands/execTool';
 import { initSoulCommand } from './commands/initSoul';
 import { openchronicleCommand } from './commands/openchronicleCmd';
+import { debugCommand } from './commands/debug';
 import { version } from '../../package.json';
 
 const program = new Command();
@@ -49,6 +50,7 @@ program.addCommand(listAgentsCommand);
 program.addCommand(execToolCommand);
 program.addCommand(initSoulCommand);
 program.addCommand(openchronicleCommand);
+program.addCommand(debugCommand);
 
 // Parse and run
 program.parse();

@@ -110,6 +110,39 @@ export default tseslint.config(
       'no-useless-escape': 'warn',
       'no-empty': 'warn',
       '@typescript-eslint/ban-ts-comment': 'warn',
+
+      // God File 守门：3 月刚拆完 1 个月内重新长回 >900 行（2026-04-28 audit），
+      // 这条规则防止再生。1000 行作为硬限，超 1000 必须拆。
+      // 历史超线文件见下方 file-pattern override 白名单（19 个文件待 backlog 拆分）。
+      'max-lines': ['error', { max: 1000, skipBlankLines: false, skipComments: false }],
+    },
+  },
+  {
+    // God File 历史白名单（2026-04-28 audit）
+    // 这些文件已超 1000 行，进 backlog 等单独拆分。新代码不允许进入这个名单。
+    files: [
+      'src/cli/database.ts',
+      'src/main/agent/parallelAgentCoordinator.ts',
+      'src/main/agent/subagentExecutor.ts',
+      'src/main/desktop/desktopActivityUnderstandingService.ts',
+      'src/main/evaluation/telemetryQueryService.ts',
+      'src/main/hooks/hookManager.ts',
+      'src/main/model/providerRegistry.ts',
+      'src/main/model/providers/shared.ts',
+      'src/main/scheduler/TaskDAG.ts',
+      'src/main/services/core/databaseService.ts',
+      'src/main/services/desktop/backgroundCgEventSurface.ts',
+      'src/main/services/desktop/computerSurface.ts',
+      'src/main/services/desktop/desktopAudioCapture.ts',
+      'src/main/services/infra/browserService.ts',
+      'src/main/session/claudeSessionParser.ts',
+      'src/main/tools/media/ppt/layouts.ts',
+      'src/main/tools/vision/computerUse.ts',
+      'src/renderer/components/TaskPanel/Orchestration.tsx',
+      'src/renderer/components/features/settings/sections/NativeDesktopSection.tsx',
+    ],
+    rules: {
+      'max-lines': 'off',
     },
   },
   {

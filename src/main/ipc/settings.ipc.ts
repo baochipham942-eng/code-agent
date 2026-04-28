@@ -92,6 +92,7 @@ async function handleCheckApiKeyConfigured(): Promise<boolean> {
     'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'ZHIPU_API_KEY',
     'GROQ_API_KEY', 'QWEN_API_KEY', 'MINIMAX_API_KEY',
     'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY',
+    'XIAOMI_API_KEY',
   ];
   return envKeyNames.some(name => !!process.env[name]);
 }

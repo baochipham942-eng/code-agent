@@ -97,6 +97,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           zhipu: 'ZHIPU_API_KEY',
           groq: 'GROQ_API_KEY',
           moonshot: 'MOONSHOT_API_KEY',
+          xiaomi: 'XIAOMI_API_KEY',
         };
         const envKey = providerEnvMap[config.modelConfig.provider];
         if (envKey && process.env[envKey]) {

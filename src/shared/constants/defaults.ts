@@ -134,6 +134,11 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'sonar-reasoning-pro': 8_192,
   'sonar-reasoning': 8_192,
   'sonar-deep-research': 8_192,
+  // 小米 MiMo（API 实测 max_tokens 上限均为 131072）
+  'mimo-v2.5-pro': 131_072,
+  'mimo-v2.5': 131_072,
+  'mimo-v2-pro': 131_072,
+  'mimo-v2-omni': 131_072,
 };
 
 /** 根据模型名查找推荐的 maxOutputTokens（先做规范化） */
@@ -206,6 +211,11 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'sonar-reasoning-pro': 128_000,
   'sonar-reasoning': 128_000,
   'sonar-deep-research': 128_000,
+  // 小米 MiMo（mimo.xiaomi.com / OpenRouter 官方文档）
+  'mimo-v2.5-pro': 1_048_576, // 1M，hybrid attention 架构
+  'mimo-v2.5': 1_048_576,
+  'mimo-v2-pro': 1_048_576,
+  'mimo-v2-omni': 262_144,    // 256k，多模态版上下文较短
 };
 
 /** 默认上下文窗口（未知模型 fallback） */

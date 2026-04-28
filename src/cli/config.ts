@@ -93,6 +93,7 @@ export class CLIConfigService {
           grok: { enabled: false },
           openrouter: { enabled: false },
           volcengine: { enabled: false },
+          xiaomi: { enabled: true, model: 'mimo-v2.5-pro' },  // 小米 MiMo Token Plan Max
         },
         routing: {
           code: { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat },

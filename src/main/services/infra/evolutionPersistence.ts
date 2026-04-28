@@ -411,8 +411,7 @@ class EvolutionPersistenceService {
       const supabase = getSupabase();
 
       // Sync strategies
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      const { data: cloudStrategies, error: strategyError } = await (supabase.from('evolution_strategies') as any)
+      const { data: cloudStrategies, error: strategyError } = await supabase.from('evolution_strategies')
         .select('*')
         .eq('user_id', userId);
 
@@ -421,7 +420,10 @@ class EvolutionPersistenceService {
           const localStrategy = this.strategies.get(cloudStrategy.id);
 
           // Cloud wins if newer or local doesn't exist
-          if (!localStrategy || cloudStrategy.updated_at > localStrategy.updatedAt) {
+          // Note: cloudStrategy.updated_at is ISO string, localStrategy.updatedAt is ms number
+          // (audit B5: previous `as any` masked this string-vs-number comparison bug)
+          const cloudUpdatedAtMs = new Date(cloudStrategy.updated_at).getTime();
+          if (!localStrategy || cloudUpdatedAtMs > localStrategy.updatedAt) {
             const strategy: Strategy = {
               id: cloudStrategy.id,
               name: cloudStrategy.name,
@@ -432,9 +434,9 @@ class EvolutionPersistenceService {
               lastUsed: cloudStrategy.last_used,
               tags: cloudStrategy.tags || [],
               createdAt: new Date(cloudStrategy.created_at).getTime(),
-              updatedAt: new Date(cloudStrategy.updated_at).getTime(),
+              updatedAt: cloudUpdatedAtMs,
               userId: cloudStrategy.user_id,
-              projectPath: cloudStrategy.project_path,
+              projectPath: cloudStrategy.project_path ?? undefined,
             };
             this.strategies.set(strategy.id, strategy);
           }
@@ -442,8 +444,7 @@ class EvolutionPersistenceService {
       }
 
       // Sync patterns
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      const { data: cloudPatterns, error: patternError } = await (supabase.from('evolution_patterns') as any)
+      const { data: cloudPatterns, error: patternError } = await supabase.from('evolution_patterns')
         .select('*')
         .eq('user_id', userId);
 
@@ -451,22 +452,24 @@ class EvolutionPersistenceService {
         for (const cloudPattern of cloudPatterns) {
           const localPattern = this.patterns.get(cloudPattern.id);
 
-          if (!localPattern || cloudPattern.updated_at > localPattern.updatedAt) {
+          // (audit B5: previous `as any` masked string-vs-number comparison bug)
+          const cloudUpdatedAtMs = new Date(cloudPattern.updated_at).getTime();
+          if (!localPattern || cloudUpdatedAtMs > localPattern.updatedAt) {
             const pattern: LearnedPattern = {
               id: cloudPattern.id,
               name: cloudPattern.name,
               type: cloudPattern.type,
               context: cloudPattern.context,
               pattern: cloudPattern.pattern,
-              solution: cloudPattern.solution,
+              solution: cloudPattern.solution ?? undefined,
               confidence: cloudPattern.confidence,
               occurrences: cloudPattern.occurrences,
               lastSeen: cloudPattern.last_seen,
               createdAt: new Date(cloudPattern.created_at).getTime(),
-              updatedAt: new Date(cloudPattern.updated_at).getTime(),
+              updatedAt: cloudUpdatedAtMs,
               tags: cloudPattern.tags || [],
               userId: cloudPattern.user_id,
-              projectPath: cloudPattern.project_path,
+              projectPath: cloudPattern.project_path ?? undefined,
             };
             this.patterns.set(pattern.id, pattern);
           }
@@ -490,8 +493,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      await (supabase.from('evolution_strategies') as any).upsert({
+      await supabase.from('evolution_strategies').upsert({
         id: strategy.id,
         user_id: userId,
         name: strategy.name,
@@ -519,8 +521,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      await (supabase.from('evolution_strategies') as any).delete().eq('id', id).eq('user_id', userId);
+      await supabase.from('evolution_strategies').delete().eq('id', id).eq('user_id', userId);
     } catch (error) {
       logger.error(' Failed to delete strategy from cloud:', error);
     }
@@ -535,8 +536,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      await (supabase.from('evolution_patterns') as any).upsert({
+      await supabase.from('evolution_patterns').upsert({
         id: pattern.id,
         user_id: userId,
         name: pattern.name,
@@ -566,8 +566,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      await (supabase.from('evolution_patterns') as any).delete().eq('id', id).eq('user_id', userId);
+      await supabase.from('evolution_patterns').delete().eq('id', id).eq('user_id', userId);
     } catch (error) {
       logger.error(' Failed to delete pattern from cloud:', error);
     }

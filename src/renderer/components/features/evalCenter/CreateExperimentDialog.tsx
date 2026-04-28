@@ -24,6 +24,7 @@ interface TestSubsetInfo {
 interface ExperimentConfig {
   name: string;
   model: string;
+  provider: string;
   testSetId: string;
   trialsPerCase: number;
   gitCommit: string;
@@ -36,13 +37,21 @@ interface CreateExperimentDialogProps {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-  { value: 'kimi-k2.6', label: 'Kimi K2.6' },
-  { value: 'deepseek-chat', label: 'DeepSeek Chat' },
-  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' },
+  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7', provider: 'anthropic' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'anthropic' },
+  { value: 'kimi-k2.6', label: 'Kimi K2.6', provider: 'moonshot' },
+  { value: 'deepseek-chat', label: 'DeepSeek Chat', provider: 'deepseek' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'gemini' },
+  // 本地 Ollama 模型（toy provider + 评测 baseline）
+  { value: 'qwen3.5:9b', label: '[本地] Qwen3.5 9B 原版', provider: 'local' },
+  { value: 'huihui_ai/qwen3.5-abliterated:9b-Qwopus-q4_K', label: '[本地] Qwen3.5 9B Qwopus (agent 调优)', provider: 'local' },
+  { value: 'gemma4-e4b-uncensored:q4km', label: '[本地] Gemma4 E4B Uncensored', provider: 'local' },
 ];
+
+const getProviderForModel = (modelValue: string): string => {
+  return MODEL_OPTIONS.find((opt) => opt.value === modelValue)?.provider ?? 'anthropic';
+};
 
 export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
   isOpen,
@@ -118,6 +127,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
       await onSubmit({
         name,
         model,
+        provider: getProviderForModel(model),
         testSetId,
         trialsPerCase,
         gitCommit,

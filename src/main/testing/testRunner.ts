@@ -435,8 +435,11 @@ export class TestRunner {
       // Reset agent state
       await this.agent.reset();
 
-      // Set up timeout
-      const timeout = testCase.timeout || this.config.defaultTimeout;
+      // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
+      const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
+        ? parseInt(process.env.CODE_AGENT_FORCE_TIMEOUT, 10)
+        : null;
+      const timeout = forceTimeout || testCase.timeout || this.config.defaultTimeout;
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error(`Test timeout after ${timeout}ms`)), timeout);
       });
@@ -709,7 +712,7 @@ export function createDefaultConfig(
     testCaseDir: testDirs.testCases.new, // Default to new path
     resultsDir: testDirs.results.new,
     workingDirectory,
-    defaultTimeout: 60000,
+    defaultTimeout: parseInt(process.env.CODE_AGENT_TEST_TIMEOUT || '60000', 10),
     stopOnFailure: false,
     verbose: false,
     parallel: false,

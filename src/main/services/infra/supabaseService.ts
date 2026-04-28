@@ -75,7 +75,7 @@ export interface Database {
           id: string;
           user_id: string;
           title: string;
-          generation_id: string;
+          generation_id: string | null;
           model_provider: string | null;
           model_name: string | null;
           working_directory: string | null;
@@ -88,10 +88,11 @@ export interface Database {
           id: string;
           user_id: string;
           title: string;
-          generation_id: string;
+          generation_id?: string | null;
           model_provider?: string | null;
           model_name?: string | null;
           working_directory?: string | null;
+          is_deleted?: boolean;
           created_at: number;
           updated_at: number;
           source_device_id?: string | null;
@@ -348,6 +349,96 @@ export interface Database {
           metadata?: Record<string, unknown>;
           started_at?: string | null;
           completed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      evolution_strategies: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          description: string;
+          steps: string[];
+          success_rate: number;
+          usage_count: number;
+          last_used: number;
+          tags: string[];
+          project_path: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          user_id: string;
+          name: string;
+          description: string;
+          steps: string[];
+          success_rate: number;
+          usage_count: number;
+          last_used: number;
+          tags?: string[];
+          project_path?: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Update: {
+          name?: string;
+          description?: string;
+          steps?: string[];
+          success_rate?: number;
+          usage_count?: number;
+          last_used?: number;
+          tags?: string[];
+          project_path?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      evolution_patterns: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          type: 'success' | 'failure' | 'optimization' | 'anti_pattern';
+          context: string;
+          pattern: string;
+          solution: string | null;
+          confidence: number;
+          occurrences: number;
+          last_seen: number;
+          tags: string[];
+          project_path: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          user_id: string;
+          name: string;
+          type: 'success' | 'failure' | 'optimization' | 'anti_pattern';
+          context: string;
+          pattern: string;
+          solution?: string | null;
+          confidence: number;
+          occurrences: number;
+          last_seen: number;
+          tags?: string[];
+          project_path?: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Update: {
+          name?: string;
+          type?: 'success' | 'failure' | 'optimization' | 'anti_pattern';
+          context?: string;
+          pattern?: string;
+          solution?: string | null;
+          confidence?: number;
+          occurrences?: number;
+          last_seen?: number;
+          tags?: string[];
+          project_path?: string | null;
           updated_at?: string;
         };
         Relationships: [];

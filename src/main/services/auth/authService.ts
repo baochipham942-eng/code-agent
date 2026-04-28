@@ -279,15 +279,13 @@ class AuthService {
     if (data.user) {
       // Update invite code usage
       if (inviteCode) {
-        // TODO: Supabase RPC types need explicit parameter definition - as any required
-        await (supabase.rpc as any)('increment_invite_code_usage', {
+        await supabase.rpc('increment_invite_code_usage', {
           code_value: inviteCode.toUpperCase(),
         });
       }
 
       // Create profile
-      // TODO: Supabase 类型系统限制，insert 需要 as any 绕过
-      await (supabase.from('profiles') as any).insert({
+      await supabase.from('profiles').insert({
         id: data.user.id,
         username: email.split('@')[0],
         quick_login_token: crypto.randomBytes(32).toString('hex'),
@@ -345,8 +343,7 @@ class AuthService {
         .single();
 
       if (!profile) {
-        // TODO: Supabase 类型系统限制，insert 需要 as any 绕过
-        await (supabase.from('profiles') as any).insert({
+        await supabase.from('profiles').insert({
           id: data.user.id,
           username: data.user.email?.split('@')[0] || data.user.id,
           nickname: data.user.user_metadata?.full_name,

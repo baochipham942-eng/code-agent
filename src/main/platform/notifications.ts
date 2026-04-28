@@ -2,13 +2,18 @@
 // Platform: Notifications - 替代 Electron Notification
 // ============================================================================
 
-import { exec } from 'child_process';
+import { safeExecDetached } from '../utils/safeShell';
 
 interface NotificationOptions {
   title?: string;
   body?: string;
   icon?: unknown;
   [key: string]: unknown;
+}
+
+// AppleScript 字符串字面量需要转义 \ 和 "
+function escapeAppleScript(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 /**
@@ -23,9 +28,10 @@ export class Notification {
 
   show(): void {
     if (process.platform === 'darwin') {
-      const title = (this.options.title || '').replace(/"/g, '\\"');
-      const body = (this.options.body || '').replace(/"/g, '\\"');
-      exec(`osascript -e 'display notification "${body}" with title "${title}"'`);
+      const title = escapeAppleScript(String(this.options.title || ''));
+      const body = escapeAppleScript(String(this.options.body || ''));
+      const script = `display notification "${body}" with title "${title}"`;
+      safeExecDetached('osascript', ['-e', script]);
     }
   }
 

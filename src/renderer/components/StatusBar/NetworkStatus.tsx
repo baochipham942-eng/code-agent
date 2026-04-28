@@ -101,24 +101,31 @@ export function NetworkStatusEnhanced({
 
   // 尝试重连
   const attemptReconnect = useCallback(async () => {
-    if (state.reconnectAttempts >= maxReconnectAttempts) {
-      return;
-    }
-
-    setState(prev => ({
-      ...prev,
-      status: 'reconnecting',
-      reconnectAttempts: prev.reconnectAttempts + 1,
-    }));
+    // 用 prev 形式记录刚 +1 后的尝试次数，避免 closure 读旧 state 导致退避少一档
+    let nextAttempts = 0;
+    let exceeded = false;
+    setState(prev => {
+      if (prev.reconnectAttempts >= maxReconnectAttempts) {
+        exceeded = true;
+        return prev;
+      }
+      nextAttempts = prev.reconnectAttempts + 1;
+      return {
+        ...prev,
+        status: 'reconnecting',
+        reconnectAttempts: nextAttempts,
+      };
+    });
+    if (exceeded) return;
 
     const isOnline = await checkConnection();
 
     if (isOnline) {
       handleOnline();
     } else {
-      // 计算下次重连时间（指数退避）
+      // 指数退避基于刚 +1 后的实际重试次数（nextAttempts），不读 closure state
       const delay = Math.min(
-        baseReconnectDelay * Math.pow(2, state.reconnectAttempts),
+        baseReconnectDelay * Math.pow(2, nextAttempts - 1),
         30000
       );
       const nextTime = Date.now() + delay;
@@ -129,7 +136,7 @@ export function NetworkStatusEnhanced({
         nextReconnectAt: nextTime,
       }));
     }
-  }, [state.reconnectAttempts, maxReconnectAttempts, checkConnection, handleOnline, baseReconnectDelay]);
+  }, [maxReconnectAttempts, checkConnection, handleOnline, baseReconnectDelay]);
 
   // 监听网络状态变化
   useEffect(() => {

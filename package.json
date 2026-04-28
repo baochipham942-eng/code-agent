@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.16.65",
+  "version": "0.16.67",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/web/webServer.cjs",
@@ -72,7 +72,11 @@
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
     "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
     "tauri:dev": "npm run rebuild-native:system && npm run build:web && cargo tauri dev",
-    "tauri:build": "npm run rebuild-native:system && npm run build && cargo tauri build && bash scripts/tauri-install.sh"
+    "tauri:build": "npm run rebuild-native:system && npm run build && cargo tauri build && bash scripts/tauri-install.sh",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint --fix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
@@ -165,6 +169,8 @@
     "concurrently": "^9.0.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "lucide-react": "^0.468.0",
     "postcss": "^8.4.0",
     "react": "^18.3.0",

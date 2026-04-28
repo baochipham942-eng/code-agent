@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { execSync } from 'child_process';
+import { safeExecSyncWithStdin } from '../utils/safeShell';
 
 // ---------------------------------------------------------------------------
 // Clipboard
@@ -30,7 +31,8 @@ export function writeText(text: string): void {
     } else if (process.platform === 'linux') {
       execSync('xclip -selection clipboard', { input: text });
     } else {
-      execSync(`powershell -command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`);
+      // Windows: clip.exe 是原生剪贴板工具，stdin 传文本，避免 powershell 命令注入
+      safeExecSyncWithStdin('clip.exe', [], text);
     }
   } catch {
     // Silently fail if clipboard not available

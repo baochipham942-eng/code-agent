@@ -63,6 +63,56 @@ async function handleDataGetStats(): Promise<unknown> {
   };
 }
 
+async function handleDataGetSnapshotStats(): Promise<{
+  snapshotCount: number;
+  sessionCount: number;
+  totalBytes: number;
+  retentionDays: number;
+  turnSnapshots: { snapshotCount: number; sessionCount: number; totalBytes: number };
+  compactionSnapshots: { snapshotCount: number; sessionCount: number; totalBytes: number };
+}> {
+  const { getDatabase } = await import('../services/core/databaseService');
+  const db = getDatabase();
+  const turnStats = db.getSnapshotStats();
+  const compactStats = db.getCompactionStats();
+  const retentionDays = db.getPreference<number>('debugSnapshotRetentionDays', 1) ?? 1;
+  return {
+    snapshotCount: turnStats.snapshotCount + compactStats.snapshotCount,
+    sessionCount: Math.max(turnStats.sessionCount, compactStats.sessionCount),
+    totalBytes: turnStats.totalBytes + compactStats.totalBytes,
+    retentionDays,
+    turnSnapshots: turnStats,
+    compactionSnapshots: compactStats,
+  };
+}
+
+async function handleDataClearSnapshots(req: { olderThanDays?: number; sessionId?: string }): Promise<number> {
+  const { getDatabase } = await import('../services/core/databaseService');
+  const db = getDatabase();
+  const olderThanMs = req.olderThanDays && req.olderThanDays > 0
+    ? req.olderThanDays * 24 * 60 * 60 * 1000
+    : undefined;
+  const turnCleared = db.clearSnapshots({ olderThanMs, sessionId: req.sessionId });
+  const compactCleared = db.clearCompactionSnapshots({ olderThanMs, sessionId: req.sessionId });
+  const total = turnCleared + compactCleared;
+  logger.info('Debug snapshots cleared', {
+    turnCleared,
+    compactCleared,
+    olderThanDays: req.olderThanDays,
+    sessionId: req.sessionId,
+  });
+  return total;
+}
+
+async function handleDataSetSnapshotRetention(req: { days: number }): Promise<void> {
+  const { getDatabase } = await import('../services/core/databaseService');
+  const db = getDatabase();
+  // 合法值: 1, 7, 30, -1 (永久)
+  const valid = [1, 7, 30, -1];
+  const days = valid.includes(req.days) ? req.days : 1;
+  db.setPreference('debugSnapshotRetentionDays', days);
+}
+
 async function handleDataClearToolCache(): Promise<number> {
   const { getToolCache } = await import('../services/infra/toolCache');
   const { getDatabase } = await import('../services/core/databaseService');
@@ -104,7 +154,7 @@ async function handleDataClearToolCache(): Promise<number> {
 export function registerDataHandlers(ipcMain: IpcMain): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.DATA, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
+    const { action, payload } = request;
 
     try {
       let data: unknown;
@@ -125,6 +175,16 @@ export function registerDataHandlers(ipcMain: IpcMain): void {
           break;
         case 'clearToolCache':
           data = await handleDataClearToolCache();
+          break;
+        case 'getSnapshotStats':
+          data = await handleDataGetSnapshotStats();
+          break;
+        case 'clearSnapshots':
+          data = await handleDataClearSnapshots((payload as { olderThanDays?: number; sessionId?: string }) ?? {});
+          break;
+        case 'setSnapshotRetention':
+          await handleDataSetSnapshotRetention((payload as { days: number }) ?? { days: 1 });
+          data = null;
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

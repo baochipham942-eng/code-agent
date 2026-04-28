@@ -37,14 +37,17 @@ interface CreateExperimentDialogProps {
   onSubmit: (config: ExperimentConfig) => Promise<void>;
 }
 
-// 从 PROVIDER_MODELS（model-catalog.json 派生）拉取所有可用模型，
-// 单一数据源；新加 provider/model 时自动同步到这里，不会再像 PR #83 那样漏接 UI 白名单。
+// 从 PROVIDER_MODELS（model-catalog.json 派生）拉取评测候选模型。
+// 单一数据源；新加 provider/model 时只需在 catalog 标 evalEligible 即可同步。
+// 默认 evalEligible=true（缺字段也算 true），明确写 false 的（搜索/视觉/legacy/中转重复）才被过滤。
 const MODEL_OPTIONS = PROVIDER_MODELS.flatMap((p) =>
-  p.models.map((m) => ({
-    value: m.id,
-    label: getModelDisplayLabel(m.id),
-    provider: p.id,
-  }))
+  p.models
+    .filter((m) => m.evalEligible !== false)
+    .map((m) => ({
+      value: m.id,
+      label: getModelDisplayLabel(m.id),
+      provider: p.id,
+    }))
 );
 
 const getProviderForModel = (modelValue: string): string => {

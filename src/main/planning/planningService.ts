@@ -112,7 +112,7 @@ export class PlanningService {
           ).catch(() => {});
         }
       } else if (point === 'on_stop') {
-        hookManager.triggerStop(undefined, sessionId).catch(silence(logger, 'triggerStop', 'error'));
+        hookManager.triggerStop(undefined, sessionId).catch(silence(logger, 'triggerStop', 'warn'));
       }
       // on_error and session_start are not bridged (planning-internal concerns)
     };

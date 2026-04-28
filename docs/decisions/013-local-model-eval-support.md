@@ -1,8 +1,8 @@
-# ADR-013: 评测中心支持本地 Ollama 模型
+# ADR-013: 评测中心 + 主聊天支持本地 Ollama 模型
 
 > 状态: accepted
 > 日期: 2026-04-28
-> 关联: `~/.claude/projects/-Users-linchen/memory/[Obsidian: 本地LLM-9B评测实测-2026-04-28]`、commit `fd5cd436`
+> 关联: `~/.claude/projects/-Users-linchen/memory/[Obsidian: 本地LLM-9B评测实测-2026-04-28]`、commits `fd5cd436` + `65a20b5f`
 
 ## 背景
 
@@ -107,6 +107,29 @@ export const MAX_SYSTEM_PROMPT_TOKENS =
 ```
 
 **关键**：默认 4000 tokens 装不下完整 50+ tools 的 schema，会触发 "Skipping deferred tools" 把 tools 砍到 14 个。本地模型评测建议设 `16000`，让模型看到完整工具集。
+
+### 5. 主聊天 ModelSwitcher — `models.ts` + `model-catalog.json`（commit `65a20b5f`）
+
+打包跑通后发现一个**遗漏**：评测中心可以选本地模型，但主聊天 `ModelSwitcher`（status bar 上的 model picker）选不到。根因：
+
+```typescript
+// src/shared/constants/models.ts:62-65
+const SUPPORTED_PROVIDERS = new Set<string>([
+  'openai', 'claude', 'gemini', 'deepseek', 'zhipu',
+  'qwen', 'moonshot', 'minimax', 'openrouter', 'perplexity',
+  // ❌ 'local' 不在白名单
+]);
+
+export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers
+  .filter((p) => SUPPORTED_PROVIDERS.has(p.id))  // ← local 被这一步过滤掉
+  .map(...)
+```
+
+虽然 `ModelSwitcher.tsx:28` 的 `QUICK_SWITCH_PROVIDERS` 已经包含 `'local'`，但它消费的 `PROVIDER_MODELS_MAP` 上游被白名单 filter 掉了 local，导致 `PROVIDER_MODELS_MAP['local']` 是 undefined，本地段渲染不出来。
+
+修复：
+1. `SUPPORTED_PROVIDERS` 加 `'local'`
+2. `model-catalog.json` 的 local provider models **替换为实际下载的 3 个**（之前列了 9 个 placeholder 都没拉）：`qwen3.5:9b` / `huihui_ai/qwen3.5-abliterated:9b-Qwopus-q4_K` / `gemma4-e4b-uncensored:q4km`
 
 ## 启动配置
 

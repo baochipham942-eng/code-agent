@@ -26,7 +26,7 @@ interface ModelOption {
 }
 
 const QUICK_SWITCH_PROVIDERS = [
-  'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local',
+  'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi',
 ] as const;
 
 const MODEL_OPTIONS: ModelOption[] = QUICK_SWITCH_PROVIDERS.flatMap((providerId) => {

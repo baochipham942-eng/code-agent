@@ -15,7 +15,7 @@ export const MODEL = {
 
 /** 默认模型配置 */
 export const DEFAULT_MODELS = {
-  /** 主要对话模型 - Kimi K2.5 包月 */
+  /** 主要对话模型 - Claude Sonnet 4.6 */
   chat: 'claude-sonnet-4-6',
   /** 推理模型 - DeepSeek V4 Pro (按需付费，替代 R1) */
   reasoning: 'deepseek-v4-pro',

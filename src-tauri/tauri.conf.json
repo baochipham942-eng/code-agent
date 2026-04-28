@@ -32,7 +32,7 @@
       "app",
       "dmg"
     ],
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": false,
     "category": "DeveloperTool",
     "icon": [
       "icons/32x32.png",
@@ -64,7 +64,7 @@
       "endpoints": [
         "https://github.com/anthropics/code-agent/releases/latest/download/latest.json"
       ],
-      "pubkey": "PLACEHOLDER_KEY"
+      "pubkey": "DISABLED_2026-04-28_NO_KEY_PAIR_GENERATED_SEE_COMMIT"
     }
   }
 }

@@ -15,24 +15,24 @@ export const MODEL = {
 
 /** 默认模型配置 */
 export const DEFAULT_MODELS = {
-  /** 主要对话模型 - Kimi K2.5 包月 */
-  chat: 'claude-sonnet-4-6',
+  /** 主要对话模型 - 小米 MiMo v2.5 Pro 包月旗舰 */
+  chat: 'mimo-v2.5-pro',
   /** 推理模型 - DeepSeek V4 Pro (按需付费，替代 R1) */
   reasoning: 'deepseek-v4-pro',
   /** 视觉理解模型 - 智谱包年 */
   vision: 'glm-4.6v',
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
-  /** 代码模型 - Kimi K2.5 包月 */
-  code: 'claude-sonnet-4-6',
+  /** 代码模型 - 小米 MiMo v2.5 Pro 包月旗舰（thinking + tool call） */
+  code: 'mimo-v2.5-pro',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /** 快速判断模型 - 智谱 GLM-4.7 Flash 免费（走 bigmodel.cn，非 0ki） */
   quick: 'glm-4.7-flash',
-  /** 超长上下文模型（128K+） */
-  longContext: 'claude-sonnet-4-6',
-  /** 包月无限制模型 */
-  unlimited: 'claude-sonnet-4-6',
+  /** 超长上下文模型（1M） - 小米 MiMo v2.5 Pro */
+  longContext: 'mimo-v2.5-pro',
+  /** 包月无限制模型 - 小米 MiMo Token Plan */
+  unlimited: 'mimo-v2.5-pro',
 } as const;
 
 /** Agent 子任务默认模型（包月无限制，适合高频调用） */

@@ -701,7 +701,7 @@ export class SubagentExecutor {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
         // Fire SubagentStop on early budget failure
-        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:budget', 'error'));
+        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
         return {
           success: false,
           output: '',
@@ -728,7 +728,7 @@ export class SubagentExecutor {
             : '任务已取消';
           agentTask.fail(errorMsg);
           // Fire SubagentStop on abort/timeout
-          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:abort', 'error'));
+          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
             success: false,
             output: finalOutput || '',

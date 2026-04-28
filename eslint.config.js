@@ -112,9 +112,11 @@ export default tseslint.config(
       '@typescript-eslint/ban-ts-comment': 'warn',
 
       // God File 守门：3 月刚拆完 1 个月内重新长回 >900 行（2026-04-28 audit），
-      // 这条规则防止再生。1000 行作为硬限，超 1000 必须拆。
-      // 历史超线文件见下方 file-pattern override 白名单（19 个文件待 backlog 拆分）。
-      'max-lines': ['error', { max: 1000, skipBlankLines: false, skipComments: false }],
+      // 这条规则防止再生。1000 行（有效行）作为硬限，超 1000 必须拆。
+      // skipBlankLines + skipComments：避免 SessionRepository.ts (993 物理 / 788 有效)
+      // / TaskManager.ts (991 物理 / 601 有效) 这类 false positive（艾克斯 review MED3）。
+      // 历史超线文件见下方 file-pattern override 白名单。
+      'max-lines': ['error', { max: 1000, skipBlankLines: true, skipComments: true }],
     },
   },
   {

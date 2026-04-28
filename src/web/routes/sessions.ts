@@ -58,16 +58,11 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
     try {
       const sm = await tryGetSessionManager();
       if (sm) {
-        const { DEFAULT_PROVIDER, DEFAULT_MODELS, MODEL_MAX_TOKENS } = await import('../../shared/constants');
+        const { resolveSessionDefaultModelConfig } = await import('../../main/services/core/sessionDefaults');
         const title = req.body?.title || 'New Session';
         const session = await sm.createSession({
           title,
-          modelConfig: {
-            provider: DEFAULT_PROVIDER,
-            model: DEFAULT_MODELS.chat,
-            temperature: 0.7,
-            maxTokens: MODEL_MAX_TOKENS.DEFAULT,
-          },
+          modelConfig: resolveSessionDefaultModelConfig(),
         });
         sm.setCurrentSession(session.id);
         res.json({ success: true, data: session });

@@ -27,7 +27,7 @@ import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
 import { IPC_CHANNELS } from '../shared/ipc';
-import { DEFAULT_PROVIDER, DEFAULT_MODELS, getModelMaxOutputTokens } from '../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import type { PermissionResponse } from '../shared/contract';
 
 const logger = createLogger('WebServer');
@@ -334,12 +334,7 @@ function registerHandlers(): void {
         case 'create':
           data = await sm.createSession({
             title: payload?.title || 'New Session',
-            modelConfig: {
-              provider: DEFAULT_PROVIDER,
-              model: DEFAULT_MODELS.chat,
-              temperature: 0.7,
-              maxTokens: getModelMaxOutputTokens(DEFAULT_MODELS.chat),
-            },
+            modelConfig: resolveSessionDefaultModelConfig(),
           });
           break;
         case 'load':

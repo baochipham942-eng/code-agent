@@ -1,0 +1,2 @@
+bash scripts/check-hardcoded-models.sh
+npx lint-staged

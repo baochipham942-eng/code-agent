@@ -21,12 +21,13 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
 import { IPC_CHANNELS } from '../shared/ipc';
+import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import type { PermissionResponse } from '../shared/contract';
 
 const logger = createLogger('WebServer');
@@ -333,12 +334,7 @@ function registerHandlers(): void {
         case 'create':
           data = await sm.createSession({
             title: payload?.title || 'New Session',
-            modelConfig: {
-              provider: 'moonshot',
-              model: 'kimi-k2.5',
-              temperature: 0.7,
-              maxTokens: 8192,
-            },
+            modelConfig: resolveSessionDefaultModelConfig(),
           });
           break;
         case 'load':
@@ -487,16 +483,16 @@ function createApp(): express.Express {
 /** Kill any process holding the target port (zombie node processes from previous runs) */
 async function killPortHolder(port: number): Promise<void> {
   try {
-    const pids = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' }).trim();
+    const pids = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' }).trim();
     if (!pids) return;
 
     // Don't kill ourselves
     const myPid = process.pid.toString();
-    const targetPids = pids.split('\n').filter((p) => p !== myPid);
+    const targetPids = pids.split('\n').filter((p) => p !== myPid && /^\d+$/.test(p));
     if (targetPids.length === 0) return;
 
     console.log(`  Killing zombie process(es) on port ${port}: PID ${targetPids.join(', ')}`);
-    execSync(`kill -9 ${targetPids.join(' ')}`, { encoding: 'utf-8' });
+    execFileSync('kill', ['-9', ...targetPids], { encoding: 'utf-8' });
 
     // Brief wait for OS to release the port
     await new Promise((resolve) => setTimeout(resolve, 300));

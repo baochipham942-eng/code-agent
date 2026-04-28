@@ -515,8 +515,17 @@ export function registerEvaluationHandlers(): void {
   // Create experiment — wire the "Start Experiment" button to actual execution
   ipcMain.handle(EVALUATION_CHANNELS.CREATE_EXPERIMENT, async (
     _event,
-    config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }
+    config: { name: string; model: string; provider?: string; testSetId: string; trialsPerCase: number; gitCommit: string }
   ) => {
+    const resolvedProvider = config.provider || 'anthropic';
+    const apiKeyByProvider: Record<string, string | undefined> = {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      moonshot: process.env.MOONSHOT_API_KEY,
+      deepseek: process.env.DEEPSEEK_API_KEY,
+      gemini: process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY,
+      local: undefined, // Ollama 不需要 apiKey
+    };
+    const resolvedApiKey = apiKeyByProvider[resolvedProvider];
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const { v4: uuidv4 } = await import('uuid');
@@ -544,7 +553,7 @@ export function registerEvaluationHandlers(): void {
         name: config.name,
         timestamp: now,
         model: config.model,
-        provider: 'anthropic',
+        provider: resolvedProvider,
         scope: 'full',
         config_json: JSON.stringify({
           testSetId: config.testSetId,
@@ -641,9 +650,9 @@ export function registerEvaluationHandlers(): void {
             workingDirectory: workingDir,
             generation: 'experiment',
             modelConfig: {
-              provider: 'anthropic',
+              provider: resolvedProvider,
               model: config.model,
-              apiKey: process.env.ANTHROPIC_API_KEY,
+              apiKey: resolvedApiKey,
             },
           });
 

@@ -17,6 +17,7 @@ NC='\033[0m'
 # 排除文件（常量来源 / 模型元数据来源 / 本脚本）
 EXCLUDE_FILES=(
   "src/shared/constants.ts"
+  "src/shared/constants/"
   "src/main/model/providerRegistry.ts"
   "scripts/check-hardcoded-models.sh"
 )
@@ -56,7 +57,7 @@ build_exclude_args() {
 # 获取待检查文件列表
 get_files() {
   if [[ "${1:-}" == "--all" ]]; then
-    find src -name '*.ts' -not -path '*/node_modules/*' 2>/dev/null
+    find src -type f \( -name '*.ts' -o -name '*.tsx' \) -not -path '*/node_modules/*' 2>/dev/null
   elif [[ "${1:-}" == "--file" ]]; then
     # 单文件模式：检查指定文件
     local target="${2:-}"
@@ -64,15 +65,18 @@ get_files() {
       echo "$target"
     fi
   else
-    git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.ts$' || true
+    git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '\.tsx?$' || true
   fi
 }
 
 is_excluded() {
   local file="$1"
   for exc in "${EXCLUDE_FILES[@]}"; do
-    if [[ "$file" == *"$exc" ]]; then
-      return 0
+    # 末尾 / 视为目录前缀（substring 匹配），否则尾部精确匹配
+    if [[ "$exc" == */ ]]; then
+      [[ "$file" == *"$exc"* ]] && return 0
+    else
+      [[ "$file" == *"$exc" ]] && return 0
     fi
   done
   return 1

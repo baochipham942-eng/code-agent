@@ -89,7 +89,7 @@ export function normalizePersistentSystemContextKey(content: string): string {
 }
 
 export const logger = createLogger('AgentLoop');
-export const MAX_SYSTEM_PROMPT_TOKENS = 4000;
+export const MAX_SYSTEM_PROMPT_TOKENS = parseInt(process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS || '4000', 10);
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS = 1200;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS = 6;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS = 260;

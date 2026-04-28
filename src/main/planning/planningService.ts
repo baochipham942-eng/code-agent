@@ -4,7 +4,11 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createLogger } from '../services/infra/logger';
+import { silence } from '../utils/errorHandling';
 import { PlanManager } from './planManager';
+
+const logger = createLogger('PlanningService');
 import { HooksEngine } from './hooksEngine';
 import { ErrorTracker } from './errorTracker';
 import { FindingsManager } from './findingsManager';
@@ -108,7 +112,7 @@ export class PlanningService {
           ).catch(() => {});
         }
       } else if (point === 'on_stop') {
-        hookManager.triggerStop(undefined, sessionId).catch(() => {});
+        hookManager.triggerStop(undefined, sessionId).catch(silence(logger, 'triggerStop', 'warn'));
       }
       // on_error and session_start are not bridged (planning-internal concerns)
     };

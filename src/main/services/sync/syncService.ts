@@ -106,7 +106,6 @@ class SyncService implements Disposable {
     const platform = process.platform;
 
     // Upsert device
-    // TODO: Supabase 类型系统限制，upsert 需要 as any
     const { data: dataRaw, error } = await supabase
       .from('devices')
       .upsert(
@@ -116,7 +115,7 @@ class SyncService implements Disposable {
           device_name: this.deviceName,
           platform,
           last_active_at: new Date().toISOString(),
-        } as any,
+        },
         {
           onConflict: 'user_id,device_id',
         }
@@ -472,8 +471,7 @@ class SyncService implements Disposable {
           updated_at: s.updatedAt,
           is_deleted: s.isDeleted ?? false,
           source_device_id: this.deviceId,
-          // TODO: Supabase upsert 类型限制
-        })) as any,
+        })),
         { onConflict: 'id' }
       );
 
@@ -507,8 +505,7 @@ class SyncService implements Disposable {
             tool_results: m.toolResults || null,
             updated_at: Date.now(),
             source_device_id: this.deviceId,
-            // TODO: Supabase upsert 类型限制
-          })) as any,
+          })),
           { onConflict: 'id' }
         );
 
@@ -560,8 +557,7 @@ class SyncService implements Disposable {
       if (conflict.table === 'sessions') {
         // 冲突记录类型断言为本地会话类型
         const local = conflict.localRecord as StoredSession;
-        // TODO: Supabase update 类型限制
-        await (supabase.from('sessions') as any).update({
+        await supabase.from('sessions').update({
           title: local.title,
           updated_at: Date.now(),
           source_device_id: this.deviceId,

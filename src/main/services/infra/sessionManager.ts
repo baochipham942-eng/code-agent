@@ -220,8 +220,7 @@ export class SessionManager implements Disposable {
 
     try {
       const supabase = getSupabase();
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      const { data: cloudMessages, error } = await (supabase.from('messages') as any)
+      const { data: cloudMessages, error } = await supabase.from('messages')
         .select('*')
         .eq('session_id', sessionId)
         .eq('is_deleted', false)
@@ -319,8 +318,7 @@ export class SessionManager implements Disposable {
 
     try {
       const supabase = getSupabase();
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      const { data: cloudSessions, error } = await (supabase.from('sessions') as any)
+      const { data: cloudSessions, error } = await supabase.from('sessions')
         .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false })

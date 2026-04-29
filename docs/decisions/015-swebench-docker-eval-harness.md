@@ -108,7 +108,13 @@ C-docker 的"求职作品集硬通货"价值压倒短期工程成本。
 
 - **SWE-bench 设计陷阱**：部分 case 的 test 是按 maintainer 实际 commit 写的，agent 跟着 problem_statement 提示给的"works" 方案修反而 fail（如 django-10999）。这是 SWE-bench 本身的局限，不是 agent 的错。报数字时要诚实标注子集
 - **judge 过严**：在"位置不同但功能等价"的修复（如 django-15987）会判低分。executable 优先策略已部分缓解，但 executable skipped 时仍可能误杀
-- **agent loop 在难 case 上自我验证陷死循环**（如 16642 旧版跑满 15 轮没 finish）。已通过 system prompt 加"不要瞎编 / 不要陷死循环"提示部分缓解
+- **agent loop 在难 case 上自我验证陷死循环**（如 16642 旧版跑满 15 轮没 finish）。已通过 system prompt 加"不要瞎编 / 不要陷死循环 / 探索黑洞预算"提示部分缓解
+- **失败实验：hypothesis-driven 策略在 mimo 这档模型上反向降低通过率**（2026-04-29 hypo-v1 实验）：
+  - Baseline (5 case 难度=15min-1hour, 无 hypothesis-driven): 4/5 = 80%
+  - Hypothesis-driven (强制先列 3-5 假设再验证): 2/5 = 40%（-40%）
+  - 失败模式：mimo 列的 hypothesis 准度不够 + "假设全验证完承认搞不定"指令 → agent 2-3 轮 finish 早早放弃，错过原本能 brute-force 找到的 hook 点（14500/14122/13809 退化）
+  - **结论**：结构化推理需要模型本身具备足够的代码定位准度。mimo-v2.5-pro 适合 brute-force 探索，**不适合 hypothesis-driven**——要试这套必须换 GPT-5 / Claude Opus
+  - 已 revert 此 prompt 改动；保留"探索黑洞预算"指引（不影响通过率，仅缩短无产出 case 的轮数浪费）
 
 ## 相关文档
 

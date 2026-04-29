@@ -4,6 +4,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message } from '@shared/contract';
 import type { ConversationEnvelope, ConversationEnvelopeContext, WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
+import type { DesignBrief } from '@shared/contract/designBrief';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
@@ -14,6 +15,32 @@ import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
 
 const logger = createLogger('useAgent');
+
+/**
+ * 把锁定的 design brief 渲染成 system-reminder 文本，prepend 到发送给 main 的
+ * IPC content，让下一轮 LLM 把 brief 作为硬约束读到。store 里的 user message 不带它，
+ * 因此 UI 显示的用户消息保持纯净。
+ */
+function formatDesignBriefReminder(brief: DesignBrief): string {
+  const lines: string[] = [
+    '<system-reminder kind="design-brief">',
+    '当前会话已锁定 design brief，按此规格直接出 artifact，不要再 emit question-form。',
+    `surface=${brief.surface ?? ''}`,
+    `direction=${brief.direction ?? ''}`,
+  ];
+  if (brief.intent) lines.push(`intent=${brief.intent}`);
+  if (brief.audience) lines.push(`audience=${brief.audience}`);
+  if (brief.constraints?.length) lines.push(`constraints=${brief.constraints.join('；')}`);
+  if (brief.references?.length) lines.push(`references=${brief.references.join(' ')}`);
+  lines.push('</system-reminder>');
+  return lines.join('\n');
+}
+
+function applyDesignBriefToContent(content: string, brief: DesignBrief | undefined): string {
+  if (!brief) return content;
+  const reminder = formatDesignBriefReminder(brief);
+  return `${reminder}\n\n${content}`;
+}
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
 type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
@@ -191,6 +218,13 @@ export function useAgentIPC({
       const swarmAgents = useSwarmStore.getState().agents;
       const directRouting = resolveDirectRouting(envelope, swarmAgents);
 
+      // 读取当前 session 锁定的 design brief（来自 question-form 提交，仅运行时内存态）。
+      // 三条 IPC 路径（direct routing / interrupt / auto）都会在 content 前面 prepend
+      // 一段 <system-reminder> 让下一轮 LLM 按 brief 出 artifact，不进 store/DB。
+      const sessionDesignBrief = effectiveSessionId
+        ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
+        : undefined;
+
       if (directRouting.kind === 'error') {
         const errorContent =
           directRouting.reason === 'attachments-not-supported'
@@ -224,7 +258,7 @@ export function useAgentIPC({
         };
 
         try {
-          const directMessage = content.trim();
+          const directMessage = applyDesignBriefToContent(content.trim(), sessionDesignBrief);
           const results = await Promise.all(
             directRouting.targets.map((target) =>
               ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
@@ -308,6 +342,7 @@ export function useAgentIPC({
           // 调用 interrupt action，后端会中断当前任务并继续新消息
           await ipcService.invokeDomain<void>('agent', 'interrupt', {
             ...envelope,
+            content: applyDesignBriefToContent(envelope.content, sessionDesignBrief),
             clientMessageId: userMessage.id,
             sessionId: effectiveSessionId,
           });
@@ -357,6 +392,7 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
+          content: applyDesignBriefToContent(envelope.content, sessionDesignBrief),
           sessionId: effectiveSessionId,
         };
         logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });

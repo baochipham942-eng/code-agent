@@ -1,3 +1,5 @@
+import type { DirectionTokens } from '../../design/direction-tokens';
+
 export type DesignBriefSurface =
   | 'app_screen'
   | 'landing_page'
@@ -41,6 +43,7 @@ export interface DesignBrief {
   constraints?: string[];
   references?: string[];
   direction?: DesignBriefDirection;
+  directionTokens?: DirectionTokens;
   source?: 'manual' | 'inferred';
 }
 
@@ -58,6 +61,41 @@ function normalizeStringList(value: unknown): string[] | undefined {
   return items.length > 0 ? Array.from(new Set(items)) : undefined;
 }
 
+function normalizeDirectionTokens(value: unknown): DirectionTokens | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Partial<DirectionTokens>;
+  const palette = raw.palette;
+  const fonts = raw.fonts;
+  if (!palette || typeof palette !== 'object' || Array.isArray(palette)) return undefined;
+  if (!fonts || typeof fonts !== 'object' || Array.isArray(fonts)) return undefined;
+
+  const paletteRaw = palette as Partial<DirectionTokens['palette']>;
+  const fontsRaw = fonts as Partial<DirectionTokens['fonts']>;
+  const paletteKeys = ['primary', 'surface', 'accent', 'muted', 'contrast'] as const;
+
+  for (const key of paletteKeys) {
+    if (!normalizeText(paletteRaw[key])) return undefined;
+  }
+  if (!normalizeText(fontsRaw.serif) || !normalizeText(fontsRaw.sans)) return undefined;
+  const posture = normalizeText(raw.posture);
+  if (!posture) return undefined;
+
+  return {
+    palette: {
+      primary: normalizeText(paletteRaw.primary)!,
+      surface: normalizeText(paletteRaw.surface)!,
+      accent: normalizeText(paletteRaw.accent)!,
+      muted: normalizeText(paletteRaw.muted)!,
+      contrast: normalizeText(paletteRaw.contrast)!,
+    },
+    fonts: {
+      serif: normalizeText(fontsRaw.serif)!,
+      sans: normalizeText(fontsRaw.sans)!,
+    },
+    posture,
+  };
+}
+
 export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): DesignBrief | undefined {
   if (!value) return undefined;
 
@@ -66,6 +104,7 @@ export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): Desig
   const audience = normalizeText(value.audience);
   const constraints = normalizeStringList(value.constraints);
   const references = normalizeStringList(value.references);
+  const directionTokens = normalizeDirectionTokens(value.directionTokens);
 
   if (intent) brief.intent = intent;
   if (value.surface && value.surface in DESIGN_BRIEF_SURFACE_LABELS) brief.surface = value.surface;
@@ -73,6 +112,7 @@ export function normalizeDesignBrief(value?: Partial<DesignBrief> | null): Desig
   if (constraints) brief.constraints = constraints;
   if (references) brief.references = references;
   if (value.direction && value.direction in DESIGN_BRIEF_DIRECTION_LABELS) brief.direction = value.direction;
+  if (directionTokens) brief.directionTokens = directionTokens;
   if (value.source === 'manual' || value.source === 'inferred') brief.source = value.source;
 
   return Object.keys(brief).length > 0 ? brief : undefined;

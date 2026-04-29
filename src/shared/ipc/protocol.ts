@@ -45,7 +45,20 @@ export type CloudAction = 'refreshConfig' | 'getInfo' | 'submitTask' | 'getTask'
 /**
  * Workspace 通道 actions
  */
-export type WorkspaceAction = 'selectDirectory' | 'getCurrent' | 'listFiles' | 'readFile' | 'openPath' | 'showItemInFolder' | 'downloadFile';
+export type WorkspaceAction =
+  | 'selectDirectory'
+  | 'getCurrent'
+  | 'setCurrent'
+  | 'listFiles'
+  | 'readFile'
+  | 'readBinary'
+  | 'writeFile'
+  | 'createFile'
+  | 'createFolder'
+  | 'openPath'
+  | 'showItemInFolder'
+  | 'downloadFile'
+  | 'summarizeDesignMd';
 
 /**
  * Settings 通道 actions

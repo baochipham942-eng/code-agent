@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import os from 'os';
+import path from 'path';
 import type { ConnectorStatus } from '../../../src/main/connectors';
 import { getConnectorRegistry } from '../../../src/main/connectors';
 import {
@@ -6,9 +9,11 @@ import {
   buildWorkbenchTurnSystemContext,
   withWorkbenchTurnSystemContext,
 } from '../../../src/main/app/workbenchTurnContext';
+import { directionTokens } from '../../../src/design/direction-tokens';
 
 describe('workbenchTurnContext', () => {
   const registry = getConnectorRegistry();
+  let tmpDirs: string[] = [];
 
   function registerConnector(id: string, status: Partial<ConnectorStatus>): void {
     registry.register({
@@ -31,7 +36,17 @@ describe('workbenchTurnContext', () => {
 
   afterEach(() => {
     ['mail', 'calendar', 'reminders'].forEach((id) => registry.unregister(id));
+    for (const dir of tmpDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tmpDirs = [];
   });
+
+  function makeTmpDir(): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'workbench-turn-context-'));
+    tmpDirs.push(dir);
+    return dir;
+  }
 
   it('builds a turn-scoped system context for selected skills, connectors, and MCP servers', () => {
     registerConnector('mail', { connected: true, readiness: 'ready' });
@@ -80,6 +95,35 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain('发送前最近截图时间：2026-04-17T08:30:00.000Z');
     expect(blocks[0]).toContain('当前 Browser workbench 未就绪：当前桌面浏览器上下文未就绪：屏幕录制未授权、collector 未启动。');
     expect(blocks[0]).toContain('修复提示：先补权限并启动采集。');
+  });
+
+  it('injects design brief tokens and root DESIGN.md summary as structured JSON', () => {
+    const cwd = makeTmpDir();
+    writeFileSync(
+      path.join(cwd, 'DESIGN.md'),
+      '# Product Principles\nUse dense admin layouts and restrained color.',
+      'utf-8',
+    );
+
+    const blocks = buildWorkbenchTurnSystemContext({
+      workingDirectory: cwd,
+      designBrief: {
+        surface: 'dashboard',
+        direction: 'technical',
+        directionTokens: directionTokens.technical,
+        references: ['existing reference'],
+        source: 'manual',
+      },
+    });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain('<design_brief_json>');
+    expect(blocks[0]).toContain('"direction": "technical"');
+    expect(blocks[0]).toContain('"directionTokens"');
+    expect(blocks[0]).toContain(directionTokens.technical.palette.accent);
+    expect(blocks[0]).toContain('existing reference');
+    expect(blocks[0]).toContain('DESIGN.md:');
+    expect(blocks[0]).toContain('Product Principles');
   });
 
   it('merges turn system context into existing run options', () => {

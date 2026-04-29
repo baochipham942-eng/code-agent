@@ -4,7 +4,8 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message } from '@shared/contract';
 import type { ConversationEnvelope, ConversationEnvelopeContext, WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
-import type { DesignBrief } from '@shared/contract/designBrief';
+import { normalizeDesignBrief, type DesignBrief } from '@shared/contract/designBrief';
+import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
@@ -17,29 +18,41 @@ import ipcService from '../../services/ipcService';
 const logger = createLogger('useAgent');
 
 /**
- * 把锁定的 design brief 渲染成 system-reminder 文本，prepend 到发送给 main 的
- * IPC content，让下一轮 LLM 把 brief 作为硬约束读到。store 里的 user message 不带它，
- * 因此 UI 显示的用户消息保持纯净。
+ * Direct routing 目前不走 AppService 的 turnSystemContext，所以仍需要把 brief
+ * prepend 到发送给目标 agent 的隐藏内容里。普通/interrupt 路径会走 context.designBrief。
  */
 function formatDesignBriefReminder(brief: DesignBrief): string {
-  const lines: string[] = [
-    '<system-reminder kind="design-brief">',
-    '当前会话已锁定 design brief，按此规格直接出 artifact，不要再 emit question-form。',
-    `surface=${brief.surface ?? ''}`,
-    `direction=${brief.direction ?? ''}`,
-  ];
-  if (brief.intent) lines.push(`intent=${brief.intent}`);
-  if (brief.audience) lines.push(`audience=${brief.audience}`);
-  if (brief.constraints?.length) lines.push(`constraints=${brief.constraints.join('；')}`);
-  if (brief.references?.length) lines.push(`references=${brief.references.join(' ')}`);
-  lines.push('</system-reminder>');
-  return lines.join('\n');
+  return [
+    '<system-reminder kind="design-brief-json">',
+    '当前会话已锁定 design brief，按此结构化 JSON 直接出 artifact，不要再 emit question-form。',
+    JSON.stringify(brief, null, 2),
+    '</system-reminder>',
+  ].join('\n');
 }
 
 function applyDesignBriefToContent(content: string, brief: DesignBrief | undefined): string {
   if (!brief) return content;
   const reminder = formatDesignBriefReminder(brief);
   return `${reminder}\n\n${content}`;
+}
+
+function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
+  if (!brief) return undefined;
+  return normalizeDesignBrief({
+    ...brief,
+    directionTokens: brief.directionTokens || (brief.direction ? directionTokens[brief.direction] : undefined),
+  });
+}
+
+function withDesignBriefContext(
+  context: ConversationEnvelopeContext | undefined,
+  brief: DesignBrief | undefined,
+): ConversationEnvelopeContext | undefined {
+  if (!brief) return context;
+  return {
+    ...(context || {}),
+    designBrief: brief,
+  };
 }
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
@@ -147,6 +160,9 @@ function toWorkbenchMetadata(
   if (context.selectedMcpServerIds?.length) {
     metadata.selectedMcpServerIds = [...context.selectedMcpServerIds];
   }
+  if (context.designBrief) {
+    metadata.designBrief = context.designBrief;
+  }
   if (context.executionIntent) {
     metadata.executionIntent = {
       ...context.executionIntent,
@@ -221,9 +237,10 @@ export function useAgentIPC({
       // 读取当前 session 锁定的 design brief（来自 question-form 提交，仅运行时内存态）。
       // 三条 IPC 路径（direct routing / interrupt / auto）都会在 content 前面 prepend
       // 一段 <system-reminder> 让下一轮 LLM 按 brief 出 artifact，不进 store/DB。
-      const sessionDesignBrief = effectiveSessionId
+      const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
-        : undefined;
+        : undefined);
+      const contextWithDesignBrief = withDesignBriefContext(context, sessionDesignBrief);
 
       if (directRouting.kind === 'error') {
         const errorContent =
@@ -248,7 +265,7 @@ export function useAgentIPC({
           role: 'user',
           content,
           timestamp: Date.now(),
-          metadata: toMessageMetadata(context, directRouting.targets, directRouting.missingTargetIds),
+          metadata: toMessageMetadata(contextWithDesignBrief, directRouting.targets, directRouting.missingTargetIds),
         };
         addMessage(userMessage);
 
@@ -333,7 +350,7 @@ export function useAgentIPC({
           content,
           timestamp: Date.now(),
           attachments,
-          metadata: toMessageMetadata(context),
+          metadata: toMessageMetadata(contextWithDesignBrief),
         };
         addMessage(userMessage);
 
@@ -342,7 +359,8 @@ export function useAgentIPC({
           // 调用 interrupt action，后端会中断当前任务并继续新消息
           await ipcService.invokeDomain<void>('agent', 'interrupt', {
             ...envelope,
-            content: applyDesignBriefToContent(envelope.content, sessionDesignBrief),
+            content: envelope.content,
+            context: contextWithDesignBrief,
             clientMessageId: userMessage.id,
             sessionId: effectiveSessionId,
           });
@@ -371,7 +389,7 @@ export function useAgentIPC({
         content,
         timestamp: Date.now(),
         attachments,
-        metadata: toMessageMetadata(context),
+        metadata: toMessageMetadata(contextWithDesignBrief),
       };
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
       addMessage(userMessage);
@@ -392,7 +410,7 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
-          content: applyDesignBriefToContent(envelope.content, sessionDesignBrief),
+          context: contextWithDesignBrief,
           sessionId: effectiveSessionId,
         };
         logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });

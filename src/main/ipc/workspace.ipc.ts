@@ -8,6 +8,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import { readDesignMdSummary } from '../../design/design-md-loader';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -220,6 +221,14 @@ async function handleDownloadFile(
   return { filePath };
 }
 
+async function handleSummarizeDesignMd(payload: { cwd?: string | null }): Promise<string | null> {
+  const cwd = payload.cwd?.trim();
+  if (!cwd) {
+    return null;
+  }
+  return readDesignMdSummary(cwd);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -275,6 +284,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'downloadFile':
           data = await handleDownloadFile(payload as { url: string; filename?: string });
+          break;
+        case 'summarizeDesignMd':
+          data = await handleSummarizeDesignMd(payload as { cwd?: string | null });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

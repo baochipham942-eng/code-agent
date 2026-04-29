@@ -124,6 +124,9 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain('existing reference');
     expect(blocks[0]).toContain('DESIGN.md:');
     expect(blocks[0]).toContain('Product Principles');
+    // Self-critique section 同条件追加
+    expect(blocks[0]).toContain('<design_self_critique>');
+    expect(blocks[0]).toContain(directionTokens.technical.posture);
   });
 
   it('merges turn system context into existing run options', () => {

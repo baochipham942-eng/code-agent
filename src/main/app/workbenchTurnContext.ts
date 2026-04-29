@@ -6,6 +6,7 @@ import { directionTokens } from '../../design/direction-tokens';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
 import { getConnectorRegistry } from '../connectors';
+import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -33,6 +34,10 @@ export function buildWorkbenchTurnSystemContext(
     lines.push('<design_brief_json>');
     lines.push(designBrief);
     lines.push('</design_brief_json>');
+    const selfCritique = buildSelfCritiquePromptSection(context?.designBrief);
+    if (selfCritique) {
+      lines.push(selfCritique);
+    }
   }
 
   if (context.selectedSkillIds?.length) {

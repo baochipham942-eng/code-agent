@@ -2,6 +2,7 @@ import type { MessageAttachment } from './message';
 import type { AppServiceRunOptions } from './appService';
 import type { SelectedElementInfo } from '../livePreview/protocol';
 import type { ManagedBrowserProfileMode } from './desktop';
+import type { DesignBrief } from './designBrief';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
@@ -59,6 +60,7 @@ export interface ConversationEnvelopeContext {
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
+  designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
@@ -83,6 +85,7 @@ export interface WorkbenchMessageMetadata {
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
+  designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
 }

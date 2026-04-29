@@ -3,6 +3,7 @@ import {
   formatDesignBriefLabel,
   normalizeDesignBrief,
 } from '../../../src/shared/contract/designBrief';
+import { directionTokens } from '../../../src/design/direction-tokens';
 
 describe('normalizeDesignBrief', () => {
   it('returns undefined for empty input', () => {
@@ -55,6 +56,33 @@ describe('normalizeDesignBrief', () => {
     expect(normalizeDesignBrief({ intent: 'x', source: 'inferred' })?.source).toBe('inferred');
     // @ts-expect-error — forced bogus source
     expect(normalizeDesignBrief({ intent: 'x', source: 'auto' })?.source).toBeUndefined();
+  });
+
+  it('keeps complete direction token packages and drops incomplete packages', () => {
+    expect(
+      normalizeDesignBrief({
+        direction: 'premium',
+        directionTokens: directionTokens.premium,
+      }),
+    ).toEqual({
+      direction: 'premium',
+      directionTokens: directionTokens.premium,
+    });
+
+    expect(
+      normalizeDesignBrief({
+        direction: 'premium',
+        directionTokens: {
+          ...directionTokens.premium,
+          palette: {
+            ...directionTokens.premium.palette,
+            accent: '',
+          },
+        },
+      }),
+    ).toEqual({
+      direction: 'premium',
+    });
   });
 });
 

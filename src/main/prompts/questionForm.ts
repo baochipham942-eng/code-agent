@@ -35,7 +35,8 @@ export const QUESTION_FORM_PROMPT = `
 
 - emit question-form 这一轮**不要**同时输出其它 artifact（不要把 chart / generative_ui / spreadsheet / document 跟 question-form 混在同一回复里）
 - 用占位值是给用户参考用的，**用户会在表单 UI 里改**——所以你提的默认值要符合任务直觉，但不要假装用户已经选过
-- 用户提交后，下一轮你会在 system context 里收到锁定的 design brief（surface / direction / 等）；从那一轮起按 brief 生成实际 artifact
+- 用户提交后，下一轮你会在 system context 里收到锁定的 design brief JSON（surface / direction / directionTokens / references 等）；从那一轮起按 brief 生成实际 artifact，并把 directionTokens 的 OKLch palette、font stacks、posture 当成样式硬约束
+- 如果项目根目录存在 DESIGN.md，它的摘要会进入 brief.references；生成 artifact 时要优先复用这些设计原则
 - 如果用户在自然语言里已经给齐了 surface 和 direction（例如"做一个 premium 调性的 landing page"），可以跳过 question-form，直接以推断 brief 出 artifact
 
 不要把 question-form 用于普通问答、确认、需求澄清等场景，它只服务于"成品向 artifact 的 brief 收集"。

@@ -19,7 +19,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/design/**/*.test.ts'],
     // 排除需要特殊处理的原生模块测试
     exclude: [
       '**/node_modules/**',

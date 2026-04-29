@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import type { WorkspacePreviewItem, WorkspacePreviewKind } from '@shared/contract';
 import { formatDesignBriefLabel } from '@shared/contract/designBrief';
+import type { DesignBrief } from '@shared/contract/designBrief';
+import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
 import { isPreviewable } from '../utils/previewable';
@@ -92,6 +94,60 @@ function statusClass(status: WorkspacePreviewItem['status']): string {
   }
 }
 
+function firstFontName(stack: string): string {
+  return stack
+    .split(',')
+    .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+    .find(Boolean) || 'system-ui';
+}
+
+function tokensForBrief(brief?: DesignBrief): DirectionTokens | undefined {
+  if (!brief) return undefined;
+  return brief.directionTokens || (brief.direction ? directionTokens[brief.direction] : undefined);
+}
+
+function DirectionTokenMini({
+  tokens,
+  className = '',
+}: {
+  tokens: DirectionTokens;
+  className?: string;
+}) {
+  const colors = [
+    tokens.palette.primary,
+    tokens.palette.surface,
+    tokens.palette.accent,
+    tokens.palette.muted,
+    tokens.palette.contrast,
+  ];
+  return (
+    <span className={`inline-flex items-center gap-1 ${className}`}>
+      <span className="flex h-2 w-14 overflow-hidden rounded-sm border border-white/[0.08]">
+        {colors.map((color, index) => (
+          <span
+            key={`${color}-${index}`}
+            className="flex-1"
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </span>
+      <span className="max-w-[90px] truncate text-[10px] text-zinc-500">
+        {firstFontName(tokens.fonts.sans)}
+      </span>
+    </span>
+  );
+}
+
+function DesignBriefBadge({ brief }: { brief: DesignBrief }) {
+  const tokens = tokensForBrief(brief);
+  return (
+    <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/[0.06] px-2 py-1 text-[11px] text-cyan-200">
+      {tokens && <DirectionTokenMini tokens={tokens} />}
+      <span className="truncate">{formatDesignBriefLabel(brief)}</span>
+    </div>
+  );
+}
+
 function PreviewListItem({
   item,
   active,
@@ -101,6 +157,7 @@ function PreviewListItem({
   active: boolean;
   onSelect: () => void;
 }) {
+  const listTokens = tokensForBrief(item.designBrief);
   return (
     <button
       type="button"
@@ -121,8 +178,11 @@ function PreviewListItem({
             {item.subtitle && <span className="truncate">· {item.subtitle}</span>}
           </div>
           {item.designBrief && (
-            <div className="mt-0.5 truncate text-[10px] text-cyan-300/80">
-              {formatDesignBriefLabel(item.designBrief)}
+            <div className="mt-1 min-w-0 space-y-0.5">
+              <div className="truncate text-[10px] text-cyan-300/80">
+                {formatDesignBriefLabel(item.designBrief)}
+              </div>
+              {listTokens && <DirectionTokenMini tokens={listTokens} />}
             </div>
           )}
         </div>
@@ -381,9 +441,18 @@ export const WorkspacePreviewPanel: React.FC = () => {
                       {selected.source.label ? ` · ${selected.source.label}` : ''}
                     </div>
                     {selected.designBrief && (
-                      <div className="mt-2 inline-flex items-center rounded-md border border-cyan-500/20 bg-cyan-500/[0.06] px-2 py-0.5 text-[11px] text-cyan-200">
-                        {formatDesignBriefLabel(selected.designBrief)}
-                      </div>
+                      <>
+                        <DesignBriefBadge brief={selected.designBrief} />
+                        {selected.designBrief.references?.length ? (
+                          <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-zinc-400">
+                            {selected.designBrief.references.map((reference) => (
+                              <div key={reference} className="rounded border border-white/[0.06] bg-white/[0.025] px-2 py-1">
+                                {reference}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </div>
                 </div>

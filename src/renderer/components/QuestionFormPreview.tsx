@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Check } from 'lucide-react';
 import {
   DESIGN_BRIEF_DIRECTION_LABELS,
   DESIGN_BRIEF_SURFACE_LABELS,
@@ -7,11 +8,15 @@ import {
   type DesignBriefSurface,
 } from '@shared/contract/designBrief';
 import type { WorkspacePreviewItem } from '@shared/contract';
+import { IPC_DOMAINS } from '@shared/ipc';
 import {
   parseQuestionForm,
   renderQuestionFormToDesignBrief,
   type QuestionForm,
 } from '@/artifacts/question-form';
+import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
+import { useAppStore } from '../stores/appStore';
+import ipcService from '../services/ipcService';
 
 export const DESIGN_BRIEF_SUBMIT_EVENT = 'design-brief:submit';
 
@@ -46,6 +51,21 @@ function multilineToList(value: string): string[] {
 
 function listToMultiline(value: string[] | undefined): string {
   return value?.length ? value.join('\n') : '';
+}
+
+function firstFontName(stack: string): string {
+  return stack
+    .split(',')
+    .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+    .find(Boolean) || 'system-ui';
+}
+
+function appendReference(existing: string, reference: string): string {
+  const lines = multilineToList(existing);
+  if (lines.some((line) => line === reference || line.startsWith('DESIGN.md:'))) {
+    return existing;
+  }
+  return [...lines, reference].join('\n');
 }
 
 function buildInitialState(item: WorkspacePreviewItem): FormState {
@@ -84,6 +104,7 @@ function buildInitialState(item: WorkspacePreviewItem): FormState {
 
 export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
   const initial = useMemo(() => buildInitialState(item), [item.id, item.content?.json]);
+  const workingDirectory = useAppStore((appState) => appState.workingDirectory);
   const [state, setState] = useState<FormState>(initial);
   const [submitted, setSubmitted] = useState(false);
 
@@ -91,6 +112,29 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
     setState(initial);
     setSubmitted(false);
   }, [initial]);
+
+  useEffect(() => {
+    if (!workingDirectory || submitted) return;
+    let cancelled = false;
+
+    ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'getDesignMdSummary', {
+      cwd: workingDirectory,
+    })
+      .then((summary) => {
+        if (cancelled || !summary) return;
+        setState((current) => ({
+          ...current,
+          references: appendReference(current.references, summary),
+        }));
+      })
+      .catch(() => {
+        // DESIGN.md is optional; absence or IPC fallback should not block the form.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workingDirectory, item.id, submitted]);
 
   const ready = Boolean(state.surface && state.direction);
 
@@ -137,7 +181,7 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label className="space-y-1">
           <span className={labelClass}>Surface *</span>
           <select
@@ -153,20 +197,21 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
           </select>
         </label>
 
-        <label className="space-y-1">
+        <div className="space-y-1 md:col-span-2">
           <span className={labelClass}>Direction *</span>
-          <select
-            className={inputClass}
-            value={state.direction}
-            onChange={(e) => setState((s) => ({ ...s, direction: e.target.value as DesignBriefDirection | '' }))}
-            disabled={submitted}
-          >
-            <option value="">— 选一个 —</option>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {DIRECTION_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+              <DirectionCard
+                key={value}
+                label={label}
+                tokens={directionTokens[value]}
+                selected={state.direction === value}
+                disabled={submitted}
+                onSelect={() => setState((s) => ({ ...s, direction: value }))}
+              />
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
       </div>
 
       <label className="block space-y-1">
@@ -193,7 +238,7 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label className="space-y-1">
           <span className={labelClass}>Constraints</span>
           <textarea
@@ -234,5 +279,91 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function DirectionCard({
+  label,
+  tokens,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  tokens: DirectionTokens;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      className={`min-h-[142px] rounded-lg border p-3 text-left transition-all ${
+        selected
+          ? 'border-cyan-400/70 bg-cyan-500/[0.08] ring-1 ring-cyan-400/40'
+          : 'border-white/[0.08] bg-zinc-950/30 hover:border-white/[0.18] hover:bg-white/[0.035]'
+      } ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-zinc-100">{label}</div>
+          <div className="mt-1 text-[10px] text-zinc-500">{firstFontName(tokens.fonts.sans)}</div>
+        </div>
+        <span
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+            selected ? 'border-cyan-300 bg-cyan-400 text-zinc-950' : 'border-zinc-700 text-transparent'
+          }`}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </span>
+      </div>
+      <PaletteStrip tokens={tokens} className="mt-3 h-2" />
+      <div className="mt-3 space-y-0.5">
+        <div
+          className="truncate text-[12px] text-zinc-100"
+          style={{ fontFamily: tokens.fonts.serif }}
+        >
+          Design system sample
+        </div>
+        <div
+          className="truncate text-[12px] text-zinc-300"
+          style={{ fontFamily: tokens.fonts.sans }}
+        >
+          中文字体样例
+        </div>
+      </div>
+      <div className="mt-2 text-[11px] leading-relaxed text-zinc-400">
+        {tokens.posture}
+      </div>
+    </button>
+  );
+}
+
+function PaletteStrip({
+  tokens,
+  className = '',
+}: {
+  tokens: DirectionTokens;
+  className?: string;
+}) {
+  const colors = [
+    tokens.palette.primary,
+    tokens.palette.surface,
+    tokens.palette.accent,
+    tokens.palette.muted,
+    tokens.palette.contrast,
+  ];
+  return (
+    <div className={`flex overflow-hidden rounded ${className}`}>
+      {colors.map((color, index) => (
+        <span
+          key={`${color}-${index}`}
+          className="flex-1"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </div>
   );
 }

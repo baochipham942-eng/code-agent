@@ -4,8 +4,10 @@ export const PROVIDER_TIMEOUT = 300000;
 /** 默认 Provider — 小米 MiMo Token Plan 包月（fresh user 默认） */
 export const DEFAULT_PROVIDER = 'xiaomi' as const;
 
-/** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'claude-opus-4-7' as const;
+/** 默认模型（主力对话）— 必须与 DEFAULT_PROVIDER 匹配，否则 UI ModelSwitcher 显示
+ *  会与 webServer 实际生效模型脱钩（曾经的 bug：DEFAULT_PROVIDER='xiaomi' 但
+ *  DEFAULT_MODEL='claude-opus-4-7'，UI 显示 "Claude Opus 4.7" 但实际跑 Xiaomi/mimo）。 */
+export const DEFAULT_MODEL = 'mimo-v2.5-pro' as const;
 
 /** 模型 maxTokens 分层默认值（对标 Claude Code / Aider 行业标准） */
 export const MODEL_MAX_TOKENS = {

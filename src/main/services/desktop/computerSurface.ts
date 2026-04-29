@@ -277,6 +277,87 @@ class DesktopComputerSurface {
     }
   }
 
+  async locateBackgroundElement(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    const targetApp = action.targetApp;
+    if (!targetApp) {
+      return {
+        success: false,
+        error: 'targetApp is required for desktop locate_role.',
+      };
+    }
+    if (!action.role) {
+      return {
+        success: false,
+        error: 'role required for locate_role',
+      };
+    }
+
+    const listResult = await this.listBackgroundElements(action);
+    if (!listResult.success) {
+      return listResult;
+    }
+
+    const elements = (listResult.metadata?.elements as BackgroundAxElement[] | undefined) || [];
+    const wantedRole = normalizeBackgroundRole(action.role);
+    const wantedName = action.name?.trim() || '';
+    const exact = action.exact === true;
+
+    const matches = elements.filter((element) => {
+      if (wantedRole && normalizeBackgroundRole(element.role) !== wantedRole) {
+        return false;
+      }
+      if (!wantedName) {
+        return true;
+      }
+      const elementName = element.name || '';
+      if (exact) {
+        return elementName === wantedName;
+      }
+      return elementName.toLowerCase().includes(wantedName.toLowerCase());
+    });
+
+    if (matches.length === 0) {
+      return {
+        success: false,
+        error: `Target element not found for ${targetApp}: role="${action.role}"${wantedName ? ` name="${wantedName}"` : ''}`,
+        metadata: {
+          backgroundSurface: true,
+          targetApp,
+          targetRole: wantedRole || null,
+          targetName: wantedName || null,
+          failureKind: 'locator_missing',
+          recommendedAction: 'Run get_ax_elements for the target app to inspect available roles and names.',
+        },
+      };
+    }
+
+    const chosen = matches[0];
+    const ambiguous = matches.length > 1;
+    const descriptor = `role="${chosen.role}"${chosen.name ? ` name="${chosen.name}"` : ''}`;
+    const output = ambiguous
+      ? `Located ${matches.length} matches for ${targetApp}; using first: ${descriptor} [axPath=${chosen.axPath}]`
+      : `Located ${descriptor} for ${targetApp} [axPath=${chosen.axPath}]`;
+
+    return {
+      success: true,
+      output,
+      metadata: {
+        backgroundSurface: true,
+        targetApp,
+        targetRole: chosen.role,
+        targetName: chosen.name || null,
+        targetAxPath: chosen.axPath,
+        axPath: chosen.axPath,
+        matchCount: matches.length,
+        matches,
+        failureKind: ambiguous ? 'locator_ambiguous' : null,
+        recommendedAction: ambiguous
+          ? 'Multiple elements matched; pass a more specific name or pick an axPath from get_ax_elements.'
+          : null,
+      },
+    };
+  }
+
   async listBackgroundCgEventWindows(
     options: ListBackgroundCgEventWindowsOptions = {},
   ): Promise<ComputerSurfaceActionResult> {

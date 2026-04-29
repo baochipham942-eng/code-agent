@@ -33,14 +33,16 @@ export const ComputerTool: Tool = {
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
 
-## Smart actions (Playwright-powered, for browser):
-- locate_element: Find element by CSS selector, return coordinates
-- locate_text: Find element by text content, return coordinates
-- locate_role: Find element by ARIA role and name
-- smart_click: Click element by selector or text (no coordinates needed)
-- smart_type: Type into element by selector (no coordinates needed)
-- smart_hover: Hover over element by selector
-- get_elements: List interactive elements on page
+## Smart actions (Playwright-powered, browser only unless noted):
+- locate_element: [browser only] Find element by CSS selector, return coordinates
+- locate_text: [browser only] Find element by text content, return coordinates
+- locate_role: Find element by ARIA role and name. Dual-mode:
+    * Browser (no targetApp): returns coordinates via Playwright
+    * Desktop (targetApp + role [+ name]): returns axPath via macOS Accessibility; chain with click/doubleClick/type using the returned axPath
+- smart_click: [browser only] Click element by selector or text (no coordinates needed)
+- smart_type: [browser only] Type into element by selector (no coordinates needed)
+- smart_hover: [browser only] Hover over element by selector
+- get_elements: [browser only] List interactive elements on page
 
 ## Parameters:
 - action: The action to perform (see above)
@@ -68,7 +70,7 @@ export const ComputerTool: Tool = {
 - limit: Maximum elements for get_ax_elements
 - maxDepth: Maximum Accessibility tree depth for get_ax_elements
 
-IMPORTANT: For smart actions, browser must be launched via Browser tool first.`,
+IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility — feed it back to click/type with the same targetApp).`,
   requiresPermission: true,
   permissionLevel: 'execute', // highest among sub-tools: execute > write
   inputSchema: {

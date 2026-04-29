@@ -84,14 +84,16 @@ export const computerUseTool: Tool = {
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
 
-## Smart Actions (Playwright-powered, for browser):
-- locate_element: Find element by CSS selector, return coordinates
-- locate_text: Find element by text content, return coordinates
-- locate_role: Find element by ARIA role and name
-- smart_click: Click element by selector or text (no coordinates needed)
-- smart_type: Type into element by selector (no coordinates needed)
-- smart_hover: Hover over element by selector
-- get_elements: List interactive elements on page
+## Smart Actions (Playwright-powered, browser only unless noted):
+- locate_element: [browser only] Find element by CSS selector, return coordinates
+- locate_text: [browser only] Find element by text content, return coordinates
+- locate_role: Find element by ARIA role and name. Dual-mode:
+    * Browser (no targetApp): returns coordinates via Playwright
+    * Desktop (targetApp + role [+ name]): returns axPath via macOS Accessibility, feed it back to click/doubleClick/type
+- smart_click: [browser only] Click element by selector or text (no coordinates needed)
+- smart_type: [browser only] Type into element by selector (no coordinates needed)
+- smart_hover: [browser only] Hover over element by selector
+- get_elements: [browser only] List interactive elements on page
 
 ## Parameters:
 - action: The action to perform
@@ -123,11 +125,12 @@ export const computerUseTool: Tool = {
 - {"action": "click", "targetApp": "Finder", "role": "button", "name": "Back"} - press an accessible element through the background macOS surface
 - {"action": "smart_click", "selector": "button.submit"}
 - {"action": "smart_click", "text": "Sign In"}
-- {"action": "locate_role", "role": "button", "name": "Submit"}
+- {"action": "locate_role", "role": "button", "name": "Submit"} - browser, returns coordinates
+- {"action": "locate_role", "targetApp": "Code Agent", "role": "textbox"} - desktop, returns axPath; chain with {"action": "type", "targetApp": "Code Agent", "axPath": "...", "text": "hi"} to fill it
 - {"action": "smart_type", "selector": "#email", "text": "user@example.com"}
 - {"action": "get_elements"} - list all interactive elements
 
-IMPORTANT: For smart actions, browser must be launched via browser_action first.`,
+IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser via browser_action. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility).`,
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {
@@ -360,9 +363,15 @@ IMPORTANT: For smart actions, browser must be launched via browser_action first.
     try {
       let result: ToolExecutionResult;
 
-      // Smart actions use Playwright (browser must be running)
+      // Smart actions use Playwright (browser must be running).
+      // Exception: locate_role with targetApp routes to macOS background AX
+      // so the model can locate desktop-app elements without a browser.
       if (isSmartAction(action.action)) {
-        result = await executeSmartAction(action);
+        if (action.action === 'locate_role' && action.targetApp) {
+          result = await computerSurface.locateBackgroundElement(action);
+        } else {
+          result = await executeSmartAction(action);
+        }
       } else if (surfaceAuth?.state.mode === 'background_ax') {
         result = await computerSurface.executeBackgroundAction(action);
       } else if (surfaceAuth?.state.mode === 'background_cgevent') {

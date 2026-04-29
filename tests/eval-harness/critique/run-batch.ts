@@ -9,9 +9,11 @@
  *   MOONSHOT_API_KEY (必需) — primary 判官 (Kimi)
  *   DEEPSEEK_API_KEY (可选) — secondary 判官；缺失则跳过 cross-check
  *   CRITIQUE_PRIMARY_MODEL (可选) — override moonshot defaultModel
- *   CRITIQUE_PRIMARY_ENDPOINT (可选) — override moonshot endpoint（如切到 KIMI_K25 走 api.kimi.com/coding/v1）
+ *   CRITIQUE_PRIMARY_ENDPOINT (可选) — 优先级最高的 endpoint override
+ *   MOONSHOT_API_URL (可选, .env 里常有) — 如有则覆盖 PROVIDER_REGISTRY 默认（适配 cn.haioi.net 等代理）
  *   CRITIQUE_SECONDARY_MODEL (可选) — override deepseek defaultModel
- *   CRITIQUE_SECONDARY_ENDPOINT (可选) — override deepseek endpoint
+ *   CRITIQUE_SECONDARY_ENDPOINT (可选) — 优先级最高的 endpoint override
+ *   DEEPSEEK_API_URL (可选, .env 里常有) — fallback 链中段
  *   CRITIQUE_FORMAT=json|md (默认 json)
  *   CRITIQUE_OUT_FILE (可选) — 写入文件，缺失则 stdout
  */
@@ -42,14 +44,16 @@ function readEnv(): Env {
   const env: Env = {
     primaryKey,
     primaryModel: process.env.CRITIQUE_PRIMARY_MODEL ?? moonshot.defaultModel,
-    primaryEndpoint: process.env.CRITIQUE_PRIMARY_ENDPOINT ?? moonshot.endpoint,
+    primaryEndpoint:
+      process.env.CRITIQUE_PRIMARY_ENDPOINT ?? process.env.MOONSHOT_API_URL ?? moonshot.endpoint,
     format: process.env.CRITIQUE_FORMAT === 'md' ? 'md' : 'json',
     outFile: process.env.CRITIQUE_OUT_FILE,
   };
   if (process.env.DEEPSEEK_API_KEY) {
     env.secondaryKey = process.env.DEEPSEEK_API_KEY;
     env.secondaryModel = process.env.CRITIQUE_SECONDARY_MODEL ?? deepseek.defaultModel;
-    env.secondaryEndpoint = process.env.CRITIQUE_SECONDARY_ENDPOINT ?? deepseek.endpoint;
+    env.secondaryEndpoint =
+      process.env.CRITIQUE_SECONDARY_ENDPOINT ?? process.env.DEEPSEEK_API_URL ?? deepseek.endpoint;
   }
   return env;
 }

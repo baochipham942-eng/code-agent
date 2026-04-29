@@ -19,10 +19,10 @@ const COMPUTER_USE_ACTIONS = [
 
 export const ComputerTool: Tool = {
   name: 'Computer',
-  description: `Unified computer control tool combining screenshot capture and mouse/keyboard automation.
+  description: `Unified computer control tool combining screenshot capture and mouse/keyboard automation. Also exposed as "computer_use" — both names map to the same capability set. If the user says "computer_use" or you previously planned with that name, use this tool.
 
 ## Screenshot action (screenshot tool):
-- screenshot: Capture screen or window screenshot with optional AI analysis
+- screenshot: Capture screen/window. By default the assistant only gets back a file path and does NOT see the pixels — set analyze=true (or chain image_analyze on the saved file) before claiming you observed anything on screen.
 
 ## Basic mouse/keyboard actions (coordinate-based):
 - get_state / observe / get_ax_elements / get_windows / diagnose_app: Read Computer Surface state, frontmost or target app/window, Accessibility candidates, scored macOS windows, and App-level AX/TCC/CGEvent diagnostics
@@ -124,7 +124,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       analyze: {
         type: 'boolean',
-        description: '[screenshot] Enable AI analysis of screenshot content (default: false)',
+        description: '[screenshot] Enable AI analysis (default: false). MUST be true if you intend to verify or describe what is on screen — without it the assistant only sees the file path.',
       },
       prompt: {
         type: 'string',

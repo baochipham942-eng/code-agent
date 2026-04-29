@@ -3,6 +3,7 @@ import {
   parseQuestionForm,
   renderQuestionFormToDesignBrief,
 } from '@/artifacts/question-form';
+import { directionTokens } from '@/design/direction-tokens';
 
 const wrap = (json: string) => '```question-form\n' + json + '\n```';
 
@@ -83,6 +84,7 @@ describe('renderQuestionFormToDesignBrief', () => {
     });
     expect(brief.surface).toBe('presentation');
     expect(brief.direction).toBe('editorial');
+    expect(brief.directionTokens).toEqual(directionTokens.editorial);
     expect(brief.source).toBe('manual');
     expect(brief.intent).toBeUndefined();
   });

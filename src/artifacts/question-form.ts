@@ -12,6 +12,7 @@ import {
   type DesignBriefDirection,
   type DesignBriefSurface,
 } from '../shared/contract/designBrief';
+import { directionTokens } from '../design/direction-tokens';
 
 export interface QuestionForm {
   surface: DesignBriefSurface;
@@ -111,6 +112,7 @@ export function renderQuestionFormToDesignBrief(form: QuestionForm): DesignBrief
   const brief: DesignBrief = {
     surface: form.surface,
     direction: form.direction,
+    directionTokens: directionTokens[form.direction],
     source: 'manual',
   };
   if (form.intent) brief.intent = form.intent;

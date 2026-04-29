@@ -1,5 +1,9 @@
 import type { ConversationEnvelopeContext, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
+import { normalizeDesignBrief } from '../../shared/contract/designBrief';
+import type { DesignBrief } from '../../shared/contract/designBrief';
+import { directionTokens } from '../../design/direction-tokens';
+import { readDesignMdSummary } from '../../design/design-md-loader';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
 import { getConnectorRegistry } from '../connectors';
 
@@ -24,6 +28,12 @@ export function buildWorkbenchTurnSystemContext(
   }
 
   const lines: string[] = [];
+  const designBrief = buildDesignBriefPromptPayload(context);
+  if (designBrief) {
+    lines.push('<design_brief_json>');
+    lines.push(designBrief);
+    lines.push('</design_brief_json>');
+  }
 
   if (context.selectedSkillIds?.length) {
     lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);
@@ -91,6 +101,36 @@ export function buildWorkbenchTurnSystemContext(
       '</turn_workbench_context>',
     ].join('\n'),
   ];
+}
+
+function buildDesignBriefPromptPayload(context?: ConversationEnvelopeContext): string | null {
+  if (!context?.designBrief) {
+    return null;
+  }
+
+  const brief = enrichDesignBriefForPrompt(context.designBrief, context.workingDirectory);
+  if (!brief) {
+    return null;
+  }
+
+  return JSON.stringify(brief, null, 2);
+}
+
+function enrichDesignBriefForPrompt(
+  brief: DesignBrief,
+  workingDirectory?: string | null,
+): DesignBrief | undefined {
+  const references = [...(brief.references || [])];
+  const designMdSummary = workingDirectory ? readDesignMdSummary(workingDirectory) : null;
+  if (designMdSummary && !references.some((item) => item === designMdSummary || item.startsWith('DESIGN.md:'))) {
+    references.push(designMdSummary);
+  }
+
+  return normalizeDesignBrief({
+    ...brief,
+    references,
+    directionTokens: brief.directionTokens || (brief.direction ? directionTokens[brief.direction] : undefined),
+  });
 }
 
 function isConnectorReadyForTurnScope(connectorId: string): boolean {

@@ -1,7 +1,7 @@
 // ============================================================================
 // TaskMonitor - StatusRail 主工作面视图
 // ============================================================================
-// 主卡片链路: TodoCard → ContextCard（主卡）→ OutputsCard → Turn Scope → ReferencesCard
+// 主卡片链路: 进度 → 来源 → 连接 → 产物
 // 数据统一来自 useStatusRailModel
 // ============================================================================
 
@@ -15,15 +15,16 @@ import type {
 } from '@shared/contract/turnTimeline';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
-import { useStatusRailModel } from '../../hooks/useStatusRailModel';
+import { useStatusRailModel, type StatusRailContextModel } from '../../hooks/useStatusRailModel';
 import { useCurrentTurnArtifactOwnership } from '../../hooks/useCurrentTurnArtifactOwnership';
 import { useCurrentTurnCapabilityScope } from '../../hooks/useCurrentTurnCapabilityScope';
 import { useCurrentTurnRoutingEvidence } from '../../hooks/useCurrentTurnRoutingEvidence';
+import { useWorkspacePreviewModel } from '../../hooks/useWorkspacePreviewModel';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
 import {
   Check, Loader2, AlertTriangle,
-  FileText, FolderOpen, Wrench, GitBranch,
+  Eye, FileText, FolderOpen, Wrench, GitBranch,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
@@ -45,22 +46,31 @@ import {
   resolveWorkbenchCapabilityFromSources,
   type WorkbenchCapabilityTarget,
 } from '../../utils/workbenchCapabilitySheet';
+import type { ArtifactItem } from '../../hooks/useStatusRailModel';
+import type { WorkspacePreviewItem } from '@shared/contract';
 
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId, messages } = useSessionStore();
   const { workingDirectory } = useAppStore();
+  const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   const processingSessionIds = useAppStore((s) => s.processingSessionIds);
   const isProcessing = currentSessionId ? processingSessionIds.has(currentSessionId) : false;
   const { references: referencedWorkbenchItems, history: workbenchHistory } = useWorkbenchInsights();
   const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const currentTurnCapabilityScope = useCurrentTurnCapabilityScope();
   const currentTurnRoutingEvidence = useCurrentTurnRoutingEvidence();
+  const workspacePreviewItems = useWorkspacePreviewModel();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
   const { t } = useI18n();
   const { toolTimeout } = useToolProgress(currentSessionId);
 
   const model = useStatusRailModel();
   const { context, todos: todoModel, outputs } = model;
+  const sourceCount = context.items.length
+    + referencedWorkbenchItems.length
+    + (currentTurnCapabilityScope ? currentTurnCapabilityScope.scope.selected.length : 0)
+    + (currentTurnRoutingEvidence ? 1 : 0);
+  const blockedScopeCount = currentTurnCapabilityScope?.scope.blocked?.length ?? 0;
 
   const [activeSheetEntry, setActiveSheetEntry] = useState<{
     target: WorkbenchCapabilityTarget;
@@ -134,6 +144,9 @@ export const TaskMonitor: React.FC = () => {
       blockedReason: blockedReason || null,
     });
   }, []);
+  const openPreviewWorkspace = useCallback((itemId?: string | null) => {
+    openWorkspacePreview(itemId ?? workspacePreviewItems[0]?.id ?? null);
+  }, [openWorkspacePreview, workspacePreviewItems]);
 
   // ── 渲染 ──
 
@@ -157,9 +170,9 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
-      {/* ═══ Card 1: Semantic task plan or current action trace ═══ */}
+      {/* ═══ Card 1: Progress ═══ */}
       {todoModel.total > 0 ? (
-      <Card title={t.taskPanel.sectionTodos} count={`${todoModel.completed}/${todoModel.total}`}>
+      <Card title="进度" count={`${todoModel.completed}/${todoModel.total}`}>
         <div className="space-y-0.5">
           {todoModel.items.map((todo, index) => (
             <div key={index} className="flex items-center gap-2 py-0.5">
@@ -187,7 +200,7 @@ export const TaskMonitor: React.FC = () => {
       </Card>
       ) : toolPhases.length > 0 ? (
       <Card
-        title="本轮动作"
+        title="进度"
         count={t.taskPanel.phaseOps.replace('{count}', String(toolPhases.reduce((sum, phase) => sum + phase.count, 0)))}
       >
         <div className="space-y-0.5">
@@ -218,26 +231,84 @@ export const TaskMonitor: React.FC = () => {
         </div>
       </Card>
       ) : (
-      <Card title={t.taskPanel.sectionTodos} isEmpty emptyLabel="暂无任务计划">
+      <Card title="进度" isEmpty emptyLabel="暂无任务计划">
         <EmptyState text="暂无任务计划" />
       </Card>
       )}
 
-      {/* ═══ Card 2: ContextCard — 仅展示百分比（详情与 Compact 在 ChatInput 的 ContextUsagePill 里） ═══ */}
+      {/* ═══ Card 2: Sources ═══ */}
       <Card
-        title={t.taskPanel.sectionContext}
-        highlight={context.warningLevel !== 'normal'}
+        title="来源"
+        count={sourceCount > 0 ? String(sourceCount) : undefined}
+        highlight={
+          context.warningLevel !== 'normal'
+          || blockedScopeCount > 0
+          || currentTurnRoutingEvidence?.tone === 'warning'
+          || currentTurnRoutingEvidence?.tone === 'error'
+        }
       >
-        <div className={`text-2xl font-semibold tabular-nums ${
-          context.warningLevel === 'critical' ? 'text-red-400' :
-          context.warningLevel === 'warning' ? 'text-yellow-400' :
-          'text-emerald-400'
-        }`}>
-          {Math.round(context.usagePercent)}%
+        <div className="space-y-2">
+          <ContextSourceSummary context={context} />
+
+          {currentTurnCapabilityScope && (
+            <SourceSubsection
+              title="当前 Turn Scope"
+              count={`#${currentTurnCapabilityScope.turnNumber}`}
+              highlight={blockedScopeCount > 0}
+            >
+              <CurrentTurnCapabilityScopeCard
+                scopeView={currentTurnCapabilityScope}
+                blockedCapabilitiesWithActions={blockedCapabilitiesWithActions}
+                runningActionKey={runningActionKey}
+                actionErrors={actionErrors}
+                completedActions={completedActions}
+                onQuickAction={runQuickAction}
+                onOpenCapability={openCapabilitySheet}
+              />
+            </SourceSubsection>
+          )}
+
+          {currentTurnRoutingEvidence && (
+            <SourceSubsection
+              title="当前 Turn Routing"
+              count={`#${currentTurnRoutingEvidence.turnNumber}`}
+              highlight={currentTurnRoutingEvidence.tone === 'warning' || currentTurnRoutingEvidence.tone === 'error'}
+            >
+              <CurrentTurnRoutingEvidenceCard
+                routingView={currentTurnRoutingEvidence}
+              />
+            </SourceSubsection>
+          )}
+
+          <SourceSubsection
+            title={t.taskPanel.sectionReferences}
+            count={referencedWorkbenchItems.length > 0 ? String(referencedWorkbenchItems.length) : '0'}
+          >
+            {referencedWorkbenchItems.length > 0 ? (
+              <div className="space-y-0.5">
+                {referencedWorkbenchItems.map((reference) => (
+                  <WorkbenchReferenceRow
+                    key={`${reference.kind}-${reference.id}`}
+                    reference={reference}
+                    locale="zh"
+                    onOpenDetails={() => openCapabilitySheet({
+                      kind: reference.kind,
+                      id: reference.id,
+                    })}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState text={t.taskPanel.skillsMcpEmpty} />
+            )}
+          </SourceSubsection>
         </div>
       </Card>
 
-      {/* ═══ Card 3: OutputsCard ═══ */}
+      {/* ═══ Card 3: Connections ═══ */}
+      <ConnectorsCard title="连接" />
+
+      {/* ═══ Card 4: Outputs ═══ */}
       <Card
         title={t.taskPanel.sectionOutputs}
         count={currentTurnArtifactOwnership
@@ -249,77 +320,34 @@ export const TaskMonitor: React.FC = () => {
         isEmpty={!currentTurnArtifactOwnership && outputs.count === 0}
         emptyLabel="0"
       >
+        {workspacePreviewItems.length > 0 && (
+          <div className="mb-2 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => openPreviewWorkspace()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-200 hover:border-cyan-500/35 hover:bg-cyan-500/15"
+            >
+              <Eye className="h-3 w-3" />
+              Preview {workspacePreviewItems.length}
+            </button>
+          </div>
+        )}
         {currentTurnArtifactOwnership ? (
           <CurrentTurnArtifactOwnershipCard
             artifactView={currentTurnArtifactOwnership}
+            previewItems={workspacePreviewItems}
+            onOpenPreview={openPreviewWorkspace}
           />
         ) : outputs.count > 0 ? (
-          <div className="space-y-0.5">
-            {outputs.files.map((file) => (
-              <div key={file.path} className="flex items-center gap-2 py-0.5" title={file.path}>
-                <FileText className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                <span className="text-xs text-zinc-400 truncate font-mono">{file.name}</span>
-              </div>
-            ))}
-          </div>
+          <OutputFileRows
+            files={outputs.files}
+            previewItems={workspacePreviewItems}
+            onOpenPreview={openPreviewWorkspace}
+          />
         ) : (
           <EmptyState text={t.taskPanel.artifactsEmpty} />
         )}
       </Card>
-
-      {currentTurnCapabilityScope && (
-        <Card
-          title="当前 Turn Scope"
-          count={`#${currentTurnCapabilityScope.turnNumber}`}
-          highlight={currentTurnCapabilityScope.scope.blocked.length > 0}
-        >
-          <CurrentTurnCapabilityScopeCard
-            scopeView={currentTurnCapabilityScope}
-            blockedCapabilitiesWithActions={blockedCapabilitiesWithActions}
-            runningActionKey={runningActionKey}
-            actionErrors={actionErrors}
-            completedActions={completedActions}
-            onQuickAction={runQuickAction}
-            onOpenCapability={openCapabilitySheet}
-          />
-        </Card>
-      )}
-
-      {currentTurnRoutingEvidence && (
-        <Card
-          title="当前 Turn Routing"
-          count={`#${currentTurnRoutingEvidence.turnNumber}`}
-          highlight={currentTurnRoutingEvidence.tone === 'warning' || currentTurnRoutingEvidence.tone === 'error'}
-        >
-          <CurrentTurnRoutingEvidenceCard
-            routingView={currentTurnRoutingEvidence}
-          />
-        </Card>
-      )}
-
-      {/* ═══ Card 4: ReferencesCard ═══ */}
-      <Card title={t.taskPanel.sectionReferences} isEmpty={referencedWorkbenchItems.length === 0} emptyLabel="0">
-        {referencedWorkbenchItems.length > 0 ? (
-          <div className="space-y-0.5">
-            {referencedWorkbenchItems.map((reference) => (
-              <WorkbenchReferenceRow
-                key={`${reference.kind}-${reference.id}`}
-                reference={reference}
-                locale="zh"
-                onOpenDetails={() => openCapabilitySheet({
-                  kind: reference.kind,
-                  id: reference.id,
-                })}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState text={t.taskPanel.skillsMcpEmpty} />
-        )}
-      </Card>
-
-      {/* ═══ Card 5: ConnectorsCard ═══ */}
-      <ConnectorsCard />
 
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}
@@ -337,6 +365,163 @@ export const TaskMonitor: React.FC = () => {
 };
 
 // ── Card 容器组件已抽到 ./Card ──
+
+function findPreviewItemForPath(
+  previewItems: WorkspacePreviewItem[],
+  path?: string,
+): WorkspacePreviewItem | null {
+  if (!path) return null;
+  return previewItems.find((item) => item.file?.path === path) || null;
+}
+
+function findPreviewItemForArtifact(
+  previewItems: WorkspacePreviewItem[],
+  artifact: TurnArtifactOwnershipItem,
+): WorkspacePreviewItem | null {
+  if (artifact.path) {
+    const byPath = findPreviewItemForPath(previewItems, artifact.path);
+    if (byPath) return byPath;
+  }
+  return previewItems.find((item) => item.title === artifact.label) || null;
+}
+
+function OutputFileRows({
+  files,
+  previewItems,
+  onOpenPreview,
+}: {
+  files: ArtifactItem[];
+  previewItems: WorkspacePreviewItem[];
+  onOpenPreview: (itemId?: string | null) => void;
+}) {
+  return (
+    <div className="space-y-0.5">
+      {files.map((file) => (
+        <OutputFileRow
+          key={file.path}
+          file={file}
+          previewItem={findPreviewItemForPath(previewItems, file.path)}
+          onOpenPreview={onOpenPreview}
+        />
+      ))}
+    </div>
+  );
+}
+
+function OutputFileRow({
+  file,
+  previewItem,
+  onOpenPreview,
+}: {
+  file: ArtifactItem;
+  previewItem: WorkspacePreviewItem | null;
+  onOpenPreview: (itemId?: string | null) => void;
+}) {
+  const row = (
+    <>
+      <FileText className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+      <span className="text-xs text-zinc-400 truncate font-mono">{file.name}</span>
+    </>
+  );
+
+  if (!previewItem) {
+    return (
+      <div className="flex items-center gap-2 py-0.5" title={file.path}>
+        {row}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenPreview(previewItem.id)}
+      className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
+      title={file.path}
+    >
+      {row}
+      <Eye className="ml-auto h-3 w-3 flex-shrink-0 text-cyan-400/70" />
+    </button>
+  );
+}
+
+function formatCompactNumber(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return String(value);
+}
+
+function getContextToneClass(warningLevel: StatusRailContextModel['warningLevel']): string {
+  switch (warningLevel) {
+    case 'critical':
+      return 'text-red-400';
+    case 'warning':
+      return 'text-yellow-400';
+    default:
+      return 'text-emerald-400';
+  }
+}
+
+function ContextSourceSummary({ context }: { context: StatusRailContextModel }) {
+  const bucketEntries = [
+    ['Rules', context.buckets.rules],
+    ['Files', context.buckets.files],
+    ['Web', context.buckets.web],
+    ['Other', context.buckets.other],
+  ].filter(([, count]) => Number(count) > 0);
+
+  return (
+    <div className="rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] uppercase tracking-wide text-zinc-500">Context</div>
+        <div className={`text-sm font-semibold tabular-nums ${getContextToneClass(context.warningLevel)}`}>
+          {Math.round(context.usagePercent)}%
+        </div>
+      </div>
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-800">
+        <div
+          className={`h-full transition-all duration-300 ${
+            context.warningLevel === 'critical' ? 'bg-red-500'
+              : context.warningLevel === 'warning' ? 'bg-yellow-500'
+              : 'bg-emerald-500'
+          }`}
+          style={{ width: `${Math.min(100, Math.max(0, context.usagePercent))}%` }}
+        />
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-zinc-600">
+        <span>{formatCompactNumber(context.currentTokens)} / {formatCompactNumber(context.maxTokens)} tokens</span>
+        {bucketEntries.length > 0 && (
+          <span className="truncate">
+            {bucketEntries.map(([label, count]) => `${label} ${count}`).join(' · ')}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SourceSubsection({
+  title,
+  count,
+  highlight,
+  children,
+}: {
+  title: string;
+  count?: string;
+  highlight?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-md border px-2.5 py-2 ${
+      highlight ? 'border-yellow-500/20 bg-yellow-500/[0.03]' : 'border-white/[0.05] bg-white/[0.015]'
+    }`}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">{title}</span>
+        {count && <span className="text-[10px] text-zinc-600">{count}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 function getCapabilityPillTone(
   kind: 'skill' | 'connector' | 'mcp',
@@ -690,8 +875,12 @@ function CurrentTurnRoutingEvidenceCard({
 
 function CurrentTurnArtifactOwnershipCard({
   artifactView,
+  previewItems,
+  onOpenPreview,
 }: {
   artifactView: NonNullable<ReturnType<typeof useCurrentTurnArtifactOwnership>>;
+  previewItems: WorkspacePreviewItem[];
+  onOpenPreview: (itemId?: string | null) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -705,20 +894,56 @@ function CurrentTurnArtifactOwnershipCard({
 
       <div className="space-y-1.5">
         {artifactView.artifactOwnership.map((item, index) => (
-          <div
+          <CurrentTurnArtifactOwnershipRow
             key={`${item.kind}-${item.label}-${index}`}
-            className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
-          >
-            <WorkbenchPill tone={getArtifactPillTone(item.kind)}>
-              {getArtifactKindLabel(item.kind)}
-            </WorkbenchPill>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs text-zinc-100">{item.label}</div>
-              <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
-            </div>
-          </div>
+            item={item}
+            previewItem={findPreviewItemForArtifact(previewItems, item)}
+            onOpenPreview={onOpenPreview}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function CurrentTurnArtifactOwnershipRow({
+  item,
+  previewItem,
+  onOpenPreview,
+}: {
+  item: TurnArtifactOwnershipItem;
+  previewItem: WorkspacePreviewItem | null;
+  onOpenPreview: (itemId?: string | null) => void;
+}) {
+  const row = (
+    <>
+      <WorkbenchPill tone={getArtifactPillTone(item.kind)}>
+        {getArtifactKindLabel(item.kind)}
+      </WorkbenchPill>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs text-zinc-100">{item.label}</div>
+        <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+      </div>
+    </>
+  );
+
+  if (!previewItem) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
+        {row}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenPreview(previewItem.id)}
+      className="flex w-full items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 text-left hover:border-cyan-500/25 hover:bg-cyan-500/[0.045]"
+      title={item.path || item.label}
+    >
+      {row}
+      <Eye className="ml-auto h-3 w-3 flex-shrink-0 text-cyan-400/70" />
+    </button>
   );
 }

@@ -353,6 +353,9 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
+    expect(html).toContain('进度');
+    expect(html).toContain('来源');
+    expect(html).toContain('连接');
     expect(html).toContain('当前 Turn Scope');
     expect(html).toContain('当前 Turn Routing');
     expect(html).toContain('Scope Inspector Lite');

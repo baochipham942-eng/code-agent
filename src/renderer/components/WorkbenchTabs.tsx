@@ -5,10 +5,11 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
+import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -33,6 +34,7 @@ export const WorkbenchTabs: React.FC = () => {
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const { isStandard } = useDisclosure();
+  const workspacePreviewItems = useWorkspacePreviewModel();
 
   // "+" 按钮的 popover 状态：列出未打开的 Task/Skills/Files 让用户重开
   const [addOpen, setAddOpen] = useState(false);
@@ -55,7 +57,8 @@ export const WorkbenchTabs: React.FC = () => {
   const hasTask = workbenchTabs.includes('task');
   const hasSkills = workbenchTabs.includes('skills');
   const hasFiles = workbenchTabs.includes('files');
-  const canAddAny = !hasTask || (!hasSkills && isStandard) || !hasFiles;
+  const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
+  const canAddAny = !hasTask || (!hasSkills && isStandard) || !hasFiles || !hasWorkspacePreview;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'task') {
@@ -66,6 +69,15 @@ export const WorkbenchTabs: React.FC = () => {
     }
     if (id === 'files') {
       return { id, label: '文件', title: '文件浏览器', isDirty: false };
+    }
+    if (id === 'workspace-preview') {
+      const count = workspacePreviewItems.length;
+      return {
+        id,
+        label: count > 0 ? `Preview ${count}` : 'Preview',
+        title: 'Workspace Preview',
+        isDirty: false,
+      };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -161,6 +173,16 @@ export const WorkbenchTabs: React.FC = () => {
                 >
                   <FolderTree className="w-3.5 h-3.5 text-amber-400/80" />
                   文件
+                </button>
+              )}
+              {!hasWorkspacePreview && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('workspace-preview'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <Eye className="w-3.5 h-3.5 text-cyan-400/80" />
+                  Preview
                 </button>
               )}
             </div>

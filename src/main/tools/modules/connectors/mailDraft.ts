@@ -28,6 +28,10 @@ function normalizeAddresses(value: unknown): string[] {
   return [];
 }
 
+function textArg(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 async function executeMailDraft(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -82,7 +86,31 @@ async function executeMailDraft(
         draft.attachments.length > 0 ? `Attachments: ${draft.attachments.join(', ')}` : null,
         `状态：${draft.saved ? '已保存到草稿' : '未保存'}`,
       ].filter(Boolean).join('\n'),
-      meta: { saved: draft.saved },
+      meta: {
+        saved: draft.saved,
+        previewItem: {
+          kind: 'message_draft',
+          title: draft.subject,
+          subtitle: to.join(', '),
+          status: draft.saved ? 'ready' : 'draft',
+          content: {
+            text: [
+              `To: ${to.join(', ')}`,
+              cc.length > 0 ? `CC: ${cc.join(', ')}` : null,
+              bcc.length > 0 ? `BCC: ${bcc.join(', ')}` : null,
+              `Subject: ${draft.subject}`,
+              '',
+              textArg(args.content),
+            ].filter((line) => line !== null).join('\n'),
+            summary: `To: ${to.join(', ')}`,
+          },
+          actions: [
+            { kind: 'copy', label: 'Copy' },
+            { kind: 'send', label: 'Send' },
+          ],
+          priority: 80,
+        },
+      },
     };
   } catch (error) {
     return {

@@ -98,7 +98,7 @@ const nextPreviewTabTick = () => ++_previewTabTick;
 
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | `preview:${string}`;
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | `preview:${string}`;
 
 const PREVIEW_PREFIX = 'preview:';
 const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
@@ -158,6 +158,7 @@ interface AppState {
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
+  selectedWorkspacePreviewId: string | null;
 
   // Unified right workbench — tab order & active view across Task/Skills/Preview.
   workbenchTabs: WorkbenchTabId[];
@@ -218,6 +219,8 @@ interface AppState {
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
   openPreview: (filePath: string) => void;
+  openWorkspacePreview: (itemId?: string | null) => void;
+  setSelectedWorkspacePreviewId: (itemId: string | null) => void;
   openLivePreview: (devServerUrl: string, devServerSessionId?: string) => void;
   /** V2-A: 打开/关闭 dev server launcher 模态 */
   openDevServerLauncher: () => void;
@@ -313,6 +316,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial file preview registry
   previewTabs: [],
   activePreviewTabId: null,
+  selectedWorkspacePreviewId: null,
 
   // Initial workbench — Task pinned and active by default.
   workbenchTabs: ['task'],
@@ -452,6 +456,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
   },
+  openWorkspacePreview: (itemId = null) => {
+    set((state) => ({
+      ...state,
+      selectedWorkspacePreviewId: itemId ?? state.selectedWorkspacePreviewId,
+      workbenchTabs: state.workbenchTabs.includes('workspace-preview')
+        ? state.workbenchTabs
+        : [...state.workbenchTabs, 'workspace-preview'],
+      activeWorkbenchTab: 'workspace-preview',
+    }));
+  },
+  setSelectedWorkspacePreviewId: (itemId) => set({ selectedWorkspacePreviewId: itemId }),
   openLivePreview: (devServerUrl, devServerSessionId) => {
     // 以 URL 作为唯一 key，沿用 preview: 前缀的 WorkbenchTabId 机制
     set((state) => {

@@ -37,6 +37,15 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBe('skills');
   });
 
+  it('openWorkspacePreview opens the workspace preview tab and tracks selected item', () => {
+    useAppStore.getState().openWorkspacePreview('preview-item-1');
+
+    const state = useAppStore.getState();
+    expect(state.workbenchTabs).toEqual(['task', 'workspace-preview']);
+    expect(state.activeWorkbenchTab).toBe('workspace-preview');
+    expect(state.selectedWorkspacePreviewId).toBe('preview-item-1');
+  });
+
   it('closeWorkbenchTab removes tab and clears active when nothing remains', () => {
     const { closeWorkbenchTab } = useAppStore.getState();
     closeWorkbenchTab('task');

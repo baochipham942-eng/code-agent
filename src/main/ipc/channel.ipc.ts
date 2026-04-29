@@ -10,6 +10,7 @@ import type {
   ChannelType,
   ChannelAccount,
   ChannelAccountConfig,
+  ChannelInboxItem,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
 } from '../../shared/contract/channel';
@@ -49,6 +50,13 @@ export function registerChannelHandlers(
     }
   });
 
+  channelManager.on('inbox_changed', (items) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send(CHANNEL_CHANNELS.INBOX_CHANGED, items);
+    }
+  });
+
   // 获取所有账号
   ipcMain.handle(CHANNEL_CHANNELS.LIST_ACCOUNTS, async (): Promise<ChannelAccount[]> => {
     try {
@@ -80,6 +88,29 @@ export function registerChannelHandlers(
       return [];
     }
   });
+
+  // 获取最近外部消息
+  ipcMain.handle(CHANNEL_CHANNELS.LIST_INBOX, async (): Promise<ChannelInboxItem[]> => {
+    try {
+      return channelManager.getInboxItems();
+    } catch (error) {
+      logger.error('LIST_INBOX failed', { error: String(error) });
+      return [];
+    }
+  });
+
+  // 忽略一条外部消息
+  ipcMain.handle(
+    CHANNEL_CHANNELS.DISMISS_INBOX_ITEM,
+    async (_, itemId: string): Promise<boolean> => {
+      try {
+        return channelManager.dismissInboxItem(itemId);
+      } catch (error) {
+        logger.error('DISMISS_INBOX_ITEM failed', { error: String(error) });
+        return false;
+      }
+    }
+  );
 
   // 添加账号
   ipcMain.handle(

@@ -4,11 +4,15 @@
 
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 import { app } from '../../platform';
 import { createLogger } from '../infra/logger';
 import { getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('DatabaseService');
+const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const runtimeRequire = typeof require === 'function' ? require : createRequire(import.meta.url);
 // 延迟加载 better-sqlite3，CLI 模式下原生模块为 Electron 编译，ABI 不匹配
 // 降级后数据库功能不可用，CLI 使用自己的 CLIDatabaseService
 import type BetterSqlite3 from 'better-sqlite3';
@@ -17,14 +21,14 @@ if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
   // Web/Tauri 模式: 系统 Node.js 运行，Electron ABI 的 .node 文件不兼容
   // 优先从 dist/native/ 加载为系统 Node 编译的版本
   const nativePaths = [
-    path.join(__dirname, '../native/better-sqlite3'),      // dist/web/ -> dist/native/
-    path.join(__dirname, '../../native/better-sqlite3'),   // legacy/resource fallback
+    path.join(moduleDir, '../native/better-sqlite3'),      // dist/web/ -> dist/native/
+    path.join(moduleDir, '../../native/better-sqlite3'),   // legacy/resource fallback
     path.join(process.cwd(), 'dist/native/better-sqlite3'), // cwd fallback
   ];
   for (const nativePath of nativePaths) {
     if (!Database) {
       try {
-        Database = require(nativePath);
+        Database = runtimeRequire(nativePath);
         logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
       } catch (error) {
         logger.warn(`[DatabaseService] Failed to load better-sqlite3 from ${nativePath}:`, error);
@@ -34,7 +38,7 @@ if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
   // 回退到默认路径（Electron 模式或 node_modules）
   if (!Database) {
     try {
-      Database = require('better-sqlite3');
+      Database = runtimeRequire('better-sqlite3');
     } catch (error) {
       const err = error as Error;
       console.warn('[DatabaseService] better-sqlite3 not available:', err.message?.split('\n')[0]);

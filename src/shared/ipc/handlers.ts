@@ -79,6 +79,7 @@ import type {
 
 import type {
   ChannelAccount,
+  ChannelInboxItem,
   ChannelType,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
@@ -394,6 +395,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT]: (accountId: string) => Promise<boolean>;
   [IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.CHANNEL_LIST_INBOX]: () => Promise<ChannelInboxItem[]>;
+  [IPC_CHANNELS.CHANNEL_DISMISS_INBOX_ITEM]: (itemId: string) => Promise<boolean>;
 
   // Evaluation (会话评测)
   [IPC_CHANNELS.EVALUATION_RUN]: (payload: { sessionId: string; save?: boolean }) => Promise<EvaluationResult>;
@@ -653,6 +656,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.LAB_TRAINING_PROGRESS]: (event: TrainingProgressEvent) => void;
   // Channel events
   [IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED]: (accounts: ChannelAccount[]) => void;
+  [IPC_CHANNELS.CHANNEL_INBOX_CHANGED]: (items: ChannelInboxItem[]) => void;
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
   // Swarm events
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;

@@ -129,6 +129,12 @@ describe('remindersCreateModule (native)', () => {
         expect(result.output).toContain('已创建提醒：');
         expect(result.output).toContain('- [Work] Ship PR');
         expect(result.output).not.toContain('(completed)');
+        expect(result.meta?.previewItem).toMatchObject({
+          kind: 'reminder',
+          title: 'Ship PR',
+          subtitle: 'Work',
+          status: 'ready',
+        });
       }
       expect(execMock).toHaveBeenCalledWith('create_reminder', validArgs);
     });

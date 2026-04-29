@@ -49,11 +49,36 @@ async function executeRemindersCreate(
       completed: boolean;
     };
     ctx.logger.debug('reminders_create', { list: reminder.list, title: reminder.title });
+    const notes = typeof args.notes === 'string' ? args.notes : '';
+    const remindAtMs = typeof args.remind_at_ms === 'number' ? args.remind_at_ms : null;
+    const remindAtText = remindAtMs ? new Date(remindAtMs).toLocaleString('zh-CN') : '';
 
     return {
       ok: true,
       output: `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`,
-      meta: { list: reminder.list, title: reminder.title },
+      meta: {
+        list: reminder.list,
+        title: reminder.title,
+        previewItem: {
+          kind: 'reminder',
+          title: reminder.title,
+          subtitle: reminder.list,
+          status: reminder.completed ? 'applied' : 'ready',
+          content: {
+            text: [
+              `[${reminder.list}] ${reminder.title}`,
+              remindAtText ? `提醒时间：${remindAtText}` : null,
+              notes ? `备注：${notes}` : null,
+            ].filter(Boolean).join('\n'),
+            summary: remindAtText ? `${reminder.list} · ${remindAtText}` : reminder.list,
+          },
+          actions: [
+            { kind: 'copy', label: 'Copy' },
+            { kind: 'open', label: 'Open' },
+          ],
+          priority: 80,
+        },
+      },
     };
   } catch (error) {
     return {

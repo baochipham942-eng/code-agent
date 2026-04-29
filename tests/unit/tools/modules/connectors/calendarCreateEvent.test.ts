@@ -146,6 +146,12 @@ describe('calendarCreateEventModule (native)', () => {
         expect(result.output).toContain('- [Work] Standup');
         expect(result.output).toContain('- 开始：');
         expect(result.output).toContain('- 地点：Zoom');
+        expect(result.meta?.previewItem).toMatchObject({
+          kind: 'calendar_event',
+          title: 'Standup',
+          subtitle: 'Work',
+          status: 'ready',
+        });
       }
       expect(execMock).toHaveBeenCalledWith('create_event', validArgs);
     });

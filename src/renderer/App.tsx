@@ -22,6 +22,7 @@ import { isDesktopShellMode, isTauriMode } from './utils/platform';
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
+import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
@@ -421,6 +422,7 @@ export const App: React.FC = () => {
                           {activeWorkbenchTab === 'files' && (
                             <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
                           )}
+                          {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
                           {isPreviewActive && <PreviewPanel />}
                         </div>
                       </div>

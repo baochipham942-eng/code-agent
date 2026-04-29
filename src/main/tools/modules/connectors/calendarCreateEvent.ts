@@ -54,11 +54,36 @@ async function executeCalendarCreateEvent(
       location?: string;
     };
     ctx.logger.debug('calendar_create_event', { calendar: event.calendar, title: event.title });
+    const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
+    const endText = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知';
 
     return {
       ok: true,
-      output: `已创建日历事件：\n- [${event.calendar}] ${event.title}\n- 开始：${event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知'}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`,
-      meta: { calendar: event.calendar, title: event.title },
+      output: `已创建日历事件：\n- [${event.calendar}] ${event.title}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`,
+      meta: {
+        calendar: event.calendar,
+        title: event.title,
+        previewItem: {
+          kind: 'calendar_event',
+          title: event.title,
+          subtitle: event.calendar,
+          status: 'ready',
+          content: {
+            text: [
+              `[${event.calendar}] ${event.title}`,
+              `开始：${startText}`,
+              `结束：${endText}`,
+              event.location ? `地点：${event.location}` : null,
+            ].filter(Boolean).join('\n'),
+            summary: `${startText} · ${event.calendar}`,
+          },
+          actions: [
+            { kind: 'copy', label: 'Copy' },
+            { kind: 'open', label: 'Open' },
+          ],
+          priority: 80,
+        },
+      },
     };
   } catch (error) {
     return {

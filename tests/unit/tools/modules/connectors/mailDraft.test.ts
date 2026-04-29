@@ -137,6 +137,15 @@ describe('mailDraftModule (native)', () => {
         expect(result.output).toContain('To: a@x.com');
         expect(result.output).toContain('状态：已保存到草稿');
         expect(result.output).not.toContain('CC:');
+        expect(result.meta?.previewItem).toMatchObject({
+          kind: 'message_draft',
+          title: 'Draft',
+          subtitle: 'a@x.com',
+          status: 'ready',
+          content: {
+            summary: 'To: a@x.com',
+          },
+        });
       }
       expect(execMock).toHaveBeenCalledWith('draft_message', validArgs);
     });
@@ -165,6 +174,9 @@ describe('mailDraftModule (native)', () => {
         expect(result.output).toContain('BCC: d@x.com');
         expect(result.output).toContain('Attachments: doc.pdf');
         expect(result.output).toContain('状态：已保存到草稿');
+        const previewItem = result.meta?.previewItem as { content?: { text?: string } } | undefined;
+        expect(previewItem?.content?.text).toContain('CC: c@x.com');
+        expect(previewItem?.content?.text).toContain('BCC: d@x.com');
       }
     });
 

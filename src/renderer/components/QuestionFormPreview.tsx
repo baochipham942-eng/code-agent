@@ -117,7 +117,7 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
     if (!workingDirectory || submitted) return;
     let cancelled = false;
 
-    ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'summarizeDesignMd', {
+    ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'getDesignMdSummary', {
       cwd: workingDirectory,
     })
       .then((summary) => {

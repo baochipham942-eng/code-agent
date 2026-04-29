@@ -18,14 +18,14 @@ export function readDesignMdSummary(cwd: string): string | null {
     return null;
   }
   try {
-    const summary = summarizeDesignMd(readFileSync(filePath, 'utf-8'));
+    const summary = getDesignMdSummary(readFileSync(filePath, 'utf-8'));
     return summary ? `${DESIGN_MD}: ${summary}` : null;
   } catch {
     return null;
   }
 }
 
-export function summarizeDesignMd(content: string): string {
+export function getDesignMdSummary(content: string): string {
   const trimmed = content.trim();
   if (!trimmed) {
     return '';

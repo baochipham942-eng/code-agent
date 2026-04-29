@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   findDesignMd,
   readDesignMdSummary,
-  summarizeDesignMd,
+  getDesignMdSummary,
 } from '../design-md-loader';
 
 let tmpDirs: string[] = [];
@@ -42,11 +42,11 @@ describe('design-md-loader', () => {
   });
 
   it('returns an empty summary for an empty file', () => {
-    expect(summarizeDesignMd('   \n')).toBe('');
+    expect(getDesignMdSummary('   \n')).toBe('');
   });
 
   it('summarizes frontmatter, first heading, and the opening body text', () => {
-    const summary = summarizeDesignMd([
+    const summary = getDesignMdSummary([
       '---',
       'title: Admin Console',
       'tone: work-focused',

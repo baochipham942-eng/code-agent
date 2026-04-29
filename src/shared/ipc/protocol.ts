@@ -58,7 +58,7 @@ export type WorkspaceAction =
   | 'openPath'
   | 'showItemInFolder'
   | 'downloadFile'
-  | 'summarizeDesignMd';
+  | 'getDesignMdSummary';
 
 /**
  * Settings 通道 actions

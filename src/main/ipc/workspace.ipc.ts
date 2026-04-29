@@ -221,7 +221,7 @@ async function handleDownloadFile(
   return { filePath };
 }
 
-async function handleSummarizeDesignMd(payload: { cwd?: string | null }): Promise<string | null> {
+async function handleGetDesignMdSummary(payload: { cwd?: string | null }): Promise<string | null> {
   const cwd = payload.cwd?.trim();
   if (!cwd) {
     return null;
@@ -285,8 +285,8 @@ export function registerWorkspaceHandlers(
         case 'downloadFile':
           data = await handleDownloadFile(payload as { url: string; filename?: string });
           break;
-        case 'summarizeDesignMd':
-          data = await handleSummarizeDesignMd(payload as { cwd?: string | null });
+        case 'getDesignMdSummary':
+          data = await handleGetDesignMdSummary(payload as { cwd?: string | null });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

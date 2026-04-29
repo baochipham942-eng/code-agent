@@ -280,4 +280,91 @@ describe('DesktopComputerSurface target boundaries', () => {
       recommendedAction: expect.any(String),
     });
   });
+
+  it('locates a desktop element by role and returns its axPath', async () => {
+    installMacOsSurfaceMocks({
+      axElementsStdout: [
+        '1\tbutton\tSubmit\t1.2.3',
+        '2\ttextbox\tEmail\t1.2.4',
+      ].join('\n'),
+    });
+    const surface = await loadSurface();
+
+    const result = await surface.locateBackgroundElement({
+      action: 'locate_role',
+      targetApp: 'Notes',
+      role: 'textbox',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('axPath=1.2.4');
+    expect(result.metadata).toMatchObject({
+      backgroundSurface: true,
+      targetApp: 'Notes',
+      targetRole: 'textbox',
+      targetName: 'Email',
+      targetAxPath: '1.2.4',
+      axPath: '1.2.4',
+      matchCount: 1,
+      failureKind: null,
+    });
+  });
+
+  it('flags locator_ambiguous when multiple elements match and returns the first', async () => {
+    installMacOsSurfaceMocks({
+      axElementsStdout: [
+        '1\tbutton\tSave\t1.2.3',
+        '2\tbutton\tSave\t1.2.5',
+      ].join('\n'),
+    });
+    const surface = await loadSurface();
+
+    const result = await surface.locateBackgroundElement({
+      action: 'locate_role',
+      targetApp: 'Notes',
+      role: 'button',
+      name: 'Save',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('Located 2 matches');
+    expect(result.metadata).toMatchObject({
+      matchCount: 2,
+      axPath: '1.2.3',
+      failureKind: 'locator_ambiguous',
+      recommendedAction: expect.any(String),
+    });
+  });
+
+  it('returns locator_missing when no element matches the role', async () => {
+    installMacOsSurfaceMocks({
+      axElementsStdout: '1\tbutton\tCancel\t1.2.3',
+    });
+    const surface = await loadSurface();
+
+    const result = await surface.locateBackgroundElement({
+      action: 'locate_role',
+      targetApp: 'Finder',
+      role: 'textbox',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Target element not found');
+    expect(result.metadata).toMatchObject({
+      failureKind: 'locator_missing',
+      recommendedAction: expect.any(String),
+    });
+  });
+
+  it('rejects locate_role without targetApp at the desktop entry point', async () => {
+    const surface = await loadSurface();
+
+    const result = await surface.locateBackgroundElement({
+      action: 'locate_role',
+      role: 'button',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('targetApp');
+  });
 });

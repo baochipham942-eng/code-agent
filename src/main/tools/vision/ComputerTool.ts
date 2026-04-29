@@ -28,8 +28,8 @@ export const ComputerTool: Tool = {
 - get_state / observe / get_ax_elements / get_windows / diagnose_app: Read Computer Surface state, frontmost or target app/window, Accessibility candidates, scored macOS windows, and App-level AX/TCC/CGEvent diagnostics
 - click / doubleClick / rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
-- type: Type text into focused element
-- key: Press keyboard key with optional modifiers
+- type: Type text. Without targetApp+axPath this fires global keystrokes at the frontmost app — if focus shifts mid-task (video call popup, OS notification, app switch) input lands in the wrong window. Use targetApp + axPath (from get_ax_elements / locate_role) for headless typing immune to frontmost changes.
+- key: Press keyboard shortcut. Same caveat as type. Note: shortcuts (Cmd+N etc.) cannot be routed via background AX — if you just want to trigger a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
 
@@ -69,6 +69,14 @@ export const ComputerTool: Tool = {
 - timeout: Wait timeout in ms (default: 5000)
 - limit: Maximum elements for get_ax_elements
 - maxDepth: Maximum Accessibility tree depth for get_ax_elements
+
+## Standard recipe for filling a desktop text field (avoids "keystrokes-go-to-wrong-app" bugs)
+1. observe (confirm targetApp is reachable)
+2. get_ax_elements (list element axPaths)
+3. locate_role with targetApp + role [+ name] (resolve to a single axPath)
+4. type with targetApp + axPath + text (background AX, immune to frontmost-app changes)
+
+If a tool result includes metadata.foregroundFallbackWarning, your last keystroke ran as a global event — re-run the recipe with targetApp+axPath before continuing.
 
 IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility — feed it back to click/type with the same targetApp).`,
   requiresPermission: true,

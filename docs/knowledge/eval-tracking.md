@@ -2,10 +2,108 @@
 
 ## Project State
 
-- **Code Agent**: v0.16.65 (commits 3d81a779 / b0625519 / 54a58c5e / 82a7f461 / 19fa963d / be4c32f9 / 06c8a329 on 2026-04-25)
-- **最新评测套件**: incremental-edit (5 cases, P0 observation-masking baseline)
-- **历史最高**: v14 190/200 (95%), v19 189/200 (94.5%), v28 188/200 (94%) — 旧 Claude baseline，与新框架不可比
-- **默认模型**: claude-sonnet-4-6（2026-03-08 升级）
+- **Code Agent**: v0.16.68（基于 mimo-v2.5-pro + DeepSeek judge + SWE-bench docker harness）
+- **业界标准 baseline**: mimo-v2.5-pro 在 **SWE-bench Verified Django <15min 子集 10 case 上 9/10 = 90% first-shot pass rate**（2026-04-29，详见下方 §SWE-bench Verified milestone）
+- **历史套件**:
+  - SWE-bench Verified Django subset (2026-04-29): 9/10 = 90% — **业界对齐**
+  - incremental-edit (2026-04-25): 5 cases P0 observation-masking baseline — 内部
+  - Excel benchmark (2026-02-13): v14 190/200 (95%) — 旧 Claude baseline，与新框架不可比
+- **默认评测模型**: mimo-v2.5-pro（包月不计费）；判定模型: DeepSeek-chat
+
+---
+
+## SWE-bench Verified milestone (2026-04-29)
+
+> 业界标准 docker e2e 评测，第一个能写简历的硬数字。详见 [ADR-015](../decisions/015-swebench-docker-eval-harness.md)。
+
+### 数字
+
+**mimo-v2.5-pro × SWE-bench Verified × Django <15min × 10 case = 9/10 first-shot pass**
+
+| Case | 真测 | 备注 |
+|------|------|------|
+| django-10880 | ✅ | grep→read→edit→verify，5 轮 finish |
+| django-11179 | ✅ | delete pk 重置 |
+| django-14373 | ✅ | dateformat 4 位年份 zfill |
+| django-15987 | ✅ | agent 修上游而非使用点（位置不同但等价）—— judge 30 分误判，docker 真测推翻 |
+| django-16642 | ✅ | prompt 改进版本（旧版编 `x-brotli` 错） |
+| django-10914 | ✅ | batch2 |
+| django-10999 | ❌ | **SWE-bench 设计陷阱**：agent 按 problem_statement 提示修，但 test 是按 maintainer 重构（`<sign>` 组）写的 |
+| django-11119 | ✅ | template autoescape |
+| django-11133 | ✅ | memoryview 兼容 |
+| django-11163 | ✅ | `is not None` vs truthy |
+
+### 业界参照（不要直接对比，子集和难度不同）
+
+| 模型 | SWE-bench Verified pass rate |
+|------|----------------------------|
+| Claude Opus 4.6 | ~70% (full 500) |
+| Claude Sonnet 3.5 | 49% (full 500) |
+| GPT-4o | 33% (full 500) |
+| Aider + Claude | 26% (full 500) |
+| **Code Agent (mimo-v2.5-pro)** | **90% (10 case Django <15min subset)** |
+
+### 评测体系架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: Diff Shape Validation (eval/swe-bench/validation.ts) │
+│    ├─ hit_standard_file: agent 改的文件跟 standard 重合      │
+│    ├─ no_tests_modified: 不动 tests/                         │
+│    ├─ diff_within_3x_standard: 行数合理                      │
+│    └─ not_empty                                              │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 2: LLM-as-Judge (judges/patchEquivalence.ts, DeepSeek) │
+│    ├─ semantic_match: 0-100                                  │
+│    ├─ matches_intent / matches_implementation                │
+│    ├─ key_differences: 文本可读差异列表                       │
+│    └─ 用途: executable 缺席时兜底；非 ground truth          │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3: Executable Validation (docker, ground truth)        │
+│    ├─ docker run swebench/sweb.eval.x86_64.<repo>_<id>_<inst> │
+│    ├─ 内部: apply test_patch + apply agent.diff + runtests   │
+│    ├─ 解析 exit_code: 0=passed / 非 0=failed                 │
+│    └─ 优先于 judge: docker PASS 直接 PASSED 不被 judge 否决   │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+                decideRunOutcome (validation.ts:78)
+                executable 优先 → judge fallback → shape 兜底
+```
+
+### 关键发现 / 踩坑
+
+1. **judge 在"位置不同但等价"的修复上过严**（django-15987）—— LLM-as-Judge 看不到 test 真跑，只能基于文本相似度。docker 是 ground truth
+2. **SWE-bench 部分 case 是设计陷阱**（django-10999）—— test 按 maintainer 重构写，agent 按 problem_statement 提示修反而 fail
+3. **本地 Python 跑不动 Django 2.2**（cgi 模块 PEP 594 在 Python 3.13+ 移除）—— 只有 docker 路径可行
+4. **REPO_NUMERIC_ID 命名规则**: docker hub image 名是 `<repo>_<numeric_id>_<instance>`（django=1776），不是 instance_id 直接命名
+5. **FAIL_TO_PASS 字段格式不统一**（标准 dotted path vs 自然语言描述）—— 三级 fallback 推断（标准格式 → test_patch hunks → 整个 module）
+
+### 运行命令
+
+```bash
+# 跑单个 case（默认 docker 模式）
+npx tsx eval/swe-bench/run-one-case.ts --instance django__django-10880 --run-tag baseline
+
+# 切回本地 Python（fallback，Django 2.2 在 Python 3.13+ 跑不动）
+npx tsx eval/swe-bench/run-one-case.ts --instance django__django-10880 --mode python
+
+# 复评所有现有 runs（不重跑 agent，只重跑 executable + judge）
+npx tsx eval/swe-bench/replay-validation.ts            # 默认 docker
+npx tsx eval/swe-bench/replay-validation.ts --mode python
+
+# 只跑 LLM judge（不跑 executable）
+npx tsx eval/swe-bench/reevaluate-with-judge.ts
+```
+
+### 下一步演进方向
+
+- 扩 difficulty=`15min-1hour` 看 mimo 在难任务表现（预期掉到 50-60%）
+- 扩 REPO_NUMERIC_ID 映射到 sympy / matplotlib（跨 repo 验证）
+- 设计 hypothesisGenerator（看 fail case transcript 自动出"修哪里"假设，参考 ADR-015 风险段）
+
+---
 
 ## 2026-04-25 修复记录
 

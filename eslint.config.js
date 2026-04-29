@@ -14,6 +14,10 @@ export default tseslint.config(
       'vercel-api/**',
       '*.config.js',
       '*.config.ts',
+      // SWE-bench sandbox 是 clone 的第三方 repo (django 等), 不该被项目 lint 管
+      'eval/swe-bench/sandbox/**',
+      'eval/swe-bench/runs/**',
+      'eval/swe-bench/_docker-tmp/**',
     ],
   },
   {

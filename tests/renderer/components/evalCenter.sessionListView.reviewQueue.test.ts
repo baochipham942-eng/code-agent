@@ -86,7 +86,12 @@ vi.mock('../../../src/renderer/stores/evalCenterStore', () => ({
   useEvalCenterStore: () => storeState,
 }));
 
-import { SessionListView } from '../../../src/renderer/components/features/evalCenter/SessionListView';
+import {
+  buildReviewQueueFollowupPrompt,
+  matchesReviewQueueAssetQuery,
+  matchesSessionAssetQuery,
+  SessionListView,
+} from '../../../src/renderer/components/features/evalCenter/SessionListView';
 
 describe('SessionListView review queue', () => {
   beforeEach(() => {
@@ -101,9 +106,11 @@ describe('SessionListView review queue', () => {
     );
 
     expect(html).toContain('Review Queue');
-    expect(html).toContain('当前支持手动加入，也支持从 Replay 的 Failure Follow-up 入口回流。');
+    expect(html).toContain('搜索会话 / Review / Replay');
+    expect(html).toContain('当前支持手动加入、Replay Failure Follow-up，也能把评论带回下一轮 prompt。');
     expect(html).toContain('Queued Session');
     expect(html).toContain('Replay');
+    expect(html).toContain('带评论继续');
     expect(html).toContain('失败回看');
     expect(html).toContain('会话列表');
     expect(html).toContain('Prompt Policy · 循环卡住');
@@ -113,5 +120,24 @@ describe('SessionListView review queue', () => {
     expect(html).toContain('忽略');
     expect(html).toContain('已在 Review');
     expect(html).toContain('加入 Review');
+  });
+
+  it('builds a follow-up prompt with review comments and trace identity', () => {
+    const prompt = buildReviewQueueFollowupPrompt(storeState.reviewQueue[0]);
+
+    expect(prompt).toContain('继续处理 Review Queue 里的这一条');
+    expect(prompt).toContain('会话：Queued Session');
+    expect(prompt).toContain('Replay sessionId：session-1');
+    expect(prompt).toContain('归因：Prompt Policy · 循环卡住');
+    expect(prompt).toContain('评论：Looped through the same action.');
+  });
+
+  it('matches session and review queue assets by reusable search text', () => {
+    expect(matchesSessionAssetQuery(storeState.sessionList[0], 'gpt-5.4')).toBe(true);
+    expect(matchesSessionAssetQuery(storeState.sessionList[0], 'fresh')).toBe(false);
+
+    expect(matchesReviewQueueAssetQuery(storeState.reviewQueue[0], 'prompt policy')).toBe(true);
+    expect(matchesReviewQueueAssetQuery(storeState.reviewQueue[0], 'Looped through')).toBe(true);
+    expect(matchesReviewQueueAssetQuery(storeState.reviewQueue[0], 'session-2')).toBe(false);
   });
 });

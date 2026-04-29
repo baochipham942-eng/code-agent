@@ -33,7 +33,7 @@ type ActionType =
   | 'smart_click' | 'smart_type' | 'smart_hover'
   | 'get_elements';
 
-interface ComputerAction {
+export interface ComputerAction {
   action: ActionType;
   targetApp?: string;
   x?: number;
@@ -79,8 +79,8 @@ export const computerUseTool: Tool = {
 - diagnose_app: Diagnose target app process/window/TCC/AX/CGEvent readiness in one call
 - click/doubleClick/rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
-- type: Type text into focused element
-- key: Press keyboard key with optional modifiers
+- type: Type text. Without targetApp+axPath this fires global keystrokes at whatever app is frontmost RIGHT NOW — if a video call or another app steals focus mid-task your input lands in the wrong window. Prefer the headless form: targetApp + axPath (axPath comes from get_ax_elements or locate_role). Coordinate-form (x,y) also fires global keystrokes after a click.
+- key: Press keyboard key/shortcut. Same caveat as type — global keyboard event sent to the frontmost app. Cmd+N etc. cannot be routed via background AX; if you only need to invoke a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath instead of a global shortcut.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
 
@@ -126,9 +126,17 @@ export const computerUseTool: Tool = {
 - {"action": "smart_click", "selector": "button.submit"}
 - {"action": "smart_click", "text": "Sign In"}
 - {"action": "locate_role", "role": "button", "name": "Submit"} - browser, returns coordinates
-- {"action": "locate_role", "targetApp": "Code Agent", "role": "textbox"} - desktop, returns axPath; chain with {"action": "type", "targetApp": "Code Agent", "axPath": "...", "text": "hi"} to fill it
+- {"action": "locate_role", "targetApp": "Notes", "role": "textbox"} - desktop, returns axPath; chain with {"action": "type", "targetApp": "Notes", "axPath": "...", "text": "hi"} to fill it
 - {"action": "smart_type", "selector": "#email", "text": "user@example.com"}
 - {"action": "get_elements"} - list all interactive elements
+
+## Standard recipe for filling a desktop text field (avoids "keystrokes-go-to-wrong-app" bugs)
+1. {"action":"observe", "targetApp":"Notes"} - confirm targetApp is reachable
+2. {"action":"get_ax_elements", "targetApp":"Notes"} - list element axPaths
+3. {"action":"locate_role", "targetApp":"Notes", "role":"textbox", "name":"..."} - resolve to a single axPath
+4. {"action":"type", "targetApp":"Notes", "axPath":"...", "text":"..."} - background AX keystroke, immune to frontmost-app changes
+
+If a tool result includes metadata.foregroundFallbackWarning, it means your last keyboard action ran as a global keystroke. Re-run the recipe above with targetApp+axPath before continuing — subsequent app switches will misroute further input.
 
 IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser via browser_action. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility).`,
   requiresPermission: true,
@@ -421,6 +429,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         });
       }
 
+      result = attachForegroundKeystrokeWarning(result, action, surfaceAuth?.state.mode || null);
       return appendBrowserWorkbenchNote(result, workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -920,6 +929,29 @@ function formatComputerSurfaceState(state: ComputerSurfaceState): string {
     parts.push(`failure=${state.failureKind}`);
   }
   return parts.join(' · ');
+}
+
+const KEYSTROKE_ACTIONS_NEEDING_BACKGROUND = new Set<ActionType>(['type', 'key']);
+
+export function attachForegroundKeystrokeWarning(
+  result: ToolExecutionResult,
+  action: ComputerAction,
+  surfaceMode: ComputerSurfaceState['mode'] | null,
+): ToolExecutionResult {
+  if (!result.success || !KEYSTROKE_ACTIONS_NEEDING_BACKGROUND.has(action.action)) {
+    return result;
+  }
+  const ranAsBackground = surfaceMode === 'background_ax' || surfaceMode === 'background_cgevent';
+  if (ranAsBackground) {
+    return result;
+  }
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      foregroundFallbackWarning: 'Keystrokes were sent to whatever app is frontmost RIGHT NOW. If focus shifts (notification, video call, app switch) further input lands in the wrong window. To stay headless, re-run with targetApp + axPath (locate_role or get_ax_elements first).',
+    },
+  };
 }
 
 // Check if action is a smart (Playwright-based) action

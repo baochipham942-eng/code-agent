@@ -62,6 +62,17 @@ export function extractArtifacts(content: string): Artifact[] {
     }
   }
 
+  // Match ```question-form blocks — design brief 收集表单（先问后做）
+  const questionFormRegex = /```question-form\s*\n([\s\S]*?)```/g;
+  while ((match = questionFormRegex.exec(content)) !== null) {
+    artifacts.push({
+      id: `artifact_${++artifactCounter}`,
+      type: 'question_form',
+      content: match[1].trim(),
+      version: 1,
+    });
+  }
+
   return artifacts;
 }
 

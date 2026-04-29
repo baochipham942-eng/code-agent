@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
+import type { DesignBrief } from '@shared/contract/designBrief';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
@@ -72,6 +73,8 @@ interface SessionState {
   backgroundTasks: BackgroundTaskInfo[];
   hasOlderMessages: boolean;
   isLoadingOlder: boolean;
+  // 当前会话锁定的 design brief（来自 question-form 提交，仅运行时内存态，不进 DB）
+  sessionDesignBriefs: Map<string, DesignBrief>;
 }
 
 interface SessionActions {
@@ -99,6 +102,9 @@ interface SessionActions {
   updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
   getBackgroundTaskCount: () => number;
   renameSession: (id: string, title: string) => Promise<void>;
+  setSessionDesignBrief: (sessionId: string, brief: DesignBrief) => void;
+  clearSessionDesignBrief: (sessionId: string) => void;
+  getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -117,6 +123,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     backgroundTasks: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
+    sessionDesignBriefs: new Map<string, DesignBrief>(),
 
     loadSessions: async () => {
       const { filter } = useSessionUIStore.getState();
@@ -567,6 +574,28 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       } catch (error) {
         logger.error('Failed to rename session', error);
       }
+    },
+
+    setSessionDesignBrief: (sessionId, brief) => {
+      set((state) => {
+        const next = new Map(state.sessionDesignBriefs);
+        next.set(sessionId, brief);
+        return { sessionDesignBriefs: next };
+      });
+      logger.info('Session design brief locked', { sessionId, surface: brief.surface, direction: brief.direction });
+    },
+
+    clearSessionDesignBrief: (sessionId) => {
+      set((state) => {
+        if (!state.sessionDesignBriefs.has(sessionId)) return state;
+        const next = new Map(state.sessionDesignBriefs);
+        next.delete(sessionId);
+        return { sessionDesignBriefs: next };
+      });
+    },
+
+    getSessionDesignBrief: (sessionId) => {
+      return get().sessionDesignBriefs.get(sessionId);
     },
   }));
 

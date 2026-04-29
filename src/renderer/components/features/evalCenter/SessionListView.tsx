@@ -3,12 +3,13 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, MessageSquarePlus, Search, X } from 'lucide-react';
 import {
   getReviewQueueFailureAssetStatusLabel,
   getReviewQueueFailureCapabilityLabel,
   getReviewQueueReasonLabel,
   getReviewQueueSourceLabel,
+  type ReviewQueueItem,
   type ReviewQueueFailureCapabilityAssetStatus,
 } from '@shared/contract/reviewQueue';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
@@ -16,6 +17,72 @@ import { SessionListItem } from './SessionListItem';
 
 interface SessionListViewProps {
   onSelectSession: (sessionId: string) => void;
+}
+
+interface SessionListAsset {
+  id: string;
+  title: string;
+  modelProvider: string;
+  modelName: string;
+  status: string;
+}
+
+function normalizeAssetSearchQuery(query: string): string {
+  return query.trim().toLowerCase();
+}
+
+function textMatchesQuery(parts: Array<string | number | boolean | null | undefined>, query: string): boolean {
+  const normalizedQuery = normalizeAssetSearchQuery(query);
+  if (!normalizedQuery) return true;
+  return parts
+    .filter((part): part is string | number | boolean => part !== null && part !== undefined)
+    .some((part) => String(part).toLowerCase().includes(normalizedQuery));
+}
+
+export function matchesSessionAssetQuery(session: SessionListAsset, query: string): boolean {
+  return textMatchesQuery([
+    session.title,
+    session.id,
+    session.modelProvider,
+    session.modelName,
+    session.status,
+  ], query);
+}
+
+export function matchesReviewQueueAssetQuery(item: ReviewQueueItem, query: string): boolean {
+  return textMatchesQuery([
+    item.id,
+    item.sessionTitle,
+    item.sessionId,
+    item.trace.traceId,
+    item.trace.replayKey,
+    getReviewQueueReasonLabel(item.reason),
+    getReviewQueueSourceLabel(item.enqueueSource ?? item.source),
+    item.failureCapability ? getReviewQueueFailureCapabilityLabel(item.failureCapability) : null,
+    item.failureCapability?.summary,
+    item.failureAsset?.title,
+    item.failureAsset?.body,
+    item.failureAsset ? getReviewQueueFailureAssetStatusLabel(item.failureAsset.status) : null,
+  ], query);
+}
+
+export function buildReviewQueueFollowupPrompt(item: ReviewQueueItem): string {
+  const capabilityLabel = item.failureCapability
+    ? getReviewQueueFailureCapabilityLabel(item.failureCapability)
+    : null;
+  const reviewComment = item.failureAsset?.body || item.failureCapability?.summary || '';
+  const lines = [
+    '继续处理 Review Queue 里的这一条：',
+    `- 会话：${item.sessionTitle}`,
+    `- Replay sessionId：${item.sessionId}`,
+    `- 原因：${getReviewQueueReasonLabel(item.reason)}`,
+    `- 来源：${getReviewQueueSourceLabel(item.enqueueSource ?? item.source)}`,
+    capabilityLabel ? `- 归因：${capabilityLabel}` : null,
+    reviewComment ? `- 评论：${reviewComment}` : null,
+    '请先打开对应 replay 或会话核对证据，再做下一轮最小处理；能直接修就改必要文件并验证，不能修就写清阻塞点。',
+  ];
+
+  return lines.filter(Boolean).join('\n');
 }
 
 export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSession }) => {
@@ -35,6 +102,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
   } = useEvalCenterStore();
 
   const [expanded, setExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadSessionList();
@@ -53,6 +121,12 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
       reason: 'manual_review',
       enqueueSource: 'session_list',
     });
+  };
+
+  const handleContinueFromReview = (item: ReviewQueueItem) => {
+    window.dispatchEvent(new CustomEvent('iact:add', {
+      detail: buildReviewQueueFollowupPrompt(item),
+    }));
   };
 
   const getFailureAssetActions = (
@@ -78,10 +152,14 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
   const filtered = useMemo(() => {
     let list = [...sessionList];
+    const normalizedQuery = normalizeAssetSearchQuery(searchQuery);
 
     // Filter
     if (filterStatus !== 'all') {
       list = list.filter(s => s.status === filterStatus);
+    }
+    if (normalizedQuery) {
+      list = list.filter((session) => matchesSessionAssetQuery(session, normalizedQuery));
     }
 
     // Sort
@@ -99,7 +177,13 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
     }
 
     return list;
-  }, [sessionList, filterStatus, sortBy]);
+  }, [sessionList, filterStatus, sortBy, searchQuery]);
+
+  const filteredReviewQueue = useMemo(() => {
+    const normalizedQuery = normalizeAssetSearchQuery(searchQuery);
+    if (!normalizedQuery) return reviewQueue;
+    return reviewQueue.filter((item) => matchesReviewQueueAssetQuery(item, normalizedQuery));
+  }, [reviewQueue, searchQuery]);
 
   // Stats
   const stats = useMemo(() => {
@@ -152,6 +236,28 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">
                     {'\u274C'} {stats.errors} 错误
                   </span>
+                )}
+              </div>
+
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="搜索会话 / Review / Replay"
+                  className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-950/70 pl-8 pr-8 text-xs text-zinc-300 outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
+                    aria-label="清空搜索"
+                    title="清空搜索"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 )}
               </div>
 
@@ -212,11 +318,11 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                     Review Queue
                   </span>
                   <span className="text-[10px] text-zinc-600">
-                    {reviewQueue.length}
+                    {searchQuery ? `${filteredReviewQueue.length}/${reviewQueue.length}` : reviewQueue.length}
                   </span>
                 </div>
                 <div className="mt-1 text-[10px] text-zinc-600">
-                  当前支持手动加入，也支持从 Replay 的 Failure Follow-up 入口回流。
+                  当前支持手动加入、Replay Failure Follow-up，也能把评论带回下一轮 prompt。
                 </div>
 
                 {reviewQueueLoading ? (
@@ -227,9 +333,13 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                   <div className="mt-2 text-[11px] text-zinc-600">
                     还没有待 review 的会话
                   </div>
+                ) : filteredReviewQueue.length === 0 ? (
+                  <div className="mt-2 text-[11px] text-zinc-600">
+                    没有匹配的 Review
+                  </div>
                 ) : (
                   <div className="mt-2 space-y-1.5">
-                    {reviewQueue.slice(0, 5).map((item) => (
+                    {filteredReviewQueue.slice(0, 5).map((item) => (
                       <div
                         key={item.id}
                         className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
@@ -267,6 +377,20 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                             <span className="font-mono">{item.trace.traceId.replace('session:', '')}</span>
                           </div>
                         </button>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleContinueFromReview(item);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
+                            title="把这条 Review 的评论写入下一轮输入"
+                          >
+                            <MessageSquarePlus className="h-3 w-3" />
+                            <span>带评论继续</span>
+                          </button>
+                        </div>
                         {item.failureAsset && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-800 pt-2 text-[10px]">
                             <span className="text-zinc-600">Asset</span>
@@ -319,8 +443,8 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
             <div className="w-12 h-12 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-xl">
               {'\u{1F4AD}'}
             </div>
-            <p className="text-sm text-zinc-500">暂无会话数据</p>
-            <p className="text-xs text-zinc-600">开始一次对话后，会话将显示在这里</p>
+            <p className="text-sm text-zinc-500">{searchQuery ? '没有匹配的会话资产' : '暂无会话数据'}</p>
+            <p className="text-xs text-zinc-600">{searchQuery ? '换个关键词再搜' : '开始一次对话后，会话将显示在这里'}</p>
           </div>
         )}
 
@@ -337,7 +461,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
         {!sessionListLoading && filtered.length > 0 && (
           <div className="text-center py-3">
             <span className="text-[10px] text-zinc-600 px-3 py-1 rounded-full bg-zinc-800">
-              共 {filtered.length} 个会话
+              {searchQuery ? `匹配 ${filtered.length} / ${sessionList.length} 个会话` : `共 ${filtered.length} 个会话`}
             </span>
           </div>
         )}

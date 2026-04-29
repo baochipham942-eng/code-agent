@@ -316,6 +316,7 @@ export type EvalHarnessSource =
   | 'test-runner'
   | 'eval-harness'
   | 'regression'
+  | 'swe-bench'
   // Legacy manual benchmark import only; not a current product/CI runner.
   | 'claude-e2e'
   | 'unknown';
@@ -325,6 +326,7 @@ export type EvalRunAggregation =
   | 'best_score_pass_at_k'
   | 'median_threshold'
   | 'regression_gate'
+  | 'swe_bench_gates'
   // Legacy manual benchmark import only; not a current product/CI runner.
   | 'legacy_e2e_retry'
   | 'unknown';

@@ -41,13 +41,13 @@ import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import {
-  Bot,
+  ArrowRight,
   Code2,
   FileQuestion,
+  FolderOpen,
   Image,
   Sparkles,
   Terminal,
-  Keyboard,
   AlertTriangle,
 } from 'lucide-react';
 export const ChatView: React.FC = () => {
@@ -490,54 +490,47 @@ export const ChatView: React.FC = () => {
 // 建议卡片类型
 interface SuggestionItem {
   icon: React.ElementType;
-  text: string;
+  title: string;
   description: string;
-  color: string;
-  borderColor: string;
+  prompt: string;
+  accent: string;
   iconColor: string;
 }
 
-// 默认建议卡片（gen8）
+// 新会话任务卡：把第一屏从示例展示改成可直接启动的工作入口。
 const defaultSuggestions: SuggestionItem[] = [
   {
-    icon: Sparkles,
-    text: '做一个 3D 旋转相册',
-    description: 'CSS 3D 效果',
-    color: 'from-blue-500/20 to-cyan-500/20',
-    borderColor: 'border-blue-500/20',
+    icon: FileQuestion,
+    title: '定位代码路径',
+    description: '先读入口、数据流和测试面',
+    prompt: '请先读当前仓库里和这个需求最相关的入口、状态、测试文件，给出最小可改切片，然后直接实现并验证。',
+    accent: 'bg-sky-500/10 border-sky-500/20',
     iconColor: 'text-blue-400',
   },
   {
     icon: Code2,
-    text: '做一个代码编辑器',
-    description: '语法高亮/行号',
-    color: 'from-emerald-500/20 to-teal-500/20',
-    borderColor: 'border-emerald-500/20',
+    title: '修一个缺口',
+    description: '小范围修改，保留现有结构',
+    prompt: '请按当前代码风格修一个最小缺口，只碰必要文件，改完跑贴边测试和 typecheck。',
+    accent: 'bg-emerald-500/10 border-emerald-500/20',
     iconColor: 'text-emerald-400',
   },
   {
-    icon: Terminal,
-    text: '做一个流程图编辑器',
-    description: '拖拽连线节点',
-    color: 'from-purple-500/20 to-pink-500/20',
-    borderColor: 'border-purple-500/20',
-    iconColor: 'text-purple-400',
+    icon: Sparkles,
+    title: '复用上一轮经验',
+    description: '从历史会话、Review 和产物继续',
+    prompt: '请从当前会话历史、Review Queue 和已有产物里找可复用上下文，接着做下一轮最小实现，不要重新铺一套方案。',
+    accent: 'bg-amber-500/10 border-amber-500/20',
+    iconColor: 'text-amber-400',
   },
   {
-    icon: FileQuestion,
-    text: '做一个粒子动画',
-    description: 'Canvas 特效',
-    color: 'from-red-500/20 to-orange-500/20',
-    borderColor: 'border-red-500/20',
-    iconColor: 'text-red-400',
+    icon: Terminal,
+    title: '发布前检查',
+    description: 'installer / update / release smoke',
+    prompt: '请检查 installer、update、release smoke 这条发布前路径，先找现有脚本和 checklist，再补最小验证缺口。',
+    accent: 'bg-violet-500/10 border-violet-500/20',
+    iconColor: 'text-violet-400',
   },
-];
-
-// Keyboard shortcuts for empty state
-const shortcuts = [
-  { keys: ['⌘', 'F'], label: '搜索消息' },
-  { keys: ['⌘', '⇧', 'P'], label: '命令面板' },
-  { keys: ['Esc', 'Esc'], label: '回溯' },
 ];
 
 const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ snapshot }) => {
@@ -578,68 +571,37 @@ const EmptyState: React.FC<{
   onSend,
 }) => {
   const suggestions = defaultSuggestions;
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const folderName = workingDirectory ? workingDirectory.split('/').filter(Boolean).pop() || workingDirectory : null;
+
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
-      {/* Hero Section */}
-      <div className="relative mb-8 animate-fade-in">
-        {/* Glow effect */}
-        <div className="absolute inset-0 w-24 h-24 mx-auto rounded-3xl bg-gradient-to-br from-primary-500/30 to-accent-purple/30 blur-2xl" />
-
-        {/* Icon */}
-        <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center shadow-2xl shadow-primary-500/30 animate-glow-pulse">
-          <Bot className="w-10 h-10 text-white" />
-        </div>
-
-        {/* Decorative elements */}
-        <div className="absolute -top-2 -right-2 w-6 h-6 rounded-lg bg-accent-cyan/20 border border-accent-cyan/30 flex items-center justify-center animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '2s' }}>
-          <Sparkles className="w-3 h-3 text-accent-cyan" />
-        </div>
-        <div className="absolute -bottom-1 -left-2 w-5 h-5 rounded-lg bg-accent-emerald/20 border border-accent-emerald/30 flex items-center justify-center animate-bounce" style={{ animationDelay: '1s', animationDuration: '2.5s' }}>
-          <Terminal className="w-2.5 h-2.5 text-accent-emerald" />
-        </div>
-      </div>
-
-      {/* Title */}
-      <h1 className="text-2xl font-bold text-zinc-200 mb-2 animate-fade-in" style={{ animationDelay: '100ms' }}>
-        Code Agent
-      </h1>
-
-      {/* Subtitle */}
-      <p className="text-zinc-400 max-w-md mb-8 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
-        你的 AI 编程助手。我可以帮你编写、调试、解释和测试代码。
-        从下方建议开始，或输入你自己的问题。
-      </p>
-
-      {/* Suggestion Cards */}
-      <div className="grid grid-cols-2 gap-3 max-w-lg w-full mb-10">
-        {suggestions.map((suggestion, index) => (
-          <SuggestionCard
-            key={suggestion.text}
-            {...suggestion}
-            onSend={onSend}
-            delay={300 + index * 75}
-          />
-        ))}
-      </div>
-
-      {/* Keyboard Shortcuts */}
-      <div className="flex items-center gap-6 animate-fade-in" style={{ animationDelay: '600ms' }}>
-        <Keyboard className="w-4 h-4 text-zinc-600" />
-        {shortcuts.map((s) => (
-          <div key={s.label} className="flex items-center gap-1.5">
-            <div className="flex items-center gap-0.5">
-              {s.keys.map((k) => (
-                <kbd
-                  key={k}
-                  className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-zinc-800 border border-zinc-700 text-zinc-400"
-                >
-                  {k}
-                </kbd>
-              ))}
-            </div>
-            <span className="text-xs text-zinc-600">{s.label}</span>
+    <div className="h-full flex flex-col items-center justify-center px-6 py-12">
+      <div className="w-full max-w-2xl animate-fade-in">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-zinc-100">新会话</h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              把需求拆成可执行任务，第一轮先做到能验证。
+            </p>
           </div>
-        ))}
+          {folderName && (
+            <div className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-zinc-400">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              <span className="truncate">{folderName}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {suggestions.map((suggestion, index) => (
+            <SuggestionCard
+              key={suggestion.title}
+              {...suggestion}
+              onSend={onSend}
+              delay={100 + index * 60}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -648,10 +610,10 @@ const EmptyState: React.FC<{
 // Suggestion card component
 interface SuggestionCardProps {
   icon: React.ElementType;
-  text: string;
+  title: string;
   description: string;
-  color: string;
-  borderColor: string;
+  prompt: string;
+  accent: string;
   iconColor: string;
   onSend: (message: string) => void;
   delay: number;
@@ -659,44 +621,34 @@ interface SuggestionCardProps {
 
 const SuggestionCard: React.FC<SuggestionCardProps> = ({
   icon: Icon,
-  text,
+  title,
   description,
-  color,
-  borderColor,
+  prompt,
+  accent,
   iconColor,
   onSend,
   delay,
 }) => {
   return (
     <button
-      onClick={() => onSend(text)}
-      className={`group relative p-4 rounded-2xl text-left
-                  bg-gradient-to-br ${color}
-                  border ${borderColor}
-                  hover:border-primary-500/30 hover:shadow-lg hover:shadow-primary-500/5
-                  transition-all duration-300 ease-out-expo
-                  hover:scale-[1.02] active:scale-[0.98]
+      onClick={() => onSend(prompt)}
+      className={`group relative min-h-[128px] rounded-lg border p-4 text-left ${accent}
+                  transition-colors duration-200 hover:border-white/[0.18] hover:bg-white/[0.05]
                   animate-fade-in-up`}
       style={{ animationDelay: `${delay}ms` }}
     >
-      {/* Icon */}
-      <div className={`w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300`}>
-        <Icon className={`w-4.5 h-4.5 ${iconColor}`} />
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-black/20">
+          <Icon className={`h-4 w-4 ${iconColor}`} />
+        </div>
+        <ArrowRight className="h-4 w-4 text-zinc-600 transition-colors group-hover:text-zinc-300" />
       </div>
 
-      {/* Text */}
-      <div className="text-sm font-medium text-zinc-200 group-hover:text-zinc-200 transition-colors mb-0.5">
-        {text}
+      <div className="text-sm font-medium text-zinc-100">
+        {title}
       </div>
-      <div className="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">
+      <div className="mt-1 text-xs leading-relaxed text-zinc-500">
         {description}
-      </div>
-
-      {/* Hover arrow */}
-      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-1 group-hover:translate-x-0">
-        <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
       </div>
     </button>
   );

@@ -12,6 +12,12 @@ const SYSTEM_PREAMBLE = [
   'You are a senior product designer reviewing whether a generated artifact lives up to a design brief.',
   '你的任务：按 5 个维度给打分（整数 1-5）并给中文 reason，最后给一句中文 summary。',
   '严格输出 JSON，禁止 markdown 代码块，禁止任何额外文本。',
+  // 强约束：避免 judge 在评 markdown / HTML artifact 时，把 artifact 里的特殊字符（表格 | 、引号、换行）',
+  // 复述进 reason 字段引发 JSON malformed。即使 artifact 含 markdown 表格 / HTML / emoji，',
+  // reason 也只能是单行中文短描述。',
+  'reason 字段约束：单行中文（≤80 字符），不要含换行、双引号、反斜杠、markdown 表格 (|) 或代码块；',
+  '即使 artifact 内容含特殊字符，也只用纯文字描述判断，不要复述 artifact 原文。',
+  'summary 字段约束：单行中文一句话整体判断，同样不含换行 / 双引号 / 表格符号。',
 ].join('\n');
 
 const SCORING_GUIDE = [

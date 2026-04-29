@@ -69,7 +69,7 @@ export interface ComputerAction {
 
 export const computerUseTool: Tool = {
   name: 'computer_use',
-  description: `Control the computer with mouse, keyboard, and smart element location.
+  description: `Control the computer with mouse, keyboard, and smart element location. Also exposed as "Computer" (capital C) — both names map to the same capability set; either entry is fine.
 
 ## Basic Actions (coordinate-based):
 - get_state: Return Computer Surface readiness, mode, approvals, and last action

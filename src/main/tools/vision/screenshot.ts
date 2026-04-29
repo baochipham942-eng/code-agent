@@ -17,6 +17,11 @@ export const screenshotTool: Tool = {
   name: 'screenshot',
   description: `Capture a screenshot of the screen or a specific window, with optional AI analysis.
 
+IMPORTANT — visibility caveat: by default the assistant only gets back a file path. The image bytes are NOT injected into the conversation. To actually see what's on screen you must either:
+  (a) call this tool with analyze=true (and optionally a prompt), or
+  (b) chain the image_analyze tool on the returned path afterward.
+Without one of those two, do NOT claim you observed UI state, success, or content — you only have a saved PNG you cannot read.
+
 Use this tool to:
 - Capture the full screen for visual context
 - Capture a specific application window
@@ -27,10 +32,10 @@ Parameters:
 - target (optional): 'screen' (default) or 'window'
 - windowName (optional): Name of window to capture (if target is 'window')
 - outputPath (optional): Where to save the screenshot
-- analyze (optional): Enable AI analysis (default: false)
+- analyze (optional): Enable AI analysis (default: false). REQUIRED if you intend to verify what is on screen.
 - prompt (optional): Custom analysis prompt (default: describe content)
 
-Returns the path to the saved screenshot file and optional AI analysis.`,
+Returns the path to the saved screenshot file, plus AI analysis if analyze=true.`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

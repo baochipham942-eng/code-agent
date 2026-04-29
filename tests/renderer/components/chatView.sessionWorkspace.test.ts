@@ -184,8 +184,10 @@ describe('ChatView session shell', () => {
     expect(html).toContain('task-status-bar');
     expect(html).toContain('chat-input');
     expect(html).toContain('新会话');
-    expect(html).toContain('定位代码路径');
-    expect(html).toContain('发布前检查');
+    expect(html).toContain('写一封邮件或安排日程');
+    expect(html).toContain('做一份方案 / 文档 / PPT');
+    expect(html).toContain('查一个事 / 对比一组方案');
+    expect(html).toContain('改一段代码');
     expect(html).not.toContain('继续推进 Phase 5');
   });
 });

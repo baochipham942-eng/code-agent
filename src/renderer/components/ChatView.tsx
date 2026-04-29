@@ -43,11 +43,11 @@ import ipcService from '../services/ipcService';
 import {
   ArrowRight,
   Code2,
-  FileQuestion,
   FolderOpen,
   Image,
+  Mail,
+  Search,
   Sparkles,
-  Terminal,
   AlertTriangle,
 } from 'lucide-react';
 export const ChatView: React.FC = () => {
@@ -497,39 +497,39 @@ interface SuggestionItem {
   iconColor: string;
 }
 
-// 新会话任务卡：把第一屏从示例展示改成可直接启动的工作入口。
+// 新会话任务卡：覆盖工作生活四类入口（沟通安排 / 内容创作 / 调研对比 / 代码改动）。
 const defaultSuggestions: SuggestionItem[] = [
   {
-    icon: FileQuestion,
-    title: '定位代码路径',
-    description: '先读入口、数据流和测试面',
-    prompt: '请先读当前仓库里和这个需求最相关的入口、状态、测试文件，给出最小可改切片，然后直接实现并验证。',
+    icon: Mail,
+    title: '写一封邮件或安排日程',
+    description: '邮件、会议、待办都能直接落地',
+    prompt: '帮我起草一封邮件或安排一个会议；如果信息还不全，先问我收件人、目的和关键时间，然后给一份可直接发的版本。',
+    accent: 'bg-amber-500/10 border-amber-500/20',
+    iconColor: 'text-amber-400',
+  },
+  {
+    icon: Sparkles,
+    title: '做一份方案 / 文档 / PPT',
+    description: '从一句话开始，直接出可发的稿',
+    prompt: '帮我做一份方案或文档；先用一两句话和我对齐目的、读者和篇幅，再直接出完整稿，不要只给大纲。',
+    accent: 'bg-violet-500/10 border-violet-500/20',
+    iconColor: 'text-violet-400',
+  },
+  {
+    icon: Search,
+    title: '查一个事 / 对比一组方案',
+    description: '搜索 + 对比 + 给推荐',
+    prompt: '帮我把这件事查清楚或把这几个选项对比一下；先确认我关心的判断维度，再给结论 + 理由，不要堆链接。',
     accent: 'bg-sky-500/10 border-sky-500/20',
     iconColor: 'text-blue-400',
   },
   {
     icon: Code2,
-    title: '修一个缺口',
-    description: '小范围修改，保留现有结构',
-    prompt: '请按当前代码风格修一个最小缺口，只碰必要文件，改完跑贴边测试和 typecheck。',
+    title: '改一段代码',
+    description: '小范围修改，跑贴边测试',
+    prompt: '帮我改一段代码：先看清当前代码风格和上下文，只动必要文件，改完跑贴边测试和 typecheck 再交。',
     accent: 'bg-emerald-500/10 border-emerald-500/20',
     iconColor: 'text-emerald-400',
-  },
-  {
-    icon: Sparkles,
-    title: '复用上一轮经验',
-    description: '从历史会话、Review 和产物继续',
-    prompt: '请从当前会话历史、Review Queue 和已有产物里找可复用上下文，接着做下一轮最小实现，不要重新铺一套方案。',
-    accent: 'bg-amber-500/10 border-amber-500/20',
-    iconColor: 'text-amber-400',
-  },
-  {
-    icon: Terminal,
-    title: '发布前检查',
-    description: 'installer / update / release smoke',
-    prompt: '请检查 installer、update、release smoke 这条发布前路径，先找现有脚本和 checklist，再补最小验证缺口。',
-    accent: 'bg-violet-500/10 border-violet-500/20',
-    iconColor: 'text-violet-400',
   },
 ];
 

@@ -26,7 +26,12 @@ import { DiffView } from './DiffView';
 import { ChartBlock } from './features/chat/MessageBubble/ChartBlock';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
-import { QuestionFormPreview } from './QuestionFormPreview';
+import {
+  QuestionFormPreview,
+  DESIGN_BRIEF_SUBMIT_EVENT,
+  type DesignBriefSubmitDetail,
+} from './QuestionFormPreview';
+import { useSessionStore } from '../stores/sessionStore';
 
 function kindLabel(kind: WorkspacePreviewKind): string {
   switch (kind) {
@@ -278,6 +283,20 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
   const [copied, setCopied] = useState(false);
+
+  // 监听 question-form 提交事件，把 brief 锁定到当前 session 运行时 state（不进 DB）。
+  // 下一轮 sendMessage 会从 sessionStore 读这条 brief，prepend 到 IPC content 注入 LLM。
+  useEffect(() => {
+    function onBriefSubmit(e: Event) {
+      const detail = (e as CustomEvent<DesignBriefSubmitDetail>).detail;
+      if (!detail) return;
+      const sessionId = useSessionStore.getState().currentSessionId;
+      if (!sessionId) return;
+      useSessionStore.getState().setSessionDesignBrief(sessionId, detail.brief);
+    }
+    window.addEventListener(DESIGN_BRIEF_SUBMIT_EVENT, onBriefSubmit);
+    return () => window.removeEventListener(DESIGN_BRIEF_SUBMIT_EVENT, onBriefSubmit);
+  }, []);
 
   const selected = useMemo(() => (
     items.find((item) => item.id === selectedId) || items[0] || null

@@ -236,9 +236,15 @@ async function main() {
 - 完成后调用 finish 工具，给出修改摘要
 
 【关键 — 不要陷入死循环】：
-- 如果你已经 edit_file 完成修改，后续 grep/read 找不到额外验证信息时，应该立刻调 finish，不要反复 grep 同类 pattern
-- 如果某个值（如 MIME type / IANA 标准 / 协议字符串）你不确定具体取值，宁可在 finish summary 里写"该值我不确定，建议人工 review"，也不要瞎编一个看似专业的值
-- 自我验证最多 1-2 轮即可，不要把验证当成主要任务
+- 已 edit_file 完成修改后，后续 grep/read 找不到额外验证信息时立刻调 finish，不要反复 grep
+- 自我验证最多 1-2 轮即可
+- 不确定的值（MIME type / IANA 标准 / 协议字符串）宁可在 finish summary 写"该值不确定，建议人工 review"，**不要瞎编一个看似专业的值**
+
+【关键 — 探索黑洞预算】：
+- 探索（grep/read/list_dir）连续超过 5 轮还**没有调 edit_file** 时，意味着你定位不到修复点
+- 这时不要继续硬探索，立刻调 finish，summary 里写明：「探索 N 轮未能定位修复点。调研了 X / Y / Z（列出关键 grep pattern 和读过的文件）。可能需要改的位置是 [最佳猜测]，但不确定。建议人工接手。」
+- 有放弃的勇气是合格工程师的标志，比硬撑 15 轮零产出更专业
+- 注意：这条**只针对零 edit 的情况**。如果你已经 edit 过了在做验证，按"不要陷入死循环"规则即可
 
 注意：edit_file 要求 old_string 在文件中唯一出现。如果不唯一，先 read_file 看上下文再加更多 context 让它唯一。`;
 

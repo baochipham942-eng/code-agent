@@ -99,9 +99,50 @@ npx tsx eval/swe-bench/reevaluate-with-judge.ts
 
 ### 下一步演进方向
 
-- 扩 difficulty=`15min-1hour` 看 mimo 在难任务表现（预期掉到 50-60%）
 - 扩 REPO_NUMERIC_ID 映射到 sympy / matplotlib（跨 repo 验证）
-- 设计 hypothesisGenerator（看 fail case transcript 自动出"修哪里"假设，参考 ADR-015 风险段）
+- ~~设计 hypothesisGenerator~~ ← **2026-04-29 实验验证此路在 mimo 上反向，搁置**
+
+---
+
+## 2026-04-29 batch3 + hypothesis-driven 实验
+
+### batch3 — 难度=15min-1hour 子集 (5 case)
+
+| Case | 真测 | 备注 |
+|------|------|------|
+| django-14500 | ✅ | 7 轮，judge 100 |
+| django-11749 | ✅ | 10 轮，judge 100 |
+| django-14122 | ❌ | 探索黑洞，15 轮零 edit |
+| django-13315 | ✅ | 12 轮，judge 40（位置不同但等价） |
+| django-13809 | ✅ | 13 轮，judge 85 |
+
+**4/5 = 80% pass rate**（业界 docker e2e）
+
+### 累计 15 case (10 个 <15min + 5 个 15min-1hour)
+
+| 难度 | 通过率 |
+|------|------|
+| <15min | 9/10 = 90% |
+| 15min-1hour | 4/5 = 80% |
+| **合计** | **13/15 = 86.7%** |
+
+### Hypothesis-driven 失败实验
+
+2026-04-29 试在 system prompt 加"先列 3-5 假设再验证 → 验证完都不对就 finish"流程，跑同样 5 个 hard case（hypo-v1 vs batch3 baseline）：
+
+| Case | Baseline | Hypo-v1 | 变化 |
+|------|---------|---------|------|
+| django-14500 | ✅ 7 轮 | ❌ 3 轮 skipped | **退化** |
+| django-11749 | ✅ 10 轮 | ✅ 12 轮 | 维持 |
+| django-14122 | ❌ 15 轮 | ❌ 2 轮 skipped | 维持 fail，轮数大降 |
+| django-13315 | ✅ 12 轮 | ✅ 13 轮 | 维持 |
+| django-13809 | ✅ 13 轮 | ❌ 7 轮 exec_failed | **退化** |
+
+**结果**: 4/5 → 2/5 = **-40%**
+
+**根因**: mimo 列的假设准度不够 + "假设全验证完承认搞不定"指令 → agent 早早 finish，错过原本能 brute-force 找到的 hook 点。结构化推理需要模型本身代码定位足够准。**mimo-v2.5-pro 适合 brute-force，不适合 hypothesis-driven**。
+
+**结论**: 此 prompt 已 revert。要试 hypothesis-driven 必须换 GPT-5 / Claude Opus 当 baseline。这是个有价值的失败实验——印证"prompt 优化技巧不能脱离模型基础能力"。
 
 ---
 

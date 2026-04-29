@@ -14,7 +14,12 @@ import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemo
 import { getRepoMap } from '../../../context/repoMap';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
-import { getPromptForTask, needsGenerativeUI, GENERATIVE_UI_PROMPT } from '../../../prompts/builder';
+import {
+  getPromptForTask,
+  needsGenerativeUI,
+  GENERATIVE_UI_PROMPT,
+  QUESTION_FORM_PROMPT,
+} from '../../../prompts/builder';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
 import { estimateModelMessageTokens, estimateTokens } from '../../../context/tokenOptimizer';
@@ -104,7 +109,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   const cached = cache.dynamicPrompt;
   const now = Date.now();
 
-  if (cached && cached.key === cacheKey && now - cached.createdAt < DYNAMIC_PROMPT_CACHE_TTL_MS) {
+  if (cached?.key === cacheKey && now - cached.createdAt < DYNAMIC_PROMPT_CACHE_TTL_MS) {
     logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
     return cached.prompt;
   }
@@ -203,10 +208,12 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     );
   }
 
-  // 按意图注入 Generative UI 能力说明（~700 tok）
+  // 按意图注入 Generative UI 能力说明（~700 tok）+ Design brief 收集规则（~250 tok）
   if (typeof userQuery === 'string' && needsGenerativeUI(userQuery)) {
     systemPrompt = appendPromptBlockWithinBudget(systemPrompt, GENERATIVE_UI_PROMPT, 'generative UI');
-    logger.debug('[ContextAssembly] GenerativeUI prompt injected (intent matched)');
+    // 同条件注入 question-form 规则——LLM 看到 design-brief reminder 时会按规则跳过 form。
+    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, QUESTION_FORM_PROMPT, 'question form');
+    logger.debug('[ContextAssembly] GenerativeUI + QuestionForm prompts injected (intent matched)');
   }
 
   // 注入延迟工具提示
@@ -383,8 +390,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     const now = Date.now();
 
     if (
-      cachedCompression &&
-      cachedCompression.key === compressionCacheKey &&
+      cachedCompression?.key === compressionCacheKey &&
       now - cachedCompression.createdAt < COMPRESSION_CACHE_TTL_MS
     ) {
       ctx.runtime.compressionState = CompressionState.deserialize(cachedCompression.state);

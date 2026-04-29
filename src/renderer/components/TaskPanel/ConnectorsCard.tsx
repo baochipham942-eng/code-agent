@@ -29,6 +29,10 @@ import { Card } from './Card';
 
 type ConnectionState = 'connected' | 'disconnected' | 'connecting' | 'error' | 'lazy' | 'not_applicable';
 
+interface ConnectorsCardProps {
+  title?: string;
+}
+
 function StatusIcon({ state }: { state: ConnectionState }) {
   switch (state) {
     case 'connected':
@@ -45,7 +49,7 @@ function StatusIcon({ state }: { state: ConnectionState }) {
   }
 }
 
-export const ConnectorsCard: React.FC = () => {
+export const ConnectorsCard: React.FC<ConnectorsCardProps> = ({ title = 'CONNECTORS' }) => {
   const { t } = useI18n();
   const { openSettingsTab } = useAppStore();
   const { connectors, mcpServers } = useWorkbenchCapabilityRegistry();
@@ -102,7 +106,7 @@ export const ConnectorsCard: React.FC = () => {
   if (isEmpty) {
     return (
       <Card
-        title="CONNECTORS"
+        title={title}
         count="0"
         rightElement={
           <button
@@ -132,7 +136,7 @@ export const ConnectorsCard: React.FC = () => {
 
   return (
     <>
-      <Card title="CONNECTORS" count={countLabel || undefined}>
+      <Card title={title} count={countLabel || undefined}>
         <div className="space-y-2">
           {connectors.length > 0 && (
             <div className="space-y-1.5">

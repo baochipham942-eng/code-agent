@@ -278,6 +278,8 @@ function artifactKind(type: string): WorkspacePreviewKind {
       return 'chart';
     case 'mermaid':
       return 'diagram';
+    case 'question_form':
+      return 'question_form';
     default:
       return 'file';
   }
@@ -326,27 +328,31 @@ function collectMessageArtifacts(
   for (const message of messages) {
     if (!message.artifacts?.length) continue;
     for (const artifact of message.artifacts) {
+      const isQuestionForm = artifact.type === 'question_form';
       addItem(items, seen, {
         id: `artifact:${message.id}:${artifact.id}`,
         kind: artifactKind(artifact.type),
-        title: artifact.title || artifact.type,
-        subtitle: `v${artifact.version}`,
-        status: 'ready',
+        title: isQuestionForm ? (artifact.title || '设计 brief 收集') : (artifact.title || artifact.type),
+        subtitle: isQuestionForm ? '请补齐后提交' : `v${artifact.version}`,
+        status: isQuestionForm ? 'draft' : 'ready',
         createdAt: message.timestamp,
         source: {
           kind: 'message',
-          label: 'Assistant artifact',
+          label: isQuestionForm ? 'Brief form' : 'Assistant artifact',
           messageId: message.id,
         },
         content: {
           html: artifact.type === 'generative_ui' ? artifact.content : undefined,
-          json: ['chart', 'spreadsheet', 'document'].includes(artifact.type) ? artifact.content : undefined,
+          json: ['chart', 'spreadsheet', 'document', 'question_form'].includes(artifact.type)
+            ? artifact.content
+            : undefined,
           text: artifact.type === 'mermaid' ? artifact.content : undefined,
         },
-        actions: [
+        actions: isQuestionForm ? [] : [
           { kind: 'copy', label: 'Copy' },
         ],
-        priority: 40,
+        priority: isQuestionForm ? 85 : 40,
+        currentTurn: isQuestionForm ? true : undefined,
       }, `artifact:${artifact.id}`);
     }
   }

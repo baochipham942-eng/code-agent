@@ -23,7 +23,7 @@ const sessionState = {
         recentToolNames: ['browser_action'],
       },
     },
-  ] as any[],
+  ] as unknown[],
   sessionRuntimes: new Map([
     ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, contextHealth: null, lastActivityAt: Date.now() - 3_000 }],
   ]),
@@ -125,7 +125,7 @@ vi.mock('../../../src/renderer/components/features/chat/TurnBasedTraceView', () 
 }));
 
 vi.mock('../../../src/renderer/components/features/chat/ChatInput', () => ({
-  ChatInput: React.forwardRef((_props, _ref) => React.createElement('div', null, 'chat-input')),
+  ChatInput: React.forwardRef(() => React.createElement('div', null, 'chat-input')),
 }));
 
 vi.mock('../../../src/renderer/components/features/chat/ChatInput/useFileUpload', () => ({
@@ -183,6 +183,9 @@ describe('ChatView session shell', () => {
 
     expect(html).toContain('task-status-bar');
     expect(html).toContain('chat-input');
+    expect(html).toContain('新会话');
+    expect(html).toContain('定位代码路径');
+    expect(html).toContain('发布前检查');
     expect(html).not.toContain('继续推进 Phase 5');
   });
 });

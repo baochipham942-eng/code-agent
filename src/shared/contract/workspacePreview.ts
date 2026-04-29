@@ -18,7 +18,8 @@ export type WorkspacePreviewKind =
   | 'handoff'
   | 'generic_html'
   | 'chart'
-  | 'diagram';
+  | 'diagram'
+  | 'question_form';
 
 export type WorkspacePreviewStatus = 'draft' | 'ready' | 'applied' | 'sent' | 'failed';
 

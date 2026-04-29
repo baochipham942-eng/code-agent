@@ -9,6 +9,7 @@ import {
   FileText,
   Image,
   Mail,
+  MessageSquare,
   Table2,
   Terminal,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import { DiffView } from './DiffView';
 import { ChartBlock } from './features/chat/MessageBubble/ChartBlock';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
+import { QuestionFormPreview } from './QuestionFormPreview';
 
 function kindLabel(kind: WorkspacePreviewKind): string {
   switch (kind) {
@@ -41,6 +43,7 @@ function kindLabel(kind: WorkspacePreviewKind): string {
     case 'generic_html': return 'HTML';
     case 'chart': return 'Chart';
     case 'diagram': return 'Diagram';
+    case 'question_form': return 'Brief';
     default: return 'File';
   }
 }
@@ -67,6 +70,8 @@ function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
       return <Code2 className={`${cls} text-orange-300`} />;
     case 'terminal':
       return <Terminal className={`${cls} text-zinc-300`} />;
+    case 'question_form':
+      return <MessageSquare className={`${cls} text-cyan-300`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -235,6 +240,9 @@ function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
 }
 
 function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
+  if (item.kind === 'question_form') {
+    return <QuestionFormPreview item={item} />;
+  }
   if (item.kind === 'diff' && item.content?.before !== undefined && item.content?.after !== undefined) {
     return (
       <DiffView

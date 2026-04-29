@@ -164,10 +164,16 @@ export const CHANNEL_CHANNELS = {
   DISCONNECT_ACCOUNT: 'channel:disconnect-account',
   /** 获取可用通道类型 */
   GET_CHANNEL_TYPES: 'channel:get-types',
+  /** 获取最近外部消息 */
+  LIST_INBOX: 'channel:list-inbox',
+  /** 忽略一条外部消息 */
+  DISMISS_INBOX_ITEM: 'channel:dismiss-inbox-item',
   /** 账号状态变化事件 */
   ACCOUNT_STATUS_CHANGED: 'channel:account-status-changed',
   /** 账号列表变化事件 */
   ACCOUNTS_CHANGED: 'channel:accounts-changed',
+  /** 最近外部消息变化事件 */
+  INBOX_CHANGED: 'channel:inbox-changed',
 } as const;
 
 /**

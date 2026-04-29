@@ -273,6 +273,40 @@ export interface ChannelAccount {
 }
 
 // ============================================================================
+// Channel Inbox / Outbox
+// ============================================================================
+
+export type ChannelInboxStatus =
+  | 'new'
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'dismissed';
+
+export interface ChannelOutboxDraft {
+  content: string;
+  status: 'draft' | 'sent' | 'failed';
+  messageId?: string;
+  error?: string;
+  updatedAt: number;
+}
+
+export interface ChannelInboxItem {
+  id: string;
+  accountId: string;
+  accountName: string;
+  channelType: ChannelType;
+  message: ChannelMessage;
+  receivedAt: number;
+  status: ChannelInboxStatus;
+  sessionKey?: string;
+  sessionId?: string;
+  error?: string;
+  outboxDraft?: ChannelOutboxDraft;
+}
+
+// ============================================================================
 // Channel Events
 // ============================================================================
 

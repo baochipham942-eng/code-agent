@@ -16,8 +16,10 @@ import type {
   ChannelAccount,
   ChannelAccountConfig,
   ChannelAccountStatus,
+  ChannelInboxItem,
   ChannelMessage,
   ChannelEvent,
+  ChannelOutboxDraft,
   SendMessageResult,
 } from '../../shared/contract/channel';
 import { ApiChannel, createApiChannelFactory } from './api/apiChannel';
@@ -41,6 +43,8 @@ export interface ChannelManagerEvents {
   account_status_change: (accountId: string, status: ChannelAccountStatus, error?: string) => void;
   /** 账号列表变化 */
   accounts_changed: (accounts: ChannelAccount[]) => void;
+  /** 最近外部消息变化 */
+  inbox_changed: (items: ChannelInboxItem[]) => void;
 }
 
 /**
@@ -57,8 +61,11 @@ export class ChannelManager extends EventEmitter {
   private activeChannels: Map<string, IChannelPlugin> = new Map();
   // 账号配置 (内存缓存)
   private accounts: Map<string, ChannelAccount> = new Map();
+  // 最近外部输入，仅保存在当前运行时内存中
+  private inboxItems: Map<string, ChannelInboxItem> = new Map();
   // 消息处理器
   private messageHandler: ChannelMessageHandler | null = null;
+  private readonly maxInboxItems = 100;
 
   private constructor() {
     super();
@@ -354,6 +361,64 @@ export class ChannelManager extends EventEmitter {
     return this.getAccounts();
   }
 
+  getInboxItems(limit = 50, includeDismissed = false): ChannelInboxItem[] {
+    return Array.from(this.inboxItems.values())
+      .filter((item) => includeDismissed || item.status !== 'dismissed')
+      .sort((a, b) => b.receivedAt - a.receivedAt)
+      .slice(0, limit);
+  }
+
+  recordInboundMessage(accountId: string, message: ChannelMessage): ChannelInboxItem {
+    const account = this.accounts.get(accountId);
+    const id = this.getInboxItemId(accountId, message.id);
+    const existing = this.inboxItems.get(id);
+    const channelType = account?.type ?? 'http-api';
+    const item: ChannelInboxItem = {
+      id,
+      accountId,
+      accountName: account?.name || accountId,
+      channelType,
+      message,
+      receivedAt: message.timestamp || Date.now(),
+      status: existing?.status || 'new',
+      sessionKey: existing?.sessionKey,
+      sessionId: existing?.sessionId,
+      error: existing?.error,
+      outboxDraft: existing?.outboxDraft,
+    };
+
+    this.inboxItems.set(id, item);
+    this.pruneInbox();
+    this.emitInboxChanged();
+    return item;
+  }
+
+  updateInboxItem(
+    itemId: string,
+    updates: Partial<Pick<ChannelInboxItem, 'status' | 'sessionKey' | 'sessionId' | 'error'>> & {
+      outboxDraft?: ChannelOutboxDraft;
+    },
+  ): ChannelInboxItem | null {
+    const existing = this.inboxItems.get(itemId);
+    if (!existing) return null;
+
+    const next: ChannelInboxItem = {
+      ...existing,
+      ...updates,
+    };
+    this.inboxItems.set(itemId, next);
+    this.emitInboxChanged();
+    return next;
+  }
+
+  dismissInboxItem(itemId: string): boolean {
+    return Boolean(this.updateInboxItem(itemId, { status: 'dismissed' }));
+  }
+
+  getInboxItemId(accountId: string, messageId: string): string {
+    return `${accountId}:${messageId}`;
+  }
+
   /**
    * 获取所有已注册的插件
    */
@@ -532,6 +597,8 @@ export class ChannelManager extends EventEmitter {
       sender: message.sender.name,
     });
 
+    this.recordInboundMessage(accountId, message);
+
     // 发出事件
     this.emit('message', accountId, message);
 
@@ -541,6 +608,19 @@ export class ChannelManager extends EventEmitter {
         logger.error('Message handler error', { accountId, error });
       });
     }
+  }
+
+  private pruneInbox(): void {
+    if (this.inboxItems.size <= this.maxInboxItems) return;
+    const ordered = Array.from(this.inboxItems.values())
+      .sort((a, b) => b.receivedAt - a.receivedAt);
+    for (const item of ordered.slice(this.maxInboxItems)) {
+      this.inboxItems.delete(item.id);
+    }
+  }
+
+  private emitInboxChanged(): void {
+    this.emit('inbox_changed', this.getInboxItems());
   }
 
   private updateAccountStatus(

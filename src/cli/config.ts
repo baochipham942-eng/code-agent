@@ -36,7 +36,13 @@ export class CLIConfigService {
 
   constructor() {
     const dataDir = this.getDataDir();
-    this.configPath = path.join(dataDir, 'settings.json');
+    // 与 main ConfigService 同源 — 主进程 ConfigService 写到 config.json，
+    // CLIConfigService（webServer / CLI 模式）也优先从这里读，避免两套配置
+    // 文件分裂导致 UI 显示选了 A、实际推理走 B 的 bug。
+    // 缺失 config.json 时回落到 settings.json，保留 legacy CLI 用户兼容性。
+    const configJsonPath = path.join(dataDir, 'config.json');
+    const settingsJsonPath = path.join(dataDir, 'settings.json');
+    this.configPath = fs.existsSync(configJsonPath) ? configJsonPath : settingsJsonPath;
     this.settings = this.loadSettings();
   }
 

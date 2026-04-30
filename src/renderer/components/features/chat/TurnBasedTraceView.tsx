@@ -19,6 +19,21 @@ interface TurnBasedTraceViewProps {
   activeMatchIndex?: number;
 }
 
+export function getFocusedTurnIndex(projection: TraceProjection): number {
+  if (projection.turns.length === 0) return -1;
+  if (
+    projection.activeTurnIndex >= 0 &&
+    projection.activeTurnIndex < projection.turns.length
+  ) {
+    return projection.activeTurnIndex;
+  }
+  return projection.turns.length - 1;
+}
+
+export function shouldFollowTurnOutput(isAtBottom: boolean): 'smooth' | false {
+  return isAtBottom ? 'smooth' : false;
+}
+
 export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   projection,
   hasOlderMessages,
@@ -29,6 +44,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 }) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const prevActiveMatchRef = useRef(-1);
+  const prevFocusedTurnRef = useRef<string | null>(null);
+  const focusedTurnIndex = getFocusedTurnIndex(projection);
+  const focusedTurnId =
+    focusedTurnIndex >= 0 ? projection.turns[focusedTurnIndex]?.turnId : undefined;
 
   // 让滚动条在两侧各占一半空间：
   // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
@@ -54,22 +73,42 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     });
   }, [activeMatchIndex, searchMatches]);
 
+  useEffect(() => {
+    if (focusedTurnIndex < 0 || !focusedTurnId) return;
+
+    const focusKey = `${projection.sessionId}:${focusedTurnId}`;
+    if (prevFocusedTurnRef.current === focusKey) return;
+    prevFocusedTurnRef.current = focusKey;
+
+    const scroll = () => {
+      virtuosoRef.current?.scrollToIndex({
+        index: focusedTurnIndex,
+        align: 'start',
+        behavior: 'auto',
+      });
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(scroll);
+      return () => cancelAnimationFrame(frame);
+    }
+
+    const timer = setTimeout(scroll, 0);
+    return () => clearTimeout(timer);
+  }, [projection.sessionId, focusedTurnId, focusedTurnIndex]);
+
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {
     if (!hasOlderMessages || isLoadingOlder || !onLoadOlder) return;
     onLoadOlder();
   }, [hasOlderMessages, isLoadingOlder, onLoadOlder]);
 
-  // Auto-follow output: keep scrolled to bottom during streaming
+  // Keep bottom-follow opt-in; active/latest turns get their own top alignment.
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
-      const isStreaming = projection.activeTurnIndex >= 0;
-      // Follow if streaming or if already at bottom
-      if (isStreaming) return 'smooth';
-      if (isAtBottom) return 'smooth';
-      return false;
+      return shouldFollowTurnOutput(isAtBottom);
     },
-    [projection.activeTurnIndex],
+    [],
   );
 
   // Render individual turn card
@@ -125,6 +164,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       totalCount={projection.turns.length}
       itemContent={itemContent}
       followOutput={followOutput}
+      initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}
       startReached={handleStartReached}
       overscan={300}
       increaseViewportBy={{ top: 200, bottom: 200 }}

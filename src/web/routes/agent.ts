@@ -211,6 +211,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       let consecutiveToolFailures = 0;
       const assistantToolCalls: CachedToolCall[] = [];
       const toolResultMessages: CachedMessage[] = [];
+      const loopPersistedAssistantOrToolMessageIds = new Set<string>();
       // 追踪 text 和 tool_call 的交错顺序
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }> = [];
       let lastPartType: 'text' | 'tool_call' | null = null;
@@ -223,6 +224,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? { items: event.data, sessionId }
           : event.data ? { ...event.data, sessionId } : { sessionId };
         sendSSE(res, event.type, eventData);
+
+        if (event.type === 'message' && event.data && typeof event.data === 'object') {
+          const message = event.data as import('../../shared/contract').Message;
+          if (message.id && (message.role === 'assistant' || message.role === 'tool')) {
+            loopPersistedAssistantOrToolMessageIds.add(message.id);
+          }
+        }
 
         // 收集 stream_chunk 中的文本
         if (event.type === 'stream_chunk' && event.data?.content) {
@@ -359,6 +367,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           }
 
           const sm = await tryGetSessionManager();
+          const loopPersistedAssistantOrTool = loopPersistedAssistantOrToolMessageIds.size > 0;
           if (sm) {
             // 通过 SM 写入，同时更新 DB 和 sessionCache
             await sm.addMessageToSession(sessionId, {
@@ -367,7 +376,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               content: prompt,
               timestamp: userMsg.timestamp,
             } as import('../../shared/contract').Message);
-            if (assistantText || assistantToolCalls.length > 0) {
+            if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
@@ -387,7 +396,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               content: prompt,
               timestamp: userMsg.timestamp,
             } as import('../../shared/contract').Message);
-            if (assistantText || assistantToolCalls.length > 0) {
+            if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',

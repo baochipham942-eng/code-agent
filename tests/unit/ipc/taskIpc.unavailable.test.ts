@@ -4,9 +4,9 @@
 //
 // web 模式下 webServer 注入 `getTaskManager: () => null`。之前每次 task:* 动作
 // 都会抛 "TaskManager not initialized" 并被 logger.error 记录，污染 boot 日志。
-// 新逻辑：null 是预期状态，下沉为 debug 日志 + 结构化 unavailable 响应；
-// 只读查询（getAllStates / getQueue / getStats）返回安全默认，避免 renderer
-// 轮询时触发空指针或额外特判。
+// 新逻辑：null 是预期状态；只读查询（getAllStates / getQueue / getStats）
+// 返回安全默认且静默，避免 renderer 轮询刷 debug；写/控制类动作返回
+// 结构化 unavailable 响应，并按 action 限制诊断日志。
 // ============================================================================
 
 import { EventEmitter } from 'events';
@@ -73,7 +73,7 @@ describe('task.ipc — TaskManager unavailable', () => {
     platformState.rendererListeners.length = 0;
   });
 
-  it('write 类动作返回结构化 unavailable，不触发 error 日志', async () => {
+  it('write 类动作返回结构化 unavailable，不触发 error 日志，debug 按 action 限制', async () => {
     const ipc = makeFakeIpc();
     registerTaskHandlers(ipc as never, () => null);
     const handler = ipc.getHandler();
@@ -84,10 +84,35 @@ describe('task.ipc — TaskManager unavailable', () => {
       expect(res.success).toBe(false);
       expect(res.error?.code).toBe('TASK_MANAGER_UNAVAILABLE');
     }
+    const repeated = await handler({}, { action: 'start', payload: { sessionId: 's1' } });
+    expect(repeated.success).toBe(false);
 
     expect(logState.errorLog).not.toHaveBeenCalled();
-    // 每个 action 走 debug 路径
     expect(logState.debugLog.mock.calls.length).toBe(actions.length);
+  });
+
+  it('renderer 轮询类读操作返回安全默认且不打 debug', async () => {
+    const ipc = makeFakeIpc();
+    registerTaskHandlers(ipc as never, () => null);
+    const handler = ipc.getHandler();
+
+    for (let i = 0; i < 3; i++) {
+      await expect(handler({}, { action: 'getAllStates', payload: {} })).resolves.toMatchObject({
+        success: true,
+        data: {},
+      });
+      await expect(handler({}, { action: 'getQueue', payload: {} })).resolves.toMatchObject({
+        success: true,
+        data: [],
+      });
+      await expect(handler({}, { action: 'getStats', payload: {} })).resolves.toMatchObject({
+        success: true,
+        data: { running: 0, queued: 0, available: 0, maxConcurrent: 0 },
+      });
+    }
+
+    expect(logState.errorLog).not.toHaveBeenCalled();
+    expect(logState.debugLog).not.toHaveBeenCalled();
   });
 
   it('getAllStates 返回空对象而不是 unavailable，避免 renderer 轮询特判', async () => {

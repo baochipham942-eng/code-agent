@@ -93,6 +93,190 @@ const PARALLEL_JUDGMENT_PROMPT = `你是一个任务分析专家。快速判断�
 
 只输出JSON，不要其他内容。`;
 
+const PARSE_LOG_PREVIEW_LENGTH = 500;
+
+function truncateForLog(value: string, maxLength = PARSE_LOG_PREVIEW_LENGTH): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, maxLength)}...`;
+}
+
+function findBalancedObjectCandidates(input: string): string[] {
+  const candidates: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let quote: '"' | "'" | '`' | null = null;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    const next = input[i + 1];
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) {
+        start = i;
+      }
+      depth++;
+      continue;
+    }
+
+    if (char === '}') {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          candidates.push(input.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function extractJsonCandidates(response: string): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (candidate: string): void => {
+    const trimmed = candidate.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+    seen.add(trimmed);
+    candidates.push(trimmed);
+  };
+
+  const fencedBlockPattern = /```(?:json|javascript|js)?\s*([\s\S]*?)```/gi;
+  for (const match of response.matchAll(fencedBlockPattern)) {
+    addCandidate(match[1] ?? '');
+    for (const balanced of findBalancedObjectCandidates(match[1] ?? '')) {
+      addCandidate(balanced);
+    }
+  }
+
+  for (const balanced of findBalancedObjectCandidates(response)) {
+    addCandidate(balanced);
+  }
+
+  return candidates;
+}
+
+function sanitizeJsonLikeObject(candidate: string): string {
+  return candidate
+    .trim()
+    .replace(/^\uFEFF/, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+    .replace(/'((?:\\.|[^'\\])*)'/g, (_match, body: string) => (
+      JSON.stringify(body.replace(/\\'/g, "'").replace(/\\"/g, '"'))
+    ))
+    .replace(/,\s*([}\]])/g, '$1');
+}
+
+function parseJsonCandidate(candidate: string): Record<string, unknown> {
+  const trimmed = candidate.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    throw new Error('Parsed JSON is not an object');
+  } catch (strictError) {
+    const sanitized = sanitizeJsonLikeObject(trimmed);
+    try {
+      const parsed = JSON.parse(sanitized);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      throw new Error('Parsed JSON is not an object');
+    } catch (looseError) {
+      const strictMessage = strictError instanceof Error ? strictError.message : String(strictError);
+      const looseMessage = looseError instanceof Error ? looseError.message : String(looseError);
+      throw new Error(`strict parse failed: ${strictMessage}; loose parse failed: ${looseMessage}`);
+    }
+  }
+}
+
+function toBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.trim().toLowerCase() === 'true';
+  }
+  return Boolean(value);
+}
+
+function toNumber(value: unknown, fallback: number): number {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.map((item) => String(item).trim()).filter(Boolean);
+  return strings.length ? strings : undefined;
+}
+
 // ----------------------------------------------------------------------------
 // Task Orchestrator Class
 // ----------------------------------------------------------------------------
@@ -227,23 +411,46 @@ export class TaskOrchestrator {
    * 解析响应
    */
   private parseResponse(response: string): ParallelJudgment {
-    // 提取 JSON
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const candidates = extractJsonCandidates(response);
+    if (!candidates.length) {
+      logger.warn('[TaskOrchestrator] No JSON candidate found in model response', {
+        responsePreview: truncateForLog(response),
+      });
       throw new Error('No JSON found in response');
     }
 
-    const result = JSON.parse(jsonMatch[0]);
+    let result: Record<string, unknown> | null = null;
+    const parseErrors: string[] = [];
+    for (const candidate of candidates) {
+      try {
+        result = parseJsonCandidate(candidate);
+        break;
+      } catch (error) {
+        parseErrors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    if (!result) {
+      logger.warn('[TaskOrchestrator] Failed to parse model JSON response', {
+        candidateCount: candidates.length,
+        candidatePreviews: candidates.slice(0, 3).map((candidate) => truncateForLog(candidate, 180)),
+        responsePreview: truncateForLog(response),
+        parseErrors: parseErrors.slice(-3),
+      });
+      throw new Error(`Unable to parse JSON judgment from response (${candidates.length} candidates)`);
+    }
 
     // 验证并设置默认值
     const judgment: ParallelJudgment = {
-      shouldParallel: Boolean(result.shouldParallel),
-      reason: result.reason || 'No reason provided',
-      criticalPathLength: Number(result.criticalPathLength) || 0,
-      parallelDimensions: Number(result.parallelDimensions) || 1,
-      suggestedDimensions: result.suggestedDimensions,
-      estimatedSpeedup: result.estimatedSpeedup,
-      confidence: Number(result.confidence) || 0.5,
+      shouldParallel: toBoolean(result.shouldParallel),
+      reason: typeof result.reason === 'string' && result.reason.trim()
+        ? result.reason
+        : 'No reason provided',
+      criticalPathLength: toNumber(result.criticalPathLength, 0),
+      parallelDimensions: toNumber(result.parallelDimensions, 1),
+      suggestedDimensions: toStringArray(result.suggestedDimensions),
+      estimatedSpeedup: toOptionalNumber(result.estimatedSpeedup),
+      confidence: toNumber(result.confidence, 0.5),
     };
 
     // 根据阈值校验判断结果

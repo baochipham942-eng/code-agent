@@ -28,6 +28,13 @@ export interface TaskStats {
   maxConcurrent: number;
 }
 
+const unavailableTaskStats = (): TaskStats => ({
+  running: 0,
+  queued: 0,
+  available: 0,
+  maxConcurrent: 0,
+});
+
 export interface StartTaskPayload {
   sessionId: string;
   message: string;
@@ -152,28 +159,32 @@ export function registerTaskHandlers(
   ipcMain: IpcMain,
   getTaskManager: () => TaskManager | null
 ): void {
+  const loggedUnavailableActions = new Set<string>();
+
+  function logUnavailableActionOnce(action: string): void {
+    if (loggedUnavailableActions.has(action)) return;
+    loggedUnavailableActions.add(action);
+    logger.debug(`Task IPC ${action}: TaskManager unavailable in this mode; returning unavailable response`);
+  }
+
   // Domain Handler
   ipcMain.handle(IPC_DOMAINS.TASK, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;
 
     // Web 模式（webServer.ts 注入 getTaskManager: () => null）或桌面 bootstrap
-    // 尚未完成时，TaskManager 为 null 是预期状态。返回结构化 unavailable 响应，
-    // 且只发 debug 日志，避免把噪音升成 error。getAllStates/getStats 在可选字段
-    // 场景下返回安全默认，让 renderer 侧轮询查询不需要特殊分支。
+    // 尚未完成时，TaskManager 为 null 是预期状态。轮询读操作返回安全默认且静默；
+    // 写/控制类动作返回结构化 unavailable 响应，并按 action 只打一次 debug。
     const taskManager = getTaskManager();
     if (!taskManager) {
-      logger.debug(`Task IPC ${action}: TaskManager unavailable (likely web mode or pre-bootstrap)`);
       switch (action) {
         case 'getAllStates':
           return { success: true, data: {} };
         case 'getQueue':
           return { success: true, data: [] };
         case 'getStats':
-          return {
-            success: true,
-            data: { running: 0, queued: 0, available: 0, maxConcurrent: 0 } as TaskStats,
-          };
+          return { success: true, data: unavailableTaskStats() };
         default:
+          logUnavailableActionOnce(action);
           return {
             success: false,
             error: {

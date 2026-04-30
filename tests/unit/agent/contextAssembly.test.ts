@@ -257,6 +257,7 @@ vi.mock('../../../src/main/agent/runtime/contextAssembly/modeInjection', () => (
 
 import { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
 import { buildEnhancedSystemPrompt } from '../../../src/main/agent/messageHandling/contextBuilder';
+import { getPromptForTask } from '../../../src/main/prompts/builder';
 import { loadMemoryIndex } from '../../../src/main/lightMemory/indexLoader';
 import { buildRecentConversationsBlock } from '../../../src/main/lightMemory/recentConversations';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/main/lightMemory/skillLoader';
@@ -268,6 +269,120 @@ function buildMessage(id: string, role: Message['role'], content: string): Messa
     role,
     content,
     timestamp: Date.now(),
+  };
+}
+
+function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
+  const messages = [
+    buildMessage(`user-${Date.now()}-${Math.random()}`, 'user', 'fix repo code bug'),
+  ];
+
+  return {
+    systemPrompt: '',
+    modelConfig: {
+      provider: 'mock',
+      model: 'test-model',
+      apiKey: 'mock-key',
+      temperature: 0,
+      maxTokens: 4096,
+    },
+    toolRegistry: {
+      getDeferredToolsSummary: vi.fn().mockReturnValue(''),
+    },
+    toolExecutor: {},
+    messages,
+    onEvent: vi.fn(),
+    modelRouter: {},
+    maxIterations: 1,
+    workingDirectory: '/tmp',
+    isDefaultWorkingDirectory: true,
+    sessionId: `session-${Date.now()}-${Math.random()}`,
+    agentId: undefined,
+    userId: 'user-1',
+    persistMessage: vi.fn(),
+    onToolExecutionLog: vi.fn(),
+    circuitBreaker: {},
+    antiPatternDetector: {},
+    goalTracker: {},
+    nudgeManager: {},
+    hookMessageBuffer: {
+      add: vi.fn(),
+      flush: vi.fn().mockReturnValue(null),
+      size: 0,
+    },
+    messageHistoryCompressor: {
+      shouldProactivelyCompress: vi.fn().mockReturnValue(false),
+    },
+    autoCompressor: {
+      getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 10 }),
+    },
+    compressionState: new CompressionState(),
+    compressionPipeline: {
+      evaluate: vi.fn(async (transcript: unknown[], state: CompressionState) => ({
+        apiView: transcript,
+        totalTokens: 0,
+        layersTriggered: [],
+        compressionState: state,
+      })),
+    },
+    telemetryAdapter: undefined,
+    isCancelled: false,
+    _isRunning: false,
+    isInterrupted: false,
+    isPaused: false,
+    interruptMessage: null,
+    needsReinference: false,
+    abortController: null,
+    runAbortController: null,
+    isPlanModeActive: false,
+    planModeActive: false,
+    savedMessages: null,
+    currentAgentMode: 'normal',
+    autoApprovePlan: false,
+    enableHooks: true,
+    userHooksInitialized: false,
+    stopHookRetryCount: 0,
+    maxStopHookRetries: 3,
+    toolCallRetryCount: 0,
+    maxToolCallRetries: 2,
+    externalDataCallCount: 0,
+    preApprovedTools: new Set<string>(),
+    enableToolDeferredLoading: false,
+    structuredOutputRetryCount: 0,
+    maxStructuredOutputRetries: 2,
+    stepByStepMode: false,
+    traceId: 'trace-budget',
+    currentIterationSpanId: 'span-budget',
+    currentTurnId: 'turn-budget',
+    turnStartTime: Date.now(),
+    toolsUsedInTurn: [],
+    isSimpleTaskMode: true,
+    _researchModeActive: false,
+    _researchIterationCount: 0,
+    researchModeInjected: false,
+    budgetWarningEmitted: false,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    consecutiveErrors: 0,
+    effortLevel: 'medium',
+    thinkingStepCount: 0,
+    runStartTime: Date.now(),
+    totalIterations: 0,
+    totalTokensUsed: 0,
+    totalToolCallCount: 0,
+    _contextOverflowRetried: false,
+    _truncationRetried: false,
+    _networkRetried: false,
+    _consecutiveTruncations: 0,
+    MAX_CONSECUTIVE_TRUNCATIONS: 3,
+    contentVerificationRetries: new Map(),
+    persistentSystemContext: [],
+    contextHealthy: true,
+    autoCompressThreshold: 0,
+    contextBudgetRatio: 0,
+    genNum: 8,
+    initialSystemPromptLength: 0,
+    ...overrides,
   };
 }
 
@@ -412,12 +527,28 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(visibleContents).not.toContain('excluded content');
   });
 
+  it('does not append runtime-only prompt blocks past the system prompt budget', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5900));
+
+    const ctx = buildRuntimeContext({
+      persistentSystemContext: [
+        `PERSISTENT_MARKER ${'extra '.repeat(400)}`,
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].role).toBe('system');
+    expect(modelMessages[0].content).not.toContain('PERSISTENT_MARKER');
+  });
+
   it('reuses heavy prompt blocks within a user turn and invalidates compression on transcript change', async () => {
     const runtimeSessionId = `session-cache-${Date.now()}`;
     const messages: Message[] = [
       buildMessage('user-1', 'user', '继续优化 repo code performance，记得看 previous context'),
     ];
-    const evaluate = vi.fn(async (transcript: any[], state: CompressionState) => ({
+    const evaluate = vi.fn(async (transcript: unknown[], state: CompressionState) => ({
       apiView: transcript,
       totalTokens: 100,
       layersTriggered: [],
@@ -598,7 +729,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
 describe('ContextAssembly.checkAndAutoCompress()', () => {
   it('records hard compaction into compressionState as autocompact', async () => {
     const sessionId = `session-autocompact-${Date.now()}`;
-    const ctx: any = {
+    const ctx = {
       sessionId,
       agentId: undefined,
       messages: Array.from({ length: 6 }, (_, i) => buildMessage(`m${i}`, i === 0 ? 'user' : 'assistant', `message ${i}`)),
@@ -634,7 +765,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       hookManager: undefined,
     };
 
-    const assembly = new ContextAssembly(ctx);
+    const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
     expect(ctx.compressionState.getCommitLog()).toHaveLength(1);

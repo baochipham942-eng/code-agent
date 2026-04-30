@@ -321,20 +321,32 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
   const activeAgentBlock = buildActiveAgentContext();
   if (activeAgentBlock) {
-    systemPrompt += activeAgentBlock;
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      activeAgentBlock,
+      'active agent context',
+    );
   }
 
   // 注入后台 agent 完成通知（Codex-style async notifications）
   const completionNotifications = drainCompletionNotifications();
   if (completionNotifications.length > 0) {
-    systemPrompt += '\n\n' + completionNotifications.join('\n');
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      completionNotifications.join('\n'),
+      'completion notifications',
+    );
   }
 
   // 拼接持久化系统上下文（任务指导、模式 reminder 等）
   // 这些信息每轮推理都需要可见，而非作为消息历史被淹没
   const persistentSystemContext = ctx.getBudgetedPersistentSystemContext();
-  if (persistentSystemContext.length > 0) {
-    systemPrompt += '\n\n' + persistentSystemContext.join('\n\n');
+  for (let index = 0; index < persistentSystemContext.length; index += 1) {
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      persistentSystemContext[index],
+      `persistent system context #${index + 1}`,
+    );
   }
 
   // Check system prompt length and warn if too long

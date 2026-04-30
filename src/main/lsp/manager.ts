@@ -12,8 +12,8 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import * as fs from 'fs';
 import { getLanguageId } from './languages';
+import { ensureInstalled, LSPInstallError, type LSPInstallSource } from './installer';
 
 // ============================================================================
 // Types
@@ -27,6 +27,8 @@ export interface LSPServerConfig {
   extensionToLanguage?: Record<string, string>;
   restartOnCrash?: boolean;
   maxRestarts?: number;
+  /** Optional installer; falls back to PATH if not configured */
+  install?: LSPInstallSource;
 }
 
 export type LSPServerState = 'initializing' | 'ready' | 'error' | 'stopped';
@@ -86,7 +88,14 @@ export class LSPServer extends EventEmitter {
     this.state = 'initializing';
 
     try {
-      this.process = spawn(this.config.command, this.config.args || [], {
+      const resolved = await ensureInstalled({
+        name: this.config.name,
+        command: this.config.command,
+        args: this.config.args ?? [],
+        install: this.config.install,
+      });
+
+      this.process = spawn(resolved.command, resolved.args, {
         cwd: workspaceRoot,
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -360,11 +369,6 @@ export class LSPServerManager extends EventEmitter {
 
     try {
       for (const config of this.serverConfigs) {
-        if (!isCommandAvailable(config.command)) {
-          console.warn(`[LSP] Skipping ${config.name}: command not available`);
-          continue;
-        }
-
         const server = new LSPServer(config);
 
         server.on('diagnostics', (params) => {
@@ -380,7 +384,16 @@ export class LSPServerManager extends EventEmitter {
           await server.start(this.workspaceRoot);
           this.servers.set(config.name, server);
         } catch (err) {
-          console.error(`[LSP] Failed to start ${config.name}:`, err);
+          if (err instanceof LSPInstallError) {
+            console.warn(`[LSP] ${config.name} install failed: ${err.message}`);
+            this.emit('install-failed', {
+              serverName: config.name,
+              source: err.source,
+              message: err.message,
+            });
+          } else {
+            console.error(`[LSP] Failed to start ${config.name}:`, err);
+          }
         }
       }
 
@@ -543,6 +556,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'npm',
+      packages: ['typescript-language-server', 'typescript'],
+      binName: 'typescript-language-server',
+    },
   },
   {
     name: 'pyright',
@@ -552,6 +570,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.py': 'python' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'npm',
+      packages: ['pyright'],
+      binName: 'pyright-langserver',
+    },
   },
   {
     name: 'gopls',
@@ -561,6 +584,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.go': 'go' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'system',
+      installCmd: 'go install golang.org/x/tools/gopls@latest',
+      docUrl: 'https://github.com/golang/tools/tree/master/gopls',
+    },
   },
   {
     name: 'rust-analyzer',
@@ -570,6 +598,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.rs': 'rust' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'system',
+      installCmd: 'rustup component add rust-analyzer',
+      docUrl: 'https://rust-analyzer.github.io/manual.html#installation',
+    },
   },
 ];
 

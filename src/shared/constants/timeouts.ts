@@ -236,6 +236,14 @@ export const SKILL_TIMEOUTS = {
   INSTALL: 30_000,
 } as const;
 
+/** LSP 服务超时 */
+export const LSP_TIMEOUTS = {
+  /** npm 安装 LSP server 超时（ts-server/pyright 首次拉包） */
+  INSTALL: 180_000,
+  /** PATH 命令探测超时 */
+  COMMAND_CHECK: 5_000,
+} as const;
+
 /** Live Preview dev server 管理超时 */
 export const LIVE_PREVIEW_TIMEOUTS = {
   /** dev server 启动到 ready 的最长等待时间 */

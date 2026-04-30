@@ -28,12 +28,89 @@ import { generateStructuredSlides } from './slideContentAgent';
 import { parseTopicBrief, executeResearch } from './researchAgent';
 import { injectChartData, buildChartDataFromResearch } from './assetGenerator';
 import { generateSlideIllustrations } from './illustrationAgent';
-import { reviewPresentation, summarizeReview, isLibreOfficeAvailable } from './visualReview';
+import { reviewPresentation, summarizeReview, isLibreOfficeAvailable, convertToScreenshots } from './visualReview';
 import { createLogger } from '../../../services/infra/logger';
 import { VLM_REQUEST_TIMEOUT } from './constants';
 
 const logger = createLogger('PPTGenerate');
 const LEGACY_PPT_GENERATE_ENV = 'ENABLE_LEGACY_PPT_GENERATE';
+
+interface DesignPptArtifact {
+  version: 1;
+  kind: 'design_ppt';
+  title: string;
+  topic: string;
+  theme: string;
+  outputPath: string;
+  slideCodePath?: string;
+  promptPath?: string;
+  screenshots: string[];
+  slidesCount: number;
+  iterations: number;
+  createdAt: string;
+  screenshotError?: string;
+}
+
+async function writeDesignPptArtifact(input: {
+  topic: string;
+  theme: string;
+  finalPath: string;
+  outputDir: string;
+  designResult: {
+    slidesCount?: number;
+    iterations: number;
+    slideCode?: string;
+    prompts?: Array<{ kind: string; prompt: string }>;
+  };
+}): Promise<{ artifactPath: string; artifact: DesignPptArtifact }> {
+  const baseName = path.basename(input.finalPath, '.pptx');
+  const artifactPath = path.join(input.outputDir, `${baseName}.design-artifact.json`);
+  const slideCodePath = input.designResult.slideCode
+    ? path.join(input.outputDir, `${baseName}.design-slide-code.ts`)
+    : undefined;
+  const promptPath = input.designResult.prompts?.length
+    ? path.join(input.outputDir, `${baseName}.design-prompts.json`)
+    : undefined;
+
+  if (slideCodePath && input.designResult.slideCode) {
+    fs.writeFileSync(slideCodePath, input.designResult.slideCode, 'utf8');
+  }
+  if (promptPath && input.designResult.prompts) {
+    fs.writeFileSync(promptPath, JSON.stringify(input.designResult.prompts, null, 2), 'utf8');
+  }
+
+  const screenshotsDir = path.join(input.outputDir, `${baseName}.screenshots`);
+  let screenshots: string[] = [];
+  let screenshotError: string | undefined;
+  if (isLibreOfficeAvailable()) {
+    try {
+      screenshots = await convertToScreenshots(input.finalPath, screenshotsDir);
+    } catch (err: unknown) {
+      screenshotError = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    screenshotError = 'LibreOffice not available';
+  }
+
+  const artifact: DesignPptArtifact = {
+    version: 1,
+    kind: 'design_ppt',
+    title: path.basename(input.finalPath),
+    topic: input.topic,
+    theme: input.theme,
+    outputPath: input.finalPath,
+    slideCodePath,
+    promptPath,
+    screenshots,
+    slidesCount: input.designResult.slidesCount || screenshots.length,
+    iterations: input.designResult.iterations,
+    createdAt: new Date().toISOString(),
+    screenshotError,
+  };
+
+  fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), 'utf8');
+  return { artifactPath, artifact };
+}
 
 
 // Use require for pptxgenjs (CJS compatible with Electron)
@@ -130,6 +207,11 @@ export const pptGenerateTool: Tool = {
         enum: ['generate', 'template', 'design'],
         description: '生成模式: generate（结构化模板）、template（PPTX 模板）、design（LLM 直接编写代码，视觉最优）',
         default: 'generate',
+      },
+      fallback_on_design_failure: {
+        type: 'boolean',
+        description: 'mode=design 失败时是否降级到 v7 generate。默认 false，避免把 Design Mode 失败伪装成普通生成成功。',
+        default: false,
       },
       template_path: {
         type: 'string',
@@ -235,12 +317,16 @@ export const pptGenerateTool: Tool = {
       research: enableResearch = true,
       review: enableReview = true,
       auto_illustrate: autoIllustrate = false,
+      fallback_on_design_failure: fallbackOnDesignFailure = false,
     } = params as unknown as PPTGenerateParams & { research?: boolean; review?: boolean; auto_illustrate?: boolean };
 
     const isPreview = preview === true;
     const shouldNormalizeDensity = normalize_density === true;
     const shouldResearch = enableResearch !== false;
     const shouldReview = enableReview !== false;
+    let designFallback:
+      | { error: string; iterations: number; requestedMode: 'design' }
+      | null = null;
 
     try {
       const timestamp = Date.now();
@@ -401,6 +487,13 @@ export const pptGenerateTool: Tool = {
 
         if (designResult.success) {
           const stats = fs.statSync(finalPath);
+          const designArtifact = await writeDesignPptArtifact({
+            topic,
+            theme: theme as string,
+            finalPath,
+            outputDir,
+            designResult,
+          });
           const researchInfo = researchContext
             ? `，深度搜索（${researchContext.facts.length} 事实，${researchContext.statistics.length} 数据）`
             : '';
@@ -417,6 +510,35 @@ export const pptGenerateTool: Tool = {
               mode: 'design',
               iterations: designResult.iterations,
               hasResearch: !!researchContext,
+              designArtifactPath: designArtifact.artifactPath,
+              designSlideCodePath: designArtifact.artifact.slideCodePath,
+              designPromptPath: designArtifact.artifact.promptPath,
+              designScreenshots: designArtifact.artifact.screenshots,
+              previewItem: {
+                id: `design-ppt:${timestamp}`,
+                kind: 'design_ppt',
+                title: path.basename(finalPath),
+                subtitle: `Design Mode · ${designResult.slidesCount || slides_count} slides`,
+                status: designArtifact.artifact.screenshotError ? 'draft' : 'ready',
+                file: {
+                  path: finalPath,
+                  name: path.basename(finalPath),
+                  size: stats.size,
+                  mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                },
+                content: {
+                  json: JSON.stringify(designArtifact.artifact),
+                  summary: designArtifact.artifact.screenshotError
+                    ? `PPT generated, screenshot preview failed: ${designArtifact.artifact.screenshotError}`
+                    : `Editable Design Mode deck with ${designArtifact.artifact.screenshots.length} rendered slide previews.`,
+                },
+                actions: [
+                  { kind: 'open', label: 'Open PPTX' },
+                  { kind: 'edit', label: 'Edit Design Code' },
+                ],
+                priority: 88,
+                currentTurn: true,
+              },
               attachment: {
                 id: `ppt-${timestamp}`,
                 type: 'file',
@@ -429,8 +551,26 @@ export const pptGenerateTool: Tool = {
             },
           };
         }
-        logger.warn('Design mode failed, falling back to generate mode');
-        // 不 return，继续走下方 v7 generate 流程
+        designFallback = {
+          error: designResult.error || 'Unknown Design Mode failure',
+          iterations: designResult.iterations,
+          requestedMode: 'design',
+        };
+        logger.warn(`Design mode failed: ${designFallback.error}`);
+        if (!fallbackOnDesignFailure) {
+          return {
+            success: false,
+            error: `Design Mode 失败: ${designFallback.error}`,
+            metadata: {
+              requestedMode: 'design',
+              fallbackAvailable: true,
+              fallbackHint: 'Set fallback_on_design_failure=true to generate with v7 workflow after Design Mode failure.',
+              designModeError: designFallback.error,
+              designModeIterations: designFallback.iterations,
+            },
+          };
+        }
+        logger.warn('Falling back to generate mode after Design Mode failure');
       }
 
       // ===== 生成模式 =====
@@ -623,6 +763,9 @@ export const pptGenerateTool: Tool = {
       const notesInfo = notesCount > 0 ? `，${notesCount} 页演讲稿` : '';
       const illustrationCount = autoIllustrate ? slideImages.filter(img => img.image_path.includes('illustration-')).length : 0;
       const illustrationInfo = illustrationCount > 0 ? `，${illustrationCount} 张 AI 配图` : '';
+      const fallbackInfo = designFallback
+        ? `\nDesign Mode fallback: ${designFallback.error}`
+        : '';
 
       return {
         success: true,
@@ -631,7 +774,7 @@ export const pptGenerateTool: Tool = {
 文件: ${finalPath}
 主题: ${themeConfig.name} (${theme})
 幻灯片: ${totalSlides} 页
-大小: ${formatFileSize(stats.size)}${reviewSummary}
+大小: ${formatFileSize(stats.size)}${reviewSummary}${fallbackInfo}
 
 点击文件路径可直接打开。`,
         outputPath: finalPath,
@@ -644,6 +787,12 @@ export const pptGenerateTool: Tool = {
           chartMode: chart_mode,
           hasResearch: !!researchContext,
           hasSpeakerNotes: notesCount > 0,
+          ...(designFallback ? {
+            requestedMode: designFallback.requestedMode,
+            fallbackFrom: 'design',
+            designModeError: designFallback.error,
+            designModeIterations: designFallback.iterations,
+          } : {}),
           attachment: {
             id: `ppt-${timestamp}`,
             type: 'file',

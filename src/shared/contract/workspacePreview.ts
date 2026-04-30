@@ -19,7 +19,8 @@ export type WorkspacePreviewKind =
   | 'generic_html'
   | 'chart'
   | 'diagram'
-  | 'question_form';
+  | 'question_form'
+  | 'design_ppt';
 
 export type WorkspacePreviewStatus = 'draft' | 'ready' | 'applied' | 'sent' | 'failed';
 

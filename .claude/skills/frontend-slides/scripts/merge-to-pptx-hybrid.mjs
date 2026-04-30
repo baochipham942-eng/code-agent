@@ -185,23 +185,18 @@ function addTextContent(slide, data, isCover) {
 
   // 要点列表
   if (data.bullets && data.bullets.length > 0) {
-    const bulletTexts = data.bullets.map((text) => ({
-      text: `  ${text}`,
-      options: {
-        fontSize: STYLE.bullets.fontSize,
-        fontFace: font,
-        color: STYLE.colors.bullet,
-        bullet: { type: 'number' },
-        lineSpacing: STYLE.bullets.lineSpacing,
-        paraSpaceBefore: 6,
-      },
-    }));
+    const bulletText = data.bullets.map((text) => `• ${text}`).join('\n');
 
-    slide.addText(bulletTexts, {
+    slide.addText(bulletText, {
       x: STYLE.bullets.x,
       y: STYLE.bullets.y,
       w: STYLE.bullets.w,
       h: STYLE.bullets.h,
+      fontSize: STYLE.bullets.fontSize,
+      fontFace: font,
+      color: STYLE.colors.bullet,
+      lineSpacing: STYLE.bullets.lineSpacing,
+      paraSpaceBefore: 6,
       valign: 'top',
     });
   }

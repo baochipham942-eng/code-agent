@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { ThemeConfig, ResearchContext, VlmCallback } from './types';
 import { buildScaffold } from './designScaffold';
-import { buildDesignPrompt, buildRevisionPrompt, buildErrorFixPrompt } from './designPrompt';
+import { buildDesignPrompt, buildCodeOnlyDesignPrompt, buildRevisionPrompt, buildErrorFixPrompt } from './designPrompt';
 import { extractSlideCode, sanitizeCode, executeDesignScript, validateOutput } from './designExecutor';
 import { reviewPresentation, summarizeReview, isLibreOfficeAvailable } from './visualReview';
 import { createLogger } from '../../../services/infra/logger';
@@ -37,6 +37,8 @@ export interface DesignModeResult {
   iterations: number;
   fallbackUsed: boolean;
   error?: string;
+  slideCode?: string;
+  prompts?: Array<{ kind: string; prompt: string }>;
 }
 
 /**
@@ -51,11 +53,13 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
   let iterations = 0;
   let lastSlideCode: string | null = null;
   let lastError: string | null = null;
+  const prompts: Array<{ kind: string; prompt: string }> = [];
 
   // ── Phase 1: 生成 slide 代码 ──
   logger.debug(`Design mode: topic="${topic}", slides=${slideCount}, theme=${theme.name}`);
 
   const prompt = buildDesignPrompt(topic, slideCount, theme, researchContext);
+  prompts.push({ kind: 'initial', prompt });
   let llmResponse: string;
   try {
     llmResponse = await modelCallback(prompt);
@@ -67,8 +71,26 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
 
   lastSlideCode = extractSlideCode(llmResponse);
   if (!lastSlideCode) {
-    logger.warn('Design mode: failed to extract slide code from LLM response');
-    return { success: false, iterations: 0, fallbackUsed: false, error: 'Failed to extract slide code' };
+    logger.warn(`Design mode: failed to extract slide code from LLM response (${describeUnextractableResponse(llmResponse)})`);
+    logger.debug('Design mode L0: retrying with compact code-only prompt');
+
+    const retryPrompt = buildCodeOnlyDesignPrompt(topic, slideCount, theme, researchContext);
+    prompts.push({ kind: 'code_only_retry', prompt: retryPrompt });
+    try {
+      const retryResponse = await modelCallback(retryPrompt);
+      lastSlideCode = extractSlideCode(retryResponse);
+      if (!lastSlideCode) {
+        return {
+          success: false,
+          iterations: 0,
+          fallbackUsed: false,
+          error: `Failed to extract slide code after L0 retry: ${describeUnextractableResponse(retryResponse)}`,
+        };
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, iterations: 0, fallbackUsed: false, error: `L0 LLM failed: ${message}` };
+    }
   }
 
   // ── Phase 2: 安全检查 + 执行（含 L1/L2 降级） ──
@@ -81,6 +103,7 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
     lastError = execResult.error;
 
     const fixPrompt = buildErrorFixPrompt(lastSlideCode, lastError);
+    prompts.push({ kind: 'error_fix', prompt: fixPrompt });
     try {
       const fixResponse = await modelCallback(fixPrompt);
       const fixedCode = extractSlideCode(fixResponse);
@@ -94,6 +117,7 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
           logger.debug('Design mode L2: simplified retry');
           const simplifiedCount = Math.min(slideCount, DESIGN_MODE.SIMPLIFIED_SLIDE_COUNT);
           const simplePrompt = buildDesignPrompt(topic, simplifiedCount, theme);
+          prompts.push({ kind: 'simplified', prompt: simplePrompt });
           try {
             const simpleResponse = await modelCallback(simplePrompt);
             const simpleCode = extractSlideCode(simpleResponse);
@@ -161,6 +185,7 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
         }
 
         const revisionPrompt = buildRevisionPrompt(lastSlideCode, issueLines.join('\n'));
+        prompts.push({ kind: 'visual_revision', prompt: revisionPrompt });
         const revisionResponse = await modelCallback(revisionPrompt);
         const revisedCode = extractSlideCode(revisionResponse);
 
@@ -196,12 +221,28 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
     slidesCount,
     iterations,
     fallbackUsed: false,
+    slideCode: lastSlideCode || undefined,
+    prompts,
   };
 }
 
 // ============================================================================
 // Internal
 // ============================================================================
+
+function describeUnextractableResponse(response: string | null | undefined): string {
+  if (!response) return 'empty model content';
+  const trimmed = response.trim();
+  const hasFence = /```/.test(trimmed);
+  const hasSlideMarker = trimmed.includes('// --- Slide');
+  const hasAddSlide = trimmed.includes('pptx.addSlide');
+  return [
+    `length=${trimmed.length}`,
+    `codeFence=${hasFence}`,
+    `slideMarker=${hasSlideMarker}`,
+    `addSlide=${hasAddSlide}`,
+  ].join(', ');
+}
 
 async function tryExecute(
   slideCode: string,

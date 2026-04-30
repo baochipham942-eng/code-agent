@@ -1,5 +1,11 @@
 import { hasNativeBridge } from '../api/transport';
 
+function getBrowserAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
+  return typeof token === 'string' && token.trim().length > 0 ? token.trim() : null;
+}
+
 export function resolveFileUrl(filePath: string): string {
   if (!filePath) return '';
 
@@ -16,7 +22,10 @@ export function resolveFileUrl(filePath: string): string {
     && (!hasNativeBridge() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
 
   if (isWebMode) {
-    return `/api/workspace/file?path=${encodeURIComponent(filePath)}`;
+    const params = new URLSearchParams({ path: filePath });
+    const token = getBrowserAuthToken();
+    if (token) params.set('token', token);
+    return `/api/workspace/file?${params.toString()}`;
   }
 
   return `file://${filePath}`;

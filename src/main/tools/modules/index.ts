@@ -61,6 +61,9 @@ import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.sche
 // document/
 import { docEditSchema } from './document/docEdit.schema';
 
+// excel/
+import { excelAutomateSchema } from './excel/excelAutomate.schema';
+
 // mcp/
 import { mcpInvokeSchema } from './mcp/mcpInvoke.schema';
 import { mcpAddServerSchema } from './mcp/mcpAddServer.schema';
@@ -427,8 +430,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // excel (1)
   registry.register(
-    { name: 'ExcelAutomate', description: 'Automate Excel workbook operations (read/write cells, formulas, sheets).', inputSchema: minSchema({ file_path: { type: 'string' }, action: { type: 'string' } }), category: 'excel', permissionLevel: 'write' },
-    async () => (await import('./excel/wrappers')).excelAutomateModule,
+    excelAutomateSchema,
+    async () => (await import('./excel/excelAutomate')).excelAutomateModule,
   );
 
   // planning (16)

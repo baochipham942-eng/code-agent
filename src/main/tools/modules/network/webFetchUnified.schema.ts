@@ -6,6 +6,8 @@ export const webFetchUnifiedSchema: ToolSchema = {
   name: 'WebFetch',
   description: `Unified web request tool combining smart page fetching and raw HTTP API calls.
 
+Use this only when you already have a specific URL. If you still need to discover URLs, call WebSearch first.
+
 Actions:
 - fetch: Fetch a URL and extract information using AI-powered content extraction.
   Best for reading web pages, documentation, articles. Includes caching and smart truncation.
@@ -17,6 +19,7 @@ Actions:
 
 IMPORTANT: Both actions WILL FAIL for authenticated/private URLs (Google Docs, Confluence, etc.).
 For GitHub URLs, prefer bash with gh CLI.
+Do not retry the same failing URL with the same arguments. If fetch fails because of HTTP status, auth, or crawler blocking, switch strategy or report the failure.
 
 Examples:
 - Fetch a webpage: { "action": "fetch", "url": "https://docs.example.com/guide", "prompt": "Extract the installation steps" }
@@ -63,7 +66,7 @@ Examples:
         description: '[request] Timeout in milliseconds (default: 30000, max: 300000)',
       },
     },
-    required: ['action'],
+    required: ['action', 'url'],
   },
   category: 'network',
   permissionLevel: 'network',

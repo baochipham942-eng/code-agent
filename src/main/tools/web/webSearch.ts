@@ -45,7 +45,7 @@ const logger = createLogger('WebSearch');
 
 export const webSearchTool: Tool = {
   name: 'WebSearch',
-  description: 'Searches the web for information. REQUIRED parameter: `query` (non-empty string — do not call without it). Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets.',
+  description: 'Searches the web for information. REQUIRED parameter: `query` (non-empty string — do not call without it). Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets. Stop once the returned results are enough; do not repeat the same search just to add more sources.',
   dynamicDescription: () => {
     const now = new Date();
     const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
@@ -59,8 +59,10 @@ IMPORTANT: 当前日期为 ${currentDate}。搜索时务必使用正确的年份
 CRITICAL: After answering with search results, you MUST include a "Sources:" section listing relevant URLs as markdown hyperlinks.
 
 Use for: finding documentation, researching APIs, looking up error messages, discovering libraries, current events.
-For reading a specific URL you already have, use WebFetch instead.
+For reading a specific URL you already have, use WebFetch with {"action":"fetch","url":"https://...","prompt":"..."}.
 For searching local code, use grep or glob.
+
+Do not repeatedly search or fetch when the current results already answer the question. If you need page contents for top results, prefer auto_extract instead of doing a separate WebFetch loop over every result.
 
 Features:
 - Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics

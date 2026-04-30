@@ -236,4 +236,45 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('#phase3-workflow-button');
     expect(html).toContain('trace-grouped-click');
   });
+
+  it('marks mixed tool groups as partial instead of a full failure', () => {
+    const nodes: TraceNode[] = [
+      {
+        id: 'node-search',
+        type: 'tool_call',
+        content: '',
+        timestamp: 1,
+        toolCall: {
+          id: 'tool-search',
+          name: 'WebSearch',
+          args: { query: 'pawwork github' },
+          result: '8 results',
+          success: true,
+        },
+      },
+      {
+        id: 'node-fetch',
+        type: 'tool_call',
+        content: '',
+        timestamp: 2,
+        toolCall: {
+          id: 'tool-fetch',
+          name: 'WebFetch',
+          args: { url: 'https://github.com/pawwork' },
+          result: 'HTTP 404 Not Found',
+          success: false,
+        },
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, {
+        nodes,
+        defaultExpanded: false,
+      }),
+    );
+
+    expect(html).toContain('aria-label="部分失败"');
+    expect(html).not.toContain('aria-label="失败"');
+  });
 });

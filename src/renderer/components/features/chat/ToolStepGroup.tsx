@@ -37,15 +37,19 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return buildStepLabel(names);
   }, [nodes]);
 
-  // 任一 tool 失败则整行加红点；任一 tool 正在流式则不显示红点（避免误判）
-  const status = useMemo<'streaming' | 'error' | 'ok'>(() => {
+  const status = useMemo<'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
+    let hasSuccess = false;
     for (const n of nodes) {
       const tc = n.toolCall;
       if (!tc) continue;
       if (tc._streaming) return 'streaming';
       if (tc.success === false) hasError = true;
+      if (tc.success === true || (tc.result !== undefined && tc.success !== false)) {
+        hasSuccess = true;
+      }
     }
+    if (hasError && hasSuccess) return 'partial';
     return hasError ? 'error' : 'ok';
   }, [nodes]);
 
@@ -94,6 +98,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {status === 'error' && (
           <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" aria-label="失败" />
+        )}
+        {status === 'partial' && (
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" aria-label="部分失败" />
         )}
         <span className="truncate font-mono">{label}</span>
       </button>

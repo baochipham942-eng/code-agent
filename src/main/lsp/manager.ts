@@ -13,6 +13,7 @@ import { spawn, ChildProcess, spawnSync } from 'child_process';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs';
+import { getLanguageId } from './languages';
 
 // ============================================================================
 // Types
@@ -450,23 +451,7 @@ export class LSPServerManager extends EventEmitter {
   }
 
   private getLanguageId(ext: string): string {
-    const mapping: Record<string, string> = {
-      '.ts': 'typescript',
-      '.tsx': 'typescriptreact',
-      '.js': 'javascript',
-      '.jsx': 'javascriptreact',
-      '.py': 'python',
-      '.java': 'java',
-      '.go': 'go',
-      '.rs': 'rust',
-      '.cpp': 'cpp',
-      '.c': 'c',
-      '.cs': 'csharp',
-      '.rb': 'ruby',
-      '.php': 'php',
-    };
-
-    return mapping[ext] || 'plaintext';
+    return getLanguageId(ext);
   }
 
   getStatus(): { status: 'initializing' | 'ready' | 'failed' } {

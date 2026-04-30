@@ -8,6 +8,7 @@ import { getContextWindow, DEFAULT_MODEL } from '../../shared/constants';
 import {
   ContextHealthState,
   ContextHealthUpdateEvent,
+  CompressionStats,
   getWarningLevel,
   createEmptyHealthState,
   TokenBreakdown,
@@ -18,6 +19,7 @@ import {
 } from './tokenEstimator';
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
+import type { ToolCall } from '../../shared/contract';
 
 /**
  * Extended message type for context health tracking
@@ -26,6 +28,7 @@ import { getSessionStateManager } from '../session/sessionStateManager';
 export interface ContextMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  toolCalls?: ToolCall[];
   toolResults?: Array<{
     output?: string;
     error?: string;
@@ -77,13 +80,15 @@ export class ContextHealthService {
     sessionId: string,
     messages: ContextMessage[],
     systemPrompt: string,
-    model: string = DEFAULT_MODEL
+    model: string = DEFAULT_MODEL,
+    compression?: CompressionStats,
   ): ContextHealthState {
     const maxTokens = this.getModelContextLimit(model);
+    const previousHealth = this.sessionStates.get(sessionId);
 
     // 计算各部分的 token 使用量
     const systemPromptTokens = estimateTokens(systemPrompt);
-    const messagesTokens = this.calculateMessagesTokens(messages);
+    const messagesTokens = this.calculateMessagesTokens(messages) + this.calculateToolCallTokens(messages);
     const toolResultsTokens = this.calculateToolResultsTokens(messages);
 
     const breakdown: TokenBreakdown = {
@@ -108,6 +113,7 @@ export class ContextHealthService {
       warningLevel: getWarningLevel(usagePercent),
       estimatedTurnsRemaining,
       lastUpdated: Date.now(),
+      compression: compression ?? previousHealth?.compression,
     };
 
     // 保存状态
@@ -194,6 +200,39 @@ export class ContextHealthService {
         content: msg.content,
       }));
     return estimateConversationTokens(nonToolMessages);
+  }
+
+  /**
+   * 计算 assistant tool calls 的 token 数。
+   *
+   * 许多运行轨迹会把 assistant 消息正文留空，只把真实模型上下文放在
+   * tool_calls JSON 里；如果不计这部分，Context Usage 会被低估到接近 0。
+   */
+  private calculateToolCallTokens(messages: ContextMessage[]): number {
+    let totalTokens = 0;
+
+    for (const message of messages) {
+      if (!message.toolCalls?.length) continue;
+
+      for (const toolCall of message.toolCalls) {
+        let args = '';
+        try {
+          args = JSON.stringify(toolCall.arguments ?? {});
+        } catch {
+          args = String(toolCall.arguments ?? '');
+        }
+
+        const text = [
+          toolCall.name,
+          toolCall.shortDescription || '',
+          args,
+        ].filter(Boolean).join('\n');
+
+        totalTokens += estimateTokens(text);
+      }
+    }
+
+    return totalTokens;
   }
 
   /**

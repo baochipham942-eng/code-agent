@@ -7,6 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import { Shrink, Loader2 } from 'lucide-react';
 import { useStatusRailModel } from '../../../hooks/useStatusRailModel';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { CompactResult } from '@shared/contract/contextHealth';
 import ipcService from '../../../services/ipcService';
@@ -23,27 +24,22 @@ export const InlineStrip: React.FC = () => {
   const [feedback, setFeedback] = useState<CompactResult | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
-  if (context.usagePercent < 50) return null;
-
-  const barColor =
-    context.warningLevel === 'critical' ? 'bg-red-500' :
-    context.warningLevel === 'warning' ? 'bg-yellow-500' :
-    'bg-emerald-500';
-
-  const textColor =
-    context.warningLevel === 'critical' ? 'text-red-400' :
-    context.warningLevel === 'warning' ? 'text-yellow-400' :
-    'text-zinc-500';
-
   const handleCompact = useCallback(async () => {
     if (isCompacting || !compact.canCompact) return;
+    const sessionId = useSessionStore.getState().currentSessionId;
     setIsCompacting(true);
     setFeedback(null);
     setFeedbackError(null);
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '') as CompactResult;
+      const result = await ipcService.invoke(
+        IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
+        sessionId ?? undefined,
+      ) as CompactResult;
       if (result.success) {
         setFeedback(result);
+        if (sessionId) {
+          void useSessionStore.getState().refreshContextHealth(sessionId);
+        }
       } else {
         setFeedbackError('压缩失败');
       }
@@ -55,6 +51,18 @@ export const InlineStrip: React.FC = () => {
       setIsCompacting(false);
     }
   }, [isCompacting, compact.canCompact]);
+
+  if (context.usagePercent < 50) return null;
+
+  const barColor =
+    context.warningLevel === 'critical' ? 'bg-red-500' :
+    context.warningLevel === 'warning' ? 'bg-yellow-500' :
+    'bg-emerald-500';
+
+  const textColor =
+    context.warningLevel === 'critical' ? 'text-red-400' :
+    context.warningLevel === 'warning' ? 'text-yellow-400' :
+    'text-zinc-500';
 
   return (
     <div className="flex items-center gap-2 px-4 py-1 max-w-3xl mx-auto animate-fade-in">

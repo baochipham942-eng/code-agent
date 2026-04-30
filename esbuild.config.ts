@@ -32,7 +32,6 @@ const NATIVE_EXTERNALS = [
   'qrcode',
   'pdfkit',
   'sharp',
-  'docx',
   'node-pty',
   '@ui-tars/sdk',
   'onnxruntime-node',

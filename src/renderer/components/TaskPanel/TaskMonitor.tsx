@@ -40,6 +40,7 @@ import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './Workbe
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../workbench/WorkbenchCapabilitySheetLite';
 import { formatWorkbenchHistoryActionSummary } from '../../utils/workbenchPresentation';
+import { formatContextUsagePercent } from '../../utils/contextUsageFormat';
 import {
   getWorkbenchCapabilityQuickActions,
   getWorkbenchCapabilityQuickActionFeedback,
@@ -592,7 +593,7 @@ function ContextSourceSummary({ context }: { context: StatusRailContextModel }) 
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] uppercase tracking-wide text-zinc-500">Context</div>
         <div className={`text-sm font-semibold tabular-nums ${getContextToneClass(context.warningLevel)}`}>
-          {Math.round(context.usagePercent)}%
+          {formatContextUsagePercent(context.usagePercent)}%
         </div>
       </div>
       <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-800">

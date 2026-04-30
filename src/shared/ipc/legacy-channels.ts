@@ -338,6 +338,7 @@ export const IPC_CHANNELS = {
 
   // Context compact channels (部分压缩)
   CONTEXT_COMPACT_FROM: 'context:compact-from',
+  CONTEXT_COMPACT_CURRENT: 'context:compact-current',
 
   // Context intervention channels (pin/exclude/retain)
   CONTEXT_INTERVENTION_GET: 'context:intervention:get',

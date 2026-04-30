@@ -24,6 +24,43 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
 
+function hydrateToolCallResults(messages: Message[]): Message[] {
+  const resultsByToolCallId = new Map<string, NonNullable<Message['toolResults']>[number]>();
+
+  for (const message of messages) {
+    for (const result of message.toolResults ?? []) {
+      if (result.toolCallId) {
+        resultsByToolCallId.set(result.toolCallId, result);
+      }
+    }
+  }
+
+  if (resultsByToolCallId.size === 0) {
+    return messages;
+  }
+
+  return messages.map((message) => {
+    if (!message.toolCalls?.length) {
+      return message;
+    }
+
+    let changed = false;
+    const toolCalls = message.toolCalls.map((toolCall) => {
+      if (toolCall.result) {
+        return toolCall;
+      }
+      const result = resultsByToolCallId.get(toolCall.id);
+      if (!result) {
+        return toolCall;
+      }
+      changed = true;
+      return { ...toolCall, result };
+    });
+
+    return changed ? { ...message, toolCalls } : message;
+  });
+}
+
 async function refreshContextHealthForSession(sessionId: string, switchVersion: number): Promise<void> {
   try {
     const health = await ipcService.invoke(IPC_CHANNELS.CONTEXT_HEALTH_GET, sessionId) as ContextHealthState | null;
@@ -117,6 +154,7 @@ interface SessionActions {
   loadSessions: () => Promise<void>;
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   switchSession: (sessionId: string) => Promise<void>;
+  refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
   unarchiveSession: (sessionId: string) => Promise<void>;
@@ -253,7 +291,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           const newUnreadIds = new Set(unreadSessionIds);
           newUnreadIds.delete(sessionId);
 
-          const loadedMessages = session.messages || [];
+          const loadedMessages = hydrateToolCallResults(session.messages || []);
           const totalCount = (session as any).messageCount ?? loadedMessages.length;
           useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
           set({
@@ -291,6 +329,32 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             isLoading: false
           });
         }
+      }
+    },
+
+    refreshContextHealth: async (sessionId?: string) => {
+      const targetSessionId = sessionId || get().currentSessionId;
+      if (!targetSessionId) {
+        return null;
+      }
+
+      try {
+        const health = await ipcService.invoke(
+          IPC_CHANNELS.CONTEXT_HEALTH_GET,
+          targetSessionId,
+        ) as ContextHealthState | null;
+
+        if (get().currentSessionId === targetSessionId) {
+          const appStore = useAppStore.getState();
+          if (shouldReplaceContextHealth(health, appStore.contextHealth)) {
+            appStore.setContextHealth(health ?? null);
+          }
+        }
+
+        return health ?? null;
+      } catch (error) {
+        logger.warn('Failed to refresh context health for session', { sessionId: targetSessionId, error });
+        return null;
       }
     },
 
@@ -386,7 +450,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     addMessage: (message: Message) => {
       set((state) => ({
-        messages: [...state.messages, message],
+        messages: hydrateToolCallResults([...state.messages, message]),
         streamSnapshot: null,
       }));
 
@@ -429,11 +493,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     setMessages: (messages: Message[]) => {
       const { currentSessionId, sessions } = get();
+      const hydratedMessages = hydrateToolCallResults(messages);
       set({
-        messages,
+        messages: hydratedMessages,
         sessions: currentSessionId
           ? sessions.map((session) =>
-              session.id === currentSessionId ? deriveCurrentSessionMeta(session, messages) : session
+              session.id === currentSessionId ? deriveCurrentSessionMeta(session, hydratedMessages) : session
             )
           : sessions,
       });
@@ -456,10 +521,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           limit: 30,
         });
         if (result && result.messages && result.messages.length > 0) {
-          const olderMessages = result.messages;
+          const olderMessages = result.messages as Message[];
           const hasMore = result.hasMore;
           set(state => ({
-            messages: [...olderMessages, ...state.messages],
+            messages: hydrateToolCallResults([...olderMessages, ...state.messages]),
             hasOlderMessages: hasMore,
             isLoadingOlder: false,
           }));

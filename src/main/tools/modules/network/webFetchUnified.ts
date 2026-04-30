@@ -27,6 +27,9 @@ class WebFetchUnifiedHandler implements ToolHandler<Record<string, unknown>, str
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
+    const validationError = validateWebFetchUnifiedArgs(args);
+    if (validationError) return validationError;
+
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
       return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
@@ -43,6 +46,23 @@ class WebFetchUnifiedHandler implements ToolHandler<Record<string, unknown>, str
     ctx.logger.debug('WebFetch done', { action, ok: legacyResult.success });
     return adaptLegacyResult(legacyResult);
   }
+}
+
+function validateWebFetchUnifiedArgs(args: Record<string, unknown>): ToolResult<string> | null {
+  const action = args.action;
+  if (action !== 'fetch' && action !== 'request') {
+    return { ok: false, error: 'Invalid WebFetch action. Use "fetch" or "request".', code: 'INVALID_ARGS' };
+  }
+
+  if (typeof args.url !== 'string' || args.url.trim().length === 0) {
+    return { ok: false, error: 'WebFetch requires a non-empty url.', code: 'INVALID_ARGS' };
+  }
+
+  if (action === 'fetch' && (typeof args.prompt !== 'string' || args.prompt.trim().length === 0)) {
+    return { ok: false, error: 'WebFetch action "fetch" requires a non-empty prompt.', code: 'INVALID_ARGS' };
+  }
+
+  return null;
 }
 
 export const webFetchUnifiedModule: ToolModule<Record<string, unknown>, string> = {

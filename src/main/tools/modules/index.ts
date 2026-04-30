@@ -70,6 +70,9 @@ import { mcpAddServerSchema } from './mcp/mcpAddServer.schema';
 import { mcpUnifiedSchema } from './mcp/mcpUnified.schema';
 
 // network/
+import { webFetchSchema } from './network/webFetch.schema';
+import { webFetchUnifiedSchema } from './network/webFetchUnified.schema';
+import { webSearchSchema } from './network/webSearch.schema';
 import { httpRequestSchema } from './network/httpRequest.schema';
 import { readDocumentSchema } from './network/readDocument.schema';
 import { readDocxSchema } from './network/readDocx.schema';
@@ -529,14 +532,19 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     );
   };
 
-  // HTTP / Web fetching (4)
-  REGISTER_NET('web_fetch', 'Fetch a URL and extract content via AI.', 'network',
-    async () => (await import('./network/wrappers')).webFetchModule, true);
-  REGISTER_NET('WebFetch', 'Unified web fetch facade (action: fetch | request).', 'network',
-    async () => (await import('./network/wrappers')).webFetchUnifiedModule, true);
-  REGISTER_NET('WebSearch', 'Search the web via Perplexity/Exa/Tavily.', 'network',
-    async () => (await import('./network/wrappers')).webSearchModule, true);
-  // http_request → native ToolModule
+  // HTTP / Web fetching (4) — all native (Level 1+)
+  registry.register(
+    webFetchSchema,
+    async () => (await import('./network/webFetch')).webFetchModule,
+  );
+  registry.register(
+    webFetchUnifiedSchema,
+    async () => (await import('./network/webFetchUnified')).webFetchUnifiedModule,
+  );
+  registry.register(
+    webSearchSchema,
+    async () => (await import('./network/webSearch')).webSearchModule,
+  );
   registry.register(
     httpRequestSchema,
     async () => (await import('./network/httpRequest')).httpRequestModule,

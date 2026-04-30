@@ -9,9 +9,8 @@
 // ============================================================================
 
 // HTTP / Web fetching
-import { webFetchTool } from '../../web/webFetch';
-import { WebFetchUnifiedTool } from '../../web/WebFetchUnifiedTool';
-import { webSearchTool } from '../../web/webSearch';
+// web_fetch / WebFetch / WebSearch 已迁移为 Level 1 native module
+// （见 modules/network/{webFetch,webFetchUnified,webSearch}.ts）
 // http_request 已迁移为 native ToolModule（见 modules/network/httpRequest.ts）
 
 // Document reading
@@ -70,11 +69,8 @@ const NET_NETWORK_WRITE = {
   permissionLevel: 'network' as const,
 };
 
-// ── HTTP / Web fetching (3) ─────────────────────────────────────────────
-// http_request 已迁移为 native ToolModule
-export const webFetchModule = wrapLegacyTool(webFetchTool, NET_NETWORK_READ);
-export const webFetchUnifiedModule = wrapLegacyTool(WebFetchUnifiedTool, NET_NETWORK_READ);
-export const webSearchModule = wrapLegacyTool(webSearchTool, NET_NETWORK_READ);
+// ── HTTP / Web fetching (0) ─────────────────────────────────────────────
+// web_fetch / WebFetch / WebSearch / http_request 已全部迁移为 native module
 
 // ── Document reading (0) ────────────────────────────────────────────────
 // ReadDocument / read_docx / read_pdf / read_xlsx 已全部迁移为 native

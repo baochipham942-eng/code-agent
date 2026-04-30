@@ -12,7 +12,8 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess, spawnSync } from 'child_process';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import * as fs from 'fs';
+import { getLanguageId } from './languages';
+import { ensureInstalled, LSPInstallError, type LSPInstallSource } from './installer';
 
 // ============================================================================
 // Types
@@ -26,6 +27,8 @@ export interface LSPServerConfig {
   extensionToLanguage?: Record<string, string>;
   restartOnCrash?: boolean;
   maxRestarts?: number;
+  /** Optional installer; falls back to PATH if not configured */
+  install?: LSPInstallSource;
 }
 
 export type LSPServerState = 'initializing' | 'ready' | 'error' | 'stopped';
@@ -85,7 +88,14 @@ export class LSPServer extends EventEmitter {
     this.state = 'initializing';
 
     try {
-      this.process = spawn(this.config.command, this.config.args || [], {
+      const resolved = await ensureInstalled({
+        name: this.config.name,
+        command: this.config.command,
+        args: this.config.args ?? [],
+        install: this.config.install,
+      });
+
+      this.process = spawn(resolved.command, resolved.args, {
         cwd: workspaceRoot,
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -338,12 +348,18 @@ export class LSPServer extends EventEmitter {
 // LSP Server Manager
 // ============================================================================
 
+export interface LSPInstallFailure {
+  source: LSPInstallSource | undefined;
+  message: string;
+}
+
 export class LSPServerManager extends EventEmitter {
   private servers = new Map<string, LSPServer>();
   private serverConfigs: LSPServerConfig[] = [];
   private workspaceRoot: string;
   private state: 'initializing' | 'ready' | 'failed' = 'initializing';
   private diagnosticsCache = new Map<string, LSPDiagnostic[]>();
+  private installFailures = new Map<string, LSPInstallFailure>();
 
   constructor(workspaceRoot: string) {
     super();
@@ -359,11 +375,6 @@ export class LSPServerManager extends EventEmitter {
 
     try {
       for (const config of this.serverConfigs) {
-        if (!isCommandAvailable(config.command)) {
-          console.warn(`[LSP] Skipping ${config.name}: command not available`);
-          continue;
-        }
-
         const server = new LSPServer(config);
 
         server.on('diagnostics', (params) => {
@@ -379,7 +390,20 @@ export class LSPServerManager extends EventEmitter {
           await server.start(this.workspaceRoot);
           this.servers.set(config.name, server);
         } catch (err) {
-          console.error(`[LSP] Failed to start ${config.name}:`, err);
+          if (err instanceof LSPInstallError) {
+            console.warn(`[LSP] ${config.name} install failed: ${err.message}`);
+            this.installFailures.set(config.name, {
+              source: err.source,
+              message: err.message,
+            });
+            this.emit('install-failed', {
+              serverName: config.name,
+              source: err.source,
+              message: err.message,
+            });
+          } else {
+            console.error(`[LSP] Failed to start ${config.name}:`, err);
+          }
         }
       }
 
@@ -423,6 +447,28 @@ export class LSPServerManager extends EventEmitter {
     return undefined;
   }
 
+  /**
+   * If no live server matches the file but a configured server failed to
+   * install, return that failure so callers can surface a useful hint
+   * (e.g. include the install command in the tool error).
+   */
+  getInstallFailureForFile(filePath: string): LSPInstallFailure | undefined {
+    const ext = path.extname(filePath).toLowerCase();
+
+    for (const config of this.serverConfigs) {
+      const normalizedExtensions = config.fileExtensions.map((e) =>
+        e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`
+      );
+
+      if (normalizedExtensions.includes(ext)) {
+        const failure = this.installFailures.get(config.name);
+        if (failure) return failure;
+      }
+    }
+
+    return undefined;
+  }
+
   getAllServers(): Map<string, LSPServer> {
     return this.servers;
   }
@@ -450,23 +496,7 @@ export class LSPServerManager extends EventEmitter {
   }
 
   private getLanguageId(ext: string): string {
-    const mapping: Record<string, string> = {
-      '.ts': 'typescript',
-      '.tsx': 'typescriptreact',
-      '.js': 'javascript',
-      '.jsx': 'javascriptreact',
-      '.py': 'python',
-      '.java': 'java',
-      '.go': 'go',
-      '.rs': 'rust',
-      '.cpp': 'cpp',
-      '.c': 'c',
-      '.cs': 'csharp',
-      '.rb': 'ruby',
-      '.php': 'php',
-    };
-
-    return mapping[ext] || 'plaintext';
+    return getLanguageId(ext);
   }
 
   getStatus(): { status: 'initializing' | 'ready' | 'failed' } {
@@ -558,6 +588,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'npm',
+      packages: ['typescript-language-server', 'typescript'],
+      binName: 'typescript-language-server',
+    },
   },
   {
     name: 'pyright',
@@ -567,6 +602,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.py': 'python' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'npm',
+      packages: ['pyright'],
+      binName: 'pyright-langserver',
+    },
   },
   {
     name: 'gopls',
@@ -576,6 +616,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.go': 'go' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'system',
+      installCmd: 'go install golang.org/x/tools/gopls@latest',
+      docUrl: 'https://github.com/golang/tools/tree/master/gopls',
+    },
   },
   {
     name: 'rust-analyzer',
@@ -585,6 +630,11 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     extensionToLanguage: { '.rs': 'rust' },
     restartOnCrash: true,
     maxRestarts: 3,
+    install: {
+      type: 'system',
+      installCmd: 'rustup component add rust-analyzer',
+      docUrl: 'https://rust-analyzer.github.io/manual.html#installation',
+    },
   },
 ];
 

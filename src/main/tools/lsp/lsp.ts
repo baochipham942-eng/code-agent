@@ -96,9 +96,24 @@ export const lspTool: Tool = {
       let result = await manager.sendRequest(resolvedPath, method, requestParams);
 
       if (result === undefined) {
+        const ext = path.extname(resolvedPath);
+        const failure = manager.getInstallFailureForFile(resolvedPath);
+        if (failure?.source?.type === 'system') {
+          const docHint = failure.source.docUrl ? ` (docs: ${failure.source.docUrl})` : '';
+          return {
+            success: false,
+            error: `No LSP server available for ${ext}: install failed. Run: ${failure.source.installCmd}${docHint}`,
+          };
+        }
+        if (failure?.source?.type === 'npm') {
+          return {
+            success: false,
+            error: `No LSP server available for ${ext}: auto-install failed (${failure.message}). Check network and try again.`,
+          };
+        }
         return {
           success: false,
-          error: `No LSP server available for file type: ${path.extname(resolvedPath)}`,
+          error: `No LSP server available for file type: ${ext}`,
         };
       }
 

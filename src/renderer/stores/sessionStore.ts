@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Session, Message, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
+import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
@@ -22,6 +23,37 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
 
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
+
+async function refreshContextHealthForSession(sessionId: string, switchVersion: number): Promise<void> {
+  try {
+    const health = await ipcService.invoke(IPC_CHANNELS.CONTEXT_HEALTH_GET, sessionId) as ContextHealthState | null;
+    if (switchVersion !== _switchCounter || useSessionStore.getState().currentSessionId !== sessionId) {
+      return;
+    }
+    useAppStore.getState().setContextHealth(health ?? null);
+  } catch (error) {
+    logger.warn('Failed to refresh context health for session', { sessionId, error });
+    if (switchVersion === _switchCounter && useSessionStore.getState().currentSessionId === sessionId) {
+      useAppStore.getState().setContextHealth(null);
+    }
+  }
+}
+
+function shouldReplaceContextHealth(
+  next: ContextHealthState | null | undefined,
+  previous: ContextHealthState | null | undefined,
+): boolean {
+  if (!previous) {
+    return true;
+  }
+  if (!next) {
+    return false;
+  }
+  if (next.currentTokens > 0) {
+    return true;
+  }
+  return previous.currentTokens <= 0;
+}
 
 export interface SessionWithMeta extends Session {
   messageCount: number;
@@ -59,6 +91,10 @@ function deriveCurrentSessionMeta(session: SessionWithMeta, messages: Message[])
 
 export type SessionFilter = 'active' | 'archived' | 'all';
 
+interface CreateSessionOptions {
+  workingDirectory?: string | null;
+}
+
 interface SessionState {
   sessions: SessionWithMeta[];
   currentSessionId: string | null;
@@ -79,7 +115,7 @@ interface SessionState {
 
 interface SessionActions {
   loadSessions: () => Promise<void>;
-  createSession: (title?: string) => Promise<Session | null>;
+  createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
@@ -152,24 +188,31 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    createSession: async (title?: string) => {
+    createSession: async (title?: string, options?: CreateSessionOptions) => {
       set({ isLoading: true, error: null });
       try {
-        const session = await invokeSession<Session | null>('create', { title });
+        const session = await invokeSession<Session | null>('create', {
+          title,
+          workingDirectory: options?.workingDirectory,
+        });
         if (session) {
           const newSessionWithMeta: SessionWithMeta = normalizeSession({
             ...session,
             messageCount: 0,
             turnCount: 0,
           });
+          useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
           set((state) => ({
             sessions: [newSessionWithMeta, ...state.sessions],
             currentSessionId: session.id,
             messages: [],
             todos: [],
             streamSnapshot: null,
+            hasOlderMessages: false,
+            isLoadingOlder: false,
             isLoading: false,
           }));
+          useAppStore.getState().setContextHealth(null);
           return session;
         }
         return null;
@@ -190,6 +233,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
       const switchVersion = ++_switchCounter;
 
+      useAppStore.getState().setContextHealth(null);
       set({ isLoading: true, error: null });
       try {
         const session = await invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId });
@@ -225,6 +269,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
             ),
           });
+          await refreshContextHealthForSession(sessionId, switchVersion);
         } else {
           // 后端返回 null/undefined — 仍然切换到该会话（显示空状态）
           logger.warn('switchSession: backend returned null session', { sessionId });
@@ -236,6 +281,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             streamSnapshot: null,
             isLoading: false,
           });
+          useAppStore.getState().setContextHealth(null);
         }
       } catch (error) {
         logger.error('Failed to switch session', error);
@@ -473,11 +519,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
 
       const newRuntimes = new Map(sessionRuntimes);
+      const previousRuntime = sessionRuntimes.get(event.sessionId);
+      const contextHealth = shouldReplaceContextHealth(event.contextHealth, previousRuntime?.contextHealth)
+        ? event.contextHealth
+        : previousRuntime?.contextHealth ?? null;
       newRuntimes.set(event.sessionId, {
         sessionId: event.sessionId,
         status: event.status,
         activeAgentCount: event.activeAgentCount,
-        contextHealth: event.contextHealth,
+        contextHealth,
         lastActivityAt: Date.now(),
       });
 
@@ -485,6 +535,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         runningSessionIds: newRunningIds,
         sessionRuntimes: newRuntimes,
       });
+
+      if (event.sessionId === get().currentSessionId) {
+        const appStore = useAppStore.getState();
+        if (shouldReplaceContextHealth(contextHealth, appStore.contextHealth)) {
+          appStore.setContextHealth(contextHealth ?? null);
+        }
+      }
 
       logger.debug('Session runtime updated', {
         sessionId: event.sessionId,

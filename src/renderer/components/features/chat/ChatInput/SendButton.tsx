@@ -1,6 +1,5 @@
 // ============================================================================
-// SendButton - 发送按钮组件（含加载状态、停止功能和中断功能）
-// Claude Code 风格：处理中时可以继续输入，发送会中断当前任务
+// SendButton - 发送按钮组件（含加载状态、停止功能和运行中补充指令）
 // ============================================================================
 
 import React from 'react';
@@ -9,9 +8,9 @@ import { Send, Square, Loader2 } from 'lucide-react';
 export interface SendButtonProps {
   /** 是否禁用 */
   disabled?: boolean;
-  /** 是否正在处理（显示停止按钮或中断发送按钮） */
+  /** 是否正在处理（显示停止按钮或补充指令按钮） */
   isProcessing?: boolean;
-  /** 是否正在中断（显示旋转加载图标） */
+  /** 运行中补充指令正在接入（显示旋转加载图标） */
   isInterrupting?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
@@ -29,8 +28,8 @@ export interface SendButtonProps {
  * 发送按钮 - 支持三种状态：
  * 1. 空闲时：显示发送按钮
  * 2. 处理中 + 无内容：显示停止按钮
- * 3. 处理中 + 有内容：显示中断发送按钮（橙色，表示会中断当前任务）
- * 4. 中断中：显示旋转加载图标
+ * 3. 处理中 + 有内容：显示补充指令按钮
+ * 4. 补充指令接入中：显示旋转加载图标
  */
 export const SendButton: React.FC<SendButtonProps> = ({
   disabled = false,
@@ -42,29 +41,29 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onStop,
   label,
 }) => {
-  // 中断中：显示旋转加载图标
+  // 补充指令接入中：显示旋转加载图标
   if (isInterrupting) {
     return (
       <button
         type="button"
         disabled
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-amber-400 transition-all duration-200 bg-amber-500/20 cursor-wait"
-        aria-label="正在中断..."
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-200 transition-all duration-200 bg-white/10 cursor-wait"
+        aria-label="正在发送补充指令"
       >
         <Loader2 className="w-4 h-4 animate-spin" />
       </button>
     );
   }
 
-  // 处理中 + 有内容：显示中断发送按钮（橙色警告色，表示会中断当前任务）
+  // 处理中 + 有内容：显示补充指令按钮
   if (isProcessing && hasContent) {
     return (
       <button
         type={type}
         onClick={onClick}
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-300 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 scale-100 hover:scale-105"
-        aria-label="中断并发送新指令"
-        title="中断当前任务并发送新指令"
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-950 transition-all duration-300 bg-zinc-100 hover:bg-white shadow-lg shadow-white/10 hover:shadow-white/20 scale-100 hover:scale-105"
+        aria-label="发送补充指令"
+        title="发送补充指令"
       >
         <Send className="w-4 h-4 -rotate-45" />
       </button>

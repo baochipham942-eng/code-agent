@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.5 (对应 v0.16.66+)
-> 日期: 2026-04-27
+> 版本: 9.6 (对应 v0.16.71)
+> 日期: 2026-04-29
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -41,6 +41,9 @@
 | [010](./decisions/010-swarm-road-to-10.md) | Swarm Road to 10 | closed |
 | [011](./decisions/011-chat-native-workbench.md) | Chat-Native Workbench 架构 | accepted |
 | [012](./decisions/012-live-preview-v2-c-deferred.md) | Live Preview V2-C Next.js 支持延期，V2 收敛为 Vite-only MVP | accepted |
+| [013](./decisions/013-local-model-eval-support.md) | 评测中心 + 主聊天支持本地 Ollama 模型 | accepted |
+| [014](./decisions/014-debug-snapshot-system.md) | 调试快照系统 + CLI debug 命令树 | accepted |
+| [015](./decisions/015-swebench-docker-eval-harness.md) | SWE-bench docker-based eval harness | accepted |
 
 ---
 
@@ -58,7 +61,7 @@
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录 |
+| AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider） |
 | 本地桥接 | packages/bridge (localhost:9527) |
 | 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
@@ -87,6 +90,7 @@ code-agent/
 │   │   ├── context/            # 上下文投影系统（6 层压缩管线 + CompressionState + ProjectionEngine）
 │   │   ├── errors/             # 统一错误处理（分类、恢复引擎、自动学习）
 │   │   ├── events/             # 事件三通道（InternalEventStore 持久化 + ControlStream 实时 + Mailbox 协调）
+│   │   │                         # 注：EventBus / EventBridge 运行时已迁出 protocol/，归位到 services/eventing/
 │   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook）
 │   │   ├── ipc/                # IPC handler 层（前后端通信桥梁，含 provider.ipc.ts 连通性测试+诊断+健康状态）
 │   │   ├── model/              # ModelRouter, Provider, 自适应路由, 智能 Fallback, HealthMonitor, 请求规范化中间件
@@ -98,6 +102,7 @@ code-agent/
 │   │   ├── services/           # 核心服务（Auth, Sync, Database, SecureStorage, 引用溯源）
 │   │   ├── session/            # 会话管理（Worker Epoch 生成代围栏、快照重物化、导出、分叉、恢复）
 │   │   ├── tools/              # gen1-gen8 工具实现 + DocEdit
+│   │   │                         # 注：tool dispatch 已从 protocol/ 拆出，归位到 tools/dispatch/（M1.2）
 │   │   │
 │   │   │── ── 智能层 ──────────────────────────────
 │   │   ├── cloud/              # 云端任务服务（任务路由、混合调度、加密同步）
@@ -134,8 +139,10 @@ code-agent/
 │   │   ├── stores/             # Zustand 状态
 │   │   └── hooks/              # 自定义 hooks
 │   │
-│   ├── shared/                 # 类型定义、常量、IPC 协议
-│   ├── cli/                    # CLI 接口（独立构建入口）
+│   ├── shared/                 # 类型定义、常量、IPC 协议（含 contract/designBrief、contract/workspacePreview）
+│   ├── design/                 # Design Brief 工作流：direction-tokens、critique judge（5 维评分 + prompt）
+│   ├── artifacts/              # Session-level artifact 定义（question-form 等结构化采集产物）
+│   ├── cli/                    # CLI 接口（独立构建入口；含 `debug` 命令树）
 │   └── web/                    # Web Server（SSE API + 路由）
 │
 ├── src-tauri/                   # Tauri Rust Shell
@@ -183,6 +190,42 @@ code-agent/
 | Replay / Eval | structured replay join model/tool/event evidence；`real-agent-run` gate 校验 `sessionId + replayKey + telemetryCompleteness`，缺关键证据会 fail/degraded | `telemetryQueryService.ts`、`testRunner.ts`、`ExperimentRunner.ts` |
 
 验证口径：P1/P2 计划文档列出的 blocker 已在 unit/renderer/security 定向测试和 `npm run typecheck` 层面闭环；真实 app 长 run pause/resume、UI cancel 长命令、Agent Team 多 agent、reload recovery 仍按 smoke 风险列在对应文档里，不写成已完成的产品验收。
+
+### v0.16.67-71 Hardening + 评测扩面 + Design Brief 生产化（2026-04-27 ~ 2026-04-29）
+
+两天的 50+ commits 集中在：基建守门、安全收口、目录归位、新模型接入、Design Brief 全链路、评测扩面、调试快照与 CLI debug 命令树、channel 实时事件。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Tauri Updater 安全 (M6.a / M6.b) | cloud-api 下发 `sha256` 字段；updater 落盘前哈希校验；`open_update_url` 阻止二进制下载，仅可在浏览器打开 release 页 | `src/main/services/updater/*`、`vercel-api/`、`docs/releases/` |
+| Updater artifact 关闭 | `tauri.conf.json` 关闭自动 updater artifact 生成，避免无签名/无哈希产物意外发布 | `src-tauri/tauri.conf.json` |
+| EventBus / EventBridge 归位 | 事件运行时从 `src/main/protocol/` 迁到 `src/main/services/eventing/`，`vi.mock` 路径同步更新；事件分层与三通道契约不变 | `src/main/services/eventing/*`、`tests/eventing/*` |
+| Tool dispatch 归位 (M1.2) | tool 分发从 `protocol/` 拆出，统一到 `src/main/tools/dispatch/`，`ToolResolver` 与 abort 链贯通保持原状 | `src/main/tools/dispatch/toolResolver.ts` |
+| 调试快照体系 (ADR-014) | `turn_snapshots` + `compaction_snapshots` 两张表 + 写入器；step pause；settings "调试快照" section 含 retention selector；`data` 域 IPC 暴露 stats/clear/setRetention；CLI `code-agent debug` 命令树复用同一能力 | `src/main/agent/runtime/turnSnapshotWriter.ts`、`src/main/context/compactionSnapshotWriter.ts`、`src/main/ipc/data.ipc.ts`、`src/cli/commands/debug/*` |
+| 本地 Ollama 评测 (ADR-013) | 评测中心 `MODEL_OPTIONS` 显式声明 provider；`evaluation.ipc.ts` 接收 provider 字段并按 provider 路由 API key；主聊天 `ModelSwitcher` unhide local provider | `src/renderer/components/features/evalCenter/CreateExperimentDialog.tsx`、`src/main/ipc/evaluation.ipc.ts`、`src/renderer/components/StatusBar/ModelSwitcher.tsx` |
+| `evalEligible` catalog 字段 | `model-catalog.json` 标记可评测模型，`CreateExperimentDialog` 模型列表从 `PROVIDER_MODELS` 派生并按 `evalEligible` 过滤，避免视觉/嵌入模型出现在主聊天打分对象里 | `src/shared/model-catalog.json`、`src/shared/constants/models.ts` |
+| SWE-bench docker harness (ADR-015) | 独立 `eval/swe-bench/`，colima + 官方 docker image；`validation.ts` 双层 executable validation；CLI `--mode docker \| python` 默认 docker；Django <15min 子集 9/10 first-shot；不污染 chat agent 主链路 | `eval/swe-bench/*`、`docs/decisions/015-swebench-docker-eval-harness.md` |
+| 小米 MiMo provider | 新增 `XiaomiProvider`（OpenAI 兼容，新加坡 token-plan 节点），注册 4 个模型（mimo-v2.5-pro / v2.5 / v2-pro / v2-omni 多模态）；`DEFAULT_PROVIDER` 切到 `xiaomi`，`DEFAULT_MODEL` 切到 `mimo-v2.5-pro`；CLI / IPC / Web 各入口注册 `XIAOMI_API_KEY` env | `src/main/model/providers/xiaomiProvider.ts`、`src/shared/constants/providers.ts`、`src/shared/constants/defaults.ts`、`scripts/acceptance/xiaomi-smoke.ts` |
+| 模型 capability/缩写 单源真理 | 散落在前后端的 capability map 与缩写映射收敛到 `src/shared/constants/models.ts`，前端只消费派生视图 | `src/shared/constants/models.ts` |
+| SessionManager apiKey 剥离 | HTTP response 经 `SessionManager` 出口前显式 strip `ModelConfig.apiKey`，防止云同步 / Web 模式回传链路把密钥泄漏到 renderer 或日志 | `src/main/session/SessionManager.ts` |
+| Audit Phase A (命令注入 + 默认模型硬编码) | 长期遗留 shell 拼接路径全部走 `execFile`；多处 `\|\| 'deepseek'` `\|\| 'kimi-k2.5'` 风格的硬编码 fallback 全部替换为 `DEFAULT_PROVIDER` / `DEFAULT_MODEL` 常量 | `src/main/`（多文件）；自检 `grep -rn "\|\| 'deepseek'"` |
+| NetworkStatus closure-stale 修复 | `NetworkStatus` 闭包陈旧导致退避少一档，调整为读最新 state 而非 closure 捕获 | `src/main/network/networkStatus.ts` |
+| `silenceAsync` observability helper | 新增 `silenceAsync` 包装高频 fire-and-forget 调用，6 处关键审计链路接入避免日志爆炸但保留诊断断点 | `src/main/utils/silenceAsync.ts` |
+| Husky + lint-staged + 硬编码自检 | 提交前自动跑 `grep -rn "\|\| 'deepseek'"` 等自检规则，硬编码常量回潮即拦截 | `.husky/pre-commit`、`package.json` |
+| `max-lines: 1000` ESLint 守门 | 1000 行上限作为 God File 硬护栏，19 个 legacy God File 进白名单逐步消化 | `.eslintrc`、`docs/audits/2026-04-27-codex-2day-burst-cleanup.md` |
+| Supabase services 类型清理 | 一次性移除 18+ 处 `as any`，并修出 latent bug（B5 audit） | `src/main/services/sync/*` |
+| Design Brief 生产化 (Phase A→C.3) | `src/design/`（direction-tokens + 5-dim critique）、`src/artifacts/question-form.ts`、`src/main/prompts/selfCritique.ts`、`src/main/prompts/questionForm.ts`、`src/main/app/workbenchTurnContext.ts` 把 brief 生产路径接进 envelope 与 system prompt；C.3 路线 A 借鉴 nexu-io 模式注入 silent self-critique pre-emit gate | `src/design/*`、`src/artifacts/*`、`src/shared/contract/designBrief.ts`、`src/main/prompts/selfCritique.ts` |
+| Workspace Preview Panel | 新增右侧 workbench tab 承载 designBrief / questionForm 实时预览；`useWorkspacePreviewModel` hook 订阅 envelope 元数据；TaskMonitor 增加 scope inspector 与之联动 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/components/QuestionFormPreview.tsx`、`src/renderer/hooks/useWorkspacePreviewModel.ts`、`src/renderer/utils/workspacePreview.ts` |
+| Channel inbox / outbox 实时事件 | 入站 / 出站事件统一 IPC 通道，renderer 可 `list / dismiss`；`ConnectorsCard` 直接消费 channel inbox 状态 | `src/main/channels/*`、`src/renderer/components/.../ConnectorsCard.tsx` |
+| Chat-view 新会话首屏 | 新 session 首屏从"示例 prompt 卡"改为"工作 / 生活 / 学习 / 娱乐"四类任务入口卡 | `src/renderer/components/.../chat/ChatView/EmptyState*.tsx` |
+| Eval Center Review Queue | `SessionListView` 把待评 session 集中分桶，标注 replay 完整度与异常 case；行点击进详情；fatal inference error 熔断；DB 去重 | `src/renderer/components/features/evalCenter/SessionListView.tsx`、`src/main/evaluation/testRunner.ts` |
+| Computer Surface `locate_role+targetApp` | 走 macOS background AX 直连指定 app 控件树，避免唤起前台；`type` / `key` 没有 background target 时降级前台键盘事件，bridge 显式 warn；文档 Computer / computer_use 别名映射 + 截图可见性规则 | `src/main/tools/computerUse.ts`、`src/main/tools/desktop.ts`、`docs/guides/computer-use.md` |
+| CLI config 单源 | `CLIConfigService` 与 `ConfigService` 统一为同一份 config source，避免 CLI 模式与 Tauri 模式读到不同默认值 | `src/cli/config.ts`、`src/main/config/*`（PR #88） |
+
+**架构边界澄清**：
+- `services/eventing/` 与 `tools/dispatch/` 都是 `protocol/` 的"专项归位"，不引入新的运行时语义。`protocol/` 只保留跨进程消息契约，运行时实现回到各自能力域。
+- Design Brief 工作流落点是 `src/design/`、`src/artifacts/`、`src/shared/contract/designBrief.ts` 三处，与主聊天 envelope 之间通过 `workbenchTurnContext` + `messageBuild` 串联。它对普通编程任务保持零打扰。
+- 调试快照体系不依赖 telemetry / replay 旧链路，单独走 SQLite 双表，方便后续按 retention window 单独清理。
 
 ### v0.16.59 竞品追赶 (2026-04-11)
 
@@ -700,6 +743,8 @@ agentLoop.executeTool(Read)
 | **v0.16.53** | 富文档编辑 | DocEdit 统一入口、Excel 14 操作、Word 7 操作、PPT 编辑加固、SnapshotManager |
 | **v0.16.55** | Agent Team | SpawnGuard 并发守卫、并行多代理执行、Git Worktree 隔离、异步完成通知、结果聚合 |
 | **v0.16.57** | 架构对齐 | 投影式上下文管理（6 层压缩）、Prompt 矩阵（4 Profile × 5 Overlay）、GuardFabric 多源权限、事件三通道、Worker Epoch、多模型差异化路由、Operator Surface |
+| **v0.16.66** | Agent Runtime Hardening | run lifecycle 终态、run-level abort、TaskManager-owned chat、MCP direct execute、Skill trust gate、multiagent reliability、structured replay gate |
+| **v0.16.71** | Hardening + 评测扩面 + Design Brief | Tauri updater 安全 (M6.a/b)、EventBus & dispatch 归位、调试快照体系 (ADR-014)、本地 Ollama 评测 (ADR-013)、SWE-bench docker harness (ADR-015)、小米 MiMo provider + 默认模型切换、Design Brief 生产化 (Phase A→C.3)、Workspace Preview Panel、Channel inbox/outbox |
 
 </details>
 

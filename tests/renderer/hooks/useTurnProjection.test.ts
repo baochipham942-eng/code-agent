@@ -125,6 +125,10 @@ describe('projectTurns', () => {
           workbench: {
             routingMode: 'direct',
             targetAgentIds: ['agent-reviewer'],
+            directRoutingDelivery: {
+              deliveredTargetIds: ['agent-reviewer'],
+              deliveredTargetNames: ['Reviewer'],
+            },
           },
         },
       },
@@ -136,6 +140,76 @@ describe('projectTurns', () => {
     expect(projection.activeTurnIndex).toBe(0);
     expect(projection.turns[0].status).toBe('streaming');
     expect(projection.turns[1].status).toBe('completed');
+  });
+
+  it('attaches a runtime supplement to the current active turn', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '先分析这个问题',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在分析中',
+        timestamp: 150,
+      },
+      {
+        id: 'user-2',
+        role: 'user',
+        content: '补充一下，客户读者也要覆盖',
+        timestamp: 220,
+        metadata: {
+          workbench: {
+            runtimeInputMode: 'supplement',
+          },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-4', true, []);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.activeTurnIndex).toBe(0);
+    expect(projection.turns[0].status).toBe('streaming');
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-text',
+      'user-2',
+    ]);
+  });
+
+  it('marks a newly submitted normal user turn active while waiting for the assistant response', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '上一轮问题',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '上一轮回答',
+        timestamp: 150,
+      },
+      {
+        id: 'user-2',
+        role: 'user',
+        content: '继续',
+        timestamp: 220,
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-4', true, []);
+
+    expect(projection.turns).toHaveLength(2);
+    expect(projection.activeTurnIndex).toBe(1);
+    expect(projection.turns[0].status).toBe('completed');
+    expect(projection.turns[1].status).toBe('streaming');
+    expect(projection.turns[1].startTime).toBe(220);
   });
 
   it('ignores pending launch requests from another session', () => {

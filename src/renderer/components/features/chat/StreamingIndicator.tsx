@@ -4,9 +4,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Brain, AlertTriangle, StopCircle } from 'lucide-react';
+import type { TraceNode } from '@shared/contract/trace';
 
 interface StreamingIndicatorProps {
   startTime: number;
+  runningToolStartTime?: number;
   onForceStop?: () => void;
 }
 
@@ -18,6 +20,8 @@ const PHASES = [
   { threshold: 60, label: '处理时间较长...',  color: 'text-amber-400', icon: AlertTriangle },
   { threshold: 90, label: '工具可能卡住',    color: 'text-red-400', icon: AlertTriangle },
 ] as const;
+
+const STUCK_THRESHOLD_SECONDS = 90;
 
 function getPhase(elapsedSeconds: number) {
   for (let i = PHASES.length - 1; i >= 0; i--) {
@@ -32,23 +36,60 @@ function formatElapsed(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({ startTime, onForceStop }) => {
+export function getStreamingIndicatorState(
+  elapsedSeconds: number,
+  runningToolElapsedSeconds?: number,
+) {
+  const safeElapsed = Math.max(0, elapsedSeconds);
+  const toolStuck =
+    typeof runningToolElapsedSeconds === 'number' &&
+    runningToolElapsedSeconds >= STUCK_THRESHOLD_SECONDS;
+  const phaseElapsed = toolStuck
+    ? safeElapsed
+    : Math.min(safeElapsed, STUCK_THRESHOLD_SECONDS - 1);
+
+  return {
+    phase: getPhase(phaseElapsed),
+    isStuck: toolStuck,
+  };
+}
+
+export function getRunningToolStartTime(nodes: TraceNode[]): number | undefined {
+  const runningStarts = nodes
+    .filter((node) => {
+      const toolCall = node.toolCall;
+      if (!toolCall) return false;
+      if (toolCall._streaming) return false;
+      return toolCall.success === undefined && toolCall.result === undefined;
+    })
+    .map((node) => node.timestamp);
+
+  return runningStarts.length > 0 ? Math.min(...runningStarts) : undefined;
+}
+
+export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({ startTime, runningToolStartTime, onForceStop }) => {
   const [elapsed, setElapsed] = useState(0);
+  const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    // Initialize with current elapsed time
-    setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    const updateElapsed = () => {
+      const now = Date.now();
+      setElapsed(Math.floor((now - startTime) / 1000));
+      setRunningToolElapsed(
+        runningToolStartTime !== undefined
+          ? Math.floor((now - runningToolStartTime) / 1000)
+          : undefined,
+      );
+    };
 
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
 
     return () => clearInterval(interval);
-  }, [startTime]);
+  }, [startTime, runningToolStartTime]);
 
-  const phase = getPhase(elapsed);
+  const { phase, isStuck } = getStreamingIndicatorState(elapsed, runningToolElapsed);
   const Icon = phase.icon;
-  const isStuck = elapsed >= PHASES[PHASES.length - 1].threshold;
 
   return (
     <div className="flex items-center gap-2 py-1">

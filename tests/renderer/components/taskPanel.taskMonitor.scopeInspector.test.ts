@@ -1,16 +1,24 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const appState = {
   workingDirectory: '/repo/app',
-  sessionTaskProgress: {},
+  sessionTaskProgress: {} as Record<string, any>,
   processingSessionIds: new Set<string>(),
 };
 
 const sessionState = {
   currentSessionId: 'session-1',
-  messages: [],
+  messages: [] as Array<any>,
+  sessionDesignBriefs: new Map<string, any>(),
+};
+
+const statusRailTodosState = {
+  items: [] as Array<any>,
+  completed: 0,
+  total: 0,
 };
 
 const currentTurnScopeState = {
@@ -168,6 +176,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({
     t: {
       taskPanel: {
+        progress: '进度',
         workIn: '工作于 {folderName}',
         sectionTodos: '待办',
         todosEmpty: '暂无待办',
@@ -176,12 +185,28 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         artifactsEmpty: '没有产物',
         sectionReferences: '引用',
         skillsMcpEmpty: '没有技能',
+        progressEmpty: '暂无任务计划',
+        phaseThinking: '分析请求中',
+        phaseGenerating: '生成回复中',
+        phaseToolPending: '准备执行',
+        phaseToolRunning: '执行工具中',
+        phaseCompleted: '回复完成',
+        phaseFailed: '任务失败',
         phaseRead: '读取文件',
         phaseEdit: '写入文件',
         phaseExecute: '执行命令',
         phaseSearch: '搜索信息',
         phaseMcp: '调用工具',
         phaseOps: '{count} 次操作',
+        taskProgressTool: '工具：{tool}',
+        taskProgressToolPosition: '第 {index}/{total} 个工具',
+        toolActivity: '工具活动',
+        toolActivityRead: '文件读取活动',
+        toolActivityEdit: '文件写入活动',
+        toolActivityExecute: '命令执行活动',
+        toolActivitySearch: '搜索活动',
+        toolActivityMcp: '外部工具活动',
+        toolActivityOps: '{count} 次工具操作',
         bucketRules: 'Rules',
         bucketFiles: 'Files',
         bucketWeb: 'Web',
@@ -223,11 +248,7 @@ vi.mock('../../../src/renderer/hooks/useStatusRailModel', () => ({
       compressionCount: 0,
       totalSavedTokens: 0,
     },
-    todos: {
-      items: [],
-      completed: 0,
-      total: 0,
-    },
+    todos: statusRailTodosState,
     outputs: {
       files: [],
       count: 0,
@@ -316,6 +337,12 @@ import { TaskMonitor } from '../../../src/renderer/components/TaskPanel/TaskMoni
 
 describe('TaskMonitor scope inspector slice', () => {
   beforeEach(() => {
+    appState.sessionTaskProgress = {};
+    appState.processingSessionIds = new Set<string>();
+    sessionState.messages = [];
+    statusRailTodosState.items = [];
+    statusRailTodosState.completed = 0;
+    statusRailTodosState.total = 0;
     currentTurnScopeState.selectedCapabilities[0] = {
       kind: 'skill',
       key: 'skill:draft-skill',
@@ -346,6 +373,93 @@ describe('TaskMonitor scope inspector slice', () => {
     currentTurnScopeState.blockedCapabilities = [currentTurnScopeState.selectedCapabilities[0]];
     quickActionRunnerState.completedActions = {};
     quickActionRunnerState.actionErrors = {};
+  });
+
+  it('uses session task progress as the semantic progress when there are no todos', () => {
+    appState.sessionTaskProgress = {
+      'session-1': {
+        turnId: 'turn-2',
+        phase: 'generating',
+        step: '生成文档中',
+        tool: 'Read',
+        toolIndex: 0,
+        toolTotal: 3,
+      },
+    };
+    sessionState.messages = [
+      {
+        toolCalls: [
+          { name: 'Read', arguments: { path: '/repo/app/brief.md' } },
+          { name: 'Read', arguments: { path: '/repo/app/report.md' } },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('生成文档中');
+    expect(html).toContain('生成回复中');
+    expect(html).toContain('工具：Read');
+    expect(html).toContain('第 1/3 个工具');
+    expect(html).not.toContain('读取文件');
+    expect(html).not.toContain('文件读取活动');
+  });
+
+  it('falls back to tool activity when there are no todos or task progress', () => {
+    sessionState.messages = [
+      {
+        toolCalls: [
+          { name: 'Read', arguments: { path: '/repo/app/brief.md' } },
+          { name: 'Read', arguments: { path: '/repo/app/report.md' } },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('工具活动');
+    expect(html).toContain('文件读取活动');
+    expect(html).toContain('2 次工具操作');
+  });
+
+  it('keeps todos as the highest priority over task progress and tool activity', () => {
+    statusRailTodosState.items = [
+      {
+        status: 'in_progress',
+        content: '生成文档',
+        activeForm: '正在生成文档',
+      },
+    ];
+    statusRailTodosState.completed = 0;
+    statusRailTodosState.total = 1;
+    appState.sessionTaskProgress = {
+      'session-1': {
+        turnId: 'turn-2',
+        phase: 'generating',
+        step: '生成回复中',
+      },
+    };
+    sessionState.messages = [
+      {
+        toolCalls: [
+          { name: 'Read', arguments: { path: '/repo/app/brief.md' } },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('正在生成文档');
+    expect(html).toContain('0/1');
+    expect(html).not.toContain('生成回复中');
+    expect(html).not.toContain('工具活动');
+    expect(html).not.toContain('文件读取活动');
   });
 
   it('renders the current turn capability scope with the same four layers used by chat trace', () => {

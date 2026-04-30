@@ -58,11 +58,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return sessionId ?? this._getCurrentSessionId();
   }
 
-  private getOrchestratorOrThrow(sessionId?: string) {
+  private getOrchestrator(sessionId?: string) {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
+    return resolvedSessionId ? tm.getOrCreateCurrentOrchestrator(resolvedSessionId) : undefined;
+  }
+
+  private getOrchestratorOrThrow(sessionId?: string) {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
-    const orchestrator = tm.getOrCreateCurrentOrchestrator(resolvedSessionId);
+    const orchestrator = this.getOrchestrator(resolvedSessionId);
     if (!orchestrator) throw new Error('Agent not initialized');
     return orchestrator;
   }
@@ -97,6 +102,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       metadata.executionIntent = {
         ...context.executionIntent,
       };
+    }
+    if (context.runtimeInput) {
+      metadata.runtimeInputMode = context.runtimeInput.mode;
     }
 
     return Object.keys(metadata).length > 0 ? metadata : undefined;
@@ -161,11 +169,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async sendMessage(envelope: ConversationEnvelope): Promise<void> {
     const tm = this.getTaskManager();
-    const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
+    const orchestrator = this.getOrchestrator(resolvedSessionId);
     if (envelope.context?.workingDirectory) {
-      orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
+      orchestrator?.setWorkingDirectory(envelope.context.workingDirectory);
     }
     await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
     const options = withWorkbenchTurnSystemContext(
@@ -203,11 +211,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async interruptAndContinue(envelope: ConversationEnvelope): Promise<void> {
     const tm = this.getTaskManager();
-    const orchestrator = this.getOrchestratorOrThrow(envelope.sessionId);
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
+    const orchestrator = this.getOrchestrator(resolvedSessionId);
     if (envelope.context?.workingDirectory) {
-      orchestrator.setWorkingDirectory(envelope.context.workingDirectory);
+      orchestrator?.setWorkingDirectory(envelope.context.workingDirectory);
     }
     await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
     const options = withWorkbenchTurnSystemContext(
@@ -246,7 +254,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const sessionManager = getSessionManager();
     const settings = configService.getSettings();
-    const workingDirectory = this.getWorkingDirectory();
+    const requestedWorkingDirectory = config?.workingDirectory?.trim();
+    const workingDirectory = requestedWorkingDirectory || this.getWorkingDirectory();
 
     const session = await sessionManager.createSession({
       title: config?.title || 'New Session',
@@ -265,6 +274,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const taskManager = this.getTaskManager();
     taskManager.cleanup(session.id);
     taskManager.setCurrentSessionId(session.id);
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(session.id);
+    if (orchestrator && workingDirectory?.trim()) {
+      orchestrator.setWorkingDirectory(workingDirectory);
+    }
 
     return session;
   }

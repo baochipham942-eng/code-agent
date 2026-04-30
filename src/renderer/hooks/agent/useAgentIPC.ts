@@ -2,7 +2,12 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message } from '@shared/contract';
-import type { ConversationEnvelope, ConversationEnvelopeContext, WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
+import type {
+  ConversationEnvelope,
+  ConversationEnvelopeContext,
+  RuntimeInputMode,
+  WorkbenchMessageMetadata,
+} from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
 import { normalizeDesignBrief, type DesignBrief } from '@shared/contract/designBrief';
 import { directionTokens } from '@/design/direction-tokens';
@@ -12,7 +17,9 @@ import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
+import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
+import { toast } from '../../hooks/useToast';
 import ipcService from '../../services/ipcService';
 
 const logger = createLogger('useAgent');
@@ -73,6 +80,29 @@ type DirectRoutingResolution =
       targetIds: string[];
       missingTargetIds: string[];
     };
+
+export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
+  return status === 'running'
+    || status === 'paused'
+    || status === 'queued'
+    || status === 'cancelling';
+}
+
+export function getRuntimeFollowupFailureMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
+  if (/agent not initialized|no active session|not initialized/i.test(raw)) {
+    return '当前任务还没准备好接收补充指令，稍后再发一次。';
+  }
+  return `补充指令没发出去：${raw}`;
+}
+
+export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {
+  return context?.runtimeInput?.mode === 'redirect' ? 'redirect' : 'supplement';
+}
+
+export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
+  return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
+}
 
 export function resolveDirectRouting(
   envelope: ConversationEnvelope,
@@ -168,6 +198,9 @@ function toWorkbenchMetadata(
       ...context.executionIntent,
     };
   }
+  if (context.runtimeInput) {
+    metadata.runtimeInputMode = context.runtimeInput.mode;
+  }
 
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
@@ -202,7 +235,7 @@ export function useAgentIPC({
 }: UseAgentIPCArgs) {
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
-  // Claude Code 风格：如果正在处理中，自动触发中断
+  // 运行中继续发送时，自动作为补充指令接入当前任务
   const sendMessage = useCallback(
     async (envelope: ConversationEnvelope) => {
       const { content, attachments, context } = envelope;
@@ -235,7 +268,7 @@ export function useAgentIPC({
       const directRouting = resolveDirectRouting(envelope, swarmAgents);
 
       // 读取当前 session 锁定的 design brief（来自 question-form 提交，仅运行时内存态）。
-      // 三条 IPC 路径（direct routing / interrupt / auto）都会在 content 前面 prepend
+      // 三条 IPC 路径（direct routing / runtime follow-up / auto）都会在 content 前面 prepend
       // 一段 <system-reminder> 让下一轮 LLM 按 brief 出 artifact，不进 store/DB。
       const sessionDesignBrief = enrichDesignBrief(effectiveSessionId
         ? useSessionStore.getState().getSessionDesignBrief(effectiveSessionId)
@@ -336,12 +369,19 @@ export function useAgentIPC({
 
       // 检查当前会话是否正在处理（允许其他会话并发发送）
       const isCurrentSessionProcessing = effectiveSessionId
-        ? useAppStore.getState().isSessionProcessing(effectiveSessionId)
+        ? (
+            useAppStore.getState().isSessionProcessing(effectiveSessionId)
+            || isRuntimeBusyStatus(useTaskStore.getState().sessionStates[effectiveSessionId]?.status)
+          )
         : isProcessing;
 
-      // Claude Code 风格：如果正在处理中，触发中断并继续新消息
+      // 运行中发送的新输入作为补充指令交给当前任务，后端仍通过 interruptAndContinue 接入。
       if (isCurrentSessionProcessing) {
-        logger.info('sendMessage - session processing, triggering interrupt', { isCurrentSessionProcessing });
+        const runtimeInputMode = getRuntimeInputMode(contextWithDesignBrief);
+        logger.info('sendMessage - session processing, sending runtime input', {
+          isCurrentSessionProcessing,
+          runtimeInputMode,
+        });
 
         // 添加用户消息到界面
         const userMessage: Message = {
@@ -354,9 +394,13 @@ export function useAgentIPC({
         };
         addMessage(userMessage);
 
+        const rollbackUserMessage = () => {
+          const sessionState = useSessionStore.getState();
+          sessionState.setMessages(sessionState.messages.filter((message) => message.id !== userMessage.id));
+        };
+
         setIsInterrupting(true);
         try {
-          // 调用 interrupt action，后端会中断当前任务并继续新消息
           await ipcService.invokeDomain<void>('agent', 'interrupt', {
             ...envelope,
             content: envelope.content,
@@ -364,20 +408,18 @@ export function useAgentIPC({
             clientMessageId: userMessage.id,
             sessionId: effectiveSessionId,
           });
-          logger.debug('interrupt invoke returned');
+          logger.debug('runtime input invoke returned');
+          toast.info(getRuntimeInputSuccessMessage(runtimeInputMode));
         } catch (error) {
-          logger.error('Interrupt error', error);
+          logger.error('Runtime input error', error);
+          rollbackUserMessage();
           setIsInterrupting(false);
-          // 清除 processing 状态，避免永久卡死
-          setSessionProcessing(effectiveSessionId!, false);
-          // 错误时创建一条错误消息
-          const errorMessage: Message = {
-            id: generateMessageId(),
-            role: 'assistant',
-            content: `中断失败: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            timestamp: Date.now(),
-          };
-          addMessage(errorMessage);
+          const taskStatus = useTaskStore.getState().sessionStates[effectiveSessionId!]?.status;
+          if (!isRuntimeBusyStatus(taskStatus)) {
+            setSessionProcessing(effectiveSessionId!, false);
+          }
+          toast.warning(getRuntimeFollowupFailureMessage(error));
+          throw error;
         }
         return;
       }

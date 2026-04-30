@@ -11,6 +11,8 @@
 import type {
   ModelConfig,
   Message,
+  MessageAttachment,
+  MessageMetadata,
   ToolCall,
   ToolResult,
   AgentEvent,
@@ -654,12 +656,51 @@ export class ConversationRuntime {
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;
+      await this.persistFailedRunContinuationContext(userMessage, iterations, error);
     } finally {
       await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum, terminal);
       this.ctx.runAbortController = null;
     }
 
     if (runError) throw runError;
+  }
+
+  private async persistFailedRunContinuationContext(
+    userMessage: string,
+    iterations: number,
+    error: unknown,
+  ): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const truncatedUserMessage = userMessage.length > 2000
+      ? `${userMessage.slice(0, 2000)}\n...[truncated user request]...`
+      : userMessage;
+    const truncatedError = errorMessage.length > 1200
+      ? `${errorMessage.slice(0, 1200)}\n...[truncated runtime error]...`
+      : errorMessage;
+
+    const marker: Message = {
+      id: generateMessageId(),
+      role: 'system',
+      content: [
+        '<failed-run-continuation-context>',
+        '上一轮 agent 运行在完成最终回复前失败。后续如果用户只说“继续”，要沿着这条失败轮恢复，不要回到更早的提问，也不要要求用户重复已经给出的主题。',
+        `失败轮用户请求：${truncatedUserMessage}`,
+        `失败发生在第 ${iterations} 轮推理后。`,
+        `失败错误：${truncatedError}`,
+        '</failed-run-continuation-context>',
+      ].join('\n'),
+      timestamp: Date.now(),
+      isMeta: true,
+      source: 'system',
+    };
+
+    try {
+      await this.contextAssembly.addAndPersistMessage(marker);
+    } catch (persistError) {
+      logger.warn('[AgentLoop] Failed to persist failed-run continuation context', {
+        error: persistError instanceof Error ? persistError.message : String(persistError),
+      });
+    }
   }
 
   // ========================================================================
@@ -919,9 +960,14 @@ export class ConversationRuntime {
     logger.info('[AgentLoop] Interrupt requested with new message');
   }
 
-  steer(newMessage: string, clientMessageId?: string): void {
+  steer(
+    newMessage: string,
+    clientMessageId?: string,
+    attachments?: MessageAttachment[],
+    metadata?: MessageMetadata,
+  ): void {
     this.ctx.abortController?.abort();
-    this.messageProcessor.injectSteerMessage(newMessage, clientMessageId);
+    this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
     this.ctx.needsReinference = true;
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }

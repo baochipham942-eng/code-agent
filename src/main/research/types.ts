@@ -170,6 +170,7 @@ export interface AgentRunOptions {
   turnSystemContext?: string[];
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
+  runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;
 }
 
 // ============================================================================

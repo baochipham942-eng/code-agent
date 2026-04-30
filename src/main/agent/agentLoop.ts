@@ -6,6 +6,8 @@
 import type {
   ModelConfig,
   Message,
+  MessageAttachment,
+  MessageMetadata,
   ToolCall,
   ToolResult,
   AgentEvent,
@@ -346,8 +348,13 @@ export class AgentLoop {
     this.conversationRuntime.interrupt(newMessage);
   }
 
-  steer(newMessage: string, clientMessageId?: string): void {
-    this.conversationRuntime.steer(newMessage, clientMessageId);
+  steer(
+    newMessage: string,
+    clientMessageId?: string,
+    attachments?: MessageAttachment[],
+    metadata?: MessageMetadata,
+  ): void {
+    this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata);
   }
 
   wasInterrupted(): boolean {

@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ============================================================================
 // ConversationRuntime Tests
 // Tests for session initialization, message handling, state transitions,
 // control methods (cancel/interrupt/steer), plan mode, structured output
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHookManager } from '../../../src/main/hooks';
 
 const activityMocks = vi.hoisted(() => ({
@@ -454,6 +455,7 @@ function createMockModules() {
       injectSystemMessage: vi.fn(),
       injectResearchModePrompt: vi.fn(),
       checkAndAutoCompress: vi.fn(),
+      addAndPersistMessage: vi.fn(),
     } as any,
     runFinalizer: {
       finalizeRun: vi.fn(),
@@ -680,6 +682,8 @@ describe('ConversationRuntime', () => {
       expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
         'new direction',
         'client-message-1',
+        undefined,
+        undefined,
       );
     });
   });
@@ -963,6 +967,19 @@ describe('ConversationRuntime', () => {
         expect.anything(),
         expect.any(Number),
         expect.objectContaining({ status: 'failed', error }),
+      );
+      expect(modules.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: 'system',
+          isMeta: true,
+          source: 'system',
+          content: expect.stringContaining('失败轮用户请求：boom'),
+        }),
+      );
+      expect(modules.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('失败错误：model exploded'),
+        }),
       );
       expect(ctx.runAbortController).toBeNull();
     });

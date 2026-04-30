@@ -40,7 +40,7 @@ export function registerSessionHandlers(
           data = await requireAppService().listSessions(payload as { includeArchived?: boolean } | undefined);
           break;
         case 'create':
-          data = await requireAppService().createSession(payload as { title?: string });
+          data = await requireAppService().createSession(payload as { title?: string; workingDirectory?: string | null });
           break;
         case 'load':
           data = await requireAppService().loadSession((payload as { sessionId: string }).sessionId);

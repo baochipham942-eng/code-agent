@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/main/app/agentAppService';
 import type { SessionStatus } from '../../../src/main/task';
@@ -108,6 +109,7 @@ describe('AgentAppService lifecycle routing', () => {
       context: {
         workingDirectory: '/tmp/project',
         executionIntent: { allowBrowserAutomation: false },
+        runtimeInput: { mode: 'supplement' },
       },
     } as any);
 
@@ -117,14 +119,36 @@ describe('AgentAppService lifecycle routing', () => {
       undefined,
       expect.objectContaining({
         executionIntent: { allowBrowserAutomation: false },
+        runtimeInput: { mode: 'supplement' },
       }),
       expect.objectContaining({
         workbench: expect.objectContaining({
           workingDirectory: '/tmp/project',
           executionIntent: { allowBrowserAutomation: false },
+          runtimeInputMode: 'supplement',
         }),
       }),
       'client-msg-1',
+    );
+  });
+
+  it('lets TaskManager recover runtime follow-up when no orchestrator is currently attached', async () => {
+    taskManager.getOrCreateCurrentOrchestrator.mockReturnValueOnce(undefined);
+    const service = createService(taskManager);
+
+    await service.interruptAndContinue({
+      sessionId: 'session-orphan',
+      content: '继续按新要求处理',
+      clientMessageId: 'client-msg-2',
+    } as any);
+
+    expect(taskManager.interruptAndContinue).toHaveBeenCalledWith(
+      'session-orphan',
+      '继续按新要求处理',
+      undefined,
+      undefined,
+      undefined,
+      'client-msg-2',
     );
   });
 

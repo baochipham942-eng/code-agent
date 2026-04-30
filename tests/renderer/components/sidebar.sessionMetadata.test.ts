@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -143,6 +144,7 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('后台');
     expect(html).toContain('3 轮');
     expect(html).toContain('工作区 · Browser');
+    expect(html).toContain('aria-label="在 code-agent 新建会话"');
   });
 
   it('supports the background-only quick filter', () => {

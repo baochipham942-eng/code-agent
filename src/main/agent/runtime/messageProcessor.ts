@@ -5,6 +5,8 @@
 
 import type {
   Message,
+  MessageAttachment,
+  MessageMetadata,
   AgentEvent,
   ToolCall,
   ToolResult,
@@ -637,12 +639,19 @@ export class MessageProcessor {
   /**
    * Inject steer message into conversation history.
    */
-  injectSteerMessage(newMessage: string, clientMessageId?: string): void {
+  injectSteerMessage(
+    newMessage: string,
+    clientMessageId?: string,
+    attachments?: MessageAttachment[],
+    metadata?: MessageMetadata,
+  ): void {
     const steerMessage: Message = {
       id: clientMessageId ?? generateMessageId(),
       role: 'user',
       content: newMessage,
       timestamp: Date.now(),
+      attachments,
+      metadata,
     };
     this.ctx.messages.push(steerMessage);
 

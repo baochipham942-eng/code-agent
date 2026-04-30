@@ -4,7 +4,6 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
 import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
@@ -15,6 +14,20 @@ import { getToolSearchService } from '../toolSearch';
 import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
+const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
+
+export interface SkillDiscoveryServiceOptions {
+  includeClaudeLegacySkills?: boolean;
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function shouldIncludeClaudeLegacySkills(options: SkillDiscoveryServiceOptions): boolean {
+  return options.includeClaudeLegacySkills ?? isTruthyEnv(process.env[INCLUDE_CLAUDE_LEGACY_SKILLS_ENV]);
+}
 
 /**
  * 库元数据接口
@@ -32,9 +45,10 @@ interface LibraryMeta {
  * Skill 发现服务
  *
  * 负责从多个来源发现和加载 Skills：
- * 1. 用户级目录: ~/.claude/skills/
- * 2. 项目级目录: .claude/skills/
- * 3. 内置 Skills (从 cloudConfigService 转换)
+ * 1. 用户级目录: ~/.code-agent/skills/
+ * 2. 项目级目录: .code-agent/skills/
+ * 3. Claude legacy 目录: 显式开启后才扫描
+ * 4. 内置 Skills (从 cloudConfigService 转换)
  *
  * 优先级：项目 > 用户 > 内置（后加载的覆盖先加载的）
  */
@@ -42,8 +56,13 @@ class SkillDiscoveryService {
   private skills: Map<string, ParsedSkill> = new Map();
   private initialized = false;
   private workingDirectory = '';
+  private readonly includeClaudeLegacySkills: boolean;
   /** 初始化中的 promise，用于 fire-and-forget 场景下的并发锁 */
   private initPromise: Promise<void> | null = null;
+
+  constructor(options: SkillDiscoveryServiceOptions = {}) {
+    this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
+  }
 
   private normalizeWorkingDirectory(workingDirectory: string): string {
     return path.resolve(workingDirectory);
@@ -77,19 +96,31 @@ class SkillDiscoveryService {
     // 1. 加载内置 Skills（最低优先级）
     await this.loadBuiltinSkills();
 
-    // 2. 加载用户级 Skills（两个目录都扫描，.code-agent 优先级更高）
-    //    先扫 ~/.claude/skills/（通用），再扫 ~/.code-agent/skills/（专属，同名覆盖）
+    // 2. 加载用户级 Skills。Claude legacy 目录默认隔离，显式开启后再参与兼容扫描。
     const skillsDirs = getSkillsDir(this.workingDirectory);
-    await this.scanDirectory(skillsDirs.user.legacy, 'user');
+    if (this.includeClaudeLegacySkills) {
+      await this.scanDirectory(skillsDirs.user.legacy, 'user');
+    } else {
+      logger.debug('Skipping Claude legacy user skills directory', {
+        dir: skillsDirs.user.legacy,
+        optInEnv: INCLUDE_CLAUDE_LEGACY_SKILLS_ENV,
+      });
+    }
     await this.scanDirectory(skillsDirs.user.new, 'user');
 
     // 3. 加载远程库 Skills
     await this.loadFromLibraries();
 
-    // 4. 加载项目级 Skills（最高优先级，两个目录都扫描）
-    //    先扫 .claude/skills/（通用），再扫 .code-agent/skills/（专属，同名覆盖）
+    // 4. 加载项目级 Skills（最高优先级）。同样默认只扫 .code-agent/skills。
     if (skillsDirs.project) {
-      await this.scanDirectory(skillsDirs.project.legacy, 'project');
+      if (this.includeClaudeLegacySkills) {
+        await this.scanDirectory(skillsDirs.project.legacy, 'project');
+      } else {
+        logger.debug('Skipping Claude legacy project skills directory', {
+          dir: skillsDirs.project.legacy,
+          optInEnv: INCLUDE_CLAUDE_LEGACY_SKILLS_ENV,
+        });
+      }
       await this.scanDirectory(skillsDirs.project.new, 'project');
     }
 

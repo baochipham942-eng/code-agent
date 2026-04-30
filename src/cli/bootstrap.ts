@@ -12,7 +12,7 @@ Module.prototype.require = function(id: string) {
   if (id === 'electron') {
     return electronMock;
   }
-  return originalRequire.apply(this, arguments);
+  return originalRequire.call(this, id);
 };
 
 // 现在可以安全导入其他模块了
@@ -20,7 +20,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { getCLIConfigService, type CLIConfigService } from './config';
-import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './database';
+import { initCLIDatabase, type CLIDatabaseService } from './database';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
@@ -52,6 +52,32 @@ let sessionManager: CLISessionManager | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
 let currentTelemetrySessionId: string | null = null;
+
+type AgentLoopMessageSessionManager = Pick<CLISessionManager, 'addMessage' | 'addMessageToSession'>;
+
+export async function persistAgentLoopMessageToSession(
+  manager: AgentLoopMessageSessionManager | null,
+  message: Message,
+  options: {
+    sessionId?: string;
+    modelConfig: ModelConfig;
+    workingDirectory: string;
+    title?: string;
+  },
+): Promise<void> {
+  if (!manager) return;
+
+  if (options.sessionId) {
+    await manager.addMessageToSession(options.sessionId, message, {
+      title: options.title || 'CLI Session',
+      modelConfig: options.modelConfig,
+      workingDirectory: options.workingDirectory,
+    });
+    return;
+  }
+
+  await manager.addMessage(message);
+}
 
 /**
  * 初始化 CLI 核心服务
@@ -263,7 +289,10 @@ export function createAgentLoop(
     : SYSTEM_PROMPT;
 
   // 统一使用传入的 sessionId，或生成一个临时 ID
-  const effectiveSessionId = sessionId || `cli-${Date.now()}`;
+  const explicitSessionId = typeof sessionId === 'string' && sessionId.trim().length > 0
+    ? sessionId.trim()
+    : undefined;
+  const effectiveSessionId = explicitSessionId || `cli-${Date.now()}`;
 
   // 创建 PlanningService（如果启用规划模式）
   let planningService = undefined;
@@ -349,12 +378,14 @@ export function createAgentLoop(
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {
-      if (sessionManager) {
-        try {
-          await sessionManager.addMessage(message);
-        } catch (error) {
-          console.warn('[CLI] Failed to persist message:', (error as Error).message);
-        }
+      try {
+        await persistAgentLoopMessageToSession(sessionManager, message, {
+          sessionId: explicitSessionId,
+          modelConfig: config.modelConfig,
+          workingDirectory: config.workingDirectory,
+        });
+      } catch (error) {
+        console.warn('[CLI] Failed to persist message:', (error as Error).message);
       }
     },
   });

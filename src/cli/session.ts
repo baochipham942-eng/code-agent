@@ -27,6 +27,10 @@ export interface SessionCreateOptions {
   workingDirectory?: string;
 }
 
+export interface SessionScopedMessageOptions extends SessionCreateOptions {
+  setCurrent?: boolean;
+}
+
 // ----------------------------------------------------------------------------
 // CLI Session Manager
 // ----------------------------------------------------------------------------
@@ -66,6 +70,28 @@ export class CLISessionManager {
   private isDatabaseAvailable(): boolean {
     const db = this.getDb();
     return db !== null && db.isInitialized;
+  }
+
+  private isDuplicateMessageError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('UNIQUE constraint failed: messages.id');
+  }
+
+  private ensureSession(sessionId: string, options: SessionCreateOptions): void {
+    if (!this.isDatabaseAvailable()) return;
+
+    const db = this.getDb()!;
+    if (db.getSession(sessionId)) return;
+
+    const now = Date.now();
+    db.createSession({
+      id: sessionId,
+      title: options.title || this.generateSessionTitle(),
+      modelConfig: options.modelConfig,
+      workingDirectory: options.workingDirectory,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -231,27 +257,56 @@ export class CLISessionManager {
       throw new Error('No current session');
     }
 
-    // 数据库可用时持久化
-    if (this.isDatabaseAvailable()) {
-      try {
-        this.getDb()!.addMessage(this.currentSessionId, message);
-      } catch (error) {
-        console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
-      }
-    }
-
-    // 更新缓存
-    if (this.sessionCache.has(this.currentSessionId)) {
-      const cached = this.sessionCache.get(this.currentSessionId)!;
-      cached.messages.push(message);
-      cached.messageCount++;
-      cached.updatedAt = Date.now();
-    }
+    await this.addMessageToSession(this.currentSessionId, message);
 
     // 自动更新会话标题（如果是第一条用户消息）
     // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
     if (message.role === 'user') {
       void this.maybeUpdateTitle(message.content).catch(() => { /* 静默降级 */ });
+    }
+  }
+
+  /**
+   * 添加消息到指定会话（支持 Web/CLI 复用 AgentLoop 时不依赖 currentSessionId）
+   */
+  async addMessageToSession(
+    sessionId: string,
+    message: Message,
+    options?: SessionScopedMessageOptions,
+  ): Promise<void> {
+    if (!sessionId) {
+      throw new Error('No session id');
+    }
+
+    if (options) {
+      this.ensureSession(sessionId, options);
+      if (options.setCurrent) {
+        this.setCurrentSession(sessionId);
+      }
+    }
+
+    // 数据库可用时持久化
+    if (this.isDatabaseAvailable()) {
+      try {
+        this.getDb()!.addMessage(sessionId, message);
+      } catch (error) {
+        if (!this.isDuplicateMessageError(error)) {
+          console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
+        }
+      }
+    }
+
+    // 更新缓存
+    if (this.sessionCache.has(sessionId)) {
+      const cached = this.sessionCache.get(sessionId)!;
+      const existingIndex = cached.messages.findIndex((cachedMessage) => cachedMessage.id === message.id);
+      if (existingIndex >= 0) {
+        cached.messages[existingIndex] = { ...cached.messages[existingIndex], ...message };
+      } else {
+        cached.messages.push(message);
+      }
+      cached.messageCount = cached.messages.length;
+      cached.updatedAt = Date.now();
     }
   }
 

@@ -4,6 +4,7 @@
 
 import { randomUUID, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -13,12 +14,26 @@ import type { Request, Response, NextFunction } from 'express';
  * 才生成新的。复用后 kill/restart webServer 不会让 Tauri WebView 里固化的
  * token 失效，避免 "Invalid auth token" 踩坑。
  *
- * .dev-token 写入/清理由 webServer.ts 负责（listen callback + shutdown），
+ * .dev-token 写入由 webServer.ts 负责（listen callback），
  * 若进程 crash 未清理，下次启动就会复用上次的 token — 这正是我们想要的。
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function resolveDevAuthTokenPath(cwd = process.cwd()): string {
+  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
+  const normalizedCwd = path.normalize(cwd);
+  const segments = normalizedCwd.split(path.sep).filter(Boolean);
+  const isPackagedResourceCwd = segments.some((segment, index) =>
+    segment.endsWith('.app') &&
+    segments[index + 1] === 'Contents' &&
+    segments[index + 2] === 'Resources'
+  );
+
+  return path.join(isPackagedResourceCwd ? dataDir : cwd, '.dev-token');
+}
+
 function loadOrGenerateAuthToken(): string {
-  const devTokenPath = path.join(process.cwd(), '.dev-token');
+  const devTokenPath = resolveDevAuthTokenPath();
   try {
     const existing = fs.readFileSync(devTokenPath, 'utf-8').trim();
     if (UUID_RE.test(existing)) return existing;

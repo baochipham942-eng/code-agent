@@ -266,6 +266,60 @@ ${researchSection}
 }
 
 /**
+ * 构建短提示词：用于 thinking 模型把预算耗在 reasoning、正文为空或抽不到代码时重试。
+ */
+export function buildCodeOnlyDesignPrompt(
+  topic: string,
+  slideCount: number,
+  theme: ThemeConfig,
+  research?: ResearchContext,
+): string {
+  const palette = generateGoldenAnglePalette(theme.accent, 4);
+  const researchGuard = research
+    ? '只使用已提供研究数据中的事实和数字。'
+    : '不要编造具体数字、百分比或金额；使用定性表达。';
+
+  return `你要生成可直接执行的 pptxgenjs slide 代码。上一轮没有输出可抽取的代码，这一轮必须压缩思考，直接输出代码块。
+
+主题：${topic}
+页数：${slideCount}
+约束：${researchGuard}
+
+已预定义变量：
+- pptx, DS, F, W, H, MX, MY, CW, CH
+- DS.bg='${theme.bgColor}', DS.bgCard='${theme.bgSecondary}', DS.text='${theme.textPrimary}', DS.textMuted='${theme.textSecondary}'
+- DS.accent='${theme.accent}', DS.accent2='${palette[1]}', DS.accent3='${palette[2]}', DS.accent4='${palette[3]}'
+
+已预定义 helper：
+- addBg(s), addTitle(s,text,opts?), addFooter(s,text), addPageNum(s,num,total)
+- addCard(s,x,y,w,h,opts?), dimColor(hex,opacity?), hex6(color)
+- addHubSpoke(s,centerLabel,nodes,opts?), addTimeline(s,milestones,opts?)
+
+硬要求：
+1. 只输出一个 \`\`\`typescript 代码块，不要解释、不要 Markdown 标题。
+2. 每页必须以 \`// --- Slide N: 用途 ---\` 开头。
+3. 每页用独立 \`{ ... }\` 包裹，内部先 \`const s = pptx.addSlide();\`，再 \`addBg(s);\`。
+4. 每页都必须有 \`s.addNotes('...')\`。
+5. 只使用已预定义变量和 helper，不要 import、require、process、fs、path。
+6. 颜色值使用 DS.* 或 6 位 hex，无 #，不要拼接 alpha。
+7. 标题短句，正文每页不超过 5 个要点。
+
+输出格式示例：
+\`\`\`typescript
+// --- Slide 1: 封面 ---
+{
+  const s = pptx.addSlide();
+  addBg(s);
+  s.addText('标题', { x: MX, y: 2.3, w: CW, h: 0.8, fontSize: 40, fontFace: F.title, color: DS.text, bold: true, align: 'center' });
+  s.addText('副标题', { x: MX, y: 3.25, w: CW, h: 0.4, fontSize: 16, fontFace: F.body, color: DS.textMuted, align: 'center' });
+  s.addNotes('封面介绍。');
+}
+\`\`\`
+
+现在生成完整 ${slideCount} 页。`;
+}
+
+/**
  * 构建修订 Prompt（VLM 审查后）
  */
 export function buildRevisionPrompt(originalCode: string, vlmIssues: string): string {

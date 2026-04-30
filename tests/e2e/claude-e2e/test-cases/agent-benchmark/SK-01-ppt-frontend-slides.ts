@@ -109,6 +109,7 @@ export const SK01: TestCase = {
   setupCommands: [
     'mkdir -p .claude/skills/frontend-slides/scripts .claude/skills/ppt',
     `cp "${__dirname}/../../../../../.claude/skills/frontend-slides/SKILL.md" .claude/skills/frontend-slides/SKILL.md`,
+    `cp "${__dirname}/../../../../../.claude/skills/frontend-slides/scripts/merge-to-pptx-hybrid.mjs" .claude/skills/frontend-slides/scripts/`,
     `cp "${__dirname}/../../../../../.claude/skills/frontend-slides/scripts/merge-to-pptx.mjs" .claude/skills/frontend-slides/scripts/`,
     `cp "${__dirname}/../../../../../.claude/skills/frontend-slides/scripts/merge-to-pdf.mjs" .claude/skills/frontend-slides/scripts/`,
     `cp "${__dirname}/../../../../../.claude/skills/ppt/SKILL.md" .claude/skills/ppt/SKILL.md`,

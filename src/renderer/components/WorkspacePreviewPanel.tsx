@@ -10,6 +10,7 @@ import {
   Image,
   Mail,
   MessageSquare,
+  Presentation,
   Table2,
   Terminal,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import type { DesignBrief } from '@shared/contract/designBrief';
 import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { isPreviewable } from '../utils/previewable';
 import {
   buildWorkspacePreviewHtmlSrcdoc,
@@ -51,6 +53,7 @@ function kindLabel(kind: WorkspacePreviewKind): string {
     case 'chart': return 'Chart';
     case 'diagram': return 'Diagram';
     case 'question_form': return 'Brief';
+    case 'design_ppt': return 'Design PPT';
     default: return 'File';
   }
 }
@@ -79,6 +82,8 @@ function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
       return <Terminal className={`${cls} text-zinc-300`} />;
     case 'question_form':
       return <MessageSquare className={`${cls} text-cyan-300`} />;
+    case 'design_ppt':
+      return <Presentation className={`${cls} text-fuchsia-300`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -304,9 +309,131 @@ function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
   );
 }
 
+interface DesignPptArtifactSpec {
+  kind?: 'design_ppt';
+  title?: string;
+  topic?: string;
+  theme?: string;
+  outputPath?: string;
+  slideCodePath?: string;
+  promptPath?: string;
+  screenshots?: string[];
+  slidesCount?: number;
+  iterations?: number;
+  screenshotError?: string;
+}
+
+function parseDesignPptArtifact(item: WorkspacePreviewItem): DesignPptArtifactSpec | null {
+  const raw = item.content?.json;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as DesignPptArtifactSpec;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
+  const openPreview = useAppStore((state) => state.openPreview);
+  const spec = parseDesignPptArtifact(item);
+  const screenshots = spec?.screenshots || [];
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const selectedScreenshot = screenshots[Math.min(selectedIndex, Math.max(screenshots.length - 1, 0))];
+  const pptxPath = spec?.outputPath || item.file?.path;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 rounded-lg border border-white/[0.08] bg-black/20 p-3 text-xs text-zinc-400 sm:grid-cols-4">
+        <div>
+          <div className="text-[10px] uppercase text-zinc-600">Slides</div>
+          <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.slidesCount || screenshots.length || '-'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase text-zinc-600">Theme</div>
+          <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.theme || '-'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase text-zinc-600">Iterations</div>
+          <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.iterations ?? '-'}</div>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          {pptxPath && (
+            <button
+              type="button"
+              onClick={() => openPreview(pptxPath)}
+              className="rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
+            >
+              Open PPTX
+            </button>
+          )}
+          {spec?.slideCodePath && (
+            <button
+              type="button"
+              onClick={() => openPreview(spec.slideCodePath!)}
+              className="rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
+            >
+              Edit code
+            </button>
+          )}
+        </div>
+      </div>
+
+      {selectedScreenshot ? (
+        <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
+          <img
+            src={resolveFileUrl(selectedScreenshot)}
+            alt={`Slide ${selectedIndex + 1}`}
+            className="w-full bg-zinc-950 object-contain"
+          />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+          {spec?.screenshotError || 'No slide screenshots available.'}
+        </div>
+      )}
+
+      {screenshots.length > 1 && (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {screenshots.map((screenshot, index) => (
+            <button
+              key={screenshot}
+              type="button"
+              onClick={() => setSelectedIndex(index)}
+              className={`overflow-hidden rounded-md border transition-colors ${
+                index === selectedIndex
+                  ? 'border-cyan-400 bg-cyan-500/10'
+                  : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
+              }`}
+              title={`Slide ${index + 1}`}
+            >
+              <img
+                src={resolveFileUrl(screenshot)}
+                alt={`Slide ${index + 1}`}
+                className="aspect-video w-full object-cover"
+              />
+              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">Slide {index + 1}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {(spec?.slideCodePath || spec?.promptPath) && (
+        <div className="space-y-1 rounded-lg border border-white/[0.08] bg-black/20 p-3 text-[11px] text-zinc-500">
+          {spec.slideCodePath && <div className="truncate font-mono">code: {spec.slideCodePath}</div>}
+          {spec.promptPath && <div className="truncate font-mono">prompts: {spec.promptPath}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
   if (item.kind === 'question_form') {
     return <QuestionFormPreview item={item} />;
+  }
+  if (item.kind === 'design_ppt') {
+    return <DesignPptPreview item={item} />;
   }
   if (item.kind === 'diff' && item.content?.before !== undefined && item.content?.after !== undefined) {
     return (

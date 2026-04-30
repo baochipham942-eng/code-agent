@@ -97,6 +97,7 @@ export interface PPTGenerateParams {
   chart_mode?: ChartMode;
   normalize_density?: boolean;   // D3: 启用信息密度控制
   mode?: 'generate' | 'template' | 'design'; // D1: 生成模式 + Design Mode
+  fallback_on_design_failure?: boolean; // Design Mode 失败时是否继续降级到 v7 generate，默认 false
   template_path?: string;        // D1: 模板文件路径（Phase 2）
   placeholders?: Record<string, string>; // D1: 占位符替换（Phase 2）
   data_source?: string;          // D2: 数据源文件路径（Phase 2）

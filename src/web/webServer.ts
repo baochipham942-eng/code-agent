@@ -45,7 +45,13 @@ import {
 import { handleTempUpload, handleScreenshot, cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
-import { SERVER_AUTH_TOKEN, corsMiddleware, rateLimitMiddleware, authMiddleware } from './middleware/auth';
+import {
+  SERVER_AUTH_TOKEN,
+  authMiddleware,
+  corsMiddleware,
+  rateLimitMiddleware,
+  resolveDevAuthTokenPath,
+} from './middleware/auth';
 
 // Route modules
 import { createHealthRouter } from './routes/health';
@@ -543,7 +549,8 @@ async function main(): Promise<void> {
 
   server.listen(port, host, () => {
     // Write token to .dev-token for Vite dev server to read
-    const devTokenPath = path.join(process.cwd(), '.dev-token');
+    const devTokenPath = resolveDevAuthTokenPath();
+    fs.mkdirSync(path.dirname(devTokenPath), { recursive: true });
     fs.writeFileSync(devTokenPath, SERVER_AUTH_TOKEN, 'utf-8');
 
     console.log();

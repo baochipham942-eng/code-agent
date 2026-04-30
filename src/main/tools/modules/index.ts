@@ -61,6 +61,11 @@ import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.sche
 // document/
 import { docEditSchema } from './document/docEdit.schema';
 
+// mcp/
+import { mcpInvokeSchema } from './mcp/mcpInvoke.schema';
+import { mcpAddServerSchema } from './mcp/mcpAddServer.schema';
+import { mcpUnifiedSchema } from './mcp/mcpUnified.schema';
+
 // network/
 import { httpRequestSchema } from './network/httpRequest.schema';
 import { readDocumentSchema } from './network/readDocument.schema';
@@ -402,16 +407,16 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // mcp (3)
   registry.register(
-    { name: 'mcp', description: 'Direct MCP tool invocation.', inputSchema: minSchema({ server: { type: 'string' }, tool: { type: 'string' } }), category: 'mcp', permissionLevel: 'network' },
-    async () => (await import('./mcp/wrappers')).mcpModule,
+    mcpInvokeSchema,
+    async () => (await import('./mcp/mcpInvoke')).mcpInvokeModule,
   );
   registry.register(
-    { name: 'MCPUnified', description: 'Unified MCP facade for cross-server tool calls.', inputSchema: minSchema({ action: { type: 'string' } }), category: 'mcp', permissionLevel: 'network' },
-    async () => (await import('./mcp/wrappers')).mcpUnifiedModule,
+    mcpUnifiedSchema,
+    async () => (await import('./mcp/mcpUnified')).mcpUnifiedModule,
   );
   registry.register(
-    { name: 'mcp_add_server', description: 'Register a new MCP server.', inputSchema: minSchema({ name: { type: 'string' }, command: { type: 'string' } }), category: 'mcp', permissionLevel: 'write' },
-    async () => (await import('./mcp/wrappers')).mcpAddServerModule,
+    mcpAddServerSchema,
+    async () => (await import('./mcp/mcpAddServer')).mcpAddServerModule,
   );
 
   // document (1)

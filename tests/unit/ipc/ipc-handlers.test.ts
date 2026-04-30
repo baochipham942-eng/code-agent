@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ============================================================================
 // IPC Handlers Unit Tests
 // 测试 IPC handler 的输入验证、返回格式、错误处理
@@ -256,6 +257,32 @@ describe('IPC Handlers', () => {
       expect(response.success).toBe(true);
       expect(response.data).toBeDefined();
       expect((response.data as any).id).toBe('new-session-id');
+    });
+
+    it('passes workspace directory through to app service', async () => {
+      const mockAppService = {
+        createSession: vi.fn().mockResolvedValue({
+          id: 'workspace-session-id',
+          title: 'Workspace Session',
+          workingDirectory: '/repo/code-agent',
+          createdAt: Date.now(),
+          messages: [],
+        }),
+      };
+
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+
+      const request: IPCRequest = {
+        action: 'create',
+        payload: { title: 'Workspace Session', workingDirectory: '/repo/code-agent' },
+      };
+      const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, request);
+
+      expect(response.success).toBe(true);
+      expect(mockAppService.createSession).toHaveBeenCalledWith({
+        title: 'Workspace Session',
+        workingDirectory: '/repo/code-agent',
+      });
     });
 
     it('returns error when services not initialized', async () => {

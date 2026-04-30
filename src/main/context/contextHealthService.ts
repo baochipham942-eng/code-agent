@@ -17,6 +17,7 @@ import {
   estimateConversationTokens,
 } from './tokenEstimator';
 import { createLogger } from '../services/infra/logger';
+import { getSessionStateManager } from '../session/sessionStateManager';
 
 /**
  * Extended message type for context health tracking
@@ -111,6 +112,11 @@ export class ContextHealthService {
 
     // 保存状态
     this.sessionStates.set(sessionId, health);
+    try {
+      getSessionStateManager().updateContextHealth(sessionId, health);
+    } catch (error) {
+      logger.debug('Failed to mirror context health into session runtime state:', error);
+    }
 
     // 发送事件到渲染进程
     this.emitHealthUpdate(sessionId, health);

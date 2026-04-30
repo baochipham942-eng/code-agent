@@ -5,9 +5,9 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Pause, Play } from 'lucide-react';
+import { Image, FileText, Pause, Play, Plus, GitBranch } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
-import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
+import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
@@ -50,11 +50,11 @@ import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExec
 // ============================================================================
 
 export interface ChatInputProps {
-  onSend: (envelope: ConversationEnvelope) => void;
+  onSend: (envelope: ConversationEnvelope) => void | Promise<void>;
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
-  /** 是否正在中断（Claude Code 风格：中断当前任务切换到新指令） */
+  /** 运行中补充指令正在接入 */
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
@@ -102,6 +102,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
+  const [runtimeInputMode, setRuntimeInputMode] = useState<RuntimeInputMode>('supplement');
+  const [runtimeDraftStatus, setRuntimeDraftStatus] = useState<string | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
     suggestedName: string;
@@ -142,7 +144,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return undefined;
   }, [routingMode, selectedDirectAgents, swarmAgents]);
 
-  const buildEnvelope = useCallback((rawContent: string, nextAttachments?: MessageAttachment[]): ConversationEnvelope => {
+  const buildEnvelope = useCallback((
+    rawContent: string,
+    nextAttachments?: MessageAttachment[],
+    nextRuntimeInputMode?: RuntimeInputMode,
+  ): ConversationEnvelope => {
     const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
     const content = parsedMentions ? parsedMentions.content : rawContent.trim();
     const baseContext = buildContext();
@@ -168,11 +174,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           },
         }
       : nextContext;
+    const runtimeScopedContext = nextRuntimeInputMode
+      ? {
+          ...context,
+          runtimeInput: {
+            mode: nextRuntimeInputMode,
+          },
+        }
+      : context;
 
     return {
       content,
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
-      context,
+      context: runtimeScopedContext,
     };
   }, [browserSession, buildContext, swarmAgents]);
 
@@ -256,6 +270,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
+    setRuntimeDraftStatus(null);
     // Detect / prefix to show inline slash command popover
     if (newValue.startsWith('/')) {
       setShowSlashPopover(true);
@@ -347,16 +362,32 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     resetInputHistoryIndex,
   } = useSessionUIStore();
 
+  const resolvedPlaceholder = useMemo(() => {
+    if (inputPlaceholder) return inputPlaceholder;
+    if (!isProcessing) return undefined;
+    return runtimeInputMode === 'redirect'
+      ? '改道：按这条重新处理...'
+      : '补充当前任务...';
+  }, [inputPlaceholder, isProcessing, runtimeInputMode]);
+
+  useEffect(() => {
+    if (!isProcessing) {
+      setRuntimeInputMode('supplement');
+      setRuntimeDraftStatus(null);
+    }
+  }, [isProcessing]);
+
   // 处理提交
-  // Claude Code 风格：即使正在处理也允许提交（触发中断）
+  // 运行中允许提交，把新输入作为补充指令交给当前任务。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
-    const nextEnvelope = buildEnvelope(trimmedValue, attachments);
-    // 允许在 isProcessing 时提交以触发中断功能
+    const activeRuntimeInputMode = isProcessing ? runtimeInputMode : undefined;
+    const nextEnvelope = buildEnvelope(trimmedValue, attachments, activeRuntimeInputMode);
     const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
+      setRuntimeDraftStatus(null);
       // 添加到输入历史
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
@@ -365,17 +396,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       if (nextEnvelope.content.startsWith('!')) {
         const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
-          // Send as a bash execution request to the agent
-          onSend({
-            content: `Execute this shell command and show the output: \`${shellCmd}\``,
-            context: nextEnvelope.context,
-          });
+          try {
+            await onSend({
+              content: `Execute this shell command and show the output: \`${shellCmd}\``,
+              context: nextEnvelope.context,
+            });
+          } catch {
+            if (isProcessing) {
+              setRuntimeDraftStatus(runtimeInputMode === 'redirect'
+                ? '改道没发出去，草稿已保留'
+                : '当前任务还没准备好，草稿已保留');
+            }
+            inputAreaRef.current?.focus();
+            return;
+          }
         }
       } else {
-        onSend(nextEnvelope);
+        try {
+          await onSend(nextEnvelope);
+        } catch {
+          if (isProcessing) {
+            setRuntimeDraftStatus(runtimeInputMode === 'redirect'
+              ? '改道没发出去，草稿已保留'
+              : '当前任务还没准备好，草稿已保留');
+          }
+          inputAreaRef.current?.focus();
+          return;
+        }
       }
       setValue('');
       setAttachments([]);
+      setRuntimeInputMode('supplement');
     }
   };
 
@@ -621,12 +672,82 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             hasMessages={hasMessages}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
-            placeholder={inputPlaceholder}
+            placeholder={resolvedPlaceholder}
             onHistoryPrev={getPreviousInput}
             onHistoryNext={getNextInput}
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
+          {isProcessing && hasContent && !isInterrupting && (
+            <div className="px-4 pb-2 -mt-1 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRuntimeInputMode('supplement');
+                    setRuntimeDraftStatus(null);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                    runtimeInputMode === 'supplement'
+                      ? 'bg-zinc-100 text-zinc-950'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  aria-pressed={runtimeInputMode === 'supplement'}
+                  title="加入当前任务，不改变整体方向"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>补充</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRuntimeInputMode('redirect');
+                    setRuntimeDraftStatus(null);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                    runtimeInputMode === 'redirect'
+                      ? 'bg-amber-400 text-zinc-950'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  aria-pressed={runtimeInputMode === 'redirect'}
+                  title="停止当前思路，按这条重新处理"
+                >
+                  <GitBranch className="h-3 w-3" />
+                  <span>改道</span>
+                </button>
+              </div>
+              <div className="inline-flex max-w-full items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-400">
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  runtimeDraftStatus
+                    ? 'bg-amber-300'
+                    : runtimeInputMode === 'redirect'
+                      ? 'bg-amber-300'
+                      : 'bg-emerald-400'
+                }`} />
+                <span className="truncate">
+                  {runtimeDraftStatus || (
+                    runtimeInputMode === 'redirect'
+                      ? '将停止当前思路并按这条改道'
+                      : '将加入当前任务，不打断整体方向'
+                  )}
+                </span>
+                {runtimeDraftStatus && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRuntimeDraftStatus(null);
+                      setValue('');
+                      setAttachments([]);
+                    }}
+                    className="ml-1 text-zinc-500 hover:text-zinc-200"
+                    title="清除这条草稿"
+                  >
+                    取消
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}
@@ -684,7 +805,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
               </button>
             )}
-            {/* 发送/停止/中断按钮 */}
+            {/* 发送/停止/补充指令按钮 */}
             <SendButton
               disabled={disabled && !isProcessing}
               isProcessing={isProcessing}

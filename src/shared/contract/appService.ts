@@ -12,6 +12,7 @@ import type { ModelProvider } from './model';
 import type {
   ConversationEnvelope,
   ConversationExecutionIntent,
+  RuntimeInputIntent,
   WorkbenchToolScope,
 } from './conversationEnvelope';
 
@@ -22,6 +23,7 @@ export interface AppServiceRunOptions {
   researchMode?: boolean;
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
+  runtimeInput?: RuntimeInputIntent;
   [key: string]: unknown;
 }
 
@@ -30,6 +32,7 @@ export interface AppServiceRunOptions {
  */
 export interface CreateSessionConfig {
   title?: string;
+  workingDirectory?: string | null;
 }
 
 /**

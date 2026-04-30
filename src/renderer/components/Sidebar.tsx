@@ -11,7 +11,6 @@ import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useEvalCenterStore } from '../stores/evalCenterStore';
 import {
   MessageSquare,
   Plus,
@@ -47,6 +46,7 @@ import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGroupin
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
+import { copyPathToClipboard } from '../utils/platform';
 import {
   createWorkbenchRecipeMergedContext,
   getDefaultWorkbenchPresetName,
@@ -141,7 +141,6 @@ export const Sidebar: React.FC = () => {
     setShowDAGPanel,
   } = useAppStore();
   const { dagPanelEnabled } = useDisclosure();
-  const enqueueReviewItem = useEvalCenterStore((state) => state.enqueueReviewItem);
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
@@ -191,6 +190,7 @@ export const Sidebar: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // 右键菜单状态
@@ -279,7 +279,7 @@ export const Sidebar: React.FC = () => {
   }, [filteredSessions, pinnedSessionIds]);
 
   const handleNewChat = async () => {
-    if (isCreatingSession) {
+    if (isCreatingSession || creatingWorkspaceKey) {
       return;
     }
 
@@ -289,6 +289,32 @@ export const Sidebar: React.FC = () => {
       clearPlanningState();
     } finally {
       setIsCreatingSession(false);
+    }
+  };
+
+  const handleNewWorkspaceChat = async (
+    e: React.MouseEvent,
+    workspaceKey: string,
+    workingDirectory?: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const directory = workingDirectory?.trim();
+    if (!directory || isCreatingSession || creatingWorkspaceKey) {
+      return;
+    }
+
+    setCreatingWorkspaceKey(workspaceKey);
+    try {
+      const session = await createSession('新对话', { workingDirectory: directory });
+      if (session) {
+        setWorkingDirectory(directory);
+        setWorkspaceExpanded(workspaceKey, true);
+        clearPlanningState();
+      }
+    } finally {
+      setCreatingWorkspaceKey(null);
     }
   };
 
@@ -388,6 +414,20 @@ export const Sidebar: React.FC = () => {
         },
       },
       {
+        label: '复制会话 ID',
+        icon: '🆔',
+        onClick: async () => {
+          try {
+            const copied = await copyPathToClipboard(session.id);
+            if (!copied) {
+              throw new Error('Clipboard copy returned false');
+            }
+          } catch (error) {
+            logger.error('Failed to copy session id', error);
+          }
+        },
+      },
+      {
         label: isArchived ? '取消归档' : '归档',
         icon: '📦',
         onClick: () => {
@@ -404,72 +444,51 @@ export const Sidebar: React.FC = () => {
         onClick: () => softDelete([session.id]),
         danger: true,
       },
-      {
-        label: '加入 Review',
-        icon: '📋',
-        onClick: async () => {
-          try {
-            await enqueueReviewItem({
-              sessionId: session.id,
-              sessionTitle: session.title,
-              reason: 'manual_review',
-              enqueueSource: 'session_list',
-            });
-          } catch (error) {
-            logger.error('Failed to enqueue session review', error);
-          }
-        },
-      },
-      {
-        label: '打开 Replay',
-        icon: '👁️',
-        onClick: () => {
-          setShowEvalCenter(true, undefined, session.id);
-        },
-      },
-      {
-        label: '在当前会话复用工作台',
-        icon: '🧰',
-        disabled: !reusableWorkbench,
-        onClick: async () => {
-          try {
-            if (reusableWorkbenchDirectory) {
-              const response = await window.domainAPI?.invoke<string | null>(
-                IPC_DOMAINS.WORKSPACE,
-                'setCurrent',
-                { dir: reusableWorkbenchDirectory },
-              );
-              if (response && !response.success) {
-                throw new Error(response.error?.message || 'Failed to sync workbench directory');
-              }
-              setWorkingDirectory(response?.data || reusableWorkbenchDirectory);
-            }
+      ...(reusableWorkbench
+        ? [
+            {
+              label: '在当前会话复用工作台',
+              icon: '🧰',
+              onClick: async () => {
+                try {
+                  if (reusableWorkbenchDirectory) {
+                    const response = await window.domainAPI?.invoke<string | null>(
+                      IPC_DOMAINS.WORKSPACE,
+                      'setCurrent',
+                      { dir: reusableWorkbenchDirectory },
+                    );
+                    if (response && !response.success) {
+                      throw new Error(response.error?.message || 'Failed to sync workbench directory');
+                    }
+                    setWorkingDirectory(response?.data || reusableWorkbenchDirectory);
+                  }
 
-            applySessionWorkbenchPreset(session);
-          } catch (error) {
-            logger.error('Failed to reuse session workbench preset', error);
-          }
-        },
-      },
-      {
-        label: '保存为 Preset',
-        icon: '💾',
-        disabled: !reusableWorkbench,
-        onClick: () => {
-          const fallbackName = getDefaultWorkbenchPresetName(session);
-          const promptedName =
-            typeof window !== 'undefined' && typeof window.prompt === 'function'
-              ? window.prompt('Preset 名称', fallbackName)
-              : fallbackName;
-          if (promptedName === null) {
-            return;
-          }
+                  applySessionWorkbenchPreset(session);
+                } catch (error) {
+                  logger.error('Failed to reuse session workbench preset', error);
+                }
+              },
+            },
+            {
+              label: '保存工作台为 Preset',
+              icon: '💾',
+              onClick: () => {
+                const fallbackName = getDefaultWorkbenchPresetName(session);
+                const promptedName =
+                  typeof window !== 'undefined' && typeof window.prompt === 'function'
+                    ? window.prompt('Preset 名称', fallbackName)
+                    : fallbackName;
+                if (promptedName === null) {
+                  return;
+                }
 
-          saveWorkbenchPresetFromSession(session, {
-            name: promptedName.trim() || fallbackName,
-          });
-        },
-      },
+                saveWorkbenchPresetFromSession(session, {
+                  name: promptedName.trim() || fallbackName,
+                });
+              },
+            },
+          ] satisfies ContextMenuItem[]
+        : []),
       ...recentPresetItems,
       ...recentRecipeItems,
       {
@@ -497,32 +516,6 @@ export const Sidebar: React.FC = () => {
           }
         },
       },
-      {
-        label: '导出 JSON',
-        icon: '📤',
-        onClick: async () => {
-          try {
-            const response = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'export', {
-              sessionId: session.id,
-            });
-            if (!response?.success) {
-              throw new Error(response?.error?.message || 'Failed to export session');
-            }
-            const data = response.data;
-            if (data) {
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `session-${session.title || session.id}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }
-          } catch (error) {
-            logger.error('Failed to export session', error);
-          }
-        },
-      },
     ];
   }, [
     applySessionWorkbenchPreset,
@@ -532,7 +525,6 @@ export const Sidebar: React.FC = () => {
     pinnedSessionIds,
     savedWorkbenchPresets,
     savedWorkbenchRecipes,
-    setShowEvalCenter,
     setWorkingDirectory,
     saveWorkbenchPresetFromSession,
     softDelete,
@@ -714,7 +706,7 @@ export const Sidebar: React.FC = () => {
         {/* New Chat */}
         <button
           onClick={handleNewChat}
-          disabled={isCreatingSession}
+          disabled={isCreatingSession || creatingWorkspaceKey !== null}
           className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
@@ -794,19 +786,42 @@ export const Sidebar: React.FC = () => {
               const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
               return (
                 <div key={group.key} className="mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceExpanded(group.key, !expanded)}
-                    className="sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+                  <div
+                    className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
                     title={group.path ?? group.name}
                   >
-                    <ChevronRight
-                      className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                    />
-                    <IconComponent className="w-3 h-3 text-zinc-500" />
-                    <span className="text-xs font-medium text-zinc-400 truncate">{group.name}</span>
-                    <span className="ml-auto text-[10px] text-zinc-600">{group.sessions.length}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceExpanded(group.key, !expanded)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
+                      <ChevronRight
+                        className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                      />
+                      <IconComponent className="w-3 h-3 text-zinc-500" />
+                      <span className="text-xs font-medium text-zinc-400 truncate">{group.name}</span>
+                    </button>
+                    <span className="text-[10px] text-zinc-600">{group.sessions.length}</span>
+                    {!group.isUncategorized && (
+                      <button
+                        type="button"
+                        aria-label={`在 ${group.name} 新建会话`}
+                        title={`在 ${group.name} 新建会话`}
+                        onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
+                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600 ${
+                          creatingWorkspaceKey === group.key
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                        }`}
+                      >
+                        {creatingWorkspaceKey === group.key ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                   {expanded && (
                     <div className="space-y-0.5">
                       {group.sessions.length === 0 ? (

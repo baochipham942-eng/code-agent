@@ -6,7 +6,7 @@ import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
-import { StreamingIndicator } from './StreamingIndicator';
+import { StreamingIndicator, getRunningToolStartTime } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
@@ -78,6 +78,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   }, [canFold, turn.nodes]);
 
   const lastIndex = displayNodes.length - 1;
+  const runningToolStartTime = useMemo(
+    () => getRunningToolStartTime(turn.nodes),
+    [turn.nodes],
+  );
 
   return (
     <div
@@ -146,11 +150,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               }
               const node: TraceNode = d.node;
               // User node rendered above; skip here to avoid duplicate
-              if (canFold && foldedView?.userNode && node.id === foldedView.userNode.id) {
+              if (canFold && node.id === foldedView?.userNode?.id) {
                 return null;
               }
               // Final text rendered below; skip here to avoid duplicate
-              if (canFold && foldedView?.finalTextNode && node.id === foldedView.finalTextNode.id) {
+              if (canFold && node.id === foldedView?.finalTextNode?.id) {
                 return null;
               }
               const isNodeStreaming =
@@ -167,7 +171,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
             {/* Streaming indicator at bottom of active turn */}
             {isStreaming && turn.nodes.length > 0 && (
-              <StreamingIndicator startTime={turn.startTime} />
+              <StreamingIndicator
+                startTime={turn.startTime}
+                runningToolStartTime={runningToolStartTime}
+              />
             )}
           </>
         )}

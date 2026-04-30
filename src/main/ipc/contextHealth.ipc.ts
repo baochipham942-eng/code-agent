@@ -16,12 +16,81 @@ import type { TaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getDatabase } from '../services/core/databaseService';
+import { DEFAULT_MODEL } from '../../shared/constants';
+import type { ContextHealthState } from '../../shared/contract/contextHealth';
+import type { Message } from '../../shared/contract';
 
 const logger = createLogger('ContextHealthIPC');
 
 interface ContextHealthDependencies {
   getAppService: () => AgentApplicationService | null;
   getTaskManager: () => TaskManager | null;
+}
+
+function hasMeasuredUsage(health: ContextHealthState | null | undefined): health is ContextHealthState {
+  return Boolean(health && health.currentTokens > 0);
+}
+
+function toContextMessages(messages: Message[]) {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content || '',
+    toolResults: message.toolResults?.map((result) => ({
+      output: result.output,
+      error: result.error,
+    })),
+  }));
+}
+
+function resolveModelForSession(appService: AgentApplicationService, sessionId: string): string {
+  const override = appService.getModelOverride(sessionId)?.model;
+  if (override) {
+    return override;
+  }
+
+  try {
+    return getDatabase().getSession(sessionId)?.modelConfig?.model || DEFAULT_MODEL;
+  } catch {
+    return DEFAULT_MODEL;
+  }
+}
+
+export async function resolveContextHealthForSession(
+  deps: Pick<ContextHealthDependencies, 'getAppService'>,
+  sessionId: string,
+): Promise<ContextHealthState> {
+  const contextHealthService = getContextHealthService();
+  const cached = contextHealthService.get(sessionId);
+
+  if (hasMeasuredUsage(cached)) {
+    return cached;
+  }
+
+  const appService = deps.getAppService();
+  if (!appService) {
+    return cached;
+  }
+
+  try {
+    const messages = await appService.getMessages(sessionId);
+    if (!messages || messages.length === 0) {
+      return cached;
+    }
+
+    const model = resolveModelForSession(appService, sessionId);
+    return contextHealthService.update(
+      sessionId,
+      toContextMessages(messages),
+      '',
+      model,
+    );
+  } catch (error) {
+    logger.warn('Failed to derive context health from session messages:', {
+      sessionId,
+      error,
+    });
+    return cached;
+  }
 }
 
 /**
@@ -33,8 +102,7 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   // 获取指定会话的上下文健康状态
   ipcMain.handle(IPC_CHANNELS.CONTEXT_HEALTH_GET, async (_event, sessionId: string) => {
     try {
-      const health = contextHealthService.get(sessionId);
-      return health;
+      return await resolveContextHealthForSession(deps, sessionId);
     } catch (error) {
       logger.error('Failed to get context health:', error);
       return null;

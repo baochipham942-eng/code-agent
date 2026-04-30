@@ -415,7 +415,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // 网络/TLS 瞬态错误：在 agentLoop 层再重试一次（provider 层重试已耗尽后的最后兜底）
     const errMsg = error instanceof Error ? error.message : String(error);
     const errCode = (error as NodeJS.ErrnoException).code;
-    const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|network socket disconnected/i.test(errMsg)
+    const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac|network socket disconnected/i.test(errMsg)
       || /ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(errCode || '');
     if (isNetworkError && !ctx.runtime._networkRetried) {
       ctx.runtime._networkRetried = true;

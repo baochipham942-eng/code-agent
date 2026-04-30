@@ -7,6 +7,11 @@
 
 import React, { useMemo, useCallback, useState } from 'react';
 import type {
+  AgentTaskPhase,
+  TaskProgressData,
+  WorkspacePreviewItem,
+} from '@shared/contract';
+import type {
   BlockedCapabilityReason,
   TurnArtifactOwnershipItem,
   TurnCapabilityInvocationItem,
@@ -47,11 +52,11 @@ import {
   type WorkbenchCapabilityTarget,
 } from '../../utils/workbenchCapabilitySheet';
 import type { ArtifactItem } from '../../hooks/useStatusRailModel';
-import type { WorkspacePreviewItem } from '@shared/contract';
 
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId, messages } = useSessionStore();
   const { workingDirectory } = useAppStore();
+  const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   const processingSessionIds = useAppStore((s) => s.processingSessionIds);
   const isProcessing = currentSessionId ? processingSessionIds.has(currentSessionId) : false;
@@ -66,6 +71,7 @@ export const TaskMonitor: React.FC = () => {
 
   const model = useStatusRailModel();
   const { context, todos: todoModel, outputs } = model;
+  const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
   const sourceCount = context.items.length
     + referencedWorkbenchItems.length
     + (currentTurnCapabilityScope ? currentTurnCapabilityScope.scope.selected.length : 0)
@@ -79,7 +85,7 @@ export const TaskMonitor: React.FC = () => {
 
   // ── Phase-based 进度推导（无 todos 时的回退）──
   const toolPhases = useMemo(() => {
-    if (todoModel.total > 0) return [];
+    if (todoModel.total > 0 || taskProgress) return [];
     const phases: Array<{ type: PhaseType; count: number; status: 'completed' | 'in_progress' }> = [];
     for (const msg of messages.slice(-30)) {
       if (!msg.toolCalls) continue;
@@ -99,9 +105,61 @@ export const TaskMonitor: React.FC = () => {
       phases[phases.length - 1].status = 'completed';
     }
     return phases;
-  }, [messages, todoModel.total, isProcessing]);
+  }, [messages, todoModel.total, taskProgress, isProcessing]);
 
   const folderName = workingDirectory ? workingDirectory.split('/').pop() || workingDirectory : null;
+
+  const taskPhaseLabel = (phase: AgentTaskPhase): string => {
+    const map: Record<AgentTaskPhase, string> = {
+      thinking: t.taskPanel.phaseThinking,
+      generating: t.taskPanel.phaseGenerating,
+      tool_pending: t.taskPanel.phaseToolPending,
+      tool_running: t.taskPanel.phaseToolRunning,
+      completed: t.taskPanel.phaseCompleted,
+      failed: t.taskPanel.phaseFailed,
+    };
+    return map[phase];
+  };
+
+  const taskProgressTitle = (progress: TaskProgressData): string => {
+    const step = progress.step?.trim();
+    const tool = progress.tool?.trim();
+    if (step) {
+      const normalizedStep = step.toLowerCase();
+      const normalizedTool = tool?.toLowerCase();
+      const isRawToolStep = progress.phase === 'tool_running'
+        && normalizedTool
+        && (
+          normalizedStep === `执行 ${normalizedTool}`
+          || normalizedStep === `running ${normalizedTool}`
+          || normalizedStep === normalizedTool
+        );
+      if (!isRawToolStep) return step;
+    }
+    return taskPhaseLabel(progress.phase);
+  };
+
+  const taskProgressDetails = (progress: TaskProgressData): string[] => {
+    const details: string[] = [];
+    if (progress.tool) {
+      details.push(t.taskPanel.taskProgressTool.replace('{tool}', progress.tool));
+    }
+    if (progress.toolTotal && progress.toolTotal > 1) {
+      const displayIndex = Math.min((progress.toolIndex ?? 0) + 1, progress.toolTotal);
+      details.push(
+        t.taskPanel.taskProgressToolPosition
+          .replace('{index}', String(displayIndex))
+          .replace('{total}', String(progress.toolTotal)),
+      );
+    }
+    return details;
+  };
+
+  const taskProgressStatus = (phase: AgentTaskPhase): 'completed' | 'failed' | 'in_progress' => {
+    if (phase === 'completed') return 'completed';
+    if (phase === 'failed') return 'failed';
+    return 'in_progress';
+  };
 
   const phaseLabel = (type: PhaseType): string => {
     const map: Record<PhaseType, string> = {
@@ -112,6 +170,17 @@ export const TaskMonitor: React.FC = () => {
       mcp: t.taskPanel.phaseMcp,
     };
     return map[type];
+  };
+
+  const toolActivityLabel = (type: PhaseType): string => {
+    const map: Record<PhaseType, string> = {
+      read: t.taskPanel.toolActivityRead,
+      edit: t.taskPanel.toolActivityEdit,
+      execute: t.taskPanel.toolActivityExecute,
+      search: t.taskPanel.toolActivitySearch,
+      mcp: t.taskPanel.toolActivityMcp,
+    };
+    return map[type] ?? phaseLabel(type);
   };
 
   const blockedCapabilitiesWithActions = useMemo(() => (
@@ -172,7 +241,7 @@ export const TaskMonitor: React.FC = () => {
 
       {/* ═══ Card 1: Progress ═══ */}
       {todoModel.total > 0 ? (
-      <Card title="进度" count={`${todoModel.completed}/${todoModel.total}`}>
+      <Card title={t.taskPanel.progress} count={`${todoModel.completed}/${todoModel.total}`}>
         <div className="space-y-0.5">
           {todoModel.items.map((todo, index) => (
             <div key={index} className="flex items-center gap-2 py-0.5">
@@ -198,12 +267,61 @@ export const TaskMonitor: React.FC = () => {
           ))}
         </div>
       </Card>
+      ) : taskProgress ? (
+      <Card title={t.taskPanel.progress} count={taskPhaseLabel(taskProgress.phase)}>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 py-0.5">
+            {taskProgressStatus(taskProgress.phase) === 'completed' ? (
+              <div className="w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
+                <Check className="w-2.5 h-2.5 text-white" />
+              </div>
+            ) : taskProgressStatus(taskProgress.phase) === 'failed' ? (
+              <div className="w-4 h-4 rounded-full bg-red-500/15 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
+              </div>
+            ) : (
+              <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                {taskProgress.phase === 'tool_pending' || taskProgress.phase === 'tool_running' ? (
+                  <Wrench className="w-2.5 h-2.5 text-primary-400" />
+                ) : (
+                  <Loader2 className="w-2.5 h-2.5 text-primary-400 animate-spin" />
+                )}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className={`text-xs truncate ${
+                taskProgressStatus(taskProgress.phase) === 'completed' ? 'text-zinc-300'
+                  : taskProgressStatus(taskProgress.phase) === 'failed' ? 'text-red-300'
+                  : 'text-zinc-200'
+              }`}>
+                {taskProgressTitle(taskProgress)}
+              </div>
+              {taskProgressDetails(taskProgress).length > 0 && (
+                <div className="mt-0.5 text-[10px] text-zinc-600 truncate">
+                  {taskProgressDetails(taskProgress).join(' · ')}
+                </div>
+              )}
+            </div>
+          </div>
+          {taskProgress.progress !== undefined && taskProgress.progress > 0 && (
+            <div className="h-1 bg-zinc-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary-500 transition-all duration-300"
+                style={{ width: `${taskProgress.progress}%` }}
+              />
+            </div>
+          )}
+        </div>
+      </Card>
       ) : toolPhases.length > 0 ? (
       <Card
-        title="进度"
-        count={t.taskPanel.phaseOps.replace('{count}', String(toolPhases.reduce((sum, phase) => sum + phase.count, 0)))}
+        title={t.taskPanel.progress}
+        count={t.taskPanel.toolActivityOps.replace('{count}', String(toolPhases.reduce((sum, phase) => sum + phase.count, 0)))}
       >
-        <div className="space-y-0.5">
+        <div className="space-y-1">
+          <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+            {t.taskPanel.toolActivity}
+          </div>
           {toolPhases.map((phase, index) => {
             const PhaseIcon = PHASE_ICONS[phase.type];
             return (
@@ -220,10 +338,10 @@ export const TaskMonitor: React.FC = () => {
                 <span className={`text-xs flex-1 ${
                   phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
                 }`}>
-                  {phaseLabel(phase.type)}
+                  {toolActivityLabel(phase.type)}
                 </span>
                 <span className="text-xs text-zinc-600">
-                  {t.taskPanel.phaseOps.replace('{count}', String(phase.count))}
+                  {t.taskPanel.toolActivityOps.replace('{count}', String(phase.count))}
                 </span>
               </div>
             );
@@ -231,8 +349,8 @@ export const TaskMonitor: React.FC = () => {
         </div>
       </Card>
       ) : (
-      <Card title="进度" isEmpty emptyLabel="暂无任务计划">
-        <EmptyState text="暂无任务计划" />
+      <Card title={t.taskPanel.progress} isEmpty emptyLabel={t.taskPanel.progressEmpty}>
+        <EmptyState text={t.taskPanel.progressEmpty} />
       </Card>
       )}
 

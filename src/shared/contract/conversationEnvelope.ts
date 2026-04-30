@@ -6,6 +6,7 @@ import type { DesignBrief } from './designBrief';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
+export type RuntimeInputMode = 'supplement' | 'redirect';
 
 export interface BrowserSessionIntentPreview {
   url?: string | null;
@@ -48,6 +49,10 @@ export interface ConversationExecutionIntent {
   browserSessionSnapshot?: BrowserSessionIntentSnapshot;
 }
 
+export interface RuntimeInputIntent {
+  mode: RuntimeInputMode;
+}
+
 export interface DirectRoutingDeliverySnapshot {
   deliveredTargetIds: string[];
   deliveredTargetNames?: string[];
@@ -62,6 +67,7 @@ export interface ConversationEnvelopeContext {
   selectedMcpServerIds?: string[];
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
+  runtimeInput?: RuntimeInputIntent;
   // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
   // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。
@@ -87,5 +93,6 @@ export interface WorkbenchMessageMetadata {
   selectedMcpServerIds?: string[];
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
+  runtimeInputMode?: RuntimeInputMode;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
 }

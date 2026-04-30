@@ -57,6 +57,20 @@ export function projectTurns(
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 
+    // Runtime supplements are part of the in-flight task, not a new turn.
+    const runtimeInputMode = msg.metadata?.workbench?.runtimeInputMode;
+    if (msg.role === 'user' && runtimeInputMode === 'supplement' && currentTurn) {
+      currentTurn.nodes.push({
+        id: msg.id,
+        type: 'user',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        attachments: msg.attachments,
+        metadata: msg.metadata,
+      });
+      continue;
+    }
+
     // User message → start a new turn
     if (msg.role === 'user') {
       // Close previous turn
@@ -193,11 +207,26 @@ export function projectTurns(
     }
   }
 
-  // Mark the most recent assistant/tool turn as streaming if processing.
-  // This avoids a direct-routed user turn stealing the active marker.
+  // Direct-routed sidecar messages should not steal the active marker from
+  // the in-flight task. Normal user turns can still be active while waiting
+  // for the first assistant response.
   let activeTurnIndex = -1;
   if (isProcessing && turns.length > 0) {
+    const latestTurn = turns[turns.length - 1];
+    const latestNode = latestTurn.nodes[latestTurn.nodes.length - 1];
+    const directRoutingDelivery = latestNode?.metadata?.workbench?.directRoutingDelivery;
+    const isDirectRoutedUserTurn =
+      latestNode?.type === 'user' &&
+      latestNode.metadata?.workbench?.routingMode === 'direct' &&
+      (directRoutingDelivery?.deliveredTargetIds?.length || 0) > 0;
+
+    if (latestNode?.type === 'user' && !isDirectRoutedUserTurn) {
+      latestTurn.status = 'streaming';
+      activeTurnIndex = turns.length - 1;
+    }
+
     for (let index = turns.length - 1; index >= 0; index -= 1) {
+      if (activeTurnIndex >= 0) break;
       const candidateTurn = turns[index];
       const lastNode = candidateTurn.nodes[candidateTurn.nodes.length - 1];
       if (!lastNode) continue;

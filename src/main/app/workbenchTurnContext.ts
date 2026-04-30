@@ -53,6 +53,14 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`优先从这些 MCP servers 取工具或资源（仅在相关时使用）：${context.selectedMcpServerIds.join('、')}`);
   }
 
+  if (context.runtimeInput?.mode === 'supplement') {
+    lines.push('这条消息是用户在 agent 运行过程中的补充指令：把它纳入当前任务和已有计划，除非内容明确要求改方向，不要把它当成全新任务。');
+  }
+
+  if (context.runtimeInput?.mode === 'redirect') {
+    lines.push('这条消息是用户显式选择的改道指令：停止沿用当前思路，按这条新要求重组接下来的执行。');
+  }
+
   if (context.executionIntent?.browserSessionMode === 'managed') {
     lines.push('本轮显式接入 Browser workbench：使用托管浏览器。需要网页自动化时，可优先走 browser_action 或 computer_use 的智能浏览器路径。');
   }
@@ -193,7 +201,7 @@ export function withWorkbenchTurnSystemContext(
       ...(workbenchToolScope?.allowedMcpServerIds || []),
     ],
   });
-  if (turnSystemContext.length === 0 && !toolScope && !context?.executionIntent) {
+  if (turnSystemContext.length === 0 && !toolScope && !context?.executionIntent && !context?.runtimeInput) {
     return options;
   }
 
@@ -202,5 +210,6 @@ export function withWorkbenchTurnSystemContext(
     ...(turnSystemContext.length > 0 ? { turnSystemContext } : {}),
     ...(toolScope ? { toolScope } : {}),
     ...(context?.executionIntent ? { executionIntent: { ...context.executionIntent } } : {}),
+    ...(context?.runtimeInput ? { runtimeInput: { ...context.runtimeInput } } : {}),
   };
 }

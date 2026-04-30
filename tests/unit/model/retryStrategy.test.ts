@@ -53,6 +53,12 @@ describe('Retry Strategy', () => {
         expect(isTransientError('TLS connection was established')).toBe(true);
       });
 
+      it('should detect TLS bad record MAC failures', () => {
+        expect(isTransientError('ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC')).toBe(true);
+        expect(isTransientError('write: ssl routines: SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC')).toBe(true);
+        expect(isTransientError('tlsv1 alert bad record mac')).toBe(true);
+      });
+
       it('should detect network socket disconnected', () => {
         expect(isTransientError('network socket disconnected')).toBe(true);
       });
@@ -139,12 +145,13 @@ describe('Retry Strategy', () => {
     it('should fall back on transient errors', () => {
       expect(isFallbackEligible('read ECONNRESET')).toBe(true);
       expect(isFallbackEligible('503 Service Unavailable')).toBe(true);
+      expect(isFallbackEligible('ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC')).toBe(true);
     });
 
     it('should fall back on non-retryable provider capacity and billing errors', () => {
       expect(isFallbackEligible('No available accounts: no available accounts')).toBe(true);
       expect(isFallbackEligible('{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}')).toBe(true);
-      expect(isFallbackEligible('Your subscription plan does not include access to model: glm-4-flash')).toBe(true);
+      expect(isFallbackEligible('Your subscription plan does not include access to model: glm-4.7-flash')).toBe(true);
       expect(isFallbackEligible('model_not_allowed')).toBe(true);
     });
 
@@ -252,6 +259,20 @@ describe('Retry Strategy', () => {
 
       const fn = vi.fn()
         .mockRejectedValueOnce(err)
+        .mockResolvedValue('resolved');
+
+      const result = await withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 1,
+        baseDelay: 1,
+      });
+      expect(result).toBe('resolved');
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry TLS bad record MAC failures', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(new Error('ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC'))
         .mockResolvedValue('resolved');
 
       const result = await withTransientRetry(fn, {

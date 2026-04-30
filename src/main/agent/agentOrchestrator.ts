@@ -24,6 +24,7 @@ import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
 import { classifyIntent } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
+import { getContextHealthService } from '../context/contextHealthService';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { createLogger } from '../services/infra/logger';
@@ -58,6 +59,8 @@ const logger = createLogger('AgentOrchestrator');
 interface PendingSteerMessage {
   content: string;
   clientMessageId?: string;
+  attachments?: MessageAttachment[];
+  messageMetadata?: MessageMetadata;
 }
 
 // ----------------------------------------------------------------------------
@@ -203,6 +206,7 @@ export class AgentOrchestrator {
           logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
         }
       }
+      this.updateContextHealthSnapshot(sessionId, modelConfig.model);
     }
 
     // Session-aware event handler with telemetry
@@ -311,7 +315,12 @@ export class AgentOrchestrator {
 
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
-      this.pendingSteerMessages.push({ content: effectiveMessage, clientMessageId });
+      this.pendingSteerMessages.push({
+        content: effectiveMessage,
+        clientMessageId,
+        attachments: attachments as MessageAttachment[] | undefined,
+        messageMetadata,
+      });
       return;
     }
 
@@ -324,11 +333,21 @@ export class AgentOrchestrator {
     } as AgentEvent & { sessionId?: string });
 
     if (this.agentLoop) {
-      this.agentLoop.steer(effectiveMessage, clientMessageId);
+      this.agentLoop.steer(
+        effectiveMessage,
+        clientMessageId,
+        attachments as MessageAttachment[] | undefined,
+        messageMetadata,
+      );
 
       while (this.pendingSteerMessages.length > 0) {
         const queued = this.pendingSteerMessages.shift()!;
-        this.agentLoop.steer(queued.content, queued.clientMessageId);
+        this.agentLoop.steer(
+          queued.content,
+          queued.clientMessageId,
+          queued.attachments,
+          queued.messageMetadata,
+        );
         logger.info('[AgentOrchestrator] Processed queued steer message');
       }
 
@@ -493,6 +512,26 @@ export class AgentOrchestrator {
       const trimCount = this.messages.length - MAX_MESSAGES_IN_MEMORY;
       this.messages = this.messages.slice(trimCount);
       logger.debug(`Trimmed ${trimCount} old messages, keeping ${this.messages.length}`);
+    }
+  }
+
+  private updateContextHealthSnapshot(sessionId: string, model: string): void {
+    try {
+      getContextHealthService().update(
+        sessionId,
+        this.messages.map((message) => ({
+          role: message.role,
+          content: message.content || '',
+          toolResults: message.toolResults?.map((result) => ({
+            output: result.output,
+            error: result.error,
+          })),
+        })),
+        SYSTEM_PROMPT,
+        model,
+      );
+    } catch (error) {
+      logger.warn('Failed to update context health after user message:', error);
     }
   }
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -16,12 +17,12 @@ const invokeMock = vi.hoisted(() => vi.fn());
 const domainInvokeMock = vi.hoisted(() => vi.fn());
 const setShowEvalCenterMock = vi.hoisted(() => vi.fn());
 const setWorkingDirectoryMock = vi.hoisted(() => vi.fn());
-const enqueueReviewItemMock = vi.hoisted(() => vi.fn());
 const applySessionWorkbenchPresetMock = vi.hoisted(() => vi.fn());
 const applyWorkbenchPresetMock = vi.hoisted(() => vi.fn());
 const applyWorkbenchRecipeMock = vi.hoisted(() => vi.fn());
 const saveWorkbenchPresetFromSessionMock = vi.hoisted(() => vi.fn());
 const promptMock = vi.hoisted(() => vi.fn());
+const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
 const workbenchPresetState = vi.hoisted(() => ({
   presets: [] as any[],
   recipes: [] as any[],
@@ -34,7 +35,7 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 5) {
+      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 6) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),
@@ -184,11 +185,6 @@ vi.mock('../../../src/renderer/stores/taskStore', () => ({
     selector ? selector({ sessionStates: {} }) : { sessionStates: {} },
 }));
 
-vi.mock('../../../src/renderer/stores/evalCenterStore', () => ({
-  useEvalCenterStore: (selector?: (state: { enqueueReviewItem: typeof enqueueReviewItemMock }) => unknown) =>
-    selector ? selector({ enqueueReviewItem: enqueueReviewItemMock }) : { enqueueReviewItem: enqueueReviewItemMock },
-}));
-
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: invokeMock,
@@ -223,12 +219,13 @@ describe('Sidebar review actions', () => {
     domainInvokeMock.mockResolvedValue({ success: true, data: '/repo/code-agent' });
     setShowEvalCenterMock.mockReset();
     setWorkingDirectoryMock.mockReset();
-    enqueueReviewItemMock.mockReset();
     applySessionWorkbenchPresetMock.mockReset();
     applyWorkbenchPresetMock.mockReset();
     applyWorkbenchRecipeMock.mockReset();
     saveWorkbenchPresetFromSessionMock.mockReset();
     promptMock.mockReset();
+    clipboardWriteTextMock.mockReset();
+    clipboardWriteTextMock.mockResolvedValue(undefined);
     workbenchPresetState.presets = [];
     workbenchPresetState.recipes = [];
     Reflect.set(globalThis, 'window', {
@@ -237,33 +234,33 @@ describe('Sidebar review actions', () => {
       },
       prompt: promptMock,
     });
-  });
-
-  it('enqueues the selected session into review queue from context menu', async () => {
-    renderSidebarWithContextMenu();
-
-    const queueAction = menuState.items.find((item) => item.label === '加入 Review');
-    expect(queueAction).toBeTruthy();
-
-    await queueAction?.onClick();
-
-    expect(enqueueReviewItemMock).toHaveBeenCalledWith({
-      sessionId: 'session-1',
-      sessionTitle: 'Reviewable Session',
-      reason: 'manual_review',
-      enqueueSource: 'session_list',
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        clipboard: {
+          writeText: clipboardWriteTextMock,
+        },
+      },
+      configurable: true,
     });
   });
 
-  it('opens eval center on the selected session replay from context menu', () => {
+  it('copies the selected session id from context menu', async () => {
     renderSidebarWithContextMenu();
 
-    const replayAction = menuState.items.find((item) => item.label === '打开 Replay');
-    expect(replayAction).toBeTruthy();
+    const copyIdAction = menuState.items.find((item) => item.label === '复制会话 ID');
+    expect(copyIdAction).toBeTruthy();
 
-    replayAction?.onClick();
+    await copyIdAction?.onClick();
 
-    expect(setShowEvalCenterMock).toHaveBeenCalledWith(true, undefined, 'session-1');
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith('session-1');
+  });
+
+  it('keeps internal review and raw export actions out of the session context menu', () => {
+    renderSidebarWithContextMenu();
+
+    expect(menuState.items.some((item) => item.label === '加入 Review')).toBe(false);
+    expect(menuState.items.some((item) => item.label === '打开 Replay')).toBe(false);
+    expect(menuState.items.some((item) => item.label === '导出 JSON')).toBe(false);
   });
 
   it('reuses the selected session workbench in the current session from context menu', async () => {
@@ -286,7 +283,7 @@ describe('Sidebar review actions', () => {
     promptMock.mockReturnValue('Browser review preset');
     renderSidebarWithContextMenu();
 
-    const savePresetAction = menuState.items.find((item) => item.label === '保存为 Preset');
+    const savePresetAction = menuState.items.find((item) => item.label === '保存工作台为 Preset');
     expect(savePresetAction).toBeTruthy();
     expect(savePresetAction?.disabled).not.toBe(true);
 
@@ -385,7 +382,7 @@ describe('Sidebar review actions', () => {
     expect(applyWorkbenchRecipeMock).toHaveBeenCalledWith(recipe);
   });
 
-  it('disables workbench reuse when the session has no reusable workbench state', () => {
+  it('hides workbench reuse and preset actions when the session has no reusable workbench state', () => {
     const originalSession = sessionState.sessions[0];
     sessionState.sessions[0] = {
       ...originalSession,
@@ -401,11 +398,9 @@ describe('Sidebar review actions', () => {
     renderSidebarWithContextMenu();
 
     const reuseAction = menuState.items.find((item) => item.label === '在当前会话复用工作台');
-    expect(reuseAction).toBeTruthy();
-    expect(reuseAction?.disabled).toBe(true);
-    const savePresetAction = menuState.items.find((item) => item.label === '保存为 Preset');
-    expect(savePresetAction).toBeTruthy();
-    expect(savePresetAction?.disabled).toBe(true);
+    expect(reuseAction).toBeUndefined();
+    const savePresetAction = menuState.items.find((item) => item.label === '保存工作台为 Preset');
+    expect(savePresetAction).toBeUndefined();
 
     sessionState.sessions[0] = originalSession;
   });

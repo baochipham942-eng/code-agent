@@ -348,12 +348,18 @@ export class LSPServer extends EventEmitter {
 // LSP Server Manager
 // ============================================================================
 
+export interface LSPInstallFailure {
+  source: LSPInstallSource | undefined;
+  message: string;
+}
+
 export class LSPServerManager extends EventEmitter {
   private servers = new Map<string, LSPServer>();
   private serverConfigs: LSPServerConfig[] = [];
   private workspaceRoot: string;
   private state: 'initializing' | 'ready' | 'failed' = 'initializing';
   private diagnosticsCache = new Map<string, LSPDiagnostic[]>();
+  private installFailures = new Map<string, LSPInstallFailure>();
 
   constructor(workspaceRoot: string) {
     super();
@@ -386,6 +392,10 @@ export class LSPServerManager extends EventEmitter {
         } catch (err) {
           if (err instanceof LSPInstallError) {
             console.warn(`[LSP] ${config.name} install failed: ${err.message}`);
+            this.installFailures.set(config.name, {
+              source: err.source,
+              message: err.message,
+            });
             this.emit('install-failed', {
               serverName: config.name,
               source: err.source,
@@ -431,6 +441,28 @@ export class LSPServerManager extends EventEmitter {
         if (server.getState() === 'ready') {
           return server;
         }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * If no live server matches the file but a configured server failed to
+   * install, return that failure so callers can surface a useful hint
+   * (e.g. include the install command in the tool error).
+   */
+  getInstallFailureForFile(filePath: string): LSPInstallFailure | undefined {
+    const ext = path.extname(filePath).toLowerCase();
+
+    for (const config of this.serverConfigs) {
+      const normalizedExtensions = config.fileExtensions.map((e) =>
+        e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`
+      );
+
+      if (normalizedExtensions.includes(ext)) {
+        const failure = this.installFailures.get(config.name);
+        if (failure) return failure;
       }
     }
 

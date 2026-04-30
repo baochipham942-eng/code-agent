@@ -139,7 +139,14 @@ export const App: React.FC = () => {
     customHandlers: {
       triggerCompact: async () => {
         try {
-          await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '');
+          const currentSessionId = useSessionStore.getState().currentSessionId;
+          await ipcService.invoke(
+            IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
+            currentSessionId ?? undefined,
+          );
+          if (currentSessionId) {
+            await useSessionStore.getState().refreshContextHealth(currentSessionId);
+          }
         } catch { /* ignore */ }
       },
     },

@@ -11,6 +11,63 @@ const logger = createLogger('useAgent');
 
 type AgentEvent = { type: string; data: any; sessionId?: string };
 
+type AgentErrorPayload = Record<string, any>;
+
+function isRecord(value: unknown): value is AgentErrorPayload {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function normalizeAgentErrorPayload(data: unknown): AgentErrorPayload {
+  if (!isRecord(data)) return {};
+  const nested = isRecord(data.data) ? data.data : {};
+  return { ...data, ...nested };
+}
+
+export function getAgentErrorMessage(data: unknown): string | null {
+  const payload = normalizeAgentErrorPayload(data);
+  const message = typeof payload.message === 'string'
+    ? payload.message.trim()
+    : typeof payload.error === 'string'
+      ? payload.error.trim()
+      : '';
+  return message || null;
+}
+
+export function isTerminalAgentError(data: unknown): boolean {
+  const payload = normalizeAgentErrorPayload(data);
+  return payload.terminal !== false
+    && payload.level !== 'warning'
+    && payload.severity !== 'warning';
+}
+
+export function formatAgentErrorContent(data: unknown): string | null {
+  const payload = normalizeAgentErrorPayload(data);
+  const message = getAgentErrorMessage(payload);
+  if (!message) return null;
+
+  if (payload.code === 'CONTEXT_LENGTH_EXCEEDED') {
+    const details = payload.details;
+    const requestedK = details?.requested ? Math.round(details.requested / 1000) : '?';
+    const maxK = details?.max ? Math.round(details.max / 1000) : '?';
+    return (
+      `⚠️ **${message}**\n\n` +
+      `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
+      `${payload.suggestion || '建议新开一个会话继续对话。'}`
+    );
+  }
+
+  return `Error: ${message}`;
+}
+
+function mergeErrorContent(existing: string | undefined, errorContent: string): string {
+  const current = existing || '';
+  const trimmed = current.trim();
+  if (!trimmed || trimmed.startsWith('Error:') || trimmed.startsWith('⚠️')) {
+    return errorContent;
+  }
+  return `${current}\n\n${errorContent}`;
+}
+
 export const useSessionLifecycleEffects = ({
   flushRef,
   lastEventAtRef,
@@ -40,6 +97,16 @@ export const useSessionLifecycleEffects = ({
           setIsProcessing(false);
         }
       };
+      const refreshContextHealth = () => {
+        if (!isCurrentSessionEvent || !eventSessionId) return;
+        useSessionStore.getState().refreshContextHealth(eventSessionId).catch((error) => {
+          logger.warn('Failed to refresh context health after agent event', {
+            sessionId: eventSessionId,
+            eventType: event.type,
+            error,
+          });
+        });
+      };
       const logHandledEvent = () => {
         logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
       };
@@ -55,26 +122,30 @@ export const useSessionLifecycleEffects = ({
         case 'error':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
-          logger.error('Agent error', { message: event.data?.message, code: event.data?.code });
+          if (!isTerminalAgentError(event.data)) {
+            logger.warn('Agent warning', {
+              message: getAgentErrorMessage(event.data),
+              code: normalizeAgentErrorPayload(event.data).code,
+            });
+            break;
+          }
+          logger.error('Agent error', {
+            message: getAgentErrorMessage(event.data),
+            code: normalizeAgentErrorPayload(event.data).code,
+          });
           if (isCurrentSessionEvent) {
             const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
             if (lastMessage?.role === 'assistant') {
-              let errorContent: string;
-              if (event.data?.code === 'CONTEXT_LENGTH_EXCEEDED') {
-                const details = event.data.details;
-                const requestedK = details?.requested ? Math.round(details.requested / 1000) : '?';
-                const maxK = details?.max ? Math.round(details.max / 1000) : '?';
-                errorContent =
-                  `⚠️ **${event.data.message}**\n\n` +
-                  `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
-                  `${event.data.suggestion || '建议新开一个会话继续对话。'}`;
-              } else {
-                errorContent = `Error: ${event.data?.message || 'Unknown error'}`;
+              const errorContent = formatAgentErrorContent(event.data);
+              if (errorContent) {
+                updateMessage(lastMessage.id, {
+                  content: mergeErrorContent(lastMessage.content, errorContent),
+                });
               }
-              updateMessage(lastMessage.id, { content: errorContent });
             }
           }
           clearSessionProcessing();
+          refreshContextHealth();
           break;
 
         case 'agent_complete':
@@ -90,6 +161,7 @@ export const useSessionLifecycleEffects = ({
           if (eventSessionId) {
             setSessionTaskProgress(eventSessionId, null);
           }
+          refreshContextHealth();
           break;
 
         case 'research_detected':
@@ -152,6 +224,7 @@ export const useSessionLifecycleEffects = ({
           logger.debug('stream_end - ensuring processing state is cleared');
           flushRef.current();
           clearSessionProcessing();
+          refreshContextHealth();
           break;
 
         default:

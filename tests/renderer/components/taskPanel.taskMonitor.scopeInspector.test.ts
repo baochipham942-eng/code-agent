@@ -21,6 +21,20 @@ const statusRailTodosState = {
   total: 0,
 };
 
+const statusRailContextState = {
+  currentTokens: 3200,
+  maxTokens: 128000,
+  usagePercent: 3,
+  warningLevel: 'normal' as const,
+  buckets: {
+    rules: 1,
+    files: 0,
+    web: 0,
+    other: 0,
+  },
+  items: [] as Array<any>,
+};
+
 const currentTurnScopeState = {
   turnId: 'turn-2',
   turnNumber: 2,
@@ -230,19 +244,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 
 vi.mock('../../../src/renderer/hooks/useStatusRailModel', () => ({
   useStatusRailModel: () => ({
-    context: {
-      currentTokens: 3200,
-      maxTokens: 128000,
-      usagePercent: 3,
-      warningLevel: 'normal',
-      buckets: {
-        rules: 1,
-        files: 0,
-        web: 0,
-        other: 0,
-      },
-      items: [],
-    },
+    context: statusRailContextState,
     compact: {
       canCompact: false,
       compressionCount: 0,
@@ -343,6 +345,19 @@ describe('TaskMonitor scope inspector slice', () => {
     statusRailTodosState.items = [];
     statusRailTodosState.completed = 0;
     statusRailTodosState.total = 0;
+    Object.assign(statusRailContextState, {
+      currentTokens: 3200,
+      maxTokens: 128000,
+      usagePercent: 3,
+      warningLevel: 'normal',
+      buckets: {
+        rules: 1,
+        files: 0,
+        web: 0,
+        other: 0,
+      },
+      items: [],
+    });
     currentTurnScopeState.selectedCapabilities[0] = {
       kind: 'skill',
       key: 'skill:draft-skill',
@@ -424,6 +439,29 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).toContain('工具活动');
     expect(html).toContain('文件读取活动');
     expect(html).toContain('2 次工具操作');
+  });
+
+  it('keeps sub-1% context usage visible in the right rail', () => {
+    Object.assign(statusRailContextState, {
+      currentTokens: 1536,
+      maxTokens: 1048576,
+      usagePercent: 0.1,
+      buckets: {
+        rules: 0,
+        files: 5,
+        web: 0,
+        other: 53,
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('0.1%');
+    expect(html).toContain('1.5k / 1048.6k tokens');
+    expect(html).toContain('Files 5');
+    expect(html).toContain('Other 53');
   });
 
   it('keeps todos as the highest priority over task progress and tool activity', () => {

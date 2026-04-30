@@ -51,6 +51,8 @@ export const SERVER_AUTH_TOKEN = loadOrGenerateAuthToken();
 const ALLOWED_ORIGINS = new Set([
   'http://localhost:8180',
   'http://127.0.0.1:8180',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'tauri://localhost',

@@ -508,6 +508,7 @@ export interface IpcInvokeHandlers {
 
   // Context compact (部分压缩)
   [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<import('../../shared/contract/contextHealth').CompactResult>;
+  [IPC_CHANNELS.CONTEXT_COMPACT_CURRENT]: (sessionId?: string) => Promise<import('../../shared/contract/contextHealth').CompactResult>;
 
   // Context intervention controls (pin/exclude/retain)
   [IPC_CHANNELS.CONTEXT_INTERVENTION_GET]: (request: ContextInterventionRequest) => Promise<ContextInterventionSnapshot>;

@@ -284,8 +284,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           if (!event.data.success) {
             consecutiveToolFailures++;
             if (consecutiveToolFailures >= 2) {
-              sendSSE(res, 'error', {
-                data: { message: `工具连续 ${consecutiveToolFailures} 次失败: ${event.data.error || 'unknown'}`, level: 'warning' },
+              sendSSE(res, 'tool_warning', {
+                message: `工具连续 ${consecutiveToolFailures} 次失败: ${event.data.error || 'unknown'}`,
+                level: 'warning',
                 sessionId,
               });
             }

@@ -23,6 +23,7 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
     const messagesForEstimation = ctx.runtime.messages.map(msg => ({
       role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
       content: msg.content,
+      toolCalls: msg.toolCalls,
       toolResults: msg.toolResults?.map(tr => ({
         output: tr.output,
         error: tr.error,

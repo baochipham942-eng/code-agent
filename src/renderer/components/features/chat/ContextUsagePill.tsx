@@ -11,9 +11,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Shrink } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { CompactResult } from '@shared/contract/contextHealth';
 import ipcService from '../../../services/ipcService';
+import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -54,13 +56,23 @@ export const ContextUsagePill: React.FC = () => {
 
   const handleCompact = useCallback(async () => {
     if (isCompacting) return;
+    const sessionId = useSessionStore.getState().currentSessionId;
     setIsCompacting(true);
     setCompactResult(null);
     setCompactError(null);
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, '') as CompactResult;
-      if (result.success) setCompactResult(result);
-      else setCompactError('压缩失败');
+      const result = await ipcService.invoke(
+        IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
+        sessionId ?? undefined,
+      ) as CompactResult;
+      if (result.success) {
+        setCompactResult(result);
+        if (sessionId) {
+          void useSessionStore.getState().refreshContextHealth(sessionId);
+        }
+      } else {
+        setCompactError('压缩失败');
+      }
       setTimeout(() => { setCompactResult(null); setCompactError(null); }, 5000);
     } catch {
       setCompactError('压缩失败');
@@ -74,7 +86,7 @@ export const ContextUsagePill: React.FC = () => {
   const currentTokens = contextHealth?.currentTokens ?? 0;
   const maxTokens = contextHealth?.maxTokens ?? 0;
   const pct = Math.max(0, Math.min(100, usagePercent));
-  const displayPct = Math.round(pct);
+  const displayPct = formatContextUsagePercent(pct);
   const tone = toneFromPercent(pct);
   const styles = TONE_STYLES[tone];
   const canCompact = pct >= 70;

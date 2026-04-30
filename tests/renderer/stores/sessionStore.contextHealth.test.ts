@@ -101,6 +101,27 @@ describe('sessionStore context health refresh', () => {
     expect(useAppStore.getState().contextHealth).toEqual(health);
   });
 
+  it('refreshes context health for the current session after a completed turn', async () => {
+    const health = makeHealth(7186);
+    useSessionStore.setState({
+      currentSessionId: 'session-1',
+      sessionRuntimes: new Map(),
+    });
+    useAppStore.setState({ contextHealth: null });
+    mockInvoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.CONTEXT_HEALTH_GET) {
+        return health;
+      }
+      return null;
+    });
+
+    const result = await useSessionStore.getState().refreshContextHealth('session-1');
+
+    expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.CONTEXT_HEALTH_GET, 'session-1');
+    expect(result).toEqual(health);
+    expect(useAppStore.getState().contextHealth).toEqual(health);
+  });
+
   it('does not replace measured context health with an empty runtime event', () => {
     const measuredHealth = makeHealth(2345);
     const emptyHealth = makeHealth(0);

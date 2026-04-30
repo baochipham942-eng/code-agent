@@ -4,6 +4,7 @@
 
 import React from 'react';
 import type { ContextUsageProps } from './types';
+import { formatContextUsagePercent } from '../../utils/contextUsageFormat';
 
 /**
  * 获取文本颜色类名
@@ -29,7 +30,7 @@ function getBarColor(percent: number): string {
 export function ContextUsage({ percent }: ContextUsageProps) {
   // 确保百分比在 0-100 范围内
   const normalizedPercent = Math.min(100, Math.max(0, percent));
-  const displayPercent = Math.round(normalizedPercent);
+  const displayPercent = formatContextUsagePercent(normalizedPercent);
 
   return (
     <div

@@ -96,6 +96,18 @@ export function getRuntimeFollowupFailureMessage(error: unknown): string {
   return `补充指令没发出去：${raw}`;
 }
 
+export function getAgentSendFailureMessage(error: unknown): string {
+  const raw = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : '';
+  const message = raw.trim();
+  return message
+    ? `Error: ${message}`
+    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
+}
+
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {
   return context?.runtimeInput?.mode === 'redirect' ? 'redirect' : 'supplement';
 }
@@ -467,7 +479,7 @@ export function useAgentIPC({
         const errorMessage: Message = {
           id: generateMessageId(),
           role: 'assistant',
-          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          content: getAgentSendFailureMessage(error),
           timestamp: Date.now(),
         };
         addMessage(errorMessage);

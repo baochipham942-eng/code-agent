@@ -9,6 +9,8 @@ import type {
   ManagedBrowserLeaseState,
   ManagedBrowserProfileMode,
   ManagedBrowserProxyConfig,
+  ManagedBrowserProvider,
+  ManagedBrowserProviderPreference,
 } from '@shared/contract/desktop';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import type { WorkbenchCapabilityRegistryItem } from './workbenchCapabilityRegistry';
@@ -307,6 +309,17 @@ function summarizePathTail(value: string | null | undefined): string | null {
   return basename === trimmed ? basename : `.../${basename}`;
 }
 
+function formatUrlTarget(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${parsed.hostname}${path}`;
+  } catch {
+    return url.length > 80 ? `${url.slice(0, 77)}...` : url;
+  }
+}
+
 function getProfileMode(value: unknown): ManagedBrowserProfileMode | null {
   return value === 'persistent' || value === 'isolated' ? value : null;
 }
@@ -349,6 +362,44 @@ function buildManagedBrowserProfileValue(preview: unknown, session: unknown): st
     return profileMode;
   }
   return profileId || profileSummary;
+}
+
+function getProviderLabel(value: string | null): string | null {
+  switch (value) {
+    case 'system-chrome-cdp':
+      return 'System Chrome via CDP';
+    case 'playwright-bundled':
+      return 'Playwright bundled Chromium';
+    case 'auto':
+      return 'Auto';
+    default:
+      return value;
+  }
+}
+
+function getManagedBrowserProvider(preview: unknown, session: unknown): {
+  provider: ManagedBrowserProvider | string | null;
+  requestedProvider: ManagedBrowserProviderPreference | string | null;
+} {
+  return {
+    provider: firstStringField(preview, ['provider']) || firstStringField(session, ['provider']),
+    requestedProvider: firstStringField(preview, ['requestedProvider']) || firstStringField(session, ['requestedProvider']),
+  };
+}
+
+function buildManagedBrowserProviderValue(preview: unknown, session: unknown): string | null {
+  const { provider, requestedProvider } = getManagedBrowserProvider(preview, session);
+  const providerLabel = getProviderLabel(provider);
+  if (!providerLabel) {
+    return null;
+  }
+
+  const requestedLabel = getProviderLabel(requestedProvider);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== provider && requestedLabel) {
+    return `${providerLabel} / requested ${requestedLabel}`;
+  }
+
+  return providerLabel;
 }
 
 function buildManagedBrowserScopeValue(preview: unknown, session: unknown): string | null {
@@ -416,6 +467,46 @@ function buildManagedBrowserProxyValue(proxy: ManagedBrowserProxyConfig | null):
   return `${proxy.mode}${region}${bypass}`;
 }
 
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function buildSnapshotRefValue(value: unknown): string | null {
+  const snapshot = asRecord(value);
+  if (!snapshot) {
+    return null;
+  }
+
+  const url = formatUrlTarget(firstStringField(snapshot, ['url']));
+  const capturedAtMs = typeof snapshot.capturedAtMs === 'number' && Number.isFinite(snapshot.capturedAtMs)
+    ? snapshot.capturedAtMs
+    : null;
+  const age = capturedAtMs
+    ? `${Math.max(0, Math.floor((Date.now() - capturedAtMs) / 1000))}s ago`
+    : null;
+
+  const target = url || 'snapshot';
+  return [target, age].filter(Boolean).join(' · ') || null;
+}
+
+function buildManagedBrowserRecoveryValue(preview: unknown, session: unknown): string | null {
+  const previewSummary = firstStringField(preview, ['recoverySnapshotSummary']);
+  if (previewSummary) {
+    return previewSummary;
+  }
+
+  const trace = asRecord(asRecord(session)?.lastTrace);
+  const evidence = asStringArray(trace?.evidenceSummary);
+  if (evidence.length > 0) {
+    return evidence.slice(0, 2).join(' · ');
+  }
+
+  const snapshotSummary = buildSnapshotRefValue(trace?.after) || buildSnapshotRefValue(trace?.before);
+  return snapshotSummary ? `snapshot: ${snapshotSummary}` : null;
+}
+
 export function buildBrowserWorkbenchStatusRows(args: {
   mode: BrowserSessionMode;
   browserSession: BrowserWorkbenchStateForPresentation | null | undefined;
@@ -433,11 +524,13 @@ export function buildBrowserWorkbenchStatusRows(args: {
     const sessionId = firstStringField(preview, ['sessionId'])
       || firstStringField(browserSession.managedSession, ['sessionId', 'id']);
     const profileValue = buildManagedBrowserProfileValue(preview, browserSession.managedSession);
+    const providerValue = buildManagedBrowserProviderValue(preview, browserSession.managedSession);
     const scopeValue = buildManagedBrowserScopeValue(preview, browserSession.managedSession);
     const accountValue = buildManagedBrowserAccountValue(getAccountState(preview, browserSession.managedSession));
     const lease = getManagedBrowserLease(preview, browserSession.managedSession);
     const leaseValue = buildManagedBrowserLeaseValue(lease);
     const proxyValue = buildManagedBrowserProxyValue(getManagedBrowserProxy(preview, browserSession.managedSession));
+    const recoveryValue = buildManagedBrowserRecoveryValue(preview, browserSession.managedSession);
 
     return [
       {
@@ -456,6 +549,13 @@ export function buildBrowserWorkbenchStatusRows(args: {
         label: 'Mode',
         value: preview?.surfaceMode || browserSession.managedSession.mode || 'headless',
       },
+      ...(providerValue
+        ? [{
+            label: 'Provider',
+            value: providerValue,
+            title: providerValue,
+          }]
+        : []),
       ...(profileValue
         ? [{
             label: 'Profile',
@@ -508,22 +608,37 @@ export function buildBrowserWorkbenchStatusRows(args: {
             title: traceId,
           }]
         : []),
+      ...(recoveryValue
+        ? [{
+            label: 'Recovery',
+            value: recoveryValue,
+            title: recoveryValue,
+          }]
+        : []),
     ];
   }
 
   const preview = browserSession.preview?.mode === 'desktop' ? browserSession.preview : null;
   const traceId = preview?.traceId || browserSession.computerSurface?.lastAction?.id || null;
-  const surfaceValue = browserSession.computerSurface?.background
-    ? 'Background Accessibility surface'
-    : browserSession.computerSurface?.mode === 'foreground_fallback'
-      ? 'Foreground fallback (current window)'
-      : 'Unavailable';
+  const surfaceMode = browserSession.computerSurface?.mode;
+  const surfaceValue = surfaceMode === 'background_ax'
+    ? 'Background AX surface'
+    : surfaceMode === 'background_cgevent'
+      ? 'Background CGEvent surface'
+      : surfaceMode === 'foreground_fallback'
+        ? 'Manual foreground fallback'
+        : 'Unavailable';
+  const surfaceTone: BrowserWorkbenchStatusTone = surfaceMode === 'foreground_fallback'
+    ? 'neutral'
+    : browserSession.computerSurface?.ready
+      ? 'ready'
+      : 'blocked';
 
   return [
     {
       label: 'Surface',
       value: surfaceValue,
-      tone: browserSession.computerSurface?.ready ? 'ready' : 'blocked',
+      tone: surfaceTone,
       title: browserSession.computerSurface?.safetyNote || undefined,
     },
     ...(preview?.frontmostApp || browserSession.computerSurface?.targetApp

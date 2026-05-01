@@ -8,8 +8,8 @@ export const PLAN_MODE_RULES = `
 复杂任务（3+文件、架构变更、需求不明确）使用 \`enter_plan_mode\`。
 
 **流程**：
-1. 并行 task(explore) 探索代码库
-2. task(plan) 设计方案
+1. 并行 Task(explore) 探索代码库
+2. Task(plan) 设计方案
 3. 整合结果 + AskUserQuestion 澄清
 4. 生成计划（文件清单、步骤、风险）
 5. **必须** exit_plan_mode 请求批准

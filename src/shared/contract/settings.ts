@@ -4,6 +4,7 @@
 
 import type { ModelProvider } from './model';
 import type { PermissionLevel } from './tool';
+import type { ContextCompressionConfig } from './contextHealth';
 
 export interface AppSettings {
   models: {
@@ -146,4 +147,6 @@ export interface AppSettings {
     /** 重置周期 (小时, 默认 24) */
     resetPeriodHours?: number;
   };
+  // 上下文压缩配置
+  contextCompression?: ContextCompressionConfig;
 }

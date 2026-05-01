@@ -186,6 +186,8 @@ export const IPC_CHANNELS = {
   // Context health channels
   CONTEXT_HEALTH_GET: 'context:health:get',
   CONTEXT_HEALTH_EVENT: 'context:health:event',
+  CONTEXT_COMPRESSION_CONFIG_GET: 'context:compression-config:get',
+  CONTEXT_COMPRESSION_CONFIG_SET: 'context:compression-config:set',
 
   // Status bar update channels
   STATUS_TOKEN_UPDATE: 'status:token-update',

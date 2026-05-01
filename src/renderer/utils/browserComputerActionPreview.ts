@@ -2,42 +2,37 @@ import type { ToolCall } from '@shared/contract';
 import {
   redactBrowserComputerInputPayloadsInValue,
   sanitizeBrowserComputerMetadata,
+  summarizeBrowserComputerSecretScope,
 } from '@shared/utils/browserComputerRedaction';
+import {
+  getBrowserComputerActionCatalogEntry,
+  type BrowserComputerActionCatalogEntry,
+  type BrowserComputerCatalogApprovalKind,
+  type BrowserComputerCatalogEvidenceKind,
+  type BrowserComputerCatalogRisk,
+  type BrowserComputerCatalogSafeRecovery,
+  type BrowserComputerCatalogScope,
+  type BrowserComputerCatalogTool,
+} from '@shared/utils/browserComputerActionCatalog';
 
-export type BrowserComputerActionRisk = 'read' | 'browser_action' | 'desktop_input';
+export type BrowserComputerActionRisk = BrowserComputerCatalogRisk;
 
 export interface BrowserComputerActionPreview {
   surface: 'browser' | 'computer';
+  tool: BrowserComputerCatalogTool;
+  action: string;
   summary: string;
   target?: string | null;
   risk: BrowserComputerActionRisk;
   riskLabel: string;
+  scope: BrowserComputerCatalogScope;
+  requiresManagedSession: boolean;
+  evidenceKind: BrowserComputerCatalogEvidenceKind;
+  approvalKind: BrowserComputerCatalogApprovalKind;
+  safeRecovery: BrowserComputerCatalogSafeRecovery;
   traceId?: string | null;
   mode?: string | null;
 }
-
-const BROWSER_READ_ACTIONS = new Set([
-  'list_tabs',
-  'get_content',
-  'get_elements',
-  'get_dom_snapshot',
-  'get_a11y_snapshot',
-  'get_workbench_state',
-  'get_account_state',
-  'get_logs',
-  'screenshot',
-  'wait',
-]);
-
-const COMPUTER_READ_ACTIONS = new Set([
-  'get_state',
-  'observe',
-  'get_ax_elements',
-  'locate_element',
-  'locate_text',
-  'locate_role',
-  'get_elements',
-]);
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -146,6 +141,42 @@ function formatDesktopElementTarget(args: Record<string, unknown>): string | nul
   return null;
 }
 
+function formatWindowLocalPoint(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const x = asNumber(record.x);
+  const y = asNumber(record.y);
+  return x !== null && y !== null ? `windowLocal ${x},${y}` : null;
+}
+
+function formatBackgroundWindowTarget(args: Record<string, unknown>, metadata?: Record<string, unknown>): string | null {
+  const windowRef = asString(args.windowRef) || asString(metadata?.targetWindowRef);
+  if (windowRef) {
+    return `windowRef ${truncate(windowRef, 48)}`;
+  }
+
+  const pid = asNumber(args.pid) ?? asNumber(metadata?.targetPid);
+  const windowId = asNumber(args.windowId) ?? asNumber(metadata?.targetWindowId);
+  const windowLocal = formatWindowLocalPoint(args.windowLocalPoint)
+    || formatWindowLocalPoint(metadata?.windowLocalPoint);
+  const windowX = asNumber(args.windowX);
+  const windowY = asNumber(args.windowY);
+  const windowPoint = windowLocal || (windowX !== null && windowY !== null ? `windowLocal ${windowX},${windowY}` : null);
+  const parts = [
+    pid !== null ? `pid ${pid}` : null,
+    windowId !== null ? `window ${windowId}` : null,
+    windowPoint,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function hasBackgroundWindowTarget(args: Record<string, unknown>, metadata?: Record<string, unknown>): boolean {
+  return !!formatBackgroundWindowTarget(args, metadata);
+}
+
 function formatTypedText(args: Record<string, unknown>): string {
   if (asString(args.secretRef)) {
     return 'secretRef';
@@ -173,6 +204,39 @@ function getTraceMetadata(toolCall: Pick<ToolCall, 'result'>): {
     traceId: asString(metadata?.traceId) || asString(trace?.id),
     mode: asString(trace?.mode),
   };
+}
+
+function getComputerMode(
+  args: Record<string, unknown>,
+  metadata?: Record<string, unknown>,
+  traceMode?: string | null,
+): string | null {
+  return traceMode
+    || asString(metadata?.computerSurfaceMode)
+    || asString(args.mode)
+    || (metadata?.foregroundFallback ? 'foreground_fallback' : null)
+    || (hasBackgroundWindowTarget(args, metadata) ? 'background_cgevent' : null)
+    || (metadata?.backgroundSurface ? 'background_ax' : null);
+}
+
+function getCatalogRiskLabel(
+  catalog: BrowserComputerActionCatalogEntry,
+  mode: string | null,
+  metadata?: Record<string, unknown>,
+): string {
+  if (catalog.risk === 'read') {
+    return '只读';
+  }
+  if (catalog.scope === 'managed_browser' || catalog.scope === 'browser_scoped_computer') {
+    return '托管浏览器动作';
+  }
+  if (mode === 'background_cgevent' || metadata?.computerSurfaceMode === 'background_cgevent') {
+    return '后台 CGEvent';
+  }
+  if (mode === 'background_ax' || metadata?.computerSurfaceMode === 'background_ax' || metadata?.backgroundSurface) {
+    return '后台 AX';
+  }
+  return '前台需确认';
 }
 
 function buildBrowserSummary(action: string, args: Record<string, unknown>): {
@@ -253,7 +317,7 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>): {
   }
 }
 
-function buildComputerSummary(action: string, args: Record<string, unknown>): {
+function buildComputerSummary(action: string, args: Record<string, unknown>, metadata?: Record<string, unknown>, mode?: string | null): {
   summary: string;
   target?: string | null;
 } {
@@ -267,9 +331,19 @@ function buildComputerSummary(action: string, args: Record<string, unknown>): {
       };
     case 'get_ax_elements':
       return { summary: '读取后台 AX 元素', target: asString(args.targetApp) };
+    case 'get_windows':
+      return { summary: '读取窗口候选', target: asString(args.targetApp) || asString(args.title) || asString(args.bundleId) };
+    case 'diagnose_app':
+      return { summary: '诊断目标 app', target: asString(args.targetApp) || asString(args.bundleId) };
     case 'click':
     case 'doubleClick':
     case 'rightClick':
+      if (mode === 'background_cgevent' || hasBackgroundWindowTarget(args, metadata)) {
+        return {
+          summary: `${action} 后台窗口动作`,
+          target: formatBackgroundWindowTarget(args, metadata) || asString(args.targetApp) || asString(metadata?.targetApp),
+        };
+      }
       return {
         summary: args.targetApp && (args.axPath || args.role || args.name || args.selector) ? `${action} 后台元素` : `${action} 坐标`,
         target: formatSelector(args) || asString(args.targetApp),
@@ -319,31 +393,49 @@ export function buildBrowserComputerActionPreview(
 
   const args = toolCall.arguments || {};
   const action = asString(args.action) || 'unknown';
+  const catalog = getBrowserComputerActionCatalogEntry(toolCall.name, action, args);
+  if (!catalog) {
+    return null;
+  }
   const { traceId, mode } = getTraceMetadata(toolCall);
 
   if (toolCall.name === 'browser_action') {
-    const risk: BrowserComputerActionRisk = BROWSER_READ_ACTIONS.has(action) ? 'read' : 'browser_action';
     return {
       surface: 'browser',
+      tool: catalog.tool,
+      action: catalog.action,
       ...buildBrowserSummary(action, args),
-      risk,
-      riskLabel: risk === 'read' ? '只读' : '托管浏览器动作',
+      risk: catalog.risk,
+      riskLabel: getCatalogRiskLabel(catalog, mode),
+      scope: catalog.scope,
+      requiresManagedSession: catalog.requiresManagedSession,
+      evidenceKind: catalog.evidenceKind,
+      approvalKind: catalog.approvalKind,
+      safeRecovery: catalog.safeRecovery,
       traceId,
       mode,
     };
   }
 
-  const risk: BrowserComputerActionRisk = COMPUTER_READ_ACTIONS.has(action) ? 'read' : 'desktop_input';
-  const summary = buildComputerSummary(action, args);
-  const metadataTargetApp = asString(toolCall.result?.metadata?.targetApp);
+  const metadata = toolCall.result?.metadata || {};
+  const computerMode = getComputerMode(args, metadata, mode);
+  const summary = buildComputerSummary(action, args, metadata, computerMode);
+  const metadataTargetApp = asString(metadata.targetApp);
   return {
     surface: 'computer',
+    tool: catalog.tool,
+    action: catalog.action,
     ...summary,
     target: summary.target || metadataTargetApp,
-    risk,
-    riskLabel: risk === 'read' ? '只读' : '桌面输入',
+    risk: catalog.risk,
+    riskLabel: getCatalogRiskLabel(catalog, computerMode, metadata),
+    scope: catalog.scope,
+    requiresManagedSession: catalog.requiresManagedSession,
+    evidenceKind: catalog.evidenceKind,
+    approvalKind: catalog.approvalKind,
+    safeRecovery: catalog.safeRecovery,
     traceId,
-    mode,
+    mode: computerMode,
   };
 }
 
@@ -367,6 +459,19 @@ function parseFoundCount(output: unknown): string | null {
 
 function joinResultSummary(preview: BrowserComputerActionPreview): string {
   return preview.target ? `${preview.summary} -> ${preview.target}` : preview.summary;
+}
+
+function formatComputerSurfaceStateSummary(surface: { ready?: unknown; mode?: unknown } | undefined): string | null {
+  if (!surface) {
+    return null;
+  }
+
+  const mode = asString(surface.mode) || 'unknown';
+  if (mode === 'foreground_fallback') {
+    return 'Computer Surface: foreground fallback · foreground required';
+  }
+
+  return `Computer Surface: ${surface.ready ? 'ready' : 'not ready'} · ${mode}`;
 }
 
 function formatAccountStateSummary(value: unknown, prefix = '账号态'): string | null {
@@ -528,10 +633,7 @@ export function summarizeBrowserComputerActionResult(
   switch (action) {
     case 'get_state': {
       const surface = metadata.computerSurface as { ready?: unknown; mode?: unknown } | undefined;
-      if (surface) {
-        return `Computer Surface: ${surface.ready ? 'ready' : 'not ready'} · ${asString(surface.mode) || 'unknown'}`;
-      }
-      return joinResultSummary(preview);
+      return formatComputerSurfaceStateSummary(surface) || joinResultSummary(preview);
     }
     case 'observe': {
       const snapshot = metadata.computerSurfaceSnapshot as { appName?: unknown; windowTitle?: unknown; screenshotPath?: unknown } | undefined;
@@ -597,6 +699,11 @@ export function formatBrowserComputerActionArguments(
   }
   if ('secretRef' in safeArgs) {
     safeArgs.secretRef = '[secretRef]';
+    safeArgs.secretScope = summarizeBrowserComputerSecretScope(args);
+    delete safeArgs.domainScope;
+    delete safeArgs.secretDomain;
+    delete safeArgs.secretDomains;
+    delete safeArgs.legacyGlobalSecret;
   }
   if ('uploadFilePath' in safeArgs) {
     safeArgs.uploadFilePath = basename(safeArgs.uploadFilePath);

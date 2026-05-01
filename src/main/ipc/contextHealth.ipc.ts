@@ -9,7 +9,12 @@ import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { getContextEventLedger } from '../context/contextEventLedger';
 import { estimateTokens } from '../context/tokenEstimator';
+import { compactMessagesWithSummary } from '../context/compactionService';
+import { getCompactModelInfo, resetCompactModel } from '../context/compactModel';
 import {
+  type ContextCompressionChannelState,
+  type ContextCompressionConfig,
+  type ContextCompressionConfigPatch,
   getCompressionStatus,
   type CompactResult,
   type CompressionStats,
@@ -18,18 +23,127 @@ import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { CompressedMessage } from '../context/tokenOptimizer';
 import type { TaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
-import { getSessionManager } from '../services';
+import { getConfigService, getSessionManager } from '../services';
 import { getDatabase } from '../services/core/databaseService';
-import { DEFAULT_MODEL } from '../../shared/constants';
+import { DEFAULT_MODEL, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import type { ContextHealthState } from '../../shared/contract/contextHealth';
-import type { Message, MessageRole } from '../../shared/contract';
+import type { Message } from '../../shared/contract';
+import type { ModelConfig } from '../../shared/contract/model';
+import type { AppSettings } from '../../shared/contract/settings';
 
 const logger = createLogger('ContextHealthIPC');
+
+const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
+  enabled: true,
+  warningThreshold: 0.75,
+  criticalThreshold: 0.85,
+  preserveRecentCount: 10,
+  triggerTokens: 100000,
+  compactProvider: 'moonshot',
+  compactModel: DEFAULT_MODELS.compact,
+  auditEnabled: true,
+};
 
 interface ContextHealthDependencies {
   getAppService: () => AgentApplicationService | null;
   getTaskManager: () => TaskManager | null;
   getSystemPromptForSession?: (sessionId: string) => string | null | undefined;
+}
+
+function clampRatio(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(0.95, Math.max(0.1, value));
+}
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeCompressionConfig(config?: Partial<ContextCompressionConfig>): ContextCompressionConfig {
+  const merged = { ...DEFAULT_CONTEXT_COMPRESSION_CONFIG, ...(config || {}) };
+  const warningThreshold = clampRatio(merged.warningThreshold, DEFAULT_CONTEXT_COMPRESSION_CONFIG.warningThreshold);
+  const criticalThreshold = Math.max(
+    warningThreshold,
+    clampRatio(merged.criticalThreshold, DEFAULT_CONTEXT_COMPRESSION_CONFIG.criticalThreshold),
+  );
+  const triggerTokens = merged.triggerTokens === undefined
+    ? undefined
+    : clampInt(merged.triggerTokens, DEFAULT_CONTEXT_COMPRESSION_CONFIG.triggerTokens ?? 100000, 16000, 1000000);
+
+  return {
+    enabled: merged.enabled !== false,
+    warningThreshold,
+    criticalThreshold,
+    preserveRecentCount: clampInt(merged.preserveRecentCount, DEFAULT_CONTEXT_COMPRESSION_CONFIG.preserveRecentCount, 2, 50),
+    ...(triggerTokens ? { triggerTokens } : {}),
+    compactProvider: typeof merged.compactProvider === 'string' && merged.compactProvider.trim()
+      ? merged.compactProvider.trim()
+      : DEFAULT_CONTEXT_COMPRESSION_CONFIG.compactProvider,
+    compactModel: typeof merged.compactModel === 'string' && merged.compactModel.trim()
+      ? merged.compactModel.trim()
+      : DEFAULT_CONTEXT_COMPRESSION_CONFIG.compactModel,
+    auditEnabled: merged.auditEnabled !== false,
+  };
+}
+
+function getPersistedCompressionConfig(): ContextCompressionConfig {
+  try {
+    return normalizeCompressionConfig(getConfigService().getSettings().contextCompression);
+  } catch {
+    return { ...DEFAULT_CONTEXT_COMPRESSION_CONFIG };
+  }
+}
+
+function toAppSettingsPatch(config: ContextCompressionConfig): Partial<AppSettings> {
+  return { contextCompression: config };
+}
+
+function applyCompressionConfig(config: ContextCompressionConfig): void {
+  getAutoCompressor().updateConfig({
+    enabled: config.enabled,
+    warningThreshold: config.warningThreshold,
+    criticalThreshold: config.criticalThreshold,
+    preserveRecentCount: config.preserveRecentCount,
+    triggerTokens: config.triggerTokens,
+  });
+  resetCompactModel();
+}
+
+function getCompressionChannelState(config = getPersistedCompressionConfig()): ContextCompressionChannelState {
+  applyCompressionConfig(config);
+  const compressor = getAutoCompressor();
+  const stats = compressor.getStats();
+  const compactModel = getCompactModelInfo();
+
+  return {
+    config,
+    runtime: {
+      compressionCount: stats.compressionCount,
+      totalSavedTokens: stats.totalSavedTokens,
+      lastCompressionAt: stats.lastCompressionAt,
+      recentStrategies: stats.recentStrategies,
+    },
+    compactModel: {
+      provider: compactModel?.provider ?? config.compactProvider,
+      model: compactModel?.model ?? config.compactModel,
+      configured: Boolean(compactModel),
+    },
+    features: {
+      audit: config.auditEnabled ? 'enabled' : 'disabled',
+      manifest: 'enabled',
+      hooks: 'available',
+    },
+  };
+}
+
+async function updateCompressionConfig(patch: ContextCompressionConfigPatch): Promise<ContextCompressionChannelState> {
+  const nextConfig = normalizeCompressionConfig({
+    ...getPersistedCompressionConfig(),
+    ...patch,
+  });
+  await getConfigService().updateSettings(toAppSettingsPatch(nextConfig));
+  return getCompressionChannelState(nextConfig);
 }
 
 function emptyCompactResult(): CompactResult {
@@ -171,6 +285,41 @@ function resolveModelForSession(appService: AgentApplicationService | null, sess
   }
 }
 
+function resolveModelConfigForSession(
+  appService: AgentApplicationService | null,
+  sessionId: string,
+): Pick<ModelConfig, 'provider' | 'model'> {
+  const override = appService?.getModelOverride(sessionId);
+  if (override?.model) {
+    return {
+      provider: override.provider || DEFAULT_PROVIDER,
+      model: override.model,
+    };
+  }
+
+  try {
+    const modelConfig = getDatabase().getSession(sessionId)?.modelConfig;
+    if (modelConfig?.model) {
+      return {
+        provider: modelConfig.provider || DEFAULT_PROVIDER,
+        model: modelConfig.model,
+      };
+    }
+  } catch {
+    // Fall back to defaults below.
+  }
+
+  return { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL };
+}
+
+function resolveHookManagerForSession(deps: ContextHealthDependencies, sessionId: string) {
+  try {
+    return deps.getTaskManager()?.getOrchestrator(sessionId)?.getHookManager?.();
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveLatestSystemPromptFromTelemetry(sessionId: string): string {
   try {
     const db = getDatabase().getDb();
@@ -252,11 +401,12 @@ async function compactSession(
     return emptyCompactResult();
   }
 
-  const compressor = getAutoCompressor();
+  const compressionConfig = getPersistedCompressionConfig();
+  applyCompressionConfig(compressionConfig);
   const anchorMessageId = resolveCompactAnchorMessageId(
     messages,
     options.messageId,
-    compressor.getConfig().preserveRecentCount,
+    compressionConfig.preserveRecentCount,
   );
   if (!anchorMessageId) {
     logger.info('Compact requested but the session is too short to compact');
@@ -269,59 +419,54 @@ async function compactSession(
   const maxTokens = health.maxTokens || 128000;
   const beforePercent = maxTokens > 0 ? Math.round((beforeTokens / maxTokens) * 1000) / 10 : 0;
 
-  const compactResult = await compressor.compactFrom(anchorMessageId, compressedMessages, '');
-  if (!compactResult.success) {
-    logger.info('Compact from message returned unsuccessful (nothing to compact or message not found)');
-    const stats = compressor.getStats();
+  const systemPrompt = resolveSystemPromptForSession(deps, sessionId);
+  const modelConfig = resolveModelConfigForSession(appService, sessionId);
+  const compaction = await compactMessagesWithSummary({
+    sessionId,
+    source: options.messageId ? 'manual_from_message' : 'manual_current',
+    messages,
+    anchorMessageId,
+    preserveRecentCount: compressionConfig.preserveRecentCount,
+    systemPrompt,
+    modelConfig,
+    hookManager: resolveHookManagerForSession(deps, sessionId),
+    usagePercent: beforePercent,
+    skipAudit: !compressionConfig.auditEnabled,
+  });
+
+  if (!compaction.success || !compaction.newMessages || !compaction.summaryMessage || !compaction.block) {
+    logger.info('Compact returned unsuccessful', {
+      sessionId,
+      reason: compaction.reason,
+    });
     return {
       success: false,
+      reason: compaction.reason,
       beforeTokens,
       afterTokens: beforeTokens,
       savedTokens: 0,
       beforePercent,
       afterPercent: beforePercent,
       layersUsed: [],
-      retained: { recentTurns: compressor.getConfig().preserveRecentCount, pinnedItems: 0 },
-      compressionCount: stats.compressionCount,
-      totalSavedTokens: stats.totalSavedTokens,
+      retained: { recentTurns: compressionConfig.preserveRecentCount, pinnedItems: 0 },
+      compressionCount: health.compression?.compressionCount ?? 0,
+      totalSavedTokens: health.compression?.totalSavedTokens ?? 0,
+      warnings: compaction.warnings,
     } satisfies CompactResult;
   }
 
-  const afterTokens = compactResult.messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
-  const savedTokens = beforeTokens - afterTokens;
+  const newMessages = compaction.newMessages;
+  const afterTokens = compaction.afterTokens;
+  const savedTokens = compaction.savedTokens;
   const afterPercent = maxTokens > 0 ? Math.round((afterTokens / maxTokens) * 1000) / 10 : 0;
-
-  const originalMessageMap = new Map(messages.map((message) => [message.id, message]));
-  const compactedAt = Date.now();
-  let summaryIndex = 0;
-  const newMessages: Message[] = compactResult.messages.map((compressedMessage) => {
-    if (compressedMessage.id) {
-      const original = originalMessageMap.get(compressedMessage.id);
-      if (original) return original;
-    }
-
-    const summaryId = `compact-summary-${compactedAt}-${summaryIndex++}`;
-    return {
-      id: summaryId,
-      role: compressedMessage.role as MessageRole,
-      content: compressedMessage.content,
-      timestamp: compactedAt,
-      compaction: {
-        type: 'compaction' as const,
-        content: compressedMessage.content,
-        timestamp: compactedAt,
-        compactedMessageCount: compactResult.compactedCount,
-        compactedTokenCount: savedTokens,
-      },
-    };
-  });
+  const compactedAt = compaction.block.timestamp;
 
   const taskManager = deps.getTaskManager();
   if (taskManager) {
     const orchestrator = taskManager.getOrchestrator(sessionId);
     if (orchestrator) {
       orchestrator.setMessages(newMessages);
-      logger.info(`Compact applied: ${compactResult.compactedCount} messages compacted, ${savedTokens} tokens saved`);
+      logger.info(`Compact applied: ${compaction.block.compactedMessageCount} messages compacted, ${savedTokens} tokens saved`);
     } else {
       logger.warn('Orchestrator not found for session — compact result not applied to runtime');
     }
@@ -343,9 +488,10 @@ async function compactSession(
         targetMessageIds: compactedMessageIds,
         timestamp: compactedAt,
         metadata: {
-          kind: 'manual_compact',
-          compactedMessageCount: compactResult.compactedCount,
+          kind: compaction.block.source || 'manual_compact',
+          compactedMessageCount: compaction.block.compactedMessageCount,
           compactedTokenCount: savedTokens,
+          anchorMessageId: compaction.block.anchorMessageId,
         },
       });
       getContextEventLedger().upsertCompressionEvents(
@@ -361,15 +507,13 @@ async function compactSession(
     logger.warn('Manual compact completed in runtime but failed to persist compacted session', error);
   }
 
-  const stats = compressor.getStats();
   const compressionStats: CompressionStats = {
     status: getCompressionStatus(afterPercent),
     lastCompressionAt: compactedAt,
-    compressionCount: stats.compressionCount + 1,
-    totalSavedTokens: stats.totalSavedTokens + savedTokens,
+    compressionCount: (health.compression?.compressionCount ?? 0) + 1,
+    totalSavedTokens: (health.compression?.totalSavedTokens ?? 0) + savedTokens,
   };
   const model = resolveModelForSession(appService, sessionId);
-  const systemPrompt = resolveSystemPromptForSession(deps, sessionId);
   contextHealthService.update(
     sessionId,
     toContextMessages(newMessages),
@@ -387,14 +531,20 @@ async function compactSession(
     afterPercent,
     layersUsed: ['L3'],
     retained: {
-      recentTurns: compressor.getConfig().preserveRecentCount,
+      recentTurns: compressionConfig.preserveRecentCount,
       pinnedItems: 0,
     },
     compressionCount: compressionStats.compressionCount,
     totalSavedTokens: compressionStats.totalSavedTokens,
+    summaryMessageId: compaction.summaryMessage.id,
+    compactedMessageCount: compaction.block.compactedMessageCount,
+    preservedMessageCount: newMessages.length - 1,
+    provider: compaction.block.provider,
+    model: compaction.block.model,
+    warnings: compaction.warnings,
   };
 
-  logger.info(`Manual compact completed: ${compactResult.compactedCount} messages compacted, ${savedTokens} tokens saved (${beforeTokens} → ${afterTokens})`);
+  logger.info(`Manual compact completed: ${compaction.block.compactedMessageCount} messages compacted, ${savedTokens} tokens saved (${beforeTokens} → ${afterTokens})`);
   return result;
 }
 
@@ -403,6 +553,25 @@ async function compactSession(
  */
 export function registerContextHealthHandlers(deps: ContextHealthDependencies): void {
   const contextHealthService = getContextHealthService();
+  applyCompressionConfig(getPersistedCompressionConfig());
+
+  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET, async () => {
+    try {
+      return getCompressionChannelState();
+    } catch (error) {
+      logger.error('Failed to get context compression config:', error);
+      return getCompressionChannelState(DEFAULT_CONTEXT_COMPRESSION_CONFIG);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET, async (_event, patch: ContextCompressionConfigPatch) => {
+    try {
+      return await updateCompressionConfig(patch);
+    } catch (error) {
+      logger.error('Failed to update context compression config:', error);
+      return getCompressionChannelState();
+    }
+  });
 
   // 获取指定会话的上下文健康状态
   ipcMain.handle(IPC_CHANNELS.CONTEXT_HEALTH_GET, async (_event, sessionId: string) => {

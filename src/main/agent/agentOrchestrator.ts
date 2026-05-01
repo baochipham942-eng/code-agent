@@ -497,6 +497,10 @@ export class AgentOrchestrator {
     return liveState ?? this.lastSerializedCompressionState;
   }
 
+  getHookManager() {
+    return this.agentLoop?.getHookManager();
+  }
+
   clearMessages(): void {
     this.messages = [];
     logger.debug('Messages cleared');

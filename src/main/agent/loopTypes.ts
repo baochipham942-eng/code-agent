@@ -247,7 +247,8 @@ export const PARALLEL_SAFE_TOOLS = new Set([
   'mcp_list_resources',
   'mcp_read_resource',
   'mcp_get_status',
-  // P5: 子代理任务可并行（只读子代理如 explore, code-review, plan）
+  // P5: 子代理任务可并行（只读子代理如 explore, reviewer, plan）
+  'Explore',
   'task',
   'Task',  // SDK 版本
 ]);

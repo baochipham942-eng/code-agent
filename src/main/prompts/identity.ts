@@ -93,7 +93,7 @@ read it before answering. Investigate first, then respond.
 </investigate_before_answering>
 
 ## Task Execution
-1. Search first (glob, grep, task) to understand the codebase
+1. Search first (glob, grep, Task when broad exploration is needed) to understand the codebase
 2. Implement with appropriate tools
 3. Verify with tests if available
 4. Run lint/typecheck if available
@@ -142,7 +142,7 @@ export const TOOL_DISCIPLINE = `
 Call multiple tools in a single response when they are independent of each other.
 Sequential only when there is a data dependency (e.g., read -> edit, mkdir -> write).
 
-Parallel: git status + git diff, read fileA + read fileB, multiple task() dispatches
+Parallel: git status + git diff, read fileA + read fileB, multiple Task dispatches
 Sequential: Read -> Edit, Glob -> Read found files, git add -> git commit
 </use_parallel_tool_calls>
 `.trim();

@@ -55,10 +55,10 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 3. **数据安全审计** — 检查敏感数据处理、加密、存储安全
 4. **依赖安全审计** — 检查第三方依赖漏洞
 
-[并行调用 4 次 task 工具，每个使用 subagent_type="reviewer"，各自聚焦一个维度]
+[并行调用 4 次 Task 工具，每个使用 subagent_type="reviewer"，各自聚焦一个维度]
 
 所有审计完成后，我将汇总发现并按严重程度排序。`,
-    tokens: estimateTokens(`我将从多个维度并行审计，同时派发 4 个 reviewer 子代理：1. 认证授权审计 2. 输入验证审计 3. 数据安全审计 4. 依赖安全审计 [并行调用 4 次 task 工具] 所有审计完成后，我将汇总发现并按严重程度排序。`),
+    tokens: estimateTokens(`我将从多个维度并行审计，同时派发 4 个 reviewer 子代理：1. 认证授权审计 2. 输入验证审计 3. 数据安全审计 4. 依赖安全审计 [并行调用 4 次 Task 工具] 所有审计完成后，我将汇总发现并按严重程度排序。`),
     tags: ['audit', 'security', 'parallel'],
   },
   {
@@ -71,10 +71,10 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 2. **性能** — reviewer 检查算法复杂度、内存使用、潜在瓶颈
 3. **测试覆盖** — reviewer 检查测试完整性、边界条件处理
 
-[并行调用 3 次 task 工具，各自聚焦一个维度]
+[并行调用 3 次 Task 工具，各自聚焦一个维度]
 
 汇总后给出整体评分和优先改进建议。`,
-    tokens: estimateTokens(`我将并行派发 3 个子代理分析代码质量：1. 可维护性 2. 性能 3. 测试覆盖 [并行调用 3 次 task 工具] 汇总后给出整体评分和优先改进建议。`),
+    tokens: estimateTokens(`我将并行派发 3 个子代理分析代码质量：1. 可维护性 2. 性能 3. 测试覆盖 [并行调用 3 次 Task 工具] 汇总后给出整体评分和优先改进建议。`),
     tags: ['quality', 'parallel'],
   },
 
@@ -87,10 +87,10 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     userPrompt: '帮我找到所有处理用户认证的代码',
     assistantResponse: `这需要广泛搜索代码库，我委派一个 explore 子代理来处理。
 
-[调用 task 工具，subagent_type="explore"，指示其搜索 auth/login/authenticate 相关文件、认证中间件、JWT/session 处理逻辑，返回完整文件路径和关键代码位置]
+[调用 Task 工具，subagent_type="explore"，指示其搜索 auth/login/authenticate 相关文件、认证中间件、JWT/session 处理逻辑，返回完整文件路径和关键代码位置]
 
 等待探索结果后，我会整理为清晰的代码地图。`,
-    tokens: estimateTokens(`这需要广泛搜索代码库，我委派一个 explore 子代理来处理。[调用 task 工具] 等待探索结果后，我会整理为清晰的代码地图。`),
+    tokens: estimateTokens(`这需要广泛搜索代码库，我委派一个 explore 子代理来处理。[调用 Task 工具] 等待探索结果后，我会整理为清晰的代码地图。`),
     tags: ['explore', 'delegation'],
   },
   {
@@ -99,10 +99,10 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     userPrompt: '分析这个项目的整体架构',
     assistantResponse: `架构分析需要全局视角，我委派一个 plan 子代理进行深度探索。
 
-[调用 task 工具，subagent_type="plan"，指示其识别分层结构、分析模块职责、追踪数据流和控制流、梳理依赖关系]
+[调用 Task 工具，subagent_type="plan"，指示其识别分层结构、分析模块职责、追踪数据流和控制流、梳理依赖关系]
 
 子代理完成后，我将基于其发现生成架构概览。`,
-    tokens: estimateTokens(`架构分析需要全局视角，我委派一个 plan 子代理进行深度探索。[调用 task 工具] 子代理完成后，我将基于其发现生成架构概览。`),
+    tokens: estimateTokens(`架构分析需要全局视角，我委派一个 plan 子代理进行深度探索。[调用 Task 工具] 子代理完成后，我将基于其发现生成架构概览。`),
     tags: ['architecture', 'plan', 'delegation'],
   },
 

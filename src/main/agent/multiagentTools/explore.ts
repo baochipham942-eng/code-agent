@@ -87,24 +87,15 @@ Provide specific feedback with file and line references when possible.`,
 };
 
 export const exploreTool: Tool = {
-  name: 'task',
-  description: `Launch a specialized subagent to handle complex, multi-step tasks autonomously.
+  name: 'Explore',
+  description: `Launch an explorer sub-agent to gather codebase context.
 
-**IMPORTANT**: For tasks requiring deep codebase exploration, security audits, or code reviews,
-ALWAYS use this tool to delegate to a subagent instead of doing it directly.
+Use this tool for broad, read-only codebase exploration when the target files or
+functions are not yet clear. If the target file and edit region are already
+known, use direct read/search/edit tools instead.
 
-Available subagent types:
-- explore: Fast codebase exploration agent. Use for searching files, understanding code structure,
-  finding implementations. The explore agent can perform multiple searches efficiently.
-- bash: Command execution specialist. Use for running builds, tests, installations.
-- plan: Software architect. Use for designing implementation plans before coding.
-- code-review: Code reviewer. Use for reviewing code quality, security, and best practices.
-
-When to use task tool:
-- Exploring unfamiliar codebases (use explore)
-- Security audits or code reviews (use code-review)
-- Planning complex implementations (use plan)
-- Running multiple related commands (use bash)`,
+The explorer can perform multiple searches and file reads, then return a short
+summary with relevant paths and line references.`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {
@@ -116,7 +107,7 @@ When to use task tool:
       },
       subagent_type: {
         type: 'string',
-        description: 'Type of subagent: explore, bash, plan, code-review',
+        description: 'Optional legacy subagent type. Defaults to explore.',
         enum: ['explore', 'bash', 'plan', 'code-review'],
       },
       run_in_background: {
@@ -124,7 +115,7 @@ When to use task tool:
         description: 'Run the agent in background (default: false)',
       },
     },
-    required: ['prompt', 'subagent_type'],
+    required: ['prompt'],
   },
 
   async execute(
@@ -132,7 +123,7 @@ When to use task tool:
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const prompt = params.prompt as string;
-    const subagentType = params.subagent_type as keyof typeof SUBAGENT_TYPES;
+    const subagentType = (params.subagent_type as keyof typeof SUBAGENT_TYPES | undefined) || 'explore';
     const runInBackground = (params.run_in_background as boolean) || false;
 
     const subagentConfig = SUBAGENT_TYPES[subagentType];

@@ -8,6 +8,7 @@ import type { Message } from '../../../src/shared/contract';
 import { CompressionPipeline } from '../../../src/main/context/compressionPipeline';
 import { CompressionState } from '../../../src/main/context/compressionState';
 import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
+import { getContextHealthService } from '../../../src/main/context/contextHealthService';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -128,6 +129,14 @@ vi.mock('../../../src/main/tools/dataFingerprint', () => ({
 
 vi.mock('../../../src/main/context/compactModel', () => ({
   compactModelSummarize: vi.fn().mockResolvedValue('summary'),
+  compactModelSummarizeWithMetadata: vi.fn().mockResolvedValue({
+    summary: 'summary',
+    metadata: {
+      provider: 'mock',
+      model: 'test-model',
+      useMainModel: false,
+    },
+  }),
 }));
 
 vi.mock('../../../src/shared/constants', () => ({
@@ -389,6 +398,17 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
+  vi.mocked(getContextHealthService).mockReset();
+  vi.mocked(getContextHealthService).mockReturnValue({
+    get: vi.fn().mockReturnValue({
+      usagePercent: 0,
+      currentTokens: 0,
+      maxTokens: 128000,
+    }),
+    update: vi.fn().mockReturnValue({
+      compression: {},
+    }),
+  } as never);
 });
 
 describe('ContextAssembly.buildModelMessages()', () => {
@@ -732,7 +752,11 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     const ctx = {
       sessionId,
       agentId: undefined,
-      messages: Array.from({ length: 6 }, (_, i) => buildMessage(`m${i}`, i === 0 ? 'user' : 'assistant', `message ${i}`)),
+      messages: Array.from({ length: 6 }, (_, i) => buildMessage(
+        `m${i}`,
+        i === 0 ? 'user' : 'assistant',
+        `message ${i} ${'hard compaction transcript '.repeat(250)}`,
+      )),
       hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
       onEvent: vi.fn(),
       modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
@@ -760,6 +784,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         shouldWrapUp: vi.fn().mockReturnValue(false),
         getCompactionCount: vi.fn().mockReturnValue(1),
         getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: 123 }),
+        recordCompaction: vi.fn(),
       },
       systemPrompt: '',
       hookManager: undefined,
@@ -777,9 +802,154 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: 'system',
-          compaction: expect.objectContaining({ content: expect.stringContaining('compressed summary') }),
+          compaction: expect.objectContaining({
+            content: expect.stringContaining('summary'),
+            source: 'auto_threshold',
+          }),
         }),
       ]),
     );
+  });
+
+  it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {
+    const sessionId = `session-fallback-${Date.now()}`;
+    const checkAndCompress = vi.fn().mockRejectedValue(new Error('legacy checkAndCompress should not be called'));
+    const messages = Array.from({ length: 8 }, (_, i) =>
+      buildMessage(
+        `fallback-${i}`,
+        i % 2 === 0 ? 'user' : 'assistant',
+        `fallback message ${i} ${'long transcript content '.repeat(250)}`,
+      )
+    );
+
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({
+        usagePercent: 82,
+        currentTokens: 110000,
+        maxTokens: 128000,
+      }),
+      update: vi.fn(),
+    } as never);
+
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages,
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: {
+        getDeferredToolsSummary: vi.fn().mockReturnValue(''),
+      },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+        checkAndCompress,
+        getConfig: vi.fn().mockReturnValue({
+          enabled: true,
+          warningThreshold: 0.75,
+          preserveRecentCount: 2,
+        }),
+        getCompactionCount: vi.fn().mockReturnValue(1),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: 123 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    expect(checkAndCompress).not.toHaveBeenCalled();
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalledWith(expect.any(Number), 'ai_summary');
+    expect(ctx.compressionState.getCommitLog()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          layer: 'autocompact',
+          operation: 'compact',
+        }),
+      ]),
+    );
+    expect(ctx.messages[0]).toEqual(
+      expect.objectContaining({
+        role: 'system',
+        compaction: expect.objectContaining({
+          source: 'auto_threshold',
+          content: expect.stringContaining('[Context Handoff]'),
+        }),
+      }),
+    );
+    expect(serviceMocks.sessionManager.replaceMessages).toHaveBeenCalledWith(sessionId, ctx.messages);
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context_compressed',
+        data: expect.objectContaining({
+          strategy: 'compaction_block',
+        }),
+      }),
+    );
+  });
+
+  it('does not run percentage fallback compaction below the warning budget', async () => {
+    const sessionId = `session-fallback-skip-${Date.now()}`;
+    const checkAndCompress = vi.fn();
+    const compactModelMessages = Array.from({ length: 8 }, (_, i) =>
+      buildMessage(`fallback-skip-${i}`, 'assistant', 'long transcript content '.repeat(250))
+    );
+
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({
+        usagePercent: 50,
+        currentTokens: 64000,
+        maxTokens: 128000,
+      }),
+      update: vi.fn(),
+    } as never);
+
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages: compactModelMessages,
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: {
+        getDeferredToolsSummary: vi.fn().mockReturnValue(''),
+      },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+        checkAndCompress,
+        getConfig: vi.fn().mockReturnValue({
+          enabled: true,
+          warningThreshold: 0.75,
+          preserveRecentCount: 2,
+        }),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    expect(checkAndCompress).not.toHaveBeenCalled();
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+    expect(serviceMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'context_compressed' }));
   });
 });

@@ -11,6 +11,8 @@ import type {
   ManagedBrowserProfileMode,
   ManagedBrowserProxyConfig,
   ManagedBrowserProviderPreference,
+  ComputerSurfaceAxQuality,
+  ComputerSurfaceFailureKind,
 } from '@shared/contract';
 import type { ManagedBrowserProxyInput } from '../services/infra/browserService';
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
@@ -25,6 +27,59 @@ import { createLogger } from '../services/infra/logger';
 let manualAudioActive = false;
 
 const logger = createLogger('DesktopIPC');
+const COMPUTER_SURFACE_FAILURE_KINDS = new Set<ComputerSurfaceFailureKind>([
+  'permission_denied',
+  'target_app_not_running',
+  'target_not_frontmost',
+  'target_window_not_found',
+  'ax_unavailable',
+  'ax_tree_poor',
+  'locator_missing',
+  'locator_ambiguous',
+  'coordinate_untrusted',
+  'action_execution_failed',
+  'evidence_unavailable',
+]);
+
+function toComputerSurfaceFailureKind(value: unknown): ComputerSurfaceFailureKind | null {
+  return typeof value === 'string' && COMPUTER_SURFACE_FAILURE_KINDS.has(value as ComputerSurfaceFailureKind)
+    ? value as ComputerSurfaceFailureKind
+    : null;
+}
+
+function toComputerSurfaceAxQuality(value: unknown): ComputerSurfaceAxQuality | null {
+  const quality = asRecord(value);
+  if (!quality) return null;
+  if (
+    typeof quality.score !== 'number'
+    || (quality.grade !== 'good' && quality.grade !== 'usable' && quality.grade !== 'poor')
+    || typeof quality.elementCount !== 'number'
+    || typeof quality.labeledElementCount !== 'number'
+    || typeof quality.withAxPathCount !== 'number'
+    || typeof quality.unlabeledRatio !== 'number'
+    || typeof quality.missingAxPathRatio !== 'number'
+    || typeof quality.duplicateLabelRoleCount !== 'number'
+    || !quality.roleCounts
+    || typeof quality.roleCounts !== 'object'
+    || Array.isArray(quality.roleCounts)
+    || !Array.isArray(quality.reasons)
+  ) {
+    return null;
+  }
+
+  return {
+    score: quality.score,
+    grade: quality.grade,
+    elementCount: quality.elementCount,
+    labeledElementCount: quality.labeledElementCount,
+    withAxPathCount: quality.withAxPathCount,
+    unlabeledRatio: quality.unlabeledRatio,
+    missingAxPathRatio: quality.missingAxPathRatio,
+    duplicateLabelRoleCount: quality.duplicateLabelRoleCount,
+    roleCounts: quality.roleCounts as Record<string, number>,
+    reasons: quality.reasons.filter((item): item is string => typeof item === 'string'),
+  };
+}
 
 export function registerDesktopHandlers(ipcMain: IpcMain): void {
   const service = getNativeDesktopService();
@@ -90,14 +145,36 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             targetApp: payload?.targetApp,
             includeScreenshot: payload?.includeScreenshot === true,
           });
+          const failureKind = typeof snapshot.failureKind === 'string' ? snapshot.failureKind : null;
+          const blockingReasons = Array.isArray(snapshot.blockingReasons)
+            ? snapshot.blockingReasons.filter((item): item is string => typeof item === 'string')
+            : undefined;
+          const recommendedAction = typeof snapshot.recommendedAction === 'string' ? snapshot.recommendedAction : null;
+          const data = {
+            snapshot,
+            state: computerSurface.getState({
+              targetApp: failureKind ? null : snapshot.appName || payload?.targetApp || undefined,
+              blockedReason: failureKind
+                ? blockingReasons?.join(' ') || 'Computer Surface observe blocked'
+                : null,
+              failureKind,
+              blockingReasons,
+              recommendedAction,
+            }),
+          };
+          if (failureKind) {
+            return {
+              success: false,
+              error: {
+                code: 'COMPUTER_SURFACE_OBSERVE_FAILED',
+                message: blockingReasons?.[0] || 'Computer Surface observe blocked',
+              },
+              data,
+            } satisfies IPCResponse<unknown>;
+          }
           return {
             success: true,
-            data: {
-              snapshot,
-              state: computerSurface.getState({
-                targetApp: snapshot.appName || payload?.targetApp || undefined,
-              }),
-            },
+            data,
           } satisfies IPCResponse<unknown>;
         }
 
@@ -114,10 +191,31 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             limit: payload?.limit,
             maxDepth: payload?.maxDepth,
           });
+          const metadata = asRecord(result.metadata);
+          const targetApp = metadata?.targetApp === null
+            ? null
+            : typeof metadata?.targetApp === 'string'
+              ? metadata.targetApp
+              : payload?.targetApp || null;
+          const failureKind = toComputerSurfaceFailureKind(metadata?.failureKind)
+            ?? (result.success ? null : 'evidence_unavailable');
+          const blockingReasons = Array.isArray(metadata?.blockingReasons)
+            ? metadata.blockingReasons.filter((item): item is string => typeof item === 'string')
+            : result.success
+              ? undefined
+              : [result.error || 'Computer Surface AX candidate read failed'];
+          const recommendedAction = typeof metadata?.recommendedAction === 'string'
+            ? metadata.recommendedAction
+            : null;
+          const axQuality = toComputerSurfaceAxQuality(metadata?.axQuality);
           const state = computerSurface.getState({
-            targetApp: payload?.targetApp,
+            targetApp,
             blockedReason: result.success ? null : result.error || null,
             mode: 'background_ax',
+            failureKind,
+            blockingReasons,
+            recommendedAction,
+            axQuality,
           });
           if (!result.success) {
             return {
@@ -147,8 +245,15 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           await browserService.close();
           return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
 
-        case 'getComputerSurfaceState':
-          return { success: true, data: getComputerSurface().getState() } satisfies IPCResponse<unknown>;
+        case 'getComputerSurfaceState': {
+          const payload = request.payload as { targetApp?: string } | undefined;
+          return {
+            success: true,
+            data: getComputerSurface().getState({
+              targetApp: payload?.targetApp || undefined,
+            }),
+          } satisfies IPCResponse<unknown>;
+        }
 
         case 'listRecent': {
           const payload = request.payload as { limit?: number } | undefined;
@@ -239,10 +344,18 @@ export function summarizeManagedBrowserRecoverySnapshotData(input: {
   domSnapshot: unknown;
   accessibilitySnapshot: unknown;
 }): Record<string, unknown> {
+  const domSnapshot = summarizeDomSnapshot(input.domSnapshot);
+  const accessibilitySnapshot = summarizeAccessibilitySnapshot(input.accessibilitySnapshot);
   return {
     session: summarizeManagedBrowserSession(input.session),
-    domSnapshot: summarizeDomSnapshot(input.domSnapshot),
-    accessibilitySnapshot: summarizeAccessibilitySnapshot(input.accessibilitySnapshot),
+    domSnapshot,
+    accessibilitySnapshot,
+    recoveryEvidence: {
+      domHeadingCount: domSnapshot.headingCount,
+      interactiveCount: domSnapshot.interactiveCount,
+      accessibilityAvailable: accessibilitySnapshot.available,
+      snapshotCapturedAtMs: domSnapshot.capturedAtMs,
+    },
   };
 }
 
@@ -374,6 +487,8 @@ function summarizeDomSnapshot(value: unknown): Record<string, unknown> {
       ? dom.interactive.length
       : 0;
   return {
+    snapshotId: typeof dom?.snapshotId === 'string' ? dom.snapshotId : undefined,
+    capturedAtMs: typeof dom?.capturedAtMs === 'number' ? dom.capturedAtMs : null,
     headingCount,
     interactiveCount,
   };

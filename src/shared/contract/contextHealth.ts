@@ -45,6 +45,47 @@ export interface CompressionStats {
   totalSavedTokens: number;
 }
 
+export interface ContextCompressionConfig {
+  /** 自动压缩是否开启 */
+  enabled: boolean;
+  /** 达到该使用率后开始提醒或准备压缩，0-1 */
+  warningThreshold: number;
+  /** 达到该使用率后主动压缩，0-1 */
+  criticalThreshold: number;
+  /** 压缩后保留最近消息数 */
+  preserveRecentCount: number;
+  /** 绝对 token 数触发阈值 */
+  triggerTokens?: number;
+  /** 压缩摘要 provider */
+  compactProvider?: string;
+  /** 压缩摘要模型 */
+  compactModel?: string;
+  /** 是否记录压缩审计快照 */
+  auditEnabled: boolean;
+}
+
+export interface ContextCompressionChannelState {
+  config: ContextCompressionConfig;
+  runtime: {
+    compressionCount: number;
+    totalSavedTokens: number;
+    lastCompressionAt?: number;
+    recentStrategies: string[];
+  };
+  compactModel: {
+    provider?: string;
+    model?: string;
+    configured: boolean;
+  };
+  features: {
+    audit: 'enabled' | 'disabled';
+    manifest: 'enabled';
+    hooks: 'available';
+  };
+}
+
+export type ContextCompressionConfigPatch = Partial<ContextCompressionConfig>;
+
 /**
  * 上下文健康状态
  */
@@ -72,6 +113,8 @@ export interface ContextHealthState {
  */
 export interface CompactResult {
   success: boolean;
+  /** 失败或弱成功时给 UI/日志展示的原因 */
+  reason?: string;
   /** 压缩前 token 数 */
   beforeTokens: number;
   /** 压缩后 token 数 */
@@ -95,6 +138,18 @@ export interface CompactResult {
   compressionCount: number;
   /** 本会话累计释放 token 数 */
   totalSavedTokens: number;
+  /** 新生成的摘要消息 ID */
+  summaryMessageId?: string;
+  /** 被压缩的消息数 */
+  compactedMessageCount?: number;
+  /** 保留的消息数 */
+  preservedMessageCount?: number;
+  /** 实际执行摘要的 provider */
+  provider?: string;
+  /** 实际执行摘要的 model */
+  model?: string;
+  /** 压缩质量或校验警告 */
+  warnings?: string[];
 }
 
 /**

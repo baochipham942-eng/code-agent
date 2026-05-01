@@ -7,11 +7,10 @@ import { ModelRouter } from '../../../src/main/model/modelRouter';
 import { PROVIDER_REGISTRY } from '../../../src/main/model/providerRegistry';
 import {
   DEFAULT_PROVIDER,
-  DEFAULT_MODEL,
   DEFAULT_MODELS,
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
-import type { ModelCapability, ModelConfig } from '../../../src/shared/contract';
+import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
 
 // --------------------------------------------------------------------------
 // Mocks
@@ -247,6 +246,40 @@ describe('ModelRouter', () => {
       expect(fallback?.provider).toBe('openai');
       expect(fallback?.model).toBe('gpt-4o');
     });
+
+    it('should prefer the current provider model for compact when it can summarize', () => {
+      const originalConfig: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'xiaomi-key',
+        baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        maxTokens: 8192,
+      };
+
+      const fallback = router.getFallbackConfig('compact', originalConfig);
+
+      expect(fallback?.provider).toBe('xiaomi');
+      expect(fallback?.model).toBe('mimo-v2.5-pro');
+      expect(fallback?.apiKey).toBe('xiaomi-key');
+      expect(fallback?.baseUrl).toBe('https://token-plan-sgp.xiaomimimo.com/v1');
+    });
+
+    it('should keep compact fallback provider and model paired when current model is unavailable', () => {
+      const originalConfig: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'missing-model',
+        apiKey: 'xiaomi-key',
+        baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        maxTokens: 8192,
+      };
+
+      const fallback = router.getFallbackConfig('compact', originalConfig);
+
+      expect(fallback?.provider).toBe('moonshot');
+      expect(fallback?.model).toBe(DEFAULT_MODELS.compact);
+      expect(fallback?.apiKey).toBe('mock-api-key');
+      expect(fallback?.baseUrl).toBeUndefined();
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -294,7 +327,7 @@ describe('ModelRouter', () => {
 
     it('should throw for unsupported provider', async () => {
       const config: ModelConfig = {
-        provider: 'nonexistent' as any,
+        provider: 'nonexistent' as ModelProvider,
         model: 'fake-model',
         apiKey: 'test-key',
         maxTokens: 1000,

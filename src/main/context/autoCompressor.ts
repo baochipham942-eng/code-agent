@@ -785,6 +785,18 @@ Generate the handoff summary:`;
   }
 
   /**
+   * 记录外部统一 compaction service 完成的压缩。
+   * 用于保持 shouldWrapUp()/统计逻辑和新的统一摘要入口一致。
+   */
+  recordCompaction(savedTokens: number, strategy: CompressionStrategy = 'ai_summary'): void {
+    this.compressionHistory.push({
+      timestamp: Date.now(),
+      savedTokens,
+      strategy,
+    });
+  }
+
+  /**
    * 从指定消息开始压缩之前的消息
    * 用于右键菜单"从此处压缩"功能
    */

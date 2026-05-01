@@ -31,6 +31,11 @@ export interface ContextRule {
   };
 }
 
+function usedDelegationTool(toolName: string): boolean {
+  return toolName === 'Task' || toolName === 'task' || toolName === 'Explore' ||
+    toolName === 'spawn_agent' || toolName === 'AgentSpawn';
+}
+
 // ----------------------------------------------------------------------------
 // 上下文规则定义
 // ----------------------------------------------------------------------------
@@ -44,7 +49,7 @@ export const CONTEXT_RULES: ContextRule[] = [
     type: 'suppress',
     description: '成功委派后不再提醒委派',
     condition: (ctx) =>
-      ctx.toolsUsedInTurn.includes('task') && !ctx.hasError,
+      ctx.toolsUsedInTurn.some(usedDelegationTool) && !ctx.hasError,
     effect: (reminderId, score) => {
       if (reminderId === 'MUST_DELEGATE' || reminderId === 'TASK_NOT_DIRECT') {
         return { newScore: 0, suppress: true };
@@ -57,7 +62,7 @@ export const CONTEXT_RULES: ContextRule[] = [
     type: 'suppress',
     description: '已并行派发后不再提醒并行',
     condition: (ctx) =>
-      ctx.toolsUsedInTurn.filter((t) => t === 'task').length >= 2,
+      ctx.toolsUsedInTurn.filter(usedDelegationTool).length >= 2,
     effect: (reminderId, score) => {
       if (reminderId === 'PARALLEL_DISPATCH') {
         return { newScore: 0, suppress: true };
@@ -137,7 +142,7 @@ export const CONTEXT_RULES: ContextRule[] = [
     condition: (ctx) =>
       ctx.iterationCount > 3 &&
       ctx.toolsUsedInTurn.length === 1 &&
-      !ctx.toolsUsedInTurn.includes('task'),
+      !ctx.toolsUsedInTurn.some(usedDelegationTool),
     effect: (reminderId, score) => {
       if (reminderId === 'BATCH_OPERATIONS') {
         return { newScore: Math.min(score + 0.5, 1) };

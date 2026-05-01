@@ -7,9 +7,10 @@
 // - Information extraction
 // ============================================================================
 
-import { ModelRouter } from '../model/modelRouter';
+import { ContextLengthExceededError, ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
+import type { AppSettings } from '../../shared/contract/settings';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 
@@ -19,9 +20,27 @@ const logger = createLogger('CompactModel');
 // Types
 // ----------------------------------------------------------------------------
 
-interface CompactModelOptions {
-  maxTokens?: number;
-  temperature?: number;
+export type CompactModelFallbackReason =
+  | 'compact_model_unavailable'
+  | 'compact_model_missing_api_key'
+  | 'compact_context_length_exceeded';
+
+export interface CompactModelSummaryMetadata {
+  provider: ModelProvider;
+  model: string;
+  useMainModel: boolean;
+  fallbackReason?: CompactModelFallbackReason;
+}
+
+export interface CompactModelSummaryResult {
+  summary: string;
+  metadata: CompactModelSummaryMetadata;
+}
+
+interface ResolvedSummaryModel {
+  config: ModelConfig;
+  useMainModel: boolean;
+  fallbackReason?: CompactModelFallbackReason;
 }
 
 // ----------------------------------------------------------------------------
@@ -29,14 +48,84 @@ interface CompactModelOptions {
 // ----------------------------------------------------------------------------
 
 let modelRouter: ModelRouter | null = null;
-let compactConfig: ModelConfig | null = null;
+let compactModelResolution: ResolvedSummaryModel | null = null;
+
+function getProviderBaseUrl(settings: AppSettings, provider: ModelProvider): string | undefined {
+  return settings.models?.providers?.[provider]?.baseUrl;
+}
+
+function getConfiguredCompactModel(settings: AppSettings): Pick<ModelConfig, 'provider' | 'model'> | null {
+  const provider = settings.contextCompression?.compactProvider as ModelProvider | undefined;
+  const model = settings.contextCompression?.compactModel;
+  if (!provider || !model) return null;
+  return { provider, model };
+}
+
+function getModelApiKey(
+  configService: ReturnType<typeof getConfigService>,
+  provider: ModelProvider,
+  model: string
+): string | undefined {
+  if (provider === 'moonshot' && model === DEFAULT_MODELS.compact) {
+    return process.env.KIMI_K25_API_KEY || configService.getApiKey(provider);
+  }
+  return configService.getApiKey(provider);
+}
+
+function isContextLengthError(error: unknown): boolean {
+  if (error instanceof ContextLengthExceededError) return true;
+  const maybeError = error as { code?: string; message?: string; name?: string } | undefined;
+  if (maybeError?.code === 'CONTEXT_LENGTH_EXCEEDED' || maybeError?.name === 'ContextLengthExceededError') {
+    return true;
+  }
+  return /context length|上下文长度超出|maximum context length/i.test(maybeError?.message ?? '');
+}
+
+async function requestSummary(
+  router: ModelRouter,
+  config: ModelConfig,
+  finalPrompt: string,
+  maxTokens: number,
+  useMainModel: boolean
+): Promise<string> {
+  logger.debug('Generating summary', {
+    provider: config.provider,
+    model: config.model,
+    promptLength: finalPrompt.length,
+    maxTokens,
+    useMainModel,
+  });
+
+  const response = await router.inference(
+    [{ role: 'user', content: finalPrompt }],
+    [],
+    {
+      ...config,
+      maxTokens: Math.min(maxTokens, config.maxTokens || 2048),
+    }
+  );
+
+  if (response.content) {
+    logger.debug('Summary generated', {
+      responseLength: response.content.length,
+    });
+    return response.content;
+  }
+
+  throw new Error('Empty response from compact model');
+}
 
 /**
  * Initialize the compact model configuration
  * Uses the 'compact' capability fallback model
  */
 function initializeCompactModel(): ModelConfig | null {
-  if (compactConfig) return compactConfig;
+  const resolution = initializeCompactSummaryModel();
+  return resolution?.config ?? null;
+}
+
+function initializeCompactSummaryModel(): ResolvedSummaryModel | null {
+  if (compactModelResolution) return compactModelResolution;
 
   try {
     const configService = getConfigService();
@@ -48,7 +137,7 @@ function initializeCompactModel(): ModelConfig | null {
       provider,
       model: settings.model?.model || DEFAULT_MODELS.chat,
       apiKey: '', // Will be retrieved from secure storage
-      baseUrl: settings.models?.providers?.[provider]?.baseUrl,
+      baseUrl: getProviderBaseUrl(settings, provider),
       temperature: 0.3, // Lower temperature for consistent summaries
       maxTokens: 2048,
     };
@@ -58,36 +147,86 @@ function initializeCompactModel(): ModelConfig | null {
       modelRouter = new ModelRouter();
     }
 
+    const configuredCompact = getConfiguredCompactModel(settings);
+    if (configuredCompact) {
+      const apiKey = getModelApiKey(configService, configuredCompact.provider, configuredCompact.model);
+      if (apiKey) {
+        compactModelResolution = {
+          config: {
+            provider: configuredCompact.provider,
+            model: configuredCompact.model,
+            apiKey,
+            baseUrl: getProviderBaseUrl(settings, configuredCompact.provider),
+            temperature: 0.3,
+            maxTokens: 2048,
+          },
+          useMainModel: false,
+        };
+        logger.info('Configured compact model initialized', {
+          provider: compactModelResolution.config.provider,
+          model: compactModelResolution.config.model,
+        });
+        return compactModelResolution;
+      }
+      logger.warn('Configured compact model has no API key, using fallback model', {
+        provider: configuredCompact.provider,
+        model: configuredCompact.model,
+      });
+    }
+
     // Get the compact fallback model
     const fallbackConfig = modelRouter.getFallbackConfig('compact', baseConfig);
 
     if (fallbackConfig) {
-      // Get API key for the fallback provider
-      const apiKey = configService.getServiceApiKey('openrouter');
+      const fallbackProvider = fallbackConfig.provider as ModelProvider;
+      const apiKey = fallbackConfig.apiKey || getModelApiKey(configService, fallbackProvider, fallbackConfig.model);
       if (apiKey) {
-        compactConfig = {
-          ...fallbackConfig,
-          apiKey,
-          temperature: 0.3,
-          maxTokens: 2048,
+        compactModelResolution = {
+          config: {
+            ...fallbackConfig,
+            apiKey,
+            baseUrl: getProviderBaseUrl(settings, fallbackProvider),
+            temperature: 0.3,
+            maxTokens: 2048,
+          },
+          useMainModel: false,
         };
         logger.info('Compact model initialized', {
-          provider: compactConfig.provider,
-          model: compactConfig.model,
+          provider: compactModelResolution.config.provider,
+          model: compactModelResolution.config.model,
         });
-        return compactConfig;
+        return compactModelResolution;
       }
-    }
-
-    // Fallback to main model if compact not available
-    logger.warn('Compact model not available, using main model for summarization');
-    const mainApiKey = configService.getApiKey(baseConfig.provider);
-    if (mainApiKey) {
-      compactConfig = {
-        ...baseConfig,
-        apiKey: mainApiKey,
-      };
-      return compactConfig;
+      logger.warn('Compact fallback model has no API key, using main model for summarization', {
+        provider: fallbackProvider,
+        model: fallbackConfig.model,
+      });
+      const mainApiKey = getModelApiKey(configService, baseConfig.provider, baseConfig.model);
+      if (mainApiKey) {
+        compactModelResolution = {
+          config: {
+            ...baseConfig,
+            apiKey: mainApiKey,
+          },
+          useMainModel: true,
+          fallbackReason: 'compact_model_missing_api_key',
+        };
+        return compactModelResolution;
+      }
+    } else {
+      logger.warn('Compact model not available, using main model for summarization');
+      const mainApiKey = getModelApiKey(configService, baseConfig.provider, baseConfig.model);
+      if (mainApiKey) {
+        compactModelResolution = {
+          config: {
+            ...baseConfig,
+            apiKey: mainApiKey,
+          },
+          useMainModel: true,
+          fallbackReason: 'compact_model_unavailable',
+        };
+        return compactModelResolution;
+      }
     }
 
     logger.error('No API key available for summarization');
@@ -95,6 +234,98 @@ function initializeCompactModel(): ModelConfig | null {
   } catch (error) {
     logger.error('Failed to initialize compact model', { error });
     return null;
+  }
+}
+
+function resolveMainSummaryModel(): ResolvedSummaryModel | null {
+  const config = initializeMainModel();
+  if (!config) return null;
+  return {
+    config,
+    useMainModel: true,
+  };
+}
+
+function toSummaryResult(summary: string, resolution: ResolvedSummaryModel): CompactModelSummaryResult {
+  return {
+    summary,
+    metadata: {
+      provider: resolution.config.provider,
+      model: resolution.config.model,
+      useMainModel: resolution.useMainModel,
+      fallbackReason: resolution.fallbackReason,
+    },
+  };
+}
+
+/**
+ * Generate AI summary and return the actual model used.
+ */
+export async function compactModelSummarizeWithMetadata(
+  prompt: string,
+  maxTokens: number,
+  options?: {
+    /** 使用主模型做摘要（而非 cheap model），理解上下文更好 */
+    useMainModel?: boolean;
+    /** 自定义摘要指令，覆盖默认 prompt */
+    instructions?: string;
+  }
+): Promise<CompactModelSummaryResult> {
+  // 如果提供了自定义指令，替换 prompt 中的默认指令部分
+  const finalPrompt = options?.instructions
+    ? prompt.replace(/^.*?(?=\n\n对话历史：)/s, options.instructions)
+    : prompt;
+
+  const resolution = options?.useMainModel
+    ? resolveMainSummaryModel()
+    : initializeCompactSummaryModel();
+
+  if (!resolution) {
+    throw new Error('Compact model not configured');
+  }
+
+  if (!modelRouter) {
+    modelRouter = new ModelRouter();
+  }
+
+  try {
+    const summary = await requestSummary(
+      modelRouter,
+      resolution.config,
+      finalPrompt,
+      maxTokens,
+      resolution.useMainModel
+    );
+    return toSummaryResult(summary, resolution);
+  } catch (error) {
+    if (!options?.useMainModel && !resolution.useMainModel && isContextLengthError(error)) {
+      const mainResolution = resolveMainSummaryModel();
+      if (
+        mainResolution
+        && (mainResolution.config.provider !== resolution.config.provider || mainResolution.config.model !== resolution.config.model)
+      ) {
+        logger.warn('Compact model context window exceeded, retrying with main model', {
+          compactProvider: resolution.config.provider,
+          compactModel: resolution.config.model,
+          mainProvider: mainResolution.config.provider,
+          mainModel: mainResolution.config.model,
+          promptLength: finalPrompt.length,
+        });
+        try {
+          const summary = await requestSummary(modelRouter, mainResolution.config, finalPrompt, maxTokens, true);
+          return toSummaryResult(summary, {
+            ...mainResolution,
+            fallbackReason: 'compact_context_length_exceeded',
+          });
+        } catch (fallbackError) {
+          logger.error('Failed to generate summary with main model fallback', { error: fallbackError });
+          throw fallbackError;
+        }
+      }
+    }
+
+    logger.error('Failed to generate summary', { error });
+    throw error;
   }
 }
 
@@ -117,56 +348,8 @@ export async function compactModelSummarize(
     instructions?: string;
   }
 ): Promise<string> {
-  // 如果提供了自定义指令，替换 prompt 中的默认指令部分
-  const finalPrompt = options?.instructions
-    ? prompt.replace(/^.*?(?=\n\n对话历史：)/s, options.instructions)
-    : prompt;
-
-  let config: ModelConfig | null;
-
-  if (options?.useMainModel) {
-    // 使用主模型：理解上下文更好，适合高质量摘要
-    config = initializeMainModel();
-  } else {
-    config = initializeCompactModel();
-  }
-
-  if (!config) {
-    throw new Error('Compact model not configured');
-  }
-
-  if (!modelRouter) {
-    modelRouter = new ModelRouter();
-  }
-
-  try {
-    logger.debug('Generating summary', {
-      provider: config.provider,
-      model: config.model,
-      promptLength: finalPrompt.length,
-      maxTokens,
-      useMainModel: !!options?.useMainModel,
-    });
-
-    const response = await modelRouter.chat({
-      provider: config.provider,
-      model: config.model,
-      messages: [{ role: 'user', content: finalPrompt }],
-      maxTokens: Math.min(maxTokens, config.maxTokens || 2048),
-    });
-
-    if (response.content) {
-      logger.debug('Summary generated', {
-        responseLength: response.content.length,
-      });
-      return response.content;
-    }
-
-    throw new Error('Empty response from compact model');
-  } catch (error) {
-    logger.error('Failed to generate summary', { error });
-    throw error;
-  }
+  const result = await compactModelSummarizeWithMetadata(prompt, maxTokens, options);
+  return result.summary;
 }
 
 /**
@@ -178,7 +361,8 @@ function initializeMainModel(): ModelConfig | null {
     const settings = configService.getSettings();
 
     const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
-    const apiKey = configService.getApiKey(provider);
+    const model = settings.model?.model || DEFAULT_MODELS.chat;
+    const apiKey = getModelApiKey(configService, provider, model);
 
     if (!apiKey) {
       logger.warn('No API key available for main model summarization');
@@ -187,9 +371,9 @@ function initializeMainModel(): ModelConfig | null {
 
     return {
       provider,
-      model: settings.model?.model || DEFAULT_MODELS.chat,
+      model,
       apiKey,
-      baseUrl: settings.models?.providers?.[provider]?.baseUrl,
+      baseUrl: getProviderBaseUrl(settings, provider),
       temperature: 0.3,
       maxTokens: 2048,
     };
@@ -204,7 +388,7 @@ function initializeMainModel(): ModelConfig | null {
  * Call this when user settings change
  */
 export function resetCompactModel(): void {
-  compactConfig = null;
+  compactModelResolution = null;
   logger.debug('Compact model configuration reset');
 }
 

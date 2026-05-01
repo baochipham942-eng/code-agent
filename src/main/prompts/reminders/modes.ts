@@ -35,7 +35,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 **审计模式**：检测到安全/代码审计任务。
 
 推荐流程：
-1. 并行派发多个 code-review 子代理
+1. 并行派发多个 reviewer 子代理
 2. 收集所有子代理的审计结果
 3. 整合生成完整审计报告
 
@@ -54,7 +54,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 
 推荐流程：
 1. 获取变更文件列表（git diff --name-only）
-2. 并行派发 code-review 子代理分析
+2. 并行派发 reviewer 子代理分析
 3. 整合生成审查报告
 </system-reminder>`,
     tokens: 80,

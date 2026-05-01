@@ -44,6 +44,8 @@ import type {
 } from '../contract/memory';
 
 import type {
+  ContextCompressionChannelState,
+  ContextCompressionConfigPatch,
   ContextHealthState,
   ContextHealthUpdateEvent,
 } from '../contract/contextHealth';
@@ -359,6 +361,8 @@ export interface IpcInvokeHandlers {
 
   // Context health
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
+  [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
+  [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
 
   // Session status (multi-session parallel support)
   [IPC_CHANNELS.SESSION_STATUS_GET]: (sessionId: string) => Promise<SessionRuntimeSummary | null>;

@@ -12,6 +12,9 @@ import { createLogger } from '../main/services/infra/logger';
 import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
 import { MetricsCollector } from '../main/agent/metricsCollector';
 import { retryEvents } from '../main/model/providers/retryStrategy';
+import { getAgentDispatchInfo } from './agentDispatch';
+
+export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
 const logger = createLogger('CLI-Adapter');
 
@@ -228,12 +231,11 @@ export class CLIAgent {
         const toolName = event.data.name;
         const toolArgs = event.data.arguments;
         this.toolCallNames.set(event.data.id, toolName);
-        if (toolName === 'spawn_agent' || toolName === 'task') {
+        const dispatch = getAgentDispatchInfo(toolName, toolArgs);
+        if (dispatch) {
           // Emit agent_dispatch for sub-agent spawning
-          const agentRole = String(toolArgs?.role || toolArgs?.agent || 'unknown');
-          const agentTask = String(toolArgs?.task || '');
-          this.pendingAgentCalls.set(event.data.id, { agent: agentRole, task: agentTask });
-          this.writeStreamJson('agent_dispatch', { agent: agentRole, task: agentTask });
+          this.pendingAgentCalls.set(event.data.id, dispatch);
+          this.writeStreamJson('agent_dispatch', dispatch);
         } else {
           this.writeStreamJson('tool_start', { name: toolName, args: toolArgs });
         }

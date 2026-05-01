@@ -24,7 +24,7 @@ interface CompactionSink {
 }
 
 function getSink(): CompactionSink | null {
-  if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+  if (process.env.CODE_AGENT_CLI_MODE === 'true' && process.env.CODE_AGENT_WEB_MODE !== 'true') {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const cliDbMod = require('../../cli/database') as {

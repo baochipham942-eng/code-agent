@@ -14,7 +14,7 @@ export const TOOLS_PROMPT = `
 | Glob / Grep | File discovery / content search |
 | WebSearch | Web info lookup |
 | AskUserQuestion | Ask user for clarification |
-| task | Sub-agents for complex/parallel work |
+| Task / Explore | Sub-agents for broad exploration or complex parallel work |
 | teammate | Agent coordination (handoff/query/broadcast) |
 | Skill | Slash commands (\`/xxx\` always routes here) |
 | CodeExecute | Batch 3+ similar tool calls in JS |
@@ -28,4 +28,3 @@ export const TOOLS_PROMPT = `
 
 // Orchestrator Mode prompt (for swarm scenarios)
 export { getOrchestratorPrompt, getOrchestratorPromptCompact } from './orchestrator';
-

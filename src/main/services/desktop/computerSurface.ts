@@ -123,6 +123,20 @@ class DesktopComputerSurface {
   private backgroundEnabled = process.env.CODE_AGENT_COMPUTER_BACKGROUND_SURFACE !== '0';
 
   async observe(options: { includeScreenshot?: boolean; targetApp?: string } = {}): Promise<ComputerSurfaceSnapshot> {
+    if (options.targetApp && this.isDeniedApp(options.targetApp)) {
+      const blocked = this.buildDeniedAppBlock('observe');
+      const snapshot = {
+        capturedAtMs: Date.now(),
+        appName: null,
+        windowTitle: null,
+        failureKind: blocked.failureKind,
+        blockingReasons: blocked.blockingReasons,
+        recommendedAction: blocked.recommendedAction,
+      } as ComputerSurfaceSnapshot & ComputerSurfacePreflightBlock;
+      this.lastSnapshot = snapshot;
+      return snapshot;
+    }
+
     const snapshot: ComputerSurfaceSnapshot = {
       capturedAtMs: Date.now(),
       ...(options.targetApp && this.canUseBackgroundSurface()
@@ -145,6 +159,10 @@ class DesktopComputerSurface {
   }
 
   async executeBackgroundAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    if (action.targetApp && this.isDeniedApp(action.targetApp)) {
+      return this.deniedAppActionResult('background Accessibility action');
+    }
+
     if (!this.canUseBackgroundAxAction(action) || !action.targetApp) {
       return {
         success: false,
@@ -212,10 +230,7 @@ class DesktopComputerSurface {
     }
 
     if (this.isDeniedApp(targetApp)) {
-      return {
-        success: false,
-        error: `Computer Surface blocked accessibility read for protected app: ${targetApp}`,
-      };
+      return this.deniedAppActionResult('accessibility read');
     }
 
     const limit = clampInt(action.limit, 1, 80, 40);
@@ -361,6 +376,12 @@ class DesktopComputerSurface {
   async listBackgroundCgEventWindows(
     options: ListBackgroundCgEventWindowsOptions = {},
   ): Promise<ComputerSurfaceActionResult> {
+    if (options.targetApp && this.isDeniedApp(options.targetApp)) {
+      return this.deniedAppActionResult('window listing', {
+        computerSurfaceMode: 'background_cgevent',
+      });
+    }
+
     if (!this.canUseBackgroundSurface()) {
       return {
         success: false,
@@ -406,6 +427,12 @@ class DesktopComputerSurface {
   }
 
   async executeBackgroundCgEventAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    if (action.targetApp && this.isDeniedApp(action.targetApp)) {
+      return this.deniedAppActionResult('background CGEvent action', {
+        computerSurfaceMode: 'background_cgevent',
+      });
+    }
+
     const normalized = normalizeBackgroundCgEventRequest(action);
     if (!normalized) {
       return {
@@ -443,6 +470,12 @@ class DesktopComputerSurface {
   }
 
   async diagnoseApp(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
+    if (action.targetApp && this.isDeniedApp(action.targetApp)) {
+      return this.deniedAppActionResult('app diagnosis', {
+        computerSurfaceMode: 'background_cgevent',
+      });
+    }
+
     if (!this.canUseBackgroundSurface()) {
       return {
         success: false,
@@ -497,6 +530,48 @@ class DesktopComputerSurface {
     context: ComputerSurfacePermissionContext = {},
   ): Promise<ComputerSurfaceAuthorization> {
     const actionMode = this.resolveActionMode(action);
+    if (action.targetApp && this.isDeniedApp(action.targetApp)) {
+      const mode = actionMode;
+      const blockingReasons = this.buildDeniedAppBlock('automation').blockingReasons;
+      const recommendedAction = this.buildDeniedAppBlock('automation').recommendedAction;
+      const trace: WorkbenchActionTrace = {
+        id: `computer_trace_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        targetKind: 'computer',
+        toolName: 'computer_use',
+        action: action.action,
+        mode,
+        startedAtMs: Date.now(),
+        before: {
+          appName: null,
+          title: null,
+          screenshotPath: null,
+          capturedAtMs: Date.now(),
+        },
+        params: { protectedTarget: true },
+        failureKind: 'permission_denied',
+        blockingReasons,
+        recommendedAction,
+      };
+      return {
+        allowed: false,
+        reason: blockingReasons[0],
+        state: this.getState({
+          targetApp: null,
+          blockedReason: 'protected app',
+          approvalScope: 'blocked',
+          mode,
+          failureKind: 'permission_denied',
+          blockingReasons,
+          recommendedAction,
+        }),
+        trace,
+        sensitive: false,
+        failureKind: 'permission_denied',
+        blockingReasons,
+        recommendedAction,
+      };
+    }
+
     const before = await this.observe({
       targetApp: actionMode === 'background_ax' || actionMode === 'background_cgevent'
         ? action.targetApp
@@ -616,14 +691,13 @@ class DesktopComputerSurface {
     }
 
     if (this.isDeniedApp(targetApp)) {
-      const blockingReasons = [`Computer Surface blocked automation for protected app: ${targetApp}`];
-      const recommendedAction = 'Choose a non-protected target app or remove the app from the denied list intentionally.';
+      const { blockingReasons, recommendedAction } = this.buildDeniedAppBlock('automation');
       return {
         allowed: false,
         reason: blockingReasons[0],
         state: this.getState({
-          targetApp,
-          blockedReason: `protected app: ${targetApp}`,
+          targetApp: null,
+          blockedReason: 'protected app',
           approvalScope: 'blocked',
           mode,
           failureKind: 'permission_denied',
@@ -632,6 +706,13 @@ class DesktopComputerSurface {
         }),
         trace: {
           ...trace,
+          before: {
+            appName: null,
+            title: null,
+            screenshotPath: null,
+            capturedAtMs: trace.before?.capturedAtMs,
+          },
+          params: { protectedTarget: true },
           failureKind: 'permission_denied',
           blockingReasons,
           recommendedAction,
@@ -646,7 +727,7 @@ class DesktopComputerSurface {
     const sensitive = isSensitiveAction(action);
     const approvedByPolicy = this.allowedApps.length > 0
       ? this.allowedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase())
-      : this.approvedAppScopes.has(this.approvalKey(targetApp, mode));
+      : this.approvedAppScopes.has(this.approvalKey(targetApp, mode, context.sessionId));
 
     if (!approvedByPolicy || sensitive) {
       const approved = await context.requestPermission?.({
@@ -709,7 +790,7 @@ class DesktopComputerSurface {
       }
 
       if (!sensitive) {
-        this.approvedAppScopes.add(this.approvalKey(targetApp, mode));
+        this.approvedAppScopes.add(this.approvalKey(targetApp, mode, context.sessionId));
       }
     }
 
@@ -1012,6 +1093,33 @@ class DesktopComputerSurface {
     return this.deniedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase());
   }
 
+  private buildDeniedAppBlock(actionDescription: string): ComputerSurfacePreflightBlock {
+    return {
+      failureKind: 'permission_denied',
+      blockingReasons: [`Computer Surface blocked ${actionDescription} for a protected app.`],
+      recommendedAction: 'Choose a non-protected target app or remove the app from the denied list intentionally.',
+    };
+  }
+
+  private deniedAppActionResult(
+    actionDescription: string,
+    metadata: Record<string, unknown> = {},
+  ): ComputerSurfaceActionResult {
+    const blocked = this.buildDeniedAppBlock(actionDescription);
+    return {
+      success: false,
+      error: blocked.blockingReasons[0],
+      metadata: {
+        backgroundSurface: true,
+        targetApp: null,
+        failureKind: blocked.failureKind,
+        blockingReasons: blocked.blockingReasons,
+        recommendedAction: blocked.recommendedAction,
+        ...metadata,
+      },
+    };
+  }
+
   private canUseBackgroundAxAction(action: ComputerSurfaceAction): boolean {
     return this.canUseBackgroundSurface()
       && Boolean(action.targetApp)
@@ -1028,8 +1136,9 @@ class DesktopComputerSurface {
       && Boolean(normalizeBackgroundCgEventRequest(action));
   }
 
-  private approvalKey(targetApp: string, mode: ComputerSurfaceMode): string {
-    return `${mode}:${targetApp.toLowerCase()}`;
+  private approvalKey(targetApp: string, mode: ComputerSurfaceMode, sessionId?: string): string {
+    const scope = sessionId?.trim() ? sessionId.trim() : 'anonymous';
+    return `${scope}:${mode}:${targetApp.toLowerCase()}`;
   }
 
   private resolveApprovalScope(

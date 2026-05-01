@@ -21,6 +21,8 @@ describe('desktop recovery snapshot summaries', () => {
         },
       },
       domSnapshot: {
+        snapshotId: 'snapshot-1',
+        capturedAtMs: 1_777_000,
         headings: [{ text: 'secret@example.com' }],
         interactiveElements: [{ text: 'secret@example.com' }, { text: 'Submit' }],
         rawHtml: '<input value="secret@example.com">',
@@ -44,11 +46,19 @@ describe('desktop recovery snapshot summaries', () => {
         },
       },
       domSnapshot: {
+        snapshotId: 'snapshot-1',
+        capturedAtMs: 1_777_000,
         headingCount: 1,
         interactiveCount: 2,
       },
       accessibilitySnapshot: {
         available: true,
+      },
+      recoveryEvidence: {
+        domHeadingCount: 1,
+        interactiveCount: 2,
+        accessibilityAvailable: true,
+        snapshotCapturedAtMs: 1_777_000,
       },
     });
     expect(JSON.stringify(result)).not.toContain('secret@example.com');

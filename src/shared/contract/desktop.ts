@@ -197,6 +197,9 @@ export interface ComputerSurfaceSnapshot {
   appName?: string | null;
   windowTitle?: string | null;
   screenshotPath?: string | null;
+  failureKind?: ComputerSurfaceFailureKind | null;
+  blockingReasons?: string[];
+  recommendedAction?: string | null;
 }
 
 export interface ComputerSurfaceState {

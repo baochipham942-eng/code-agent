@@ -217,7 +217,7 @@ For the app-host Browser/Computer smoke:
 - The Managed repair action starts a real managed browser session and returns to `Ready / Running`.
 - Browser failure cards render executable recovery actions for safe setup work: start Managed browser,补齐 Managed tab, or refresh DOM / Accessibility snapshot evidence.
 - Clicking a Browser/Computer failure-card Recovery Action shows an explicit `preparing` / `success` / `failed` status, then renders the prepared evidence summary without auto-retrying the failed action.
-- Snapshot recovery success shows DOM heading count, interactive element count, and whether Accessibility snapshot evidence is available.
+- Snapshot recovery success shows DOM heading count, interactive element count, whether Accessibility snapshot evidence is available, and the snapshot timestamp.
 - Managed mode explains the surface as `Managed browser`, shows `System Chrome via CDP` / `Playwright bundled Chromium` as provider copy, and frames repair buttons as next-step actions rather than raw provider commands.
 - Desktop mode renders unprobed readiness separately from denied state and exposes repair actions without clicking foreground desktop or opening macOS settings when the legacy readiness UI is present.
 - Computer failure cards only expose safe recovery actions: open Desktop status, observe the current window, or list AX candidates for a named target app. Foreground fallback remains a manual step.

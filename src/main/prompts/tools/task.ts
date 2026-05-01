@@ -11,26 +11,27 @@
 export const TASK_TOOL_DESCRIPTION = `
 ## Task 工具
 
-启动子代理处理复杂任务。**支持并行派发多个子代理**。
+启动子代理处理复杂任务。工具名是 **Task**。目标文件和编辑区域已经明确时，直接用读写工具完成，不要为了单点修改再委派。
 
 ### 子代理类型
 
 | 类型 | 用途 |
 |------|------|
 | explore | 探索代码库、理解架构、查找实现 |
-| code-review | 代码审查、安全审计、质量检查 |
+| reviewer | 代码审查、安全审计、质量检查 |
+| coder | 代码编写、修复、重构 |
 | plan | 设计方案、任务分解、架构规划 |
-| bash | 命令执行、构建、测试 |
+| awaiter | 长命令等待、测试监控 |
 
 ### 并行派发（重要）
 
-当任务包含多个独立维度时，**同时派发多个 task**：
+当任务包含多个独立维度时，**同时派发多个 Task**：
 
 \`\`\`
 // 在单个响应中并行派发
-task(subagent_type="code-review", prompt="安全审计：扫描 API 认证问题")
-task(subagent_type="explore", prompt="性能分析：找出 N+1 查询")
-task(subagent_type="code-review", prompt="代码质量：检查 any 类型")
+Task(subagent_type="reviewer", prompt="安全审计：扫描 API 认证问题")
+Task(subagent_type="explore", prompt="性能分析：找出 N+1 查询")
+Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型")
 \`\`\`
 
 **并行场景**：
@@ -41,15 +42,15 @@ task(subagent_type="code-review", prompt="代码质量：检查 any 类型")
 ### 使用示例
 
 \`\`\`json
-task {
+Task {
   "subagent_type": "explore",
   "prompt": "找到所有处理用户认证的文件"
 }
 \`\`\`
 
 \`\`\`json
-task {
-  "subagent_type": "code-review",
+Task {
+  "subagent_type": "reviewer",
   "prompt": "审查 src/auth/ 的安全性"
 }
 \`\`\`

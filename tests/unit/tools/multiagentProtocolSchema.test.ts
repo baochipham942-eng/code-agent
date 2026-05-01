@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { agentSpawnTool, sdkTaskTool, sendInputTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { agentSpawnTool, exploreTool, sdkTaskTool, sendInputTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
 describe('multiagent protocol schemas', () => {
@@ -12,6 +12,13 @@ describe('multiagent protocol schemas', () => {
 
     expect(schema?.inputSchema).toEqual(sdkTaskTool.inputSchema);
     expect(schema?.inputSchema.required).toEqual(['prompt', 'subagent_type']);
+  });
+
+  it('uses the real Explore schema for the protocol wrapper', () => {
+    const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'Explore');
+
+    expect(schema?.inputSchema).toEqual(exploreTool.inputSchema);
+    expect(schema?.inputSchema.required).toEqual(['prompt']);
   });
 
   it('uses the real spawn_agent schema for the protocol wrapper', () => {

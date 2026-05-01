@@ -24,8 +24,8 @@ Edit 更安全，只修改指定部分，减少意外覆盖。
     id: 'TASK_NOT_DIRECT',
     priority: 2,
     content: `<system-reminder>
-**使用 task 工具**：对于需要多步骤探索的任务，使用 task 工具委派给专门的子代理。
-子代理有专门的工具和上下文窗口，比直接执行更高效。
+**使用 Task 工具**：对于需要多步骤探索的任务，可以使用 Task 工具委派给专门的子代理。
+目标文件、函数、编辑区域已经明确时，直接使用 Read/Edit/Bash 验证，不要为单点修改再委派。
 </system-reminder>`,
     tokens: 60,
     shouldInclude: (ctx) => {

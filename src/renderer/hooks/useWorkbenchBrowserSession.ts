@@ -5,6 +5,8 @@ import type {
   ManagedBrowserLeaseState,
   ManagedBrowserProfileMode,
   ManagedBrowserProxyConfig,
+  ManagedBrowserProvider,
+  ManagedBrowserProviderPreference,
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -45,6 +47,9 @@ interface ManagedBrowserSessionPreviewMetadata {
   accountState?: ManagedBrowserAccountStateSummary | null;
   lease?: ManagedBrowserLeaseState | null;
   proxy?: ManagedBrowserProxyConfig | null;
+  provider?: ManagedBrowserProvider | null;
+  requestedProvider?: ManagedBrowserProviderPreference | null;
+  recoverySnapshotSummary?: string | null;
 }
 
 type BrowserWorkbenchRepairActionKind =
@@ -86,6 +91,9 @@ export interface BrowserWorkbenchPreview {
   accountState?: ManagedBrowserAccountStateSummary | null;
   lease?: ManagedBrowserLeaseState | null;
   proxy?: ManagedBrowserProxyConfig | null;
+  provider?: ManagedBrowserProvider | null;
+  requestedProvider?: ManagedBrowserProviderPreference | null;
+  recoverySnapshotSummary?: string | null;
 }
 
 export interface BrowserWorkbenchState {
@@ -254,7 +262,31 @@ function getManagedSessionPreviewMetadata(
     accountState: asRecord(session)?.accountState as ManagedBrowserAccountStateSummary | null | undefined,
     lease: asRecord(session)?.lease as ManagedBrowserLeaseState | null | undefined,
     proxy: asRecord(session)?.proxy as ManagedBrowserProxyConfig | null | undefined,
+    provider: session.provider || null,
+    requestedProvider: session.requestedProvider || null,
+    recoverySnapshotSummary: getManagedBrowserRecoverySnapshotSummary(session),
   };
+}
+
+function getManagedBrowserRecoverySnapshotSummary(
+  session: ManagedBrowserSessionState,
+): string | null {
+  const evidenceSummary = session.lastTrace?.evidenceSummary;
+  if (Array.isArray(evidenceSummary) && evidenceSummary.length > 0) {
+    return evidenceSummary.slice(0, 2).join(' · ');
+  }
+
+  const snapshot = session.lastTrace?.after || session.lastTrace?.before;
+  if (!snapshot) {
+    return null;
+  }
+
+  if (typeof snapshot.capturedAtMs === 'number') {
+    const ageSeconds = Math.max(0, Math.floor((Date.now() - snapshot.capturedAtMs) / 1000));
+    return `snapshot captured ${ageSeconds}s ago`;
+  }
+
+  return 'snapshot captured';
 }
 
 async function loadManagedBrowserSession(): Promise<ManagedBrowserSessionState> {

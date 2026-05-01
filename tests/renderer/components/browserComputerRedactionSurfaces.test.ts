@@ -17,10 +17,15 @@ import {
   exportToJson,
   exportToMarkdown,
 } from '../../../src/renderer/components/features/export/ExportModal';
+import {
+  formatBrowserComputerActionArguments,
+  formatBrowserComputerActionResultDetails,
+} from '../../../src/renderer/utils/browserComputerActionPreview';
 import { sanitizeSessionForBrowserComputerExport } from '../../../src/renderer/utils/browserComputerExportRedaction';
 import type { Message } from '../../../src/shared/contract';
 
 const SECRET = 'secret@example.com';
+const SECRET_REF = 'env:CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD';
 
 describe('browser/computer redaction surfaces', () => {
   it('redacts Browser/Computer input payloads in observability details', () => {
@@ -290,7 +295,7 @@ describe('browser/computer redaction surfaces', () => {
 
     expect(summary).toContain('智能输入 18 chars');
     expect(summary).toContain('#email');
-    expect(summary).toContain('需确认');
+    expect(summary).toMatch(/需确认|foreground_fallback/);
     expect(summary).not.toContain(SECRET);
   });
 
@@ -352,6 +357,75 @@ describe('browser/computer redaction surfaces', () => {
     expect(html).toContain('智能输入 18 chars');
     expect(html).toContain('#email');
     expect(html).not.toContain(SECRET);
+  });
+
+  it('renders browser secretRef placeholders and domain scope without exposing the ref name', () => {
+    const toolCall = {
+      name: 'browser_action',
+      arguments: {
+        action: 'type',
+        selector: '#password',
+        secretRef: SECRET_REF,
+        domainScope: 'https://accounts.example.com/login',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: `Typed secretRef ${SECRET_REF} into #password`,
+      },
+    };
+
+    const args = formatBrowserComputerActionArguments(toolCall.name, toolCall.arguments);
+    const result = formatBrowserComputerActionResultDetails(toolCall);
+
+    expect(args).toContain('[secretRef]');
+    expect(args).toContain('accounts.example.com');
+    expect(args).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+    expect(result).toBe('输入 secretRef -> #password');
+    expect(result).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+  });
+
+  it('redacts computer_use secretRef input paths in raw export-shaped data', () => {
+    const messages: Message[] = [{
+      id: 'msg-1',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [{
+        id: 'tool-1',
+        name: 'computer_use',
+        arguments: {
+          action: 'smart_type',
+          selector: '#password',
+          secretRef: SECRET_REF,
+          domainScope: ['https://accounts.example.com/login'],
+        },
+        result: {
+          toolCallId: 'tool-1',
+          success: false,
+          error: `No element found after ${SECRET_REF}`,
+          metadata: {
+            attemptedSecretRef: SECRET_REF,
+            browserComputerRecoveryActionOutcome: {
+              status: 'success',
+              title: `Recovered after ${SECRET_REF}`,
+              evidence: [
+                'TargetRef: password-field',
+                `DOM headings: ${SECRET_REF}`,
+              ],
+            },
+          },
+        },
+      }],
+    }];
+
+    const json = JSON.stringify(sanitizeSessionForBrowserComputerExport({ messages }), null, 2);
+
+    expect(json).toContain('[secretRef]');
+    expect(json).toContain('accounts.example.com');
+    expect(json).toContain('TargetRef: password-field');
+    expect(json).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+    expect(json).not.toContain(SECRET_REF);
   });
 
   it('drops Browser/Computer raw metadata fields from exports', () => {

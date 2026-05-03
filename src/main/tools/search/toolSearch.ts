@@ -76,9 +76,12 @@ export const toolSearchTool: Tool = {
         const discoveryHint = discoveryFailures.length > 0
           ? `\n\nMCP 懒加载发现失败：\n${discoveryFailures.join('\n')}`
           : '';
+        // success: false — 没有匹配项就是搜索失败,让 stagnationDetector 把这次调用计入
+        // 错误窗口,避免模型反复换关键字搜同一类不存在的工具(实战 case:龙虾 rate limit
+        // 重复 ToolSearch 但每次返回 success+text 让模型误以为有进展)。
         return {
-          success: true,
-          output: `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+          success: false,
+          error: `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
           metadata: {
             loadedTools: result.loadedTools,
             totalCount: result.totalCount,
@@ -123,6 +126,21 @@ export const toolSearchTool: Tool = {
 
       logger.info(`Search "${query}" loaded tools: ${result.loadedTools.join(', ')}`);
 
+      // 命中匹配但全部 loadable=false → 没有可调用工具,视作失败让模型换路径,
+      // 避免它把"看到工具描述"误读为"可以调用了",反复换关键字搜同一片不可调用区。
+      const noToolsLoaded = result.loadedTools.length === 0;
+      if (noToolsLoaded) {
+        return {
+          success: false,
+          error: lines.join('\n'),
+          metadata: {
+            loadedTools: result.loadedTools,
+            totalCount: result.totalCount,
+            hasMore: result.hasMore,
+            mcpDiscovery,
+          },
+        };
+      }
       return {
         success: true,
         output: lines.join('\n'),

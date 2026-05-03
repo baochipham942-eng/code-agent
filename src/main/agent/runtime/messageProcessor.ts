@@ -39,6 +39,7 @@ import {
   fingerprintToolCall,
   pushAndDetectStagnation,
   buildStagnationHint,
+  buildStagnationStopMessage,
 } from './stagnationDetector';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
@@ -575,6 +576,29 @@ export class MessageProcessor {
         });
         this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount));
         this.ctx.stagnationWarningEmitted = true;
+      }
+      // Hint 注入后仍重复 → 真止损,避免无谓烧 token。
+      // 实战 case:龙虾 rate limit 重复 ToolSearch,日志 app-2026-05-03.log:1126。
+      if (detection.shouldStop) {
+        logger.warn(
+          `[Stagnation] shouldStop after warning — fingerprint=${detection.sameFingerprint} matchCount=${detection.matchCount}, breaking iteration`,
+        );
+        logCollector.agent('ERROR', `Stagnation stop: ${detection.matchCount}× same call after warning`, {
+          fingerprint: detection.sameFingerprint,
+          matchCount: detection.matchCount,
+        });
+        this.contextAssembly.injectSystemMessage(
+          buildStagnationStopMessage(detection.matchCount, detection.sameFingerprint),
+        );
+        this.ctx.onEvent({
+          type: 'error',
+          data: {
+            message: `工具调用陷入死循环 (fingerprint=${detection.sameFingerprint},连续 ${detection.matchCount} 次),已停止本轮以避免烧 token`,
+            code: 'STAGNATION_STOP',
+            suggestion: '换工具或换参数;若任务确实无法推进,直接告知用户限制',
+          },
+        });
+        return 'break';
       }
     }
 

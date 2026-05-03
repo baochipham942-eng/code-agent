@@ -10,8 +10,8 @@
 //   - 每次 tool call 完成后计算 fingerprint = sha256(name + args + result_summary).slice(0,12)
 //   - 维护最近 N 个 fingerprint
 //   - 连续 STAGNATION_THRESHOLD 个相同 → 视为 stagnation
-//   - 注入 system 提示给模型，提示"你正在重复，请换方案"
-//   - 不强制 break loop（让模型有自我纠正机会），但下一轮如果再重复就 break
+//   - 首次命中注入 system 提示，提示"你正在重复，请换方案"
+//   - 如果 warning 后仍继续同一 fingerprint，就停止本轮，避免继续烧 token
 // ============================================================================
 
 import { createHash } from 'crypto';
@@ -30,6 +30,21 @@ function summarizeOutput(result: ToolResult): string {
   const out = typeof result.output === 'string' ? result.output.slice(0, 200) : '';
   const err = typeof result.error === 'string' ? result.error.slice(0, 100) : '';
   return `${out}|${err}|${result.success ? 'ok' : 'err'}`;
+}
+
+function countTailRun(fingerprints: string[]): { fingerprint?: string; count: number } {
+  if (fingerprints.length === 0) {
+    return { count: 0 };
+  }
+
+  const last = fingerprints[fingerprints.length - 1];
+  let count = 1;
+  for (let i = fingerprints.length - 2; i >= 0; i--) {
+    if (fingerprints[i] === last) count++;
+    else break;
+  }
+
+  return { fingerprint: last, count };
 }
 
 /**
@@ -54,7 +69,15 @@ export function fingerprintToolCall(tc: ToolCall, result: ToolResult): string {
 export function pushAndDetectStagnation(
   recent: string[],
   newFingerprints: string[],
-): { detected: boolean; sameFingerprint?: string; matchCount: number } {
+): {
+  detected: boolean;
+  sameFingerprint?: string;
+  matchCount: number;
+  previousMatchCount: number;
+  shouldStop: boolean;
+} {
+  const previousTail = countTailRun(recent);
+
   // 推入新 fingerprint，超过窗口大小则丢最旧的
   for (const fp of newFingerprints) {
     recent.push(fp);
@@ -62,27 +85,36 @@ export function pushAndDetectStagnation(
   }
 
   if (recent.length < STAGNATION_THRESHOLD) {
-    return { detected: false, matchCount: 0 };
+    return { detected: false, matchCount: 0, previousMatchCount: previousTail.count, shouldStop: false };
   }
 
-  // 从尾部往前数连续相同的 fingerprint
-  const last = recent[recent.length - 1];
-  let count = 1;
-  for (let i = recent.length - 2; i >= 0; i--) {
-    if (recent[i] === last) count++;
-    else break;
-  }
+  const { fingerprint: last, count } = countTailRun(recent);
 
   if (count >= STAGNATION_THRESHOLD) {
-    return { detected: true, sameFingerprint: last, matchCount: count };
+    const shouldStop = (
+      previousTail.fingerprint === last &&
+      previousTail.count >= STAGNATION_THRESHOLD
+    );
+    return {
+      detected: true,
+      sameFingerprint: last,
+      matchCount: count,
+      previousMatchCount: previousTail.fingerprint === last ? previousTail.count : 0,
+      shouldStop,
+    };
   }
 
-  return { detected: false, matchCount: count };
+  return {
+    detected: false,
+    matchCount: count,
+    previousMatchCount: previousTail.fingerprint === last ? previousTail.count : 0,
+    shouldStop: false,
+  };
 }
 
 /**
  * 给模型的 system 提示文本（注入到 conversation 让下一轮看见）。
- * 措辞：明确指出循环 + 建议路径 + 不强制 break，让模型自己 reason。
+ * 措辞：明确指出循环 + 建议路径，给模型一次自我纠正机会。
  */
 export function buildStagnationHint(matchCount: number): string {
   return (
@@ -96,4 +128,9 @@ export function buildStagnationHint(matchCount: number): string {
     `- If you genuinely cannot make progress, tell the user the limitation honestly rather than fabricating a plausible-looking answer.\n` +
     `</stagnation-detected>`
   );
+}
+
+export function buildStagnationStopMessage(matchCount: number, fingerprint?: string): string {
+  const fingerprintText = fingerprint ? ` fingerprint=${fingerprint}` : '';
+  return `Tool stagnation detected again after warning: ${matchCount} consecutive identical tool+args+result calls${fingerprintText}. Stopping the agent loop to avoid wasting tokens.`;
 }

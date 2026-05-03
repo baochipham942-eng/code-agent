@@ -20,6 +20,8 @@ export interface TokenBreakdown {
   messages: number;
   /** 工具结果占用的 tokens */
   toolResults: number;
+  /** 工具 schema 定义占用的 tokens（每轮请求都会发，之前漏算导致 UI 显示偏低） */
+  toolDefinitions?: number;
 }
 
 /**

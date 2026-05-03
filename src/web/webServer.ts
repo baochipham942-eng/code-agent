@@ -28,7 +28,8 @@ import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
-import type { PermissionResponse } from '../shared/contract';
+import { getModelSessionState } from '../main/session/modelSessionState';
+import type { ModelProvider, PermissionResponse } from '../shared/contract';
 
 const logger = createLogger('WebServer');
 
@@ -188,6 +189,17 @@ async function initializeServices(): Promise<void> {
     }
   })();
 
+  // 把 web 模式的 mock window 注入 contextHealthService，否则它的 emitHealthUpdate
+  // 的 mainWindow 检查直接 return，前端 SSE 永远收不到 context fill 更新（实测：
+  // 工具调用执行 39 turn 但 UI 占比纹丝不动）。
+  try {
+    const { getContextHealthService } = await import('../main/context/contextHealthService');
+    getContextHealthService().setMainWindow(webModeWindow as any);
+    logger.info('contextHealthService bound to web-mode window');
+  } catch (error) {
+    logger.warn('Failed to bind contextHealthService window:', (error as Error).message);
+  }
+
   logger.info('Backend services initialized');
 }
 
@@ -334,6 +346,42 @@ function registerHandlers(): void {
   handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
     const { action, payload } = request;
     try {
+      if (action === 'switchModel') {
+        if (!payload?.sessionId || !payload?.provider || !payload?.model) {
+          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId, provider and model are required' } };
+        }
+        getModelSessionState().setOverride(payload.sessionId, {
+          provider: payload.provider as ModelProvider,
+          model: payload.model,
+          temperature: payload.temperature,
+          maxTokens: payload.maxTokens,
+          adaptive: payload.adaptive,
+        });
+        return {
+          success: true,
+          data: {
+            provider: payload.provider,
+            model: payload.model,
+            adaptive: payload.adaptive,
+          },
+        };
+      }
+
+      if (action === 'getModelOverride') {
+        if (!payload?.sessionId) {
+          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
+        }
+        return { success: true, data: getModelSessionState().getOverride(payload.sessionId) };
+      }
+
+      if (action === 'clearModelOverride') {
+        if (!payload?.sessionId) {
+          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
+        }
+        getModelSessionState().clearOverride(payload.sessionId);
+        return { success: true, data: null };
+      }
+
       let sm: Awaited<ReturnType<typeof import('../main/services/infra/sessionManager').getSessionManager>> | null = null;
       if (dbAvailable) {
         try {
@@ -344,18 +392,41 @@ function registerHandlers(): void {
       if (!sm) {
         return { success: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' } };
       }
+      // 切会话/新建会话之前先 flush 旧 session 的 streaming partial，避免 AI 回复在切换中丢失。
+      // 与 AppService.flushPreviousSessionIfRunning 等价（web mode 下 AppService 为 null，
+      // 所以直接拿 TaskManager 的 orchestrator 触发 cancel）。
+      // web mode 的 inference 走 routes/agent.ts → activeAgentLoops（不通过 TaskManager.activeOrchestrators），
+      // 切会话前从 activeAgentLoops 拿当前 session 的 agentLoop.cancel('session-switch')，
+      // 让 ConversationRuntime.cancel 把 partial 持久化到 DB 后再 abort。
+      const flushPreviousIfRunning = async (nextSessionId?: string): Promise<void> => {
+        const currentSessionId = sm!.getCurrentSessionId();
+        if (!currentSessionId) return;
+        if (nextSessionId && currentSessionId === nextSessionId) return;
+        const agentLoop = activeAgentLoops.get(currentSessionId);
+        if (!agentLoop) return;
+        logger.info('[webServer:session] flush previous session before switch', { currentSessionId, nextSessionId });
+        try {
+          // agentLoop.cancel 已改成 async (B1)，但 deps 类型签名是 cancel(): void —— 这里用 await 兼容两者
+          await Promise.resolve((agentLoop as any).cancel('session-switch'));
+        } catch (err) {
+          logger.warn('[webServer:session] flush previous session failed', err);
+        }
+      };
+
       let data: unknown;
       switch (action) {
         case 'list':
           data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
           break;
         case 'create':
+          await flushPreviousIfRunning();
           data = await sm.createSession({
             title: payload?.title || 'New Session',
             modelConfig: resolveSessionDefaultModelConfig(),
           });
           break;
         case 'load':
+          await flushPreviousIfRunning(payload?.sessionId);
           data = await sm.restoreSession(payload?.sessionId);
           break;
         case 'delete':

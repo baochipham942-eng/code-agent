@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import type { Message } from '../../shared/contract';
+import type { ModelProvider } from '../../shared/contract/model';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -31,6 +33,93 @@ interface AgentRouterDeps {
 }
 
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
+
+function buildSessionTitle(prompt: string): string {
+  return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+}
+
+function upsertCachedMessage(messages: CachedMessage[], message: CachedMessage): CachedMessage[] {
+  const existingIndex = messages.findIndex((cached) => cached.id === message.id);
+  if (existingIndex >= 0) {
+    const next = [...messages];
+    next[existingIndex] = { ...next[existingIndex], ...message };
+    return next;
+  }
+  return [...messages, message];
+}
+
+function enforceSessionCacheLimit(): void {
+  if (sessionMessages.size <= SESSION_CACHE_MAX) return;
+  const oldestKey = sessionMessages.keys().next().value;
+  if (oldestKey) sessionMessages.delete(oldestKey);
+}
+
+function cacheMessageForSession(sessionId: string, message: CachedMessage): void {
+  const cached = upsertCachedMessage(sessionMessages.get(sessionId) || [], message);
+  sessionMessages.set(sessionId, cached);
+  enforceSessionCacheLimit();
+}
+
+function updateInMemorySession(sessionId: string, prompt: string, historyWasEmpty: boolean): void {
+  const title = buildSessionTitle(prompt);
+  const existing = inMemorySessions.get(sessionId);
+  if (existing) {
+    existing.updatedAt = Date.now();
+    existing.messageCount = (sessionMessages.get(sessionId) || []).length;
+    if (historyWasEmpty) existing.title = title;
+    return;
+  }
+
+  inMemorySessions.set(sessionId, {
+    id: sessionId,
+    title,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messageCount: (sessionMessages.get(sessionId) || []).length,
+  });
+}
+
+function isDuplicateMessageError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('UNIQUE constraint failed') || message.includes('SQLITE_CONSTRAINT');
+}
+
+async function ensureDbSession(
+  sessionId: string,
+  title: string,
+  modelConfig: { provider: ModelProvider; model: string },
+): Promise<any> {
+  const { getDatabase } = await import('../../main/services/core/databaseService');
+  const db = getDatabase();
+  if (!db.getSession(sessionId)) {
+    db.createSessionWithId(sessionId, {
+      title,
+      modelConfig,
+    });
+  }
+  return db;
+}
+
+async function persistMessageToDb(
+  sessionManager: Awaited<ReturnType<AgentRouterDeps['tryGetSessionManager']>> | null,
+  db: any,
+  sessionId: string,
+  message: Message,
+): Promise<void> {
+  if (sessionManager) {
+    await sessionManager.addMessageToSession(sessionId, message);
+    return;
+  }
+
+  try {
+    db.addMessage(sessionId, message);
+  } catch (error) {
+    if (!isDuplicateMessageError(error)) {
+      throw error;
+    }
+    db.updateMessage(message.id, message);
+  }
+}
 
 export function createAgentRouter(deps: AgentRouterDeps): Router {
   const router = Router();
@@ -64,14 +153,28 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     sendSSE(res, 'task_start', { taskId, prompt, sessionId });
 
     try {
+      // 解析有效的 model/provider:body 显式参数 > session override > 默认。
+      // 切换 UI 把模型写进 modelSessionState 后,/api/run 必须从这里读,
+      // 否则 UI 切换看似生效但推理仍走 default(实测:UI 选 deepseek,日志仍 xiaomi)。
+      let effectiveModel = model;
+      let effectiveProvider = provider;
+      if (!effectiveModel || !effectiveProvider) {
+        const { getModelSessionState } = await import('../../main/session/modelSessionState');
+        const override = getModelSessionState().getOverride(sessionId);
+        if (override && !override.adaptive) {
+          effectiveProvider = effectiveProvider ?? override.provider;
+          effectiveModel = effectiveModel ?? override.model;
+        }
+      }
+
       const { createCLIAgent } = await import('../../cli/adapter');
       const { createAgentLoop } = await import('../../cli/bootstrap');
 
       const agent = await createCLIAgent({
         project: project || process.cwd(),
         gen: generation,
-        model,
-        provider,
+        model: effectiveModel,
+        provider: effectiveProvider,
         json: true,
       });
 
@@ -306,6 +409,62 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         broadcastSSE('session:list-updated', undefined);
       }
 
+      // === pre-persist user message before agentLoop.run ===
+      // 把 user msg 在 run 之前落库,避免 cancel/abort/异常时 user prompt 丢失。
+      // assistant/tool 消息由 messageProcessor 在 run 中自己落库,这里只补 user。
+      let userMsgPrePersistedDb = false;
+      let userMsgPrePersistedSupabase = false;
+
+      if (dbAvailable) {
+        try {
+          const sm = await tryGetSessionManager();
+          const db = await ensureDbSession(
+            sessionId,
+            buildSessionTitle(prompt),
+            { provider: runModelConfig.provider as ModelProvider, model: runModelConfig.model },
+          );
+          await persistMessageToDb(sm, db, sessionId, {
+            id: msgId,
+            role: 'user',
+            content: prompt,
+            timestamp: userMsg.timestamp,
+          } as Message);
+          userMsgPrePersistedDb = true;
+        } catch (err) {
+          logger.warn('Pre-persist user message to DB failed (continuing run):', (err as Error).message);
+        }
+      }
+
+      try {
+        const sb = await getSupabaseForSession();
+        if (sb) {
+          const title = buildSessionTitle(prompt);
+          await sb.supabase.from('sessions').upsert({
+            id: sessionId,
+            user_id: sb.userId,
+            title,
+            model_provider: runModelConfig.provider,
+            model_name: runModelConfig.model,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            source_device_id: 'web',
+          }, { onConflict: 'id' });
+          await sb.supabase.from('messages').insert({
+            id: msgId,
+            session_id: sessionId,
+            user_id: sb.userId,
+            role: 'user',
+            content: prompt,
+            timestamp: userMsg.timestamp,
+            updated_at: Date.now(),
+            source_device_id: 'web',
+          });
+          userMsgPrePersistedSupabase = true;
+        }
+      } catch (err) {
+        logger.warn('Pre-persist user message to Supabase failed (continuing run):', (err as Error).message);
+      }
+
       await agentLoop.run(prompt);
 
       // ── 缓存会话消息（维持多轮上下文）──
@@ -371,12 +530,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const loopPersistedAssistantOrTool = loopPersistedAssistantOrToolMessageIds.size > 0;
           if (sm) {
             // 通过 SM 写入，同时更新 DB 和 sessionCache
-            await sm.addMessageToSession(sessionId, {
-              id: msgId,
-              role: 'user',
-              content: prompt,
-              timestamp: userMsg.timestamp,
-            } as import('../../shared/contract').Message);
+            if (!userMsgPrePersistedDb) {
+              await sm.addMessageToSession(sessionId, {
+                id: msgId,
+                role: 'user',
+                content: prompt,
+                timestamp: userMsg.timestamp,
+              } as import('../../shared/contract').Message);
+            }
             if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
@@ -391,12 +552,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
             const { getDatabase } = await import('../../main/services/core/databaseService');
             const db = getDatabase();
-            db.addMessage(sessionId, {
-              id: msgId,
-              role: 'user',
-              content: prompt,
-              timestamp: userMsg.timestamp,
-            } as import('../../shared/contract').Message);
+            if (!userMsgPrePersistedDb) {
+              db.addMessage(sessionId, {
+                id: msgId,
+                role: 'user',
+                content: prompt,
+                timestamp: userMsg.timestamp,
+              } as import('../../shared/contract').Message);
+            }
             if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
@@ -438,17 +601,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             updated_at: Date.now(),
             source_device_id: 'web',
           }, { onConflict: 'id' });
-          // Insert user message
-          await sb.supabase.from('messages').insert({
-            id: msgId,
-            session_id: sessionId,
-            user_id: sb.userId,
-            role: 'user',
-            content: prompt,
-            timestamp: userMsg.timestamp,
-            updated_at: Date.now(),
-            source_device_id: 'web',
-          });
+          // Insert user message (skip if pre-persisted)
+          if (!userMsgPrePersistedSupabase) {
+            await sb.supabase.from('messages').insert({
+              id: msgId,
+              session_id: sessionId,
+              user_id: sb.userId,
+              role: 'user',
+              content: prompt,
+              timestamp: userMsg.timestamp,
+              updated_at: Date.now(),
+              source_device_id: 'web',
+            });
+          }
           // Insert assistant message
           if (assistantText || assistantToolCalls.length > 0) {
             await sb.supabase.from('messages').insert({

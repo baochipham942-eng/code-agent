@@ -78,6 +78,19 @@ export class TaskComplexityAnalyzer {
     const listMatches = userMessage.match(listPattern) || [];
     const hasList = listMatches.length >= 2;
 
+    // 简单规则6: 长内容产出约束（中文写作/小说/报告类任务,输入很短但输出预期很长）
+    // 上面的 charCount 看的是"输入长度",对"写3000字小说,分6段,慢慢写"这种短输入
+    // 长输出的请求会判 simple/fastPath,导致 agent 一把梭直接交差。这里识别输出约束
+    // 关键词,任意一个命中就升级为 complex,让 planning 走多步分解。
+    const longOutputCountPattern = /(\d{2,})\s*(?:字|words?)/i;
+    const partitionPattern = /分\s*[\d一二三四五六七八九十]+\s*(?:段|个段|部分|章节|章|节|步)/;
+    const outputStyleKeywords = ['慢慢写', '详细展开', '循序渐进', '事无巨细', '逐步展开', '逐段', '一段一段'];
+    const longOutputMatch = userMessage.match(longOutputCountPattern);
+    const requestsLongOutput = longOutputMatch ? Number(longOutputMatch[1]) >= 500 : false;
+    const requestsPartition = partitionPattern.test(userMessage);
+    const requestsDetailedStyle = outputStyleKeywords.some(k => userMessage.includes(k));
+    const hasOutputConstraint = requestsLongOutput || requestsPartition || requestsDetailedStyle;
+
     // 计算复杂度
     let complexity: TaskComplexity = 'simple';
     let confidence = 0.6;
@@ -87,12 +100,15 @@ export class TaskComplexityAnalyzer {
       complexity = 'complex';
       reasons.push('审计/审查类任务');
       confidence = 0.85;
-    } else if (fileCount >= 3 || stepCount >= 2 || charCount > 200 || hasList) {
+    } else if (fileCount >= 3 || stepCount >= 2 || charCount > 200 || hasList || hasOutputConstraint) {
       complexity = 'complex';
       if (fileCount >= 3) reasons.push(`涉及 ${fileCount} 个文件`);
       if (stepCount >= 2) reasons.push(`包含多步骤描述`);
       if (charCount > 200) reasons.push(`详细描述 (${charCount} 字符)`);
       if (hasList) reasons.push(`包含多项清单 (${listMatches.length} 项)`);
+      if (requestsLongOutput && longOutputMatch) reasons.push(`要求长内容产出 (${longOutputMatch[0]})`);
+      if (requestsPartition) reasons.push(`要求分段/分部分产出`);
+      if (requestsDetailedStyle) reasons.push(`要求详细/慢节奏写作`);
       confidence = 0.7;
     } else if (fileCount >= 2 || stepCount >= 1 || charCount > 50) {
       complexity = 'moderate';

@@ -14,11 +14,32 @@ interface SessionsRouterDeps {
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
   tryGetSessionManager: () => Promise<any>;
   getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
+  activeAgentLoops: Map<string, { cancel(reason?: string): void | Promise<void> }>;
 }
 
 export function createSessionsRouter(deps: SessionsRouterDeps): Router {
   const router = Router();
-  const { logger, tryGetSessionManager, getSupabaseForSession } = deps;
+  const { logger, tryGetSessionManager, getSupabaseForSession, activeAgentLoops } = deps;
+
+  /**
+   * 切会话/新建会话之前 flush 旧 session 的 streaming partial,避免 AI 回复在切换中丢失。
+   * web 模式的 inference 走 routes/agent.ts → activeAgentLoops(不经 TaskManager),
+   * 跟 webServer.ts:domain:session 的 flush 共用同一份状态;原 TaskManager.getOrchestrator
+   * 在 web 模式永远拿不到对应实例,等于没 flush。
+   */
+  const flushPreviousIfRunning = async (sm: any, nextSessionId?: string): Promise<void> => {
+    const currentSessionId = sm?.getCurrentSessionId?.();
+    if (!currentSessionId) return;
+    if (nextSessionId && currentSessionId === nextSessionId) return;
+    const agentLoop = activeAgentLoops.get(currentSessionId);
+    if (!agentLoop) return;
+    logger.info('flush previous session before switch', { currentSessionId, nextSessionId });
+    try {
+      await Promise.resolve(agentLoop.cancel('session-switch'));
+    } catch (err) {
+      logger.warn('flush previous session failed', err);
+    }
+  };
 
   router.get('/sessions', async (_req: Request, res: Response) => {
     try {
@@ -58,6 +79,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
     try {
       const sm = await tryGetSessionManager();
       if (sm) {
+        await flushPreviousIfRunning(sm);
         const { resolveSessionDefaultModelConfig } = await import('../../main/services/core/sessionDefaults');
         const title = req.body?.title || 'New Session';
         const session = await sm.createSession({
@@ -111,6 +133,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       const sessionId = req.params.id as string;
       const sm = await tryGetSessionManager();
       if (sm) {
+        await flushPreviousIfRunning(sm, sessionId);
         const session = await sm.restoreSession(sessionId);
         if (session) {
           // DB 路径找到了会话但消息可能为空 — 用内存缓存补充

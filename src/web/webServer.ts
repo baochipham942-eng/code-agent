@@ -548,6 +548,7 @@ function createApp(): express.Express {
     logger,
     tryGetSessionManager,
     getSupabaseForSession,
+    activeAgentLoops,
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────

@@ -6,6 +6,7 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { createLogger } from '../../services/infra/logger';
 import { getAppName, getAppVersion, isPackaged } from '../../platform/appPaths';
+import { getEnvCapabilities } from '../../services/core/envCapabilities';
 
 const logger = createLogger('ContextBuilder');
 
@@ -33,6 +34,10 @@ function isGitRepo(dir: string): boolean {
 /**
  * Build environment info block (Claude Code style <env> block)
  * Injected once per prompt assembly — ~60 tokens, zero tool calls saved.
+ *
+ * 如果启动时探针已跑完（getEnvCapabilities 返回非 null），还会追加一个
+ * <env-capabilities> 块列出本地可用的 CLI，并提示模型用 Bash + `--help` 探索。
+ * 不点名具体场景，给清单 + discovery 原则即可。
  */
 function buildEnvironmentBlock(workingDirectory: string): string {
   const platform = process.platform;                    // darwin / linux / win32
@@ -41,7 +46,7 @@ function buildEnvironmentBlock(workingDirectory: string): string {
   const today = new Date().toISOString().split('T')[0]; // 2026-02-13
   const gitRepo = isGitRepo(workingDirectory);
 
-  return `<env>
+  const baseBlock = `<env>
 Working directory: ${workingDirectory}
 Is directory a git repo: ${gitRepo ? 'Yes' : 'No'}
 Platform: ${platform}
@@ -50,6 +55,17 @@ Default Shell: ${shell}
 Home Directory: ${os.homedir()}
 Today's date: ${today}
 </env>`;
+
+  const caps = getEnvCapabilities();
+  if (!caps || caps.length === 0) return baseBlock;
+
+  const cliList = caps.map((c) => c.name).join(', ');
+  const capsBlock = `<env-capabilities>
+Local CLIs detected on PATH: ${cliList}
+When built-in tools (WebFetch / Glob / Grep / Read / Edit / Write) don't fit your need — e.g. anti-scraping pages, niche file formats, structured data wrangling — invoke any of these via Bash. Probe unfamiliar CLIs with \`<cli> --help\` before using.
+</env-capabilities>`;
+
+  return `${baseBlock}\n\n${capsBlock}`;
 }
 
 /**

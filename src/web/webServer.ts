@@ -93,12 +93,13 @@ async function initializeServices(): Promise<void> {
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
 
-  // 加载 .env 文件（确保 API Key 等环境变量可用）
+  // 加载 .env 文件（确保 API Key、HTTPS_PROXY 等环境变量可用）
+  // 优先级：~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）
+  // 不再搜 process.cwd()：launchd 启的 app cwd 是 /，永远 miss，且会让 dev/prod 行为发散
   try {
     const dotenv = await import("dotenv");
-    // 按优先级搜索 .env：cwd → 脚本所在目录 → 资源目录（Tauri 打包）
     const candidates = [
-      path.join(process.cwd(), ".env"),
+      path.join(os.homedir(), ".code-agent", ".env"),
       path.join(__dirname, ".env"),
       path.join(__dirname, "..", ".env"),
     ];
@@ -175,6 +176,17 @@ async function initializeServices(): Promise<void> {
   }
 
   // Memory service removed — Light Memory (file-based) is used instead
+
+  // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞初始化）
+  // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块
+  void (async () => {
+    try {
+      const { probeEnvCapabilities } = await import('../main/services/core/envCapabilities');
+      await probeEnvCapabilities();
+    } catch (error) {
+      logger.warn('EnvCapabilities probe failed (non-fatal):', (error as Error).message);
+    }
+  })();
 
   logger.info('Backend services initialized');
 }

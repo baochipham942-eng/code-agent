@@ -157,6 +157,17 @@ export async function initializeCLIServices(): Promise<void> {
     cliLog('Failed to kick off SkillDiscoveryService:', error);
   }
 
+  // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞 CLI 首字响应）
+  // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块
+  void (async () => {
+    try {
+      const { probeEnvCapabilities } = await import('../main/services/core/envCapabilities');
+      await probeEnvCapabilities();
+    } catch (error) {
+      cliLog('EnvCapabilities probe failed (non-fatal):', error);
+    }
+  })();
+
   initialized = true;
   cliLog('CLI services initialized');
 }

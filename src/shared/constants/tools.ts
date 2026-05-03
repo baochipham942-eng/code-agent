@@ -79,3 +79,30 @@ export const CROSS_VERIFY = {
   /** 相似度阈值 — >= 此值视为 agreement */
   SIMILARITY_THRESHOLD: 0.7,
 } as const;
+
+/**
+ * 启动时探测的本地 CLI 候选清单。
+ *
+ * 探针并行跑 `which X`，检测命中的 CLI 暴露给模型（写入 system prompt 的
+ * <env-capabilities> 块）。设计原则：
+ * - 只暴露探到的（缺失就不出现），新装 CLI 重启即生效
+ * - 不点名"小红书用 opencli" 这类硬规则，给清单 + discovery 原则
+ * - 新增 CLI 在这里加一行，不改代码
+ */
+export const PROBED_CLI_CANDIDATES: readonly string[] = [
+  // 数据处理 / 文本
+  'jq', 'yq', 'rg', 'fd', 'sqlite3',
+  // 网页抓取 / 反爬
+  'opencli', 'jina',
+  // 文档 / OCR
+  'mineru', 'pdftotext', 'pandoc',
+  // 媒体
+  'ffmpeg', 'imagemagick',
+  // 网络
+  'curl', 'wget', 'http',
+  // VCS / 包管理（部分系统不带）
+  'gh', 'hub',
+] as const;
+
+/** 探针超时（每个 which 调用），避免启动卡死 */
+export const ENV_PROBE_TIMEOUT_MS = 1500;

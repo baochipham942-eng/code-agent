@@ -7,8 +7,6 @@
 //
 // ============================================================================
 
-/// <reference path="../types/electron.d.ts" />
-
 import type {
   ElectronAPI as CommandBridgeAPI,
   DomainAPI,
@@ -20,6 +18,86 @@ import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 
 type EventCallback = (...args: unknown[]) => void;
+
+const AUTH_RELOAD_ATTEMPT_KEY = 'code-agent:http-auth-token-reload-attempted';
+
+type AuthTokenRecovery = {
+  status: number;
+  message: string;
+  willReload: boolean;
+};
+
+function getInjectedAuthToken(): string | undefined {
+  return (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+}
+
+function getReloadStorage(): Storage | null {
+  try {
+    return window.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthTokenReloadAttempt(): void {
+  getReloadStorage()?.removeItem(AUTH_RELOAD_ATTEMPT_KEY);
+}
+
+function scheduleAuthTokenReloadOnce(): boolean {
+  const storage = getReloadStorage();
+  if (storage?.getItem(AUTH_RELOAD_ATTEMPT_KEY) === '1') {
+    return false;
+  }
+  storage?.setItem(AUTH_RELOAD_ATTEMPT_KEY, '1');
+
+  const reload = window.location?.reload;
+  if (typeof reload !== 'function') {
+    return false;
+  }
+
+  window.setTimeout(() => {
+    window.location.reload();
+  }, 250);
+  return true;
+}
+
+function parseHttpErrorMessage(errorBody: string): string {
+  if (!errorBody) return '';
+  try {
+    const parsed = JSON.parse(errorBody) as unknown;
+    if (parsed && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>;
+      if (typeof record.error === 'string') return record.error;
+      if (record.error && typeof record.error === 'object') {
+        const error = record.error as Record<string, unknown>;
+        if (typeof error.message === 'string') return error.message;
+        if (typeof error.code === 'string') return error.code;
+      }
+      if (typeof record.message === 'string') return record.message;
+    }
+  } catch {
+    // fall through to raw body
+  }
+  return errorBody;
+}
+
+function getRecoverableAuthTokenError(status: number, errorMessage: string): AuthTokenRecovery | null {
+  if (status !== 401 && status !== 403) return null;
+  const normalized = errorMessage.toLowerCase();
+  if (!normalized.includes('auth token') && !normalized.includes('authorization')) {
+    return null;
+  }
+
+  const willReload = scheduleAuthTokenReloadOnce();
+  const nextStep = willReload
+    ? '页面会自动刷新一次，重新注入本地 token。'
+    : '请手动刷新页面，重新注入本地 token。';
+  return {
+    status,
+    willReload,
+    message: `本地 Web 会话 token 已失效 (${status}: ${errorMessage || 'Invalid auth token'})。${nextStep}问题在本地页面和后端 token 不一致，和模型或云端代理无关。`,
+  };
+}
 
 /**
  * 基于 HTTP API 的 Code Agent API polyfill
@@ -82,7 +160,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
 
 /** Get auth headers for API requests. Token is injected into HTML by webServer. */
 function getAuthHeaders(): Record<string, string> {
-  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+  const token = getInjectedAuthToken();
   if (token) {
     return { 'Authorization': `Bearer ${token}` };
   }
@@ -104,7 +182,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
   function ensureSSE(): void {
     if (eventSource && eventSource.readyState !== EventSource.CLOSED) return;
 
-    const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+    const token = getInjectedAuthToken();
     const params = new URLSearchParams();
     if (token) params.set('token', token);
     if (lastSeenEventId >= 0) params.set('lastEventId', String(lastSeenEventId));
@@ -211,15 +289,15 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         // 非 2xx 响应：读取错误体并抛出，避免当 SSE 流解析
         if (!response.ok) {
           const errorBody = await response.text();
-          let errorMessage: string;
-          try {
-            const parsed = JSON.parse(errorBody);
-            errorMessage = parsed.error || parsed.message || errorBody;
-          } catch {
-            errorMessage = errorBody;
+          const errorMessage = parseHttpErrorMessage(errorBody);
+          const authError = getRecoverableAuthTokenError(response.status, errorMessage);
+          if (authError) {
+            console.warn('[HttpTransport] local auth token expired:', authError.message);
+            throw new Error(authError.message);
           }
           throw new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`);
         }
+        clearAuthTokenReloadAttempt();
 
         // 读取 SSE 流并分发事件到 listeners
         if (response.body) {
@@ -344,9 +422,16 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
         if (!response.ok) {
           const errorBody = await response.text();
-          console.warn(`[HttpTransport] ${channel} failed:`, response.status, errorBody);
+          const errorMessage = parseHttpErrorMessage(errorBody);
+          const authError = getRecoverableAuthTokenError(response.status, errorMessage);
+          if (authError) {
+            console.warn(`[HttpTransport] ${channel} local auth token expired:`, authError.message);
+            throw new Error(authError.message);
+          }
+          console.warn(`[HttpTransport] ${channel} failed:`, response.status, errorMessage || errorBody);
           return undefined as ReturnType<IpcInvokeHandlers[K]>;
         }
+        clearAuthTokenReloadAttempt();
 
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
@@ -428,6 +513,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       });
 
       if (!res.ok) {
+        const errorBody = await res.text();
+        const errorMessage = parseHttpErrorMessage(errorBody);
+        const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+        if (authError) {
+          throw new Error(authError.message);
+        }
         throw new Error(`Upload failed: ${res.status}`);
       }
 
@@ -447,7 +538,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          clearAuthTokenReloadAttempt();
+          return await res.json();
+        }
+        const errorBody = await res.text();
+        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
       } catch { /* fallthrough */ }
       return { text: '', pageCount: 0 };
     },
@@ -459,7 +555,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          clearAuthTokenReloadAttempt();
+          return await res.json();
+        }
+        const errorBody = await res.text();
+        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
       } catch { /* fallthrough */ }
       return { text: '', sheetCount: 0, rowCount: 0 };
     },
@@ -471,7 +572,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          clearAuthTokenReloadAttempt();
+          return await res.json();
+        }
+        const errorBody = await res.text();
+        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
       } catch { /* fallthrough */ }
       return null;
     },
@@ -483,7 +589,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          clearAuthTokenReloadAttempt();
+          return await res.json();
+        }
+        const errorBody = await res.text();
+        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
       } catch { /* fallthrough */ }
       return null;
     },
@@ -495,7 +606,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType }),
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          clearAuthTokenReloadAttempt();
+          return await res.json();
+        }
+        const errorBody = await res.text();
+        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
       } catch { /* fallthrough */ }
       return { success: false, error: 'HTTP transport: transcribe not available' };
     },
@@ -534,14 +650,27 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         });
 
         if (res.ok) {
+          clearAuthTokenReloadAttempt();
           return await res.json() as IPCResponse<T>;
+        }
+
+        const errorMessage = parseHttpErrorMessage(await res.text());
+        const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+        if (authError) {
+          return {
+            success: false,
+            error: {
+              code: 'LOCAL_AUTH_TOKEN_EXPIRED',
+              message: authError.message,
+            },
+          };
         }
 
         return {
           success: false,
           error: {
             code: `HTTP_${res.status}`,
-            message: await res.text(),
+            message: errorMessage,
           },
         };
       } catch (err) {

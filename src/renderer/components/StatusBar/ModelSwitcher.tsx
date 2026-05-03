@@ -172,9 +172,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       )
       .then((res) => {
-        if (res?.success && res.data) {
-          setOverrideModel(res.data.model);
-          setOverrideAdaptive(!!res.data.adaptive);
+        if (res?.success) {
+          setOverrideModel(res.data?.model ?? null);
+          setOverrideAdaptive(!!res.data?.adaptive);
+        } else {
+          toast.error('加载模型覆盖失败: ' + (res?.error?.message ?? '未知错误'));
         }
       })
       .catch((err: unknown) => toast.error('加载模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误')));
@@ -184,18 +186,22 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     async (option: ModelOption) => {
       if (!sessionId) return;
       try {
-        await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
+        const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
           sessionId,
           provider: option.provider,
           model: option.model,
           adaptive: false,
         });
+        if (!res?.success) {
+          toast.error('模型切换失败: ' + (res?.error?.message ?? '未知错误') + '。请检查 API Key 或网络连接');
+          return;
+        }
         setOverrideModel(option.model);
         setOverrideAdaptive(false);
+        setOpen(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
       }
-      setOpen(false);
     },
     [sessionId]
   );
@@ -204,34 +210,42 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     if (!sessionId) return;
     try {
       // 自动模式：provider/model 传当前默认作占位，后端靠 adaptive=true 判断
-      await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
+      const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
         sessionId,
         provider: defaultProvider,
         model: currentModel,
         adaptive: true,
       });
+      if (!res?.success) {
+        toast.error('切换到自动模式失败: ' + (res?.error?.message ?? '未知错误'));
+        return;
+      }
       setOverrideModel(currentModel);
       setOverrideAdaptive(true);
+      setOpen(false);
     } catch (err) {
       toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
-    setOpen(false);
   }, [sessionId, defaultProvider, currentModel]);
 
   const handleClear = useCallback(async () => {
     if (!sessionId) return;
     try {
-      await window.domainAPI?.invoke(
+      const res = await window.domainAPI?.invoke(
         IPC_DOMAINS.SESSION,
         'clearModelOverride',
         { sessionId }
       );
+      if (!res?.success) {
+        toast.error('清除模型覆盖失败: ' + (res?.error?.message ?? '未知错误'));
+        return;
+      }
       setOverrideModel(null);
       setOverrideAdaptive(false);
+      setOpen(false);
     } catch (err) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
-    setOpen(false);
   }, [sessionId]);
 
   const displayModel = overrideModel || currentModel;

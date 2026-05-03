@@ -95,6 +95,11 @@ export type ErrorCategory =
   | 'network_error'
   | 'command_failure'
   | 'context_overflow'
+  | 'dependency_missing'   // 缺包/缺二进制（Cannot find package/module，was rate_limit 误标）
+  | 'http_4xx'             // HTTP 4xx (除 429 → rate_limit)
+  | 'http_5xx'             // HTTP 5xx
+  | 'sandbox_denied'       // 沙箱拒绝
+  | 'auth_failed'          // 401/403/认证失败
   | 'unknown';
 
 export interface TelemetryToolCall {

@@ -129,6 +129,18 @@ export interface RuntimeContext {
   totalOutputTokens: number;
   consecutiveErrors: number;
 
+  // --- Stagnation detection ---
+  // 最近 N 次工具调用的 fingerprint (name + args_hash + result_hash)。
+  // 连续 STAGNATION_THRESHOLD 个相同 → 注入 system 提示并 break，避免死循环。
+  recentToolFingerprints: string[];
+  stagnationWarningEmitted: boolean;
+
+  // --- Ground-truth gate ---
+  // 本次 run 中 tool result 命中反爬指纹的次数。finalize 时如果用户消息含 URL
+  // 且此计数 >= 阈值，给最终 assistant_response 加一个 disclaimer，避免幻觉伪造
+  // 内容被当成"成功获取"上交。
+  antiScrapingHitsInRun: number;
+
   // --- Thinking ---
   effortLevel: EffortLevel;
   thinkingStepCount: number;

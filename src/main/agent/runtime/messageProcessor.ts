@@ -35,6 +35,13 @@ import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
+import {
+  fingerprintToolCall,
+  pushAndDetectStagnation,
+  buildStagnationHint,
+} from './stagnationDetector';
+import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
+import { applyGroundTruthGate } from './groundTruthGate';
 
 const logger = createLogger('MessageProcessor');
 
@@ -255,10 +262,30 @@ export class MessageProcessor {
     }
 
     const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+
+    // === Ground-truth gate ===
+    // 如果用户首条消息含 URL 且本 run 命中反爬阈值，给"成功输出"加 disclaimer。
+    // 不替换内容，只 prefix 提示——让用户看到"反爬限制下未必准确"。
+    const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
+    const gated = applyGroundTruthGate(
+      typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
+      this.ctx.antiScrapingHitsInRun,
+      strippedContent,
+    );
+    if (gated.applied) {
+      logger.warn(
+        `[GroundTruthGate] disclaimer prepended (anti-scraping hits=${this.ctx.antiScrapingHitsInRun}) — flagging potential fabrication`,
+      );
+      logCollector.agent('WARN', 'Ground-truth gate prepended disclaimer to assistant response', {
+        antiScrapingHits: this.ctx.antiScrapingHitsInRun,
+      });
+    }
+
+    const finalContent = gated.content;
     const assistantMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
-      content: strippedContent,
+      content: finalContent,
       timestamp: Date.now(),
       thinking: response.thinking,
       effortLevel: this.ctx.effortLevel,
@@ -270,7 +297,7 @@ export class MessageProcessor {
     };
 
     // Artifact extraction
-    const artifacts = extractArtifacts(strippedContent);
+    const artifacts = extractArtifacts(finalContent);
     if (artifacts.length > 0) {
       assistantMessage.artifacts = artifacts;
     }
@@ -526,6 +553,40 @@ export class MessageProcessor {
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);
+
+    // === Stagnation detection ===
+    // 计算本轮每个 tool call 的 fingerprint，push 到滑动窗口，连续 N 次相同
+    // → 注入提示让模型换路径。不强制 break loop（给模型自我纠正机会），但
+    // 已经发出过提示后再次命中就升级（这里用 stagnationWarningEmitted 标记 + 后续可在 finalizer break）
+    const fingerprints = toolCalls.map((tc: ToolCall) => {
+      const r = toolResults.find((res: ToolResult) => res.toolCallId === tc.id);
+      return r ? fingerprintToolCall(tc, r) : '';
+    }).filter((fp: string) => fp.length > 0);
+
+    if (fingerprints.length > 0) {
+      const detection = pushAndDetectStagnation(this.ctx.recentToolFingerprints, fingerprints);
+      if (detection.detected && !this.ctx.stagnationWarningEmitted) {
+        logger.warn(
+          `[Stagnation] detected ${detection.matchCount}× repeat of fingerprint ${detection.sameFingerprint} — injecting hint to model`,
+        );
+        logCollector.agent('WARN', `Stagnation detected: ${detection.matchCount}× same tool+args+result`, {
+          fingerprint: detection.sameFingerprint,
+          matchCount: detection.matchCount,
+        });
+        this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount));
+        this.ctx.stagnationWarningEmitted = true;
+      }
+    }
+
+    // === Ground-truth gate (counter increment) ===
+    // 扫描 toolResults，命中反爬 marker 就累加计数。最终 assistant message 落地前
+    // 用此计数判断是否要加 disclaimer（在 handleTextResponse 里调用 applyGroundTruthGate）
+    for (const r of toolResults) {
+      const text = typeof r.output === 'string' ? r.output : (typeof r.error === 'string' ? r.error : '');
+      if (text.includes(ANTI_SCRAPING_HINT_MARKER)) {
+        this.ctx.antiScrapingHitsInRun++;
+      }
+    }
 
     // === 先解析模型输出的任务列表（模型显式标记优先） ===
     this.runFinalizer.tryParseTodosFromResponse(response);

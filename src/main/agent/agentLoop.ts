@@ -241,6 +241,13 @@ export class AgentLoop {
       totalOutputTokens: 0,
       consecutiveErrors: 0,
 
+      // Stagnation detection
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+
+      // Ground-truth gate
+      antiScrapingHitsInRun: 0,
+
       // Thinking
       effortLevel: 'high' as any,
       thinkingStepCount: 0,

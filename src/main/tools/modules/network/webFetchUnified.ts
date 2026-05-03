@@ -17,6 +17,7 @@ import type {
 import { WebFetchUnifiedTool } from '../../web/WebFetchUnifiedTool';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { webFetchUnifiedSchema as schema } from './webFetchUnified.schema';
+import { detectAntiScrapingHint } from './antiScrapingDetector';
 
 class WebFetchUnifiedHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -44,6 +45,20 @@ class WebFetchUnifiedHandler implements ToolHandler<Record<string, unknown>, str
     const legacyResult = await WebFetchUnifiedTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('WebFetch done', { action, ok: legacyResult.success });
+
+    // 反爬检测：在 result 末尾追加 hint，提示模型走 Bash + 本地 CLI 替代方案。
+    // 不修改 success/failure 判定，只增量信息——让模型自己决定是否换路径。
+    const url = typeof args.url === 'string' ? args.url : undefined;
+    const hint = detectAntiScrapingHint(url, legacyResult.success, legacyResult.output, legacyResult.error);
+    if (hint) {
+      if (legacyResult.success && typeof legacyResult.output === 'string') {
+        legacyResult.output = `${legacyResult.output}\n\n${hint}`;
+      } else if (!legacyResult.success && typeof legacyResult.error === 'string') {
+        legacyResult.error = `${legacyResult.error}\n\n${hint}`;
+      }
+      ctx.logger.debug('WebFetch anti-scraping hint emitted', { url });
+    }
+
     return adaptLegacyResult(legacyResult);
   }
 }

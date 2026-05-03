@@ -40,7 +40,11 @@ const INTENT_RULES: IntentRule[] = [
   },
   {
     intent: 'explanation',
-    keywords: ['解释', '什么是', '为什么', '怎么', 'explain', 'what', 'why', 'how', '原理', '含义'],
+    keywords: [
+      '解释', '什么是', '为什么', '怎么', '原理', '含义',
+      '介绍', '讲讲', '说明一下',
+      'explain', 'what', 'why', 'how',
+    ],
     weight: 0.9,
   },
   {
@@ -79,8 +83,15 @@ const INTENT_RULES: IntentRule[] = [
   },
   {
     intent: 'research',
-    keywords: ['调研', '研究', '对比', '方案', 'research', 'investigate', 'compare'],
-    toolHeuristics: ['WebSearch', 'WebFetch'],
+    keywords: [
+      '调研', '研究', '对比', '方案',
+      // 信息提取/总结类（读 URL/文章）
+      '提炼', '总结', '摘要', '提取', '抓取', '读取',
+      '看看', '查看', '读一下', '获取',
+      'research', 'investigate', 'compare',
+      'summarize', 'summarise', 'extract', 'fetch', 'scrape',
+    ],
+    toolHeuristics: ['WebSearch', 'WebFetch', 'Browser'],
     weight: 0.8,
   },
   {
@@ -157,6 +168,17 @@ export function classifyIntent(
         keywords: [...(existing?.keywords ?? []), '[multi-tool]'],
       });
     }
+  }
+
+  // URL-only prompt fallback: 用户给 URL 但没匹配明确动词关键词时（如直接贴
+  // 链接 + "看看"），强信号判为 research，避免大量 turn 标 'unknown'
+  const hasUrl = /https?:\/\/\S+/i.test(userPrompt);
+  if (hasUrl) {
+    const existing = scores.get('research');
+    scores.set('research', {
+      score: (existing?.score ?? 0) + 0.6,
+      keywords: [...(existing?.keywords ?? []), '[url-in-prompt]'],
+    });
   }
 
   // Sort by score

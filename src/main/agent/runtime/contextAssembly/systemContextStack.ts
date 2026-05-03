@@ -145,25 +145,49 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   ctx.runtime.messages.push(message);
   ctx.recordContextEventsForMessage(message);
 
-  if (process.env.CODE_AGENT_CLI_MODE === 'true') {
-    // CLI 模式：通过回调持久化（包含 tool_results）
-    if (ctx.runtime.persistMessage) {
-      try {
-        await ctx.runtime.persistMessage(message);
-        markMessagePersistedByContextAssembly(message);
-      } catch (error) {
-        logger.error('Failed to persist message (CLI):', error);
-      }
+  // 单一统一路径：优先用 runtime.persistMessage callback（CLI/webServer/desktop 都注入了），
+  // callback 缺失或失败时降级到 sessionManager.addMessageToSession（idempotent，重复写会自动 update）。
+  // 任何写入失败用 logger.warn 输出，确保被默认日志级别捕获。
+  let persisted = false;
+
+  if (ctx.runtime.persistMessage) {
+    try {
+      await ctx.runtime.persistMessage(message);
+      persisted = true;
+    } catch (error) {
+      logger.warn('[ContextAssembly] persistMessage callback failed; falling back to sessionManager', {
+        sessionId: ctx.runtime.sessionId,
+        messageId: message.id,
+        role: message.role,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    return;
   }
 
-  try {
-    const sessionManager = getSessionManager();
-    await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
+  if (!persisted && ctx.runtime.sessionId) {
+    try {
+      const sessionManager = getSessionManager();
+      await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
+      persisted = true;
+    } catch (error) {
+      logger.warn('[ContextAssembly] sessionManager.addMessageToSession failed', {
+        sessionId: ctx.runtime.sessionId,
+        messageId: message.id,
+        role: message.role,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (persisted) {
     markMessagePersistedByContextAssembly(message);
-  } catch (error) {
-    logger.error('Failed to persist message:', error);
+  } else {
+    logger.warn('[ContextAssembly] message NOT persisted to db', {
+      sessionId: ctx.runtime.sessionId,
+      messageId: message.id,
+      role: message.role,
+      hasCallback: !!ctx.runtime.persistMessage,
+    });
   }
 }
 

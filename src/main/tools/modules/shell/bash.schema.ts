@@ -3,18 +3,20 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const bashSchema: ToolSchema = {
   name: 'Bash',
-  description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. Working directory persists between calls.
+  description: `Executes a bash command. Working directory persists across calls.
 
-IMPORTANT: Avoid using this tool to run \`find\`, \`grep\`, \`cat\`, \`head\`, \`tail\`, \`sed\`, \`awk\`, or \`echo\` commands. Instead, use the appropriate dedicated tool as this will be much faster and more reliable:
-- File search: Use Glob (NOT find or ls)
-- Content search: Use Grep (NOT grep or rg)
-- Read files: Use Read (NOT cat/head/tail/sed -n/awk/python3 file reads)
-- Edit files: Use Edit (NOT sed/awk)
-- Write files: Use Write (NOT echo >/cat <<EOF)
+Returns: stdout/stderr (combined), exit code if non-zero, signal if terminated, background PIDs if started.
 
-Reserve Bash exclusively for: running scripts, git commands, installing packages, compilation, and other system operations that genuinely require shell execution. If you are unsure, default to the dedicated tool.
+For common file/search operations, dedicated tools are faster and more reliable:
+- File listing: Glob (instead of \`find\` / \`ls\`)
+- Content search: Grep (instead of \`grep\` / \`rg\`)
+- Read files: Read (instead of \`cat\` / \`head\` / \`tail\` / \`sed -n\`)
+- Edit files: Edit (instead of \`sed\` / \`awk\`)
+- Write files: Write (instead of \`echo >\` / \`cat <<EOF\`)
 
-Git: NEVER --force push or --no-verify unless explicitly requested.`,
+For everything else — running scripts, git, build/install, invoking any CLI on PATH (jq, ffmpeg, opencli, jina, mineru, pdftotext ...), or probing the environment with \`which\` / \`<cli> --help\` to learn what tools are available — Bash is your tool. When the built-in tools fall short (anti-scraping responses, niche formats, structured data wrangling), fall back to Bash and explore. The <env-capabilities> block in your context lists CLIs already detected locally; if a needed one is missing, \`command -v X\` confirms availability before use.
+
+Git: NEVER \`--force\` push or \`--no-verify\` unless explicitly requested.`,
   inputSchema: {
     type: 'object',
     properties: {

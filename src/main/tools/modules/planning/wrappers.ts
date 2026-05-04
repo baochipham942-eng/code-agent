@@ -19,7 +19,6 @@ import { taskGetTool } from '../../planning/taskGet';
 import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { taskUpdateTool } from '../../planning/taskUpdate';
 import { TaskManagerTool } from '../../planning/TaskManagerTool';
-import { findingsWriteTool } from '../../planning/findingsWrite';
 import { exploreTool } from '../../../agent/multiagentTools/explore';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
@@ -46,8 +45,7 @@ const PLAN_EXECUTE = {
 // plan_read / plan_recover_recent_work 已迁移到 native ToolModule，见 ./planRead.ts / ./planRecoverRecentWork.ts
 
 // ── 计划写 ──
-// plan_update 已迁移到 native ToolModule，见 ./planUpdate.ts
-export const findingsWriteModule = wrapLegacyTool(findingsWriteTool, PLAN_WRITE);
+// plan_update / findings_write 已迁移到 native ToolModule，见 ./planUpdate.ts / ./findingsWrite.ts
 
 // ── 计划 facade ──
 // plan_mode facade (PlanMode / enter_plan_mode / exit_plan_mode) 已迁移到

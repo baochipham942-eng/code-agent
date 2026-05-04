@@ -354,16 +354,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).agentSpawnModule,
   );
   registry.register(
-    {
-      name: 'wait_agent',
-      description: 'Wait for a spawned agent to complete and return its output.',
-      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
-      category: 'multiagent',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
-    async () => (await import('./multiagent/wrappers')).waitAgentModule,
+    waitAgentSchema,
+    async () => (await import('./multiagent/waitAgent')).waitAgentModule,
   );
   registry.register(
     closeAgentSchema,

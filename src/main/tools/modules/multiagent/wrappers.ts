@@ -10,19 +10,12 @@
 import { sdkTaskTool } from '../../../agent/multiagentTools/task';
 import { teammateTool } from '../../../agent/multiagentTools/teammate';
 import { spawnAgentTool, agentSpawnTool } from '../../../agent/multiagentTools/spawnAgent';
-import { waitAgentTool } from '../../../agent/multiagentTools/waitAgent';
 import { agentMessageTool } from '../../../agent/multiagentTools/agentMessage';
 import { sendInputTool } from '../../../agent/multiagentTools/sendInput';
 import { workflowOrchestrateTool } from '../../../agent/multiagentTools/workflowOrchestrate';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
 const MA_EXECUTE = { category: 'multiagent' as const, permissionLevel: 'execute' as const };
-const MA_READ = {
-  category: 'multiagent' as const,
-  permissionLevel: 'read' as const,
-  readOnly: true,
-  allowInPlanMode: true,
-};
 
 // Task / spawn / workflow / teammate 都涉及子进程或副作用 → execute
 export const taskModule = wrapLegacyTool(sdkTaskTool, MA_EXECUTE);
@@ -34,6 +27,4 @@ export const sendInputModule = wrapLegacyTool(sendInputTool, MA_EXECUTE);
 export const workflowOrchestrateModule = wrapLegacyTool(workflowOrchestrateTool, MA_EXECUTE);
 export const agentMessageModule = wrapLegacyTool(agentMessageTool, MA_EXECUTE);
 
-// wait 是 read-ish（只读子 agent 状态/结果）
-export const waitAgentModule = wrapLegacyTool(waitAgentTool, MA_READ);
-// planReview: 已迁移到 Level 2 native，见 ./planReview.ts
+// wait/planReview: 已迁移到 Level 2 native，见 ./waitAgent.ts / ./planReview.ts

@@ -14,9 +14,7 @@ export { AgentMessageTool } from './agentMessage';
 export { WorkflowOrchestrateTool } from './workflowOrchestrate';
 export { TeammateTool } from './teammate';
 
-// Phase 2: Agent lifecycle tools
-export { WaitAgentTool, waitAgentTool } from './waitAgent';
-// closeAgent — migrated to native; see src/main/tools/modules/multiagent/closeAgent.ts
+// Phase 2: Agent lifecycle tools — migrated to native; see src/main/tools/modules/multiagent/{waitAgent,closeAgent}.ts
 // Phase 3: Agent communication
 export { SendInputTool, sendInputTool } from './sendInput';
 

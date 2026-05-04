@@ -41,6 +41,7 @@ export const AppearanceSettings: React.FC = () => {
   useEffect(() => {
     const loadFontSize = async () => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 App.tsx，SETTINGS 域 'get' 应抽 SettingsIpcMap 让 invokeDomain narrow
         const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
         if (settings?.ui?.fontSize) {
           const sizeMap: Record<number, 'small' | 'medium' | 'large'> = { 13: 'small', 14: 'medium', 16: 'large' };

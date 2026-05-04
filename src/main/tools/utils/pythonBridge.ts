@@ -30,6 +30,7 @@ export function resolveScriptPath(scriptName: string): string {
   if (fs.existsSync(prodPath)) return prodPath;
 
   // 3. 资源目录
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): process.resourcesPath 是 Electron 注入字段（@types/node 没有），应通过 NodeJS.Process & { resourcesPath?: string } 类型扩展
   const resourcePath = path.join((process as any).resourcesPath || '', 'scripts/', scriptName);
   if (fs.existsSync(resourcePath)) return resourcePath;
 

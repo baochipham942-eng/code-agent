@@ -91,6 +91,7 @@ export const MCPSettings: React.FC = () => {
 
   const loadCodexSettings = async () => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 App.tsx，SETTINGS 域 'get' 应抽 SettingsIpcMap 让 invokeDomain narrow
       const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
       if (settings?.codex) {
         setCodexDetectedPath(settings.codex.detectedPath ?? null);
@@ -104,6 +105,7 @@ export const MCPSettings: React.FC = () => {
 
   const handleCodexToggle = async (field: 'sandboxEnabled' | 'crossVerifyEnabled', value: boolean) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 loadCodexSettings，SETTINGS 域 narrow
       const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
       const codex = settings?.codex || { sandboxEnabled: false, crossVerifyEnabled: false };
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {

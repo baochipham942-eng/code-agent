@@ -167,8 +167,10 @@ export function createBatchedEventEmitter(
       } else {
         // 发送批量事件
         originalOnEvent({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentEvent 联合里没有 'batch' 这个 type；批量事件协议应该作为独立类型 BatchedAgentEvent 加入联合或换成专用 onBatch 回调
           type: 'batch' as any,
           data: events,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 batch type 不在 AgentEvent 联合里，整个 envelope 强转后应替换为 BatchedAgentEvent
         } as any);
       }
     },

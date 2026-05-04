@@ -113,7 +113,9 @@ function selectChartType(title: string, points: string[]): ChartType {
  * 渲染原生可编辑图表
  */
 export function renderNativeChart(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptx 是 PptxGenJS 实例，应 import PptxGenJS 替换 any
   pptx: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): slide 是 PptxGenJS.Slide，应 import 后替换
   slide: any,
   chartData: ChartSlotData,
   theme: ThemeConfig,
@@ -129,6 +131,7 @@ export function renderNativeChart(
   }];
 
   // 通用图表选项
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs IChartOpts 类型应 import { IChartOpts } from 'pptxgenjs'
   const baseOpts: any = {
     x: bounds.x,
     y: bounds.y,
@@ -154,6 +157,7 @@ export function renderNativeChart(
     baseOpts.valGridLine = { color: theme.cardBorder, style: 'dash', size: 0.5 };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ChartType 字面量联合，应 import { ChartType } from 'pptxgenjs'
   let pptxChartType: any;
 
   switch (chartType) {

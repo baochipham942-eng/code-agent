@@ -20,6 +20,7 @@ export function useErrorRecovery(maxAlerts = 5) {
     const api = window.codeAgentAPI || window.electronAPI;
     if (!api?.on) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC event 类型应是 IpcRendererEvent，但 window.codeAgentAPI.on 这层 wrapper 没透传 Electron 类型；应在 preload 类型声明里给 OnHandler 加 IpcRendererEvent
     const handler = (_event: any, data: ErrorRecoveryEvent) => {
       const alert: Alert = {
         id: `recovery-${data.timestamp}`,

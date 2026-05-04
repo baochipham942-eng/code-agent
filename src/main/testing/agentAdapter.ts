@@ -46,6 +46,7 @@ export class AgentLoopAdapter implements AgentInterface {
     let turnCount = 0;
 
     // Set up event listeners to capture outputs
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): testing harness 在 AgentLoop 上 hook emit 来抓事件，AgentLoop 没有公开 emit 方法；应该让 AgentLoop 实现 EventEmitter 接口或提供 onAnyEvent 公开 API
     const originalEmit = (this.agentLoop as any).emit?.bind(this.agentLoop);
 
     try {
@@ -57,6 +58,7 @@ export class AgentLoopAdapter implements AgentInterface {
 
       // After run completes, extract results from the agent state
       // This needs to be adapted based on actual AgentLoop implementation
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentLoop 内部 state 字段不公开，testing harness 直接读私有 state；应提供 AgentLoop.snapshotState() 公开接口
       const state = (this.agentLoop as any).state || {};
 
       // Extract responses from messages
@@ -94,7 +96,9 @@ export class AgentLoopAdapter implements AgentInterface {
    */
   async reset(): Promise<void> {
     // Reset the agent loop state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentLoop.reset 是非公开方法，testing harness 通过 duck typing 调用；应在 AgentLoop 公开 reset() 或导出 ITestableAgentLoop 接口
     if (typeof (this.agentLoop as any).reset === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 reset 非公开
       await (this.agentLoop as any).reset();
     }
   }
@@ -207,6 +211,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const _require = createRequire(import.meta.url);
       const electronMock = (await import('../../cli/electron-mock')).default;
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _require('module') 拿到的 NodeJS.Module 没有 prototype.require 字段（动态 monkey-patch CommonJS loader）；应该用 NodeJS.Module & { prototype: { require: (id: string) => unknown } } 类型扩展
       const Module = _require('module') as any;
       const originalRequire = Module.prototype.require;
       Module.prototype.require = function(id: string) {

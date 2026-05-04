@@ -159,6 +159,7 @@ export class GUIAgent {
     this.state.isRunning = true;
     this.actionCallback = onAction;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): content 字段在 GUI agent 自定义消息里既可能是 string 也可能是图文 array；应抽出 GuiAgentMessageContent 联合类型
     const messages: Array<{ role: string; content: any }> = [
       {
         role: 'system',

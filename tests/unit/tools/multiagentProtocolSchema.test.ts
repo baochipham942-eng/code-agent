@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { agentSpawnTool, exploreTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { exploreTool } from '../../../src/main/agent/multiagentTools';
 import { taskSchema } from '../../../src/main/tools/modules/multiagent/task.schema';
 import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
+import { spawnAgentSchema, agentSpawnSchema } from '../../../src/main/tools/modules/multiagent/spawnAgent.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
 describe('multiagent protocol schemas', () => {
@@ -26,7 +27,7 @@ describe('multiagent protocol schemas', () => {
   it('uses the real spawn_agent schema for the protocol wrapper', () => {
     const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'spawn_agent');
 
-    expect(schema?.inputSchema).toEqual(spawnAgentTool.inputSchema);
+    expect(schema?.inputSchema).toEqual(spawnAgentSchema.inputSchema);
     expect(schema?.inputSchema.properties).toHaveProperty('role');
     expect(schema?.inputSchema.properties).toHaveProperty('task');
     expect(schema?.inputSchema.properties).toHaveProperty('agents');
@@ -35,7 +36,7 @@ describe('multiagent protocol schemas', () => {
   it('uses the real AgentSpawn schema for the protocol wrapper', () => {
     const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'AgentSpawn');
 
-    expect(schema?.inputSchema).toEqual(agentSpawnTool.inputSchema);
+    expect(schema?.inputSchema).toEqual(agentSpawnSchema.inputSchema);
     expect(schema?.inputSchema.properties).toHaveProperty('role');
     expect(schema?.inputSchema.properties).toHaveProperty('task');
     expect(schema?.inputSchema.properties).toHaveProperty('agents');

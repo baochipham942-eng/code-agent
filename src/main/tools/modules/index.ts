@@ -107,7 +107,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
-import { exploreTool, spawnAgentTool, agentSpawnTool } from '../../agent/multiagentTools';
+import { exploreTool } from '../../agent/multiagentTools';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -331,18 +331,12 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/teammate')).teammateModule,
   );
   registry.register(
-    legacyToolSchema(spawnAgentTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).spawnAgentModule,
+    spawnAgentSchema,
+    async () => (await import('./multiagent/spawnAgent')).spawnAgentModule,
   );
   registry.register(
-    legacyToolSchema(agentSpawnTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).agentSpawnModule,
+    agentSpawnSchema,
+    async () => (await import('./multiagent/spawnAgent')).agentSpawnModule,
   );
   registry.register(
     waitAgentSchema,

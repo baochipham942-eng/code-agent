@@ -266,7 +266,7 @@ describe('resolveContextHealthForSession', () => {
     // currentTokens = messages + toolDefinitions。toolDefinitions 来自 ContextHealthService
     // 自动从 tool registry 估算（小红书 session 漏算 ~14k 是修这个 bug 的初衷）。
     expect(health.currentTokens).toBe(
-      health.breakdown.messages + health.breakdown.toolDefinitions
+      health.breakdown.messages + (health.breakdown.toolDefinitions ?? 0)
     );
   });
 
@@ -295,7 +295,7 @@ describe('resolveContextHealthForSession', () => {
     // + toolResults + toolDefinitions。这里 toolResults=0，所以 currentTokens 等于
     // systemPrompt + messages + toolDefinitions。
     expect(health.currentTokens).toBe(
-      health.breakdown.systemPrompt + health.breakdown.messages + health.breakdown.toolDefinitions
+      health.breakdown.systemPrompt + health.breakdown.messages + (health.breakdown.toolDefinitions ?? 0)
     );
   });
 

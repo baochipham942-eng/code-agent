@@ -413,8 +413,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/planRecoverRecentWork')).planRecoverRecentWorkModule,
   );
   registry.register(
-    { name: 'plan_update', description: 'Update the persistent plan (add/edit/complete tasks).', inputSchema: minSchema({ updates: { type: 'object' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).planUpdateModule,
+    planUpdateSchema,
+    async () => (await import('./planning/planUpdate')).planUpdateModule,
   );
   registry.register(
     { name: 'findings_write', description: 'Persist research findings into the plan.', inputSchema: minSchema({ findings: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },

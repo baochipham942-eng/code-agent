@@ -3,6 +3,9 @@
 // ============================================================================
 // 为 DOCX 文件添加 Track Changes（修订追踪）能力
 // 用于合同审阅、法务修订等协作场景
+//
+// P1 Wave 2 — document 迁移：从 src/main/tools/document/docxTrackChanges.ts
+// 整体搬迁过来，作为 docxEditCore.ts 的内部 helper（仅被本目录引用）。
 // ============================================================================
 
 let _revisionId = 100; // 起始 RSID，递增
@@ -26,11 +29,16 @@ function escapeXml(text: string): string {
     .replace(/'/g, '&apos;');
 }
 
+// JSZip instance type — 没有官方导出的类型，留 minimal shape 给本目录使用
+interface JSZipLike {
+  files: Record<string, { async: (kind: 'string') => Promise<string> }>;
+  file: (path: string, content: string) => void;
+}
+
 /**
  * 在 word/settings.xml 中启用修订追踪
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): zip 是 JSZip 实例，应 import { JSZip } from 'jszip'
-export async function enableTrackChanges(zip: any): Promise<void> {
+export async function enableTrackChanges(zip: JSZipLike): Promise<void> {
   const settingsFile = 'word/settings.xml';
   if (!zip.files[settingsFile]) return;
 
@@ -49,8 +57,7 @@ export async function enableTrackChanges(zip: any): Promise<void> {
 /**
  * 创建/更新 word/people.xml
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 enableTrackChanges，zip 应是 JSZip
-export async function ensurePeopleXml(zip: any, author: string): Promise<void> {
+export async function ensurePeopleXml(zip: JSZipLike, author: string): Promise<void> {
   const peopleFile = 'word/people.xml';
   const escapedAuthor = escapeXml(author);
 
@@ -79,8 +86,7 @@ export async function ensurePeopleXml(zip: any, author: string): Promise<void> {
 /**
  * 确保 people.xml 被正确引用
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 enableTrackChanges，zip 应是 JSZip
-async function ensurePeopleRelationships(zip: any): Promise<void> {
+async function ensurePeopleRelationships(zip: JSZipLike): Promise<void> {
   // 更新 [Content_Types].xml
   const ctFile = '[Content_Types].xml';
   if (zip.files[ctFile]) {
@@ -130,3 +136,5 @@ export function wrapDeletion(text: string, author: string, date?: string): strin
   const isoDate = toISODate(date);
   return `<w:del w:id="${id}" w:author="${escapeXml(author)}" w:date="${isoDate}"><w:r><w:delText xml:space="preserve">${escaped}</w:delText></w:r></w:del>`;
 }
+
+export type { JSZipLike };

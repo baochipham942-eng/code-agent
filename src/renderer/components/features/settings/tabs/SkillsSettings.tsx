@@ -64,7 +64,7 @@ const logger = createLogger('SkillsSettings');
  
 const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ipcService.invoke 的 channel 联合类型不包含 skill:* 通道，应该把 SKILL_CHANNELS 加进 IpcChannel 联合或提供 unsafeInvoke 入口
     return await (ipcService.invoke as any)(channel, ...args) as T;
   } catch (err) {
     logger.error(`IPC invoke failed for ${channel}`, err);

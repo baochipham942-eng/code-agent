@@ -199,6 +199,7 @@ async function initializeServices(): Promise<void> {
   // 工具调用执行 39 turn 但 UI 占比纹丝不动）。
   try {
     const { getContextHealthService } = await import('../main/context/contextHealthService');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): web 模式的 BrowserWindow 是自定义 mock 不是 Electron.BrowserWindow，contextHealthService.setMainWindow 应该接 MockBrowserWindow|Electron.BrowserWindow 联合或 ducktype 接口
     getContextHealthService().setMainWindow(webModeWindow as any);
     logger.info('contextHealthService bound to web-mode window');
   } catch (error) {
@@ -291,6 +292,7 @@ function registerHandlers(): void {
   }
 
   const deps: IpcDependencies = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 setMainWindow，IpcDependencies.getMainWindow 返回 Electron.BrowserWindow 但 web 模式给的是 mock
     getMainWindow: () => webModeWindow as any,
     getAppService: () => null, // Web mode uses HTTP API, not AppService
     getConfigService: () => {
@@ -313,6 +315,7 @@ function registerHandlers(): void {
   // 1. 接受 ipcMain 参数的 handler — 注册到我们传入的 mockIpcMain
   // 2. 直接 import { ipcMain } from 'electron' 的 handler — 注册到 electronMock 的 ipcMain
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): mockIpcMain 类型不完整匹配 Electron.IpcMain，应该把 setupAllIpcHandlers 第一个参数改成 IpcMainLike 鸭子类型接口
   setupAllIpcHandlers(mockIpcMain as any, deps);
 
   const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE);
@@ -412,6 +415,7 @@ function registerHandlers(): void {
         logger.info('[webServer:session] flush previous session before switch', { currentSessionId, nextSessionId });
         try {
           // agentLoop.cancel 已改成 async (B1)，但 deps 类型签名是 cancel(): void —— 这里用 await 兼容两者
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): activeAgentLoops 的元素类型 cancel() 签名是 void，但实际实现已改 async，需要把 IAgentLoopHandle.cancel 类型改成 () => void | Promise<void>
           await Promise.resolve((agentLoop as any).cancel('session-switch'));
         } catch (err) {
           logger.warn('[webServer:session] flush previous session failed', err);

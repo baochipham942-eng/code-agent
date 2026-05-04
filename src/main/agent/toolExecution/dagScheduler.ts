@@ -28,6 +28,7 @@ export interface ToolExecutionDAG {
 function extractFilePath(toolCall: ToolCall): string | null {
   const args = toolCall.arguments;
   if (!args || typeof args !== 'object') return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ToolCall.arguments 是 unknown，应改成 unknown + 显式 narrow（'file_path' in args && typeof args.file_path === 'string'）
   return (args as any).file_path || (args as any).path || null;
 }
 
@@ -36,6 +37,7 @@ function extractFilePath(toolCall: ToolCall): string | null {
  */
 function extractBashWritePaths(toolCall: ToolCall): string[] {
   if (toolCall.name !== 'bash') return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ToolCall.arguments 是 unknown，应改成显式 narrow（'command' in args && typeof args.command === 'string'）
   const command = (toolCall.arguments as any)?.command;
   if (!command || typeof command !== 'string') return [];
 

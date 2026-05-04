@@ -168,8 +168,11 @@ export class ChannelAgentBridge {
     const pending = this.pendingChannelMessages.get(ingressKey);
     const message: ChannelMessage = pending?.message ?? {
       id: (meta.messageId as string) || uuidv4(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): channelId 类型 ChannelType 是字面量联合 'telegram'|'webhook'|... 'api' 不在内但语义对应外部 API；应该把 'api' 加进 ChannelType 或专门用 ChannelType | 'api'
       channelId: 'api' as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): meta 是 Record<string, unknown>，sender 应该 narrow 成 ChannelSender；走 zod 校验或在写入 metadata 前定型
       sender: meta.sender as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sender，context 应 narrow 成 ChannelContext
       context: meta.context as any,
       content: msg.content,
       attachments: meta.attachments as ChannelAttachment[] | undefined,

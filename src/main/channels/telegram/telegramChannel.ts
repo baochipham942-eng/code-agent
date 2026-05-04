@@ -176,6 +176,7 @@ export class TelegramChannel extends BaseChannelPlugin {
      
     this.bot = new Bot(this.telegramConfig.botToken, {
       client: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): grammy 的 BotConfig.client.baseFetchConfig 是 native fetch RequestInit，不接 node-fetch 的 { agent }；应该升级 grammy 或用 transformer 注入
         baseFetchConfig: { agent, compress: true } as any,
         fetch: (url: any, init?: any) => nodeFetch(url, { ...init, agent }),
       },

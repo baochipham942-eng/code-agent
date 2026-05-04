@@ -25,6 +25,7 @@ function markMessagePersistedByContextAssembly(message: Message): void {
 }
 
 export function wasMessagePersistedByContextAssembly(message: Message): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): CONTEXT_ASSEMBLY_PERSISTED_MESSAGE 是用 Object.defineProperty 偷偷挂的非枚举 symbol-ish 标记，不在 Message 类型上；应该把这个 marker 用 WeakSet<Message> 替代，把数据从 message 上分离
   return Boolean((message as any)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
 }
 

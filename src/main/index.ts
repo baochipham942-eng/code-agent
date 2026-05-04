@@ -40,6 +40,7 @@ import type { PendingApprovalRepository } from './services/core/repositories/Pen
 const PROTOCOL = 'code-agent';
 
 // Register deep link protocol (must be before app.whenReady)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): process.defaultApp 是 Electron 注入的非标准字段（dev 模式判定），@types/node 上没有；应该 import { app } from 'electron' 后用 NodeJS.Process & { defaultApp?: boolean } 类型扩展
 if ((process as any).defaultApp) {
   // Development: need to pass the script path
   if (process.argv.length >= 2) {

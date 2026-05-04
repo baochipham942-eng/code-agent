@@ -15,7 +15,6 @@ import { PlanTool } from '../../planning/PlanTool';
 import { confirmActionTool } from '../../planning/confirmAction';
 import { taskListTool } from '../../planning/taskList';
 import { taskCreateTool } from '../../planning/taskCreate';
-import { planUpdateTool } from '../../planning/planUpdate';
 import { taskGetTool } from '../../planning/taskGet';
 import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { taskUpdateTool } from '../../planning/taskUpdate';
@@ -47,7 +46,7 @@ const PLAN_EXECUTE = {
 // plan_read / plan_recover_recent_work 已迁移到 native ToolModule，见 ./planRead.ts / ./planRecoverRecentWork.ts
 
 // ── 计划写 ──
-export const planUpdateModule = wrapLegacyTool(planUpdateTool, PLAN_WRITE);
+// plan_update 已迁移到 native ToolModule，见 ./planUpdate.ts
 export const findingsWriteModule = wrapLegacyTool(findingsWriteTool, PLAN_WRITE);
 
 // ── 计划 facade ──

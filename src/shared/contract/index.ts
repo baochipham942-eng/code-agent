@@ -26,6 +26,7 @@ export * from './auth';
 export * from './sync';
 export * from './device';
 export * from './settings';
+export * from './configService';
 export * from './update';
 
 // Cloud & GUI types

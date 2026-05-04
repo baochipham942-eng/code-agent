@@ -27,8 +27,11 @@ export interface PendingLocalToolCall {
 interface AgentRouterDeps {
   activeAgentLoops: Map<string, { cancel(): void }>;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tryGetSessionManager 返回 SessionManager，应直接 import 类型
   tryGetSessionManager: () => Promise<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient，应 import @supabase/supabase-js
   getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
 }
 
@@ -88,6 +91,7 @@ async function ensureDbSession(
   sessionId: string,
   title: string,
   modelConfig: { provider: ModelProvider; model: string },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 返回的是 databaseService getDatabase() 实例，应 import { Database } from '../../main/services/core/databaseService'
 ): Promise<any> {
   const { getDatabase } = await import('../../main/services/core/databaseService');
   const db = getDatabase();
@@ -102,6 +106,7 @@ async function ensureDbSession(
 
 async function persistMessageToDb(
   sessionManager: Awaited<ReturnType<AgentRouterDeps['tryGetSessionManager']>> | null,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 ensureDbSession，db 是 Database 实例，应 import 类型
   db: any,
   sessionId: string,
   message: Message,

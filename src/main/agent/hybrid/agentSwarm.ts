@@ -376,6 +376,7 @@ export class AgentSwarm {
 
         // 等待 worker 完成
         result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): workerManager 'event' 事件 payload 没定义类型，应在 worker types 里抽出 WorkerEvent 联合（worker_completed / worker_failed / worker_progress）
           const onEvent = (event: any) => {
             if (event.workerId !== workerId) return;
             if (event.type === 'worker_completed') {

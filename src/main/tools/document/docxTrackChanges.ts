@@ -29,6 +29,7 @@ function escapeXml(text: string): string {
 /**
  * 在 word/settings.xml 中启用修订追踪
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): zip 是 JSZip 实例，应 import { JSZip } from 'jszip'
 export async function enableTrackChanges(zip: any): Promise<void> {
   const settingsFile = 'word/settings.xml';
   if (!zip.files[settingsFile]) return;
@@ -48,6 +49,7 @@ export async function enableTrackChanges(zip: any): Promise<void> {
 /**
  * 创建/更新 word/people.xml
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 enableTrackChanges，zip 应是 JSZip
 export async function ensurePeopleXml(zip: any, author: string): Promise<void> {
   const peopleFile = 'word/people.xml';
   const escapedAuthor = escapeXml(author);
@@ -77,6 +79,7 @@ export async function ensurePeopleXml(zip: any, author: string): Promise<void> {
 /**
  * 确保 people.xml 被正确引用
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 enableTrackChanges，zip 应是 JSZip
 async function ensurePeopleRelationships(zip: any): Promise<void> {
   // 更新 [Content_Types].xml
   const ctFile = '[Content_Types].xml';

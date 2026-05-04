@@ -64,6 +64,7 @@ export async function createWindow(): Promise<void> {
   });
 
   // Log web contents events
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Electron WebContents.on('did-fail-load') 回调签名 (event: Event, errorCode: number, errorDescription: string)，应该按 Electron 类型签名而不是 any
   mainWindow.webContents.on('did-fail-load', (event: any, errorCode: any, errorDescription: any) => {
     logger.error('Failed to load', new Error(errorDescription), { errorCode });
   });

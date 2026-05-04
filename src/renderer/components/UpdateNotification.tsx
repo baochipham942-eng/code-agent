@@ -40,6 +40,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
   // Listen for update events from main process
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 ForceUpdateModal，update 事件 data 应抽 UpdateEvent 联合类型
     const handleUpdateEvent = (event: { type: string; data?: any }) => {
       logger.debug('Received event', { type: event.type, data: event.data });
 

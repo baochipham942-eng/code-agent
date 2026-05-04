@@ -598,6 +598,7 @@ export function renderMermaidNative(
     }
 
     // 绘制形状
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ShapeProps 类型应 import { AddShapeProps } from 'pptxgenjs'，含 x/y/w/h/fill/line/rectRadius
     const shapeProps: any = {
       x: node.x,
       y: node.y,

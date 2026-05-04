@@ -84,6 +84,7 @@ export class TelegramChannel extends BaseChannelPlugin {
       const nf = require('node-fetch');
       const nodeFetch = (nf.default || nf) as Function; // eslint-disable-line @typescript-eslint/no-unsafe-function-type -- node-fetch vs native fetch type mismatch
       clientOptions.baseFetchConfig = { agent, compress: true };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): grammy 的 fetch 适配器签名 (url: RequestInfo, init?: RequestInit)，但 node-fetch v2 类型不兼容；应该升级 node-fetch v3 或换 undici
       clientOptions.fetch = (url: any, init?: any) => nodeFetch(url, { ...init, agent });
       logger.info('Using proxy for Telegram', { proxyUrl });
     }
@@ -178,6 +179,7 @@ export class TelegramChannel extends BaseChannelPlugin {
       client: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): grammy 的 BotConfig.client.baseFetchConfig 是 native fetch RequestInit，不接 node-fetch 的 { agent }；应该升级 grammy 或用 transformer 注入
         baseFetchConfig: { agent, compress: true } as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 fetch 签名 mismatch（grammy native fetch vs node-fetch v2）
         fetch: (url: any, init?: any) => nodeFetch(url, { ...init, agent }),
       },
     });

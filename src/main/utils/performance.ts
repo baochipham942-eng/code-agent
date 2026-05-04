@@ -86,6 +86,7 @@ export async function measureAsync<T>(
 /**
  * Create a timed wrapper for a function
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 高阶函数泛型约束 `(...args: any[]) => Promise<any>` 是 TS 标准 idiom（同 errors/handler.ts），unknown[] 不兼容 Parameters<T>
 export function withTiming<T extends (...args: any[]) => Promise<any>>(
   fn: T,
   label: string
@@ -272,6 +273,7 @@ export function clearMarks(): void {
 /**
  * Throttle function execution
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 withTiming，高阶函数泛型 idiom，unknown 会破调用方推断
 export function throttle<T extends (...args: any[]) => any>(
   fn: T,
   limit: number
@@ -290,6 +292,7 @@ export function throttle<T extends (...args: any[]) => any>(
 /**
  * Debounce function execution
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 withTiming，高阶函数泛型 idiom，unknown 会破调用方推断
 export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay: number

@@ -59,6 +59,7 @@ export function registerCronHandlers(): void {
         }
 
         case 'updateJob': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload narrow 应该用 zod schema 校验后再用，updates 在 cronService.updateJob 类型上是 Partial<CronJobDefinition>
           const { jobId, updates } = payload as { jobId: string; updates: any };
           const job = await cronService.updateJob(jobId, updates);
           return { success: true, data: job } satisfies IPCResponse;

@@ -277,6 +277,7 @@ async function vlmReview(screenshots: string[], slides: StructuredSlide[]): Prom
         });
         process.stdout.write(`  [${i + 1}/${screenshots.length}] ${slideLayout}: ${review.score}/5\n`);
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): catch 形参 ts4.0+ 默认 unknown，访问 .message 应改成 `err instanceof Error ? err.message : String(err)`
     } catch (err: any) {
       console.log(`  [${i + 1}] VLM 调用失败: ${err.message}`);
       results.push({ slideIndex: i, layout: slideLayout, score: 3, issues: ['VLM 调用失败'] });

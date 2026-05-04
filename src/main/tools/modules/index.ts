@@ -409,8 +409,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/planRead')).planReadModule,
   );
   registry.register(
-    { name: 'plan_recover_recent_work', description: 'Recover recent uncommitted work into a plan.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).planRecoverRecentWorkModule,
+    planRecoverRecentWorkSchema,
+    async () => (await import('./planning/planRecoverRecentWork')).planRecoverRecentWorkModule,
   );
   registry.register(
     { name: 'plan_update', description: 'Update the persistent plan (add/edit/complete tasks).', inputSchema: minSchema({ updates: { type: 'object' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },

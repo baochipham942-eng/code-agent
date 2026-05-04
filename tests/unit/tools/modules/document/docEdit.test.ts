@@ -20,7 +20,7 @@ vi.mock('../../../../../src/main/tools/excel/excelEdit', () => ({
   executeExcelEdit: (...args: unknown[]) => executeExcelEditMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/document/docxEdit', () => ({
+vi.mock('../../../../../src/main/tools/modules/document/docxEditCore', () => ({
   executeDocxEdit: (...args: unknown[]) => executeDocxEditMock(...args),
 }));
 

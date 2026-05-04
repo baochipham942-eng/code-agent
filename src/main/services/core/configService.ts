@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { app } from '../../platform';
 import type { AppSettings, ModelProvider } from '../../../shared/contract';
+import type { IReadConfigService, ServiceApiKey } from '../../../shared/contract/configService';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
@@ -204,7 +205,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
 };
 
-export class ConfigService {
+export class ConfigService implements IReadConfigService {
   private settings: AppSettings = DEFAULT_SETTINGS;
   private configPath: string;
 
@@ -486,7 +487,7 @@ export class ConfigService {
    * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, SkillsMP, etc.)
    * Priority: secure storage > environment variable
    */
-  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity' | 'tavily' | 'skillsmp'): string | undefined {
+  getServiceApiKey(service: ServiceApiKey): string | undefined {
     const storage = getSecureStorage();
 
     // Check secure storage first

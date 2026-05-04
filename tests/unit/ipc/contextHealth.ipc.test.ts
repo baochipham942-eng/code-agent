@@ -75,6 +75,29 @@ const compactMocks = vi.hoisted(() => {
 vi.mock('../../../src/main/platform', () => ({
   ipcMain: compactMocks.ipcMain,
   BrowserWindow: class MockBrowserWindow {},
+  app: {
+    getPath: vi.fn((_name: string) => '/tmp/test-userdata'),
+    getVersion: vi.fn(() => '0.0.0-test'),
+    getName: vi.fn(() => 'code-agent-test'),
+    getAppPath: vi.fn(() => '/tmp/test-app'),
+    getLocale: vi.fn(() => 'en-US'),
+    isReady: vi.fn(() => true),
+    isPackaged: false,
+    commandLine: { appendSwitch: vi.fn() },
+    on: vi.fn(),
+    once: vi.fn(),
+    off: vi.fn(),
+    removeListener: vi.fn(),
+    removeAllListeners: vi.fn(),
+    emit: vi.fn(() => false),
+    quit: vi.fn(),
+    exit: vi.fn(),
+    requestSingleInstanceLock: vi.fn(() => true),
+    setAppUserModelId: vi.fn(),
+    setAsDefaultProtocolClient: vi.fn(() => false),
+    setPath: vi.fn(),
+    whenReady: vi.fn(() => Promise.resolve()),
+  },
 }));
 
 vi.mock('../../../src/main/services', () => ({

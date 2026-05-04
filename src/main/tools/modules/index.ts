@@ -315,13 +315,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
   );
 
-  // ── batch 6: multiagent/ wrapper（9 个，验证 ctx.legacyToolRegistry/modelConfig）─
-  const minimalMASchema = (props: Record<string, { type: string }>, required: string[] = []) => ({
-    type: 'object' as const,
-    properties: props,
-    required,
-  });
-
+  // ── batch 6: multiagent/ — 9 工具全部 native（Wave 3 完成，wrappers.ts 已删除）─
   registry.register(
     taskSchema,
     async () => (await import('./multiagent/task')).taskModule,
@@ -355,14 +349,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/agentMessage')).agentMessageModule,
   );
   registry.register(
-    {
-      name: 'workflow_orchestrate',
-      description: 'Run a multi-step workflow across agents (DAG orchestration).',
-      inputSchema: minimalMASchema({ workflow: { type: 'object' } }, ['workflow']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).workflowOrchestrateModule,
+    workflowOrchestrateSchema,
+    async () => (await import('./multiagent/workflowOrchestrate')).workflowOrchestrateModule,
   );
   registry.register(
     planReviewSchema,

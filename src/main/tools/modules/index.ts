@@ -330,14 +330,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).taskModule,
   );
   registry.register(
-    {
-      name: 'teammate',
-      description: 'Send a message to a named teammate agent in the active swarm.',
-      inputSchema: minimalMASchema({ to: { type: 'string' }, message: { type: 'string' } }, ['to', 'message']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).teammateModule,
+    teammateSchema,
+    async () => (await import('./multiagent/teammate')).teammateModule,
   );
   registry.register(
     legacyToolSchema(spawnAgentTool, {

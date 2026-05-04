@@ -8,16 +8,15 @@
 // ============================================================================
 
 import { sdkTaskTool } from '../../../agent/multiagentTools/task';
-import { teammateTool } from '../../../agent/multiagentTools/teammate';
 import { spawnAgentTool, agentSpawnTool } from '../../../agent/multiagentTools/spawnAgent';
 import { workflowOrchestrateTool } from '../../../agent/multiagentTools/workflowOrchestrate';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
 const MA_EXECUTE = { category: 'multiagent' as const, permissionLevel: 'execute' as const };
 
-// Task / spawn / workflow / teammate 都涉及子进程或副作用 → execute
+// Task / spawn / workflow 涉及子进程或副作用 → execute
 export const taskModule = wrapLegacyTool(sdkTaskTool, MA_EXECUTE);
-export const teammateModule = wrapLegacyTool(teammateTool, MA_EXECUTE);
+// teammate: 已迁移到 Level 2 native，见 ./teammate.ts
 export const spawnAgentModule = wrapLegacyTool(spawnAgentTool, MA_EXECUTE);
 export const agentSpawnModule = wrapLegacyTool(agentSpawnTool, MA_EXECUTE);
 // closeAgent / sendInput: 已迁移到 Level 2 native，见 ./{closeAgent,sendInput}.ts

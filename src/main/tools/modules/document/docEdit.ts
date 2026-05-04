@@ -1,10 +1,13 @@
 // ============================================================================
-// DocEdit (P0-6.3 Batch 7 — document: native ToolModule rewrite)
+// DocEdit (P1 Wave 2 — document: native ToolModule rewrite)
 //
 // 统一文档编辑入口：.xlsx/.pptx/.docx 按后缀自动分派
-// - xlsx → executeExcelEdit (legacy helper, 需要 legacy ctx)
-// - docx → executeDocxEdit (legacy helper, 仅 params)
-// - pptx → 通过 ctx.resolver 派发到 ppt_edit (legacy ctx)
+// - xlsx → executeExcelEdit (cross-cat 函数式 helper, excel category 待迁移)
+// - docx → executeDocxEdit (本目录 docxEditCore.ts，已 native 化)
+// - pptx → 通过 ctx.resolver 派发到 ppt_edit (cross-cat dispatch)
+//
+// 已去除 wrapLegacyTool / buildLegacyCtxFromProtocol，五链 + 错误码规范化:
+// INVALID_ARGS / PERMISSION_DENIED / ABORTED / NOT_INITIALIZED / FS_ERROR
 // ============================================================================
 
 import * as path from 'path';
@@ -13,14 +16,18 @@ import type {
   ToolModule,
   ToolContext,
   CanUseToolFn,
+  CanUseToolResult,
   ToolProgressFn,
   ToolResult,
-  ToolSchema,
 } from '../../../protocol/tools';
-import type { ToolResolver } from '../../../tools/dispatch/toolResolver';
+import type { ToolResolver } from '../../dispatch/toolResolver';
+import type {
+  ToolContext as LegacyToolContext,
+  PermissionRequestData,
+} from '../../types';
 import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
-import { executeDocxEdit, type DocxEditParams } from '../../document/docxEdit';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { executeDocxEdit, type DocxEditParams } from './docxEditCore';
+import { docEditSchema as schema } from './docEdit.schema';
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -31,61 +38,64 @@ const FORMAT_MAP: Record<string, DocFormat> = {
   '.docx': 'docx',
 };
 
-const schema: ToolSchema = {
-  name: 'DocEdit',
-  description: `Unified document editing tool — atomic incremental edits on Excel, PPT, and Word files.
-Auto-detects format from file extension (.xlsx/.xls/.pptx/.docx). Auto-snapshots before editing.
-~80% token savings vs full-file regeneration.
+// ---------------------------------------------------------------------------
+// Local legacy ctx adapter — 仅用于 cross-cat dispatch（excelEdit / ppt_edit），
+// 避免依赖 _helpers/legacyAdapter.ts。
+// ---------------------------------------------------------------------------
 
-## Parameters:
-- file_path (required): Path to the document (.xlsx/.pptx/.docx)
-- operations (required): Array of edit operations (format-specific, see below)
-- dry_run: Preview changes without applying (default: false)
+async function forwardPermission(
+  request: PermissionRequestData,
+  canUseTool: CanUseToolFn,
+): Promise<boolean> {
+  const reason = request.type === 'dangerous_command' && request.reason
+    ? `dangerous:${request.reason}`
+    : request.reason;
 
-## Excel operations (.xlsx):
-- set_cell: { action: "set_cell", sheet?: "Sheet1", cell: "B7", value: 42000, format?: { bold: true } }
-- set_range: { action: "set_range", range: "A1:C2", values: [["a","b","c"],[1,2,3]] }
-- set_formula: { action: "set_formula", cell: "B8", formula: "=SUM(B2:B7)" }
-- insert_rows: { action: "insert_rows", after: 5, data: [["new","row"]] }
-- delete_rows: { action: "delete_rows", from: 3, count: 2 }
-- insert_columns / delete_columns
-- set_style: { action: "set_style", range: "A1:D1", style: { bold: true, fill: "E2EFDA" } }
-- rename_sheet / add_sheet / delete_sheet / set_column_width / merge_cells / auto_filter
+  const result: CanUseToolResult = await canUseTool(
+    request.tool,
+    request.details ?? {},
+    reason,
+    request,
+  );
+  return result.allow;
+}
 
-## PPT operations (.pptx):
-Use the ppt_edit tool directly (8 actions: replace_title, replace_content, replace_slide, delete_slide, insert_slide, extract_style, reorder_slides, update_notes).
+function buildDispatchLegacyCtx(
+  ctx: ToolContext,
+  canUseTool: CanUseToolFn,
+): LegacyToolContext {
+  const wrapEmit = (event: string, data: unknown) => {
+    ctx.emit({ type: event, ...((data && typeof data === 'object') ? data : { data }) } as never);
+  };
 
-## Word operations (.docx):
-- replace_text: { action: "replace_text", search: "old", replace: "new", all?: true }
-- replace_paragraph: { action: "replace_paragraph", index: 2, text: "new content" }
-- insert_paragraph: { action: "insert_paragraph", after: 1, text: "new para", style?: "heading2" }
-- delete_paragraph: { action: "delete_paragraph", index: 3, count?: 2 }
-- replace_heading: { action: "replace_heading", index: 0, text: "New Title" }
-- append_paragraph: { action: "append_paragraph", text: "added at end" }
-- set_text_style: { action: "set_text_style", search: "important", bold: true, color: "FF0000" }`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      file_path: {
-        type: 'string',
-        description: 'Path to the document (.xlsx/.pptx/.docx)',
-      },
-      operations: {
-        type: 'array',
-        description: 'Array of edit operations (format-specific)',
-      },
-      dry_run: {
-        type: 'boolean',
-        description: 'Preview changes without applying (default: false)',
-      },
-    },
-    required: ['file_path', 'operations'],
-  },
-  category: 'document',
-  permissionLevel: 'write',
-  readOnly: false,
-  allowInPlanMode: false,
-};
+  return {
+    workingDirectory: ctx.workingDir,
+    requestPermission: (request) => forwardPermission(request, canUseTool),
+    abortSignal: ctx.abortSignal,
+    sessionId: ctx.sessionId,
+    emit: wrapEmit,
+    emitEvent: wrapEmit,
+    modelConfig: ctx.modelConfig,
+    hookManager: ctx.hookManager as LegacyToolContext['hookManager'],
+    planningService: ctx.planningService,
+    modelCallback: ctx.modelCallback,
+    currentToolCallId: ctx.currentToolCallId,
+    agentId: ctx.subagent?.agentId,
+    agentName: ctx.subagent?.agentName,
+    agentRole: ctx.subagent?.agentRole,
+    messages: ctx.subagent?.messages as LegacyToolContext['messages'],
+    modifiedFiles: ctx.subagent?.modifiedFiles as LegacyToolContext['modifiedFiles'],
+    todos: ctx.subagent?.todos as LegacyToolContext['todos'],
+    currentAttachments: ctx.subagent?.attachments as LegacyToolContext['currentAttachments'],
+    resolver: ctx.resolver,
+    toolScope: ctx.toolScope,
+    executionIntent: ctx.executionIntent,
+  } as LegacyToolContext;
+}
+
+// ---------------------------------------------------------------------------
+// Main executor
+// ---------------------------------------------------------------------------
 
 async function executeDocEdit(
   args: Record<string, unknown>,
@@ -126,7 +136,9 @@ async function executeDocEdit(
 
   try {
     if (format === 'xlsx') {
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+      // executeExcelEdit 的第二个参数 `_context` 内部未使用（excelEdit.ts:256），
+      // 但签名仍要求 LegacyToolContext。传 minimal ctx 即可。
+      const legacyCtx = buildDispatchLegacyCtx(ctx, canUseTool);
       const result = await executeExcelEdit(
         { file_path: filePath, operations: operations as ExcelEditParams['operations'], dry_run: dryRun },
         legacyCtx,
@@ -178,7 +190,7 @@ async function executeDocEdit(
         code: 'NOT_INITIALIZED',
       };
     }
-    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+    const legacyCtx = buildDispatchLegacyCtx(ctx, canUseTool);
     const results: string[] = [];
     for (const op of operations) {
       if (ctx.abortSignal.aborted) {
@@ -231,3 +243,6 @@ export const docEditModule: ToolModule<Record<string, unknown>, string> = {
     return new DocEditHandler();
   },
 };
+
+// 暴露给反向 shim / 测试
+export { executeDocEdit };

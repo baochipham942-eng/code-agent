@@ -53,6 +53,7 @@ export function registerCronHandlers(): void {
         }
 
         case 'createJob': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 是 unknown，cronService.createJob 期望 CreateJobInput；应该在这里走 zod schema 校验后再转入
           const job = await cronService.createJob(payload as any);
           return { success: true, data: job } satisfies IPCResponse;
         }

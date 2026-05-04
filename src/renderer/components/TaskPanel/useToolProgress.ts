@@ -61,6 +61,7 @@ export function useToolProgress(currentSessionId: string | null): UseToolProgres
 
   // Subscribe to IPC events
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 'agent:event' 不在 IpcChannel 联合里（实际是 BrowserWindow 转发的 webContents 事件名），应在 IPC 通道注册表里加上 agent:event 或换 ipcService.subscribe 兜底入口
     const unsubscribe = ipcService.on('agent:event' as any, handleAgentEvent);
     return () => {
       unsubscribe?.();

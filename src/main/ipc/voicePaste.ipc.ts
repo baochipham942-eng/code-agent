@@ -59,6 +59,7 @@ async function transcribeWithGroq(filePath: string, language: string): Promise<s
     language,
     response_format: 'text',
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): groq SDK 的 transcription 返回类型受 response_format 影响（'text' 是 string，'json' 是 { text: string }），SDK 类型定义没区分；应该按 response_format narrow
   return typeof transcription === 'string' ? transcription : (transcription as any).text || '';
 }
 

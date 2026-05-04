@@ -110,6 +110,7 @@ const SAMPLE_SLIDES: StructuredSlide[] = [
     content: {
       leftPoints: ['智能代码补全', '多语言支持', '实时协作编辑'],
       rightPoints: ['自动化测试', '安全漏洞扫描', 'CI/CD 集成'],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SlideContent 联合类型里 two-column 应有 { leftPoints, rightPoints } 变体，这里是 fixture 测试数据，应该让 SlideContent 联合明确包含 two-column variant 字段
     } as any,
   },
   // 10. list

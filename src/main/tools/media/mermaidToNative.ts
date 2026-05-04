@@ -611,6 +611,7 @@ export function renderMermaidNative(
       shapeProps.rectRadius = rectRadius;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ShapeType 字面量限定，但这里 shapeType 是从 mermaid AST 来的动态字符串；应在 mapMermaidShapeToPptx 里返回 pptxgenjs.ShapeType 枚举
     slide.addShape(shapeType as any, shapeProps);
 
     // 节点文本

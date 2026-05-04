@@ -10,18 +10,16 @@ export { exploreTool } from './explore';
 
 // PascalCase aliases (recommended for new code)
 export { agentSpawnTool } from './spawnAgent';
-// AgentMessageTool — migrated to native; see src/main/tools/modules/multiagent/agentMessage.ts
+// AgentMessageTool / TeammateTool — migrated to native; see src/main/tools/modules/multiagent/{agentMessage,teammate}.ts
 export { WorkflowOrchestrateTool } from './workflowOrchestrate';
-export { TeammateTool } from './teammate';
 
 // Phase 2: Agent lifecycle tools — migrated to native; see src/main/tools/modules/multiagent/{waitAgent,closeAgent}.ts
 // Phase 3: Agent communication — migrated to native; see src/main/tools/modules/multiagent/sendInput.ts
 
 // Legacy snake_case exports (backward compatibility)
 export { spawnAgentTool } from './spawnAgent';
-// agentMessageTool — migrated to native (see above)
+// agentMessageTool / teammateTool — migrated to native (see above)
 export { workflowOrchestrateTool } from './workflowOrchestrate';
-export { teammateTool } from './teammate';
 
 // Plan Review — migrated to native; see src/main/tools/modules/multiagent/planReview.ts
 

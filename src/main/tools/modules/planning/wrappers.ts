@@ -12,7 +12,6 @@
 // ============================================================================
 
 import { planRecoverRecentWorkTool } from '../../planning/planRecoverRecentWork';
-import { planReadTool } from '../../planning/planRead';
 import { PlanTool } from '../../planning/PlanTool';
 import { confirmActionTool } from '../../planning/confirmAction';
 import { taskListTool } from '../../planning/taskList';
@@ -46,7 +45,7 @@ const PLAN_EXECUTE = {
 };
 
 // ── 计划读 ──
-export const planReadModule = wrapLegacyTool(planReadTool, PLAN_READ);
+// plan_read 已迁移到 native ToolModule，见 ./planRead.ts
 export const planRecoverRecentWorkModule = wrapLegacyTool(planRecoverRecentWorkTool, PLAN_READ);
 
 // ── 计划写 ──

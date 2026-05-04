@@ -142,7 +142,9 @@ describe('Sidebar session metadata', () => {
 
     expect(html).toContain('Session Native Workspace');
     expect(html).toContain('后台');
-    expect(html).toContain('3 轮');
+    // commit bce470a2 把 turnCount 显示从 Sidebar 二级信息行移除，改用
+    // workbenchSnapshot.summary 占据该位置（"工作区 · Browser"）。turnCount 仍保留
+    // 在 store 用于排序/统计，但不再直接渲染。下面对 snapshot summary 的断言已覆盖。
     expect(html).toContain('工作区 · Browser');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
   });

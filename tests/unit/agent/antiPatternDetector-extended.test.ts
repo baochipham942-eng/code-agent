@@ -211,8 +211,13 @@ describe('AntiPatternDetector - Extended', () => {
         makeToolCall('custom_tool', { param: 'value2' }),
         'error 2'
       );
-      // No alternative for custom_tool, should not contain strategy-switch
-      expect(result).toBeNull();
+      // commit bce470a2 修了"Strike 2 静默" bug：之前没有 alternative 且 args 每次不同时
+      // Strike 2 完全 null（exactArgsWarning 也 null），模型直接自决退出。
+      // 现在落入 generateStrike2GenericAdvice — 通用建议要求反问/换路径。
+      // 测试该跟实现：无 alternative 时也要给 fallback 提示，不能静默。
+      expect(result).not.toBeNull();
+      expect(result).toContain('strike-2-advice');
+      expect(result).toContain('custom_tool');
     });
   });
 

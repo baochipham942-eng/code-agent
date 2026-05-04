@@ -1,11 +1,17 @@
 // ============================================================================
-// Spawn Agent Tool - Create specialized sub-agents
+// Spawn Agent — execute helpers
 // Gen 7: Multi-Agent capability
-// Enhanced with parallel execution support
-// Refactored: Uses unified 4-layer agent types
+//
+// P1 Wave 3 multiagent native: 原 spawnAgentTool / agentSpawnTool (legacy Tool)
+// 已删除，protocol 入口在 src/main/tools/modules/multiagent/spawnAgent.ts。
+// 本文件仅保留：
+//   - executeSpawnAgent(params, ctx)  — single + parallel mode 入口
+//   - getSpawnedAgent / listSpawnedAgents / getAvailableAgents — service helpers
+//   - SpawnedAgent type — backward-compat alias
+//   - DEFAULT_ISOLATION map
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
+import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig } from '../../../shared/contract';
 import type { FullAgentConfig } from '../../../shared/contract/agentTypes';
 import { getSubagentExecutor } from '../subagentExecutor';
@@ -49,128 +55,18 @@ const DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
   awaiter: 'none',
 };
 
-export const spawnAgentTool: Tool = {
-  name: 'spawn_agent',
-  description: `Launch a sub-agent for a focused task. Sub-agents run in isolated sessions with their own context window and return only their final result to you.
-
-## When to spawn (autonomous judgment)
-Consider spawning sub-agents when:
-- Task involves 3+ unrelated files/modules (parallel exploration)
-- Need simultaneous coding and testing/review
-- Need codebase research before modification (explorer → coder pipeline)
-- Refactoring with multiple independent change points
-- Broad exploration that would consume your context window
-
-When NOT to spawn:
-- Simple single-file reads — use read_file directly
-- Searching for a specific definition — use glob/grep directly
-- Quick config changes or information queries
-- Urgent blocking work where you need the result immediately
-
-## Delegation strategy
-1. Plan first: analyze the task, identify critical path vs side-quests
-2. Keep blocking work local — only delegate non-blocking parallel tasks
-3. Subtasks must be concrete, self-contained, and non-overlapping
-4. For code edits, assign disjoint file ownership per agent
-5. Tell workers they are not alone — don't revert others' changes
-
-## After delegation
-- Minimize waiting — do meaningful non-overlapping work while agents run
-- Don't redo what a sub-agent already did
-- Review returned changes, then integrate or refine
-
-## Parallel patterns
-- Spawn multiple explorers in parallel for independent codebase questions
-- Split implementation into disjoint file scopes for parallel workers
-- Run reviewer in parallel with ongoing implementation
-
-## Available roles
-- explorer: Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.
-- coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.
-- reviewer: Code review and quality checks. Read-only.
-- planner: Architecture design and task decomposition. Full context.
-- awaiter: Long-running command monitor (tests, builds, deploys). Uses fast model, high iteration limit. Spawn in background and continue other work.
-
-## Parameters
-- role: Agent role (explorer/coder/reviewer/planner or custom name)
-- task: Concrete task description (be specific and self-contained)
-- parallel: Set true + agents array for multiple agents with dependencies
-- waitForCompletion: false to run in background (default true)
-- forkContext: true to inherit parent conversation history
-- isolation: "worktree" to give coder agent an isolated git branch (auto-cleanup if no changes)`,
-  requiresPermission: false,
-  permissionLevel: 'read',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      role: {
-        type: 'string',
-        description: 'The role/ID of the agent (built-in or predefined)',
-      },
-      task: {
-        type: 'string',
-        description: 'The task for the agent to complete',
-      },
-      customPrompt: {
-        type: 'string',
-        description: 'Custom system prompt (overrides role default, enables dynamic mode)',
-      },
-      customTools: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Custom tool list for dynamic agents',
-      },
-      maxBudget: {
-        type: 'number',
-        description: 'Maximum budget in USD for this agent',
-      },
-      waitForCompletion: {
-        type: 'boolean',
-        description: 'Wait for agent to complete before returning',
-      },
-      maxIterations: {
-        type: 'number',
-        description: 'Maximum iterations for the agent (default: 20)',
-      },
-      forkContext: {
-        type: 'boolean',
-        description: 'When true, fork parent conversation history to the sub-agent. Use when the sub-agent needs full prior context (e.g. coder tasks that depend on earlier discussion).',
-      },
-      isolation: {
-        type: 'string',
-        enum: ['worktree'],
-        description: 'Isolation mode. "worktree" creates a git worktree so the agent works on an isolated branch. Best for coder agents doing file edits in parallel. Auto-cleanup if no changes.',
-      },
-      parallel: {
-        type: 'boolean',
-        description: 'Enable parallel execution mode',
-      },
-      agents: {
-        type: 'array',
-        description: 'Array of agents for parallel execution',
-        items: {
-          type: 'object',
-          properties: {
-            role: { type: 'string' },
-            task: { type: 'string' },
-            maxBudget: { type: 'number' },
-            dependsOn: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'IDs of agents this one depends on',
-            },
-          },
-          required: ['role', 'task'],
-        },
-      },
-    },
-    required: [],
-  },
-
-  async execute(
-    params: Record<string, unknown>,
-    context: ToolContext
-  ): Promise<ToolExecutionResult> {
+/**
+ * spawn_agent / AgentSpawn 的执行入口（接 legacy ToolContext）
+ *
+ * Schema 在 src/main/tools/modules/multiagent/spawnAgent.schema.ts，
+ * protocol 入口在 src/main/tools/modules/multiagent/spawnAgent.ts。
+ * 本函数签名保留 legacy ToolContext 以避免大规模 refactor 932 行业务逻辑；
+ * native module 用 buildLegacyCtxFromProtocol 桥接 protocol → legacy ctx。
+ */
+export async function executeSpawnAgent(
+  params: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
     const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
 
@@ -475,8 +371,7 @@ Use wait_agent to block until done, or close_agent to cancel.`,
         error: `Failed to spawn agent: ${errorMsg}`,
       };
     }
-  },
-};
+}
 
 /**
  * Backward-compatible type for spawned agent status.
@@ -523,22 +418,9 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
   return listPredefinedAgents();
 }
 
-// PascalCase alias for SDK compatibility
-export const agentSpawnTool: Tool = {
-  ...spawnAgentTool,
-  name: 'AgentSpawn',
-  description: `Advanced agent creation with full control over execution.
-
-Use this tool when you need:
-- Parallel execution (multiple agents at once)
-- Background mode (fire and forget)
-- Custom prompts or tools
-- Budget control
-
-For simple synchronous task delegation, use Task instead.
-
-${spawnAgentTool.description}`,
-};
+// AgentSpawn (PascalCase variant) shares execute body with spawn_agent — the
+// schema-level distinction is now in spawnAgent.schema.ts. Both protocol entries
+// dispatch to executeSpawnAgent above.
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
 async function executeParallelAgents(

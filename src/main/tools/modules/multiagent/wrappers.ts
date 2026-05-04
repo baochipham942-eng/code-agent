@@ -15,7 +15,6 @@ import { closeAgentTool } from '../../../agent/multiagentTools/closeAgent';
 import { agentMessageTool } from '../../../agent/multiagentTools/agentMessage';
 import { sendInputTool } from '../../../agent/multiagentTools/sendInput';
 import { workflowOrchestrateTool } from '../../../agent/multiagentTools/workflowOrchestrate';
-import { planReviewTool } from '../../../agent/multiagentTools/planReview';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
 const MA_EXECUTE = { category: 'multiagent' as const, permissionLevel: 'execute' as const };
@@ -36,6 +35,6 @@ export const sendInputModule = wrapLegacyTool(sendInputTool, MA_EXECUTE);
 export const workflowOrchestrateModule = wrapLegacyTool(workflowOrchestrateTool, MA_EXECUTE);
 export const agentMessageModule = wrapLegacyTool(agentMessageTool, MA_EXECUTE);
 
-// wait / planReview 是 read-ish（只读子 agent 状态/结果）
+// wait 是 read-ish（只读子 agent 状态/结果）
 export const waitAgentModule = wrapLegacyTool(waitAgentTool, MA_READ);
-export const planReviewModule = wrapLegacyTool(planReviewTool, MA_READ);
+// planReview: 已迁移到 Level 2 native，见 ./planReview.ts

@@ -11,7 +11,6 @@ import { sdkTaskTool } from '../../../agent/multiagentTools/task';
 import { teammateTool } from '../../../agent/multiagentTools/teammate';
 import { spawnAgentTool, agentSpawnTool } from '../../../agent/multiagentTools/spawnAgent';
 import { waitAgentTool } from '../../../agent/multiagentTools/waitAgent';
-import { closeAgentTool } from '../../../agent/multiagentTools/closeAgent';
 import { agentMessageTool } from '../../../agent/multiagentTools/agentMessage';
 import { sendInputTool } from '../../../agent/multiagentTools/sendInput';
 import { workflowOrchestrateTool } from '../../../agent/multiagentTools/workflowOrchestrate';
@@ -30,7 +29,7 @@ export const taskModule = wrapLegacyTool(sdkTaskTool, MA_EXECUTE);
 export const teammateModule = wrapLegacyTool(teammateTool, MA_EXECUTE);
 export const spawnAgentModule = wrapLegacyTool(spawnAgentTool, MA_EXECUTE);
 export const agentSpawnModule = wrapLegacyTool(agentSpawnTool, MA_EXECUTE);
-export const closeAgentModule = wrapLegacyTool(closeAgentTool, MA_EXECUTE);
+// closeAgent: 已迁移到 Level 2 native，见 ./closeAgent.ts
 export const sendInputModule = wrapLegacyTool(sendInputTool, MA_EXECUTE);
 export const workflowOrchestrateModule = wrapLegacyTool(workflowOrchestrateTool, MA_EXECUTE);
 export const agentMessageModule = wrapLegacyTool(agentMessageTool, MA_EXECUTE);

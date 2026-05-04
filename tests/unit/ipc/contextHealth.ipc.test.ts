@@ -261,7 +261,13 @@ describe('resolveContextHealthForSession', () => {
     );
 
     expect(health.breakdown.messages).toBeGreaterThan(1000);
-    expect(health.currentTokens).toBe(health.breakdown.messages);
+    // commit 2ae3efa2 后 currentTokens 加上了 toolDefinitions（每次推理都发给模型的
+    // tool schema 序列化），这里没传 systemPrompt 也没 tool result，所以
+    // currentTokens = messages + toolDefinitions。toolDefinitions 来自 ContextHealthService
+    // 自动从 tool registry 估算（小红书 session 漏算 ~14k 是修这个 bug 的初衷）。
+    expect(health.currentTokens).toBe(
+      health.breakdown.messages + health.breakdown.toolDefinitions
+    );
   });
 
   it('includes the last persisted system prompt when deriving history health', async () => {

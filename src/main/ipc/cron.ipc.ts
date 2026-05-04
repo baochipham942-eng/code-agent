@@ -53,11 +53,13 @@ export function registerCronHandlers(): void {
         }
 
         case 'createJob': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 是 unknown，cronService.createJob 期望 CreateJobInput；应该在这里走 zod schema 校验后再转入
           const job = await cronService.createJob(payload as any);
           return { success: true, data: job } satisfies IPCResponse;
         }
 
         case 'updateJob': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload narrow 应该用 zod schema 校验后再用，updates 在 cronService.updateJob 类型上是 Partial<CronJobDefinition>
           const { jobId, updates } = payload as { jobId: string; updates: any };
           const job = await cronService.updateJob(jobId, updates);
           return { success: true, data: job } satisfies IPCResponse;

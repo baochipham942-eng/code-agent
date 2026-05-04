@@ -351,6 +351,7 @@ export class AgentSwarm {
         const workerId = await this.workerManager.spawn({
           role: runtime.agent.name,
           taskId: runtime.agent.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): worker spawn 期望 ModelConfig，但这里还没从 agent config 解析出来（占位空对象）；应该 resolve 出 ModelConfig 后再传，或允许 modelConfig 可选
           modelConfig: {} as any, // 从 agent config 获取
           systemPrompt: runtime.agent.prompt || '',
           task: runtime.agent.prompt || 'Execute task',
@@ -375,6 +376,7 @@ export class AgentSwarm {
 
         // 等待 worker 完成
         result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): workerManager 'event' 事件 payload 没定义类型，应在 worker types 里抽出 WorkerEvent 联合（worker_completed / worker_failed / worker_progress）
           const onEvent = (event: any) => {
             if (event.workerId !== workerId) return;
             if (event.type === 'worker_completed') {
@@ -707,6 +709,7 @@ export class AgentSwarm {
           name: taskDef.name,
           prompt: taskDef.prompt,
           tools: taskDef.tools,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): DynamicAgentConfig.model.provider 是 ProviderName 联合，AGENT_DEFAULT_MODEL.provider 是 string 字面量；应该把 AGENT_DEFAULT_MODEL.provider 类型 narrow 成 ProviderName
           model: { provider: AGENT_DEFAULT_MODEL.provider as any, model: AGENT_DEFAULT_MODEL.model },
           maxIterations: 20,
           timeout: 300000,

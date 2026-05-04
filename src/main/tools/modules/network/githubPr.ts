@@ -280,7 +280,7 @@ async function handleList(
   }
 
   let output = `找到 ${prs.length} 个 PR:\n\n`;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): gh CLI JSON 输出未做类型化，应该按 gh field flag 抽出 GhPrListItem 接口（number/title/labels/state/headRefName/author 等）
   for (const pr of prs as any[]) {
     const labels = pr.labels?.map((l: { name: string }) => l.name).join(', ');
     output += `**#${pr.number}** ${pr.title}\n`;

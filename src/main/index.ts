@@ -40,6 +40,7 @@ import type { PendingApprovalRepository } from './services/core/repositories/Pen
 const PROTOCOL = 'code-agent';
 
 // Register deep link protocol (must be before app.whenReady)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): process.defaultApp 是 Electron 注入的非标准字段（dev 模式判定），@types/node 上没有；应该 import { app } from 'electron' 后用 NodeJS.Process & { defaultApp?: boolean } 类型扩展
 if ((process as any).defaultApp) {
   // Development: need to pass the script path
   if (process.argv.length >= 2) {
@@ -89,6 +90,7 @@ function handleDeepLink(url: string): void {
 }
 
 // macOS: Handle open-url event
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Electron app.on('open-url') 回调签名 (event: Event, url: string)，应改用 Electron 类型
 app.on('open-url', (event: any, url: any) => {
   event.preventDefault();
   handleDeepLink(url);
@@ -100,6 +102,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Electron app.on('second-instance') 回调签名 (event: Event, argv: string[], workingDirectory: string)，应改用 Electron 类型
   app.on('second-instance', (_event: any, argv: any) => {
     // Someone tried to run a second instance, focus our window
     const mainWindow = getMainWindow();
@@ -109,6 +112,7 @@ if (!gotTheLock) {
     }
 
     // Handle deep link from argv (Windows/Linux)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): argv 来自 Electron 'second-instance' 是 string[]，narrow 后 arg 应为 string；同上等 Electron 类型一并修
     const url = argv.find((arg: any) => arg.startsWith(`${PROTOCOL}://`));
     if (url) {
       handleDeepLink(url);

@@ -19,6 +19,7 @@ const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 
 function wasMessagePersistedByContextAssembly(message: Message): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 systemContextStack.ts 的 marker 标记，用 WeakSet<Message> 替代会更干净
   return Boolean((message as any)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
 }
 // ============================================================================

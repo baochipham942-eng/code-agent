@@ -51,7 +51,9 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
  * Simple YAML parser for frontmatter.
  * Handles key: value pairs and key: [array] / key:\n  - item syntax.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): YAML frontmatter 解析返回任意 schema，应该用 unknown 然后让调用方按 zod 校验
 function parseSimpleYaml(yaml: string): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 yaml 返回值
   const result: Record<string, any> = {};
   const lines = yaml.split('\n');
   let currentKey: string | null = null;

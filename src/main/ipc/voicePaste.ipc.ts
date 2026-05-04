@@ -59,6 +59,7 @@ async function transcribeWithGroq(filePath: string, language: string): Promise<s
     language,
     response_format: 'text',
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): groq SDK 的 transcription 返回类型受 response_format 影响（'text' 是 string，'json' 是 { text: string }），SDK 类型定义没区分；应该按 response_format narrow
   return typeof transcription === 'string' ? transcription : (transcription as any).text || '';
 }
 
@@ -233,6 +234,7 @@ async function pasteText(text: string): Promise<void> {
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC broadcast 的 data 形态由 event 决定（voice:transcribed / voice:error 等），应抽 VoiceIpcPayload 联合按 event narrow
 function notifyRenderer(event: string, data?: any): void {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach(win => {

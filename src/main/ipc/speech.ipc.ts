@@ -106,6 +106,7 @@ async function transcribeWithGroq(audioBuffer: Buffer, mimeType: string): Promis
 
     return typeof transcription === 'string'
       ? transcription
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 voicePaste.ipc.ts，groq SDK transcription 返回类型未按 response_format 区分
       : (transcription as any).text || '';
 
   } finally {

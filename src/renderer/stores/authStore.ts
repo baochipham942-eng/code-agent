@@ -98,6 +98,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithEmail: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AUTH 域 action 返回类型由 action 决定（signInEmail 返回 SignInResult），应抽 AuthIpcMap 字典让 invokeDomain narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signInEmail', { email, password });
       if (result?.success && result.user) {
         set({
@@ -119,6 +120,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signUpWithEmail: async (email, password, inviteCode) => {
     set({ isLoading: true, error: null });
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 action 应抽 AuthIpcMap 字典 narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signUpEmail', { email, password, inviteCode });
       if (result?.success && result.user) {
         set({
@@ -150,6 +152,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithToken: async (token) => {
     set({ isLoading: true, error: null });
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 action 应抽 AuthIpcMap 字典 narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signInToken', { token });
       if (result?.success && result.user) {
         set({
@@ -183,6 +186,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   updateProfile: async (updates) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 action 应抽 AuthIpcMap 字典 narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'updateProfile', { updates });
       if (result?.success && result.user) {
         set({ user: result.user });
@@ -208,6 +212,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   resetPassword: async (email) => {
     set({ isLoading: true, error: null });
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 action 应抽 AuthIpcMap 字典 narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'resetPassword', { email });
       set({ isLoading: false });
       if (result?.success) {
@@ -224,6 +229,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   updatePassword: async (newPassword) => {
     set({ isLoading: true, error: null });
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 action 应抽 AuthIpcMap 字典 narrow
       const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'updatePassword', { password: newPassword });
       if (result?.success) {
         set({
@@ -305,6 +311,7 @@ export async function initializeAuthStore(): Promise<void> {
 
   // Load current auth status
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 signInEmail，AUTH 域 'getStatus' 应抽 AuthIpcMap 字典 narrow 成 AuthStatus
     const status = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
       store.setUser(status.user);

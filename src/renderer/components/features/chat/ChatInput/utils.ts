@@ -2,7 +2,7 @@
 // ChatInput 工具函数 - 文件处理相关
 // ============================================================================
 
-import type { AttachmentCategory } from '../../../../../shared/contract';
+import type { AttachmentCategory, MessageAttachment } from '../../../../../shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 
@@ -39,6 +39,14 @@ export const MAX_FOLDER_FILES = 50;
 // ============================================================================
 // 工具函数
 // ============================================================================
+
+/**
+ * 只有真正发出去的消息才清空输入框。登录拦截或运行时拒收会返回 false，
+ * 此时保留草稿，避免长 prompt 被弹窗吞掉。
+ */
+export function shouldClearComposerAfterSend(didSend: boolean): boolean {
+  return didSend;
+}
 
 /**
  * 根据文件信息判断类别
@@ -153,6 +161,88 @@ export async function readDirectoryEntry(
     logger.error('读取目录失败', err);
   }
   return files;
+}
+
+type ProcessFile = (file: File) => Promise<MessageAttachment | null>;
+type ProcessFolderEntry = (
+  dirEntry: FileSystemDirectoryEntry,
+  folderName: string,
+) => Promise<MessageAttachment | null>;
+
+async function attachmentFromEntry(
+  entry: FileSystemEntry,
+  processFile: ProcessFile,
+  processFolderEntry: ProcessFolderEntry,
+): Promise<MessageAttachment | null> {
+  if (entry.isFile) {
+    const fileEntry = entry as FileSystemFileEntry;
+    const file = await new Promise<File>((resolve, reject) => {
+      fileEntry.file(resolve, reject);
+    });
+    return processFile(file);
+  }
+
+  if (entry.isDirectory) {
+    return processFolderEntry(entry as FileSystemDirectoryEntry, entry.name);
+  }
+
+  return null;
+}
+
+async function attachmentsFromFiles(
+  files: FileList | File[],
+  processFile: ProcessFile,
+): Promise<MessageAttachment[]> {
+  const attachments: MessageAttachment[] = [];
+  for (const file of Array.from(files)) {
+    const attachment = await processFile(file);
+    if (attachment) {
+      attachments.push(attachment);
+    }
+  }
+  return attachments;
+}
+
+/**
+ * Browser/Electron drop payloads differ:
+ * - real folders need webkitGetAsEntry
+ * - screenshots/media dragged from browser surfaces may expose only files
+ * - some in-app browser bridges expose DataTransferItemList but no entries
+ */
+export async function collectDroppedAttachments(
+  dataTransfer: DataTransfer,
+  processFile: ProcessFile,
+  processFolderEntry: ProcessFolderEntry,
+): Promise<MessageAttachment[]> {
+  const items = dataTransfer.items;
+  const entries: FileSystemEntry[] = [];
+
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind !== 'file') {
+        continue;
+      }
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) {
+        entries.push(entry);
+      }
+    }
+  }
+
+  if (entries.length === 0) {
+    return attachmentsFromFiles(dataTransfer.files, processFile);
+  }
+
+  const attachments: MessageAttachment[] = [];
+  for (const entry of entries) {
+    const attachment = await attachmentFromEntry(entry, processFile, processFolderEntry);
+    if (attachment) {
+      attachments.push(attachment);
+    }
+  }
+
+  return attachments;
 }
 
 /**

@@ -193,6 +193,7 @@ export const IPC_CHANNELS = {
   STATUS_TOKEN_UPDATE: 'status:token-update',
   STATUS_CONTEXT_UPDATE: 'status:context-update',
   STATUS_GIT_UPDATE: 'status:git-update',
+  MANAGED_BROWSER_SESSION_CHANGED: 'desktop:managed-browser-session-changed',
 
   // Session status channels (multi-session parallel support)
   SESSION_STATUS_UPDATE: 'session:status:update',

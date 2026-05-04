@@ -128,7 +128,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
                   </button>
                 )}
               </div>
-              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto border border-gray-800/50 whitespace-pre-wrap">
+              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                 {isEditFile && editFileArgs
                   ? `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
                   : formatArgs(name, args)}
@@ -192,7 +192,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
               )}
               <pre
-                className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
+                className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                   result.success
                     ? 'text-gray-400 border-gray-800/50'
                     : 'text-red-300 border-red-500/20'

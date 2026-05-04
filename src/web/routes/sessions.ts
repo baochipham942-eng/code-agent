@@ -77,13 +77,18 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
 
   router.post('/sessions', async (req: Request, res: Response) => {
     try {
+      const title = req.body?.title || 'New Session';
+      const workingDirectory =
+        typeof req.body?.workingDirectory === 'string' && req.body.workingDirectory.trim().length > 0
+          ? req.body.workingDirectory.trim()
+          : undefined;
       const sm = await tryGetSessionManager();
       if (sm) {
         await flushPreviousIfRunning(sm);
         const { resolveSessionDefaultModelConfig } = await import('../../main/services/core/sessionDefaults');
-        const title = req.body?.title || 'New Session';
         const session = await sm.createSession({
           title,
+          workingDirectory,
           modelConfig: resolveSessionDefaultModelConfig(),
         });
         sm.setCurrentSession(session.id);
@@ -99,11 +104,12 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         const newSession = {
           id: sessionId,
           user_id: sb.userId,
-          title: req.body?.title || 'New Session',
+          title,
           model_provider: DEFAULT_PROVIDER,
           model_name: DEFAULT_MODELS.chat,
           created_at: now,
           updated_at: now,
+          working_directory: workingDirectory || null,
           source_device_id: 'web',
         };
         const { data, error } = await sb.supabase.from('sessions').insert(newSession).select().single();
@@ -115,10 +121,11 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       const now = Date.now();
       const session: InMemorySession = {
         id: `session_${now}_${Math.random().toString(36).slice(2, 8)}`,
-        title: req.body?.title || 'New Session',
+        title,
         createdAt: now,
         updatedAt: now,
         messageCount: 0,
+        workingDirectory,
       };
       inMemorySessions.set(session.id, session);
       res.json({ success: true, data: session });

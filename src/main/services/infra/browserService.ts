@@ -8,7 +8,7 @@ import type { Browser, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
-import { app } from '../../platform';
+import { app, broadcastToRenderer } from '../../platform';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import type {
@@ -21,6 +21,7 @@ import type {
   WorkbenchActionTrace,
   WorkbenchSnapshotRef,
 } from '../../../shared/contract/desktop';
+import { IPC_CHANNELS } from '../../../shared/ipc';
 import {
   buildSystemChromeCdpArgs,
   findAvailablePort,
@@ -94,6 +95,19 @@ async function getPlaywright() {
   }
   return _playwright;
 }
+
+type ManagedBrowserSessionChangeReason =
+  | 'launch'
+  | 'close'
+  | 'new_tab'
+  | 'close_tab'
+  | 'switch_tab'
+  | 'navigate'
+  | 'page_load'
+  | 'history'
+  | 'reload'
+  | 'set_viewport'
+  | 'crashed';
 
 class BrowserService implements Disposable {
   private browser: Browser | null = null;
@@ -181,6 +195,7 @@ class BrowserService implements Disposable {
         ttlMs: options.leaseTtlMs,
       });
       this.logger.log('WARN', 'Browser already running, skipping launch');
+      this.emitSessionChanged('launch');
       return;
     }
 
@@ -235,6 +250,7 @@ class BrowserService implements Disposable {
       owner: options.leaseOwner || 'managed-browser',
       ttlMs: options.leaseTtlMs,
     });
+    this.emitSessionChanged('launch');
   }
 
   async close(): Promise<void> {
@@ -254,9 +270,11 @@ class BrowserService implements Disposable {
         this.configureManagedBrowserSession('persistent');
       }
       this.logger.log('INFO', 'Browser closed, all tabs cleared');
+      this.emitSessionChanged('close');
     } else {
       this.releaseLease();
       this.logger.log('WARN', 'No browser to close');
+      this.emitSessionChanged('close');
     }
   }
 
@@ -298,9 +316,9 @@ class BrowserService implements Disposable {
     this.activeTabId = tabId;
 
     page.on('load', async () => {
-      tab.url = page.url();
-      tab.title = await page.title();
+      await this.refreshTabMetadata(tab);
       this.logger.log('DEBUG', `Page loaded: ${summarizeBrowserUrlForLog(tab.url)} - "${tab.title}"`);
+      this.emitSessionChanged('page_load');
     });
 
     page.on('console', (msg) => {
@@ -331,6 +349,7 @@ class BrowserService implements Disposable {
     });
 
     this.logger.log('INFO', `Tab created: ${tabId} - "${tab.title}" (${summarizeBrowserUrlForLog(tab.url)})`);
+    this.emitSessionChanged('new_tab');
     return tabId;
   }
 
@@ -344,6 +363,7 @@ class BrowserService implements Disposable {
         this.activeTabId = this.tabs.size > 0 ? (this.tabs.keys().next().value ?? null) : null;
       }
       this.logger.log('INFO', `Tab closed. Remaining tabs: ${this.tabs.size}`);
+      this.emitSessionChanged('close_tab');
     } else {
       this.logger.log('WARN', `Tab not found: ${tabId}`);
     }
@@ -355,6 +375,7 @@ class BrowserService implements Disposable {
       const tab = this.tabs.get(tabId)!;
       await tab.page.bringToFront();
       this.logger.log('INFO', `Switched to tab: ${tabId} - "${tab.title}"`);
+      this.emitSessionChanged('switch_tab');
     } else {
       this.logger.log('WARN', `Cannot switch - tab not found: ${tabId}`);
     }
@@ -433,25 +454,31 @@ class BrowserService implements Disposable {
     const tab = this.getTab(tabId);
     this.logger.log('INFO', `Navigating to: ${summarizeBrowserUrlForLog(url)}`);
     await tab.page.goto(url, { waitUntil: 'domcontentloaded' });
-    tab.url = tab.page.url();
-    tab.title = await tab.page.title();
+    await this.refreshTabMetadata(tab);
     this.logger.log('INFO', `Navigation complete: "${tab.title}"`);
+    this.emitSessionChanged('navigate');
   }
 
   async goBack(tabId?: string): Promise<void> {
     this.logger.log('INFO', 'Going back in history');
     const tab = this.getTab(tabId);
     await tab.page.goBack();
+    await this.refreshTabMetadata(tab);
+    this.emitSessionChanged('history');
   }
 
   async goForward(tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.goForward();
+    await this.refreshTabMetadata(tab);
+    this.emitSessionChanged('history');
   }
 
   async reload(tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.reload();
+    await this.refreshTabMetadata(tab);
+    this.emitSessionChanged('reload');
   }
 
   async setViewport(width: number, height: number): Promise<void> {
@@ -466,6 +493,7 @@ class BrowserService implements Disposable {
         })
       ),
     );
+    this.emitSessionChanged('set_viewport');
   }
 
   // --------------------------------------------------------------------------
@@ -1365,6 +1393,11 @@ class BrowserService implements Disposable {
     }
   }
 
+  private async refreshTabMetadata(tab: BrowserTab): Promise<void> {
+    tab.url = tab.page.url();
+    tab.title = await tab.page.title().catch(() => tab.title);
+  }
+
   private renewLease(args: { owner?: string; ttlMs?: number } = {}): ManagedBrowserLeaseState {
     const nowMs = Date.now();
     const lease = createManagedBrowserLease({
@@ -1467,6 +1500,7 @@ class BrowserService implements Disposable {
     this.targetRefs.clear();
     this.activeTabId = null;
     this.markLeaseExpired();
+    this.emitSessionChanged('crashed');
   }
 
   private getPublicProxyConfig(): ManagedBrowserProxyConfig {
@@ -1484,6 +1518,17 @@ class BrowserService implements Disposable {
       server: this.proxyConfig.server,
       bypass: this.proxyConfig.bypass.length > 0 ? this.proxyConfig.bypass.join(',') : undefined,
     };
+  }
+
+  private emitSessionChanged(reason: ManagedBrowserSessionChangeReason): void {
+    try {
+      broadcastToRenderer(IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED, {
+        reason,
+        session: this.getSessionState(),
+      });
+    } catch (error) {
+      this.logger.log('WARN', `Failed to broadcast managed browser session change (${reason}): ${error}`);
+    }
   }
 
   private getTab(tabId?: string): BrowserTab {

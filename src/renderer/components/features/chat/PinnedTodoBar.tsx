@@ -47,7 +47,7 @@ export const PinnedTodoBar: React.FC<PinnedTodoBarProps> = ({ plan, sessionId })
             )}
           </button>
           {!collapsed && (
-            <ul className="px-3 pb-2 pt-1 space-y-1 max-h-[240px] overflow-y-auto">
+            <ul className="px-3 pb-2 pt-1 space-y-1">
               {steps.map((step, idx) => (
                 <TodoStepItem key={step.id} step={step} index={idx + 1} />
               ))}

@@ -101,6 +101,18 @@ export function groupToolCalls(toolCalls: ToolCall[]): ToolGroup[] {
 export function extractThinkingSummary(text: string | undefined): string | null {
   if (!text?.trim()) return null;
 
+  const runtimeLines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('[runtime]'))
+    .map((line) => line.replace(/^\[runtime\]\s*/, '').trim())
+    .filter(Boolean);
+  if (runtimeLines.length > 0) {
+    const summary = runtimeLines.slice(0, 2).join(' | ');
+    if (summary.length <= 80) return summary;
+    return summary.slice(0, 77) + '...';
+  }
+
   // Try first **bold** text
   const boldMatch = text.match(/\*\*(.+?)\*\*/);
   if (boldMatch) {

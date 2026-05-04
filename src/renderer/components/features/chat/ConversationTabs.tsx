@@ -319,7 +319,7 @@ export const ConversationTabs: React.FC = () => {
       <div className="flex items-center bg-zinc-900 border-b border-zinc-700">
         {/* Tab List */}
         <div
-          className="flex-1 flex items-center overflow-x-auto scrollbar-thin scrollbar-thumb-hover"
+          className="flex-1 flex items-center overflow-x-auto scrollbar-hidden"
           onDragEnd={handleDragEnd}
         >
           {tabs.map((tab) => (

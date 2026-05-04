@@ -23,7 +23,7 @@ import {
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
-import { MODEL_MAX_TOKENS } from '../../../shared/constants';
+import { MODEL_MAX_TOKENS, getModelMaxOutputTokens } from '../../../shared/constants';
 import {
   sanitizeBrowserComputerToolArguments,
   sanitizeBrowserComputerToolResult,
@@ -58,6 +58,10 @@ function sanitizeToolResultForObservation(
     return result;
   }
   return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
+}
+
+function shouldPreserveToolObservation(result: ToolResult): boolean {
+  return result.metadata?.preserveObservation === true;
 }
 
 /**
@@ -122,6 +126,38 @@ export class MessageProcessor {
     return { response, wasForceExecuted, shouldContinue: false };
   }
 
+  private getTruncationRecoveryMaxTokens(): number {
+    const currentMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
+    const providerRecommendedMax = getModelMaxOutputTokens(this.ctx.modelConfig.model);
+    return Math.max(currentMaxTokens, providerRecommendedMax);
+  }
+
+  private buildAssistantMessageFromResponse(response: ModelResponse, content: string): Message {
+    return {
+      id: this.contextAssembly.generateId(),
+      role: 'assistant',
+      content,
+      timestamp: Date.now(),
+      thinking: response.thinking,
+      effortLevel: this.ctx.effortLevel,
+      inputTokens: response.usage?.inputTokens,
+      outputTokens: response.usage?.outputTokens,
+      contentParts: response.contentParts?.map((part) =>
+        part.type === 'text'
+          ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
+          : part
+      ),
+    };
+  }
+
+  private buildTextContinuationPrompt(): string {
+    return [
+      'Continue from exactly where your previous response stopped.',
+      'Do not repeat any earlier text, do not restart the section, and do not apologize.',
+      'If you were outputting a long file or long code block, continue with the next lines only.',
+    ].join(' ');
+  }
+
   /**
    * Handle text response: hooks, nudge checks, truncation recovery, output validation.
    * Returns 'break' to exit loop, 'continue' to retry.
@@ -133,6 +169,14 @@ export class MessageProcessor {
     shouldRunHooks: boolean,
     langfuse: any,
   ): Promise<'break' | 'continue'> {
+    if (this.ctx.isCancelled) {
+      logger.info('[AgentLoop] Skipping final text persistence after cancellation', {
+        sessionId: this.ctx.sessionId,
+        contentLength: response.content?.length ?? 0,
+      });
+      return 'break';
+    }
+
     // Research mode: indicate report generation phase
     if (this.ctx._researchModeActive) {
       this.runFinalizer.emitTaskProgress('generating', '正在生成报告...');
@@ -198,6 +242,51 @@ export class MessageProcessor {
       }
     }
 
+    const textWasTruncated =
+      response.truncated ||
+      response.finishReason === 'length' ||
+      response.finishReason === 'max_tokens';
+
+    if (textWasTruncated && response.content) {
+      this.ctx._consecutiveTruncations++;
+
+      const strippedPartialContent = this.contextAssembly.stripInternalFormatMimicry(response.content);
+      const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent);
+
+      await this.contextAssembly.addAndPersistMessage(partialAssistantMessage);
+      this.ctx.onEvent({ type: 'message', data: partialAssistantMessage });
+
+      const currentMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
+      const recoveryMaxTokens = this.getTruncationRecoveryMaxTokens();
+      if (recoveryMaxTokens > currentMaxTokens) {
+        this.ctx.modelConfig.maxTokens = recoveryMaxTokens;
+        logger.info(`[AgentLoop] Text truncation recovery: maxTokens ${currentMaxTokens} → ${recoveryMaxTokens}`);
+        logCollector.agent('INFO', `Text truncation recovery: maxTokens ${currentMaxTokens} → ${recoveryMaxTokens}`);
+      }
+
+      if (this.ctx._consecutiveTruncations >= this.ctx.MAX_CONSECUTIVE_TRUNCATIONS) {
+        logger.warn(`[AgentLoop] Consecutive truncation circuit breaker: ${this.ctx._consecutiveTruncations} consecutive truncations`);
+        logCollector.agent('WARN', `Consecutive truncation breaker triggered (${this.ctx._consecutiveTruncations}x)`);
+        this.ctx._consecutiveTruncations = 0;
+        this.contextAssembly.injectSystemMessage(
+          [
+            'Your previous responses keep hitting the output token limit.',
+            'Continue from the exact end of the latest assistant message.',
+            'Do not repeat earlier content.',
+            'If the user asked for a long file or long code listing, keep continuing in chunks until complete.',
+            'Only switch to write_file or another file-producing tool if the user explicitly wants the remaining content saved as a file.',
+          ].join(' ')
+        );
+      } else {
+        this.contextAssembly.injectSystemMessage(this.buildTextContinuationPrompt());
+      }
+
+      this.runFinalizer.emitTaskProgress('generating', '输出过长，继续生成剩余内容...');
+      return 'continue';
+    }
+
+    this.ctx._consecutiveTruncations = 0;
+
     // P1-P5 Nudge checks (delegated to NudgeManager)
     const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
       toolsUsedInTurn: this.ctx.toolsUsedInTurn,
@@ -218,48 +307,6 @@ export class MessageProcessor {
     );
     if (validationTriggered) {
       return 'continue';
-    }
-    // 动态 maxTokens: 文本响应截断自动恢复
-    if (response.truncated && !this.ctx._truncationRetried) {
-      this.ctx._truncationRetried = true;
-      const originalMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
-      const newMaxTokens = Math.min(originalMaxTokens * 2, MODEL_MAX_TOKENS.EXTENDED);
-      if (newMaxTokens > originalMaxTokens) {
-        logger.info(`[AgentLoop] Text response truncated, retrying with maxTokens: ${originalMaxTokens} → ${newMaxTokens}`);
-        logCollector.agent('INFO', `Text truncation recovery: maxTokens ${originalMaxTokens} → ${newMaxTokens}`);
-        this.ctx.modelConfig.maxTokens = newMaxTokens;
-        try {
-          response = await this.contextAssembly.inference();
-        } finally {
-          this.ctx._truncationRetried = false;
-          this.ctx.modelConfig.maxTokens = originalMaxTokens;
-        }
-        // 重试后如果变成了 tool_use，跳到下一轮处理
-        if (response.type === 'tool_use') return 'continue';
-      } else {
-        this.ctx._truncationRetried = false;
-      }
-    }
-
-    // 连续截断断路器
-    if (response.truncated || response.finishReason === 'length') {
-      this.ctx._consecutiveTruncations++;
-      if (this.ctx._consecutiveTruncations >= this.ctx.MAX_CONSECUTIVE_TRUNCATIONS) {
-        logger.warn(`[AgentLoop] Consecutive truncation circuit breaker: ${this.ctx._consecutiveTruncations} consecutive truncations`);
-        logCollector.agent('WARN', `Consecutive truncation breaker triggered (${this.ctx._consecutiveTruncations}x)`);
-        this.ctx._consecutiveTruncations = 0;
-        this.contextAssembly.injectSystemMessage(
-          `<truncation-recovery>\n` +
-          `你已连续 ${this.ctx.MAX_CONSECUTIVE_TRUNCATIONS} 次输出被截断，可能陷入了重复循环。请立即：\n` +
-          `1. 停止当前冗长的文字输出\n` +
-          `2. 用 1-2 句话总结当前进展\n` +
-          `3. 直接调用工具执行下一步操作\n` +
-          `</truncation-recovery>`
-        );
-        return 'continue';
-      }
-    } else {
-      this.ctx._consecutiveTruncations = 0;
     }
 
     const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
@@ -283,24 +330,20 @@ export class MessageProcessor {
     }
 
     const finalContent = gated.content;
-    const assistantMessage: Message = {
-      id: this.contextAssembly.generateId(),
-      role: 'assistant',
-      content: finalContent,
-      timestamp: Date.now(),
-      thinking: response.thinking,
-      effortLevel: this.ctx.effortLevel,
-      inputTokens: response.usage?.inputTokens,
-      outputTokens: response.usage?.outputTokens,
-      contentParts: response.contentParts?.map(p =>
-        p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
-      ),
-    };
+    const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
     if (artifacts.length > 0) {
       assistantMessage.artifacts = artifacts;
+    }
+
+    if (this.ctx.isCancelled) {
+      logger.info('[AgentLoop] Skipping final text persistence after late cancellation', {
+        sessionId: this.ctx.sessionId,
+        contentLength: assistantMessage.content.length,
+      });
+      return 'break';
     }
 
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
@@ -535,6 +578,9 @@ export class MessageProcessor {
 
     // Compress tool results to save tokens
     const compressedResults = sanitizedResults.map((result: ToolResult) => {
+      if (shouldPreserveToolObservation(result)) {
+        return result;
+      }
       if (result.output && typeof result.output === 'string') {
         const { content, compressed, savedTokens } = compressToolResult(result.output);
         if (compressed) {
@@ -554,6 +600,22 @@ export class MessageProcessor {
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);
+
+    if (this.ctx.forceFinalResponseReason) {
+      this.contextAssembly.flushHookMessageBuffer();
+      langfuse.endSpan(this.ctx.currentIterationSpanId, {
+        type: 'tool_calls',
+        toolCount: toolCalls.length,
+        successCount: toolResults.filter((r: ToolResult) => r.success).length,
+        forcedFinalResponse: true,
+      });
+      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+      this.ctx.onEvent({
+        type: 'turn_end',
+        data: { turnId: this.ctx.currentTurnId },
+      });
+      return 'continue';
+    }
 
     // === Stagnation detection ===
     // 计算本轮每个 tool call 的 fingerprint，push 到滑动窗口，连续 N 次相同

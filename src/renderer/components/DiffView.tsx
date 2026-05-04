@@ -117,7 +117,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       </div>
 
       {/* Diff 内容 */}
-      <div className="diff-content overflow-x-auto bg-[var(--color-surface)]">
+      <div className="diff-content overflow-x-auto scrollbar-hidden bg-[var(--color-surface)]">
         <table className="w-full text-xs font-mono">
           <tbody>
             {diffLines.map((line, index) => (

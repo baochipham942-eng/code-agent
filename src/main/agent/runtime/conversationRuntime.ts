@@ -17,6 +17,8 @@ import type {
   ToolResult,
   AgentEvent,
   AgentTaskPhase,
+  TaskPlan,
+  TodoItem,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
@@ -71,6 +73,7 @@ import {
   buildRuntimeModeBlock,
 } from '../../agent/messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
+import { detectTaskFeatures } from '../../prompts/systemReminders';
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
@@ -108,9 +111,37 @@ import type { RunFinalizer, RunTerminalInfo } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
+import { AutoPlanner } from '../../planning/autoPlanner';
 
 
 const logger = createLogger('AgentLoop');
+
+function queueRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
+  const trimmed = message.trim();
+  if (!trimmed) return;
+  ctx.pendingRuntimeDiagnostics.push(trimmed);
+}
+
+function hasActiveSessionTodos(sessionId?: string): boolean {
+  return getSessionTodos(sessionId).some((todo) => todo.status !== 'completed');
+}
+
+function todosFromPlan(plan: TaskPlan): TodoItem[] {
+  return plan.phases.flatMap((phase) =>
+    phase.steps.map((step) => ({
+      content: step.content,
+      status: step.status === 'completed' || step.status === 'skipped'
+        ? 'completed'
+        : step.status,
+      activeForm: step.activeForm || step.content,
+    })),
+  );
+}
+
+function shouldSkipAutoPlanBootstrap(userMessage: string, isPureContentGenerationTask: boolean): boolean {
+  if (isPureContentGenerationTask) return true;
+  return /(?:不要|不需要|别|无需|禁止).{0,12}(?:调用)?(?:工具|tool|计划|待办|todo|plan)|(?:no tools?|without tools?|do not use tools?|don't use tools?)/i.test(userMessage);
+}
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -595,8 +626,9 @@ export class ConversationRuntime {
         // Debug step mode: CODE_AGENT_STEP_MODE=true 时阻塞等用户回车
         await maybePauseForStep(iterations);
 
-        // M1: Loop decision engine. Only `continuation` is executed here;
-        // compact/fallback/terminate are advisory and handled by existing paths.
+        // M1: Loop decision engine. Decisions are advisory here; concrete
+        // recovery paths live in the response/tool handlers where full
+        // conversation state is available.
         {
           const loopState: LoopState = {
             stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
@@ -614,10 +646,6 @@ export class ConversationRuntime {
 
           const decision = decideNextAction(loopState);
           logger.debug(`[AgentLoop] Loop decision: ${decision.action} (${decision.execution}) - ${decision.reason}`);
-
-          if (decision.execution === 'runtime' && decision.action === 'continuation' && decision.params?.continuationPrompt) {
-            this.contextAssembly.injectSystemMessage(decision.params.continuationPrompt as string);
-          }
 
           if (decision.execution === 'advisory') {
             logger.info(`[AgentLoop] Advisory loop decision: ${decision.action} - ${decision.reason}`);
@@ -735,6 +763,20 @@ export class ConversationRuntime {
     // Task Complexity Analysis
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
     const isSimpleTask = complexityAnalysis.complexity === 'simple';
+    const startupTaskFeatures = detectTaskFeatures(userMessage);
+    const isPureContentGenerationTask =
+      startupTaskFeatures.isDocumentTask &&
+      !startupTaskFeatures.isPPTTask &&
+      !startupTaskFeatures.isDataTask &&
+      !startupTaskFeatures.isExcelTask &&
+      !startupTaskFeatures.isImageTask &&
+      !startupTaskFeatures.isVideoTask &&
+      !startupTaskFeatures.isMultiDimension &&
+      !startupTaskFeatures.isAuditTask &&
+      !startupTaskFeatures.isReviewTask &&
+      !startupTaskFeatures.isPlanningTask &&
+      !startupTaskFeatures.isFuzzyCodeReview &&
+      !startupTaskFeatures.isFuzzyTroubleshooting;
     this.ctx.isSimpleTaskMode = isSimpleTask;
 
 
@@ -765,27 +807,120 @@ export class ConversationRuntime {
       // 持久化到 system context，确保每轮推理都可见（而非注入消息历史后被淹没）
       this.contextAssembly.pushPersistentSystemContext(complexityHint);
 
-      // Parallel Judgment via small model (Groq)
-      try {
-        const orchestrator = getTaskOrchestrator();
-        const judgment = await orchestrator.judge(userMessage);
+      if (!hasActiveSessionTodos(this.ctx.sessionId)) {
+        try {
+          const sessionScopedPlanningService = this.ctx.planningService?.getPlanDirectory().includes(this.ctx.sessionId)
+            ? this.ctx.planningService
+            : undefined;
+          if (this.ctx.planningService && !sessionScopedPlanningService) {
+            queueRuntimeDiagnostic(this.ctx, '当前 run 的 planning service 未绑定本会话，先直接同步 session todos');
+          }
 
-        if (judgment.shouldParallel && judgment.confidence >= 0.7) {
-          const parallelHint = orchestrator.generateParallelHint(judgment);
-          this.contextAssembly.pushPersistentSystemContext(parallelHint);
+          if (sessionScopedPlanningService) {
+            await sessionScopedPlanningService.initialize();
+            const existingPlan = sessionScopedPlanningService.plan.getCurrentPlan()
+              ?? await sessionScopedPlanningService.plan.read();
+            const hasActivePlan = existingPlan && !sessionScopedPlanningService.plan.isComplete();
 
-          logger.info('[AgentLoop] Parallel execution suggested', {
-            dimensions: judgment.parallelDimensions,
-            criticalPath: judgment.criticalPathLength,
-            speedup: judgment.estimatedSpeedup,
+            if (hasActivePlan && existingPlan) {
+              const { todos: seededTodos } = advanceTodoStatus(todosFromPlan(existingPlan));
+              setSessionTodos(this.ctx.sessionId, seededTodos);
+              this.ctx.onEvent({ type: 'todo_update', data: seededTodos });
+              queueRuntimeDiagnostic(
+                this.ctx,
+                `已从当前计划同步 ${seededTodos.length} 条待办，右侧进度不再回退成工具活动`,
+              );
+            }
+          }
+
+          if (
+            !hasActiveSessionTodos(this.ctx.sessionId) &&
+            !shouldSkipAutoPlanBootstrap(userMessage, isPureContentGenerationTask)
+          ) {
+            const autoPlanner = new AutoPlanner({ persistPlans: false });
+            const autoPlanResult = await autoPlanner.generatePlan(userMessage, {
+              workingDirectory: this.ctx.workingDirectory || process.cwd(),
+              sessionId: this.ctx.sessionId,
+              autoCreatePlan: true,
+              syncToTodoWrite: true,
+            });
+
+            if (autoPlanResult?.plan) {
+              const { todos: seededTodos } = advanceTodoStatus(todosFromPlan(autoPlanResult.plan));
+              setSessionTodos(this.ctx.sessionId, seededTodos);
+              this.ctx.onEvent({ type: 'todo_update', data: seededTodos });
+
+              if (sessionScopedPlanningService) {
+                await sessionScopedPlanningService.plan.create({
+                  title: autoPlanResult.plan.title,
+                  objective: autoPlanResult.plan.objective,
+                  phases: autoPlanResult.plan.phases,
+                });
+                await publishPlanningStateToRenderer(sessionScopedPlanningService);
+              }
+
+              queueRuntimeDiagnostic(
+                this.ctx,
+                `已根据本轮目标生成 ${autoPlanResult.plan.metadata.totalSteps} 条真实待办${sessionScopedPlanningService ? '，并写入持久化计划' : ''}`,
+              );
+            } else {
+              queueRuntimeDiagnostic(this.ctx, '本轮没有自动生成计划，右侧待办暂时只能等待显式任务清单或后续 plan 更新');
+            }
+          } else if (!hasActiveSessionTodos(this.ctx.sessionId)) {
+            queueRuntimeDiagnostic(this.ctx, '自动计划已跳过：当前请求更像纯内容输出或明确要求不调用工具/不生成计划');
+          }
+        } catch (planBootstrapError) {
+          logger.warn('[AgentLoop] Auto-plan bootstrap failed', {
+            error: planBootstrapError instanceof Error ? planBootstrapError.message : String(planBootstrapError),
           });
-          logCollector.agent('INFO', 'Parallel execution suggested', {
-            dimensions: judgment.suggestedDimensions,
-            confidence: judgment.confidence,
-          });
+          queueRuntimeDiagnostic(
+            this.ctx,
+            `自动计划生成失败：${planBootstrapError instanceof Error ? planBootstrapError.message : 'unknown error'}`,
+          );
         }
-      } catch (error) {
-        logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+      }
+
+      if (isPureContentGenerationTask) {
+        logger.info('[AgentLoop] Skipping parallel judgment for pure content generation task', {
+          complexity: complexityAnalysis.complexity,
+        });
+        queueRuntimeDiagnostic(this.ctx, '并行判断已跳过：当前更像内容生成任务，避免额外小模型噪音');
+      } else {
+        // Parallel Judgment via small model (Groq)
+        try {
+          const orchestrator = getTaskOrchestrator();
+          const judgment = await orchestrator.judge(userMessage);
+
+          if (judgment.shouldParallel && judgment.confidence >= 0.7) {
+            const parallelHint = orchestrator.generateParallelHint(judgment);
+            this.contextAssembly.pushPersistentSystemContext(parallelHint);
+
+            logger.info('[AgentLoop] Parallel execution suggested', {
+              dimensions: judgment.parallelDimensions,
+              criticalPath: judgment.criticalPathLength,
+              speedup: judgment.estimatedSpeedup,
+            });
+            logCollector.agent('INFO', 'Parallel execution suggested', {
+              dimensions: judgment.suggestedDimensions,
+              confidence: judgment.confidence,
+            });
+            queueRuntimeDiagnostic(
+              this.ctx,
+              `并行判断建议拆分执行：${judgment.parallelDimensions} 个维度，置信度 ${Math.round(judgment.confidence * 100)}%`,
+            );
+          } else {
+            queueRuntimeDiagnostic(
+              this.ctx,
+              `并行判断保持串行：${judgment.reason}（置信度 ${Math.round(judgment.confidence * 100)}%）`,
+            );
+          }
+        } catch (error) {
+          logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+          queueRuntimeDiagnostic(
+            this.ctx,
+            `并行判断降级：${error instanceof Error ? error.message : 'unknown error'}`,
+          );
+        }
       }
     }
 
@@ -921,20 +1056,30 @@ export class ConversationRuntime {
   // Control methods (cancel, interrupt, steer)
   // ========================================================================
 
-  cancel(): void {
+  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+    this.ctx.isCancelled = true;
+
     // Preserve partial streaming content before aborting
     if (this.ctx.lastStreamedContent) {
+      const suffix = reason === 'session-switch'
+        ? '\n\n[未完成 — 切换会话中断]'
+        : '\n\n[cancelled]';
       const partialMessage: Message = {
         id: generateMessageId(),
         role: 'assistant',
-        content: this.ctx.lastStreamedContent + '\n\n[cancelled]',
+        content: this.ctx.lastStreamedContent + suffix,
         timestamp: Date.now(),
       };
       this.ctx.messages.push(partialMessage);
-      this.ctx.persistMessage?.(partialMessage);
+      // 必须 await — abort 触发后 inference Promise 立刻 reject，post-inference
+      // persist 路径不会再走，partial 必须在 abort 前落 DB
+      try {
+        await this.ctx.persistMessage?.(partialMessage);
+      } catch (err) {
+        logger.warn('[ConversationRuntime] persist partial on cancel failed:', err);
+      }
       this.ctx.lastStreamedContent = '';
     }
-    this.ctx.isCancelled = true;
     this.ctx.abortController?.abort();
     this.ctx.runAbortController?.abort();
     this.releasePauseWaiters();

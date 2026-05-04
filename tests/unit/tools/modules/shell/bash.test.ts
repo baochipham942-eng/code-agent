@@ -49,7 +49,10 @@ vi.mock('../../../../../src/main/tools/shell/ptyExecutor', () => ({
   getPtySessionOutput: (...args: unknown[]) => getPtySessionOutputMock(...args),
 }));
 
-import { bashModule } from '../../../../../src/main/tools/modules/shell/bash';
+import {
+  bashModule,
+  rewriteImplicitBackgroundCommand,
+} from '../../../../../src/main/tools/modules/shell/bash';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -317,6 +320,38 @@ describe('bashModule (native)', () => {
   });
 
   describe('run_in_background', () => {
+    it('does not rewrite inline ampersands that are followed by another command', () => {
+      expect(rewriteImplicitBackgroundCommand('echo one & echo two')).toEqual({
+        command: 'echo one & echo two',
+        rewritten: false,
+      });
+    });
+
+    it('treats a trailing shell ampersand as background mode', async () => {
+      startBackgroundTaskMock.mockReturnValue({
+        success: true,
+        taskId: 'task-trailing-amp',
+        outputFile: '/tmp/task-trailing-amp.log',
+      });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'python3 -m http.server 8000 &' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(startBackgroundTaskMock).toHaveBeenCalledWith(
+        'python3 -m http.server 8000',
+        expect.any(String),
+        expect.any(Number),
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('<task-id>task-trailing-amp</task-id>');
+        expect(result.meta?.background).toBe(true);
+      }
+    });
+
     it('returns task meta + friendly message on success', async () => {
       startBackgroundTaskMock.mockReturnValue({
         success: true,

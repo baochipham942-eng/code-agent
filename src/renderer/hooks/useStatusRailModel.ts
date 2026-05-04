@@ -8,7 +8,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import type { TodoItem } from '@shared/contract';
+import type { TaskPlan, TodoItem } from '@shared/contract';
 import type { ContextHealthWarningLevel, CompressionStats } from '@shared/contract/contextHealth';
 import { getContextWindow } from '@shared/constants';
 import { computeBucketSummary, extractContextItems, type BucketSummary, type ContextItem } from '../utils/contextBuckets';
@@ -125,6 +125,29 @@ export interface StatusRailModel {
   cache: StatusRailCacheModel;
 }
 
+function todosFromTaskPlan(plan: TaskPlan | null): TodoItem[] {
+  if (!plan) return [];
+
+  return plan.phases.flatMap((phase) =>
+    phase.steps.map((step) => ({
+      content: step.content,
+      status: step.status === 'completed' || step.status === 'skipped'
+        ? 'completed'
+        : step.status,
+      activeForm: step.activeForm || step.content,
+    })),
+  );
+}
+
+export function deriveStatusRailTodoModel(
+  sessionTodos: TodoItem[],
+  taskPlan: TaskPlan | null,
+): StatusRailTodoModel {
+  const items = sessionTodos.length > 0 ? sessionTodos : todosFromTaskPlan(taskPlan);
+  const completed = items.filter((t) => t.status === 'completed').length;
+  return { items, completed, total: items.length };
+}
+
 // ── Hook ──
 
 export function useStatusRailModel(): StatusRailModel {
@@ -133,6 +156,7 @@ export function useStatusRailModel(): StatusRailModel {
   const workingDirectory = useAppStore((s) => s.workingDirectory);
   const cacheStats = useAppStore((s) => s.cacheStats);
   const currentModel = useAppStore((s) => s.modelConfig?.model);
+  const taskPlan = useAppStore((s) => s.taskPlan);
 
   const todos = useSessionStore((s) => s.todos);
   const messages = useSessionStore((s) => s.messages);
@@ -176,9 +200,8 @@ export function useStatusRailModel(): StatusRailModel {
 
   // Todos
   const todoModel = useMemo<StatusRailTodoModel>(() => {
-    const completed = todos.filter((t) => t.status === 'completed').length;
-    return { items: todos, completed, total: todos.length };
-  }, [todos]);
+    return deriveStatusRailTodoModel(todos, taskPlan);
+  }, [todos, taskPlan]);
 
   // Outputs
   const outputs = useMemo<StatusRailOutputModel>(() => {

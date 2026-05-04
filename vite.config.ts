@@ -100,6 +100,8 @@ export default defineConfig({
         // react-syntax-highlighter 不直接 import prismjs) 和 vendor-react
         // (linux/darwin 平台 react 被 inline 进主 bundle 行为不一致) 两个坑。
         manualChunks: {
+          'vendor-katex': ['katex', 'remark-math', 'rehype-katex'],
+          'vendor-charts': ['recharts'],
           'vendor-zustand': ['zustand'],
           'vendor-markdown': ['react-markdown', 'remark-gfm'],
           'vendor-reactflow': ['@xyflow/react'],

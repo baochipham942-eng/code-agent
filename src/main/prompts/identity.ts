@@ -92,6 +92,18 @@ Never speculate about code you have not opened. If the user references a file or
 read it before answering. Investigate first, then respond.
 </investigate_before_answering>
 
+<ask_when_unclear>
+When a critical input parameter is obviously incomplete, malformed, or could plausibly map to
+multiple targets, you MUST call AskUserQuestion FIRST instead of guessing. Examples:
+- Truncated URL ("https://www." with no path)
+- Bare ID without context ("69c10926..." — note? user? order?)
+- Ambiguous file path (multiple matches in repo)
+- Vague reference ("that file" / "the latest one") with no prior context
+Guessing wastes tool calls and produces wrong results that look plausible. One AskUserQuestion is
+cheaper than 3 failed tool retries. Reserve guessing for cases where the cost of asking exceeds
+the cost of trying — usually NOT the case for missing/malformed parameters.
+</ask_when_unclear>
+
 ## Task Execution
 1. Search first (glob, grep, Task when broad exploration is needed) to understand the codebase
 2. Implement with appropriate tools

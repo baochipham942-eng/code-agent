@@ -51,7 +51,7 @@ import {
   authMiddleware,
   corsMiddleware,
   rateLimitMiddleware,
-  resolveDevAuthTokenPath,
+  writeDevAuthToken,
 } from './middleware/auth';
 
 // Route modules
@@ -153,12 +153,17 @@ async function initializeServices(): Promise<void> {
   }
 
   // 3. 初始化 AuthService（依赖 Supabase，恢复登录态）
-  try {
-    const { getAuthService } = await import('../main/services/auth/authService');
-    await getAuthService().initialize();
-    logger.info('AuthService initialized');
-  } catch (error) {
-    logger.warn('AuthService not available:', (error as Error).message);
+  // Playwright E2E 不验证真实登录态；跳过 AuthService 可隔离本机缓存用户和外部网络。
+  if (process.env.CODE_AGENT_E2E === '1') {
+    logger.info('AuthService skipped in E2E mode');
+  } else {
+    try {
+      const { getAuthService } = await import('../main/services/auth/authService');
+      await getAuthService().initialize();
+      logger.info('AuthService initialized');
+    } catch (error) {
+      logger.warn('AuthService not available:', (error as Error).message);
+    }
   }
 
   // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
@@ -422,8 +427,13 @@ function registerHandlers(): void {
           await flushPreviousIfRunning();
           data = await sm.createSession({
             title: payload?.title || 'New Session',
+            workingDirectory:
+              typeof payload?.workingDirectory === 'string' && payload.workingDirectory.trim().length > 0
+                ? payload.workingDirectory.trim()
+                : undefined,
             modelConfig: resolveSessionDefaultModelConfig(),
           });
+          sm.setCurrentSession((data as { id: string }).id);
           break;
         case 'load':
           await flushPreviousIfRunning(payload?.sessionId);
@@ -633,9 +643,7 @@ async function main(): Promise<void> {
 
   server.listen(port, host, () => {
     // Write token to .dev-token for Vite dev server to read
-    const devTokenPath = resolveDevAuthTokenPath();
-    fs.mkdirSync(path.dirname(devTokenPath), { recursive: true });
-    fs.writeFileSync(devTokenPath, SERVER_AUTH_TOKEN, 'utf-8');
+    writeDevAuthToken(SERVER_AUTH_TOKEN);
 
     console.log();
     // Machine-readable startup JSON (Tauri main.rs parses this)

@@ -42,6 +42,7 @@ vi.mock('../../../src/main/services/git/gitStatusService', () => ({
 vi.mock('../../../src/main/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getToolAnnotationsMap: () => new Map(),
+    getToolDefinitions: () => [],
   }),
 }));
 
@@ -125,6 +126,8 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     traceId: 'trace-1',
     currentIterationSpanId: 'iteration-1',
     currentTurnId: 'turn-1',
+    forceFinalResponseReason: undefined,
+    forceFinalResponsePrompt: undefined,
     turnStartTime: Date.now(),
     toolsUsedInTurn: [],
     isSimpleTaskMode: false,
@@ -319,6 +322,54 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       'ERROR',
       'too many reads',
     );
+    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.forceFinalResponsePrompt).toContain('force-final-response');
+  });
+
+  it('marks successful read_file output as preserved file evidence', async () => {
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: '     1\talpha\n     2\tbeta',
+      })),
+    };
+
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      antiPatternDetector: {
+        trackToolFailure: vi.fn(),
+        clearToolFailure: vi.fn(),
+        trackDuplicateCall: vi.fn(),
+        trackFileReread: vi.fn(),
+        trackToolExecution: vi.fn().mockReturnValue(null),
+        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
+        generateHardLimitError: vi.fn(),
+      } as never,
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const [result] = await engine.executeToolsWithHooks([
+      makeToolCall('tool-read', '/tmp/evidence.txt'),
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.metadata).toMatchObject({
+      preserveObservation: true,
+      evidenceKind: 'file_read',
+      filePath: '/tmp/evidence.txt',
+    });
   });
 
   it('passes the run-level abort signal into ToolExecutor', async () => {

@@ -19,6 +19,16 @@ import type { Request, Response, NextFunction } from 'express';
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function resolveDevMirrorTokenPath(cwd = process.cwd()): string | null {
+  const normalizedCwd = path.resolve(cwd);
+  const packageJsonPath = path.join(normalizedCwd, 'package.json');
+  const rendererRoot = path.join(normalizedCwd, 'src', 'renderer');
+  if (!fs.existsSync(packageJsonPath) || !fs.existsSync(rendererRoot)) {
+    return null;
+  }
+  return path.join(normalizedCwd, '.dev-token');
+}
+
 export function resolveDevAuthTokenPath(cwd = process.cwd()): string {
   const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
   const normalizedCwd = path.normalize(cwd);
@@ -41,6 +51,17 @@ function loadOrGenerateAuthToken(): string {
     // ENOENT or unreadable — fall through to fresh generation
   }
   return randomUUID();
+}
+
+export function writeDevAuthToken(token: string, cwd = process.cwd()): void {
+  const devTokenPath = resolveDevAuthTokenPath(cwd);
+  fs.mkdirSync(path.dirname(devTokenPath), { recursive: true });
+  fs.writeFileSync(devTokenPath, token, 'utf-8');
+
+  const repoDevTokenPath = resolveDevMirrorTokenPath(process.cwd());
+  if (repoDevTokenPath && repoDevTokenPath !== devTokenPath) {
+    fs.writeFileSync(repoDevTokenPath, token, 'utf-8');
+  }
 }
 
 /** Loaded from .dev-token on startup (dev) or freshly generated; printed to stdout for Tauri/frontend */

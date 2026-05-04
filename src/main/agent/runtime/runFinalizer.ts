@@ -96,6 +96,24 @@ import type { LearningPipeline } from './learningPipeline';
 
 const logger = createLogger('AgentLoop');
 
+function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
+  const trimmed = message.trim();
+  if (!trimmed) return;
+  if (ctx.currentTurnId) {
+    ctx.onEvent({
+      type: 'stream_reasoning',
+      data: { content: `\n[runtime] ${trimmed}\n`, turnId: ctx.currentTurnId },
+    });
+    return;
+  }
+  ctx.pendingRuntimeDiagnostics.push(trimmed);
+}
+
+function hasCheckboxChecklist(content: string | undefined): boolean {
+  if (!content) return false;
+  return /^[-*]\s+\[[ xX✓✗-]\]\s+.+$/m.test(content);
+}
+
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
 
@@ -109,6 +127,28 @@ export interface RunTerminalInfo {
 function formatTerminalError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return error === undefined ? 'Unknown runtime error' : String(error);
+}
+
+function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
+  let seenLastUser = false;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') {
+      seenLastUser = true;
+      break;
+    }
+
+    if (message.role !== 'assistant') {
+      continue;
+    }
+
+    if (typeof message.content === 'string' && message.content.trim().length > 0) {
+      return true;
+    }
+  }
+
+  return !seenLastUser;
 }
 
 // ----------------------------------------------------------------------------
@@ -223,6 +263,16 @@ export class RunFinalizer {
 
       langfuse.endTrace(this.ctx.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
+      if (!hasVisibleAssistantTextAfterLastUser(this.ctx.messages)) {
+        const fallbackMessage: Message = {
+          id: this.contextAssembly.generateId(),
+          role: 'assistant',
+          content: '任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。',
+          timestamp: Date.now(),
+        };
+        await this.contextAssembly.addAndPersistMessage(fallbackMessage);
+        this.ctx.onEvent({ type: 'message', data: fallbackMessage });
+      }
       langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);
     }
 
@@ -298,11 +348,17 @@ export class RunFinalizer {
 
     if (response.thinking) {
       parsed = parseTodos(response.thinking);
+      if (!parsed && hasCheckboxChecklist(response.thinking)) {
+        pushRuntimeDiagnostic(this.ctx, 'thinking 中的 checklist 没有显式任务标记，未提升为右侧待办');
+      }
     }
 
     // 如果 thinking 中没有，从 text content 中解析
     if (!parsed && response.content) {
       parsed = parseTodos(response.content);
+      if (!parsed && hasCheckboxChecklist(response.content)) {
+        pushRuntimeDiagnostic(this.ctx, '正文 checklist 仅作为回复内容展示，未自动写入待办面板');
+      }
     }
 
     if (!parsed || parsed.length === 0) return;
@@ -317,6 +373,7 @@ export class RunFinalizer {
 
     // 推送到前端
     this.ctx.onEvent({ type: 'todo_update', data: advanced });
+    pushRuntimeDiagnostic(this.ctx, `识别到显式任务清单，已同步 ${advanced.length} 条待办`);
 
     logger.debug(`[AgentLoop] 自动解析到 ${parsed.length} 个任务，合并后 ${advanced.length} 个`);
   }
@@ -516,18 +573,19 @@ export class RunFinalizer {
 
     if (userMessages.length === 0) return;
 
-    // Extract title from first user message (truncate to 50 chars)
-    const firstMsg = userMessages[0];
-    const title = firstMsg.length > 50 ? firstMsg.slice(0, 50).trim() + '...' : firstMsg.trim();
+    // The latest user turn carries the current session topic best in multi-turn chats.
+    const latestMsg = userMessages[userMessages.length - 1];
+    const title = latestMsg.length > 50 ? latestMsg.slice(0, 50).trim() + '...' : latestMsg.trim();
 
-    // Extract highlights: take first line of each unique user message (up to 3)
+    // Extract highlights from recent turns so follow-up constraints replace stale first-turn text.
     const highlights = userMessages
-      .slice(0, 5)
+      .slice(-5)
       .map(msg => {
         const firstLine = msg.split('\n')[0].trim();
         return firstLine.length > 60 ? firstLine.slice(0, 60) + '...' : firstLine;
       })
       .filter((v, i, a) => a.indexOf(v) === i) // dedupe
+      .reverse()
       .slice(0, 3);
 
     const today = new Date().toISOString().split('T')[0];

@@ -3,7 +3,7 @@
 // Uses react-virtuoso for virtual scrolling to handle 100+ turn sessions
 // ============================================================================
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
@@ -96,6 +96,56 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     const timer = setTimeout(scroll, 0);
     return () => clearTimeout(timer);
   }, [projection.sessionId, focusedTurnId, focusedTurnIndex]);
+
+  // 用户发新消息时，把这条 user msg 顶到视图上方（让下面的 streaming 内容有空间展开）
+  // 现有 L76 effect 只 react to turnId 变化，supplement 模式（in-flight 追加 user msg
+  // 到当前 turn）turnId 不变，不会触发 scroll。加这个 effect 监听最新 user node id：
+  // - 新开 turn：latestUserNodeId 变（同时 turnId 也变，跟 L76 重复但 prev ref 防止重 scroll）
+  // - supplement 追加：latestUserNodeId 变，但 turnId 不变 — 这是关键修复
+  const latestUserNodeId = useMemo(() => {
+    for (let i = projection.turns.length - 1; i >= 0; i--) {
+      const nodes = projection.turns[i].nodes;
+      for (let j = nodes.length - 1; j >= 0; j--) {
+        if (nodes[j].type === 'user') return nodes[j].id;
+      }
+    }
+    return null;
+  }, [projection.turns]);
+
+  const prevLatestUserIdRef = useRef<string | null>(null);
+  const prevSessionIdForUserScrollRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 切换会话：只 sync prev ref，不主动滚动（避免历史会话被强行 jump）
+    if (prevSessionIdForUserScrollRef.current !== projection.sessionId) {
+      prevSessionIdForUserScrollRef.current = projection.sessionId;
+      prevLatestUserIdRef.current = latestUserNodeId;
+      return;
+    }
+    if (!latestUserNodeId) return;
+    if (prevLatestUserIdRef.current === latestUserNodeId) return;
+    prevLatestUserIdRef.current = latestUserNodeId;
+
+    // 找到包含这条 user msg 的 turn index
+    let targetIndex = -1;
+    for (let i = projection.turns.length - 1; i >= 0; i--) {
+      if (projection.turns[i].nodes.some((n) => n.id === latestUserNodeId)) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex < 0) return;
+
+    // 下一帧 scroll，让 Virtuoso 先 render 新 item 再定位
+    const frame = requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollToIndex({
+        index: targetIndex,
+        align: 'start',
+        behavior: 'auto',
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [latestUserNodeId, projection.sessionId, projection.turns]);
 
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {

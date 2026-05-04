@@ -584,15 +584,28 @@ export const Sidebar: React.FC = () => {
       sessionRuntime?.lastActivityAt || 0,
       backgroundTask?.backgroundedAt || 0,
     );
-    const snapshotSummary = session.workbenchSnapshot?.summary || '纯对话';
+    const snapshotSummary = session.workbenchSnapshot?.summary?.trim() || '';
+    const hasMeaningfulSummary = snapshotSummary && snapshotSummary !== '纯对话';
+    const lastActiveLabel = getRelativeTime(latestActivityAt, true);
 
     return (
       <div
         key={session.id}
         onClick={() => handleSelectSession(session.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void handleSelectSession(session.id);
+          }
+        }}
         onContextMenu={(e) => handleContextMenu(e, session)}
         onMouseEnter={() => setHoveredSession(session.id)}
         onMouseLeave={() => setHoveredSession(null)}
+        role="button"
+        tabIndex={0}
+        aria-current={isSelected && !multiSelectMode ? 'true' : undefined}
+        aria-label={`打开会话 ${session.title || '未命名会话'}`}
+        data-session-id={session.id}
         className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
           isSelected && !multiSelectMode
             ? 'bg-zinc-700/60'
@@ -648,31 +661,15 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
 
-        {/* Line 2: turn count + recent activity */}
+        {/* Line 2: summary + recent activity */}
         {!isRenaming && (
           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-600">
-            <span className="truncate flex-1">
-              {session.turnCount > 0 ? `${session.turnCount} 轮` : '0 轮'}
+            <span className="truncate flex-1 text-zinc-500">
+              {hasMeaningfulSummary ? snapshotSummary : ''}
             </span>
             <span className="text-[10px] text-zinc-600 shrink-0">
-              {getRelativeTime(latestActivityAt, true)}
+              {lastActiveLabel}
             </span>
-          </div>
-        )}
-
-        {/* Line 3: workbench snapshot */}
-        {!isRenaming && (
-          <div className="mt-0.5 truncate text-[11px] text-zinc-500">
-            {snapshotSummary}
-          </div>
-        )}
-
-        {/* Line 4: selected session extras */}
-        {isSelected && !isRenaming && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            {session.turnCount > 0 && (
-              <span className="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1">{session.turnCount} 轮</span>
-            )}
           </div>
         )}
 
@@ -801,7 +798,6 @@ export const Sidebar: React.FC = () => {
                       <IconComponent className="w-3 h-3 text-zinc-500" />
                       <span className="text-xs font-medium text-zinc-400 truncate">{group.name}</span>
                     </button>
-                    <span className="text-[10px] text-zinc-600">{group.sessions.length}</span>
                     {!group.isUncategorized && (
                       <button
                         type="button"

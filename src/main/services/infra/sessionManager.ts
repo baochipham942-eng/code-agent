@@ -535,15 +535,13 @@ export class SessionManager implements Disposable {
    * 会自动结束前一个会话（异步生成摘要）
    */
   setCurrentSession(sessionId: string): void {
-    // 如果有前一个会话，异步结束它（不阻塞）
-    if (this.currentSessionId && this.currentSessionId !== sessionId) {
-      const previousSessionId = this.currentSessionId;
-      // 异步生成摘要，不阻塞会话切换
-      this.endSession(previousSessionId).catch((error) => {
-        logger.error('Failed to end previous session', { error, previousSessionId });
-      });
-    }
-
+    // 旧版本会在这里异步调 endSession(previousSessionId) 生成摘要，
+    // 但 Legacy summary generation 已经移除（见 endSession 内注释），
+    // 残留的异步调用只会打误导性 log "Ending session, generating summary"
+    // 还会与切会话期间的 zombie inference 在 currentSessionId 上 race。
+    //
+    // 切会话时 streaming partial 的持久化由调用方负责
+    // (agentAppService.flushPreviousSessionIfRunning)，本方法只负责更新 ID。
     this.currentSessionId = sessionId;
 
     // 设置工具缓存的 session
@@ -732,9 +730,20 @@ export class SessionManager implements Disposable {
 
   /**
    * 恢复会话（加载消息和状态）
+   *
+   * restoreSession 必须强制从 DB 全量 reload messages，原因：
+   * 1. getSession 默认只 load 最近 30 条（懒加载性能优化）
+   * 2. sessionCache 一旦装入就 cache hit 直接返回，不会重新读 DB
+   * 3. webServer 重启后 cache 是空的，但首次 load 走 getSession 默认 limit=30
+   *
+   * 这三层叠加导致：webServer 重启 → 用户继续对话 → LLM 拿到的 messages 只有最近 30 条
+   * （甚至更少，如果走的 fresh load 路径），历史 tool result/assistant 输出全丢，
+   * 模型像金鱼一样失忆。修法：清 cache + 全量 reload。
    */
   async restoreSession(sessionId: string): Promise<SessionWithMessages | null> {
-    const session = await this.getSession(sessionId);
+    // 清缓存确保下面的 getSession 走 DB 全量路径
+    this.sessionCache.delete(sessionId);
+    const session = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
     if (!session) return null;
 
     this.setCurrentSession(sessionId);

@@ -43,6 +43,7 @@ import {
   parseLeadingAgentMentions,
   syncLeadingAgentMentions,
 } from './agentMentionRouting';
+import { collectDroppedAttachments, shouldClearComposerAfterSend } from './utils';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
 
 // ============================================================================
@@ -50,7 +51,7 @@ import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExec
 // ============================================================================
 
 export interface ChatInputProps {
-  onSend: (envelope: ConversationEnvelope) => void | Promise<void>;
+  onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
@@ -218,7 +219,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
       if (text?.trim()) {
-        onSend(buildEnvelope(text));
+        void onSend(buildEnvelope(text));
       }
     };
     const handleAdd = (e: Event) => {
@@ -231,7 +232,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleRun = (e: Event) => {
       const cmd = (e as CustomEvent<string>).detail;
       if (cmd?.trim()) {
-        onSend(buildEnvelope(`Execute this shell command and show the output: \`${cmd.trim()}\``));
+        void onSend(buildEnvelope(`Execute this shell command and show the output: \`${cmd.trim()}\``));
       }
     };
     window.addEventListener('iact:send', handleSend);
@@ -397,10 +398,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
           try {
-            await onSend({
+            const sent = await onSend({
               content: `Execute this shell command and show the output: \`${shellCmd}\``,
               context: nextEnvelope.context,
             });
+            if (!shouldClearComposerAfterSend(sent)) {
+              inputAreaRef.current?.focus();
+              return;
+            }
           } catch {
             if (isProcessing) {
               setRuntimeDraftStatus(runtimeInputMode === 'redirect'
@@ -413,7 +418,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         }
       } else {
         try {
-          await onSend(nextEnvelope);
+          const sent = await onSend(nextEnvelope);
+          if (!shouldClearComposerAfterSend(sent)) {
+            inputAreaRef.current?.focus();
+            return;
+          }
         } catch {
           if (isProcessing) {
             setRuntimeDraftStatus(runtimeInputMode === 'redirect'
@@ -461,10 +470,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [processFile]);
 
   // 拖放处理
+  const clearDragState = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragOver) return;
+    window.addEventListener('dragend', clearDragState);
+    window.addEventListener('drop', clearDragState);
+    window.addEventListener('blur', clearDragState);
+    return () => {
+      window.removeEventListener('dragend', clearDragState);
+      window.removeEventListener('drop', clearDragState);
+      window.removeEventListener('blur', clearDragState);
+    };
+  }, [clearDragState, isDragOver]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -480,37 +507,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setIsUploading(true);
 
     try {
-      const items = e.dataTransfer.items;
-      const newAttachments: MessageAttachment[] = [];
-
-      if (items) {
-        const entries: FileSystemEntry[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const entry = items[i].webkitGetAsEntry?.();
-          if (entry) entries.push(entry);
-        }
-
-        for (const entry of entries) {
-          if (entry.isFile) {
-            const fileEntry = entry as FileSystemFileEntry;
-            const file = await new Promise<File>((resolve, reject) => {
-              fileEntry.file(resolve, reject);
-            });
-            const attachment = await processFile(file);
-            if (attachment) newAttachments.push(attachment);
-          } else if (entry.isDirectory) {
-            const dirEntry = entry as FileSystemDirectoryEntry;
-            const folderAttachment = await processFolderEntry(dirEntry, entry.name);
-            if (folderAttachment) newAttachments.push(folderAttachment);
-          }
-        }
-      } else {
-        const files = Array.from(e.dataTransfer.files);
-        for (const file of files) {
-          const attachment = await processFile(file);
-          if (attachment) newAttachments.push(attachment);
-        }
-      }
+      const newAttachments = await collectDroppedAttachments(e.dataTransfer, processFile, processFolderEntry);
 
       if (newAttachments.length > 0) {
         setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));

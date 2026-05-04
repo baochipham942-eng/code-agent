@@ -337,7 +337,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
             logger.info('Shortcut: Move to background', { sessionId: currentSessionId });
             const success = await moveToBackground(currentSessionId);
             if (success) {
-              await createSession();
+              await createSession('新对话');
             }
           }
           break;
@@ -347,7 +347,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           if (enableNewSession) {
             event.preventDefault();
             logger.info('Shortcut: New session');
-            await createSession();
+            await createSession('新对话');
           }
           break;
 

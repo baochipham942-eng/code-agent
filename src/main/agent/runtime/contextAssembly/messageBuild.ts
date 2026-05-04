@@ -90,12 +90,16 @@ function appendPromptBlockWithinBudget(
   prompt: string,
   block: string | null | undefined,
   label: string,
+  ctx?: ContextAssemblyCtx,
 ): string {
   if (!block) return prompt;
   const nextPrompt = `${prompt}\n\n${block}`;
   const nextTokens = estimateTokens(nextPrompt);
   if (nextTokens > MAX_SYSTEM_PROMPT_TOKENS) {
     logger.warn(`[ContextAssembly] Skipping ${label}: system prompt budget would be ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`);
+    ctx?.runtime.pendingRuntimeDiagnostics.push(
+      `上下文预算跳过 ${label}：预计 ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+    );
     return prompt;
   }
   return nextPrompt;
@@ -131,6 +135,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     systemPrompt,
     await buildSessionMetadataBlock(),
     'session metadata',
+    ctx,
   );
 
   // 注入轻量记忆索引（File-as-Memory）
@@ -142,6 +147,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
         systemPrompt,
         `<memory_index>\n${memoryIndex}\n</memory_index>`,
         'memory index',
+        ctx,
       );
       logger.debug('[ContextAssembly] memory_index injected (intent matched)');
     }
@@ -151,6 +157,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       systemPrompt,
       '<memory_hint>Memory files available via MemoryRead tool (see ~/.code-agent/memory/).</memory_hint>',
       'memory hint',
+      ctx,
     );
   }
 
@@ -160,7 +167,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       const skills = await loadRelevantSkills(userQuery);
       const skillBlock = buildSkillInjectionBlock(skills);
       if (skillBlock) {
-        systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills');
+        systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills', ctx);
         logger.debug(
           `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
         );
@@ -189,6 +196,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
           systemPrompt,
           `<repo_map>\n${repoMapResult.text}\n</repo_map>`,
           'repo map',
+          ctx,
         );
         if (systemPrompt !== before) {
           logger.debug(`[ContextAssembly] RepoMap injected: ${repoMapResult.fileCount} files, ${repoMapResult.symbolCount} symbols, ~${repoMapResult.estimatedTokens} tokens`);
@@ -205,14 +213,15 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       systemPrompt,
       await buildRecentConversationsBlock(),
       'recent conversations',
+      ctx,
     );
   }
 
   // 按意图注入 Generative UI 能力说明（~700 tok）+ Design brief 收集规则（~250 tok）
   if (typeof userQuery === 'string' && needsGenerativeUI(userQuery)) {
-    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, GENERATIVE_UI_PROMPT, 'generative UI');
+    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, GENERATIVE_UI_PROMPT, 'generative UI', ctx);
     // 同条件注入 question-form 规则——LLM 看到 design-brief reminder 时会按规则跳过 form。
-    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, QUESTION_FORM_PROMPT, 'question form');
+    systemPrompt = appendPromptBlockWithinBudget(systemPrompt, QUESTION_FORM_PROMPT, 'question form', ctx);
     logger.debug('[ContextAssembly] GenerativeUI + QuestionForm prompts injected (intent matched)');
   }
 
@@ -230,6 +239,7 @@ ${deferredToolsSummary}
 用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
 </deferred-tools>`,
         'deferred tools',
+        ctx,
       );
     }
   }
@@ -325,6 +335,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       systemPrompt,
       activeAgentBlock,
       'active agent context',
+      ctx,
     );
   }
 
@@ -335,6 +346,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       systemPrompt,
       completionNotifications.join('\n'),
       'completion notifications',
+      ctx,
     );
   }
 
@@ -346,6 +358,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       systemPrompt,
       persistentSystemContext[index],
       `persistent system context #${index + 1}`,
+      ctx,
     );
   }
 
@@ -434,6 +447,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           enableMicrocompact: true,
           enableContextCollapse: true,
           toolResultBudget: 2000,
+          protectedToolResultPredicate: (entry) =>
+            entry.role === 'tool' &&
+            (entry as ContextTranscriptEntry).preserveObservation === true,
           interventions: transcriptInterventions,
         },
       );
@@ -562,6 +578,9 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
           content: result.output || result.error || '',
           toolCallId: result.toolCallId,
           toolError: !result.success,
+          preserveObservation: result.metadata?.preserveObservation === true,
+          evidenceKind: result.metadata?.evidenceKind,
+          filePath: result.metadata?.filePath,
         })),
       );
       continue;

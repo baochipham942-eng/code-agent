@@ -315,6 +315,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const assistantToolCalls: CachedToolCall[] = [];
       const toolResultMessages: CachedMessage[] = [];
       const loopPersistedAssistantOrToolMessageIds = new Set<string>();
+      let runCancelled = false;
       // 追踪 text 和 tool_call 的交错顺序
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }> = [];
       let lastPartType: 'text' | 'tool_call' | null = null;
@@ -327,6 +328,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? { items: event.data, sessionId }
           : event.data ? { ...event.data, sessionId } : { sessionId };
         sendSSE(res, event.type, eventData);
+        if (event.type === 'agent_cancelled') {
+          runCancelled = true;
+        }
 
         if (event.type === 'message' && event.data && typeof event.data === 'object') {
           const message = event.data as import('../../shared/contract').Message;
@@ -471,7 +475,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
       const assistantMsgId = `msg-${Date.now()}-a`;
       const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
-      if (assistantText || assistantToolCalls.length > 0) {
+      if (!runCancelled && (assistantText || assistantToolCalls.length > 0)) {
         // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
         const hasInterleaving = contentParts.length > 1 || (contentParts.length === 1 && assistantToolCalls.length > 0 && assistantText);
         cached.push({
@@ -538,7 +542,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: userMsg.timestamp,
               } as import('../../shared/contract').Message);
             }
-            if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
+            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
@@ -560,7 +564,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: userMsg.timestamp,
               } as import('../../shared/contract').Message);
             }
-            if ((assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
+            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
@@ -615,7 +619,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             });
           }
           // Insert assistant message
-          if (assistantText || assistantToolCalls.length > 0) {
+          if (!runCancelled && (assistantText || assistantToolCalls.length > 0)) {
             await sb.supabase.from('messages').insert({
               id: assistantMsgId,
               session_id: sessionId,
@@ -660,16 +664,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   });
 
   // ── Cancel ─────────────────────────────────────────────────────────
-  router.post('/cancel', (req: Request, res: Response) => {
+  router.post('/cancel', async (req: Request, res: Response) => {
     const sessionId = req.body?.sessionId;
     if (sessionId && activeAgentLoops.has(sessionId)) {
-      activeAgentLoops.get(sessionId)!.cancel();
+      await Promise.resolve(activeAgentLoops.get(sessionId)!.cancel());
       activeAgentLoops.delete(sessionId);
       res.json({ message: 'Cancelled', sessionId });
     } else if (activeAgentLoops.size > 0) {
       // 没指定 sessionId 时取消最后一个
       const lastKey = [...activeAgentLoops.keys()].pop()!;
-      activeAgentLoops.get(lastKey)!.cancel();
+      await Promise.resolve(activeAgentLoops.get(lastKey)!.cancel());
       activeAgentLoops.delete(lastKey);
       res.json({ message: 'Cancelled', sessionId: lastKey });
     } else {

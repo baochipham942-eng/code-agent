@@ -196,7 +196,7 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) 
         </div>
       </div>
       {/* Diagram */}
-      <div className="overflow-auto p-4">
+      <div className="overflow-x-auto overflow-y-visible p-4 scrollbar-hidden">
         <div
           ref={containerRef}
           style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
@@ -288,6 +288,7 @@ const CodeBlock = memo(function CodeBlock({
       {/* Code with syntax highlighting */}
       <div className="relative">
         <SyntaxHighlighter
+          className="scrollbar-hidden"
           style={oneDark}
           language={language || 'text'}
           showLineNumbers={showLineNumbers}
@@ -297,6 +298,7 @@ const CodeBlock = memo(function CodeBlock({
             background: 'transparent',
             fontSize: '0.75rem',
             lineHeight: '1.25rem',
+            overflowY: 'visible',
           }}
           lineNumberStyle={{
             minWidth: '2.5em',
@@ -594,7 +596,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Tables
       table({ children }) {
         return (
-          <div className="my-3 overflow-x-auto">
+          <div className="my-3 overflow-x-auto scrollbar-hidden">
             <table className="min-w-full text-xs border-collapse">
               {children}
             </table>

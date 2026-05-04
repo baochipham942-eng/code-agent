@@ -26,8 +26,7 @@ export { agentMessageTool } from './agentMessage';
 export { workflowOrchestrateTool } from './workflowOrchestrate';
 export { teammateTool } from './teammate';
 
-// Plan Review
-export { planReviewTool, PlanReviewTool } from './planReview';
+// Plan Review — migrated to native; see src/main/tools/modules/multiagent/planReview.ts
 
 // Helper exports
 export { getSpawnedAgent, listSpawnedAgents, getAvailableAgents } from './spawnAgent';

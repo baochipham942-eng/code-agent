@@ -61,6 +61,17 @@ import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.sche
 // document/
 import { docEditSchema } from './document/docEdit.schema';
 
+// multiagent/
+import { taskSchema } from './multiagent/task.schema';
+import { teammateSchema } from './multiagent/teammate.schema';
+import { spawnAgentSchema, agentSpawnSchema } from './multiagent/spawnAgent.schema';
+import { waitAgentSchema } from './multiagent/waitAgent.schema';
+import { closeAgentSchema } from './multiagent/closeAgent.schema';
+import { sendInputSchema } from './multiagent/sendInput.schema';
+import { agentMessageSchema } from './multiagent/agentMessage.schema';
+import { workflowOrchestrateSchema } from './multiagent/workflowOrchestrate.schema';
+import { planReviewSchema } from './multiagent/planReview.schema';
+
 // excel/
 import { excelAutomateSchema } from './excel/excelAutomate.schema';
 
@@ -392,16 +403,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).workflowOrchestrateModule,
   );
   registry.register(
-    {
-      name: 'plan_review',
-      description: 'Review a plan or proposal from another agent before execution.',
-      inputSchema: minimalMASchema({ plan: { type: 'string' } }, ['plan']),
-      category: 'multiagent',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
-    async () => (await import('./multiagent/wrappers')).planReviewModule,
+    planReviewSchema,
+    async () => (await import('./multiagent/planReview')).planReviewModule,
   );
 
   // ── batch 7: mcp/document/excel/planning（21 个）─────────────────────────

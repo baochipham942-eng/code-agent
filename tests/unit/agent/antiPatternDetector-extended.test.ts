@@ -60,7 +60,10 @@ describe('AntiPatternDetector - Extended', () => {
       const warning = detector.trackToolExecution('read_file', true);
       expect(warning).not.toBeNull();
       expect(warning).toContain('critical-warning');
-      expect(warning).toContain('CREATION task');
+      // commit bce470a2 把 warning 文案从 CREATION task 引导改成 evidence drift 引导：
+      // 旧文案假设是创建任务被卡读循环，新文案聚焦"重复读同一段已观察的内容"，
+      // 引导基于已有 line-numbered 证据继续推进。文案改进，测试跟实现走。
+      expect(warning).toContain('evidence drift');
     });
 
     it('should warn after maxConsecutiveReadsAfterWrite (default 10)', () => {
@@ -208,8 +211,13 @@ describe('AntiPatternDetector - Extended', () => {
         makeToolCall('custom_tool', { param: 'value2' }),
         'error 2'
       );
-      // No alternative for custom_tool, should not contain strategy-switch
-      expect(result).toBeNull();
+      // commit bce470a2 修了"Strike 2 静默" bug：之前没有 alternative 且 args 每次不同时
+      // Strike 2 完全 null（exactArgsWarning 也 null），模型直接自决退出。
+      // 现在落入 generateStrike2GenericAdvice — 通用建议要求反问/换路径。
+      // 测试该跟实现：无 alternative 时也要给 fallback 提示，不能静默。
+      expect(result).not.toBeNull();
+      expect(result).toContain('strike-2-advice');
+      expect(result).toContain('custom_tool');
     });
   });
 

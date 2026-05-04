@@ -291,7 +291,12 @@ describe('resolveContextHealthForSession', () => {
     );
 
     expect(health.breakdown.systemPrompt).toBeGreaterThan(0);
-    expect(health.currentTokens).toBe(health.breakdown.systemPrompt + health.breakdown.messages);
+    // commit 2ae3efa2 后 currentTokens 加上了 toolDefinitions：systemPrompt + messages
+    // + toolResults + toolDefinitions。这里 toolResults=0，所以 currentTokens 等于
+    // systemPrompt + messages + toolDefinitions。
+    expect(health.currentTokens).toBe(
+      health.breakdown.systemPrompt + health.breakdown.messages + health.breakdown.toolDefinitions
+    );
   });
 
   it('uses the session model override when estimating max context window', async () => {

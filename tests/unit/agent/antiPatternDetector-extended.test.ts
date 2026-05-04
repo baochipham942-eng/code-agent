@@ -60,7 +60,10 @@ describe('AntiPatternDetector - Extended', () => {
       const warning = detector.trackToolExecution('read_file', true);
       expect(warning).not.toBeNull();
       expect(warning).toContain('critical-warning');
-      expect(warning).toContain('CREATION task');
+      // commit bce470a2 把 warning 文案从 CREATION task 引导改成 evidence drift 引导：
+      // 旧文案假设是创建任务被卡读循环，新文案聚焦"重复读同一段已观察的内容"，
+      // 引导基于已有 line-numbered 证据继续推进。文案改进，测试跟实现走。
+      expect(warning).toContain('evidence drift');
     });
 
     it('should warn after maxConsecutiveReadsAfterWrite (default 10)', () => {

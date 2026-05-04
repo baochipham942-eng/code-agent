@@ -366,14 +366,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/sendInput')).sendInputModule,
   );
   registry.register(
-    {
-      name: 'agent_message',
-      description: 'Send a structured message between agents in a swarm.',
-      inputSchema: minimalMASchema({ to: { type: 'string' }, payload: { type: 'object' } }, ['to', 'payload']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).agentMessageModule,
+    agentMessageSchema,
+    async () => (await import('./multiagent/agentMessage')).agentMessageModule,
   );
   registry.register(
     {

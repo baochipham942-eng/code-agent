@@ -10,7 +10,7 @@ export { exploreTool } from './explore';
 
 // PascalCase aliases (recommended for new code)
 export { agentSpawnTool } from './spawnAgent';
-export { AgentMessageTool } from './agentMessage';
+// AgentMessageTool — migrated to native; see src/main/tools/modules/multiagent/agentMessage.ts
 export { WorkflowOrchestrateTool } from './workflowOrchestrate';
 export { TeammateTool } from './teammate';
 
@@ -19,7 +19,7 @@ export { TeammateTool } from './teammate';
 
 // Legacy snake_case exports (backward compatibility)
 export { spawnAgentTool } from './spawnAgent';
-export { agentMessageTool } from './agentMessage';
+// agentMessageTool — migrated to native (see above)
 export { workflowOrchestrateTool } from './workflowOrchestrate';
 export { teammateTool } from './teammate';
 

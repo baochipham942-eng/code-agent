@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { agentSpawnTool, exploreTool, sdkTaskTool, sendInputTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { agentSpawnTool, exploreTool, sdkTaskTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
 describe('multiagent protocol schemas', () => {
@@ -42,12 +43,12 @@ describe('multiagent protocol schemas', () => {
   it('does not advertise unsupported send_input interrupt control', () => {
     const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'send_input');
 
-    expect(schema?.inputSchema).toEqual(sendInputTool.inputSchema);
-    expect(sendInputTool.inputSchema.properties).toHaveProperty('agentId');
-    expect(sendInputTool.inputSchema.properties).toHaveProperty('message');
-    expect(sendInputTool.inputSchema.properties).not.toHaveProperty('interrupt');
+    expect(schema?.inputSchema).toEqual(sendInputSchema.inputSchema);
+    expect(sendInputSchema.inputSchema.properties).toHaveProperty('agentId');
+    expect(sendInputSchema.inputSchema.properties).toHaveProperty('message');
+    expect(sendInputSchema.inputSchema.properties).not.toHaveProperty('interrupt');
     expect(schema?.inputSchema.properties).not.toHaveProperty('agent_id');
     expect(schema?.inputSchema.properties).not.toHaveProperty('input');
-    expect(sendInputTool.description).not.toMatch(/interrupt=true/);
+    expect(sendInputSchema.description).not.toMatch(/interrupt=true/);
   });
 });

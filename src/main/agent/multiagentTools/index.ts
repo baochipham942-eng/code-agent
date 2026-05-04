@@ -15,8 +15,7 @@ export { WorkflowOrchestrateTool } from './workflowOrchestrate';
 export { TeammateTool } from './teammate';
 
 // Phase 2: Agent lifecycle tools — migrated to native; see src/main/tools/modules/multiagent/{waitAgent,closeAgent}.ts
-// Phase 3: Agent communication
-export { SendInputTool, sendInputTool } from './sendInput';
+// Phase 3: Agent communication — migrated to native; see src/main/tools/modules/multiagent/sendInput.ts
 
 // Legacy snake_case exports (backward compatibility)
 export { spawnAgentTool } from './spawnAgent';

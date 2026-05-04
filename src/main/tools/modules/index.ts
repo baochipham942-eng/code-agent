@@ -107,7 +107,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
-import { sdkTaskTool, exploreTool, spawnAgentTool, agentSpawnTool, sendInputTool } from '../../agent/multiagentTools';
+import { sdkTaskTool, exploreTool, spawnAgentTool, agentSpawnTool } from '../../agent/multiagentTools';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -362,11 +362,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/closeAgent')).closeAgentModule,
   );
   registry.register(
-    legacyToolSchema(sendInputTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).sendInputModule,
+    sendInputSchema,
+    async () => (await import('./multiagent/sendInput')).sendInputModule,
   );
   registry.register(
     {

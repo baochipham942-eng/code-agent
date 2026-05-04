@@ -366,14 +366,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./multiagent/wrappers')).waitAgentModule,
   );
   registry.register(
-    {
-      name: 'close_agent',
-      description: 'Close a spawned agent and clean up its resources.',
-      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).closeAgentModule,
+    closeAgentSchema,
+    async () => (await import('./multiagent/closeAgent')).closeAgentModule,
   );
   registry.register(
     legacyToolSchema(sendInputTool, {

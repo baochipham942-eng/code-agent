@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { agentSpawnTool, exploreTool, sdkTaskTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { agentSpawnTool, exploreTool, spawnAgentTool } from '../../../src/main/agent/multiagentTools';
+import { taskSchema } from '../../../src/main/tools/modules/multiagent/task.schema';
 import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
@@ -11,7 +12,7 @@ describe('multiagent protocol schemas', () => {
   it('uses the real Task schema for the protocol wrapper', () => {
     const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'Task');
 
-    expect(schema?.inputSchema).toEqual(sdkTaskTool.inputSchema);
+    expect(schema?.inputSchema).toEqual(taskSchema.inputSchema);
     expect(schema?.inputSchema.required).toEqual(['prompt', 'subagent_type']);
   });
 

@@ -2,8 +2,7 @@
 // Multi-Agent Tools - 多代理工具
 // ============================================================================
 
-// SDK-compatible Task tool (simplified interface)
-export { sdkTaskTool } from './task';
+// SDK-compatible Task tool — migrated to native; see src/main/tools/modules/multiagent/task.ts
 
 // Legacy explore subagent launcher (registered as protocol tool "Explore")
 export { exploreTool } from './explore';

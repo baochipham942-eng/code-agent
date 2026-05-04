@@ -2,8 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
 import { DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
 import { isProtocolToolName, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
-import { toolSearchTool } from '../../../src/main/tools/search/toolSearch';
-import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch';
+import { resetToolSearchService } from '../../../src/main/services/toolSearch';
 
 const mcpClientMocks = vi.hoisted(() => ({
   discoverLazyServersForSearch: vi.fn(),
@@ -123,46 +122,6 @@ describe('ToolSearchService loadable results', () => {
     expect(result.tools[0]?.notCallableReason).toMatch(/Skill tool/i);
   });
 
-  it('formats not-callable search hits without saying every result is callable', async () => {
-    const result = await toolSearchTool.execute({ query: 'desktop', max_results: 1 }, {} as any);
-
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('不可直接调用');
-    expect(result.output).toContain('没有新工具被加载');
-    expect(result.output).not.toContain('这些工具现在可以直接使用');
-  });
-
-  it('formats virtual skill hits with their real invocation entry point', async () => {
-    const service = getToolSearchService();
-    service.registerSkill('commit', 'Prepare a git commit');
-
-    const result = await toolSearchTool.execute({ query: 'commit', max_results: 1 }, {} as any);
-
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('不可直接调用');
-    expect(result.output).toContain('调用入口：Skill({"command":"commit"})');
-  });
-
-  it('keeps lazy MCP discovery metadata when search returns no tools', async () => {
-    mcpClientMocks.discoverLazyServersForSearch.mockResolvedValue([{
-      serverName: 'sequential-thinking',
-      connected: false,
-      toolCount: 0,
-      error: 'spawn failed',
-    }]);
-
-    const result = await toolSearchTool.execute({ query: 'sequential-nohit', max_results: 1 }, {} as any);
-
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('MCP 懒加载发现失败');
-    expect(result.output).toContain('sequential-thinking: spawn failed');
-    expect(result.metadata).toMatchObject({
-      mcpDiscovery: [{
-        serverName: 'sequential-thinking',
-        connected: false,
-        toolCount: 0,
-        error: 'spawn failed',
-      }],
-    });
-  });
+  // 注：legacy toolSearchTool.execute 的输出格式化测试已迁移到
+  // tests/unit/tools/modules/search/toolSearch.test.ts（native 形态：ok/output/meta）。
 });

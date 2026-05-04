@@ -11,7 +11,6 @@
 // planModeFacade.ts），这里不再 wrap 这三个工具。
 // ============================================================================
 
-import { planRecoverRecentWorkTool } from '../../planning/planRecoverRecentWork';
 import { PlanTool } from '../../planning/PlanTool';
 import { confirmActionTool } from '../../planning/confirmAction';
 import { taskListTool } from '../../planning/taskList';
@@ -45,8 +44,7 @@ const PLAN_EXECUTE = {
 };
 
 // ── 计划读 ──
-// plan_read 已迁移到 native ToolModule，见 ./planRead.ts
-export const planRecoverRecentWorkModule = wrapLegacyTool(planRecoverRecentWorkTool, PLAN_READ);
+// plan_read / plan_recover_recent_work 已迁移到 native ToolModule，见 ./planRead.ts / ./planRecoverRecentWork.ts
 
 // ── 计划写 ──
 export const planUpdateModule = wrapLegacyTool(planUpdateTool, PLAN_WRITE);

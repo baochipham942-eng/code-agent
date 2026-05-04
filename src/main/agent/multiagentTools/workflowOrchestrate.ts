@@ -1,10 +1,16 @@
 // ============================================================================
-// Workflow Orchestrate Tool - Orchestrate multi-agent workflows
+// Workflow Orchestrate — execute helpers
 // Gen 7: Multi-Agent capability
-// Refactored: Uses type-safe workflow types from shared/types
+//
+// P1 Wave 3 multiagent native: 原 workflowOrchestrateTool / WorkflowOrchestrateTool
+// (legacy Tool) 已删除，protocol 入口在 src/main/tools/modules/multiagent/
+// workflowOrchestrate.ts。本文件仅保留：
+//   - executeWorkflowOrchestrate(params, ctx)
+//   - getAvailableWorkflows  — service helper
+//   - 内部 helpers（executeStage / extractStructuredData / etc）
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../../tools/types';
+import type { ToolContext, ToolExecutionResult } from '../../tools/types';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract';
 import type {
   WorkflowStage,
@@ -114,63 +120,16 @@ function extractGeneratedFiles(output: string): Array<{ path: string; type: 'ima
   return files;
 }
 
-export const workflowOrchestrateTool: Tool = {
-  name: 'workflow_orchestrate',
-  description: `协调多个专业 Agent 完成需要多步骤协作的复杂任务。
-
-**何时使用此工具**：
-当任务需要"先理解后处理"或"多种能力协作"时使用。
-
-**核心判断逻辑**：
-1. 任务是否需要多个不同能力的步骤？（如：识别 → 标注）
-2. 任务是否需要不同类型的模型？（如：视觉模型 → 工具调用模型）
-3. 前一步的输出是否是后一步的输入？
-
-**可用工作流**：
-${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
-
-**参数**：
-- workflow: 选择合适的工作流模板
-- task: 用户的原始任务描述`,
-  requiresPermission: false,
-  permissionLevel: 'read',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      workflow: {
-        type: 'string',
-        description: 'Workflow template name or "custom"',
-      },
-      task: {
-        type: 'string',
-        description: 'The task to accomplish',
-      },
-      stages: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            role: { type: 'string' },
-            prompt: { type: 'string' },
-            dependsOn: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['name', 'role', 'prompt'],
-        },
-        description: 'Custom workflow stages',
-      },
-      parallel: {
-        type: 'boolean',
-        description: 'Run independent stages in parallel',
-      },
-    },
-    required: ['workflow', 'task'],
-  },
-
-  async execute(
-    params: Record<string, unknown>,
-    context: ToolContext
-  ): Promise<ToolExecutionResult> {
+/**
+ * workflow_orchestrate 的执行入口（接 legacy ToolContext）
+ *
+ * Schema 在 src/main/tools/modules/multiagent/workflowOrchestrate.schema.ts；
+ * protocol 入口在同目录的 .ts native module。
+ */
+export async function executeWorkflowOrchestrate(
+  params: Record<string, unknown>,
+  context: ToolContext,
+): Promise<ToolExecutionResult> {
     const workflowName = params.workflow as string;
     const task = params.task as string;
     const customStages = params.stages as WorkflowStage[] | undefined;
@@ -289,8 +248,7 @@ ${stagesSummary}`,
         error: `Workflow failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
-  },
-};
+}
 
 // Build execution groups based on dependencies
 function buildExecutionGroups(stages: WorkflowStage[]): WorkflowStage[][] {
@@ -538,8 +496,6 @@ export function getAvailableWorkflows(): Record<string, WorkflowTemplate> {
   return { ...BUILT_IN_WORKFLOWS };
 }
 
-// PascalCase alias for SDK compatibility
-export const WorkflowOrchestrateTool: Tool = {
-  ...workflowOrchestrateTool,
-  name: 'WorkflowOrchestrate',
-};
+// WorkflowOrchestrate (PascalCase variant) — migrated to native;
+// 当前 protocol 只暴露 'workflow_orchestrate'，未来如需 PascalCase entry 可加
+// 一条 register 直连到 modules/multiagent/workflowOrchestrate 同 module。

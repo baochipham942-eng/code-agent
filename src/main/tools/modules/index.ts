@@ -61,6 +61,17 @@ import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.sche
 // document/
 import { docEditSchema } from './document/docEdit.schema';
 
+// multiagent/
+import { taskSchema } from './multiagent/task.schema';
+import { teammateSchema } from './multiagent/teammate.schema';
+import { spawnAgentSchema, agentSpawnSchema } from './multiagent/spawnAgent.schema';
+import { waitAgentSchema } from './multiagent/waitAgent.schema';
+import { closeAgentSchema } from './multiagent/closeAgent.schema';
+import { sendInputSchema } from './multiagent/sendInput.schema';
+import { agentMessageSchema } from './multiagent/agentMessage.schema';
+import { workflowOrchestrateSchema } from './multiagent/workflowOrchestrate.schema';
+import { planReviewSchema } from './multiagent/planReview.schema';
+
 // excel/
 import { excelAutomateSchema } from './excel/excelAutomate.schema';
 
@@ -96,7 +107,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
-import { sdkTaskTool, exploreTool, spawnAgentTool, agentSpawnTool, sendInputTool } from '../../agent/multiagentTools';
+import { exploreTool } from '../../agent/multiagentTools';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -304,104 +315,46 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
   );
 
-  // ── batch 6: multiagent/ wrapper（9 个，验证 ctx.legacyToolRegistry/modelConfig）─
-  const minimalMASchema = (props: Record<string, { type: string }>, required: string[] = []) => ({
-    type: 'object' as const,
-    properties: props,
-    required,
-  });
-
+  // ── batch 6: multiagent/ — 9 工具全部 native（Wave 3 完成，wrappers.ts 已删除）─
   registry.register(
-    legacyToolSchema(sdkTaskTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).taskModule,
+    taskSchema,
+    async () => (await import('./multiagent/task')).taskModule,
   );
   registry.register(
-    {
-      name: 'teammate',
-      description: 'Send a message to a named teammate agent in the active swarm.',
-      inputSchema: minimalMASchema({ to: { type: 'string' }, message: { type: 'string' } }, ['to', 'message']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).teammateModule,
+    teammateSchema,
+    async () => (await import('./multiagent/teammate')).teammateModule,
   );
   registry.register(
-    legacyToolSchema(spawnAgentTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).spawnAgentModule,
+    spawnAgentSchema,
+    async () => (await import('./multiagent/spawnAgent')).spawnAgentModule,
   );
   registry.register(
-    legacyToolSchema(agentSpawnTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).agentSpawnModule,
+    agentSpawnSchema,
+    async () => (await import('./multiagent/spawnAgent')).agentSpawnModule,
   );
   registry.register(
-    {
-      name: 'wait_agent',
-      description: 'Wait for a spawned agent to complete and return its output.',
-      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
-      category: 'multiagent',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
-    async () => (await import('./multiagent/wrappers')).waitAgentModule,
+    waitAgentSchema,
+    async () => (await import('./multiagent/waitAgent')).waitAgentModule,
   );
   registry.register(
-    {
-      name: 'close_agent',
-      description: 'Close a spawned agent and clean up its resources.',
-      inputSchema: minimalMASchema({ agent_id: { type: 'string' } }, ['agent_id']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).closeAgentModule,
+    closeAgentSchema,
+    async () => (await import('./multiagent/closeAgent')).closeAgentModule,
   );
   registry.register(
-    legacyToolSchema(sendInputTool, {
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./multiagent/wrappers')).sendInputModule,
+    sendInputSchema,
+    async () => (await import('./multiagent/sendInput')).sendInputModule,
   );
   registry.register(
-    {
-      name: 'agent_message',
-      description: 'Send a structured message between agents in a swarm.',
-      inputSchema: minimalMASchema({ to: { type: 'string' }, payload: { type: 'object' } }, ['to', 'payload']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).agentMessageModule,
+    agentMessageSchema,
+    async () => (await import('./multiagent/agentMessage')).agentMessageModule,
   );
   registry.register(
-    {
-      name: 'workflow_orchestrate',
-      description: 'Run a multi-step workflow across agents (DAG orchestration).',
-      inputSchema: minimalMASchema({ workflow: { type: 'object' } }, ['workflow']),
-      category: 'multiagent',
-      permissionLevel: 'execute',
-    },
-    async () => (await import('./multiagent/wrappers')).workflowOrchestrateModule,
+    workflowOrchestrateSchema,
+    async () => (await import('./multiagent/workflowOrchestrate')).workflowOrchestrateModule,
   );
   registry.register(
-    {
-      name: 'plan_review',
-      description: 'Review a plan or proposal from another agent before execution.',
-      inputSchema: minimalMASchema({ plan: { type: 'string' } }, ['plan']),
-      category: 'multiagent',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    },
-    async () => (await import('./multiagent/wrappers')).planReviewModule,
+    planReviewSchema,
+    async () => (await import('./multiagent/planReview')).planReviewModule,
   );
 
   // ── batch 7: mcp/document/excel/planning（21 个）─────────────────────────

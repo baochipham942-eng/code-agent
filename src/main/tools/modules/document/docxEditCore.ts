@@ -1,14 +1,22 @@
 // ============================================================================
-// DOCX Edit - Atomic paragraph/section level editing for Word documents
+// DOCX Edit Core - Atomic paragraph/section level editing for Word documents
 // ============================================================================
 // DOCX is ZIP + XML (like PPTX). We use JSZip to manipulate document.xml
 // directly for incremental edits instead of full-file regeneration.
+//
+// P1 Wave 2 — document 迁移：从 src/main/tools/document/docxEdit.ts 整体搬迁过来。
+// 仍依赖 cross-cat 共享基础设施 snapshotManager（被 excel/media 共用），保留 import。
 // ============================================================================
 
 import * as fs from 'fs';
-import type { ToolExecutionResult } from '../types';
-import { createSnapshot, restoreLatest } from './snapshotManager';
-import { enableTrackChanges, ensurePeopleXml, wrapInsertion, wrapDeletion } from './docxTrackChanges';
+import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
+import {
+  enableTrackChanges,
+  ensurePeopleXml,
+  wrapInsertion,
+  wrapDeletion,
+  type JSZipLike,
+} from './docxTrackChanges';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +38,16 @@ export interface DocxEditParams {
   file_path: string;
   operations: DocxEditOperation[];
   dry_run?: boolean;
+}
+
+// 与 legacy `ToolExecutionResult` 兼容的最小返回结构（保留 metadata.snapshotId 等
+// 字段以保证行为 1:1，避免上层依赖 legacy 类型）
+export interface DocxEditResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+  outputPath?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,8 +202,7 @@ function execSetTextStyle(xml: string, op: Extract<DocxEditOperation, { action: 
 // Track Changes executors
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): zip 是 jszip 的 JSZip 实例，应 import { JSZip } from 'jszip' 替换 any
-function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: 'track_insert' }>, zip: any): { xml: string; desc: string } {
+function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: 'track_insert' }>, zip: JSZipLike): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const insertion = wrapInsertion(op.text, author, op.date);
 
@@ -213,8 +230,7 @@ function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: '
   return { xml: result, desc: `Track insert after paragraph ${op.after}: "${op.text.substring(0, 40)}..."` };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 execTrackInsert，zip 应 narrow 成 JSZip
-function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: 'track_delete' }>, zip: any): { xml: string; desc: string } {
+function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: 'track_delete' }>, zip: JSZipLike): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const searchEscaped = escapeXml(op.search);
   let count = 0;
@@ -234,8 +250,7 @@ function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: '
   return { xml: result, desc: `Track delete "${op.search}" (${count} occurrence${count !== 1 ? 's' : ''})` };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 execTrackInsert，zip 应 narrow 成 JSZip
-function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action: 'suggest_replace' }>, zip: any): { xml: string; desc: string } {
+function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action: 'suggest_replace' }>, zip: JSZipLike): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const searchEscaped = escapeXml(op.search);
   let count = 0;
@@ -262,7 +277,7 @@ function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action
 
 export async function executeDocxEdit(
   params: DocxEditParams,
-): Promise<ToolExecutionResult> {
+): Promise<DocxEditResult> {
   const { file_path, operations, dry_run } = params;
 
   if (!fs.existsSync(file_path)) {
@@ -284,7 +299,8 @@ export async function executeDocxEdit(
   const snapshot = createSnapshot(file_path, `docx-edit: ${operations.length} ops`);
 
   try {
-    const JSZip = require('jszip');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- jszip lacks proper ESM types in this project; require() preserved from legacy implementation
+    const JSZip = require('jszip') as { loadAsync: (data: Buffer) => Promise<JSZipLike & { generateAsync: (opts: { type: 'nodebuffer' }) => Promise<Buffer> }> };
     const data = fs.readFileSync(file_path);
     const zip = await JSZip.loadAsync(data);
 

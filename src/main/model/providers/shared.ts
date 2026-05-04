@@ -86,11 +86,28 @@ type JsonSchemaNode = Record<string, unknown>;
 // Proxy Configuration
 // ----------------------------------------------------------------------------
 
-const PROXY_URL = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-const USE_PROXY = !!PROXY_URL && process.env.NO_PROXY !== 'true' && process.env.DISABLE_PROXY !== 'true';
-export const httpsAgent = USE_PROXY ? new HttpsProxyAgent(PROXY_URL) : undefined;
+let _cachedProxyUrl: string | undefined;
+let _cachedAgent: HttpsProxyAgent<string> | undefined;
 
-// Proxy status logged on first inference call, not at module init (CLI mode timing issue)
+/**
+ * 运行时读取代理配置并返回 HttpsProxyAgent。
+ * 不同于模块级常量，本函数每次调用都会重新读 env，便于运行时切换代理。
+ * 按 URL 缓存复用同一 Agent 实例，避免每次请求新建导致连接池失效。
+ */
+export function getHttpsAgent(): HttpsProxyAgent<string> | undefined {
+  const url = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+  if (!url || process.env.NO_PROXY === 'true' || process.env.DISABLE_PROXY === 'true') {
+    return undefined;
+  }
+  if (url !== _cachedProxyUrl) {
+    _cachedProxyUrl = url;
+    _cachedAgent = new HttpsProxyAgent(url);
+  }
+  return _cachedAgent;
+}
+
+/** @deprecated 模块加载时快照，运行时改 env 不生效。请用 `getHttpsAgent()`。 */
+export const httpsAgent = getHttpsAgent();
 
 /**
  * 规范化 Claude baseUrl：保证以 /v1 结尾。
@@ -122,7 +139,7 @@ export async function electronFetch(url: string, options: {
       headers: options.headers,
       data: options.body ? JSON.parse(options.body) : undefined,
       timeout: PROVIDER_TIMEOUT,
-      httpsAgent,
+      httpsAgent: getHttpsAgent(),
       validateStatus: () => true,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,

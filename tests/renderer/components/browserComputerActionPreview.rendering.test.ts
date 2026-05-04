@@ -106,6 +106,41 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('secret@example.com');
   });
 
+  it('renders browser-scoped computer_use through the managed browser catalog path', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          name: 'computer_use',
+          arguments: {
+            action: 'smart_type',
+            selector: '#email',
+            text: 'secret@example.com',
+          },
+          result: {
+            toolCallId: 'tool-1',
+            success: true,
+            output: 'Typed into #email',
+            metadata: {
+              workbenchTrace: {
+                id: 'trace-browser-scoped-smart-type',
+                mode: 'headless',
+              },
+            },
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain('智能输入 18 chars');
+    expect(html).toContain('#email');
+    expect(html).toContain('托管浏览器动作');
+    expect(html).toContain('trace-browser-scoped-smart-type');
+    expect(html).not.toContain('前台需确认');
+    expect(html).not.toContain('secret@example.com');
+  });
+
   it('redacts browser typed text from collapsed result summary markup', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {

@@ -696,6 +696,16 @@ function getEvidenceSummaryFromMetadata(metadata: Record<string, unknown> | unde
   return summary.length > 0 ? summary : undefined;
 }
 
+function getResultTargetApp(metadata: Record<string, unknown>, fallback?: string): string | null {
+  if (metadata.targetApp === null) {
+    return null;
+  }
+  if (typeof metadata.targetApp === 'string') {
+    return metadata.targetApp;
+  }
+  return fallback || null;
+}
+
 function isSurfaceReadAction(action: ActionType): boolean {
   return action === 'get_state'
     || action === 'observe'
@@ -755,15 +765,26 @@ async function observeComputerSurface(
     includeScreenshot: action.includeScreenshot,
     targetApp: action.targetApp,
   });
+  const failureKind = snapshot.failureKind || null;
+  const blockingReasons = snapshot.blockingReasons;
+  const recommendedAction = snapshot.recommendedAction || null;
   const state = computerSurface.getState({
-    targetApp: snapshot.appName || undefined,
+    targetApp: failureKind ? undefined : snapshot.appName || undefined,
+    blockedReason: failureKind ? blockingReasons?.join(' ') || 'Computer Surface observe blocked' : null,
+    failureKind,
+    blockingReasons,
+    recommendedAction,
   });
   const label = action.targetApp ? 'Target' : 'Frontmost';
+  const targetLine = failureKind
+    ? `${label}: protected app blocked`
+    : `${label}: ${snapshot.appName || action.targetApp || 'unknown'}${snapshot.windowTitle ? ` · ${snapshot.windowTitle}` : ''}`;
   return {
-    success: true,
+    success: !failureKind,
+    error: failureKind ? blockingReasons?.[0] || 'Computer Surface observe blocked.' : undefined,
     output: [
       formatComputerSurfaceState(state),
-      `${label}: ${snapshot.appName || action.targetApp || 'unknown'}${snapshot.windowTitle ? ` · ${snapshot.windowTitle}` : ''}`,
+      targetLine,
       snapshot.screenshotPath ? `Screenshot: ${snapshot.screenshotPath}` : null,
     ].filter(Boolean).join('\n'),
     metadata: {
@@ -777,6 +798,9 @@ async function observeComputerSurface(
       safetyNote: state.safetyNote,
       targetApp: state.targetApp || null,
       computerSurfaceSnapshot: snapshot,
+      failureKind,
+      blockingReasons,
+      recommendedAction,
     },
   };
 }
@@ -786,9 +810,11 @@ async function listComputerSurfaceElements(
   action: ComputerAction,
 ): Promise<ToolExecutionResult> {
   const result = await computerSurface.listBackgroundElements(action);
-  const reliability = getComputerSurfaceReliabilityFromMetadata(result.metadata || {}, result, 'background_ax');
+  const metadata = result.metadata || {};
+  const reliability = getComputerSurfaceReliabilityFromMetadata(metadata, result, 'background_ax');
+  const targetApp = getResultTargetApp(metadata, action.targetApp);
   const state = computerSurface.getState({
-    targetApp: action.targetApp || undefined,
+    targetApp: targetApp || undefined,
     blockedReason: result.success ? null : result.error || null,
     mode: 'background_ax',
     failureKind: reliability.failureKind,
@@ -799,7 +825,7 @@ async function listComputerSurfaceElements(
   return {
     ...result,
     metadata: {
-      ...(result.metadata || {}),
+      ...metadata,
       computerSurface: state,
       computerSurfaceMode: state.mode,
       backgroundSurface: isBackgroundComputerSurfaceMode(state.mode),
@@ -808,7 +834,7 @@ async function listComputerSurfaceElements(
       requiresForeground: state.requiresForeground,
       approvalScope: state.approvalScope,
       safetyNote: state.safetyNote,
-      targetApp: state.targetApp || action.targetApp || null,
+      targetApp,
       failureKind: reliability.failureKind,
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,
@@ -832,8 +858,9 @@ async function listComputerSurfaceWindows(
   });
   const metadata = result.metadata || {};
   const reliability = getComputerSurfaceReliabilityFromMetadata(metadata, result, 'background_cgevent');
+  const targetApp = getResultTargetApp(metadata, action.targetApp);
   const state = computerSurface.getState({
-    targetApp: action.targetApp || undefined,
+    targetApp: targetApp || undefined,
     blockedReason: result.success ? null : result.error || null,
     mode: 'background_cgevent',
     failureKind: reliability.failureKind,
@@ -852,7 +879,7 @@ async function listComputerSurfaceWindows(
       requiresForeground: state.requiresForeground,
       approvalScope: state.approvalScope,
       safetyNote: state.safetyNote,
-      targetApp: action.targetApp || null,
+      targetApp,
       failureKind: reliability.failureKind,
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,
@@ -867,8 +894,9 @@ async function diagnoseComputerSurfaceApp(
   const result = await computerSurface.diagnoseApp(action);
   const metadata = result.metadata || {};
   const reliability = getComputerSurfaceReliabilityFromMetadata(metadata, result, 'background_cgevent');
+  const targetApp = getResultTargetApp(metadata, action.targetApp);
   const state = computerSurface.getState({
-    targetApp: action.targetApp || undefined,
+    targetApp: targetApp || undefined,
     blockedReason: result.success ? null : result.error || null,
     mode: 'background_cgevent',
     failureKind: reliability.failureKind,
@@ -887,7 +915,7 @@ async function diagnoseComputerSurfaceApp(
       requiresForeground: state.requiresForeground,
       approvalScope: state.approvalScope,
       safetyNote: state.safetyNote,
-      targetApp: action.targetApp || null,
+      targetApp,
       failureKind: reliability.failureKind,
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,

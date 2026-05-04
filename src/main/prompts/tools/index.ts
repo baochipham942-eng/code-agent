@@ -21,7 +21,7 @@ import { EXCEL_TOOL_DESCRIPTION } from './excel';
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
   bash: BASH_TOOL_DESCRIPTION,
   Edit: EDIT_TOOL_DESCRIPTION,
-  task: TASK_TOOL_DESCRIPTION,
+  Task: TASK_TOOL_DESCRIPTION,
   ExcelAutomate: EXCEL_TOOL_DESCRIPTION,
 };
 

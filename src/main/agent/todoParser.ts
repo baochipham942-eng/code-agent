@@ -3,7 +3,7 @@
 // ============================================================================
 // 替代 TodoWrite 工具，agentLoop 自动从模型的 thinking/text content 中解析任务列表
 // 支持：markdown checkbox、编号列表格式
-// 规则：忽略代码块内的列表，连续 3+ 行才视为任务列表
+// 规则：忽略代码块内的列表，只提升带明确任务意图的 checkbox 清单
 
 import type { TodoItem, TodoStatus } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
@@ -94,6 +94,11 @@ function stripCodeBlocks(content: string): string {
   return content.replace(/```[\s\S]*?```/g, '');
 }
 
+function hasExplicitTodoIntent(content: string): boolean {
+  return /(?:^|\n)\s*(?:#{1,6}\s*)?(?:todo(?:s)?|task list|execution plan|agent tasks|任务清单|执行计划|待办|行动项|工作计划)\s*[:：]?\s*(?:\n|$)/i
+    .test(content);
+}
+
 // ============================================================================
 // 解析器：Markdown Checkbox 格式
 // ============================================================================
@@ -143,7 +148,6 @@ function parseCheckboxTodos(content: string): TodoItem[] | null {
     }
   }
 
-  // 至少 3 项才认为是任务列表
   if (items.length >= 2) {
     return items;
   }
@@ -172,8 +176,13 @@ export function parseTodos(content: string): TodoItem[] | null {
   // 先剥离代码块，避免误识别
   const cleaned = stripCodeBlocks(content);
 
+  if (!hasExplicitTodoIntent(cleaned)) {
+    logger.debug('[TodoParser] checkbox list ignored: missing explicit todo intent');
+    return null;
+  }
+
   // 只解析显式 checkbox 格式（- [ ] / - [x]），不解析编号列表
-  // 对标 Claude Code：任务必须是显式标记的，不从普通文本推断
+  // 对标 Claude Code：任务必须既有显式标记，也有明确任务意图，不从答案 checklist 推断。
   const checkboxResult = parseCheckboxTodos(cleaned);
   if (checkboxResult) {
     logger.debug(`[TodoParser] 从 checkbox 格式解析到 ${checkboxResult.length} 个任务`);

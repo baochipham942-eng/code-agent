@@ -32,7 +32,7 @@ import {
   Eye, FileText, FolderOpen, Wrench, GitBranch,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
+import { formatElapsed } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 import { Card, CardEmptyState as EmptyState } from './Card';
 import { ConnectorsCard } from './ConnectorsCard';
@@ -55,12 +55,10 @@ import {
 import type { ArtifactItem } from '../../hooks/useStatusRailModel';
 
 export const TaskMonitor: React.FC = () => {
-  const { currentSessionId, messages } = useSessionStore();
+  const { currentSessionId } = useSessionStore();
   const { workingDirectory } = useAppStore();
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
-  const processingSessionIds = useAppStore((s) => s.processingSessionIds);
-  const isProcessing = currentSessionId ? processingSessionIds.has(currentSessionId) : false;
   const { references: referencedWorkbenchItems, history: workbenchHistory } = useWorkbenchInsights();
   const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const currentTurnCapabilityScope = useCurrentTurnCapabilityScope();
@@ -83,30 +81,6 @@ export const TaskMonitor: React.FC = () => {
     target: WorkbenchCapabilityTarget;
     blockedReason?: BlockedCapabilityReason | null;
   } | null>(null);
-
-  // ── Phase-based 进度推导（无 todos 时的回退）──
-  const toolPhases = useMemo(() => {
-    if (todoModel.total > 0 || taskProgress) return [];
-    const phases: Array<{ type: PhaseType; count: number; status: 'completed' | 'in_progress' }> = [];
-    for (const msg of messages.slice(-30)) {
-      if (!msg.toolCalls) continue;
-      for (const tc of msg.toolCalls) {
-        const phase = classifyTool(tc.name);
-        if (!phase) continue;
-        const last = phases[phases.length - 1];
-        if (last?.type === phase) {
-          last.count++;
-        } else {
-          if (phases.length > 0) phases[phases.length - 1].status = 'completed';
-          phases.push({ type: phase, count: 1, status: 'in_progress' });
-        }
-      }
-    }
-    if (phases.length > 0 && !isProcessing) {
-      phases[phases.length - 1].status = 'completed';
-    }
-    return phases;
-  }, [messages, todoModel.total, taskProgress, isProcessing]);
 
   const folderName = workingDirectory ? workingDirectory.split('/').pop() || workingDirectory : null;
 
@@ -160,28 +134,6 @@ export const TaskMonitor: React.FC = () => {
     if (phase === 'completed') return 'completed';
     if (phase === 'failed') return 'failed';
     return 'in_progress';
-  };
-
-  const phaseLabel = (type: PhaseType): string => {
-    const map: Record<PhaseType, string> = {
-      read: t.taskPanel.phaseRead,
-      edit: t.taskPanel.phaseEdit,
-      execute: t.taskPanel.phaseExecute,
-      search: t.taskPanel.phaseSearch,
-      mcp: t.taskPanel.phaseMcp,
-    };
-    return map[type];
-  };
-
-  const toolActivityLabel = (type: PhaseType): string => {
-    const map: Record<PhaseType, string> = {
-      read: t.taskPanel.toolActivityRead,
-      edit: t.taskPanel.toolActivityEdit,
-      execute: t.taskPanel.toolActivityExecute,
-      search: t.taskPanel.toolActivitySearch,
-      mcp: t.taskPanel.toolActivityMcp,
-    };
-    return map[type] ?? phaseLabel(type);
   };
 
   const blockedCapabilitiesWithActions = useMemo(() => (
@@ -312,41 +264,6 @@ export const TaskMonitor: React.FC = () => {
               />
             </div>
           )}
-        </div>
-      </Card>
-      ) : toolPhases.length > 0 ? (
-      <Card
-        title={t.taskPanel.progress}
-        count={t.taskPanel.toolActivityOps.replace('{count}', String(toolPhases.reduce((sum, phase) => sum + phase.count, 0)))}
-      >
-        <div className="space-y-1">
-          <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
-            {t.taskPanel.toolActivity}
-          </div>
-          {toolPhases.map((phase, index) => {
-            const PhaseIcon = PHASE_ICONS[phase.type];
-            return (
-              <div key={`${phase.type}-${index}`} className="flex items-center gap-2 py-0.5">
-                {phase.status === 'completed' ? (
-                  <div className="w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
-                    <Check className="w-2.5 h-2.5 text-white" />
-                  </div>
-                ) : (
-                  <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
-                    <PhaseIcon className="w-2.5 h-2.5 text-primary-400" />
-                  </div>
-                )}
-                <span className={`text-xs flex-1 ${
-                  phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
-                }`}>
-                  {toolActivityLabel(phase.type)}
-                </span>
-                <span className="text-xs text-zinc-600">
-                  {t.taskPanel.toolActivityOps.replace('{count}', String(phase.count))}
-                </span>
-              </div>
-            );
-          })}
         </div>
       </Card>
       ) : (

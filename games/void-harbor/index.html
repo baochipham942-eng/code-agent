@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Void Harbor - Space Port Management</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Start Menu -->
+  <div id="start-menu">
+    <h1>VOID HARBOR</h1>
+    <p class="subtitle">Space Port Management &amp; Fleet Tactics</p>
+    <button id="btn-new-game">🚀 New Game</button>
+    <button id="btn-continue" style="display:none">📂 Continue</button>
+    <button id="btn-clear-save-menu" style="display:none">🗑 Clear Save</button>
+    <div class="instructions">
+      <p>Manage a ring-shaped space port. Supply 6 fleets and maintain reputation ≥ 60 to win.</p>
+      <p>Click buildings to inspect, assign workers, upgrade, or repair.</p>
+      <p>Watch for storms, fires, pirates, hull breaches, and power overloads!</p>
+    </div>
+  </div>
+
+  <!-- Result Panel -->
+  <div id="result-panel" class="hidden">
+    <h2 id="result-title"></h2>
+    <div id="result-stats"></div>
+    <button id="btn-result-restart">🔄 Play Again</button>
+    <button id="btn-result-menu">🏠 Main Menu</button>
+  </div>
+
+  <!-- Main App -->
+  <div id="app">
+    <!-- Top Resource Bar -->
+    <div id="top-bar">
+      <div class="resource-item"><span class="label">⚡ Power</span> <span class="value" id="res-power">0</span></div>
+      <div class="resource-item"><span class="label">💨 O₂</span> <span class="value" id="res-oxygen">0</span></div>
+      <div class="resource-item"><span class="label">⛽ Fuel</span> <span class="value" id="res-fuel">0</span></div>
+      <div class="resource-item"><span class="label">📦 Cargo</span> <span class="value" id="res-cargo">0</span></div>
+      <div class="resource-item"><span class="label">🔧 Repair</span> <span class="value" id="res-repair">0</span></div>
+      <div class="resource-item"><span class="label">😊 Morale</span> <span class="value" id="res-morale">0</span></div>
+      <div class="resource-item"><span class="label">⭐ Rep</span> <span class="value" id="res-reputation">0</span></div>
+      <div class="resource-item"><span class="label">🚀 Supplies</span> <span class="value" id="res-supplies">0/6</span></div>
+      <div class="resource-item"><span class="label">👷 Workers</span> <span class="value" id="res-workers">0</span></div>
+      <span id="game-time">20:00</span>
+    </div>
+
+    <!-- Left Panel -->
+    <div id="left-panel">
+      <h3>Buildings</h3>
+      <div id="building-list"></div>
+      <h3 style="margin-top:12px">Ships</h3>
+      <div id="ship-list"></div>
+    </div>
+
+    <!-- Canvas -->
+    <div id="canvas-container">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Debug Toggle -->
+      <button id="debug-toggle">🐛</button>
+
+      <!-- Debug Panel -->
+      <div id="debug-panel" class="hidden">
+        <div class="dbg-row">Tick: <span id="dbg-tick">0</span></div>
+        <div class="dbg-row">Entities: <span id="dbg-entities">-</span></div>
+        <div class="dbg-row">Events: <span id="dbg-events">None</span></div>
+        <div class="dbg-row">FPS: <span id="dbg-fps">0</span></div>
+        <div class="dbg-buttons">
+          <button id="dbg-storm">⚡ Storm</button>
+          <button id="dbg-fire">🔥 Fire</button>
+          <button id="dbg-pirate">🏴‍☠️ Pirate</button>
+          <button id="dbg-breach">💥 Breach</button>
+          <button id="dbg-overload">⚡ Overload</button>
+        </div>
+      </div>
+
+      <!-- Building Detail Panel -->
+      <div id="building-panel" class="hidden">
+        <h4 id="bp-name">-</h4>
+        <div class="bp-row"><span class="label">Type</span> <span id="bp-type">-</span></div>
+        <div class="bp-row"><span class="label">Level</span> <span id="bp-level">-</span></div>
+        <div class="bp-row"><span class="label">HP</span> <span id="bp-hp">-</span></div>
+        <div class="bp-row"><span class="label">Workers</span> <span id="bp-workers">-</span></div>
+        <div class="bp-row"><span class="label">Status</span> <span id="bp-status">-</span></div>
+        <div class="bp-actions">
+          <button id="btn-add-worker">+ Worker</button>
+          <button id="btn-remove-worker">- Worker</button>
+          <button id="btn-upgrade">Upgrade</button>
+          <button id="btn-repair">🔧 Repair</button>
+          <button id="btn-close-panel">✕ Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div id="right-panel">
+      <h3>Event Log</h3>
+      <div id="event-log"></div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div id="bottom-bar">
+      <button id="btn-pause">▶ Resume</button>
+      <div class="speed-group">
+        <button id="btn-speed1" class="active">1x</button>
+        <button id="btn-speed2">2x</button>
+        <button id="btn-speed3">3x</button>
+      </div>
+      <button id="btn-save">💾 Save</button>
+      <button id="btn-clear-save">🗑 Clear Save</button>
+      <button id="btn-restart">🔄 Restart</button>
+      <button id="btn-sound">🔊</button>
+    </div>
+  </div>
+
+  <script src="src/state.js"></script>
+  <script src="src/systems.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>

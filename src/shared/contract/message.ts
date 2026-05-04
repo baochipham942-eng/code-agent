@@ -57,12 +57,65 @@ export type MessageSource = 'user' | 'skill' | 'system';
 export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';
 
 // Compaction 摘要块（Claude Code 风格上下文压缩）
+export type CompactionSource =
+  | 'manual_current'
+  | 'manual_from_message'
+  | 'auto_threshold'
+  | 'overflow_recovery';
+
+export interface CompactionSurvivorFile {
+  path: string;
+  reason?: string;
+  needsReRead?: boolean;
+  survival?: 'path_only' | 'digest' | 'excerpt';
+  digest?: string;
+  excerpt?: string;
+  metadata?: {
+    size?: number;
+    mtime?: number;
+    readTime?: number;
+    textLike?: boolean;
+    truncated?: boolean;
+    sensitive?: boolean;
+  };
+}
+
+export interface CompactionSurvivorItem {
+  label: string;
+  detail: string;
+  severity?: 'info' | 'warning' | 'error';
+}
+
+export interface CompactionSurvivorManifest {
+  sessionId?: string;
+  source?: CompactionSource;
+  anchorMessageId?: string;
+  preserveRecentCount?: number;
+  compactedMessageIds?: string[];
+  preservedMessageIds?: string[];
+  files?: CompactionSurvivorFile[];
+  commands?: CompactionSurvivorItem[];
+  errors?: CompactionSurvivorItem[];
+  openWork?: CompactionSurvivorItem[];
+  artifacts?: CompactionSurvivorFile[];
+  dataFingerprint?: string;
+}
+
 export interface CompactionBlock {
   type: 'compaction';
   content: string;                // 摘要内容
   timestamp: number;
   compactedMessageCount: number;  // 被压缩的消息数量
   compactedTokenCount: number;    // 被压缩的 token 数量
+  source?: CompactionSource;
+  summaryVersion?: number;
+  anchorMessageId?: string;
+  preservedMessageIds?: string[];
+  compactedMessageIds?: string[];
+  survivorManifest?: CompactionSurvivorManifest;
+  provider?: string;
+  model?: string;
+  warnings?: string[];
 }
 
 // Generative UI Artifact（可视化产物）

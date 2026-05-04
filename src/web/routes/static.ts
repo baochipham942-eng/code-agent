@@ -6,6 +6,7 @@ import express from 'express';
 
 interface StaticDeps {
   serverAuthToken: string;
+  staticDir?: string;
 }
 
 export function createStaticRouter(deps: StaticDeps): Router {
@@ -13,7 +14,7 @@ export function createStaticRouter(deps: StaticDeps): Router {
   const { serverAuthToken } = deps;
 
   // ── Static file serving (production) ─────────────────────────────
-  const staticDir = path.join(process.cwd(), 'dist', 'renderer');
+  const staticDir = deps.staticDir ?? path.join(process.cwd(), 'dist', 'renderer');
   router.use(express.static(staticDir, {
     // Don't serve index.html via static middleware — we inject the auth token below
     index: false,
@@ -23,11 +24,20 @@ export function createStaticRouter(deps: StaticDeps): Router {
   // This ensures only clients that load the page from this server can call APIs.
   const indexPath = path.join(staticDir, 'index.html');
   let cachedIndexHtml: string | null = null;
+  let cachedIndexMtimeMs = 0;
 
-  router.get('/{*path}', (_req: Request, res: Response) => {
+  router.get('/{*path}', (req: Request, res: Response) => {
+    const requestPath = req.path || '';
+    if (requestPath.startsWith('/assets/') || path.extname(requestPath)) {
+      res.status(404).type('text').send('Static asset not found');
+      return;
+    }
+
     try {
-      if (!cachedIndexHtml) {
+      const stat = fs.statSync(indexPath);
+      if (!cachedIndexHtml || stat.mtimeMs !== cachedIndexMtimeMs) {
         cachedIndexHtml = fs.readFileSync(indexPath, 'utf-8');
+        cachedIndexMtimeMs = stat.mtimeMs;
       }
       // Inject auth token into HTML so httpTransport can attach it to API requests
       const injectedHtml = cachedIndexHtml.replace(

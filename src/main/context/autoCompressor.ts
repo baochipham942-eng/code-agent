@@ -128,9 +128,17 @@ export class AutoContextCompressor {
     // 更新压缩状态
     const compressionStatus = getCompressionStatus(health.usagePercent);
 
-    // 低于警告阈值，无需压缩
-    if (usageRatio < this.config.warningThreshold) {
+    // 触发条件：百分比阈值 OR 绝对 token 阈值（任一命中即压缩）。
+    // 1M context 模型靠百分比永远到不了 75%（但单次输入可能已 100k+，
+    // 累计开销过大），用绝对值兜底。
+    const tokenTrigger = this.shouldTriggerByTokens(health.currentTokens);
+    if (usageRatio < this.config.warningThreshold && !tokenTrigger) {
       return { compressed: false, messages, savedTokens: 0 };
+    }
+    if (tokenTrigger && usageRatio < this.config.warningThreshold) {
+      logger.info(
+        `[AutoCompressor] Triggered by absolute token threshold: ${health.currentTokens} >= ${this.config.triggerTokens} (usage only ${(usageRatio * 100).toFixed(1)}%)`,
+      );
     }
 
     logger.info(`[AutoCompressor] Usage at ${(usageRatio * 100).toFixed(1)}%, checking compression...`);
@@ -782,6 +790,18 @@ Generate the handoff summary:`;
    */
   getCompactionCount(): number {
     return this.compressionHistory.length;
+  }
+
+  /**
+   * 记录外部统一 compaction service 完成的压缩。
+   * 用于保持 shouldWrapUp()/统计逻辑和新的统一摘要入口一致。
+   */
+  recordCompaction(savedTokens: number, strategy: CompressionStrategy = 'ai_summary'): void {
+    this.compressionHistory.push({
+      timestamp: Date.now(),
+      savedTokens,
+      strategy,
+    });
   }
 
   /**

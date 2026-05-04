@@ -3,7 +3,7 @@
 // Linear-style UI refactor: Clean layout with task panel
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -55,6 +55,8 @@ import { useSwarmStore } from './stores/swarmStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 
 const logger = createLogger('App');
+const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
+const WORKBENCH_MIN_VISIBLE_WIDTH = 900;
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
   return ipcService.invokeDomain<T>(domain, action, payload);
@@ -93,11 +95,12 @@ export const App: React.FC = () => {
     openWorkbenchTab,
   } = useAppStore();
 
-  // 响应式：窗口宽度 < 1180 时隐藏右侧面板
+  // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
-  const isNarrowViewport = windowWidth < 1180;
-  const showWorkbench = !isNarrowViewport && workbenchTabs.length > 0;
+  const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
+  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && workbenchTabs.length > 0;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
+  const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
@@ -180,7 +183,19 @@ export const App: React.FC = () => {
   }, []);
 
   // Load settings from backend on mount
-  const { setModelConfig, setDisclosureLevel, sidebarCollapsed } = useAppStore();
+  const { setModelConfig, setDisclosureLevel, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+
+  useEffect(() => {
+    if (!isNarrowViewport) {
+      appliedNarrowSidebarDefaultRef.current = false;
+      return;
+    }
+
+    if (!appliedNarrowSidebarDefaultRef.current && !sidebarCollapsed) {
+      appliedNarrowSidebarDefaultRef.current = true;
+      setSidebarCollapsed(true);
+    }
+  }, [isNarrowViewport, setSidebarCollapsed, sidebarCollapsed]);
 
   useEffect(() => {
     const loadSettings = async () => {

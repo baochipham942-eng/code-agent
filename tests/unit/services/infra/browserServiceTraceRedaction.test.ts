@@ -33,4 +33,70 @@ describe('browser service trace redaction', () => {
       },
     });
   });
+
+  it('keeps browser secretRef as a placeholder with domain scope metadata', () => {
+    const params = redactBrowserWorkbenchTraceParams('browser_action', {
+      action: 'type',
+      selector: '#password',
+      secretRef: 'env:CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD',
+      secretScope: {
+        kind: 'domain',
+        domains: ['https://accounts.example.com/login'],
+      },
+    });
+
+    expect(params).toEqual({
+      action: 'type',
+      selector: '#password',
+      secretRef: '[secretRef]',
+      secretScope: {
+        kind: 'domain',
+        domains: ['accounts.example.com'],
+        source: 'secretScope',
+      },
+    });
+    expect(JSON.stringify(params)).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+  });
+
+  it('does not silently turn a secretRef without scope into a global secret', () => {
+    const params = redactBrowserWorkbenchTraceParams('browser_action', {
+      action: 'type',
+      selector: '#password',
+      secretRef: 'env:CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD',
+    });
+
+    expect(params).toMatchObject({
+      secretRef: '[secretRef]',
+      secretScope: {
+        kind: 'missing_domain_scope',
+        required: true,
+      },
+    });
+    expect(JSON.stringify(params)).not.toContain('legacy_global');
+    expect(JSON.stringify(params)).not.toContain('CODE_AGENT_BROWSER_SECRET_TEST_PASSWORD');
+  });
+
+  it('requires legacy global secrets to be explicitly marked', () => {
+    const params = redactBrowserWorkbenchTraceParams('computer_use', {
+      action: 'smart_type',
+      selector: '#password',
+      secretRef: 'vault:legacy-password',
+      secretScope: {
+        kind: 'legacy_global',
+        explicitlyMarked: true,
+      },
+    });
+
+    expect(params).toMatchObject({
+      action: 'smart_type',
+      selector: '#password',
+      secretRef: '[secretRef]',
+      secretScope: {
+        kind: 'legacy_global',
+        explicitlyMarked: true,
+        source: 'secretScope',
+      },
+    });
+    expect(JSON.stringify(params)).not.toContain('vault:legacy-password');
+  });
 });

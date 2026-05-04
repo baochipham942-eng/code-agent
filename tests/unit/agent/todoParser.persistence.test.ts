@@ -25,6 +25,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 import {
   clearSessionTodos,
   getSessionTodos,
+  parseTodos,
   setSessionTodos,
 } from '../../../src/main/agent/todoParser';
 
@@ -58,5 +59,28 @@ describe('todoParser persistence', () => {
     expect(getSessionTodos('todo-session-hydrate')).toEqual(persisted);
     expect(dbState.db.getTodos).toHaveBeenCalledWith('todo-session-hydrate');
     expect(dbState.db.saveTodos).not.toHaveBeenCalled();
+  });
+});
+
+describe('todoParser extraction guard', () => {
+  it('does not promote answer checklists into session todos', () => {
+    const parsed = parseTodos([
+      '- [ ] 保留合同提醒 7/3/1 天',
+      '- [ ] 保留每周五复盘',
+      '- [ ] 删除无用页面',
+    ].join('\n'));
+
+    expect(parsed).toBeNull();
+  });
+
+  it('promotes checkbox lists with explicit task intent', () => {
+    const parsed = parseTodos([
+      '任务清单：',
+      '- [ ] 修复内部判断 fallback',
+      '- [ ] 验证 todo 不再污染右侧面板',
+    ].join('\n'));
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed?.[0].content).toBe('修复内部判断 fallback');
   });
 });

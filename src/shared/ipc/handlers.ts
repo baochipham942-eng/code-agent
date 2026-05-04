@@ -44,6 +44,8 @@ import type {
 } from '../contract/memory';
 
 import type {
+  ContextCompressionChannelState,
+  ContextCompressionConfigPatch,
   ContextHealthState,
   ContextHealthUpdateEvent,
 } from '../contract/contextHealth';
@@ -55,6 +57,7 @@ import type {
   ContextViewRequest,
   ContextViewResponse,
 } from '../contract/contextView';
+import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import { DAG_CHANNELS, EVALUATION_CHANNELS } from './channels';
@@ -359,6 +362,8 @@ export interface IpcInvokeHandlers {
 
   // Context health
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
+  [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
+  [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
 
   // Session status (multi-session parallel support)
   [IPC_CHANNELS.SESSION_STATUS_GET]: (sessionId: string) => Promise<SessionRuntimeSummary | null>;
@@ -532,6 +537,22 @@ export interface IpcInvokeHandlers {
 
 }
 
+export interface ManagedBrowserSessionChangedEvent {
+  reason:
+    | 'launch'
+    | 'close'
+    | 'new_tab'
+    | 'close_tab'
+    | 'switch_tab'
+    | 'navigate'
+    | 'page_load'
+    | 'history'
+    | 'reload'
+    | 'set_viewport'
+    | 'crashed';
+  session: ManagedBrowserSessionState;
+}
+
 // ----------------------------------------------------------------------------
 // Main -> Renderer: Event handlers (one-way)
 // ----------------------------------------------------------------------------
@@ -647,6 +668,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.STATUS_TOKEN_UPDATE]: (event: { inputTokens: number; outputTokens: number }) => void;
   [IPC_CHANNELS.STATUS_CONTEXT_UPDATE]: (event: { percent: number }) => void;
   [IPC_CHANNELS.STATUS_GIT_UPDATE]: (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => void;
+  [IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED]: (event: ManagedBrowserSessionChangedEvent) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events

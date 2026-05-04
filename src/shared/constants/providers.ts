@@ -223,6 +223,10 @@ export const SEARCH_API_ENDPOINTS = {
  * Key = 起始 provider, Value = 降级顺序（不含自身）
  */
 export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
+  xiaomi: [
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  ],
   moonshot: [
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],

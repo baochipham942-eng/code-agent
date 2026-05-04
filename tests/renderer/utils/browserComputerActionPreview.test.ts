@@ -114,7 +114,7 @@ describe('buildBrowserComputerActionPreview', () => {
       summary: '桌面输入 18 chars',
       target: 'Google Chrome',
       risk: 'desktop_input',
-      riskLabel: '桌面输入',
+      riskLabel: '前台需确认',
       traceId: 'trace-computer-1',
       mode: 'foreground_fallback',
     });
@@ -133,6 +133,37 @@ describe('buildBrowserComputerActionPreview', () => {
       target: 'with screenshot',
       risk: 'read',
     });
+  });
+
+  it('does not summarize foreground fallback Computer Surface state as ready', () => {
+    const toolCall = makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'get_state',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Computer Surface: ready\nmode: foreground_fallback',
+        metadata: {
+          computerSurface: {
+            ready: true,
+            mode: 'foreground_fallback',
+          },
+          foregroundFallback: true,
+        },
+      },
+    });
+
+    expect(buildBrowserComputerActionPreview(toolCall)).toMatchObject({
+      surface: 'computer',
+      summary: '读取 Computer Surface 状态',
+      risk: 'read',
+      riskLabel: '只读',
+      mode: 'foreground_fallback',
+    });
+    expect(summarizeBrowserComputerActionResult(toolCall)).toBe('Computer Surface: foreground fallback · foreground required');
+    expect(summarizeBrowserComputerActionResult(toolCall)).not.toContain('ready');
   });
 
   it('uses Computer Surface metadata as the desktop target fallback', () => {
@@ -258,6 +289,141 @@ describe('buildBrowserComputerActionPreview', () => {
     expect(summarizeBrowserComputerActionResult(toolCall)).toBe('2 background AX elements');
   });
 
+  it('treats get_windows as a read-only preparation action', () => {
+    expect(buildBrowserComputerActionPreview(makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'get_windows',
+        targetApp: 'Preview',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Window candidates: 1',
+        metadata: {
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: 'Preview',
+          workbenchTrace: {
+            id: 'trace-windows',
+            mode: 'background_cgevent',
+          },
+        },
+      },
+    }))).toMatchObject({
+      surface: 'computer',
+      summary: '读取窗口候选',
+      target: 'Preview',
+      risk: 'read',
+      riskLabel: '只读',
+      traceId: 'trace-windows',
+      mode: 'background_cgevent',
+    });
+  });
+
+  it('previews background CGEvent clicks as selected-window actions with windowRef first', () => {
+    expect(buildBrowserComputerActionPreview(makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'click',
+        targetApp: 'Preview',
+        pid: 1234,
+        windowId: 42,
+        windowRef: 'cgwin:1234:42:abcdef123456',
+        windowLocalPoint: { x: 50, y: 60 },
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Background CGEvent click completed',
+        metadata: {
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: 'Preview',
+          targetWindowRef: 'cgwin:1234:42:abcdef123456',
+          targetPid: 1234,
+          targetWindowId: 42,
+          windowLocalPoint: { x: 50, y: 60 },
+        },
+      },
+    }))).toMatchObject({
+      surface: 'computer',
+      summary: 'click 后台窗口动作',
+      target: 'windowRef cgwin:1234:42:abcdef123456',
+      risk: 'desktop_input',
+      riskLabel: '后台 CGEvent',
+      mode: 'background_cgevent',
+    });
+  });
+
+  it('falls back to pid, windowId, and window-local point for background CGEvent targets before targetApp', () => {
+    expect(buildBrowserComputerActionPreview(makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'rightClick',
+        targetApp: 'Preview',
+        pid: 1234,
+        windowId: 42,
+        windowLocalPoint: { x: 20, y: 30 },
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Background CGEvent right click completed',
+        metadata: {
+          computerSurfaceMode: 'background_cgevent',
+          targetApp: 'Preview',
+        },
+      },
+    }))).toMatchObject({
+      surface: 'computer',
+      summary: 'rightClick 后台窗口动作',
+      target: 'pid 1234 · window 42 · windowLocal 20,30',
+      riskLabel: '后台 CGEvent',
+      mode: 'background_cgevent',
+    });
+  });
+
+  it('labels foreground and background computer mutation modes distinctly', () => {
+    expect(buildBrowserComputerActionPreview(makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'click',
+        targetApp: 'Finder',
+        role: 'button',
+        name: 'Back',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Background click completed',
+        metadata: {
+          computerSurfaceMode: 'background_ax',
+        },
+      },
+    }))).toMatchObject({
+      riskLabel: '后台 AX',
+      mode: 'background_ax',
+    });
+
+    expect(buildBrowserComputerActionPreview(makeToolCall({
+      name: 'computer_use',
+      arguments: {
+        action: 'scroll',
+        direction: 'down',
+      },
+      result: {
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'Scrolled',
+        metadata: {
+          foregroundFallback: true,
+        },
+      },
+    }))).toMatchObject({
+      riskLabel: '前台需确认',
+      mode: 'foreground_fallback',
+    });
+  });
+
   it('redacts browser typed text from collapsed result summaries', () => {
     const summary = summarizeBrowserComputerActionResult(makeToolCall({
       name: 'browser_action',
@@ -345,7 +511,7 @@ describe('buildBrowserComputerActionPreview', () => {
   });
 
   it('redacts smart typed text from collapsed result summaries', () => {
-    const summary = summarizeBrowserComputerActionResult(makeToolCall({
+    const toolCall = makeToolCall({
       name: 'computer_use',
       arguments: {
         action: 'smart_type',
@@ -357,8 +523,19 @@ describe('buildBrowserComputerActionPreview', () => {
         success: true,
         output: 'Typed into #email: "secret@example.com"',
       },
-    }));
+    });
+    const preview = buildBrowserComputerActionPreview(toolCall);
+    const summary = summarizeBrowserComputerActionResult(toolCall);
 
+    expect(preview).toMatchObject({
+      risk: 'browser_action',
+      riskLabel: '托管浏览器动作',
+      scope: 'browser_scoped_computer',
+      requiresManagedSession: true,
+      evidenceKind: 'action_trace',
+      approvalKind: 'tool_executor',
+      safeRecovery: 'refresh_managed_snapshot',
+    });
     expect(summary).toBe('智能输入 18 chars -> #email');
     expect(summary).not.toContain('secret@example.com');
   });

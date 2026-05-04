@@ -20,6 +20,33 @@ const compactMocks = vi.hoisted(() => {
     getMessages: vi.fn(() => state.persistedMessages),
     saveSessionRuntimeState: vi.fn(),
   };
+  const configService = {
+    settings: {
+      contextCompression: {
+        enabled: true,
+        warningThreshold: 0.75,
+        criticalThreshold: 0.85,
+        preserveRecentCount: 10,
+        triggerTokens: 100000,
+        compactProvider: 'moonshot',
+        compactModel: 'kimi-k2.5',
+        auditEnabled: true,
+      },
+      models: {
+        providers: {
+          moonshot: { enabled: true },
+        },
+      },
+    },
+    getSettings: vi.fn(() => configService.settings),
+    updateSettings: vi.fn(async (updates: any) => {
+      configService.settings = {
+        ...configService.settings,
+        ...updates,
+      };
+    }),
+    getApiKey: vi.fn(() => 'test-key'),
+  };
   return {
     state,
     handlers,
@@ -30,7 +57,18 @@ const compactMocks = vi.hoisted(() => {
     },
     sessionManager,
     database,
+    configService,
     compactModelSummarize: vi.fn(async () => '压缩摘要'),
+    compactModelSummarizeWithMetadata: vi.fn(async () => ({
+      summary: '压缩摘要',
+      metadata: {
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        useMainModel: false,
+      },
+    })),
+    resetCompactModel: vi.fn(),
+    getCompactModelInfo: vi.fn(() => ({ provider: 'moonshot', model: 'kimi-k2.5' })),
   };
 });
 
@@ -41,6 +79,7 @@ vi.mock('../../../src/main/platform', () => ({
 
 vi.mock('../../../src/main/services', () => ({
   getSessionManager: () => compactMocks.sessionManager,
+  getConfigService: () => compactMocks.configService,
 }));
 
 vi.mock('../../../src/main/services/core/databaseService', () => ({
@@ -49,6 +88,9 @@ vi.mock('../../../src/main/services/core/databaseService', () => ({
 
 vi.mock('../../../src/main/context/compactModel', () => ({
   compactModelSummarize: compactMocks.compactModelSummarize,
+  compactModelSummarizeWithMetadata: compactMocks.compactModelSummarizeWithMetadata,
+  resetCompactModel: compactMocks.resetCompactModel,
+  getCompactModelInfo: compactMocks.getCompactModelInfo,
 }));
 
 import { registerContextHealthHandlers, resolveContextHealthForSession } from '../../../src/main/ipc/contextHealth.ipc';
@@ -108,7 +150,30 @@ describe('resolveContextHealthForSession', () => {
     initAutoCompressor({ preserveRecentCount: 10 });
     compactMocks.state.currentSessionId = 'session-1';
     compactMocks.state.persistedMessages = [];
+    compactMocks.configService.settings.contextCompression = {
+      enabled: true,
+      warningThreshold: 0.75,
+      criticalThreshold: 0.85,
+      preserveRecentCount: 10,
+      triggerTokens: 100000,
+      compactProvider: 'moonshot',
+      compactModel: 'kimi-k2.5',
+      auditEnabled: true,
+    };
+    compactMocks.configService.getSettings.mockClear();
+    compactMocks.configService.updateSettings.mockClear();
+    compactMocks.configService.getApiKey.mockClear();
+    compactMocks.resetCompactModel.mockClear();
+    compactMocks.getCompactModelInfo.mockClear();
     compactMocks.compactModelSummarize.mockResolvedValue('压缩摘要');
+    compactMocks.compactModelSummarizeWithMetadata.mockResolvedValue({
+      summary: '压缩摘要',
+      metadata: {
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        useMainModel: false,
+      },
+    });
   });
 
   it('derives context health from persisted messages when runtime health is empty', async () => {
@@ -258,5 +323,47 @@ describe('resolveContextHealthForSession', () => {
     expect(setMessages).toHaveBeenCalledWith(compactMocks.state.persistedMessages);
     expect(getContextHealthService().get(sessionId).currentTokens).toBeGreaterThan(0);
     expect(getContextHealthService().get(sessionId).currentTokens).toBeLessThan(result.beforeTokens);
+  });
+
+  it('exposes and persists context compression config through IPC', async () => {
+    registerContextHealthHandlers({
+      getAppService: () => null,
+      getTaskManager: () => null,
+      getSystemPromptForSession: () => '',
+    });
+
+    const getHandler = compactMocks.handlers.get('context:compression-config:get');
+    const setHandler = compactMocks.handlers.get('context:compression-config:set');
+    expect(getHandler).toBeDefined();
+    expect(setHandler).toBeDefined();
+
+    const initial = await getHandler!({}) as any;
+    expect(initial.config.preserveRecentCount).toBe(10);
+    expect(initial.features.manifest).toBe('enabled');
+
+    const updated = await setHandler!({}, {
+      enabled: false,
+      preserveRecentCount: 6,
+      warningThreshold: 0.8,
+      compactProvider: 'openai',
+      compactModel: 'gpt-5.5',
+      auditEnabled: false,
+    }) as any;
+
+    expect(updated.config.enabled).toBe(false);
+    expect(updated.config.preserveRecentCount).toBe(6);
+    expect(updated.config.warningThreshold).toBe(0.8);
+    expect(updated.config.compactProvider).toBe('openai');
+    expect(updated.config.compactModel).toBe('gpt-5.5');
+    expect(updated.features.audit).toBe('disabled');
+    expect(compactMocks.configService.updateSettings).toHaveBeenCalledWith({
+      contextCompression: expect.objectContaining({
+        enabled: false,
+        preserveRecentCount: 6,
+        compactProvider: 'openai',
+        compactModel: 'gpt-5.5',
+        auditEnabled: false,
+      }),
+    });
   });
 });

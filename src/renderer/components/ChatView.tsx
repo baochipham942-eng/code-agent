@@ -40,6 +40,7 @@ import type { MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
+import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import {
   ArrowRight,
   Code2,
@@ -52,6 +53,7 @@ import {
 } from 'lucide-react';
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const loadReviewQueue = useEvalCenterStore((state) => state.loadReviewQueue);
   const {
     currentSessionId,
@@ -156,10 +158,13 @@ export const ChatView: React.FC = () => {
         if (!response?.success) {
           throw new Error(response?.error?.message || 'Failed to fetch plan');
         }
-        setPlan(response.data || null);
+        const nextPlan = response.data || null;
+        setPlan(nextPlan);
+        setTaskPlan(nextPlan);
       } catch (error) {
         console.error('Failed to fetch plan:', error);
         setPlan(null);
+        setTaskPlan(null);
       }
     };
 
@@ -173,14 +178,20 @@ export const ChatView: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [currentSessionId]);
+  }, [currentSessionId, setTaskPlan]);
 
   // Wave 5: 使用 taskStore 判断当前会话是否在处理中（支持多任务并行）
   const { sessionStates } = useTaskStore();
   const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
   const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
-  // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
-  const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
+  const isCurrentSessionLocallyProcessing = useAppStore((state) =>
+    currentSessionId ? state.processingSessionIds?.has(currentSessionId) ?? false : false
+  );
+  // 当前 session 没有 taskStore 记录 = 这个 session 没在跑（新建/未发消息），不能继承全局 isProcessing
+  // 否则别的 session 在 in-flight 时切到新 session，新 session 的 ChatInput 会错误显示"补充/改道"
+  // 历史选择：原 fallback 用全局 isProcessing 是为了向后兼容 Wave 5 之前的单任务模型，
+  // 但多任务并行后这个 fallback 反而成了 state 跨 session 泄漏的源头
+  const effectiveIsProcessing = isCurrentSessionProcessing || isCurrentSessionLocallyProcessing;
 
   // Auto-reset isPaused when processing finishes
   useEffect(() => {
@@ -267,6 +278,22 @@ export const ChatView: React.FC = () => {
   const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const { processFile, processFolderEntry } = useFileUpload();
+  const clearGlobalDragState = useCallback(() => {
+    dragCounterRef.current = 0;
+    setIsGlobalDragOver(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isGlobalDragOver) return;
+    window.addEventListener('dragend', clearGlobalDragState);
+    window.addEventListener('drop', clearGlobalDragState);
+    window.addEventListener('blur', clearGlobalDragState);
+    return () => {
+      window.removeEventListener('dragend', clearGlobalDragState);
+      window.removeEventListener('drop', clearGlobalDragState);
+      window.removeEventListener('blur', clearGlobalDragState);
+    };
+  }, [clearGlobalDragState, isGlobalDragOver]);
 
   const handleGlobalDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -295,53 +322,25 @@ export const ChatView: React.FC = () => {
   const handleGlobalDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsGlobalDragOver(false);
+    clearGlobalDragState();
 
-    const items = e.dataTransfer.items;
-    const newAttachments: import('../../shared/contract').MessageAttachment[] = [];
-
-    if (items) {
-      const entries: FileSystemEntry[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const entry = items[i].webkitGetAsEntry?.();
-        if (entry) entries.push(entry);
-      }
-      for (const entry of entries) {
-        if (entry.isFile) {
-          const fileEntry = entry as FileSystemFileEntry;
-          const file = await new Promise<File>((resolve, reject) => {
-            fileEntry.file(resolve, reject);
-          });
-          const attachment = await processFile(file);
-          if (attachment) newAttachments.push(attachment);
-        } else if (entry.isDirectory) {
-          const dirEntry = entry as FileSystemDirectoryEntry;
-          const folderAttachment = await processFolderEntry(dirEntry, entry.name);
-          if (folderAttachment) newAttachments.push(folderAttachment);
-        }
-      }
-    } else {
-      const files = Array.from(e.dataTransfer.files);
-      for (const file of files) {
-        const attachment = await processFile(file);
-        if (attachment) newAttachments.push(attachment);
-      }
-    }
+    const newAttachments = await collectDroppedAttachments(e.dataTransfer, processFile, processFolderEntry);
 
     if (newAttachments.length > 0) {
       chatInputRef.current?.addAttachments(newAttachments);
     }
-  }, [processFile, processFolderEntry]);
+  }, [clearGlobalDragState, processFile, processFolderEntry]);
   // 发送消息需要登录
-  const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
-    await requireAuthAsync(async () => {
+  const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
+    const didSend = await requireAuthAsync(async () => {
       await sendMessage(envelope);
+      return true;
     });
+    return didSend === true;
   }, [requireAuthAsync, sendMessage]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
-    await handleSendEnvelope(buildEnvelope(content, attachments));
+    return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
   return (
@@ -362,8 +361,7 @@ export const ChatView: React.FC = () => {
             e.stopPropagation();
             // Only hide when leaving the overlay itself (not entering a child)
             if (e.currentTarget === e.target) {
-              dragCounterRef.current = 0;
-              setIsGlobalDragOver(false);
+              clearGlobalDragState();
             }
           }}
           onDrop={handleGlobalDrop}

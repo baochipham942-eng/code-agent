@@ -2,23 +2,26 @@
 // Progress - Task progress indicator (Linear-style collapsible design)
 // ============================================================================
 // 显示三种进度：
-// 1. todos - 来自 todo_write 工具的任务列表
+// 1. todos - 来自会话待办或持久化计划
 // 2. taskProgress - 实时任务状态（当没有 todos 时显示）
 // 3. toolElapsed - 工具执行耗时 + 超时警告
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
 import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
+import { useStatusRailModel } from '../../hooks/useStatusRailModel';
+import { formatElapsed } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 
 export const Progress: React.FC = () => {
-  const { todos, currentSessionId, messages } = useSessionStore();
+  const { currentSessionId } = useSessionStore();
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const { t } = useI18n();
+  const todoModel = useStatusRailModel().todos;
+  const todos = todoModel.items;
 
   const phaseLabels: Record<string, string> = {
     thinking: t.taskPanel.phaseThinking,
@@ -33,8 +36,8 @@ export const Progress: React.FC = () => {
   const { toolProgress, toolTimeout } = useToolProgress(currentSessionId);
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
 
-  const completedCount = todos.filter((item) => item.status === 'completed').length;
-  const totalCount = todos.length;
+  const completedCount = todoModel.completed;
+  const totalCount = todoModel.total;
 
   // Initial collapsed items count
   const INITIAL_VISIBLE = 4;
@@ -47,46 +50,6 @@ export const Progress: React.FC = () => {
 
   // 是否有工具执行耗时要显示
   const showToolElapsed = toolProgress && toolProgress.elapsedMs >= 5000;
-
-  // 从工具调用历史推导工作阶段（当无显式 todos 时）
-  const toolPhases = useMemo(() => {
-    if (totalCount > 0) return []; // 有显式 todos 时不需要
-
-    const phases: Array<{ type: PhaseType; count: number; status: 'completed' | 'in_progress' }> = [];
-
-    // 只扫描最近 30 条消息
-    for (const msg of messages.slice(-30)) {
-      if (!msg.toolCalls) continue;
-      for (const tc of msg.toolCalls) {
-        const phase = classifyTool(tc.name);
-        if (!phase) continue;
-
-        const last = phases[phases.length - 1];
-        if (last?.type === phase) {
-          last.count++;
-        } else {
-          // 新阶段开始，之前的阶段标记为已完成
-          if (phases.length > 0) {
-            phases[phases.length - 1].status = 'completed';
-          }
-          phases.push({ type: phase, count: 1, status: 'in_progress' });
-        }
-      }
-    }
-
-    return phases;
-  }, [messages, totalCount]);
-
-  const phaseLabel = (type: PhaseType): string => {
-    const map: Record<PhaseType, string> = {
-      read: t.taskPanel.phaseRead,
-      edit: t.taskPanel.phaseEdit,
-      execute: t.taskPanel.phaseExecute,
-      search: t.taskPanel.phaseSearch,
-      mcp: t.taskPanel.phaseMcp,
-    };
-    return map[type];
-  };
 
   return (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
@@ -244,38 +207,9 @@ export const Progress: React.FC = () => {
         </div>
       )}
 
-      {/* 无显式 todos 时：显示工具阶段进度 */}
+      {/* 无任务计划时保持空态，避免把工具调用伪装成待办 */}
       {isExpanded && totalCount === 0 && !showRealtimeProgress && !showToolElapsed && (
-        toolPhases.length > 0 ? (
-          <div className="space-y-1 mt-3">
-            {toolPhases.map((phase, index) => {
-              const PhaseIcon = PHASE_ICONS[phase.type];
-              return (
-                <div key={`${phase.type}-${index}`} className="flex items-center gap-3 py-1.5">
-                  {phase.status === 'completed' ? (
-                    <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
-                      <Check className="w-3 h-3 text-white" />
-                    </div>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
-                      <PhaseIcon className="w-3 h-3 text-primary-400" />
-                    </div>
-                  )}
-                  <span className={`text-sm flex-1 ${
-                    phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
-                  }`}>
-                    {phaseLabel(phase.type)}
-                  </span>
-                  <span className="text-xs text-zinc-600">
-                    {t.taskPanel.phaseOps.replace('{count}', String(phase.count))}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-xs text-zinc-600 mt-3 py-2">{t.taskPanel.noProgress}</div>
-        )
+        <div className="text-xs text-zinc-600 mt-3 py-2">{t.taskPanel.noProgress}</div>
       )}
     </div>
   );

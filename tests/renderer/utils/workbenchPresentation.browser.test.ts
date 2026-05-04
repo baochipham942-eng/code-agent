@@ -49,7 +49,15 @@ describe('browser workbench presentation', () => {
           source: 'request' as const,
           regionHint: 'us-west',
         },
-        lastTrace: trace,
+        provider: 'system-chrome-cdp' as const,
+        requestedProvider: 'auto' as const,
+        lastTrace: {
+          ...trace,
+          evidenceSummary: [
+            'DOM snapshot: 1 headings · 3 interactive',
+            'Accessibility snapshot: available',
+          ],
+        },
       },
       computerSurface: null,
       preview: {
@@ -58,6 +66,8 @@ describe('browser workbench presentation', () => {
         url: 'https://example.com/docs',
         surfaceMode: 'headless',
         traceId: 'trace-preview',
+        provider: 'system-chrome-cdp' as const,
+        requestedProvider: 'auto' as const,
         sessionId: 'session-preview',
         profileMode: 'isolated',
         profileId: 'profile-preview',
@@ -91,12 +101,17 @@ describe('browser workbench presentation', () => {
       expect.objectContaining({ label: 'Status', value: 'Running', tone: 'ready' }),
       expect.objectContaining({ label: 'Session', value: 'session-preview' }),
       expect.objectContaining({ label: 'Mode', value: 'headless' }),
+      expect.objectContaining({ label: 'Provider', value: 'System Chrome via CDP' }),
       expect.objectContaining({ label: 'Profile', value: 'isolated / profile-preview' }),
       expect.objectContaining({ label: 'Scope', value: 'artifact: .../run-42' }),
       expect.objectContaining({ label: 'Lease', value: expect.stringContaining('active /') }),
       expect.objectContaining({ label: 'Proxy', value: 'http / us-west / bypass 2' }),
       expect.objectContaining({ label: 'Tab', value: 'Docs' }),
       expect.objectContaining({ label: 'Trace', value: 'trace-preview' }),
+      expect.objectContaining({
+        label: 'Recovery',
+        value: 'DOM snapshot: 1 headings · 3 interactive · Accessibility snapshot: available',
+      }),
     ]));
     expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Library');
     expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Downloads/ai/code-agent/.workbench');
@@ -180,7 +195,7 @@ describe('browser workbench presentation', () => {
       mode: 'desktop',
       browserSession,
     })).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Surface', value: 'Foreground fallback (current window)', tone: 'ready' }),
+      expect.objectContaining({ label: 'Surface', value: 'Manual foreground fallback', tone: 'neutral' }),
       expect.objectContaining({ label: 'App', value: 'Google Chrome' }),
       expect.objectContaining({ label: 'Window', value: 'Example Docs' }),
       expect.objectContaining({ label: 'Trace', value: 'trace-computer' }),
@@ -226,13 +241,53 @@ describe('browser workbench presentation', () => {
       mode: 'desktop',
       browserSession,
     })).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Surface', value: 'Background Accessibility surface', tone: 'ready' }),
+      expect.objectContaining({ label: 'Surface', value: 'Background AX surface', tone: 'ready' }),
       expect.objectContaining({ label: 'App', value: 'Finder' }),
     ]));
     expect(getBrowserWorkbenchOperationalHint({
       mode: 'desktop',
       browserSession,
     })).toBe('Computer Surface 会通过 macOS Accessibility 操作指定 app/window；坐标类动作仍需前台窗口兜底。');
+  });
+
+  it('describes background CGEvent surface separately from background AX', () => {
+    const browserSession = {
+      managedSession: {
+        running: false,
+        tabCount: 0,
+        activeTab: null,
+      },
+      computerSurface: {
+        id: 'surface-1',
+        mode: 'background_cgevent' as const,
+        platform: 'darwin',
+        ready: true,
+        background: true,
+        requiresForeground: false,
+        approvalScope: 'session_app' as const,
+        safetyNote: 'Computer Surface 会通过后台 CGEvent 操作选定窗口。',
+        targetApp: 'Preview',
+        approvedApps: [],
+        deniedApps: [],
+      },
+      preview: {
+        mode: 'desktop' as const,
+        frontmostApp: null,
+        title: null,
+        url: null,
+        surfaceMode: 'background_cgevent',
+        traceId: null,
+      },
+      blocked: false,
+    };
+
+    expect(buildBrowserWorkbenchStatusRows({
+      mode: 'desktop',
+      browserSession,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Surface', value: 'Background CGEvent surface', tone: 'ready' }),
+      expect.objectContaining({ label: 'App', value: 'Preview' }),
+    ]));
   });
 
   it('uses blocked detail as the operational hint', () => {

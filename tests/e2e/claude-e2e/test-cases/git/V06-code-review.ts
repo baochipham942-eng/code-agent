@@ -61,7 +61,7 @@ export const V06: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['code-review'], // explore 是可选的，code-review 是核心
+    expectedAgents: ['reviewer'], // explore 是可选的，reviewer 是核心
     requiredTools: ['Bash', 'Read', 'Write'],
     toolCallRange: { min: 5, max: 30 },
   },

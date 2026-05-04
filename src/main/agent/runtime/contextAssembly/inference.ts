@@ -48,6 +48,15 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
 
   let modelMessages = await ctx.buildModelMessages();
+  if (ctx.runtime.forceFinalResponsePrompt) {
+    modelMessages = [
+      ...modelMessages,
+      {
+        role: 'system',
+        content: ctx.runtime.forceFinalResponsePrompt,
+      },
+    ];
+  }
   logger.debug('[AgentLoop] Model messages count:', modelMessages.length);
   logger.debug('[AgentLoop] Model config:', {
     provider: ctx.runtime.modelConfig.provider,
@@ -196,6 +205,12 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     }
 
     let effectiveTools = tools;
+    if (ctx.runtime.forceFinalResponseReason) {
+      effectiveTools = [];
+      logger.warn('[AgentLoop] Force-final-response active; tool list disabled', {
+        reason: ctx.runtime.forceFinalResponseReason,
+      });
+    }
     if (effectiveConfig !== ctx.runtime.modelConfig) {
       const fallbackModelInfo = ctx.runtime.modelRouter.getModelInfo(
         effectiveConfig.provider,

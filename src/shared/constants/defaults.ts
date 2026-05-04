@@ -1,5 +1,16 @@
-/** Provider HTTP request timeout (ms) */
+/** Provider HTTP request timeout (ms) — socket 级 inactivity，整体请求上限 */
 export const PROVIDER_TIMEOUT = 300000;
+
+/** SSE 首字节超时（ms）：HTTP 200 后等第一个 SSE chunk 的窗口 */
+export const SSE_FIRST_BYTE_TIMEOUT = 60_000;
+
+/** SSE chunk-gap 静默超时（ms）：收到首字节后，两个真正 SSE data 行之间的最大间隔。
+ *  默认 120s 覆盖 thinking 模型 reasoning 阶段的正常静默；可通过 env 覆盖按 provider 调优。
+ *  Watchdog 触发会主动 abort 并抛 'stream inactivity timeout'，由 retryStrategy 接住自动重试。
+ *
+ *  注意：本文件被 renderer 打包，必须用 typeof 守卫 process 否则浏览器侧 ReferenceError 整个崩溃。 */
+export const SSE_INACTIVITY_TIMEOUT =
+  (typeof process !== 'undefined' && Number(process.env?.SSE_INACTIVITY_TIMEOUT_MS)) || 120_000;
 
 /** 默认 Provider — 小米 MiMo Token Plan 包月（fresh user 默认） */
 export const DEFAULT_PROVIDER = 'xiaomi' as const;

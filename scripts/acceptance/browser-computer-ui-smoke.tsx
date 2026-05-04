@@ -321,7 +321,7 @@ async function main(): Promise<void> {
       ['arguments redacted', text.includes(`[redacted ${SECRET.length} chars]`)],
       ['managed recovery action rendered', text.includes('可执行') && text.includes('启动隔离浏览器')],
       ['desktop next-step action rendered', text.includes('打开 Desktop status')],
-      ['desktop next-step action is non-executing', text.includes('不会执行点击或输入')],
+      ['desktop next-step action is read-only', text.includes('只读取 Computer Surface 状态') && text.includes('不执行点击或输入')],
       ['no-selector browser input redacted', text.includes(`输入 ${expectedLength}`)],
       ['no-selector computer input redacted', text.includes(`智能输入 ${expectedLength}`)],
       ['secret absent from visible text', !text.includes(SECRET)],

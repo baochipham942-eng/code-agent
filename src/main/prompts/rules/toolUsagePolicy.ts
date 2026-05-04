@@ -24,24 +24,24 @@ export const TOOL_USAGE_POLICY = `
 
 | 任务特征 | 正确做法 |
 |---------|---------|
-| 安全审计（认证+输入验证+数据安全） | 并行派发 3 个 task |
-| 代码审查（质量+安全+性能） | 并行派发 3 个 task |
-| 分析多个模块（auth+payment+notification） | 并行派发 3 个 task |
+| 安全审计（认证+输入验证+数据安全） | 并行派发 3 个 Task |
+| 代码审查（质量+安全+性能） | 并行派发 3 个 Task |
+| 分析多个模块（auth+payment+notification） | 并行派发 3 个 Task |
 
 **示例**（在单个响应中同时调用）：
 \`\`\`
-task(subagent_type="code-review", prompt="安全审计：扫描 API 端点的认证问题")
-task(subagent_type="explore", prompt="性能分析：找出 N+1 查询和慢查询")
-task(subagent_type="code-review", prompt="代码质量：检查 any 类型使用")
+Task(subagent_type="reviewer", prompt="安全审计：扫描 API 端点的认证问题")
+Task(subagent_type="explore", prompt="性能分析：找出 N+1 查询和慢查询")
+Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型使用")
 \`\`\`
 
 **判断标准**：
 - 各维度之间无依赖关系 → 并行派发
 - 需要前一步结果才能进行 → 串行执行
 
-### 何时考虑使用 task 工具委派
+### 何时考虑使用 Task 工具委派
 
-当你遇到以下情况时，**应该优先考虑**使用 task 工具：
+当你遇到以下情况时，**可以优先考虑**使用 Task 工具：
 
 1. **需要广泛探索代码库**
    - 不知道相关代码在哪里
@@ -54,22 +54,26 @@ task(subagent_type="code-review", prompt="代码质量：检查 any 类型使用
    - 涉及 3+ 个文件的改动
 
 3. **需要专业分析**
-   - 安全审计 → task(code-review)
-   - 性能分析 → task(explore) 先了解
-   - 架构设计 → task(plan)
+   - 安全审计 → Task(reviewer)
+   - 性能分析 → Task(explore) 先了解
+   - 架构设计 → Task(plan)
 
 4. **你不确定从哪里开始**
-   - 先用 task(explore) 了解代码库
+   - 先用 Task(explore) 了解代码库
    - 拿到分析结果后再决定下一步
+
+5. **不要为明确单点修改委派**
+   - 目标文件、函数、编辑区域已经明确时，直接 Read/Edit/Bash 验证
+   - 小型 UI 修补、文案修正、单文件测试补齐，不需要先派子代理
 
 ### 子代理类型选择
 
 | 子代理 | 适用场景 |
 |--------|----------|
 | explore | 搜索代码、理解架构、找实现位置 |
-| code-review | 代码审查、安全审计、质量检查 |
+| reviewer | 代码审查、安全审计、质量检查 |
 | plan | 设计方案、任务分解、架构规划 |
-| bash | 运行命令、测试、构建 |
+| awaiter | 长命令等待、测试监控 |
 
 ### 决策流程
 
@@ -77,22 +81,23 @@ task(subagent_type="code-review", prompt="代码质量：检查 any 类型使用
 收到任务
     ↓
 任务包含多个独立维度？
-    ├── 是 → 并行派发多个 task
+    ├── 是 → 并行派发多个 Task
     └── 否 → 继续判断
                 ↓
         需要广泛探索代码库？
-            ├── 是 → task(explore)
+            ├── 是 → Task(explore)
             └── 否 → 继续判断
                         ↓
                 需要专业分析（审计/审查/规划）？
-                    ├── 是 → task(code-review/plan)
+                    ├── 是 → Task(reviewer/plan)
                     └── 否 → 执行具体操作
 \`\`\`
 
 ### 重要提醒
 
 - **不要过度探索**：如果已经知道答案，不需要再探索
-- **不要跳过委派**：如果真的需要广泛搜索，委派比自己 grep 更高效
+- **目标明确时直接执行**：如果目标文件和修改区域已经明确，不要再为了单点修改委派
+- **不要跳过该委派的广泛探索**：如果真的需要广泛搜索，委派比自己 grep 更高效
 - **信任子代理结果**：子代理返回后，基于其结果继续工作
 
 ### Handoff 模式（长任务中断续传）

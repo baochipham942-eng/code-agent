@@ -64,7 +64,7 @@ const ActionBar = memo(function ActionBar({
       <span className="text-xs text-zinc-400 shrink-0">
         {typeLabel} #{paragraph.index + 1}
       </span>
-      <div className="flex items-center gap-1.5 flex-1 overflow-x-auto">
+      <div className="flex items-center gap-1.5 flex-1 overflow-x-auto scrollbar-hidden">
         {actions.map(({ key, label, icon: Icon, color }) => (
           <button
             key={key}
@@ -219,7 +219,7 @@ export const DocumentBlock = memo(function DocumentBlock({ spec: rawSpec }: { sp
       </div>
 
       {/* Document Body */}
-      <div className="max-h-[400px] overflow-auto divide-y divide-zinc-800/50">
+      <div className="divide-y divide-zinc-800/50">
         {paragraphs.map((para) => (
           <ParagraphItem
             key={para.index}

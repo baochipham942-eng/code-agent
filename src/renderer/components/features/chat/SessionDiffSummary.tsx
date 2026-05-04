@@ -33,7 +33,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
       for (const tc of msg.toolCalls) {
         if (!FILE_WRITE_TOOLS.includes(tc.name)) continue;
         const result = tc.result;
-        if (result && result.success === false) continue;
+        if (result?.success === false) continue;
 
         const args = (tc.arguments || {}) as Record<string, unknown>;
         let filePath = (args.file_path ?? args.path) as string | undefined;
@@ -135,7 +135,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
             </span>
           </button>
           {expanded && (
-            <ul className="px-3 pb-2 pt-1 space-y-0.5 max-h-[200px] overflow-y-auto border-t border-white/[0.06]">
+            <ul className="px-3 pb-2 pt-1 space-y-0.5 border-t border-white/[0.06]">
               {fileChanges.map((fc) => {
                 const fileName = fc.filePath.split('/').pop() || fc.filePath;
                 const dirPath = fc.filePath.slice(

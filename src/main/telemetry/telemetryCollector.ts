@@ -33,20 +33,86 @@ import {
 
 
 
-export function classifyError(errorMessage: string): ErrorCategory {
-  const msg = errorMessage.toLowerCase();
+/**
+ * 剥离 error 字符串中混入的工具/系统日志，只对"主 error message"做分类。
+ *
+ * 例如 Browser 工具失败时 error 形如：
+ *   "Cannot find package 'playwright' ...
+ *    --- Recent Logs ---
+ *    [01:16:17] [DEBUG] ..."
+ * 整段一起做 substring 匹配，日志里的 "rate"/"429"/"timeout" 等噪音字串很容易
+ * 误命中 rate_limit/timeout 等分类。
+ */
+function stripLogNoise(errorMessage: string): string {
+  // 常见日志分隔符
+  const markers = [
+    '\n--- Recent Logs ---',
+    '\n--- Logs ---',
+    '\nRecent logs:',
+    '\n[STDOUT]',
+    '\n[STDERR]',
+  ];
+  let cleaned = errorMessage;
+  for (const m of markers) {
+    const idx = cleaned.indexOf(m);
+    if (idx > 0) cleaned = cleaned.slice(0, idx);
+  }
+  return cleaned.trim();
+}
 
+export function classifyError(errorMessage: string): ErrorCategory {
+  // 剥离日志噪音，避免日志里偶现的 "rate"/"429"/"timeout" 字串误判
+  const cleaned = stripLogNoise(errorMessage);
+  const msg = cleaned.toLowerCase();
+
+  // 1. 结构化信号：缺包（最常见的"系统配置"问题）
+  if (msg.includes('cannot find package') || msg.includes('cannot find module') ||
+      msg.includes('module not found') || msg.includes('command not found')) {
+    return 'dependency_missing';
+  }
+
+  // 2. 文件系统
   if (msg.includes('enoent') || msg.includes('no such file')) return 'file_not_found';
   if (msg.includes('eacces') || msg.includes('permission denied')) return 'permission_denied';
-  if (msg.includes('timeout') || msg.includes('etimedout')) return 'timeout';
-  if (msg.includes('syntaxerror') || msg.includes('parse error')) return 'syntax_error';
+
+  // 3. 沙箱
+  if (msg.includes('denied by sandbox') || msg.includes('sandbox denied') ||
+      msg.includes('sandbox: denied')) {
+    return 'sandbox_denied';
+  }
+
+  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit）
+  if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) ||
+      msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
+    return 'rate_limit';
+  }
+  if (/\bhttp\s*40[13]\b/i.test(cleaned) || msg.includes('unauthorized') ||
+      msg.includes('forbidden') || msg.includes('authentication failed')) {
+    return 'auth_failed';
+  }
+  if (/\bhttp\s*4\d\d\b/i.test(cleaned)) return 'http_4xx';
+  if (/\bhttp\s*5\d\d\b/i.test(cleaned)) return 'http_5xx';
+
+  if (msg.includes('econnrefused') || msg.includes('econnreset') ||
+      msg.includes('enotfound') || msg.includes('fetch failed') ||
+      msg.includes('network is unreachable')) {
+    return 'network_error';
+  }
+
+  // 5. 上下文/解析
+  if (msg.includes('context length') || msg.includes('token limit') ||
+      msg.includes('maximum context')) return 'context_overflow';
+  if (msg.includes('syntaxerror') || msg.includes('parse error') ||
+      msg.includes('unexpected token')) return 'syntax_error';
+
+  // 6. 时间/编辑/Shell
+  if (msg.includes('timeout') || msg.includes('etimedout') ||
+      msg.includes('timed out')) return 'timeout';
   if (msg.includes('not unique') || msg.includes('multiple matches')) return 'edit_not_unique';
-  if (msg.includes('rate limit') || msg.includes('429') || msg.includes('quota')) return 'rate_limit';
-  if (msg.includes('econnrefused') || msg.includes('network') || msg.includes('fetch failed')) return 'network_error';
   if (msg.includes('exit code') || msg.includes('command failed')) return 'command_failure';
-  if (msg.includes('context length') || msg.includes('token limit')) return 'context_overflow';
-  // path_hallucination: "does not exist" with a file path pattern
-  if (msg.includes('does not exist') && /[\/\][\w.-]+/.test(errorMessage)) return 'path_hallucination';
+
+  // 7. path hallucination — "does not exist" 带文件路径模式
+  if (msg.includes('does not exist') && /[/\\][\w.-]+/.test(cleaned)) return 'path_hallucination';
 
   return 'unknown';
 }
@@ -311,6 +377,20 @@ export class TelemetryCollector {
 
   startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string, parentTurnId?: string): void {
     if (this.activeSession?.id !== sessionId) return;
+
+    // 如果上一 turn 还没 endTurn 就开了新 turn（messageProcessor 多个 return
+    // 'continue' 路径不调 onTurnEnd，原本会让那一 turn 永不落库 → telemetry
+    // turn_number 跳号）。这里自动 finalize，避免数据丢失。
+    if (this.activeTurn && this.activeTurn.id !== turnId) {
+      logger.warn('[TelemetryCollector] startTurn: previous turn not ended, auto-finalizing', {
+        previousTurnId: this.activeTurn.id,
+        previousTurnNumber: this.activeTurn.turnNumber,
+        newTurnNumber: turnNumber,
+      });
+      // 用空 assistantResponse 走正常 endTurn，分类为 unknown outcome（continue 路径
+      // 通常没生成最终回复，留 telemetry 痕迹比丢数据好）
+      this.endTurn(sessionId, this.activeTurn.id!, '', undefined, undefined);
+    }
 
     this.activeTurn = {
       id: turnId,
@@ -729,6 +809,7 @@ export class TelemetryCollector {
   // --------------------------------------------------------------------------
 
   createAdapter(sessionId: string, agentId?: string): TelemetryAdapter {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const collector = this;
     return {
       onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string) {

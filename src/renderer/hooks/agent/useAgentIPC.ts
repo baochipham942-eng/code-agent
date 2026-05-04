@@ -84,12 +84,18 @@ type DirectRoutingResolution =
 export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
   return status === 'running'
     || status === 'paused'
-    || status === 'queued'
-    || status === 'cancelling';
+    || status === 'queued';
+}
+
+function isRuntimeCancellingStatus(status: TaskSessionStatus | undefined): boolean {
+  return status === 'cancelling';
 }
 
 export function getRuntimeFollowupFailureMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
+  if (/already cancelling/i.test(raw)) {
+    return '上一轮还在暂停或收尾，等它回到运行中再补充。草稿还在输入框里。';
+  }
   if (/agent not initialized|no active session|not initialized/i.test(raw)) {
     return '当前任务还没准备好接收补充指令，稍后再发一次。';
   }
@@ -386,6 +392,13 @@ export function useAgentIPC({
             || isRuntimeBusyStatus(useTaskStore.getState().sessionStates[effectiveSessionId]?.status)
           )
         : isProcessing;
+      const currentTaskStatus = effectiveSessionId
+        ? useTaskStore.getState().sessionStates[effectiveSessionId]?.status
+        : undefined;
+
+      if (isRuntimeCancellingStatus(currentTaskStatus)) {
+        throw new Error('Session is already cancelling');
+      }
 
       // 运行中发送的新输入作为补充指令交给当前任务，后端仍通过 interruptAndContinue 接入。
       if (isCurrentSessionProcessing) {

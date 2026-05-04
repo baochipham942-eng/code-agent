@@ -50,6 +50,7 @@ const TRANSIENT_PATTERNS = [
   'network socket disconnected',
   '流式响应无内容',
   'first-byte timeout',
+  'stream inactivity timeout',
   '502',
   '503',
   '504',

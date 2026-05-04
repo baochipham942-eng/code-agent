@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../src/main/tools/types';
+import type { WorkbenchActionTrace } from '../../../../src/shared/contract/desktop';
 
 const browserMocks = vi.hoisted(() => {
   const state = {
@@ -217,7 +218,7 @@ const browserMocks = vi.hoisted(() => {
         ? { ...args.params, secretRef: '[secretRef]' }
         : args.params || {},
     })),
-    finishTrace: vi.fn((trace: any, args: { success: boolean; error?: string | null; screenshotPath?: string | null }) => ({
+    finishTrace: vi.fn((trace: WorkbenchActionTrace, args: { success: boolean; error?: string | null; screenshotPath?: string | null }) => ({
       ...trace,
       completedAtMs: 2,
       success: args.success,
@@ -503,6 +504,25 @@ describe('browser workbench gating', () => {
     expect(browserMocks.service.finishTrace).toHaveBeenCalledWith(expect.objectContaining({
       action: 'navigate',
     }), expect.objectContaining({ success: true }));
+  });
+
+  it('auto-creates a tab before navigate when browser automation runs without an active tab outside managed bootstrap', async () => {
+    browserMocks.state.running = true;
+    browserMocks.state.tabs = [];
+    browserMocks.state.activeTabId = null;
+
+    const result = await browserActionTool.execute(
+      {
+        action: 'navigate',
+        url: 'https://example.com',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(browserMocks.service.newTab).toHaveBeenCalledTimes(1);
+    expect(browserMocks.service.navigate).toHaveBeenCalledWith('https://example.com', undefined);
+    expect(result.output).toContain('自动创建了空白标签页后继续导航');
   });
 
   it('makes Browser.open prefer the managed browser session when managed mode is selected', async () => {

@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
+import { app, BrowserWindow } from '../platform';
 import type { AgentEvent, Message, MessageMetadata, ToolCall } from '../../shared/contract';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
@@ -12,7 +13,6 @@ import type { PlanningService } from '../planning';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
-import { app, BrowserWindow } from '../platform';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 
 const logger = createLogger('TaskManager');
@@ -21,7 +21,6 @@ const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembl
 function wasMessagePersistedByContextAssembly(message: Message): boolean {
   return Boolean((message as any)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
 }
-
 // ============================================================================
 // Types
 // ============================================================================

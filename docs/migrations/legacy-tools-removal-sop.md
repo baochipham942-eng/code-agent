@@ -176,6 +176,16 @@ npx vitest run tests/unit/tools/modules/<cat>/   # 如果有现成测试
    `import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter'`。
 3. 如果 native 实现需要调下游服务，看 `getConnectorRegistry().get(...)`、
    `ctx.planningService`、`ctx.legacyToolRegistry` 等已有的 opaque service handle。
+4. **abort 处理 — shared singleton vs per-tool session 判断**（**Wave 1 lsp 实测踩到**）：
+   如果下游服务是**共享单例**（stdio 子进程如 LSP server、外部长连接如 MCP server），
+   abort 时**不能** kill 进程或发 shutdown，否则其他 in-flight 调用全挂。处理：
+   - 走 `withAbort()` race signal vs `manager.sendRequest()` Promise
+   - abort 触发立即返回 `ABORTED`，**不杀进程**
+   - 已发的请求由 manager 内部 timeout（如 LSP 30s）清理 pending map
+   - 测试用 sentinel mock 显式断言 `manager.shutdown` / `manager.kill` **未被调用**
+
+   per-tool session（如新建临时 fs 句柄、单次 HTTP request）才能在 abort 时直接关闭。
+   迁移前先确认：当前 tool 调用的下游是 singleton 还是 per-call session。
 
 **验证**：
 ```bash
@@ -231,6 +241,18 @@ grep -rn "from ['\"].*tools/<cat>/.*Tool['\"]" src/main/tools/  # 必须没有 l
 ---
 
 ### Step 7 — 删 legacy 实现文件 + 更新 wrappers.ts
+
+**前置 grep — 删 legacy barrel 前必查反向引用**（**Wave 1 search 实测踩到**）：
+
+```bash
+grep -rn "from ['\"].*tools/<legacyDir>" src/main/        # 找所有 import legacy 的地方
+grep -rn "from ['\"].*tools/<legacyDir>/index" src/main/  # 含 barrel
+```
+
+如果 legacy barrel 还在被**非 `modules/` 代码** import（如 search 实测：
+`dispatch/toolDefinitions.ts` 引用了 `CORE_TOOLS / DEFERRED_TOOLS_META / getToolSearchService`），
+**必须先把这些 import 改成直连** `services/<cat>/*` 或其他正式 API，**再删 barrel**。
+否则 typecheck 会断在非本任务的文件上，scope 容易漂。
 
 ```bash
 rm src/main/tools/<legacyDir>/<file>.ts
@@ -293,6 +315,17 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 **操作**：每个独立 tool 一个 commit，或同一 batch（mail × 3、reminders × 4）一个 commit。
+
+**踩坑 — commit 拆分时 barrel 中间状态**（**Wave 1 lsp 实测**）：同 category 多 tool
+同时删 legacy 时，barrel `tools/<cat>/index.ts` 会同时坏掉，单个 commit 内 typecheck
+中间状态失败。处理：
+
+1. Commit 1：删第 1 个 tool 的 legacy 实现，**临时让 barrel 仍 export 第 2 个 tool**
+   （或 `git restore <legacy>` 临时把第 2 个 tool 的 legacy 文件拉回保 typecheck）。
+2. Commit 2：删第 2 个 tool 的 legacy 实现，并彻底清理 barrel。
+
+每个 commit 内部必须 typecheck 通过，不能让"barrel 半坏"的中间状态污染 git history。
+bisect 时这种中间 commit 会让二分查找失效。
 
 **失败回退**：`git reset HEAD~1`，问题修了再重提。
 
@@ -393,6 +426,13 @@ SOP：docs/migrations/legacy-tools-removal-sop.md（必读）
 
 - **不要做 cross-category 改动**：每个 agent 只动 own 的 category。`modules/_helpers/` 是
   共享层，**禁止改**，除非父会话明确同意。
+- **cross-category 反向 import 不在 scope 时的纪律**（**Wave 1 skill 实测**）：迁移过程
+  中可能发现你的 native module 引入的 cycle 根因在另一个 category（如
+  `services/skills/skillDiscoveryService.ts` 反向 import `services/toolSearch`），
+  **不要顺手修**——跨 category 改动违反 scope 锁，且会让本 PR review 范围爆炸。处理：
+  - 在 commit message / PR description 里**显式记录**这条 cross-cat 反向依赖
+  - madge cycle 数量不变即可（路径变短是正向改进的证据）
+  - 后续 Wave 接手时可以一并处理，但本 Wave 不动
 - **不要碰 ESLint gate**：`no-restricted-imports` 的 `**/tools/<cat>/**` 模式
   即使该 category 完成了，也保留作为永久护栏（防回滚）。
 - **不要重写 schema 字段名/required**：legacy 的 inputSchema 是模型可见契约，

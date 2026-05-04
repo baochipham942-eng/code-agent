@@ -64,6 +64,31 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return resolvedSessionId ? tm.getOrCreateCurrentOrchestrator(resolvedSessionId) : undefined;
   }
 
+  /**
+   * 切会话/新建会话之前调用。如果当前 session 还有正在跑的 inference，触发
+   * orchestrator.cancel('session-switch') —— 让 ConversationRuntime.cancel
+   * 把 streaming partial 持久化到 DB 后再 abort，避免切回来时 AI 回复消失。
+   * 不存在/未创建过 orchestrator 的 session 直接跳过。
+   */
+  private async flushPreviousSessionIfRunning(nextSessionId?: string): Promise<void> {
+    const currentSessionId = this._getCurrentSessionId();
+    if (!currentSessionId) return;
+    if (nextSessionId && currentSessionId === nextSessionId) return;
+
+    const tm = this.getTaskManager();
+    // 用 getOrchestrator (非创建版) 避免给从未跑过 inference 的 session 凭空建 orchestrator
+    const orchestrator = tm.getOrchestrator(currentSessionId);
+    if (!orchestrator) return;
+
+    try {
+      await orchestrator.cancel('session-switch');
+    } catch (err) {
+      // partial flush 失败不阻塞会话切换
+       
+      console.warn('[AgentAppService] flush previous session before switch failed', err);
+    }
+  }
+
   private getOrchestratorOrThrow(sessionId?: string) {
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
@@ -189,7 +214,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     );
   }
 
-  async cancel(sessionId?: string): Promise<void> {
+  async cancel(sessionId?: string, reason?: 'user' | 'session-switch'): Promise<void> {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
@@ -201,7 +226,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
 
     const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
-    await orchestrator.cancel();
+    await orchestrator.cancel(reason);
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void {
@@ -252,6 +277,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const configService = this.getConfigService();
     if (!configService) throw new Error('Services not initialized');
 
+    // 新建会话前先 flush 旧 session 的 streaming partial，避免切换中 AI 回复丢失
+    await this.flushPreviousSessionIfRunning();
+
     const sessionManager = getSessionManager();
     const settings = configService.getSettings();
     const requestedWorkingDirectory = config?.workingDirectory?.trim();
@@ -283,6 +311,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async loadSession(sessionId: string): Promise<Session> {
+    // 切会话前先 flush 旧 session 的 streaming partial，避免 AI 回复在切换中丢失
+    await this.flushPreviousSessionIfRunning(sessionId);
+
     const sessionManager = getSessionManager();
 
     const session = await sessionManager.restoreSession(sessionId);

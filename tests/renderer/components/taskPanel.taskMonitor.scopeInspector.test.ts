@@ -422,7 +422,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('文件读取活动');
   });
 
-  it('falls back to tool activity when there are no todos or task progress', () => {
+  it('keeps progress empty when there are no todos or task progress', () => {
     sessionState.messages = [
       {
         toolCalls: [
@@ -436,9 +436,10 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('工具活动');
-    expect(html).toContain('文件读取活动');
-    expect(html).toContain('2 次工具操作');
+    expect(html).toContain('暂无任务计划');
+    expect(html).not.toContain('工具活动');
+    expect(html).not.toContain('文件读取活动');
+    expect(html).not.toContain('2 次工具操作');
   });
 
   it('keeps sub-1% context usage visible in the right rail', () => {

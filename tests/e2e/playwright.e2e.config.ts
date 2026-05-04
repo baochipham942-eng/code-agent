@@ -1,6 +1,9 @@
 // Playwright config for Electron E2E tests — no webServer (we manage Vite separately)
 import { defineConfig } from '@playwright/test';
 
+delete process.env.FORCE_COLOR;
+delete process.env.NO_COLOR;
+
 export default defineConfig({
   testDir: '.',
   testMatch: ['**/*.spec.ts'],

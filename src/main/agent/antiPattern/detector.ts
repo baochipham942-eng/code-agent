@@ -12,6 +12,9 @@ import { logCollector } from '../../mcp/logCollector';
 
 const logger = createLogger('AntiPatternDetector');
 
+const SHELL_FILE_READ_PATTERN =
+  /\b(cat|less|more|head|tail|sed|awk|nl|bat)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i;
+
 // ----------------------------------------------------------------------------
 // Configuration
 // ----------------------------------------------------------------------------
@@ -123,6 +126,14 @@ export class AntiPatternDetector {
     return null;
   }
 
+  trackReadOnlyShellCommand(command: string): string | null {
+    if (!SHELL_FILE_READ_PATTERN.test(command)) {
+      return null;
+    }
+
+    return this.trackToolExecution('read_file', true);
+  }
+
   // --------------------------------------------------------------------------
   // Read/Write Tracking
   // --------------------------------------------------------------------------
@@ -183,10 +194,10 @@ export class AntiPatternDetector {
     return (
       `<critical-warning>\n` +
       `WARNING: You have performed ${this.state.consecutiveReadOps} read operations without creating any files!\n` +
-      `If this is a CREATION task (like "create a snake game"), you must:\n` +
-      `1. STOP reading files\n` +
-      `2. IMMEDIATELY use write_file to create the requested content\n` +
-      `3. Do NOT continue researching - just CREATE!\n` +
+      `The likely issue is evidence drift: previously observed file content is being lost in context.\n` +
+      `1. STOP reading the same material again\n` +
+      `2. Use the already observed line-numbered evidence to answer or make the next concrete edit\n` +
+      `3. If a specific line range is missing, read only that narrow offset/limit range once\n` +
       `</critical-warning>`
     );
   }
@@ -195,7 +206,7 @@ export class AntiPatternDetector {
    * Generate error message for hard limit reached
    */
   generateHardLimitError(): string {
-    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 次只读操作）。请检查任务是否已完成，或尝试其他方法。`;
+    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 次只读操作）。请基于已经获取到的文件证据直接输出结论；如果关键证据缺失，明确说明缺失，不要继续换工具重读。`;
   }
 
   // --------------------------------------------------------------------------
@@ -266,8 +277,10 @@ export class AntiPatternDetector {
         logger.info(`Tool ${toolCall.name} failed 2 times — suggesting alternative: ${alternative.alternative}`);
         return this.generateAlternativeSuggestion(toolCall.name, count, error);
       }
-      // 无替代工具时，返回 exact-args 警告（如果触发了）
-      return exactArgsWarning;
+      // 无替代工具时：优先返回 exact-args 警告，否则给通用 Strike 2 提示
+      // （历史 Bug：bash 不在 TOOL_ALTERNATIVES，且 args 每次不同时 exactArgsWarning 也为 null，
+      // 导致 Strike 2 完全静默，模型直接自决退出 — 见 截图会话）
+      return exactArgsWarning ?? this.generateStrike2GenericAdvice(toolCall.name, count, error);
     }
 
     // Strike 1: 参数检查引导
@@ -292,6 +305,23 @@ export class AntiPatternDetector {
       `**Why:** ${alternative.reason}\n\n` +
       `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
       `</strategy-switch-suggestion>`
+    );
+  }
+
+  /**
+   * Strike 2 (no alternative): 通用建议 — 引导反问用户或换路径
+   * 用于 TOOL_ALTERNATIVES 未覆盖的工具（如 bash），避免 Strike 2 静默
+   */
+  private generateStrike2GenericAdvice(toolName: string, count: number, error: string): string {
+    return (
+      `<strike-2-advice>\n` +
+      `⚠️ Tool "${toolName}" has failed ${count} times.\n\n` +
+      `Before retrying, consider:\n` +
+      `1. Is the input parameter ambiguous or malformed (URL truncated, ID without context, vague reference)? → Call AskUserQuestion to clarify before guessing again\n` +
+      `2. Did the previous attempt assume something not yet verified? → Use a read-only tool (Read/Bash with safe command) to check the actual state\n` +
+      `3. Is the approach fundamentally wrong? → Switch strategy entirely, do not retry the same path\n\n` +
+      `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
+      `</strike-2-advice>`
     );
   }
 

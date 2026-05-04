@@ -20,6 +20,8 @@ import {
   MODEL_MAX_TOKENS,
   getProviderEndpoint,
 } from '@shared/constants';
+import { IPC_DOMAINS } from '@shared/ipc/domains';
+import { invokeDomain } from '../services/ipcService';
 import type { SettingsTab } from '../utils/settingsTabs';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
@@ -28,8 +30,6 @@ function fireStopDevServer(sessionId: string | undefined): void {
   if (!sessionId) return;
   void (async () => {
     try {
-      const { invokeDomain } = await import('../services/ipcService');
-      const { IPC_DOMAINS } = await import('@shared/ipc');
       await invokeDomain(IPC_DOMAINS.LIVE_PREVIEW, 'stopDevServer', { sessionId });
     } catch (err) {
       console.warn('[appStore] stopDevServer failed for', sessionId, err);

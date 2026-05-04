@@ -9,7 +9,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent};
+use tauri::{include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 mod native_app_icon;
@@ -182,9 +182,12 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
     let node_binary = resolve_node_binary();
 
+    // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
+    // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
     Command::new(&node_binary)
         .arg(&script_path)
         .current_dir(&working_dir)
+        .envs(env::vars())
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -511,8 +514,11 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .separator()
         .quit()
         .build()?;
+    const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/32x32.png");
 
     let _tray = TrayIconBuilder::new()
+        .icon(TRAY_ICON)
+        .icon_as_template(true)
         .tooltip("Code Agent")
         .menu(&menu)
         .on_menu_event(move |app_handle, event| {

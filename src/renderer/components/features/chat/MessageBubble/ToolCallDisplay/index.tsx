@@ -208,6 +208,10 @@ function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserCompute
 
 const BASH_PREVIEW_LINES_PENDING = 5;
 const BASH_PREVIEW_LINES_COMPLETED = 20;
+const ANSI_ESCAPE_PATTERN = new RegExp(
+  String.raw`\u001b\[[0-9;]*[a-zA-Z]|\u001b\].*?\u0007|\u001b\[[?]?[0-9;]*[a-zA-Z]`,
+  'g',
+);
 
 function isBashTool(toolCall: ToolCall): boolean {
   return toolCall.name === 'Bash' || toolCall.name === 'bash';
@@ -215,7 +219,7 @@ function isBashTool(toolCall: ToolCall): boolean {
 
 function stripAnsi(str: string): string {
   if (typeof str !== 'string') return str;
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\?]?[0-9;]*[a-zA-Z]/g, '');
+  return str.replace(ANSI_ESCAPE_PATTERN, '');
 }
 
 function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: ToolStatus }) {
@@ -249,7 +253,7 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
   return (
     <div className="ml-6 mt-0.5 mb-0.5">
       <pre
-        className={`text-xs font-mono leading-relaxed overflow-x-auto max-h-40 ${
+        className={`text-xs font-mono leading-relaxed overflow-x-auto scrollbar-hidden whitespace-pre-wrap break-words ${
           isError ? 'text-red-400/80' : 'text-zinc-500'
         }`}
       >

@@ -2,6 +2,42 @@
 
 > 从 CLAUDE.md 提取的常见问题和解决方案
 
+## 模型连接 / 代理
+
+### 海外端点会话卡住 2-3 分钟不执行（Xiaomi mimo / OpenAI / Anthropic 等）
+
+**症状**: 会话创建后只看到一条 `Ending session, generating summary` 或 `[Provider] 请求...`，之后 2-3 分钟没有任何后续动作。日志反复出现 `ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC` + `ECONNRESET`，最后被 `ProviderHealthMonitor` 标 `unavailable`。
+
+**根因链**（2026-05-01 排查）：
+1. Tauri 安装版被 launchd 启动（PPID=1），env 仅 `USER/HOME/PATH`，无 `HTTPS_PROXY`
+2. `spawn_web_server` 给 Node 子进程的 env 也是空的（修复前没显式 `.envs()`）
+3. webServer 的 dotenv 候选不包含 `~/.code-agent/.env`，且 app bundle 里**没有** `.env`（设计如此，避免密钥泄露）
+4. `shared.ts` 模块加载时 `process.env.HTTPS_PROXY = undefined` → `httpsAgent = undefined`
+5. OpenAI SDK 直连 → DNS 把海外域名解析成 Clash fake-IP `198.18.0.x` → TLS 握手撞 Clash TUN，bad record mac
+6. ModelRouter 重试 2 次 + AgentLoop 再重试 1 次，每次 60s 超时 → 表面"会话不执行"
+
+**排查步骤**:
+```bash
+# 1. 看进程 env 有没有代理
+ps -E -p $(pgrep -f code-agent-tauri) | tr ' ' '\n' | grep -i proxy
+
+# 2. 看 dotenv 实际加载哪个文件
+grep "\.env loaded" ~/.code-agent/logs/code-agent-$(date +%Y-%m-%d).log
+
+# 3. 验证海外端点直连 vs 代理
+curl --max-time 10 https://token-plan-sgp.xiaomimimo.com/v1/models                          # 应该 timeout
+curl --max-time 10 --proxy http://127.0.0.1:7897 https://token-plan-sgp.xiaomimimo.com/v1/models  # 应该 401
+```
+
+**正确做法**:
+- 在 `~/.code-agent/.env` 配 `HTTPS_PROXY=http://127.0.0.1:7897`（打包态主路径）
+- 不要依赖 macOS 系统代理（`networksetup -setwebproxy`），Node 默认不读
+- 不要把 `.env` 塞进 app bundle，不安全且违反项目设计
+
+**架构说明**:
+- `src/main/model/providers/shared.ts` 的 `getHttpsAgent()` 是运行时 getter，env 修改重启 webServer 即生效
+- `httpsAgent` 常量是 deprecated，仅模块加载时快照，新代码统一用 `getHttpsAgent()`
+
 ## Deep Research 相关
 
 ### Deep Research 模式没有被触发

@@ -1,3 +1,6 @@
+import { IPC_DOMAINS } from '@shared/ipc/domains';
+import ipcService from './ipcService';
+
 export type ActivityContextSourceKind =
   | 'automatic_background'
   | 'manual_capture'
@@ -250,8 +253,6 @@ export function normalizeActivityContextResponse(input: unknown): ActivityContex
 }
 
 export async function getCurrentActivityContext(): Promise<ActivityContextPreview> {
-  const { default: ipcService } = await import('./ipcService');
-  const { IPC_DOMAINS } = await import('@shared/ipc');
   const result = await ipcService.invokeDomain<unknown>(IPC_DOMAINS.ACTIVITY, 'getCurrentContext');
   return normalizeActivityContextResponse(result);
 }

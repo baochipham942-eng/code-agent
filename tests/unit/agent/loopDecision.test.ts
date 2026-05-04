@@ -155,9 +155,7 @@ describe('decideNextAction – model output (max_tokens)', () => {
 
   it('continuation includes continuationPrompt param', () => {
     const decision = decideNextAction(makeState({ stopReason: 'max_tokens' }));
-    expect(decision.params?.['continuationPrompt']).toBe(
-      'Continue from where you stopped. Do not restate or apologize.',
-    );
+    expect(decision.params).toBeUndefined();
   });
 });
 
@@ -216,10 +214,10 @@ describe('decideNextAction – default', () => {
 });
 
 describe('decideNextAction – runtime contract', () => {
-  it('marks continuation as runtime-executable', () => {
+  it('marks continuation as advisory', () => {
     const decision = decideNextAction(makeState({ stopReason: 'max_tokens' }));
     expect(decision.action).toBe('continuation');
-    expect(decision.execution).toBe('runtime');
+    expect(decision.execution).toBe('advisory');
   });
 
   it('marks compact as advisory', () => {

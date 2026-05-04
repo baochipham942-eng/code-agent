@@ -46,6 +46,7 @@ import { isKnownSafeCommand } from '../../../security/commandSafety';
 const execAsync = promisify(exec);
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
+const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
 
 /**
  * 解包 self-referential 工具调用：
@@ -120,6 +121,24 @@ function truncateOutput(output: string): string {
   );
 }
 
+export function rewriteImplicitBackgroundCommand(command: string): { command: string; rewritten: boolean } {
+  const trimmed = command.trim();
+  const match = trimmed.match(BACKGROUND_TRAILING_OPERATOR);
+  if (!match) {
+    return { command, rewritten: false };
+  }
+
+  const candidate = match[1]?.trim();
+  if (!candidate) {
+    return { command, rewritten: false };
+  }
+
+  return {
+    command: candidate,
+    rewritten: true,
+  };
+}
+
 interface BashMeta extends Record<string, unknown> {
   taskId?: string;
   sessionId?: string;
@@ -159,20 +178,22 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const command = unwrapSelfReference(rawCommand);
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
     const workingDirectory = (args.working_directory as string) || ctx.workingDir;
-    const runInBackground = args.run_in_background as boolean | undefined;
+    const implicitBackground = rewriteImplicitBackgroundCommand(command);
+    const normalizedCommand = implicitBackground.command;
+    const runInBackground = (args.run_in_background as boolean | undefined) ?? implicitBackground.rewritten;
     const usePty = args.pty as boolean | undefined;
     const cols = (args.cols as number) || 80;
     const rows = (args.rows as number) || 24;
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
 
-    onProgress?.({ stage: 'starting', detail: `exec: ${command.slice(0, 60)}` });
+    onProgress?.({ stage: 'starting', detail: `exec: ${normalizedCommand.slice(0, 60)}` });
 
     // -------------------------------------------------------------------------
     // PTY 执行
     // -------------------------------------------------------------------------
     if (usePty) {
       const result = createPtySession({
-        command,
+        command: normalizedCommand,
         cwd: workingDirectory,
         cols,
         rows,
@@ -224,7 +245,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
 <output-file>${result.outputFile}</output-file>
 <status>running</status>
 <terminal-size>${cols}x${rows}</terminal-size>
-<summary>PTY session for "${command.substring(0, 50)}${command.length > 50 ? '...' : ''}" started.</summary>
+<summary>PTY session for "${normalizedCommand.substring(0, 50)}${normalizedCommand.length > 50 ? '...' : ''}" started.</summary>
 
 Use process_write/process_submit to send input to this session.
 Use process_poll to check for new output.
@@ -248,7 +269,7 @@ Use process_kill to terminate the session.`;
     // 后台任务
     // -------------------------------------------------------------------------
     if (runInBackground) {
-      const result = startBackgroundTask(command, workingDirectory, timeout);
+      const result = startBackgroundTask(normalizedCommand, workingDirectory, timeout);
       if (!result.success) {
         return {
           ok: false,
@@ -263,7 +284,7 @@ Use process_kill to terminate the session.`;
 <task-type>bash</task-type>
 <output-file>${result.outputFile}</output-file>
 <status>running</status>
-<summary>Command "${command.substring(0, 50)}${command.length > 50 ? '...' : ''}" started in background.</summary>
+<summary>Command "${normalizedCommand.substring(0, 50)}${normalizedCommand.length > 50 ? '...' : ''}" started in background.</summary>
 
 Use task_output tool with task_id="${result.taskId}" to check status and retrieve output.
 Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
@@ -283,7 +304,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     // -------------------------------------------------------------------------
     // 工具混淆预检
     // -------------------------------------------------------------------------
-    const confusedTool = detectToolConfusion(command);
+    const confusedTool = detectToolConfusion(normalizedCommand);
     if (confusedTool) {
       return {
         ok: false,
@@ -298,7 +319,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     // -------------------------------------------------------------------------
     // heredoc 截断预检
     // -------------------------------------------------------------------------
-    const heredocCheck = detectHeredocTruncation(command);
+    const heredocCheck = detectHeredocTruncation(normalizedCommand);
     if (!heredocCheck.ok) {
       return { ok: false, error: heredocCheck.reason, code: 'INVALID_ARGS' };
     }
@@ -306,8 +327,8 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     // -------------------------------------------------------------------------
     // Codex 沙箱路由（非安全命令委托 Codex）
     // -------------------------------------------------------------------------
-    if (isCodexSandboxEnabled() && !isKnownSafeCommand(command)) {
-      const codexResult = await runInCodexSandbox(command, {
+    if (isCodexSandboxEnabled() && !isKnownSafeCommand(normalizedCommand)) {
+      const codexResult = await runInCodexSandbox(normalizedCommand, {
         cwd: workingDirectory,
         timeout,
       });
@@ -329,9 +350,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     // -------------------------------------------------------------------------
     try {
       // 并行：生成动态描述（不阻塞命令执行）
-      const descriptionPromise = generateBashDescription(command).catch(() => null);
+      const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
-      const { stdout, stderr } = await execAsync(command, {
+      const { stdout, stderr } = await execAsync(normalizedCommand, {
         timeout,
         cwd: workingDirectory,
         maxBuffer: BASH.MAX_BUFFER,
@@ -350,7 +371,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       const dynamicDesc = await descriptionPromise;
 
       // 源数据锚定：从 bash 输出中提取关键事实
-      const bashFact = extractBashFacts(command, output);
+      const bashFact = extractBashFacts(normalizedCommand, output);
       if (bashFact) {
         dataFingerprintStore.recordFact(bashFact);
       }
@@ -358,7 +379,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
 
       onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('Bash done', { command: command.slice(0, 80), hasStderr: !!stderr });
+      ctx.logger.debug('Bash done', { command: normalizedCommand.slice(0, 80), hasStderr: !!stderr });
 
       return {
         ok: true,

@@ -152,7 +152,7 @@ export const Skills: React.FC = () => {
                 </button>
 
                 {showAvailable && (
-                  <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                  <div className="mt-2 space-y-1">
                     {availableSkills.slice(0, 8).map((skill) => {
                       const secondary = formatWorkbenchSkillSecondaryText(skill, { locale: 'zh' });
                       return (

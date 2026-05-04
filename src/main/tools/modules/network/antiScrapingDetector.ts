@@ -17,7 +17,9 @@
 // ============================================================================
 
 const ERROR_CODE_PATTERNS = [
-  /error_code=300031/i,    // 小红书
+  /error_code=300031/i,    // 小红书：拒绝访问
+  /error_code=300017/i,    // 小红书：URL invalid（无 xsec_token 时的反爬重定向）
+  /error_msg=url%20is%20invalid/i,  // 小红书 URL invalid 的另一种 marker
   /\bcode["']?\s*[:=]\s*["']?-?40[123]\b/,  // -401 / -403 / 401
   /\bstatus_code["']?\s*[:=]\s*["']?429\b/,
 ];
@@ -36,6 +38,9 @@ const URL_REDIRECT_MARKERS = [
   '/sec/captcha',
   '/login?',
   '/sign-in?',
+  '/website-login/',  // 小红书登录墙重定向（含 captcha / error 子页）
+  '/website-login/error',
+  '/website-login/captcha',
 ];
 
 const CHALLENGE_MARKERS = [
@@ -57,12 +62,19 @@ const SOCIAL_MEDIA_DOMAINS = [
 /** Hint 文本包含此 marker，下游（messageProcessor）扫描 result 时用于识别是否命中反爬 */
 export const ANTI_SCRAPING_HINT_MARKER = '[SYSTEM HINT: this response looks like an anti-scraping wall';
 
+// Hint 措辞演化历史：
+// v1: 只说 "use opencli/jina via Bash" → 模型用了 `opencli web read URL` 但缺 `--url` 参数失败
+// v2 (现在)：明确引导 `opencli list` 发现 adapter + `opencli <site> --help` 看子命令模式，
+//   给一个具体例子（xiaohongshu note <id>）让模型理解 site-specific adapter 的存在
 const ANTI_SCRAPING_HINT =
   ANTI_SCRAPING_HINT_MARKER +
   ' (HTTP 403/429, captcha challenge, redirect to /404, or empty page on a known site). ' +
-  'WebFetch cannot bypass this. Check the <env-capabilities> block for locally installed CLIs ' +
-  '(opencli/jina/etc) that may have session-aware adapters for this site, and invoke them via Bash. ' +
-  'Do not retry WebFetch with minor variations on the same URL — pick a different tool.]';
+  'WebFetch cannot bypass this — pick a different tool. ' +
+  'If `opencli` is in <env-capabilities>, it likely has a site-specific adapter that handles login state. ' +
+  'Discovery path via Bash: ' +
+  '(1) `opencli list` lists ALL site adapters (xiaohongshu/zhihu/weibo/bilibili/etc — top-level `--help` does NOT show them). ' +
+  '(2) `opencli <site> --help` shows site subcommands (e.g. `opencli xiaohongshu note <note-id>` extracts note content directly — much better than the generic `opencli web read --url ...`). ' +
+  'Do NOT retry WebFetch with minor URL variations on the same site.]';
 
 function isSocialMediaUrl(url: string | undefined): boolean {
   if (!url) return false;

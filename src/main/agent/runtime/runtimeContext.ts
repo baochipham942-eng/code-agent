@@ -112,6 +112,9 @@ export interface RuntimeContext {
   currentIterationSpanId: string;
   currentTurnId: string;
   currentSystemPromptHash?: string;
+  pendingRuntimeDiagnostics: string[];
+  forceFinalResponseReason?: string;
+  forceFinalResponsePrompt?: string;
 
   // --- Turn tracking ---
   turnStartTime: number;

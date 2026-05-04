@@ -9,7 +9,7 @@ import type {
   ManagedBrowserProviderPreference,
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type ManagedBrowserSessionChangedEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import ipcService from '../services/ipcService';
@@ -300,6 +300,12 @@ async function loadManagedBrowserSession(): Promise<ManagedBrowserSessionState> 
   }
 }
 
+export function getManagedSessionFromChangeEvent(
+  event: ManagedBrowserSessionChangedEvent | null | undefined,
+): ManagedBrowserSessionState | null {
+  return event?.session || null;
+}
+
 export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   refresh: () => Promise<void>;
   probePermissions: () => Promise<void>;
@@ -379,6 +385,24 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
       void refresh();
     }
   }, [mode, refresh]);
+
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED,
+      (event: ManagedBrowserSessionChangedEvent) => {
+        const nextSession = getManagedSessionFromChangeEvent(event);
+        if (nextSession) {
+          setManagedSession(nextSession);
+          return;
+        }
+        void refresh();
+      },
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [refresh]);
 
   useEffect(() => {
     if (mode === 'none' && !managedSession.running && !collectorStatus?.running) {

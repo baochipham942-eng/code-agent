@@ -5,7 +5,8 @@ export const readSchema: ToolSchema = {
   name: 'Read',
   description:
     'Reads a file from the local filesystem. Use this instead of Bash cat/head/tail. ' +
-    'Supports offset and limit for large files. Cannot read directories — use ListDirectory or Glob for that.',
+    'Supports offset and limit for large files; prefer narrow ranges after the first read instead of re-reading the same file. ' +
+    'Cannot read directories — use ListDirectory or Glob for that.',
   inputSchema: {
     type: 'object',
     properties: {

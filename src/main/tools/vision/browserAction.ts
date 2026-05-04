@@ -327,6 +327,10 @@ Examples:
           if (!url) {
             return { success: false, error: 'url required for navigate' };
           }
+          if (!tabId && !browserService.getActiveTab()) {
+            await browserService.newTab();
+            workbenchNotes.push('自动创建了空白标签页后继续导航');
+          }
           await browserService.navigate(url, tabId);
           const content = await browserService.getPageContent(tabId);
           return {

@@ -27,7 +27,7 @@ interface SpreadsheetSpec {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const MAX_VISIBLE_ROWS = 100;
+const MAX_VISIBLE_ROWS = 40;
 const COLUMN_COLORS = [
   'bg-blue-500/20 border-blue-500/40',
   'bg-emerald-500/20 border-emerald-500/40',
@@ -116,7 +116,7 @@ const ActionBar = memo(function ActionBar({
       <span className="text-xs text-zinc-400 shrink-0">
         {t.generativeUI.selected} {label}
       </span>
-      <div className="flex items-center gap-1.5 flex-1 overflow-x-auto">
+      <div className="flex items-center gap-1.5 flex-1 overflow-x-auto scrollbar-hidden">
         {actions.map(({ key, label: actionLabel, icon: Icon, color }) => (
           <button
             key={key}
@@ -146,7 +146,7 @@ const SheetTabs = memo(function SheetTabs({
   if (sheets.length <= 1) return null;
 
   return (
-    <div className="flex items-center gap-0.5 px-3 py-1.5 border-t border-zinc-700 bg-zinc-800/50 overflow-x-auto">
+    <div className="flex items-center gap-0.5 px-3 py-1.5 border-t border-zinc-700 bg-zinc-800/50 overflow-x-auto scrollbar-hidden">
       {sheets.map((sheet, i) => (
         <button
           key={i}
@@ -323,7 +323,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
       )}
 
       {/* Table */}
-      <div ref={tableRef} className="overflow-auto max-h-[400px]">
+      <div ref={tableRef} className="overflow-x-auto overflow-y-visible scrollbar-hidden">
         <table className="w-full text-xs border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="bg-zinc-800">

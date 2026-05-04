@@ -135,6 +135,13 @@ export function compressToolResult(
     return { content, compressed: false, savedTokens: 0 };
   }
 
+  // 反爬 hint 是模型识别"该换工具"的关键信号——压缩成 "... truncated ..."
+  // placeholder 后模型永远看不到，会继续撞同一堵墙（27-turn xiaohongshu 实测）。
+  // 保留含 hint 的内容不压缩，是给 agent 自我纠正的唯一通道。
+  if (content.includes('[SYSTEM HINT: this response looks like an anti-scraping wall')) {
+    return { content, compressed: false, savedTokens: 0 };
+  }
+
   // Special handling for read_xlsx results: preserve schema + sample rows + hint
   const xlsxCompressed = compressXlsxResult(content, cfg.targetTokens);
   if (xlsxCompressed) {

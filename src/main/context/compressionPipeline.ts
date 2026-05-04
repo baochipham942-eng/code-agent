@@ -32,6 +32,7 @@ export interface PipelineConfig {
   enableMicrocompact: boolean;
   enableContextCollapse: boolean;
   toolResultBudget: number; // default: 2000
+  protectedToolResultPredicate?: (message: ProjectableMessage) => boolean;
   interventions?: ContextInterventionSnapshot;
 }
 
@@ -92,6 +93,13 @@ export class CompressionPipeline {
     const protectedMessageIds = config.interventions
       ? getProtectedMessageIds(config.interventions)
       : new Set<string>();
+    if (config.protectedToolResultPredicate) {
+      for (const message of transcript) {
+        if (config.protectedToolResultPredicate(message)) {
+          protectedMessageIds.add(message.id);
+        }
+      }
+    }
 
     // -------------------------------------------------------------------------
     // L1: Tool result budget — always runs (mutates transcript messages)

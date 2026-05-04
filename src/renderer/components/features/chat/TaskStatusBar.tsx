@@ -188,7 +188,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
       <div className="w-px h-4 bg-zinc-700" />
 
       {/* 活跃任务列表 */}
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-hover scrollbar-track-transparent">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hidden">
         {activeTasks.map((task) => (
           <button
             key={task.sessionId}

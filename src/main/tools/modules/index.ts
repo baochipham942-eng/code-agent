@@ -118,6 +118,19 @@ import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
 import { enterPlanModeSchema } from './planning/enterPlanMode.schema';
 import { exitPlanModeSchema } from './planning/exitPlanMode.schema';
+import { planReadSchema } from './planning/planRead.schema';
+import { planRecoverRecentWorkSchema } from './planning/planRecoverRecentWork.schema';
+import { planUpdateSchema } from './planning/planUpdate.schema';
+import { findingsWriteSchema } from './planning/findingsWrite.schema';
+import { planFacadeSchema } from './planning/planFacade.schema';
+import { taskListSchema } from './planning/taskList.schema';
+import { taskGetSchema } from './planning/taskGet.schema';
+import { taskCreateSchema } from './planning/taskCreate.schema';
+import { taskUpdateSchema } from './planning/taskUpdate.schema';
+import { taskManagerSchema } from './planning/taskManager.schema';
+import { askUserQuestionSchema } from './planning/askUserQuestion.schema';
+import { confirmActionSchema } from './planning/confirmAction.schema';
+import { exploreSchema } from './planning/explore.schema';
 
 function legacyToolSchema(
   tool: Pick<Tool, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
@@ -392,8 +405,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // planning (16)
   registry.register(
-    { name: 'plan_read', description: 'Read the current persistent plan.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).planReadModule,
+    planReadSchema,
+    async () => (await import('./planning/planRead')).planReadModule,
   );
   registry.register(
     { name: 'plan_recover_recent_work', description: 'Recover recent uncommitted work into a plan.', inputSchema: minSchema(), category: 'planning', permissionLevel: 'read', readOnly: true, allowInPlanMode: true },

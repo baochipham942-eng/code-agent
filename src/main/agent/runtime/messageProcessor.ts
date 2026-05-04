@@ -167,6 +167,7 @@ export class MessageProcessor {
     isSimpleTask: boolean,
     iterations: number,
     shouldRunHooks: boolean,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): langfuse SDK 的 trace span 类型未导入，应 import { LangfuseTraceClient } from 'langfuse' 替换 any
     langfuse: any,
   ): Promise<'break' | 'continue'> {
     if (this.ctx.isCancelled) {
@@ -392,6 +393,7 @@ export class MessageProcessor {
     response: ModelResponse,
     wasForceExecuted: boolean,
     iterations: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 handleTextResponse，langfuse SDK trace 类型应统一从 'langfuse' import
     langfuse: any,
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls!;

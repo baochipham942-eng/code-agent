@@ -11,8 +11,11 @@ import {
 } from '../helpers/sessionCache';
 
 interface SessionsRouterDeps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): logger 第二参以后是任意上下文对象（Logger 的标准 idiom），应抽 Logger 接口共享 unknown[] 形参
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tryGetSessionManager 返回 SessionManager，应直接 import 类型，不通过 any
   tryGetSessionManager: () => Promise<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient 实例，应 import { SupabaseClient } from '@supabase/supabase-js'
   getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
   activeAgentLoops: Map<string, { cancel(reason?: string): void | Promise<void> }>;
 }
@@ -27,6 +30,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
    * 跟 webServer.ts:domain:session 的 flush 共用同一份状态;原 TaskManager.getOrchestrator
    * 在 web 模式永远拿不到对应实例,等于没 flush。
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): sm 是 SessionManager，应 import 类型，不通过 any
   const flushPreviousIfRunning = async (sm: any, nextSessionId?: string): Promise<void> => {
     const currentSessionId = sm?.getCurrentSessionId?.();
     if (!currentSessionId) return;
@@ -180,6 +184,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
           .eq('session_id', sessionId)
           .eq('is_deleted', false)
           .order('timestamp', { ascending: true });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 行类型应抽 SupabaseMessageRow（snake_case），narrow 后即可去掉
         const messages = (msgData || []).map((m: any) => ({
           id: m.id,
           role: m.role,
@@ -231,6 +236,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         if (limit) query = query.limit(limit);
         const { data, error } = await query;
         if (error) throw error;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 SupabaseMessageRow narrow
         const messages = (data || []).map((m: any) => ({
           id: m.id,
           role: m.role,

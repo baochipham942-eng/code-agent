@@ -396,6 +396,7 @@ export function registerEvaluationHandlers(): void {
     }
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ipcMain.handle 回调首参 _event 应该是 Electron.IpcMainInvokeEvent，被忽略时也应保持类型；统一改成 IpcMainInvokeEvent
   ipcMain.handle(EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG, async (_event: any, config: ScoringConfigEntry[]) => {
     try {
       fs.writeFileSync(scoringConfigPath, JSON.stringify(config, null, 2), 'utf-8');

@@ -174,6 +174,7 @@ function buildLSPRequest(
   operation: LSPOperation,
   uri: string,
   position: { line: number; character: number }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): requestParams 的形态由 LSPOperation 决定（goToDefinition / find_references / hover…），应抽 LspRequestParamsMap 字典并按 operation narrow 返回
 ): { method: string; requestParams: any } {
   const textDocument = { uri };
 
@@ -229,6 +230,7 @@ function buildLSPRequest(
 
 function formatResult(
   operation: LSPOperation,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): result 形态由 operation 决定（Location[] / Hover / SymbolInformation[]…），应抽 LspResultMap 后用 LspResultMap[op]
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -266,6 +268,7 @@ function formatResult(
 }
 
 function formatLocationResult(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP definition/implementation 返回 Location | Location[] | LocationLink[] 联合，应 import { Location, LocationLink } from 'vscode-languageserver-protocol'
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -313,6 +316,7 @@ function formatLocationResult(
 }
 
 function formatReferencesResult(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP findReferences 返回 Location[]，同 formatLocationResult 应用 vscode-languageserver-protocol 类型
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -358,6 +362,7 @@ function formatReferencesResult(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP Hover 返回 { contents: MarkedString | MarkedString[] | MarkupContent; range?: Range }，应 import { Hover } from 'vscode-languageserver-protocol'
 function formatHoverResult(result: any): { formatted: string; resultCount: number; fileCount: number } {
   if (!result) {
     return {
@@ -373,6 +378,7 @@ function formatHoverResult(result: any): { formatted: string; resultCount: numbe
 
   if (Array.isArray(result.contents)) {
     content = result.contents
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): MarkedString 是 string | { language: string; value: string }，narrow 后 c 应是 MarkedString
       .map((c: any) => (typeof c === 'string' ? c : c.value))
       .join('\n\n');
   } else if (typeof result.contents === 'string') {
@@ -394,6 +400,7 @@ function formatHoverResult(result: any): { formatted: string; resultCount: numbe
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP documentSymbol 返回 DocumentSymbol[] | SymbolInformation[]，应 import vscode-languageserver-protocol 类型
 function formatDocumentSymbolResult(result: any): { formatted: string; resultCount: number; fileCount: number } {
   const symbols = result || [];
 
@@ -428,6 +435,7 @@ function formatDocumentSymbolResult(result: any): { formatted: string; resultCou
 }
 
 function formatWorkspaceSymbolResult(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP workspaceSymbol 返回 SymbolInformation[] | WorkspaceSymbol[]，应 import vscode-languageserver-protocol 类型
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -440,6 +448,7 @@ function formatWorkspaceSymbolResult(
   }
 
   const symbols = result.filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SymbolInformation 类型已在 vscode-languageserver-protocol，narrow 后 s 应为 SymbolInformation
     (s: any) => s?.location?.uri && isValidLocation(s.location)
   );
 
@@ -451,6 +460,7 @@ function formatWorkspaceSymbolResult(
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): symbols 元素是 SymbolInformation；按上面修一致即可去掉这个 any
   const grouped = new Map<string, any[]>();
 
   for (const sym of symbols) {
@@ -486,6 +496,7 @@ function formatWorkspaceSymbolResult(
 }
 
 function formatCallHierarchyResult(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP prepareCallHierarchy 返回 CallHierarchyItem[]，应 import 类型
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -523,12 +534,14 @@ function formatCallHierarchyResult(
   return {
     formatted: lines.join('\n'),
     resultCount: items.length,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): items 是 CallHierarchyItem[]，narrow 后即可去掉
     fileCount: new Set(items.map((i: any) => i.uri).filter(Boolean)).size,
   };
 }
 
 function formatCallsResult(
   operation: LSPOperation,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP incoming/outgoingCalls 返回 CallHierarchyIncomingCall[] | CallHierarchyOutgoingCall[]，应 import 类型
   result: any,
   workingDir: string
 ): { formatted: string; resultCount: number; fileCount: number } {
@@ -544,6 +557,7 @@ function formatCallsResult(
   const isIncoming = operation === 'incomingCalls';
   const callItem = isIncoming ? 'from' : 'to';
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): call 是 CallHierarchyIncomingCall | CallHierarchyOutgoingCall，narrow 后即可去掉
   const validCalls = result.filter((call: any) => {
     const item = call[callItem];
     return item?.uri && item.range;
@@ -561,6 +575,7 @@ function formatCallsResult(
   const label = isIncoming ? 'caller' : 'callee';
   const lines = [`Found ${validCalls.length} ${label}${validCalls.length === 1 ? '' : 's'}:`];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 CallHierarchy*Call 类型 narrow 后去掉
   const grouped = new Map<string, any[]>();
 
   for (const call of validCalls) {
@@ -601,6 +616,7 @@ function isValidLocation(loc: unknown): boolean {
   return true;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): loc 是 Location | LocationLink | { location: Location } 联合，narrow 三种形态后即可去掉
 function normalizeLocation(loc: any): NormalizedLocation {
   if ('targetUri' in loc) {
     return {
@@ -659,6 +675,7 @@ function uriToPath(uri: string, workingDir?: string): string {
   return decoded;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): symbols 是 DocumentSymbol[] | SymbolInformation[]，应 narrow 后用具体类型
 function countSymbols(symbols: any[]): number {
   let count = symbols.length;
 

@@ -184,6 +184,7 @@ function execSetTextStyle(xml: string, op: Extract<DocxEditOperation, { action: 
 // Track Changes executors
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): zip 是 jszip 的 JSZip 实例，应 import { JSZip } from 'jszip' 替换 any
 function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: 'track_insert' }>, zip: any): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const insertion = wrapInsertion(op.text, author, op.date);
@@ -212,6 +213,7 @@ function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: '
   return { xml: result, desc: `Track insert after paragraph ${op.after}: "${op.text.substring(0, 40)}..."` };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 execTrackInsert，zip 应 narrow 成 JSZip
 function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: 'track_delete' }>, zip: any): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const searchEscaped = escapeXml(op.search);
@@ -232,6 +234,7 @@ function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: '
   return { xml: result, desc: `Track delete "${op.search}" (${count} occurrence${count !== 1 ? 's' : ''})` };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 execTrackInsert，zip 应 narrow 成 JSZip
 function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action: 'suggest_replace' }>, zip: any): { xml: string; desc: string } {
   const author = op.author || 'Code Agent';
   const searchEscaped = escapeXml(op.search);

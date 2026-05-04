@@ -117,6 +117,7 @@ export interface TaskListEventIpc {
 export interface SessionExport {
   id: string;
   title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ModelConfig 类型存在但放在 main/，shared/ipc/types.ts 不应反向依赖；应把 ModelConfig 抽到 shared 或重新组织 import
   modelConfig: any;
   workingDirectory?: string;
   messages: Message[];
@@ -138,6 +139,7 @@ export interface SearchResult {
 
 export interface MemoryContextResult {
   ragContext: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): projectKnowledge value 是任意 JSON，应改成 unknown 让消费方按 narrow
   projectKnowledge: Array<{ key: string; value: any }>;
   relevantCode: SearchResult[];
   relevantConversations: SearchResult[];
@@ -206,6 +208,7 @@ export interface MCPStatus {
 export interface MCPTool {
   name: string;
   description: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): MCP Tool inputSchema 是 JSON Schema 对象，应 import { JSONSchema7 } from 'json-schema'
   inputSchema: any;
   serverName: string;
 }

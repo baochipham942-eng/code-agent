@@ -143,6 +143,7 @@ async function initializeServices(): Promise<void> {
   try {
     const { initSupabase } = await import('../main/services/infra/supabaseService');
     const { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } = await import('../shared/constants');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): configService.getSettings 应返回 AppSettings 类型，narrow 后即可去掉这处
     const settings = configService.getSettings() as Record<string, any>;
     const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
@@ -237,7 +238,9 @@ function registerHandlers(): void {
     const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter');
     const { getDatabase } = require('../main/services/core/databaseService');
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): swarmTraceRepo 是 SwarmTraceRepo，应 import 类型；用 require() 加载所以推断不出来
     let swarmTraceRepo: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pendingApprovalRepo 是 PendingApprovalRepo，同 swarmTraceRepo
     let pendingApprovalRepo: any = null;
     try {
       const db = getDatabase();
@@ -351,6 +354,7 @@ function registerHandlers(): void {
 
   // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
   // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 形态由 action 决定，应抽 SessionDomainPayloadMap 字典按 action narrow（同 cron.ipc.ts）
   handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
     const { action, payload } = request;
     try {
@@ -535,6 +539,7 @@ function createApp(): express.Express {
   /**
    * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient，应 import { SupabaseClient } from '@supabase/supabase-js'（同 routes/sessions.ts）
   async function getSupabaseForSession(): Promise<{ supabase: any; userId: string } | null> {
     try {
       const { getSupabase, isSupabaseInitialized } = await import('../main/services/infra/supabaseService');

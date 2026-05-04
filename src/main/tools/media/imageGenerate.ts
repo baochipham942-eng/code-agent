@@ -281,6 +281,7 @@ async function callZhipuImageGeneration(
 /**
  * 从响应中提取图片数据
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 智谱/DeepSeek 图像生成 API response shape 应抽 ImageGenerateResponse 类型
 function extractImageFromResponse(result: any): string {
   const message = result.choices?.[0]?.message;
   if (!message) {

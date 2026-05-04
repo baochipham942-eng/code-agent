@@ -24,8 +24,17 @@ import {
   formatBrowserComputerActionArguments,
   formatBrowserComputerActionResultDetails,
 } from '../../../../../utils/browserComputerActionPreview';
+import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
+import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import type { Citation } from '@shared/contract/citation';
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const ANSI_SEQUENCE_PATTERN = new RegExp(
+  `${ESC}\\[[0-9;]*[a-zA-Z]|${ESC}\\].*?${BEL}|${ESC}\\[\\??[0-9;]*[a-zA-Z]`,
+  'g',
+);
 
 // ============================================================================
 // ANSI 转义码过滤 - 清理终端输出中的颜色和格式代码
@@ -37,12 +46,7 @@ import type { Citation } from '@shared/contract/citation';
  */
 function stripAnsiCodes(str: string): string {
   if (typeof str !== 'string') return str;
-  // 匹配所有 ANSI 转义序列：
-  // - \x1b[...m - 颜色和样式
-  // - \x1b[...H - 光标位置
-  // - \x1b[...J/K - 清屏/清行
-  // - \x1b[?...h/l - 模式设置
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\?]?[0-9;]*[a-zA-Z]/g, '');
+  return str.replace(ANSI_SEQUENCE_PATTERN, '');
 }
 
 interface Props {
@@ -124,7 +128,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
                   </button>
                 )}
               </div>
-              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto border border-gray-800/50 whitespace-pre-wrap">
+              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                 {isEditFile && editFileArgs
                   ? `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
                   : formatArgs(name, args)}
@@ -188,7 +192,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
               )}
               <pre
-                className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
+                className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                   result.success
                     ? 'text-gray-400 border-gray-800/50'
                     : 'text-red-300 border-red-500/20'
@@ -218,86 +222,224 @@ export function ToolDetails({ toolCall, compact }: Props) {
 }
 
 interface BrowserComputerNextStepAction {
-  id: 'launch_managed_browser' | 'refresh_browser_snapshot' | 'open_desktop_status';
+  id:
+    | 'launch_managed_browser'
+    | 'refresh_browser_snapshot'
+    | 'open_desktop_status'
+    | 'observe_current_window'
+    | 'list_ax_candidates';
   title: string;
   detail: string;
   executable: boolean;
-  run?: () => Promise<string>;
+  sourceToolName?: string;
+  sourceArgs?: Record<string, unknown>;
+  run?: () => Promise<BrowserComputerRecoveryOutcome>;
 }
 
-function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputerNextStepAction[] {
+export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputerNextStepAction[] {
   if (!toolCall.result || toolCall.result.success) {
     return [];
   }
   const action = typeof toolCall.arguments?.action === 'string' ? toolCall.arguments.action : '';
   const error = `${toolCall.result.error || ''}`.toLowerCase();
   const code = typeof toolCall.result.metadata?.code === 'string' ? toolCall.result.metadata.code : '';
+  const catalog = getBrowserComputerActionCatalogEntry(toolCall.name, action, toolCall.arguments);
 
-  if (toolCall.name === 'browser_action' && (error.includes('browser not running') || error.includes('managed browser'))) {
+  if (
+    toolCall.name === 'browser_action'
+    && catalog?.requiresManagedSession
+    && (error.includes('browser not running') || error.includes('managed browser'))
+  ) {
     return [{
       id: 'launch_managed_browser',
       title: '启动隔离浏览器',
       detail: '可执行；也可以从能力菜单 -> Browser -> Managed 手动切换。',
       executable: true,
+      sourceToolName: toolCall.name,
+      sourceArgs: toolCall.arguments,
       run: async () => {
         const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession', {
           url: 'about:blank',
+          provider: 'system-chrome-cdp',
         });
         if (response?.success) {
-          return 'success\nManaged browser 已启动';
+          return {
+            status: 'success',
+            text: 'success\nManaged browser 已启动\nProvider: system-chrome-cdp',
+          };
         }
-        return 'success\n已请求启动隔离浏览器';
+        return {
+          status: 'failed',
+          text: formatRecoveryFailure('Managed browser 启动失败', response),
+        };
       },
     }];
+  }
+
+  if (toolCall.name === 'computer_use' && catalog?.scope === 'browser_scoped_computer') {
+    return [buildBrowserSnapshotRecoveryAction(toolCall)];
+  }
+
+  if (toolCall.name === 'computer_use' && catalog?.scope === 'desktop_surface') {
+    const targetApp = typeof toolCall.arguments?.targetApp === 'string'
+      ? toolCall.arguments.targetApp
+      : '';
+    const actions: BrowserComputerNextStepAction[] = [{
+      id: 'open_desktop_status',
+      title: '打开 Desktop status',
+      detail: '可执行；只读取 Computer Surface 状态，不执行点击或输入。',
+      executable: true,
+      sourceToolName: toolCall.name,
+      sourceArgs: toolCall.arguments,
+      run: async () => {
+        const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'getComputerSurfaceState', {
+          targetApp: targetApp || undefined,
+        });
+        if (response?.success) {
+          return {
+            status: 'success',
+            text: [
+              'success',
+              'Desktop status 已打开',
+              ...summarizeComputerSurfaceState(response.data),
+              '只打开了状态面，没有执行点击、输入或自动重试。',
+            ].join('\n'),
+          };
+        }
+        return {
+          status: 'failed',
+          text: formatRecoveryFailure('Desktop status 打开失败', response),
+        };
+      },
+    }];
+
+    actions.push({
+      id: 'observe_current_window',
+      title: '观察当前窗口',
+      detail: '可执行；只读取前台窗口和 Computer Surface 状态，不执行动作。',
+      executable: true,
+      sourceToolName: toolCall.name,
+      sourceArgs: toolCall.arguments,
+      run: async () => {
+        const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'observeComputerSurface', {
+          includeScreenshot: false,
+        });
+        if (response?.success) {
+          return {
+            status: 'success',
+            text: [
+              'success',
+              '当前窗口已观察',
+              ...summarizeComputerSurfaceObservation(response.data),
+              '只读观察完成，没有执行点击、输入或自动重试。',
+            ].join('\n'),
+          };
+        }
+        return {
+          status: 'failed',
+          text: formatRecoveryFailure('当前窗口观察失败', response),
+        };
+      },
+    });
+
+    if (targetApp) {
+      actions.push({
+        id: 'list_ax_candidates',
+        title: '列出 AX candidates',
+        detail: `可执行；只读取 ${targetApp} 的 Accessibility 候选，不自动重试原动作。`,
+        executable: true,
+        sourceToolName: toolCall.name,
+        sourceArgs: toolCall.arguments,
+        run: async () => {
+          const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'listComputerSurfaceElements', {
+            targetApp,
+            limit: 12,
+          });
+          if (response?.success) {
+            return {
+              status: 'success',
+              text: [
+                'success',
+                'AX candidates 已准备',
+                ...summarizeComputerSurfaceElements(response.data, targetApp),
+                '只读候选已准备，没有执行点击、输入或自动重试。',
+              ].join('\n'),
+            };
+          }
+          return {
+            status: 'failed',
+            text: formatRecoveryFailure('AX candidates 准备失败', response),
+          };
+        },
+      });
+    }
+
+    return actions;
   }
 
   if (
-    (toolCall.name === 'browser_action' && code === 'STALE_TARGET_REF')
-    || (toolCall.name === 'computer_use' && action.startsWith('smart_') && toolCall.arguments?.selector)
+    toolCall.name === 'browser_action'
+    && code === 'STALE_TARGET_REF'
+    && catalog?.safeRecovery === 'refresh_managed_snapshot'
   ) {
-    return [{
-      id: 'refresh_browser_snapshot',
-      title: '刷新页面证据',
-      detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用新 targetRef、选择器或 AX 证据重试。',
-      executable: true,
-      run: async () => {
-        const response = await window.domainAPI?.invoke<Record<string, unknown>>(
-          IPC_DOMAINS.DESKTOP,
-          'getManagedBrowserRecoverySnapshot',
-          { includeAccessibility: true },
-        );
-        const data = response?.data;
-        const dom = data?.domSnapshot as Record<string, unknown> | undefined;
-        const accessibility = data?.accessibilitySnapshot as Record<string, unknown> | undefined;
-        const headingCount = typeof dom?.headingCount === 'number' ? dom.headingCount : 0;
-        const interactiveCount = typeof dom?.interactiveCount === 'number' ? dom.interactiveCount : 0;
-        const accessibilityStatus = accessibility?.available ? 'available' : 'unavailable';
-        return [
-          'success',
-          '页面证据已刷新',
-          `DOM headings: ${headingCount}`,
-          `Interactive elements: ${interactiveCount}`,
-          `Accessibility snapshot: ${accessibilityStatus}`,
-        ].join('\n');
-      },
-    }];
-  }
-
-  if (toolCall.name === 'computer_use' && code === 'COMPUTER_SURFACE_BLOCKED') {
-    return [{
-      id: 'open_desktop_status',
-      title: '打开 Desktop status',
-      detail: '不会执行点击或输入；只打开桌面状态检查。',
-      executable: false,
-    }];
+    return [buildBrowserSnapshotRecoveryAction(toolCall)];
   }
 
   return [];
 }
 
+function buildBrowserSnapshotRecoveryAction(toolCall: ToolCall): BrowserComputerNextStepAction {
+  return {
+    id: 'refresh_browser_snapshot',
+    title: '刷新页面证据',
+    detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用新 targetRef、选择器或 AX 证据重试。',
+    executable: true,
+    sourceToolName: toolCall.name,
+    sourceArgs: toolCall.arguments,
+    run: async () => {
+      const response = await window.domainAPI?.invoke<Record<string, unknown>>(
+        IPC_DOMAINS.DESKTOP,
+        'getManagedBrowserRecoverySnapshot',
+        { includeAccessibility: true },
+      );
+      const data = response?.data;
+      const dom = data?.domSnapshot as Record<string, unknown> | undefined;
+      const accessibility = data?.accessibilitySnapshot as Record<string, unknown> | undefined;
+      const recoveryEvidence = data?.recoveryEvidence as Record<string, unknown> | undefined;
+      const headingCount = typeof dom?.headingCount === 'number' ? dom.headingCount : 0;
+      const interactiveCount = typeof dom?.interactiveCount === 'number' ? dom.interactiveCount : 0;
+      const accessibilityStatus = accessibility?.available ? 'available' : 'unavailable';
+      const capturedAtMs = typeof recoveryEvidence?.snapshotCapturedAtMs === 'number'
+        ? recoveryEvidence.snapshotCapturedAtMs
+        : typeof dom?.capturedAtMs === 'number'
+          ? dom.capturedAtMs
+          : null;
+      const snapshotTimestamp = capturedAtMs && Number.isFinite(capturedAtMs)
+        ? new Date(capturedAtMs).toISOString()
+        : 'unavailable';
+      return {
+        status: 'success',
+        text: [
+          'success',
+          '页面证据已刷新',
+          `DOM headings: ${headingCount}`,
+          `Interactive elements: ${interactiveCount}`,
+          `Accessibility snapshot: ${accessibilityStatus}`,
+          `Snapshot captured: ${snapshotTimestamp}`,
+        ].join('\n'),
+      };
+    },
+  };
+}
+
+type BrowserComputerRecoveryOutcome = {
+  status: 'preparing' | 'success' | 'failed';
+  text: string;
+};
+
 function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerNextStepAction[] }) {
   const [runningAction, setRunningAction] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<BrowserComputerRecoveryOutcome | null>(null);
 
   return (
     <div className="mb-2 space-y-1.5">
@@ -311,10 +453,14 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
             event.stopPropagation();
             if (!action.run) return;
             setRunningAction(action.id);
+            setOutcome({ status: 'preparing', text: 'preparing\n正在准备只读 recovery 证据…' });
             try {
               setOutcome(await action.run());
             } catch (error) {
-              setOutcome(`error\n${error instanceof Error ? error.message : String(error)}`);
+              setOutcome({
+                status: 'failed',
+                text: `failed\n${error instanceof Error ? error.message : String(error)}`,
+              });
             } finally {
               setRunningAction(null);
             }
@@ -333,12 +479,87 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
         </button>
       ))}
       {outcome && (
-        <pre className="whitespace-pre-wrap rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-[11px] text-emerald-100">
-          {outcome}
+        <pre
+          data-testid="browser-computer-recovery-outcome"
+          className={`whitespace-pre-wrap rounded-lg border p-2 text-[11px] ${
+            outcome.status === 'failed'
+              ? 'border-red-500/20 bg-red-500/10 text-red-100'
+              : outcome.status === 'preparing'
+                ? 'border-sky-500/20 bg-sky-500/10 text-sky-100'
+                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+          }`}
+        >
+          {sanitizeBrowserComputerRecoveryText(outcome.text, actions)}
         </pre>
       )}
     </div>
   );
+}
+
+function sanitizeBrowserComputerRecoveryText(
+  text: string,
+  actions: BrowserComputerNextStepAction[],
+): string {
+  const source = actions.find((action) => action.sourceArgs);
+  const redacted = redactBrowserComputerInputPayloadsInValue(
+    source?.sourceToolName || 'computer_use',
+    source?.sourceArgs || {},
+    text,
+  );
+  return typeof redacted === 'string' ? redacted : text;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function formatRecoveryFailure(title: string, response: unknown): string {
+  if (isRecord(response) && isRecord(response.error)) {
+    const message = typeof response.error.message === 'string' ? response.error.message : 'unknown error';
+    return ['failed', title, message].join('\n');
+  }
+  return ['failed', title, 'unknown error'].join('\n');
+}
+
+function summarizeComputerSurfaceState(data: unknown): string[] {
+  const state = isRecord(data) && isRecord(data.state) ? data.state : isRecord(data) ? data : null;
+  if (!state) return ['State: unavailable'];
+  return [
+    typeof state.mode === 'string' ? `Mode: ${state.mode}` : null,
+    typeof state.targetApp === 'string' && state.targetApp ? `Target app: ${state.targetApp}` : null,
+    typeof state.requiresForeground === 'boolean' ? `Requires foreground: ${state.requiresForeground ? 'yes' : 'no'}` : null,
+    typeof state.approvalScope === 'string' ? `Approval scope: ${state.approvalScope}` : null,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeComputerSurfaceObservation(data: unknown): string[] {
+  const snapshot = isRecord(data) && isRecord(data.snapshot) ? data.snapshot : null;
+  const stateLines = isRecord(data) ? summarizeComputerSurfaceState(data.state) : [];
+  return [
+    snapshot && typeof snapshot.appName === 'string' ? `Frontmost app: ${snapshot.appName}` : null,
+    snapshot && typeof snapshot.windowTitle === 'string' ? `Window title: ${snapshot.windowTitle}` : null,
+    ...stateLines,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeComputerSurfaceElements(data: unknown, targetApp: string): string[] {
+  const metadata = isRecord(data) && isRecord(data.metadata) ? data.metadata : null;
+  const output = isRecord(data) && typeof data.output === 'string' ? data.output : '';
+  const candidateCount = Array.isArray(metadata?.elements)
+    ? metadata.elements.length
+    : Array.isArray(metadata?.candidates)
+      ? metadata.candidates.length
+      : null;
+  const outputLines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  return [
+    `Target app: ${targetApp}`,
+    candidateCount !== null ? `Candidates: ${candidateCount}` : null,
+    ...outputLines,
+  ].filter((line): line is string => Boolean(line));
 }
 
 // ============================================================================

@@ -7,8 +7,8 @@ import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
-import { logger, httpsAgent, parseContextLengthError, buildToolCallFromAccumulator } from './shared';
-import { PROVIDER_TIMEOUT } from '../../../shared/constants';
+import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator } from './shared';
+import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 
 /**
  * 规范化工具名称
@@ -53,8 +53,11 @@ export interface SSEStreamOptions {
   agent?: https.Agent | http.Agent;
   extraHeaders?: Record<string, string>;
   timeout?: number;
-  /** 首字节超时（ms），连接成功后在此时间内未收到任何数据则断开。默认 60000 */
+  /** 首字节超时（ms），连接成功后在此时间内未收到任何数据则断开。默认 SSE_FIRST_BYTE_TIMEOUT */
   firstByteTimeout?: number;
+  /** Chunk-gap 静默超时（ms）：收到首字节后，两个真正 SSE data 行之间的最大间隔。
+   *  默认 SSE_INACTIVITY_TIMEOUT。注释行 (`:`) 和 keep-alive 不会重置该 timer。 */
+  inactivityTimeout?: number;
   /** API 路径，默认 '/chat/completions' */
   endpoint?: string;
   /** Periodic snapshot callback for mid-stream persistence. Called every snapshotIntervalMs with accumulated state. */
@@ -102,7 +105,8 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     agent,
     extraHeaders,
     timeout = PROVIDER_TIMEOUT,
-    firstByteTimeout = 60000,
+    firstByteTimeout = SSE_FIRST_BYTE_TIMEOUT,
+    inactivityTimeout = SSE_INACTIVITY_TIMEOUT,
     endpoint = '/chat/completions',
     onSnapshot,
     snapshotIntervalMs,
@@ -134,6 +138,15 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     let lastSnapshotTime = 0;
     const snapshotInterval = snapshotIntervalMs ?? 3000;
 
+    // Chunk-gap inactivity watchdog state（提到 Promise 顶层以便 signal abort 路径访问）
+    let inactivityTimer: NodeJS.Timeout | null = null;
+    const clearInactivityTimer = () => {
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+      }
+    };
+
     function emitSnapshot(isFinal: boolean) {
       if (!onSnapshot) return;
       onSnapshot({
@@ -157,7 +170,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         Accept: 'text/event-stream',
         ...extraHeaders,
       },
-      agent: agent || httpsAgent,
+      agent: agent || getHttpsAgent(),
       timeout,
     };
 
@@ -211,10 +224,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       const decoder = new StringDecoder('utf8');
       let receivedFirstByte = false;
 
-      // First-byte timeout: 连接成功（HTTP 200）后，如果在 firstByteTimeout 内
-      // 没有收到任何有效 SSE data chunk，主动断开。
-      // 这覆盖了 Node.js socket timeout 无法检测的场景：
-      // TCP 连接成功、HTTP 200 已返回，但服务端不发送任何 SSE 事件。
+      // 阶段 1：HTTP 200 后等首字节
       const firstByteTimer = setTimeout(() => {
         if (!receivedFirstByte) {
           logger.warn(`[${providerName}] First-byte timeout: ${firstByteTimeout}ms 内未收到任何 SSE 数据`);
@@ -222,10 +232,28 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         }
       }, firstByteTimeout);
 
+      // 阶段 2：首字节后，监控真 SSE data 行的 chunk-gap inactivity。
+      // 注释行 (`:`) 和 TCP keep-alive 不会重置该 timer，因为它们不代表"模型在生成"。
+      // 触发后 emit error event + req.destroy(error)，由 retryStrategy 接住自动重试。
+      const armInactivityTimer = () => {
+        clearInactivityTimer();
+        inactivityTimer = setTimeout(() => {
+          logger.warn(`[${providerName}] Stream inactivity: ${inactivityTimeout}ms 内未收到 SSE data 行，主动 abort`);
+          if (onStream) {
+            onStream({
+              type: 'error',
+              error: `${providerName} stream inactivity timeout (${inactivityTimeout}ms)`,
+            });
+          }
+          req.destroy(new Error(`${providerName} stream inactivity timeout (${inactivityTimeout}ms)`));
+        }, inactivityTimeout);
+      };
+
       res.on('data', (chunk: Buffer) => {
         if (!receivedFirstByte) {
           receivedFirstByte = true;
           clearTimeout(firstByteTimer);
+          armInactivityTimer();
         }
         buffer += decoder.write(chunk);
         const lines = buffer.split('\n');
@@ -238,6 +266,8 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
           // 兼容 "data:" 和 "data: " 两种格式
           if (!line.startsWith('data:')) continue;
+          // 真正的 SSE data 行：重置 inactivity timer
+          armInactivityTimer();
           const data = line.slice(5).trim();
 
           if (data === '[DONE]') {
@@ -294,6 +324,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
               });
             }
 
+            clearInactivityTimer();
             emitSnapshot(true);
             resolve(result);
             return;
@@ -429,6 +460,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
       res.on('end', () => {
         clearTimeout(firstByteTimer);
+        clearInactivityTimer();
         // 从 content 中提取 <think> 块，合并到 reasoning
         const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
         let thinkMatch;
@@ -465,6 +497,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
       res.on('error', (err) => {
         clearTimeout(firstByteTimer);
+        clearInactivityTimer();
         logger.warn(`[${providerName}] 响应错误:`, err);
         if (onStream) {
           onStream({
@@ -496,6 +529,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
     if (signal) {
       signal.addEventListener('abort', () => {
+        clearInactivityTimer();
         req.destroy();
         reject(new Error('Request was cancelled'));
       }, { once: true });

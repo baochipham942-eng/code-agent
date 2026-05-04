@@ -33,12 +33,12 @@ export const REMINDERS: Record<ReminderType, string> = {
 <system-reminder>
 **并行派发提醒**：检测到多维度任务。
 
-你应该在**单个响应中同时派发多个 task**，而不是逐个执行：
+你应该在**单个响应中同时派发多个 Task**，而不是逐个执行：
 
 \`\`\`
-task(subagent_type="code-review", prompt="维度1: ...")
-task(subagent_type="explore", prompt="维度2: ...")
-task(subagent_type="code-review", prompt="维度3: ...")
+Task(subagent_type="reviewer", prompt="维度1: ...")
+Task(subagent_type="explore", prompt="维度2: ...")
+Task(subagent_type="reviewer", prompt="维度3: ...")
 \`\`\`
 
 各维度之间无依赖关系时，并行派发能显著提高效率。
@@ -52,12 +52,13 @@ task(subagent_type="code-review", prompt="维度3: ...")
 <system-reminder>
 **委派提醒**：这是一个需要广泛探索的复杂任务。
 
-请使用 task 工具委派给子代理，子代理有专门的工具和上下文窗口，比直接执行更高效。
+可以使用 Task 工具委派给子代理，子代理有专门的工具和上下文窗口。
 
-不要直接使用 Glob/Grep/Read，而应该：
-- 安全审计 → task(subagent_type="code-review", prompt="...")
-- 代码探索 → task(subagent_type="explore", prompt="...")
-- 架构分析 → task(subagent_type="plan", prompt="...")
+如果目标文件、函数、编辑区域已经明确，直接使用 Read/Grep/Edit 完成。
+需要委派时使用真实工具名：
+- 安全审计 → Task(subagent_type="reviewer", prompt="...")
+- 代码探索 → Task(subagent_type="explore", prompt="...")
+- 架构分析 → Task(subagent_type="plan", prompt="...")
 </system-reminder>
 `,
 
@@ -87,7 +88,7 @@ task(subagent_type="code-review", prompt="维度3: ...")
 **审计模式**：检测到安全/代码审计任务。
 
 推荐流程：
-1. 并行派发多个 code-review 子代理，每个负责一个维度
+1. 并行派发多个 reviewer 子代理，每个负责一个维度
 2. 收集所有子代理的审计结果
 3. 整合生成完整审计报告
 
@@ -104,7 +105,7 @@ task(subagent_type="code-review", prompt="维度3: ...")
 
 推荐流程：
 1. 先用 bash 获取变更文件列表（git diff --name-only）
-2. 并行派发 code-review 子代理分析不同方面
+2. 并行派发 reviewer 子代理分析不同方面
 3. 整合生成审查报告
 
 审查维度示例：代码质量、潜在问题、性能考量、安全性、可维护性

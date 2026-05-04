@@ -96,7 +96,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
-import { sdkTaskTool, spawnAgentTool, agentSpawnTool, sendInputTool } from '../../agent/multiagentTools';
+import { sdkTaskTool, exploreTool, spawnAgentTool, agentSpawnTool, sendInputTool } from '../../agent/multiagentTools';
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -499,7 +499,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/wrappers')).confirmActionModule,
   );
   registry.register(
-    { name: 'Explore', description: 'Spawn an explorer sub-agent to gather context.', inputSchema: minSchema({ prompt: { type: 'string' } }, ['prompt']), category: 'planning', permissionLevel: 'execute' },
+    legacyToolSchema(exploreTool, {
+      category: 'planning',
+      permissionLevel: 'execute',
+    }),
     async () => (await import('./planning/wrappers')).exploreModule,
   );
 

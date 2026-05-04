@@ -79,6 +79,22 @@ export class StreamHandler {
   }
 
   /**
+   * Flush runtime diagnostics into the assistant thinking stream once a turn exists.
+   */
+  private flushRuntimeDiagnostics(): void {
+    const diagnostics = this.ctx.pendingRuntimeDiagnostics.splice(0);
+    for (const diagnostic of diagnostics) {
+      this.ctx.onEvent({
+        type: 'stream_reasoning',
+        data: {
+          content: `\n[runtime] ${diagnostic}\n`,
+          turnId: this.ctx.currentTurnId,
+        },
+      });
+    }
+  }
+
+  /**
    * Setup iteration: emit events, reset turn state, inject goal checkpoints.
    */
   setupIteration(
@@ -98,6 +114,7 @@ export class StreamHandler {
       type: 'turn_start',
       data: { turnId: this.ctx.currentTurnId, iteration: iterations },
     });
+    this.flushRuntimeDiagnostics();
 
     this.ctx.turnStartTime = Date.now();
     this.ctx.toolsUsedInTurn = [];

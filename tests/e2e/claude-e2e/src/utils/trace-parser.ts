@@ -1,5 +1,19 @@
 import { ExecutionTrace, ToolCall, AgentDispatch } from '../types.js';
 
+type TraceRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is TraceRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value ? value : fallback;
+}
+
+function recordValue(value: unknown): TraceRecord {
+  return isRecord(value) ? value : {};
+}
+
 /**
  * 从 CLI 输出解析执行轨迹
  * 支持两种格式:
@@ -31,8 +45,8 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
         const toolCall = parseCodeAgentToolCall(event.data);
         toolCallMap.set(event.data.id, toolCall);
 
-        // 检查是否是 agent dispatch 工具 (spawn_agent 或 task)
-        if (event.data.name === 'spawn_agent' || event.data.name === 'task') {
+        // 检查是否是 agent dispatch 工具 (Task / spawn_agent)
+        if (isAgentDispatchTool(event.data.name)) {
           const dispatch = parseCodeAgentDispatch(event.data);
           if (currentAgentStack.length > 0) {
             dispatch.parentAgentId =
@@ -83,7 +97,7 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
             const toolCall = parseClaudeToolCall(content);
             toolCallMap.set(content.id, toolCall);
 
-            if (content.name === 'Task' || content.name === 'task') {
+            if (isAgentDispatchTool(content.name)) {
               const dispatch = parseClaudeAgentDispatch(content);
               if (currentAgentStack.length > 0) {
                 dispatch.parentAgentId =
@@ -143,27 +157,31 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
 
 // ===== code-agent 格式解析 =====
 
-function parseCodeAgentToolCall(data: any): ToolCall {
+function parseCodeAgentToolCall(data: TraceRecord): ToolCall {
   return {
-    id: data.id || `tool-${Date.now()}`,
-    name: data.name,
-    input: data.arguments || {},
+    id: stringValue(data.id, `tool-${Date.now()}`),
+    name: stringValue(data.name, 'unknown'),
+    input: recordValue(data.arguments),
     duration: 0,
     timestamp: Date.now(),
   };
 }
 
-function parseCodeAgentDispatch(data: any): AgentDispatch {
-  const args = data.arguments || {};
+function parseCodeAgentDispatch(data: TraceRecord): AgentDispatch {
+  const args = recordValue(data.arguments);
   return {
-    id: data.id || `agent-${Date.now()}`,
+    id: stringValue(data.id, `agent-${Date.now()}`),
     // 支持多种参数名：subagent_type (task), agent_type (spawn_agent), role (legacy)
-    agentType: args.subagent_type || args.agent_type || args.role || 'unknown',
-    prompt: args.task || args.prompt || '',
+    agentType: stringValue(args.subagent_type, stringValue(args.agent_type, stringValue(args.role, stringValue(args.agent, 'unknown')))),
+    prompt: stringValue(args.task, stringValue(args.prompt, '')),
     toolCalls: [],
     duration: 0,
     timestamp: Date.now(),
   };
+}
+
+function isAgentDispatchTool(name: string): boolean {
+  return name === 'Task' || name === 'task' || name === 'spawn_agent' || name === 'AgentSpawn';
 }
 
 /**
@@ -199,22 +217,22 @@ function extractToolCallsFromAgentResult(output: string): ToolCall[] {
 
 // ===== Claude CLI 格式解析 =====
 
-function parseClaudeToolCall(content: any): ToolCall {
+function parseClaudeToolCall(content: TraceRecord): ToolCall {
   return {
-    id: content.id || `tool-${Date.now()}`,
-    name: content.name,
-    input: content.input || {},
+    id: stringValue(content.id, `tool-${Date.now()}`),
+    name: stringValue(content.name, 'unknown'),
+    input: recordValue(content.input),
     duration: 0,
     timestamp: Date.now(),
   };
 }
 
-function parseClaudeAgentDispatch(content: any): AgentDispatch {
-  const input = content.input || {};
+function parseClaudeAgentDispatch(content: TraceRecord): AgentDispatch {
+  const input = recordValue(content.input);
   return {
-    id: content.id || `agent-${Date.now()}`,
-    agentType: input.subagent_type || input.agent_type || 'unknown',
-    prompt: input.prompt || input.description || '',
+    id: stringValue(content.id, `agent-${Date.now()}`),
+    agentType: stringValue(input.subagent_type, stringValue(input.agent_type, stringValue(input.role, stringValue(input.agent, 'unknown')))),
+    prompt: stringValue(input.prompt, stringValue(input.task, stringValue(input.description, ''))),
     toolCalls: [],
     duration: 0,
     timestamp: Date.now(),

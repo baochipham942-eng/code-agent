@@ -316,6 +316,58 @@ describe('computer surface gating', () => {
     expect(surfaceMocks.surface.authorizeAction).not.toHaveBeenCalled();
   });
 
+  it('carries protected app observe blocks through tool metadata', async () => {
+    const blockingReasons = ['Computer Surface blocked observe for a protected app.'];
+    const blockedState = {
+      ...surfaceMocks.surface.getState(),
+      approvalScope: 'blocked' as const,
+      targetApp: null,
+      failureKind: 'permission_denied' as const,
+      blockingReasons,
+      recommendedAction: 'Choose a non-protected target app.',
+    };
+    surfaceMocks.surface.observe.mockResolvedValueOnce({
+      capturedAtMs: 1,
+      appName: null,
+      windowTitle: null,
+      failureKind: 'permission_denied',
+      blockingReasons,
+      recommendedAction: 'Choose a non-protected target app.',
+    });
+    surfaceMocks.surface.getState.mockReturnValueOnce(blockedState);
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'observe',
+        targetApp: 'Terminal',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('Target: protected app blocked');
+    expect(result.metadata).toMatchObject({
+      targetApp: null,
+      failureKind: 'permission_denied',
+      blockingReasons,
+      recommendedAction: 'Choose a non-protected target app.',
+      computerSurface: expect.objectContaining({
+        targetApp: null,
+        failureKind: 'permission_denied',
+      }),
+      computerSurfaceSnapshot: expect.objectContaining({
+        appName: null,
+        windowTitle: null,
+        failureKind: 'permission_denied',
+      }),
+    });
+    expect(surfaceMocks.surface.observe).toHaveBeenCalledWith({
+      includeScreenshot: undefined,
+      targetApp: 'Terminal',
+    });
+    expect(surfaceMocks.surface.authorizeAction).not.toHaveBeenCalled();
+  });
+
   it('blocks foreground desktop actions when app approval is denied', async () => {
     const result = await computerUseTool.execute(
       {
@@ -862,6 +914,58 @@ describe('computer surface gating', () => {
         recommended: true,
       }),
     ]);
+  });
+
+  it('preserves protected app get_windows failure metadata without leaking the target', async () => {
+    const blockingReasons = ['Computer Surface blocked window listing for a protected app.'];
+    const blockedState = {
+      ...surfaceMocks.surface.getState(),
+      mode: 'background_cgevent' as const,
+      background: true,
+      requiresForeground: false,
+      approvalScope: 'blocked' as const,
+      targetApp: null,
+      failureKind: 'permission_denied' as const,
+      blockingReasons,
+      recommendedAction: 'Choose a non-protected target app.',
+    };
+    surfaceMocks.surface.listBackgroundCgEventWindows.mockResolvedValueOnce({
+      success: false,
+      error: blockingReasons[0],
+      metadata: {
+        backgroundSurface: true,
+        computerSurfaceMode: 'background_cgevent',
+        targetApp: null,
+        failureKind: 'permission_denied',
+        blockingReasons,
+        recommendedAction: 'Choose a non-protected target app.',
+      },
+    });
+    surfaceMocks.surface.getState.mockReturnValueOnce(blockedState);
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'get_windows',
+        targetApp: 'Terminal',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.metadata).toMatchObject({
+      computerSurfaceMode: 'background_cgevent',
+      targetApp: null,
+      failureKind: 'permission_denied',
+      blockingReasons,
+      recommendedAction: 'Choose a non-protected target app.',
+      computerSurface: expect.objectContaining({
+        targetApp: null,
+        failureKind: 'permission_denied',
+      }),
+    });
+    expect(result.metadata).not.toHaveProperty('windows');
+    expect(result.metadata).not.toHaveProperty('recommendedWindow');
+    expect(surfaceMocks.surface.authorizeAction).not.toHaveBeenCalled();
   });
 
   it('diagnoses a target app without action approval', async () => {

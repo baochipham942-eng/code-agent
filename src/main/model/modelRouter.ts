@@ -10,7 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
+import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -124,8 +124,8 @@ export class ModelRouter {
     gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     // 搜索 - Perplexity (按需)
     search: { provider: 'perplexity', model: 'sonar-pro' },
-    // 压缩 - 默认主力包月无成本
-    compact: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.compact },
+    // 压缩 - Kimi 需要走 Moonshot provider，不能和 DEFAULT_PROVIDER 机械拼接
+    compact: { ...AGENT_DEFAULT_MODEL },
     // 快速判断 - 智谱 GLM-4.7 Flash (免费)
     quick: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
     // 长上下文 - 默认主力包月
@@ -151,7 +151,8 @@ export class ModelRouter {
     // 1. 优先检查当前 provider 是否有支持该能力的模型
     const sameProviderModel = this.findSameProviderFallback(
       originalConfig.provider,
-      capability
+      capability,
+      originalConfig.model
     );
     if (sameProviderModel) {
       logger.debug(`使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`);
@@ -169,13 +170,25 @@ export class ModelRouter {
 
     logger.debug(`使用默认 fallback: ${fallback.provider}/${fallback.model}`);
 
-    const fallbackModelInfo = this.getModelInfo(fallback.provider, fallback.model);
+    const fallbackProvider = fallback.provider as ModelProvider;
+    const fallbackModelInfo = this.getModelInfo(fallbackProvider, fallback.model);
+    const providerSettings = this.getProviderSettings(fallbackProvider);
     return {
       ...originalConfig,
-      provider: fallback.provider as ModelProvider,
+      provider: fallbackProvider,
       model: fallback.model,
+      apiKey: getConfigService().getApiKey(fallbackProvider),
+      baseUrl: providerSettings?.baseUrl,
       maxTokens: fallbackModelInfo?.maxTokens || 1024,
     };
+  }
+
+  private getProviderSettings(provider: ModelProvider): { baseUrl?: string } | undefined {
+    try {
+      return getConfigService().getSettings().models?.providers?.[provider];
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -183,10 +196,19 @@ export class ModelRouter {
    */
   private findSameProviderFallback(
     provider: ModelProvider,
-    capability: ModelCapability
+    capability: ModelCapability,
+    originalModel?: string
   ): string | null {
     const providerConfig = PROVIDER_REGISTRY[provider];
     if (!providerConfig) return null;
+
+    if (capability === 'compact') {
+      const currentModel = providerConfig.models.find((m) => m.id === originalModel);
+      if (currentModel && this.canSummarizeForCompaction(currentModel)) {
+        return currentModel.id;
+      }
+      return null;
+    }
 
     const capabilityToFlag: Partial<Record<ModelCapability, keyof typeof providerConfig.models[0]>> = {
       vision: 'supportsVision',
@@ -211,6 +233,15 @@ export class ModelRouter {
     );
 
     return fastModel?.id || supportingModels[0].id;
+  }
+
+  private canSummarizeForCompaction(model: ModelInfo): boolean {
+    return model.supportsStreaming !== false && model.capabilities.some((capability) =>
+      capability === 'general' ||
+      capability === 'code' ||
+      capability === 'longContext' ||
+      capability === 'unlimited'
+    );
   }
 
   /**

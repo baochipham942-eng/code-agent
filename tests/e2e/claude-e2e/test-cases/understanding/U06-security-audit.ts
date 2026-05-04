@@ -49,7 +49,7 @@ export const U06: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['explore'], // code-review 是可选的，explore 是核心（安全审计需要全面探索）
+    expectedAgents: ['explore'], // reviewer 是可选的，explore 是核心（安全审计需要全面探索）
     requiredTools: ['Glob', 'Read', 'Grep'],
     toolCallRange: { min: 10, max: 30 },
   },

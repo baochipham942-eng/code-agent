@@ -84,6 +84,22 @@ describe('CompressionPipeline', () => {
       expect(transcript[1].content).toBe(bigContent);
       expect(result.compressionState.getSnapshot().budgetedResults.has('t1')).toBe(false);
     });
+
+    it('should preserve file evidence tool results from automatic tool budgeting', async () => {
+      const bigContent = makeText(3000);
+      const transcript: ProjectableMessage[] = [
+        makeMsg('u1', 'user', 'Read file'),
+        { ...makeMsg('t1', 'tool', bigContent), preserveObservation: true },
+      ];
+
+      const result = await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        protectedToolResultPredicate: (message) => message.preserveObservation === true,
+      });
+
+      expect(transcript[1].content).toBe(bigContent);
+      expect(result.compressionState.getSnapshot().budgetedResults.has('t1')).toBe(false);
+    });
   });
 
   // --------------------------------------------------------------------------

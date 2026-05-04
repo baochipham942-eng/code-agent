@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ModelResponse } from '../../../src/main/agent/loopTypes';
+import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import type { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
+import type { RunFinalizer } from '../../../src/main/agent/runtime/runFinalizer';
+import type { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecutionEngine';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
@@ -37,6 +42,20 @@ vi.mock('../../../src/main/mcp/logCollector.js', () => ({
 
 import { MessageProcessor } from '../../../src/main/agent/runtime/messageProcessor';
 
+function createProcessor(
+  ctx: Partial<RuntimeContext>,
+  contextAssembly: Partial<ContextAssembly> = {},
+  runFinalizer: Partial<RunFinalizer> = {},
+  toolEngine: Partial<ToolExecutionEngine> = {},
+): MessageProcessor {
+  return new MessageProcessor(
+    ctx as RuntimeContext,
+    contextAssembly as ContextAssembly,
+    runFinalizer as RunFinalizer,
+    toolEngine as ToolExecutionEngine,
+  );
+}
+
 describe('MessageProcessor persistence', () => {
   beforeEach(() => {
     delete process.env.CODE_AGENT_CLI_MODE;
@@ -50,7 +69,7 @@ describe('MessageProcessor persistence', () => {
       sessionId: 'runtime-session-1',
       messages: [],
     };
-    const processor = new MessageProcessor(ctx as any, {} as any, {} as any, {} as any);
+    const processor = createProcessor(ctx);
 
     processor.injectSteerMessage('continue with care');
 
@@ -69,7 +88,7 @@ describe('MessageProcessor persistence', () => {
       sessionId: 'runtime-session-1',
       messages: [],
     };
-    const processor = new MessageProcessor(ctx as any, {} as any, {} as any, {} as any);
+    const processor = createProcessor(ctx);
 
     processor.injectSteerMessage('continue with care', 'client-message-1');
 
@@ -93,6 +112,8 @@ describe('MessageProcessor persistence', () => {
       currentTurnId: 'turn-1',
       currentIterationSpanId: 'iteration-1',
       currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
       toolsUsedInTurn: [],
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -125,19 +146,14 @@ describe('MessageProcessor persistence', () => {
         return [{ toolCallId: 'tool-1', success: true, output: 'late result' }];
       }),
     };
-    const processor = new MessageProcessor(
-      ctx as any,
-      contextAssembly as any,
-      runFinalizer as any,
-      toolEngine as any,
-    );
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
         type: 'tool_use',
         content: '',
         toolCalls: [{ id: 'tool-1', name: 'read_file', arguments: { path: 'a.txt' } }],
-      } as any,
+      } as ModelResponse,
       false,
       1,
       { endSpan: vi.fn() },
@@ -152,5 +168,76 @@ describe('MessageProcessor persistence', () => {
     expect(runFinalizer.autoAdvanceTodos).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter.onTurnEnd).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
+  });
+
+  it('persists truncated text before asking the next iteration to continue', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      effortLevel: 'medium',
+      _researchModeActive: false,
+      _consecutiveTruncations: 0,
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      toolsUsedInTurn: [],
+      isSimpleTaskMode: false,
+      nudgeManager: {
+        runNudgeChecks: vi.fn(),
+        runOutputValidation: vi.fn(),
+      },
+      antiScrapingHitsInRun: 0,
+      onEvent: vi.fn(),
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '```ts\nexport const longFile = [\n  "part one",',
+        truncated: true,
+        finishReason: 'length',
+        usage: { inputTokens: 1000, outputTokens: 4096 },
+      },
+      false,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'assistant-message-1',
+        role: 'assistant',
+        content: expect.stringContaining('part one'),
+      }),
+    );
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({ role: 'assistant', content: expect.stringContaining('part one') }),
+    ]);
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Continue from exactly where your previous response stopped'),
+    );
+    expect(ctx.modelConfig.maxTokens).toBeGreaterThan(4096);
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message',
+        data: expect.objectContaining({ id: 'assistant-message-1' }),
+      }),
+    );
   });
 });

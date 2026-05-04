@@ -62,6 +62,8 @@ import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../pr
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
+import { validateToolArgs } from './toolArgsValidator';
+import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
 import { NudgeManager } from '../../agent/nudgeManager';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
@@ -108,6 +110,57 @@ function sanitizeToolResultForObservation(
   result: ToolResult,
 ): ToolResult {
   return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
+}
+
+function extractReadFilePath(toolCall: Pick<ToolCall, 'name' | 'arguments'>): string | null {
+  if (toolCall.name !== 'read_file' && toolCall.name !== 'Read') return null;
+  const filePath = toolCall.arguments?.file_path || toolCall.arguments?.path;
+  return typeof filePath === 'string' && filePath.trim() ? filePath : null;
+}
+
+function isBashFileRead(toolCall: Pick<ToolCall, 'name' | 'arguments'>): boolean {
+  if (toolCall.name !== 'bash' && toolCall.name !== 'Bash') return false;
+  const command = toolCall.arguments?.command;
+  if (typeof command !== 'string') return false;
+  return /\b(cat|less|more|head|tail|sed|awk|nl|bat)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i.test(command);
+}
+
+function isFileEvidenceToolCall(toolCall: Pick<ToolCall, 'name' | 'arguments'>): boolean {
+  return Boolean(extractReadFilePath(toolCall)) || isBashFileRead(toolCall);
+}
+
+function markFileEvidenceResult(
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  result: ToolResult,
+): ToolResult {
+  if (!result.success || !result.output || !isFileEvidenceToolCall(toolCall)) {
+    return result;
+  }
+
+  const filePath = extractReadFilePath(toolCall);
+  return {
+    ...result,
+    metadata: {
+      ...result.metadata,
+      preserveObservation: true,
+      evidenceKind: 'file_read',
+      ...(filePath ? { filePath } : {}),
+    },
+  };
+}
+
+function activateForceFinalResponse(ctx: RuntimeContext, reason: string): void {
+  if (ctx.forceFinalResponseReason) return;
+  ctx.forceFinalResponseReason = reason;
+  ctx.forceFinalResponsePrompt = [
+    '<force-final-response reason="read-loop-hard-limit">',
+    'The runtime has stopped further tool use because the session entered a repeated read loop.',
+    'Use only the file evidence already present in tool results and persistent context.',
+    'Do not call any tool, do not switch to Bash/Python/Grep to re-read, and do not ask the user to repeat context.',
+    'If exact evidence is missing, say which evidence is missing instead of inventing it.',
+    'Produce the final answer now.',
+    '</force-final-response>',
+  ].join('\n');
 }
 
 // Re-export types for backward compatibility
@@ -443,6 +496,50 @@ export class ToolExecutionEngine {
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
     toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
+
+    // Schema validation gate — 在真实 dispatch 前用工具自身 inputSchema 校验
+    // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
+    const definition = getToolDefinitionWithCloudMeta(toolCall.name);
+    const validation = validateToolArgs(
+      toolCall.name,
+      definition?.inputSchema,
+      toolCall.arguments as Record<string, unknown>,
+    );
+    if (!validation.ok) {
+      logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation`);
+      logCollector.tool('WARN', `Tool ${toolCall.name} args failed schema validation`, {
+        toolCallId: toolCall.id,
+      });
+
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: validation.message,
+        duration: Date.now() - startTime,
+      };
+
+      this.contextAssembly.injectSystemMessage(validation.message);
+
+      emitToolCallStart();
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
+
+      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
+        try {
+          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
+          this.ctx.onToolExecutionLog({
+            sessionId: this.ctx.sessionId,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
+            result: safeToolResult,
+          });
+        } catch { /* never let logging break tool execution */ }
+      }
+
+      return toolResult;
+    }
+
     if (this.isRunCancelled()) {
       return this.buildSuppressedCancelledResult(toolCall, startTime);
     }
@@ -633,8 +730,12 @@ export class ToolExecutionEngine {
         this.ctx.circuitBreaker.recordSuccess();
       }
 
-      // F1: Goal Tracker — 记录工具执行动作
-      this.ctx.goalTracker.recordAction(toolCall.name, normalizedResult.success);
+      // F1: Goal Tracker — 记录工具执行动作（成功/失败 + error hint）
+      this.ctx.goalTracker.recordAction(
+        toolCall.name,
+        normalizedResult.success,
+        normalizedResult.error,
+      );
 
       // Anti-pattern tracking for tool failures (F2: 4-level escalation)
       if (!normalizedResult.success && normalizedResult.error) {
@@ -642,7 +743,7 @@ export class ToolExecutionEngine {
         if (failureWarning === 'ESCALATE_TO_USER') {
           this.contextAssembly.injectSystemMessage(
             `<escalation>\n` +
-            `已尝试多次无法完成此操作。请立即向用户说明遇到的问题，不要再重试。\n` +
+            `已尝试多次无法完成此操作。立即调用 AskUserQuestion 工具，把"已尝试什么 / 错在哪 / 需要用户提供什么信息"清晰列出来让用户选择，不要再用同样的方式重试，也不要静默退出。\n` +
             `</escalation>`
           );
         } else if (failureWarning) {
@@ -730,8 +831,19 @@ export class ToolExecutionEngine {
       }
 
       // Track read vs write operations
-      const readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
+      let readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
+      if (
+        !readWriteWarning &&
+        normalizedResult.success &&
+        (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
+        typeof toolCall.arguments?.command === 'string'
+      ) {
+        readWriteWarning = this.ctx.antiPatternDetector.trackReadOnlyShellCommand(
+          toolCall.arguments.command as string,
+        );
+      }
       if (readWriteWarning === 'HARD_LIMIT') {
+        activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，最后一次工具为 ${toolCall.name}`);
         const hardLimitResult: ToolResult = {
           toolCallId: toolCall.id,
           success: false,
@@ -750,11 +862,13 @@ export class ToolExecutionEngine {
         this.contextAssembly.injectSystemMessage(readWriteWarning);
       }
 
+      const preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
+
       // User-configurable Post-Tool Hook
       if (this.ctx.hookManager) {
         try {
           const toolInput = JSON.stringify(toolCall.arguments);
-          const toolOutput = toolResult.output || '';
+          const toolOutput = preservedToolResult.output || '';
           const userPostResult = await this.ctx.hookManager.triggerPostToolUse(
             toolCall.name,
             toolInput,
@@ -845,12 +959,12 @@ export class ToolExecutionEngine {
       });
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500), toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, preservedToolResult.success, preservedToolResult.error, preservedToolResult.duration || 0, preservedToolResult.output?.substring(0, 500), preservedToolResult.metadata);
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, preservedToolResult) });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
-          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
+          const safeToolResult = sanitizeToolResultForObservation(toolCall, preservedToolResult);
           this.ctx.onToolExecutionLog({
             sessionId: this.ctx.sessionId,
             toolCallId: toolCall.id,
@@ -864,7 +978,7 @@ export class ToolExecutionEngine {
       }
 
 
-      return toolResult;
+      return preservedToolResult;
     } catch (error) {
       clearInterval(progressInterval);
       if (this.isRunCancelled()) {

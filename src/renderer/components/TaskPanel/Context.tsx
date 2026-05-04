@@ -102,7 +102,7 @@ export const Context: React.FC = () => {
               </ReactMarkdown>
             </div>
           ) : (
-            <pre className="text-zinc-400 overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="text-zinc-400 overflow-x-auto scrollbar-hidden whitespace-pre-wrap break-all">
               {stringValue}
             </pre>
           )}
@@ -162,9 +162,9 @@ export const Context: React.FC = () => {
                 )}
               </button>
 
-              {/* Expanded details with scroll and markdown support */}
+              {/* Expanded details with markdown support */}
               {isExpanded && hasDetails && (
-                <div className="px-2 py-2 bg-zinc-900 text-xs max-h-48 overflow-y-auto custom-scrollbar">
+                <div className="px-2 py-2 bg-zinc-900 text-xs">
                   {renderDetails(item.details!)}
                 </div>
               )}

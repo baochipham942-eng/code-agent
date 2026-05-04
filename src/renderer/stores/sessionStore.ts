@@ -132,6 +132,50 @@ interface CreateSessionOptions {
   workingDirectory?: string | null;
 }
 
+function normalizeDraftDirectory(value?: string | null): string {
+  return value?.trim() ?? '';
+}
+
+function isUntouchedNewSession(
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
+  workingDirectory?: string | null,
+): boolean {
+  if (session.isArchived || session.status === 'archived') {
+    return false;
+  }
+  if ((session.title || '').trim() !== '新对话') {
+    return false;
+  }
+  if ((session.messageCount ?? 0) > 0 || (session.turnCount ?? 0) > 0) {
+    return false;
+  }
+  return normalizeDraftDirectory(session.workingDirectory) === normalizeDraftDirectory(workingDirectory);
+}
+
+export function findReusableNewSessionDraft(params: {
+  sessions: SessionWithMeta[];
+  currentSessionId: string | null;
+  messages: Message[];
+  todos: TodoItem[];
+  workingDirectory?: string | null;
+}): SessionWithMeta | null {
+  const current = params.currentSessionId
+    ? params.sessions.find((session) => session.id === params.currentSessionId) ?? null
+    : null;
+  if (
+    current &&
+    params.messages.length === 0 &&
+    params.todos.length === 0 &&
+    isUntouchedNewSession(current, params.workingDirectory)
+  ) {
+    return current;
+  }
+
+  return params.sessions.find((session) =>
+    isUntouchedNewSession(session, params.workingDirectory)
+  ) ?? null;
+}
+
 interface SessionState {
   sessions: SessionWithMeta[];
   currentSessionId: string | null;
@@ -227,11 +271,34 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     createSession: async (title?: string, options?: CreateSessionOptions) => {
-      set({ isLoading: true, error: null });
       try {
+        const inheritedWorkingDirectory =
+          options?.workingDirectory !== undefined
+            ? options.workingDirectory
+            : useAppStore.getState().workingDirectory;
+        const nextTitle = title?.trim() || '新对话';
+        if (nextTitle === '新对话') {
+          const reusableSession = findReusableNewSessionDraft({
+            sessions: get().sessions,
+            currentSessionId: get().currentSessionId,
+            messages: get().messages,
+            todos: get().todos,
+            workingDirectory: inheritedWorkingDirectory,
+          });
+          if (reusableSession) {
+            if (get().currentSessionId !== reusableSession.id) {
+              await get().switchSession(reusableSession.id);
+            }
+            useAppStore.getState().setWorkingDirectory(reusableSession.workingDirectory ?? null);
+            set({ isLoading: false, error: null });
+            return reusableSession;
+          }
+        }
+
+        set({ isLoading: true, error: null });
         const session = await invokeSession<Session | null>('create', {
-          title,
-          workingDirectory: options?.workingDirectory,
+          title: nextTitle,
+          workingDirectory: inheritedWorkingDirectory,
         });
         if (session) {
           const newSessionWithMeta: SessionWithMeta = normalizeSession({
@@ -270,9 +337,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
       const switchVersion = ++_switchCounter;
+      const previewSession = get().sessions.find((session) => session.id === sessionId) ?? null;
+      const nextUnreadIds = new Set(unreadSessionIds);
+      nextUnreadIds.delete(sessionId);
 
       useAppStore.getState().setContextHealth(null);
-      set({ isLoading: true, error: null });
+      useAppStore.getState().setWorkingDirectory(previewSession?.workingDirectory ?? null);
+      set({
+        currentSessionId: sessionId,
+        messages: [],
+        todos: [],
+        streamSnapshot: null,
+        hasOlderMessages: false,
+        isLoadingOlder: false,
+        unreadSessionIds: nextUnreadIds,
+        isLoading: true,
+        error: null,
+      });
       try {
         const session = await invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId });
 
@@ -288,9 +369,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messageCount: (session as SessionWithMeta).messageCount || session.messages?.length || 0,
             turnCount: session.turnCount || session.messages?.filter((message) => message.role === 'user').length || 0,
           });
-          const newUnreadIds = new Set(unreadSessionIds);
-          newUnreadIds.delete(sessionId);
-
           const loadedMessages = hydrateToolCallResults(session.messages || []);
           const totalCount = (session as any).messageCount ?? loadedMessages.length;
           useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
@@ -300,7 +378,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             todos: session.todos || [],
             streamSnapshot: session.streamSnapshot || null,
             isLoading: false,
-            unreadSessionIds: newUnreadIds,
+            unreadSessionIds: nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
             sessions: get().sessions.map((item) =>

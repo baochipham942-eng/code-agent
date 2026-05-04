@@ -28,6 +28,24 @@ export interface ConversationSummary {
   highlights: string[];
 }
 
+function normalizeSummaryKey(summary: ConversationSummary): string {
+  return `${summary.date}\u0000${summary.title.trim().replace(/\s+/g, ' ').toLowerCase()}`;
+}
+
+function mergeHighlights(existing: string[], next: string[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const value of [...existing, ...next]) {
+    const trimmed = value.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(trimmed);
+    if (merged.length >= 3) break;
+  }
+  return merged;
+}
+
 /**
  * Load existing conversation summaries.
  */
@@ -83,7 +101,18 @@ export async function appendConversationSummary(summary: ConversationSummary): P
     await ensureMemoryDir();
     let summaries = await loadSummaries();
 
-    summaries.push(summary);
+    const summaryKey = normalizeSummaryKey(summary);
+    const existingIndex = summaries.findIndex((item) => normalizeSummaryKey(item) === summaryKey);
+    if (existingIndex >= 0) {
+      const existing = summaries[existingIndex];
+      summaries.splice(existingIndex, 1);
+      summaries.push({
+        ...summary,
+        highlights: mergeHighlights(existing.highlights, summary.highlights),
+      });
+    } else {
+      summaries.push(summary);
+    }
 
     // Keep only the last MAX_ENTRIES
     if (summaries.length > MAX_ENTRIES) {
@@ -93,7 +122,7 @@ export async function appendConversationSummary(summary: ConversationSummary): P
     const content = `# Recent Conversations\n\n${formatSummaries(summaries)}\n`;
     await fs.writeFile(getSummaryPath(), content, 'utf-8');
 
-    logger.info(`Conversation summary appended: "${summary.title}" (${summaries.length} total)`);
+    logger.info(`Conversation summary saved: "${summary.title}" (${summaries.length} total)`);
   } catch (err) {
     logger.error('Failed to append conversation summary:', err);
   }

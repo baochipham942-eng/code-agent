@@ -249,6 +249,200 @@ describe('DesktopComputerSurface target boundaries', () => {
     expect(requestPermission).not.toHaveBeenCalled();
   });
 
+  it('blocks denied targetApp observe without reading app window details', async () => {
+    const surface = await loadSurface();
+
+    const snapshot = await surface.observe({ targetApp: 'Terminal' });
+
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+    expect(snapshot).toMatchObject({
+      appName: null,
+      windowTitle: null,
+      failureKind: 'permission_denied',
+      blockingReasons: expect.arrayContaining([
+        expect.stringContaining('protected app'),
+      ]),
+      recommendedAction: expect.any(String),
+    });
+  });
+
+  it('blocks denied targetApp get_windows without returning window identifiers', async () => {
+    const surface = await loadSurface();
+
+    const result = await surface.listBackgroundCgEventWindows({ targetApp: 'Terminal' });
+
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.output).toBeUndefined();
+    expect(result.metadata).toMatchObject({
+      computerSurfaceMode: 'background_cgevent',
+      targetApp: null,
+      failureKind: 'permission_denied',
+      blockingReasons: expect.arrayContaining([
+        expect.stringContaining('protected app'),
+      ]),
+      recommendedAction: expect.any(String),
+    });
+    expect(result.metadata).not.toHaveProperty('windows');
+    expect(result.metadata).not.toHaveProperty('recommendedWindow');
+  });
+
+  it('blocks denied targetApp diagnose_app without returning diagnosis or TCC details', async () => {
+    const surface = await loadSurface();
+
+    const result = await surface.diagnoseApp({ action: 'diagnose_app', targetApp: 'Terminal' });
+
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.metadata).toMatchObject({
+      computerSurfaceMode: 'background_cgevent',
+      targetApp: null,
+      failureKind: 'permission_denied',
+      blockingReasons: expect.arrayContaining([
+        expect.stringContaining('protected app'),
+      ]),
+      recommendedAction: expect.any(String),
+    });
+    expect(result.metadata).not.toHaveProperty('appDiagnosis');
+    expect(result.metadata).not.toHaveProperty('tcc');
+    expect(result.metadata).not.toHaveProperty('windows');
+  });
+
+  it('blocks denied targetApp authorization before observe and permission prompts', async () => {
+    const surface = await loadSurface();
+    const requestPermission = vi.fn(async () => true);
+
+    const authorization = await surface.authorizeAction({
+      action: 'click',
+      targetApp: 'Terminal',
+      role: 'button',
+      name: 'Run',
+    }, {
+      sessionId: 'session-a',
+      requestPermission,
+    });
+
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(authorization.allowed).toBe(false);
+    expect(authorization).toMatchObject({
+      failureKind: 'permission_denied',
+      blockingReasons: expect.arrayContaining([
+        expect.stringContaining('protected app'),
+      ]),
+      recommendedAction: expect.any(String),
+    });
+    expect(authorization.state).toMatchObject({
+      targetApp: null,
+      approvalScope: 'blocked',
+      failureKind: 'permission_denied',
+    });
+    expect(authorization.trace.before).toMatchObject({
+      appName: null,
+      title: null,
+    });
+    expect(authorization.trace.params).toEqual({ protectedTarget: true });
+  });
+
+  it('blocks denied targetApp mutating actions at the surface method', async () => {
+    const surface = await loadSurface();
+
+    const axResult = await surface.executeBackgroundAction({
+      action: 'click',
+      targetApp: 'Terminal',
+      role: 'button',
+      name: 'Run',
+    });
+    const cgEventResult = await surface.executeBackgroundCgEventAction({
+      action: 'click',
+      targetApp: 'Terminal',
+      pid: 1234,
+      windowId: 42,
+      windowLocalPoint: { x: 10, y: 20 },
+    });
+
+    expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+    expect(axResult).toMatchObject({
+      success: false,
+      metadata: {
+        targetApp: null,
+        failureKind: 'permission_denied',
+        blockingReasons: expect.arrayContaining([
+          expect.stringContaining('protected app'),
+        ]),
+        recommendedAction: expect.any(String),
+      },
+    });
+    expect(cgEventResult).toMatchObject({
+      success: false,
+      metadata: {
+        computerSurfaceMode: 'background_cgevent',
+        targetApp: null,
+        failureKind: 'permission_denied',
+        blockingReasons: expect.arrayContaining([
+          expect.stringContaining('protected app'),
+        ]),
+        recommendedAction: expect.any(String),
+      },
+    });
+  });
+
+  it('keeps session_app approvals scoped to the current session', async () => {
+    const surface = await loadSurface();
+    const requestPermission = vi.fn(async () => true);
+    const action = {
+      action: 'click',
+      targetApp: 'Finder',
+      role: 'button',
+      name: 'Back',
+    };
+
+    const sessionAFirst = await surface.authorizeAction(action, {
+      sessionId: 'session-a',
+      requestPermission,
+    });
+    const sessionASecond = await surface.authorizeAction(action, {
+      sessionId: 'session-a',
+      requestPermission,
+    });
+    const sessionB = await surface.authorizeAction(action, {
+      sessionId: 'session-b',
+      requestPermission,
+    });
+    const anonymous = await surface.authorizeAction(action, {
+      requestPermission,
+    });
+    const explicitAfterAnonymous = await surface.authorizeAction(action, {
+      sessionId: 'session-c',
+      requestPermission,
+    });
+
+    expect(sessionAFirst.allowed).toBe(true);
+    expect(sessionASecond.allowed).toBe(true);
+    expect(sessionB.allowed).toBe(true);
+    expect(anonymous.allowed).toBe(true);
+    expect(explicitAfterAnonymous.allowed).toBe(true);
+    expect(requestPermission).toHaveBeenCalledTimes(4);
+    expect(requestPermission).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      sessionId: 'session-a',
+    }));
+    expect(requestPermission).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sessionId: 'session-b',
+    }));
+    expect(requestPermission).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      sessionId: undefined,
+    }));
+    expect(requestPermission).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      sessionId: 'session-c',
+    }));
+    expect(surface.getState().approvedApps).toEqual(expect.arrayContaining([
+      'session-a:background_ax:finder',
+      'session-b:background_ax:finder',
+      'session-c:background_ax:finder',
+      'anonymous:background_ax:finder',
+    ]));
+  });
+
   it('grades poor AX candidate lists for dogfood triage', async () => {
     installMacOsSurfaceMocks({ axElementsStdout: '' });
     const surface = await loadSurface();

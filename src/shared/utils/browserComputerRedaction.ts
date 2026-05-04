@@ -1,5 +1,6 @@
 const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
+const SECRET_REF_PLACEHOLDER = "[secretRef]";
 const SENSITIVE_KEY_PATTERN =
   /password|token|secret|credential|cookie|authorization/i;
 const SENSITIVE_PATH_KEY_PATTERN =
@@ -31,6 +32,27 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
 
+export type BrowserComputerSecretScopeSummary =
+  | {
+      kind: "domain";
+      domains: string[];
+      source: "secretScope" | "domainScope" | "url";
+    }
+  | {
+      kind: "legacy_global";
+      explicitlyMarked: true;
+      source: "secretScope" | "legacyGlobalSecret";
+    }
+  | {
+      kind: "missing_domain_scope";
+      required: true;
+    };
+
+export interface BrowserComputerSecretPlaceholderSummary {
+  placeholder: typeof SECRET_REF_PLACEHOLDER;
+  scope: BrowserComputerSecretScopeSummary;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -48,6 +70,116 @@ export function isBrowserComputerInputPayloadAction(action: unknown): boolean {
 export function redactBrowserComputerTextPreview(value: unknown): string {
   const text = typeof value === "string" ? value : "";
   return text ? `[redacted ${text.length} chars]` : "[redacted text]";
+}
+
+function normalizeDomain(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.hostname || null;
+  } catch {
+    return trimmed
+      .replace(/^\*\./, "")
+      .replace(/^https?:\/\//i, "")
+      .split(/[/:?#]/)[0]
+      .trim()
+      .toLowerCase() || null;
+  }
+}
+
+function normalizeDomains(value: unknown): string[] {
+  const rawValues = Array.isArray(value) ? value : [value];
+  return Array.from(
+    new Set(
+      rawValues
+        .map(normalizeDomain)
+        .filter((item): item is string => !!item),
+    ),
+  );
+}
+
+function getDomainScopeFromSecretScope(
+  value: unknown,
+): BrowserComputerSecretScopeSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const kind = typeof value.kind === "string" ? value.kind : value.type;
+  if (kind === "legacy_global" && value.explicitlyMarked === true) {
+    return {
+      kind: "legacy_global",
+      explicitlyMarked: true,
+      source: "secretScope",
+    };
+  }
+  if (kind !== "domain") {
+    return null;
+  }
+  const domains = normalizeDomains(
+    value.domains ?? value.domain ?? value.hosts ?? value.origin,
+  );
+  return domains.length > 0
+    ? { kind: "domain", domains, source: "secretScope" }
+    : null;
+}
+
+export function summarizeBrowserComputerSecretScope(
+  args: Record<string, unknown>,
+): BrowserComputerSecretScopeSummary {
+  const explicitScope = getDomainScopeFromSecretScope(args.secretScope);
+  if (explicitScope) {
+    return explicitScope;
+  }
+
+  if (args.legacyGlobalSecret === true) {
+    return {
+      kind: "legacy_global",
+      explicitlyMarked: true,
+      source: "legacyGlobalSecret",
+    };
+  }
+
+  const directDomains = normalizeDomains(
+    args.domainScope ?? args.secretDomain ?? args.secretDomains,
+  );
+  if (directDomains.length > 0) {
+    return {
+      kind: "domain",
+      domains: directDomains,
+      source: "domainScope",
+    };
+  }
+
+  const urlDomains = normalizeDomains(args.url ?? args.href ?? args.targetUrl);
+  if (urlDomains.length > 0) {
+    return {
+      kind: "domain",
+      domains: urlDomains,
+      source: "url",
+    };
+  }
+
+  return {
+    kind: "missing_domain_scope",
+    required: true,
+  };
+}
+
+export function summarizeBrowserComputerSecretPlaceholder(
+  args: Record<string, unknown>,
+): BrowserComputerSecretPlaceholderSummary | null {
+  return typeof args.secretRef === "string" && args.secretRef.trim()
+    ? {
+        placeholder: SECRET_REF_PLACEHOLDER,
+        scope: summarizeBrowserComputerSecretScope(args),
+      }
+    : null;
 }
 
 function redactBrowserComputerFormData(value: unknown): unknown {
@@ -82,7 +214,12 @@ export function redactBrowserComputerInputArgs(
     safeArgs.formData = redactBrowserComputerFormData(safeArgs.formData);
   }
   if ("secretRef" in safeArgs) {
-    safeArgs.secretRef = "[secretRef]";
+    safeArgs.secretRef = SECRET_REF_PLACEHOLDER;
+    safeArgs.secretScope = summarizeBrowserComputerSecretScope(args);
+    delete safeArgs.domainScope;
+    delete safeArgs.secretDomain;
+    delete safeArgs.secretDomains;
+    delete safeArgs.legacyGlobalSecret;
   }
 
   return safeArgs;
@@ -94,6 +231,12 @@ function sanitizePotentiallySensitiveArgs(
   value: unknown,
   key?: string,
 ): unknown {
+  if (key === "secretRef") {
+    return SECRET_REF_PLACEHOLDER;
+  }
+  if (key === "secretScope") {
+    return summarizeBrowserComputerSecretScope({ secretScope: value });
+  }
   if (key && SENSITIVE_KEY_PATTERN.test(key)) {
     return "[redacted]";
   }
@@ -340,6 +483,12 @@ function sanitizeBrowserComputerMetadataValue(
   if (key && RAW_BROWSER_COMPUTER_METADATA_KEYS.has(key)) {
     return OMIT;
   }
+  if (key === "secretRef") {
+    return SECRET_REF_PLACEHOLDER;
+  }
+  if (key === "secretScope") {
+    return summarizeBrowserComputerSecretScope({ secretScope: value });
+  }
   if (key && SENSITIVE_KEY_PATTERN.test(key)) {
     return "[redacted]";
   }
@@ -441,10 +590,15 @@ export function sanitizeBrowserComputerToolResult<
   };
 }
 
+interface BrowserComputerSensitiveLiteral {
+  value: string;
+  replacement: string;
+}
+
 function collectBrowserComputerInputPayloads(
   toolName: string,
   args: Record<string, unknown>,
-): string[] {
+): BrowserComputerSensitiveLiteral[] {
   if (
     !isBrowserComputerToolName(toolName) ||
     !isBrowserComputerInputPayloadAction(args.action)
@@ -452,27 +606,35 @@ function collectBrowserComputerInputPayloads(
     return [];
   }
 
-  const values = new Set<string>();
+  const values = new Map<string, string>();
   if (typeof args.text === "string" && args.text) {
-    values.add(args.text);
+    values.set(args.text, redactBrowserComputerTextPreview(args.text));
   }
   if (isRecord(args.formData)) {
     for (const value of Object.values(args.formData)) {
       if (typeof value === "string" && value) {
-        values.add(value);
+        values.set(value, redactBrowserComputerTextPreview(value));
       }
     }
   }
+  if (typeof args.secretRef === "string" && args.secretRef) {
+    values.set(args.secretRef, SECRET_REF_PLACEHOLDER);
+  }
 
-  return [...values].sort((a, b) => b.length - a.length);
+  return [...values.entries()]
+    .map(([value, replacement]) => ({ value, replacement }))
+    .sort((a, b) => b.value.length - a.value.length);
 }
 
-function redactPayloadsInString(value: string, payloads: string[]): string {
+function redactPayloadsInString(
+  value: string,
+  payloads: BrowserComputerSensitiveLiteral[],
+): string {
   let redacted = value;
   for (const payload of payloads) {
     redacted = redacted
-      .split(payload)
-      .join(redactBrowserComputerTextPreview(payload));
+      .split(payload.value)
+      .join(payload.replacement);
   }
   return redacted;
 }

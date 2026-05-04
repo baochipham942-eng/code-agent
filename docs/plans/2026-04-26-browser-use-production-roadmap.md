@@ -4,6 +4,7 @@
 状态：Phase 1-6 已按最小闭环实现并通过定向验收；Phase 5 受硬边界约束，只落 in-app managed browser 的 lease / proxy schema / crash cleanup / external bridge unsupported 基线。
 范围：in-app managed browser 优先；desktop / external browser 只纳入可复用账号态、CDP/profile/extension bridge 与人工接管边界。
 关联验收：[browser-computer-workbench-smoke.md](/Users/linchen/Downloads/ai/code-agent/docs/acceptance/browser-computer-workbench-smoke.md)
+借鉴边界：[2026-05-01-browser-use-borrowing-boundary-map.md](./2026-05-01-browser-use-borrowing-boundary-map.md)
 
 ## 0. 实施状态
 

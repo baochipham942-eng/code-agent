@@ -1,15 +1,38 @@
 // ============================================================================
-// CLI Config Service - 独立于 Electron 的配置管理
+// CLI Config Service - 兼容性入口
+// ============================================================================
+//
+// 历史背景：
+// 在 4c8b5d7d 之前，CLI/webServer 走本文件的 CLIConfigService 类，Tauri main
+// 走 src/main/services/core/configService.ts 的 ConfigService。两个类各自维护
+// read 路径与 fallback，导致"UI 选了 A、推理走 B"事故（UI 显示 MiMo v2.5 Pro，
+// webServer 实际把请求路由到 zhipu/glm-5）。
+//
+// 4c8b5d7d 仅对齐了文件路径（同读 ~/.code-agent/config.json），但两个类还在 —
+// 任何加新 getter / 新 fallback 的修改都得手动同步两边，故障会换姿势复发。
+//
+// P0-2 重构：CLIConfigService 类删除，CLI/webServer 直接复用 main ConfigService
+// 单例。CLI 模式下 keytar 不加载（CODE_AGENT_CLI_MODE 守卫，见 secureStorage.ts），
+// app.getPath('userData') 通过 electronMock 解析到 ~/.code-agent，因此 main
+// ConfigService.initialize() 自然跳过 keychain 路径、读取同一份 config.json。
+//
+// 本文件保留：
+//   - .env 加载（CLI 入口最早执行的副作用，保持向后兼容）
+//   - getCLIConfigService() 工厂函数 — 返回 main ConfigService 实例（窄成
+//     IReadConfigService 视图，避免 CLI 路径误用 write 方法）
+//   - CLIConfigService type alias —  外部 import { type CLIConfigService } 兼容
+//
+// Refs: 4c8b5d7d
 // ============================================================================
 
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
-import type { AppSettings, ModelProvider, PermissionLevel } from '../shared/contract';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_MAX_TOKENS } from '../shared/constants';
+import type { IReadConfigService } from '../shared/contract/configService';
+import { getConfigService as getMainConfigService } from '../main/services/core/configService';
 
-// 加载 .env 文件
+// 加载 .env 文件（CLI 模式专用：从 process.cwd() 或 ~/.code-agent/.env 读取）
 function loadEnvFile(): void {
   const possiblePaths = [
     path.join(process.cwd(), '.env'),
@@ -28,191 +51,19 @@ function loadEnvFile(): void {
 loadEnvFile();
 
 /**
- * CLI 配置服务 - 简化版，不依赖 Electron
+ * CLI 模式下的配置服务类型
+ *
+ * 实际是 main ConfigService 的 read-only 视图。保留这个 type alias 是为了
+ * 外部 import { type CLIConfigService } 不至于断（cli/bootstrap.ts 等）。
  */
-export class CLIConfigService {
-  private settings: AppSettings;
-  private configPath: string;
+export type CLIConfigService = IReadConfigService;
 
-  constructor() {
-    const dataDir = this.getDataDir();
-    // 与 main ConfigService 同源 — 主进程 ConfigService 写到 config.json，
-    // CLIConfigService（webServer / CLI 模式）也优先从这里读，避免两套配置
-    // 文件分裂导致 UI 显示选了 A、实际推理走 B 的 bug。
-    // 缺失 config.json 时回落到 settings.json，保留 legacy CLI 用户兼容性。
-    const configJsonPath = path.join(dataDir, 'config.json');
-    const settingsJsonPath = path.join(dataDir, 'settings.json');
-    this.configPath = fs.existsSync(configJsonPath) ? configJsonPath : settingsJsonPath;
-    this.settings = this.loadSettings();
-  }
-
-  /**
-   * 获取数据目录
-   */
-  private getDataDir(): string {
-    const dataDir = process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    return dataDir;
-  }
-
-  /**
-   * 加载设置
-   */
-  private loadSettings(): AppSettings {
-    const defaults = this.getDefaultSettings();
-
-    if (fs.existsSync(this.configPath)) {
-      try {
-        const content = fs.readFileSync(this.configPath, 'utf-8');
-        const saved = JSON.parse(content);
-        return { ...defaults, ...saved };
-      } catch {
-        return defaults;
-      }
-    }
-
-    return defaults;
-  }
-
-  /**
-   * 获取默认设置
-   */
-  private getDefaultSettings(): AppSettings {
-    return {
-      models: {
-        default: DEFAULT_MODELS.chat,
-        defaultProvider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5 使用 moonshot provider
-        providers: {
-          deepseek: { enabled: true, model: 'deepseek-v4-flash' }, // deepseek provider 自身的默认模型 (V4 2026-04-24 发布)
-          openai: { enabled: false },
-          claude: { enabled: false },
-          zhipu: { enabled: false },
-          groq: { enabled: false },
-          gemini: { enabled: false },
-          local: { enabled: false },
-          qwen: { enabled: false },
-          moonshot: { enabled: true, model: DEFAULT_MODELS.chat },  // 启用 moonshot
-          minimax: { enabled: false },
-          perplexity: { enabled: false },
-          grok: { enabled: false },
-          openrouter: { enabled: false },
-          volcengine: { enabled: false },
-          xiaomi: { enabled: true, model: 'mimo-v2.5-pro' },  // 小米 MiMo Token Plan Max
-        },
-        routing: {
-          code: { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat },
-          vision: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.vision },
-          fast: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.quick },
-          gui: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.visionFast },
-        },
-      },
-      generation: {
-        default: 'gen8',  // 使用最新代际，支持所有工具
-      },
-      workspace: {
-        recentDirectories: [],
-      },
-      permissions: {
-        autoApprove: {
-          network: false,
-          read: true,
-          write: false,
-          execute: false,
-        } as Record<PermissionLevel, boolean>,
-        blockedCommands: [],
-        devModeAutoApprove: false, // CLI 模式需要 --yes flag 显式开启
-      },
-      ui: {
-        theme: 'dark',
-        fontSize: 14,
-        showToolCalls: true,
-        language: 'zh',
-      },
-      cloud: {
-        enabled: false,
-        warmupOnInit: false,
-      },
-      guiAgent: {
-        enabled: false,
-        displayWidth: 1920,
-        displayHeight: 1080,
-      },
-      session: {
-        autoRestore: false, // CLI 模式不需要恢复会话
-        maxHistory: 100,
-      },
-      model: {
-        provider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5
-        model: DEFAULT_MODELS.chat,
-        temperature: 0.7,
-        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
-      },
-    };
-  }
-
-  /**
-   * 初始化
-   */
-  async initialize(): Promise<void> {
-    // CLI 模式下无需额外初始化
-  }
-
-  /**
-   * 获取设置
-   */
-  getSettings(): AppSettings {
-    return this.settings;
-  }
-
-  /**
-   * 获取 API Key
-   */
-  getApiKey(provider: string): string {
-    const envKeys: Record<string, string> = {
-      deepseek: 'DEEPSEEK_API_KEY',
-      openai: 'OPENAI_API_KEY',
-      zhipu: 'ZHIPU_API_KEY',
-      claude: 'ANTHROPIC_API_KEY',
-      anthropic: 'ANTHROPIC_API_KEY',
-      groq: 'GROQ_API_KEY',
-      google: 'GOOGLE_API_KEY',
-      moonshot: 'KIMI_K25_API_KEY',  // Kimi K2.5
-    };
-
-    const envKey = envKeys[provider.toLowerCase()];
-    if (envKey && process.env[envKey]) {
-      return process.env[envKey] as string;
-    }
-
-    return '';
-  }
-
-  /**
-   * 获取服务 API Key
-   */
-  getServiceApiKey(service: string): string {
-    const envKeys: Record<string, string> = {
-      langfuse_public: 'LANGFUSE_PUBLIC_KEY',
-      langfuse_secret: 'LANGFUSE_SECRET_KEY',
-    };
-
-    const envKey = envKeys[service];
-    if (envKey && process.env[envKey]) {
-      return process.env[envKey] as string;
-    }
-
-    return '';
-  }
-}
-
-// 单例
-let configService: CLIConfigService | null = null;
-
+/**
+ * 获取 CLI 配置服务（主进程 ConfigService 单例的 read-only 视图）
+ *
+ * 调用方应在调用之前确保 main ConfigService 已 initialize（CLI bootstrap 与
+ * webServer 入口都已经走过 initConfigService + initialize 流程）。
+ */
 export function getCLIConfigService(): CLIConfigService {
-  if (!configService) {
-    configService = new CLIConfigService();
-  }
-  return configService;
+  return getMainConfigService();
 }

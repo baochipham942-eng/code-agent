@@ -636,7 +636,8 @@ async function exerciseChatInputComputerFailure(
           && bodyText.includes('页面证据已刷新')
           && bodyText.includes('DOM headings:')
           && bodyText.includes('Interactive elements:')
-          && bodyText.includes('Accessibility snapshot:');
+          && bodyText.includes('Accessibility snapshot:')
+          && bodyText.includes('Snapshot captured:');
       },
       undefined,
       { timeout: 15_000 },
@@ -647,7 +648,8 @@ async function exerciseChatInputComputerFailure(
     recoveryActionSucceeded = afterText.includes('success') && afterText.includes('页面证据已刷新');
     recoveryEvidenceVisible = afterText.includes('DOM headings:')
       && afterText.includes('Interactive elements:')
-      && afterText.includes('Accessibility snapshot:');
+      && afterText.includes('Accessibility snapshot:')
+      && afterText.includes('Snapshot captured:');
     leakedSecretInText = leakedSecretInText || afterText.includes(CHAT_FAILURE_SECRET);
     leakedSecretInHtml = leakedSecretInHtml || afterHtml.includes(CHAT_FAILURE_SECRET);
 

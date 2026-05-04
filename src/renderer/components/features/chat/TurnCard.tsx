@@ -49,21 +49,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes]
   );
 
-  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 父层没说默认展开
-  const canFold =
-    turn.status === 'completed' &&
-    !isStreaming &&
-    turn.nodes.length >= FOLD_THRESHOLD;
-  const [userExpanded, setUserExpanded] = useState(
-    Boolean(defaultExpanded) || !canFold
-  );
-  const expanded = userExpanded || Boolean(forceExpanded);
-  const folded = canFold && !expanded;
-
-  // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
-  // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const foldedView = useMemo(() => {
-    if (!canFold) return null;
     const userNode = turn.nodes.find((n) => n.type === 'user') || null;
     const finalTextNode =
       [...turn.nodes]
@@ -75,8 +61,22 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             n.content.trim().length > 0
         ) || null;
     return { userNode, finalTextNode };
-  }, [canFold, turn.nodes]);
+  }, [turn.nodes]);
 
+  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本
+  const canFold =
+    turn.status === 'completed' &&
+    !isStreaming &&
+    turn.nodes.length >= FOLD_THRESHOLD &&
+    Boolean(foldedView.finalTextNode);
+  const [userExpanded, setUserExpanded] = useState(
+    Boolean(defaultExpanded) || !canFold
+  );
+  const expanded = userExpanded || Boolean(forceExpanded);
+  const folded = canFold && !expanded;
+
+  // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
+  // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const lastIndex = displayNodes.length - 1;
   const runningToolStartTime = useMemo(
     () => getRunningToolStartTime(turn.nodes),
@@ -150,7 +150,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               }
               const node: TraceNode = d.node;
               // User node rendered above; skip here to avoid duplicate
-              if (canFold && node.id === foldedView?.userNode?.id) {
+              if (node.id === foldedView.userNode?.id) {
                 return null;
               }
               // Final text rendered below; skip here to avoid duplicate

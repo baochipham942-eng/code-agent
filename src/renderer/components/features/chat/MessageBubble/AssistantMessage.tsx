@@ -90,7 +90,25 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
     setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
   }, [message.content]);
 
-  const reasoningContent = message.thinking || message.reasoning;
+  const rawReasoningContent = message.thinking || message.reasoning;
+  const reasoningContent = useMemo(() => {
+    if (!rawReasoningContent) return rawReasoningContent;
+    const runtimeLines: string[] = [];
+    const otherLines: string[] = [];
+    for (const line of rawReasoningContent.split('\n')) {
+      if (line.trim().startsWith('[runtime]')) {
+        runtimeLines.push(line);
+      } else {
+        otherLines.push(line);
+      }
+    }
+    if (runtimeLines.length === 0) return rawReasoningContent;
+    const parts = [
+      runtimeLines.join('\n'),
+      otherLines.join('\n').trim(),
+    ].filter(Boolean);
+    return parts.join('\n\n');
+  }, [rawReasoningContent]);
   const effortLabel = message.effortLevel || '';
   const thinkingSummary = useMemo(
     () => extractThinkingSummary(reasoningContent),

@@ -402,6 +402,9 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     traceId: '',
     currentIterationSpanId: '',
     currentTurnId: '',
+    pendingRuntimeDiagnostics: [],
+    forceFinalResponseReason: undefined,
+    forceFinalResponsePrompt: undefined,
 
     turnStartTime: 0,
     toolsUsedInTurn: [],
@@ -624,12 +627,12 @@ describe('ConversationRuntime', () => {
       expect(controller.signal.aborted).toBe(true);
     });
 
-    it('persists partial streamed assistant content as cancelled marker', () => {
+    it('persists partial streamed assistant content as cancelled marker', async () => {
       const persistMessage = vi.fn();
       ctx.lastStreamedContent = 'partial response';
       ctx.persistMessage = persistMessage;
 
-      runtime.cancel();
+      await runtime.cancel();
 
       expect(ctx.messages.at(-1)).toMatchObject({
         role: 'assistant',
@@ -862,7 +865,7 @@ describe('ConversationRuntime', () => {
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
     });
 
-    it('executes only runtime loop decisions by injecting the continuation prompt', async () => {
+    it('keeps truncation continuation advisory at loop-decision level', async () => {
       activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
       modules.contextAssembly.inference.mockResolvedValue({
         type: 'text',
@@ -872,7 +875,7 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('continue after truncation');
 
-      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         'Continue from where you stopped. Do not restate or apologize.',
       );
     });

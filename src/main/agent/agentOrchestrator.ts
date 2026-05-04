@@ -258,15 +258,15 @@ export class AgentOrchestrator {
     }
   }
 
-  async cancel(): Promise<void> {
-    logger.info('Cancel requested');
+  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+    logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
     this.isInterrupting = false;
     this.pendingSteerMessages = [];
 
     if (this.agentLoop) {
-      this.agentLoop.cancel();
+      await this.agentLoop.cancel(reason);
       if (this.activeRunPromise) {
         try {
           await this.activeRunPromise;
@@ -495,6 +495,10 @@ export class AgentOrchestrator {
       this.lastSerializedCompressionState = liveState;
     }
     return liveState ?? this.lastSerializedCompressionState;
+  }
+
+  getHookManager() {
+    return this.agentLoop?.getHookManager();
   }
 
   clearMessages(): void {

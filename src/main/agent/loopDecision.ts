@@ -156,13 +156,9 @@ export function decideNextAction(state: LoopState): LoopDecision {
   // -------------------------------------------------------------------------
 
   if (state.stopReason === 'max_tokens') {
-    return runtime(
+    return advisory(
       'continuation',
       'output truncated by token limit',
-      {
-        continuationPrompt:
-          'Continue from where you stopped. Do not restate or apologize.',
-      },
     );
   }
 

@@ -36,6 +36,7 @@ export interface InMemorySession {
   isArchived?: boolean;
   archivedAt?: number;
   messageCount: number;
+  workingDirectory?: string;
 }
 
 // ── 缓存实例 ──

@@ -29,12 +29,13 @@ test('侧边栏显示', async ({ page }) => {
   await page.goto('/');
 
   // 侧边栏包含「新会话」按钮
-  const newSessionBtn = page.getByText('新会话');
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
 
-  // 侧边栏底部应该有「登录」按钮（未登录状态）
-  const loginBtn = page.getByText('登录');
-  await expect(loginBtn).toBeVisible();
+  // 底部账号入口在未登录时显示「登录」，已登录时显示「用户菜单」。
+  await expect(
+    page.getByRole('button', { name: '登录' }).or(page.getByRole('button', { name: '用户菜单' })),
+  ).toBeVisible();
 });
 
 // ----------------------------------------------------------------------------
@@ -59,7 +60,7 @@ test('可以新建会话', async ({ page }) => {
   await page.goto('/');
 
   // 点击「新会话」按钮
-  const newSessionBtn = page.getByText('新会话');
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
@@ -69,30 +70,60 @@ test('可以新建会话', async ({ page }) => {
   await expect(sessionItem.first()).toBeVisible({ timeout: 10_000 });
 });
 
+test('可以从侧边栏切换会话', async ({ page }) => {
+  await page.goto('/');
+
+  const sessionItems = page.locator('[data-session-id]');
+  await expect(sessionItems.first()).toBeVisible({ timeout: 15_000 });
+
+  let sessionIds = await sessionItems.evaluateAll((items) =>
+    Array.from(new Set(items.map((item) => item.getAttribute('data-session-id')).filter(Boolean))),
+  );
+
+  if (sessionIds.length < 2) {
+    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+    await newSessionBtn.click();
+    await expect(sessionItems.nth(1)).toBeVisible({ timeout: 10_000 });
+    sessionIds = await sessionItems.evaluateAll((items) =>
+      Array.from(new Set(items.map((item) => item.getAttribute('data-session-id')).filter(Boolean))),
+    );
+  }
+
+  expect(sessionIds.length).toBeGreaterThanOrEqual(2);
+  const currentSessionId = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id');
+  const targetSessionId = sessionIds.find((id) => id !== currentSessionId);
+  expect(targetSessionId).toBeTruthy();
+
+  await page.locator(`[data-session-id="${targetSessionId}"]`).click();
+  await expect(page.locator(`[data-session-id="${targetSessionId}"]`)).toHaveAttribute('aria-current', 'true');
+});
+
 // ----------------------------------------------------------------------------
 // 5. 设置面板可打开（通过 Sidebar 底部用户菜单或 TitleBar）
 // ----------------------------------------------------------------------------
-test('设置面板可打开', async ({ page }) => {
+test('账号入口可打开登录或设置面板', async ({ page }) => {
   await page.goto('/');
 
-  // Web 模式下未登录，Sidebar 底部显示「登录」按钮
-  // 设置通常通过用户菜单进入，但未登录时可能不可用
-  // 尝试通过登录按钮旁的设置入口（如果有的话）
-  // 或者直接检查 SettingsModal 是否可以通过 store 触发
+  const loginBtn = page.getByRole('button', { name: '登录' });
+  const userMenuBtn = page.getByRole('button', { name: '用户菜单' });
+  await expect(loginBtn.or(userMenuBtn)).toBeVisible({ timeout: 15_000 });
 
-  // 方案：检查 TitleBar 区域是否有设置相关按钮
-  // TitleBar 上有评测中心、实验室等按钮，但没有直接的设置按钮
-  // 设置是通过 Sidebar 底部用户菜单触发的
+  if (await userMenuBtn.isVisible().catch(() => false)) {
+    await userMenuBtn.click();
+    const settingsBtn = page.getByRole('button', { name: '设置', exact: true });
+    await expect(settingsBtn).toBeVisible({ timeout: 5_000 });
+    await settingsBtn.click();
+    await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible({ timeout: 5_000 });
+    return;
+  }
 
-  // 未登录状态下点击「登录」按钮，应弹出 AuthModal
-  const loginBtn = page.getByText('登录');
-  await expect(loginBtn).toBeVisible({ timeout: 15_000 });
-  await loginBtn.click();
-
-  // AuthModal 应该出现（包含登录表单元素）
-  // 等一下看是否有模态弹窗出现
-  const modal = page.locator('[role="dialog"], .fixed.inset-0');
-  await expect(modal.first()).toBeVisible({ timeout: 5_000 });
+  if (await loginBtn.isVisible().catch(() => false)) {
+    await loginBtn.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog')).toContainText('登录');
+    return;
+  }
 });
 
 // ----------------------------------------------------------------------------
@@ -113,7 +144,7 @@ test('TitleBar 按钮可点击', async ({ page }) => {
   await sidebarToggle.click();
 
   // 折叠后「新会话」按钮应该不可见
-  const newSessionBtn = page.getByText('新会话');
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
   await expect(newSessionBtn).not.toBeVisible({ timeout: 3_000 });
 
   // 再次点击展开
@@ -127,9 +158,12 @@ test('TitleBar 按钮可点击', async ({ page }) => {
 test('附件按钮可见', async ({ page }) => {
   await page.goto('/');
 
-  // 附件按钮通过 aria-label 定位
-  const attachBtn = page.getByLabel('添加图片或文件');
-  await expect(attachBtn).toBeVisible({ timeout: 15_000 });
+  const addMenuBtn = page.getByRole('button', { name: '更多输入选项' });
+  await expect(addMenuBtn).toBeVisible({ timeout: 15_000 });
+  await addMenuBtn.click();
+
+  const uploadBtn = page.getByRole('button', { name: '上传图片或文件' });
+  await expect(uploadBtn).toBeVisible({ timeout: 5_000 });
 });
 
 // ----------------------------------------------------------------------------

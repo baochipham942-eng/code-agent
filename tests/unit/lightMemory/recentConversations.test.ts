@@ -85,6 +85,24 @@ describe('recentConversations', () => {
       expect(content).toContain('Session 2');
     });
 
+    it('should update an existing summary with the same date and title instead of duplicating it', async () => {
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Same session',
+        highlights: ['first turn'],
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Same session',
+        highlights: ['second turn'],
+      });
+
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      const entries = content.split('\n').filter((l: string) => l.startsWith('- **'));
+      expect(entries.length).toBe(1);
+      expect(content).toContain('first turn, second turn');
+    });
+
     it('should keep only last 15 entries', async () => {
       for (let i = 1; i <= 20; i++) {
         await appendConversationSummary({

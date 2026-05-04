@@ -4,6 +4,7 @@ import { DEFAULT_MODELS } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
+import { compactMessagesWithSummary } from '../../../context/compactionService';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { fileReadTracker } from '../../../tools/fileReadTracker';
@@ -14,6 +15,158 @@ import { getSessionTodos } from '../../../agent/todoParser';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { cachedReaddirSync, logger } from '../contextAssembly';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+
+async function commitCompactionBlock(
+  ctx: ContextAssemblyCtx,
+  block: NonNullable<Awaited<ReturnType<typeof compactMessagesWithSummary>>['block']>,
+  preserveCount: number,
+  options: {
+    currentTokens?: number;
+    compactionStartTime?: number;
+    emitCompacted?: boolean;
+    survivorReason: string;
+  },
+): Promise<void> {
+  // === 注入文件状态 + TODO 恢复上下文 ===
+  let recoveryContext = '';
+
+  const recentFiles = fileReadTracker.getRecentFiles(10);
+  if (recentFiles.length > 0) {
+    recoveryContext += '\n\n## 最近读取的文件\n';
+    recoveryContext += recentFiles.map(f => `- ${f.path}`).join('\n');
+  }
+
+  const todos = getSessionTodos(ctx.runtime.sessionId);
+  const pendingTodos = todos.filter(t => t.status !== 'completed');
+  if (pendingTodos.length > 0) {
+    recoveryContext += '\n\n## 未完成的任务\n';
+    recoveryContext += pendingTodos.map(t =>
+      `- [${t.status === 'in_progress' ? '进行中' : '待处理'}] ${t.content}`
+    ).join('\n');
+  }
+
+  const incompleteTasks = getIncompleteTasks(ctx.runtime.sessionId);
+  if (incompleteTasks.length > 0) {
+    recoveryContext += '\n\n## 未完成的子任务\n';
+    recoveryContext += incompleteTasks.map(t =>
+      `- [${t.status}] ${t.subject}`
+    ).join('\n');
+  }
+
+  // 注入数据指纹摘要（防止多轮对话中虚构数据）
+  const dataFingerprint = dataFingerprintStore.toSummary();
+  if (dataFingerprint) {
+    recoveryContext += '\n\n' + dataFingerprint;
+  }
+
+  // 注入输出目录文件列表（防止多轮对话压缩后遗忘已创建文件）
+  try {
+    const allOutputFiles = cachedReaddirSync(ctx.runtime.workingDirectory)
+      .filter(f => /\.(xlsx|xls|csv|png|pdf|json)$/i.test(f))
+      .sort();
+    if (allOutputFiles.length > 0) {
+      recoveryContext += '\n\n## 当前输出目录中已有的文件\n';
+      recoveryContext += allOutputFiles.map(f => `- ${f}`).join('\n');
+
+      recoveryContext += '\n\n⚠️ 以上文件已存在于工作目录中，请在此基础上修改，不要重新创建';
+    }
+  } catch { /* ignore if directory listing fails */ }
+
+  if (recoveryContext) {
+    block.content += recoveryContext;
+  }
+  // === 恢复上下文注入完毕 ===
+
+  // 将 compaction block 作为消息保留在历史中
+  const compactionMessage: Message = {
+    id: ctx.generateId(),
+    role: 'system',
+    content: `[Compaction] 已压缩 ${block.compactedMessageCount} 条消息，节省 ${block.compactedTokenCount} tokens\n\n${block.content}`,
+    timestamp: block.timestamp,
+    compaction: block,
+  };
+  getContextEventLedger().upsertEvents([{
+    id: '',
+    sessionId: ctx.runtime.sessionId,
+    agentId: ctx.runtime.agentId,
+    messageId: compactionMessage.id,
+    category: 'compression_survivor',
+    action: 'compressed',
+    sourceKind: 'compression_survivor',
+    sourceDetail: 'autocompact:compaction_block',
+    layer: 'autocompact',
+    reason: options.survivorReason,
+    timestamp: block.timestamp,
+  }]);
+
+  // Layer 2: 全量替换 — 删除被压缩的旧消息，只保留 compaction + 最近 N 条
+  const boundary = ctx.runtime.messages.length - preserveCount;
+  if (boundary > 0) {
+    // 替换 messages[0..boundary) 为单条 compaction 消息
+    ctx.runtime.messages.splice(0, boundary, compactionMessage);
+    logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preserveCount} recent + 1 compaction`);
+  } else {
+    // 消息太少，仅追加
+    ctx.runtime.messages.push(compactionMessage);
+  }
+  ctx.recordContextEventsForMessage(compactionMessage);
+  try {
+    await getSessionManager().replaceMessages(ctx.runtime.sessionId, ctx.runtime.messages);
+  } catch (error) {
+    logger.warn('[AgentLoop] Auto compression updated runtime but failed to persist compacted messages', error);
+  }
+
+  const nextCompressionState = new CompressionState();
+  nextCompressionState.applyCommit({
+    layer: 'autocompact',
+    operation: 'compact',
+    targetMessageIds: [compactionMessage.id],
+    timestamp: block.timestamp,
+    metadata: {
+      compactedMessageCount: block.compactedMessageCount,
+      compactedTokenCount: block.compactedTokenCount,
+      kind: 'compaction_block',
+    },
+  });
+  ctx.runtime.compressionState = nextCompressionState;
+  persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
+  getContextEventLedger().upsertCompressionEvents(
+    ctx.runtime.sessionId,
+    ctx.runtime.agentId,
+    nextCompressionState.getCommitLog(),
+  );
+
+  // 发送压缩事件（包含 compaction block 信息）
+  ctx.runtime.onEvent({
+    type: 'context_compressed',
+    data: {
+      savedTokens: block.compactedTokenCount,
+      strategy: 'compaction_block',
+      newMessageCount: ctx.runtime.messages.length,
+    },
+  } as AgentEvent);
+
+  logger.info(`[AgentLoop] CompactionBlock generated: ${block.compactedMessageCount} msgs compacted, saved ${block.compactedTokenCount} tokens`);
+
+  if (options.emitCompacted) {
+    const currentTokens = options.currentTokens ?? 0;
+    ctx.runtime.onEvent({
+      type: 'context_compacted',
+      data: {
+        tokensBefore: currentTokens,
+        tokensAfter: Math.max(0, currentTokens - block.compactedTokenCount),
+        messagesRemoved: block.compactedMessageCount,
+        duration_ms: Date.now() - (options.compactionStartTime ?? Date.now()),
+      },
+    } as AgentEvent);
+  }
+
+  logCollector.agent('INFO', 'CompactionBlock generated', {
+    compactedMessages: block.compactedMessageCount,
+    savedTokens: block.compactedTokenCount,
+    compactionCount: ctx.runtime.autoCompressor.getCompactionCount(),
+  });
+}
 
 export function updateContextHealth(ctx: ContextAssemblyCtx): void {
   try {
@@ -71,161 +224,26 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         },
       } as AgentEvent);
 
-      const messagesForCompression = ctx.runtime.messages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-        id: msg.id,
-        timestamp: msg.timestamp,
-        toolCallId: msg.toolResults?.[0]?.toolCallId,      // 保留 tool↔assistant 配对
-        toolCallIds: msg.toolCalls?.map(tc => tc.id),       // 保留 assistant→tool 配对
-      }));
+      const preserveCount = ctx.runtime.autoCompressor.getConfig().preserveRecentCount;
+      const compactionResult = await compactMessagesWithSummary({
+        sessionId: ctx.runtime.sessionId,
+        source: 'auto_threshold',
+        messages: ctx.runtime.messages,
+        preserveRecentCount: preserveCount,
+        systemPrompt: ctx.runtime.systemPrompt,
+        modelConfig: ctx.runtime.modelConfig,
+        hookManager: ctx.runtime.hookManager,
+      });
 
-      // 生成 CompactionBlock
-      const compactionResult = await ctx.runtime.autoCompressor.compactToBlock(
-        messagesForCompression,
-        ctx.runtime.systemPrompt,
-        ctx.runtime.hookManager
-      );
-
-      if (compactionResult) {
+      if (compactionResult.success && compactionResult.block) {
         const { block } = compactionResult;
+        ctx.runtime.autoCompressor.recordCompaction(block.compactedTokenCount, 'ai_summary');
 
-        // === 注入文件状态 + TODO 恢复上下文 ===
-        let recoveryContext = '';
-
-        const recentFiles = fileReadTracker.getRecentFiles(10);
-        if (recentFiles.length > 0) {
-          recoveryContext += '\n\n## 最近读取的文件\n';
-          recoveryContext += recentFiles.map(f => `- ${f.path}`).join('\n');
-        }
-
-        const todos = getSessionTodos(ctx.runtime.sessionId);
-        const pendingTodos = todos.filter(t => t.status !== 'completed');
-        if (pendingTodos.length > 0) {
-          recoveryContext += '\n\n## 未完成的任务\n';
-          recoveryContext += pendingTodos.map(t =>
-            `- [${t.status === 'in_progress' ? '进行中' : '待处理'}] ${t.content}`
-          ).join('\n');
-        }
-
-        const incompleteTasks = getIncompleteTasks(ctx.runtime.sessionId);
-        if (incompleteTasks.length > 0) {
-          recoveryContext += '\n\n## 未完成的子任务\n';
-          recoveryContext += incompleteTasks.map(t =>
-            `- [${t.status}] ${t.subject}`
-          ).join('\n');
-        }
-
-        // 注入数据指纹摘要（防止多轮对话中虚构数据）
-        const dataFingerprint = dataFingerprintStore.toSummary();
-        if (dataFingerprint) {
-          recoveryContext += '\n\n' + dataFingerprint;
-        }
-
-        // 注入输出目录文件列表（防止多轮对话压缩后遗忘已创建文件）
-        try {
-          const allOutputFiles = cachedReaddirSync(ctx.runtime.workingDirectory)
-            .filter(f => /\.(xlsx|xls|csv|png|pdf|json)$/i.test(f))
-            .sort();
-          if (allOutputFiles.length > 0) {
-            recoveryContext += '\n\n## 当前输出目录中已有的文件\n';
-            recoveryContext += allOutputFiles.map(f => `- ${f}`).join('\n');
-
-            recoveryContext += '\n\n⚠️ 以上文件已存在于工作目录中，请在此基础上修改，不要重新创建';
-          }
-        } catch { /* ignore if directory listing fails */ }
-
-        if (recoveryContext) {
-          block.content += recoveryContext;
-        }
-        // === 恢复上下文注入完毕 ===
-
-        // 将 compaction block 作为消息保留在历史中
-        const compactionMessage: Message = {
-          id: ctx.generateId(),
-          role: 'system',
-          content: `[Compaction] 已压缩 ${block.compactedMessageCount} 条消息，节省 ${block.compactedTokenCount} tokens\n\n${block.content}`,
-          timestamp: block.timestamp,
-          compaction: block,
-        };
-        getContextEventLedger().upsertEvents([{
-          id: '',
-          sessionId: ctx.runtime.sessionId,
-          agentId: ctx.runtime.agentId,
-          messageId: compactionMessage.id,
-          category: 'compression_survivor',
-          action: 'compressed',
-          sourceKind: 'compression_survivor',
-          sourceDetail: 'autocompact:compaction_block',
-          layer: 'autocompact',
-          reason: 'Compaction block inserted after hard threshold compaction',
-          timestamp: block.timestamp,
-        }]);
-
-        // Layer 2: 全量替换 — 删除被压缩的旧消息，只保留 compaction + 最近 N 条
-        const preserveCount = ctx.runtime.autoCompressor.getConfig().preserveRecentCount;
-        const boundary = ctx.runtime.messages.length - preserveCount;
-        if (boundary > 0) {
-          // 替换 messages[0..boundary) 为单条 compaction 消息
-          ctx.runtime.messages.splice(0, boundary, compactionMessage);
-          logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preserveCount} recent + 1 compaction`);
-        } else {
-          // 消息太少，仅追加
-          ctx.runtime.messages.push(compactionMessage);
-        }
-        ctx.recordContextEventsForMessage(compactionMessage);
-        try {
-          await getSessionManager().replaceMessages(ctx.runtime.sessionId, ctx.runtime.messages);
-        } catch (error) {
-          logger.warn('[AgentLoop] Hard compaction updated runtime but failed to persist compacted messages', error);
-        }
-
-        const nextCompressionState = new CompressionState();
-        nextCompressionState.applyCommit({
-          layer: 'autocompact',
-          operation: 'compact',
-          targetMessageIds: [compactionMessage.id],
-          timestamp: block.timestamp,
-          metadata: {
-            compactedMessageCount: block.compactedMessageCount,
-            compactedTokenCount: block.compactedTokenCount,
-            kind: 'compaction_block',
-          },
-        });
-        ctx.runtime.compressionState = nextCompressionState;
-        persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
-        getContextEventLedger().upsertCompressionEvents(
-          ctx.runtime.sessionId,
-          ctx.runtime.agentId,
-          nextCompressionState.getCommitLog(),
-        );
-
-        // 发送压缩事件（包含 compaction block 信息）
-        ctx.runtime.onEvent({
-          type: 'context_compressed',
-          data: {
-            savedTokens: block.compactedTokenCount,
-            strategy: 'compaction_block',
-            newMessageCount: ctx.runtime.messages.length,
-          },
-        } as AgentEvent);
-
-        logger.info(`[AgentLoop] CompactionBlock generated: ${block.compactedMessageCount} msgs compacted, saved ${block.compactedTokenCount} tokens`);
-
-        // Emit context_compacted event (Claude Code style)
-        ctx.runtime.onEvent({
-          type: 'context_compacted',
-          data: {
-            tokensBefore: currentTokens,
-            tokensAfter: currentTokens - block.compactedTokenCount,
-            messagesRemoved: block.compactedMessageCount,
-            duration_ms: Date.now() - compactionStartTime,
-          },
-        } as AgentEvent);
-        logCollector.agent('INFO', 'CompactionBlock generated', {
-          compactedMessages: block.compactedMessageCount,
-          savedTokens: block.compactedTokenCount,
-          compactionCount: ctx.runtime.autoCompressor.getCompactionCount(),
+        await commitCompactionBlock(ctx, block, preserveCount, {
+          currentTokens,
+          compactionStartTime,
+          emitCompacted: true,
+          survivorReason: 'Compaction block inserted after hard threshold compaction',
         });
 
         // 检查是否应该收尾（总预算超限）
@@ -245,41 +263,37 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       }
     }
 
-    // 回退到原有的百分比阈值压缩
-    const messagesForCompression = ctx.runtime.messages.map(msg => ({
-      role: msg.role,
-      content: msg.content,
-      id: msg.id,
-      timestamp: msg.timestamp,
-      toolCallId: msg.toolResults?.[0]?.toolCallId,      // 保留 tool↔assistant 配对
-      toolCallIds: msg.toolCalls?.map(tc => tc.id),       // 保留 assistant→tool 配对
-    }));
+    // 百分比阈值 fallback 也统一走 compactMessagesWithSummary，避免继续分叉旧压缩器。
+    const compressorConfig = ctx.runtime.autoCompressor.getConfig();
+    if (!compressorConfig.enabled) return;
 
-    const result = await ctx.runtime.autoCompressor.checkAndCompress(
-      ctx.runtime.sessionId,
-      messagesForCompression,
-      ctx.runtime.systemPrompt,
-      ctx.runtime.modelConfig.model || DEFAULT_MODELS.chat,
-      ctx.runtime.hookManager
-    );
+    const health = getContextHealthService().get(ctx.runtime.sessionId);
+    if (!health) return;
 
-    if (result.compressed) {
-      logger.info(`[AgentLoop] Auto compression: saved ${result.savedTokens} tokens using ${result.strategy}`);
-      logCollector.agent('INFO', 'Auto context compression', {
-        savedTokens: result.savedTokens,
-        strategy: result.strategy,
-        messageCount: result.messages.length,
+    const usageRatio = health.usagePercent / 100;
+    if (usageRatio < compressorConfig.warningThreshold) return;
+
+    logger.info(`[AgentLoop] Usage at ${(usageRatio * 100).toFixed(1)}%, triggering unified fallback compaction`);
+
+    const preserveCount = compressorConfig.preserveRecentCount;
+    const compactionResult = await compactMessagesWithSummary({
+      sessionId: ctx.runtime.sessionId,
+      source: 'auto_threshold',
+      messages: ctx.runtime.messages,
+      preserveRecentCount: preserveCount,
+      systemPrompt: ctx.runtime.systemPrompt,
+      modelConfig: ctx.runtime.modelConfig,
+      hookManager: ctx.runtime.hookManager,
+      usagePercent: health.usagePercent,
+    });
+
+    if (compactionResult.success && compactionResult.block) {
+      const { block } = compactionResult;
+      ctx.runtime.autoCompressor.recordCompaction(block.compactedTokenCount, 'ai_summary');
+
+      await commitCompactionBlock(ctx, block, preserveCount, {
+        survivorReason: 'Compaction block inserted after percentage fallback compaction',
       });
-
-      // 发送压缩事件
-      ctx.runtime.onEvent({
-        type: 'context_compressed',
-        data: {
-          savedTokens: result.savedTokens,
-          strategy: result.strategy,
-          newMessageCount: result.messages.length,
-        },
-      } as AgentEvent);
     }
   } catch (error) {
     logger.error('[AgentLoop] Auto compression failed:', error);

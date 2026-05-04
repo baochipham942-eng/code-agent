@@ -59,6 +59,14 @@ export function registerTelemetryHandlers(
     }
   );
 
+  // 获取 Computer Surface 可靠性聚合
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.GET_COMPUTER_SURFACE_SUMMARY,
+    async (_event, sessionId: string) => {
+      return storage.getComputerSurfaceReliabilitySummary(sessionId);
+    }
+  );
+
   // 获取意图分布
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_INTENT_DIST,

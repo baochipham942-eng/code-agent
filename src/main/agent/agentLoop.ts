@@ -224,6 +224,9 @@ export class AgentLoop {
       traceId: '',
       currentIterationSpanId: '',
       currentTurnId: '',
+      pendingRuntimeDiagnostics: [],
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
 
       // Turn tracking
       turnStartTime: 0,
@@ -240,6 +243,13 @@ export class AgentLoop {
       totalInputTokens: 0,
       totalOutputTokens: 0,
       consecutiveErrors: 0,
+
+      // Stagnation detection
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+
+      // Ground-truth gate
+      antiScrapingHitsInRun: 0,
 
       // Thinking
       effortLevel: 'high' as any,
@@ -332,8 +342,8 @@ export class AgentLoop {
     this.conversationRuntime.setInteractionMode(mode);
   }
 
-  cancel(): void {
-    this.conversationRuntime.cancel();
+  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+    await this.conversationRuntime.cancel(reason);
   }
 
   pause(): void {

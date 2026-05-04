@@ -67,6 +67,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'Explore',
+    shortDescription: '启动只读探索子代理收集代码库上下文',
+    tags: ['planning', 'multiagent', 'search'],
+    aliases: ['explore', 'subagent-explore', 'codebase exploration'],
+    source: 'builtin',
+  },
+  {
     name: 'confirm_action',
     shortDescription: '请求用户确认危险操作',
     tags: ['planning'],

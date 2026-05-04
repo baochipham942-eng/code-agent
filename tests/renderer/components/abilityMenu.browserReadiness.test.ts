@@ -25,6 +25,7 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
 }));
 
 import { AbilityMenu } from '../../../src/renderer/components/features/chat/ChatInput/AbilityMenu';
+import { ConversationSettings } from '../../../src/renderer/components/features/settings/tabs/ConversationSettings';
 
 describe('AbilityMenu browser readiness', () => {
   beforeEach(() => {
@@ -101,7 +102,7 @@ describe('AbilityMenu browser readiness', () => {
     );
 
     expect(html).toContain('Computer surface');
-    expect(html).toContain('Foreground fallback (current window)');
+    expect(html).toContain('Manual foreground fallback');
     expect(html).toContain('Computer Surface 会作用于当前前台 app/window；没有后台隔离。');
     expect(html).toContain('Screen Capture');
     expect(html).toContain('未探测');
@@ -112,5 +113,20 @@ describe('AbilityMenu browser readiness', () => {
     expect(html).toContain('授权辅助功能');
     expect(html).toContain('text-zinc-300');
     expect(html).toContain('text-amber-300');
+  });
+
+  it('uses current Browser mode copy in ConversationSettings', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationSettings));
+
+    expect(html).toContain('in-app managed browser');
+    expect(html).toContain('System Chrome via CDP');
+    expect(html).toContain('应用隔离 profile');
+    expect(html).toContain('读取当前桌面/前台浏览器上下文 + Computer Surface');
+    expect(html).toContain('前台动作需人工确认');
+    expect(html).toContain('Session Inspector');
+    expect(html).toContain('Desktop / Computer Surface 状态摘要');
+    expect(html).not.toContain('独立 Playwright Chromium');
+    expect(html).not.toContain('接管系统 Chrome');
+    expect(html).not.toContain('复用现有登录态');
   });
 });

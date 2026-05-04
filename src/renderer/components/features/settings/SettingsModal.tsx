@@ -183,10 +183,15 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        className="relative w-full max-w-2xl max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
-          <h2 className="text-lg font-semibold text-zinc-200">{t.settings.title}</h2>
+          <h2 id="settings-modal-title" className="text-lg font-semibold text-zinc-200">{t.settings.title}</h2>
           <IconButton
             icon={<X className="w-5 h-5" />}
             aria-label="Close settings"

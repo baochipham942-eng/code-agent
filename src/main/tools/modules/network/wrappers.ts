@@ -29,7 +29,7 @@ import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 
 // Media generation / processing
 import { imageGenerateTool } from '../../media/imageGenerate';
-import { imageProcessTool } from '../../media/imageProcess';
+// image_process 已迁移到 native，见 ./imageProcess.ts
 import { imageAnalyzeTool } from '../../media/imageAnalyze';
 import { imageAnnotateTool } from '../../media/imageAnnotate';
 import { videoGenerateTool } from '../../media/videoGenerate';
@@ -87,7 +87,7 @@ export const xlwingsExecuteModule = wrapLegacyTool(xlwingsExecuteTool, NET_WRITE
 
 // ── Media (8) ───────────────────────────────────────────────────────────
 export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);
-export const imageProcessModule = wrapLegacyTool(imageProcessTool, NET_WRITE);
+// image_process 已迁移到 native，见 ./imageProcess.ts
 export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_READ);
 export const imageAnnotateModule = wrapLegacyTool(imageAnnotateTool, NET_WRITE);
 export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);

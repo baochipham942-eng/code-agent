@@ -1,2 +1,3 @@
 bash scripts/check-hardcoded-models.sh
+bash scripts/check-provider-symmetry.sh --quiet
 npx lint-staged

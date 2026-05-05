@@ -76,7 +76,6 @@ describe('NudgeManager', () => {
   beforeEach(() => {
     manager = new NudgeManager();
     vi.clearAllMocks();
-    mockGetCurrentTodos.mockReturnValue([]);
     mockGetIncompleteTasks.mockReturnValue([]);
     mockExistsSync.mockReturnValue(false);
     mockReaddirSync.mockReturnValue([]);

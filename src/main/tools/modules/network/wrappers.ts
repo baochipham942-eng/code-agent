@@ -33,7 +33,7 @@ import { imageProcessTool } from '../../media/imageProcess';
 import { imageAnalyzeTool } from '../../media/imageAnalyze';
 import { imageAnnotateTool } from '../../media/imageAnnotate';
 import { videoGenerateTool } from '../../media/videoGenerate';
-import { textToSpeechTool } from '../../media/textToSpeech';
+// text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
 import { localSpeechToTextTool } from '../../media/localSpeechToText';
 
@@ -91,7 +91,7 @@ export const imageProcessModule = wrapLegacyTool(imageProcessTool, NET_WRITE);
 export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_READ);
 export const imageAnnotateModule = wrapLegacyTool(imageAnnotateTool, NET_WRITE);
 export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);
-export const textToSpeechModule = wrapLegacyTool(textToSpeechTool, NET_NETWORK_WRITE);
+// text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
 export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET_READ);
 

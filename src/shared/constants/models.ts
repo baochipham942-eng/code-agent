@@ -64,8 +64,10 @@ export interface ProviderInfo {
 const SUPPORTED_PROVIDERS = new Set<string>([
   'openai', 'claude', 'gemini', 'deepseek', 'zhipu',
   'qwen', 'moonshot', 'minimax', 'openrouter', 'perplexity',
-  'xiaomi', // 小米 MiMo（Token Plan 包月）
-  'local',  // Ollama 本地模型（toy provider + 评测 baseline）
+  'xiaomi',     // 小米 MiMo（Token Plan 包月）
+  'local',      // Ollama 本地模型（toy provider + 评测 baseline）
+  'volcengine', // 火山引擎 (豆包) — QUICK_SWITCH 已暴露但 SUPPORTED 漏加，被 provider-symmetry guardrail 抓出
+  'grok',       // xAI Grok    — catalog 元数据齐备但未暴露至 SUPPORTED
 ]);
 
 export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers

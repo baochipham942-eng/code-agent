@@ -1,0 +1,42 @@
+name: Provider Symmetry Guardrail
+
+# 检测 catalog / SUPPORTED_PROVIDERS / QUICK_SWITCH_PROVIDERS 三个锚点之间的 provider id 漂移。
+# 设计文档：docs/audits/symmetric-application-guardrail.md
+#
+# 触发条件：仅在 provider 锚点文件或脚本本身改动的 PR / push 上跑，
+# 否则全量绿灯通过 — 把这个 guardrail 当独立短路径，不串到 swarm-ci 里。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/shared/model-catalog.json'
+      - 'src/shared/constants/models.ts'
+      - 'src/renderer/components/StatusBar/ModelSwitcher.tsx'
+      - 'scripts/check-provider-symmetry.sh'
+      - '.github/workflows/provider-symmetry.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/shared/model-catalog.json'
+      - 'src/shared/constants/models.ts'
+      - 'src/renderer/components/StatusBar/ModelSwitcher.tsx'
+      - 'scripts/check-provider-symmetry.sh'
+      - '.github/workflows/provider-symmetry.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: provider-symmetry-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  symmetry:
+    name: Provider id 三锚点对称性
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run provider symmetry check
+        run: bash scripts/check-provider-symmetry.sh

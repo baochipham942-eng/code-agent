@@ -97,6 +97,7 @@ import { excelGenerateSchema } from './network/excelGenerate.schema';
 import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
 import { pdfGenerateSchema } from './network/pdfGenerate.schema';
 import { pdfCompressSchema } from './network/pdfCompress.schema';
+import { pdfAutomateSchema } from './network/pdfAutomate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -556,8 +557,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     pdfCompressSchema,
     async () => (await import('./network/pdfCompress')).pdfCompressModule,
   );
-  REGISTER_NET('PdfAutomate', 'Unified PDF facade (generate/compress/read/merge/split/extract_tables/convert_to_docx).', 'write',
-    async () => (await import('./network/wrappers')).pdfAutomateModule, false);
+  registry.register(
+    pdfAutomateSchema,
+    async () => (await import('./network/pdfAutomate')).pdfAutomateModule,
+  );
   registry.register(
     xlwingsExecuteSchema,
     async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,

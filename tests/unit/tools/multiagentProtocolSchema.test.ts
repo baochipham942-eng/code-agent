@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { exploreTool } from '../../../src/main/agent/multiagentTools';
+import { exploreSchema } from '../../../src/main/tools/modules/planning/explore.schema';
 import { taskSchema } from '../../../src/main/tools/modules/multiagent/task.schema';
 import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
 import { spawnAgentSchema, agentSpawnSchema } from '../../../src/main/tools/modules/multiagent/spawnAgent.schema';
@@ -20,7 +20,7 @@ describe('multiagent protocol schemas', () => {
   it('uses the real Explore schema for the protocol wrapper', () => {
     const schema = getProtocolRegistry().getSchemas().find((toolSchema) => toolSchema.name === 'Explore');
 
-    expect(schema?.inputSchema).toEqual(exploreTool.inputSchema);
+    expect(schema?.inputSchema).toEqual(exploreSchema.inputSchema);
     expect(schema?.inputSchema.required).toEqual(['prompt']);
   });
 

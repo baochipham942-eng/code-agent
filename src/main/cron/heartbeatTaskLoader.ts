@@ -254,11 +254,14 @@ export function isWithinActiveHours(activeHours?: string): boolean {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const startMinutes = parseInt(startH!) * 60 + parseInt(startM!);
-  const endMinutes = parseInt(endH!) * 60 + parseInt(endM!);
+  const endMRaw = parseInt(endM!);
+  const endMinutes = parseInt(endH!) * 60 + endMRaw;
 
   if (startMinutes <= endMinutes) {
     return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
   }
-  // 跨午夜
-  return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  // 跨午夜：HH:00 视为该小时整点结束（HH:59），对齐"夜班 22:00-06:00"语义；
+  // 旧实现把 06:00 当严格 360 分钟边界，导致 06:01-06:59 被错判为窗口外。
+  const inclusiveEnd = endMRaw === 0 ? endMinutes + 59 : endMinutes;
+  return currentMinutes >= startMinutes || currentMinutes <= inclusiveEnd;
 }

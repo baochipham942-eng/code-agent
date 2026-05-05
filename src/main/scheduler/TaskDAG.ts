@@ -31,6 +31,12 @@ import {
   getNextTaskStatus,
 } from '../../shared/contract/taskDAG';
 import { createLogger } from '../services/infra/logger';
+import {
+  computeTopologicalOrder,
+  computeExecutionLevels,
+  computeCriticalPath,
+  validateDAG,
+} from './taskDagAlgorithms';
 
 const logger = createLogger('TaskDAG');
 
@@ -600,155 +606,34 @@ export class TaskDAG extends EventEmitter {
   // ============================================================================
 
   /**
-   * 获取拓扑排序
-   * 使用 Kahn 算法
+   * 获取拓扑排序（Kahn 算法）。结果会缓存到 isDirty 失效。
    */
   getTopologicalOrder(): string[] {
     if (!this.isDirty && this.topologicalOrder) {
       return this.topologicalOrder;
     }
-
-    const result: string[] = [];
-    const inDegree = new Map<string, number>();
-    const queue: string[] = [];
-
-    // 初始化入度
-    for (const [id, task] of this.tasks) {
-      inDegree.set(id, task.dependencies.length);
-      if (task.dependencies.length === 0) {
-        queue.push(id);
-      }
-    }
-
-    // Kahn 算法
-    while (queue.length > 0) {
-      // 按优先级排序后取第一个
-      queue.sort((a, b) => {
-        const taskA = this.tasks.get(a)!;
-        const taskB = this.tasks.get(b)!;
-        return getPriorityValue(taskB.priority) - getPriorityValue(taskA.priority);
-      });
-
-      const current = queue.shift()!;
-      result.push(current);
-
-      const task = this.tasks.get(current)!;
-      for (const depId of task.dependents) {
-        const newDegree = inDegree.get(depId)! - 1;
-        inDegree.set(depId, newDegree);
-        if (newDegree === 0) {
-          queue.push(depId);
-        }
-      }
-    }
-
-    // 检查是否有循环依赖
-    if (result.length !== this.tasks.size) {
-      throw new Error('Circular dependency detected in DAG');
-    }
-
-    this.topologicalOrder = result;
+    this.topologicalOrder = computeTopologicalOrder(this.tasks);
     this.isDirty = false;
-
-    return result;
+    return this.topologicalOrder;
   }
 
   /**
-   * 获取执行层级（同层可并行）
+   * 获取执行层级（同层可并行）。
    */
   getExecutionLevels(): string[][] {
-    const levels: string[][] = [];
-    const completed = new Set<string>();
-    const remaining = new Set(this.tasks.keys());
-
-    while (remaining.size > 0) {
-      const currentLevel: string[] = [];
-
-      // 找出所有依赖已满足的任务
-      for (const id of remaining) {
-        const task = this.tasks.get(id)!;
-        const allDepsCompleted = task.dependencies.every(d => completed.has(d));
-        if (allDepsCompleted) {
-          currentLevel.push(id);
-        }
-      }
-
-      if (currentLevel.length === 0) {
-        throw new Error('Circular dependency or invalid DAG');
-      }
-
-      // 按优先级排序
-      currentLevel.sort((a, b) => {
-        const taskA = this.tasks.get(a)!;
-        const taskB = this.tasks.get(b)!;
-        return getPriorityValue(taskB.priority) - getPriorityValue(taskA.priority);
-      });
-
-      levels.push(currentLevel);
-
-      // 标记为已完成并从 remaining 移除
-      for (const id of currentLevel) {
-        completed.add(id);
-        remaining.delete(id);
-      }
-    }
-
-    return levels;
+    return computeExecutionLevels(this.tasks);
   }
 
   /**
-   * 获取关键路径（最长路径）
-   * 使用动态规划计算
+   * 获取关键路径（最长路径）。复用拓扑排序缓存。
    */
   getCriticalPath(): string[] {
     if (!this.isDirty && this.criticalPath) {
       return this.criticalPath;
     }
-
     const order = this.getTopologicalOrder();
-    const dist = new Map<string, number>(); // 到达该任务的最长路径长度
-    const prev = new Map<string, string>(); // 前驱节点
-
-    // 初始化
-    for (const id of order) {
-      dist.set(id, 0);
-    }
-
-    // 动态规划计算最长路径
-    for (const id of order) {
-      const task = this.tasks.get(id)!;
-      const currentDist = dist.get(id)!;
-      const taskDuration = task.metadata.estimatedDuration || this.options.defaultTimeout;
-
-      for (const depId of task.dependents) {
-        const newDist = currentDist + taskDuration;
-        if (newDist > (dist.get(depId) || 0)) {
-          dist.set(depId, newDist);
-          prev.set(depId, id);
-        }
-      }
-    }
-
-    // 找到最远的终点
-    let maxDist = 0;
-    let endNode = '';
-    for (const [id, d] of dist) {
-      if (d > maxDist) {
-        maxDist = d;
-        endNode = id;
-      }
-    }
-
-    // 回溯构建关键路径
-    const path: string[] = [];
-    let current: string | undefined = endNode;
-    while (current) {
-      path.unshift(current);
-      current = prev.get(current);
-    }
-
-    this.criticalPath = path;
-    return path;
+    this.criticalPath = computeCriticalPath(this.tasks, this.options, order);
+    return this.criticalPath;
   }
 
   // ============================================================================
@@ -756,65 +641,10 @@ export class TaskDAG extends EventEmitter {
   // ============================================================================
 
   /**
-   * 验证 DAG 的完整性
+   * 校验 DAG 完整性。
    */
   validate(): { valid: boolean; errors: string[]; warnings: string[] } {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    // 1. 检查空 DAG
-    if (this.tasks.size === 0) {
-      errors.push('DAG is empty');
-      return { valid: false, errors, warnings };
-    }
-
-    // 2. 检查循环依赖
-    try {
-      this.getTopologicalOrder();
-    } catch {
-      errors.push('Circular dependency detected');
-    }
-
-    // 3. 检查悬空依赖
-    for (const task of this.tasks.values()) {
-      for (const depId of task.dependencies) {
-        if (!this.tasks.has(depId)) {
-          errors.push(`Task "${task.id}" depends on non-existent task "${depId}"`);
-        }
-      }
-    }
-
-    // 4. 检查无入口点
-    const hasEntryPoint = Array.from(this.tasks.values()).some(t => t.dependencies.length === 0);
-    if (!hasEntryPoint) {
-      errors.push('DAG has no entry point (all tasks have dependencies)');
-    }
-
-    // 5. 检查任务配置
-    for (const task of this.tasks.values()) {
-      if (task.type === 'agent') {
-        const config = task.config as AgentTaskConfig;
-        if (!config.role) {
-          errors.push(`Agent task "${task.id}" missing role`);
-        }
-        if (!config.prompt) {
-          errors.push(`Agent task "${task.id}" missing prompt`);
-        }
-      }
-    }
-
-    // 6. 警告：孤立任务（无依赖也无被依赖）
-    for (const task of this.tasks.values()) {
-      if (task.dependencies.length === 0 && task.dependents.length === 0 && this.tasks.size > 1) {
-        warnings.push(`Task "${task.id}" is isolated (no dependencies or dependents)`);
-      }
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-    };
+    return validateDAG(this.tasks);
   }
 
   // ============================================================================

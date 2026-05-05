@@ -99,6 +99,7 @@ import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
 import { videoGenerateSchema } from './network/videoGenerate.schema';
+import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -562,8 +563,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     imageProcessSchema,
     async () => (await import('./network/imageProcess')).imageProcessModule,
   );
-  REGISTER_NET('image_analyze', 'Analyze an image with vision models.', 'network',
-    async () => (await import('./network/wrappers')).imageAnalyzeModule, true);
+  registry.register(
+    imageAnalyzeSchema,
+    async () => (await import('./network/imageAnalyze')).imageAnalyzeModule,
+  );
   registry.register(
     imageAnnotateSchema,
     async () => (await import('./network/imageAnnotate')).imageAnnotateModule,

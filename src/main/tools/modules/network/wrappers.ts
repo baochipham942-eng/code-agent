@@ -40,7 +40,7 @@ import { localSpeechToTextTool } from '../../media/localSpeechToText';
 // Visual / chart helpers
 // chart_generate / mermaid_export / qrcode_generate 已迁移至原生 ToolModule
 // （见 modules/network/{chartGenerate,mermaidExport,qrcodeGenerate}.ts）
-import { screenshotPageTool } from '../../web/screenshotPage';
+// screenshot_page 已迁移到 native，见 ./screenshotPage.ts
 
 // External integrations
 // jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已迁移为 native ToolModule
@@ -95,9 +95,8 @@ export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
 export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET_READ);
 
-// ── Visual helpers (1) ──────────────────────────────────────────────────
-// chart_generate / mermaid_export / qrcode_generate 已迁移为 native
-export const screenshotPageModule = wrapLegacyTool(screenshotPageTool, NET_NETWORK_READ);
+// ── Visual helpers (0) ──────────────────────────────────────────────────
+// chart_generate / mermaid_export / qrcode_generate / screenshot_page 已全部迁移为 native
 
 // ── External integrations (0) ───────────────────────────────────────────
 // jira / github_pr / twitter_fetch / youtube_transcript / academic_search 已全部迁移为 native

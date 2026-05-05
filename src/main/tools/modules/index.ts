@@ -93,6 +93,7 @@ import { chartGenerateSchema } from './network/chartGenerate.schema';
 import { mermaidExportSchema } from './network/mermaidExport.schema';
 import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { speechToTextSchema } from './network/speechToText.schema';
+import { textToSpeechSchema } from './network/textToSpeech.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -560,8 +561,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).imageAnnotateModule, false);
   REGISTER_NET('video_generate', 'Generate a video clip from prompt.', 'network',
     async () => (await import('./network/wrappers')).videoGenerateModule, false);
-  REGISTER_NET('text_to_speech', 'Convert text to speech audio.', 'network',
-    async () => (await import('./network/wrappers')).textToSpeechModule, false);
+  registry.register(
+    textToSpeechSchema,
+    async () => (await import('./network/textToSpeech')).textToSpeechModule,
+  );
   registry.register(
     speechToTextSchema,
     async () => (await import('./network/speechToText')).speechToTextModule,

@@ -94,6 +94,7 @@ import { mermaidExportSchema } from './network/mermaidExport.schema';
 import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { speechToTextSchema } from './network/speechToText.schema';
 import { textToSpeechSchema } from './network/textToSpeech.schema';
+import { imageProcessSchema } from './network/imageProcess.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -553,8 +554,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   // Media (8)
   REGISTER_NET('image_generate', 'Generate an image (DALL-E / Stable Diffusion / etc.).', 'network',
     async () => (await import('./network/wrappers')).imageGenerateModule, false);
-  REGISTER_NET('image_process', 'Process an image (resize/crop/rotate/format).', 'write',
-    async () => (await import('./network/wrappers')).imageProcessModule, false);
+  registry.register(
+    imageProcessSchema,
+    async () => (await import('./network/imageProcess')).imageProcessModule,
+  );
   REGISTER_NET('image_analyze', 'Analyze an image with vision models.', 'network',
     async () => (await import('./network/wrappers')).imageAnalyzeModule, true);
   REGISTER_NET('image_annotate', 'Annotate an image (boxes, arrows, text).', 'write',

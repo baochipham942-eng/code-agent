@@ -98,6 +98,7 @@ import { imageProcessSchema } from './network/imageProcess.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
+import { videoGenerateSchema } from './network/videoGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -567,8 +568,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     imageAnnotateSchema,
     async () => (await import('./network/imageAnnotate')).imageAnnotateModule,
   );
-  REGISTER_NET('video_generate', 'Generate a video clip from prompt.', 'network',
-    async () => (await import('./network/wrappers')).videoGenerateModule, false);
+  registry.register(
+    videoGenerateSchema,
+    async () => (await import('./network/videoGenerate')).videoGenerateModule,
+  );
   registry.register(
     textToSpeechSchema,
     async () => (await import('./network/textToSpeech')).textToSpeechModule,

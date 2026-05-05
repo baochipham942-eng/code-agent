@@ -32,7 +32,7 @@ import { imageGenerateTool } from '../../media/imageGenerate';
 // image_process 已迁移到 native，见 ./imageProcess.ts
 import { imageAnalyzeTool } from '../../media/imageAnalyze';
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts
-import { videoGenerateTool } from '../../media/videoGenerate';
+// video_generate 已迁移到 native，见 ./videoGenerate.ts
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
 // local_speech_to_text 已迁移到 native，见 ./localSpeechToText.ts
@@ -84,7 +84,7 @@ export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK
 // image_process 已迁移到 native，见 ./imageProcess.ts
 export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_READ);
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts
-export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);
+// video_generate 已迁移到 native，见 ./videoGenerate.ts
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
 // local_speech_to_text 已迁移到 native，见 ./localSpeechToText.ts

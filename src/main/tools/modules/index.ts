@@ -93,6 +93,7 @@ import { chartGenerateSchema } from './network/chartGenerate.schema';
 import { mermaidExportSchema } from './network/mermaidExport.schema';
 import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { docxGenerateSchema } from './network/docxGenerate.schema';
+import { excelGenerateSchema } from './network/excelGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -540,8 +541,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     docxGenerateSchema,
     async () => (await import('./network/docxGenerate')).docxGenerateModule,
   );
-  REGISTER_NET('excel_generate', 'Generate a .xlsx spreadsheet.', 'write',
-    async () => (await import('./network/wrappers')).excelGenerateModule, false);
+  registry.register(
+    excelGenerateSchema,
+    async () => (await import('./network/excelGenerate')).excelGenerateModule,
+  );
   REGISTER_NET('pdf_generate', 'Generate a .pdf document.', 'write',
     async () => (await import('./network/wrappers')).pdfGenerateModule, false);
   REGISTER_NET('pdf_compress', 'Compress an existing PDF.', 'write',

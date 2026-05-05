@@ -20,8 +20,7 @@
 // Document generation
 import { pptGenerateTool } from '../../media/ppt';
 import { pptEditTool } from '../../media/ppt/editTool';
-// docxGenerate 已迁移到 Level 2 native module（见 ./docxGenerate.ts）
-import { excelGenerateTool } from '../../document/excelGenerate';
+// docxGenerate / excelGenerate 已迁移到 Level 2 native module（见 ./docxGenerate.ts / ./excelGenerate.ts）
 import { pdfGenerateTool } from '../../media/pdfGenerate';
 import { pdfCompressTool } from '../../media/pdfCompress';
 import { PdfAutomateTool } from '../../media/pdfAutomate';
@@ -78,8 +77,7 @@ const NET_NETWORK_WRITE = {
 // ── Document generation (7) ─────────────────────────────────────────────
 export const pptGenerateModule = wrapLegacyTool(pptGenerateTool, NET_NETWORK_WRITE);
 export const pptEditModule = wrapLegacyTool(pptEditTool, NET_WRITE);
-// docx_generate 已迁移到 Level 2 native module（见 ./docxGenerate.ts）
-export const excelGenerateModule = wrapLegacyTool(excelGenerateTool, NET_WRITE);
+// docx_generate / excel_generate 已迁移到 Level 2 native module（见 ./docxGenerate.ts / ./excelGenerate.ts）
 export const pdfGenerateModule = wrapLegacyTool(pdfGenerateTool, NET_WRITE);
 export const pdfCompressModule = wrapLegacyTool(pdfCompressTool, NET_WRITE);
 export const pdfAutomateModule = wrapLegacyTool(PdfAutomateTool, NET_WRITE);

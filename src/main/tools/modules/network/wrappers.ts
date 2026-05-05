@@ -21,10 +21,8 @@
 import { pptGenerateTool } from '../../media/ppt';
 import { pptEditTool } from '../../media/ppt/editTool';
 // docxGenerate / excelGenerate 已迁移到 Level 2 native module（见 ./docxGenerate.ts / ./excelGenerate.ts）
-// pdfGenerate / pdfCompress 已迁移到 Level 2 native module
-//   （见 ./pdfGenerate.ts / ./pdfCompress.ts）
-import { PdfAutomateTool } from '../../media/pdfAutomate';
-// xlwingsExecute 已迁移到 Level 2 native module（见 ./xlwingsExecute.ts）
+// pdfGenerate / pdfCompress / pdfAutomate / xlwingsExecute 已迁移到 Level 2 native module
+//   （见 ./pdfGenerate.ts / ./pdfCompress.ts / ./pdfAutomate.ts / ./xlwingsExecute.ts）
 
 // Media generation / processing
 import { imageGenerateTool } from '../../media/imageGenerate';
@@ -78,10 +76,8 @@ const NET_NETWORK_WRITE = {
 export const pptGenerateModule = wrapLegacyTool(pptGenerateTool, NET_NETWORK_WRITE);
 export const pptEditModule = wrapLegacyTool(pptEditTool, NET_WRITE);
 // docx_generate / excel_generate 已迁移到 Level 2 native module（见 ./docxGenerate.ts / ./excelGenerate.ts）
-// pdf_generate / pdf_compress 已迁移到 Level 2 native module
-//   （见 ./pdfGenerate.ts / ./pdfCompress.ts）
-export const pdfAutomateModule = wrapLegacyTool(PdfAutomateTool, NET_WRITE);
-// xlwings_execute 已迁移到 Level 2 native module（见 ./xlwingsExecute.ts）
+// pdf_generate / pdf_compress / PdfAutomate / xlwings_execute 已迁移到 Level 2 native module
+//   （见 ./pdfGenerate.ts / ./pdfCompress.ts / ./pdfAutomate.ts / ./xlwingsExecute.ts）
 
 // ── Media (8) ───────────────────────────────────────────────────────────
 export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);

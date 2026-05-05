@@ -8,8 +8,6 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
-import type { ToolSchema } from '../../protocol/tools';
-import type { Tool } from '../types';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -100,13 +98,13 @@ import { academicSearchSchema } from './network/academicSearch.schema';
 
 // vision/
 import { visualEditSchema } from './vision/visualEdit.schema';
-import { browserActionTool } from '../vision/browserAction';
-import { browserNavigateTool } from '../vision/browserNavigate';
-import { BrowserTool } from '../vision/BrowserTool';
-import { ComputerTool } from '../vision/ComputerTool';
-import { computerUseTool } from '../vision/computerUse';
-import { guiAgentTool } from '../vision/guiAgent';
-import { screenshotTool } from '../vision/screenshot';
+import { browserSchema } from './vision/browser.schema';
+import { computerSchema } from './vision/computer.schema';
+import { browserActionSchema } from './vision/browserAction.schema';
+import { browserNavigateSchema } from './vision/browserNavigate.schema';
+import { computerUseSchema } from './vision/computerUse.schema';
+import { screenshotSchema } from './vision/screenshot.schema';
+import { guiAgentSchema } from './vision/guiAgent.schema';
 // exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
 
 // lightMemory/
@@ -131,19 +129,6 @@ import { taskManagerSchema } from './planning/taskManager.schema';
 import { askUserQuestionSchema } from './planning/askUserQuestion.schema';
 import { confirmActionSchema } from './planning/confirmAction.schema';
 import { exploreSchema } from './planning/explore.schema';
-
-function legacyToolSchema(
-  tool: Pick<Tool, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
-  options: Omit<ToolSchema, 'name' | 'description' | 'inputSchema' | 'dynamicDescription'>,
-): ToolSchema {
-  return {
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-    ...(tool.dynamicDescription ? { dynamicDescription: tool.dynamicDescription } : {}),
-    ...options,
-  };
-}
 
 export function registerMigratedTools(registry: ToolRegistry): void {
   // ── file/ batch 1 ─────────────────────────────────────────────────────
@@ -221,59 +206,34 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./lsp/lsp')).lspModule,
   );
 
-  // ── batch 4: vision/ wrapper 模式（7 个，wrappers.ts 单文件聚合 module）─
-  // 注：register 要求 schema 立即提供（getSchemas 用），所以这里复用 legacy tool 的真实 schema。
-  // loader 内 lazy 拉 wrappers.ts 拿对应 module
+  // ── batch 4: vision/ Level 1 native (schema 抽出 + wrapper-mode 委托 legacy)─
   registry.register(
-    legacyToolSchema(BrowserTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).browserModule,
+    browserSchema,
+    async () => (await import('./vision/browser')).browserModule,
   );
   registry.register(
-    legacyToolSchema(ComputerTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).computerModule,
+    computerSchema,
+    async () => (await import('./vision/computer')).computerModule,
   );
   registry.register(
-    legacyToolSchema(browserActionTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).browserActionModule,
+    browserActionSchema,
+    async () => (await import('./vision/browserAction')).browserActionModule,
   );
   registry.register(
-    legacyToolSchema(browserNavigateTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).browserNavigateModule,
+    browserNavigateSchema,
+    async () => (await import('./vision/browserNavigate')).browserNavigateModule,
   );
   registry.register(
-    legacyToolSchema(computerUseTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).computerUseModule,
+    computerUseSchema,
+    async () => (await import('./vision/computerUse')).computerUseModule,
   );
   registry.register(
-    legacyToolSchema(screenshotTool, {
-      category: 'vision',
-      permissionLevel: 'read',
-      readOnly: true,
-      allowInPlanMode: true,
-    }),
-    async () => (await import('./vision/wrappers')).screenshotModule,
+    screenshotSchema,
+    async () => (await import('./vision/screenshot')).screenshotModule,
   );
   registry.register(
-    legacyToolSchema(guiAgentTool, {
-      category: 'vision',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./vision/wrappers')).guiAgentModule,
+    guiAgentSchema,
+    async () => (await import('./vision/guiAgent')).guiAgentModule,
   );
 
   // visual_edit — Live Preview 点击元素 → 视觉 LLM 产 diff → 原子落盘

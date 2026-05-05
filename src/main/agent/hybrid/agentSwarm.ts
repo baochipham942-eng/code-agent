@@ -198,12 +198,17 @@ export class AgentSwarm {
         this.executeAgent(runtime, executor)
       );
 
-      // 等待任意一个完成（或全部完成）
+      // 等待任意一个完成（或全部完成）；手工 clearTimeout 避免 5s 软超时 timer 累积
       if (executions.length > 0) {
-        await Promise.race([
-          Promise.all(executions),
-          this.waitForTimeout(5000),  // 5 秒检查一次
-        ]);
+        let pollId: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            Promise.all(executions),
+            new Promise<void>(resolve => { pollId = setTimeout(resolve, 5000); }),
+          ]);
+        } finally {
+          if (pollId) clearTimeout(pollId);
+        }
       } else {
         // 没有可执行的 Agent，等待一下
         await this.waitForTimeout(100);

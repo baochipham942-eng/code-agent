@@ -6,6 +6,7 @@
 import type { DataSourceType, SourceResult } from './types';
 import { DataSourceRouter } from './dataSourceRouter';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 
 const logger = createLogger('SearchFallback');
 
@@ -428,18 +429,13 @@ export class SearchFallbackHandler {
   }
 
   /**
-   * 带超时的执行
+   * 带超时的执行（withTimeout 自动清理 timer，胜者侧不留 zombie 句柄）
    */
   private async executeWithTimeout<T>(
     promise: Promise<T>,
     timeoutMs: number
   ): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error('Search timeout')), timeoutMs)
-      ),
-    ]);
+    return withTimeout(promise, timeoutMs, 'Search timeout');
   }
 
   /**

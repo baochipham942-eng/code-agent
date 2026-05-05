@@ -1,15 +1,7 @@
-// ============================================================================
-// Task Manager Tool - Consolidates 4 task tools into 1 with action dispatch
-// Phase 2: Tool Schema Consolidation (Group 3: 4->1)
-// ============================================================================
+// Schema-only file (P1 Wave 3 — planning native migration)
+import type { ToolSchema } from '../../../protocol/tools';
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { taskCreateTool } from './taskCreate';
-import { taskGetTool } from './taskGet';
-import { taskListTool } from './taskList';
-import { taskUpdateTool } from './taskUpdate';
-
-export const TaskManagerTool: Tool = {
+export const taskManagerSchema: ToolSchema = {
   name: 'TaskManager',
   description: `Unified task management tool for creating, listing, retrieving, and updating session tasks.
 
@@ -27,7 +19,6 @@ Examples:
 - Add dependency: { "action": "update", "taskId": "2", "addBlockedBy": ["1"] }
 - Snooze desktop task: { "action": "update", "taskId": "3", "desktopAction": "snooze", "desktopSnoozeHours": 24 }
 - Delete: { "action": "update", "taskId": "1", "status": "deleted" }`,
-
   inputSchema: {
     type: 'object',
     properties: {
@@ -97,34 +88,7 @@ Examples:
     },
     required: ['action'],
   },
-
-  requiresPermission: false,
-  permissionLevel: 'read',
-
-  async execute(
-    params: Record<string, unknown>,
-    context: ToolContext
-  ): Promise<ToolExecutionResult> {
-    const action = params.action as string;
-
-    switch (action) {
-      case 'create':
-        return taskCreateTool.execute(params, context);
-
-      case 'get':
-        return taskGetTool.execute(params, context);
-
-      case 'list':
-        return taskListTool.execute(params, context);
-
-      case 'update':
-        return taskUpdateTool.execute(params, context);
-
-      default:
-        return {
-          success: false,
-          error: `Unknown action: ${action}. Valid actions: create, get, list, update`,
-        };
-    }
-  },
+  category: 'planning',
+  permissionLevel: 'write',
+  allowInPlanMode: true,
 };

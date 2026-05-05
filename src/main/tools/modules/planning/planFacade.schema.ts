@@ -1,14 +1,9 @@
-// ============================================================================
-// Plan Tool - Unified plan read/update (Phase 2 consolidation)
-// Merges: plan_read, plan_update
-// ============================================================================
+// Schema-only file (P1 Wave 3 — planning native migration)
+// Note: this is the unified `Plan` facade tool (read/update/recover_recent_work).
+// Distinct from the plan_mode facade in planModeFacade.schema.ts (PlanMode).
+import type { ToolSchema } from '../../../protocol/tools';
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { planReadTool } from './planRead';
-import { planUpdateTool } from './planUpdate';
-import { planRecoverRecentWorkTool } from './planRecoverRecentWork';
-
-export const PlanTool: Tool = {
+export const planFacadeSchema: ToolSchema = {
   name: 'Plan',
   description: `Creates and manages execution plans for complex multi-step tasks.
 
@@ -21,10 +16,6 @@ Examples:
 - Read: { "action": "read", "summary": true }
 - Update step: { "action": "update", "stepContent": "Implement login", "status": "completed" }
 - Recover work: { "action": "recover_recent_work", "query": "issue #42 memory plan" }`,
-
-  requiresPermission: false,
-  permissionLevel: 'read',
-
   inputSchema: {
     type: 'object',
     properties: {
@@ -87,28 +78,7 @@ Examples:
     },
     required: ['action'],
   },
-
-  async execute(
-    params: Record<string, unknown>,
-    context: ToolContext
-  ): Promise<ToolExecutionResult> {
-    const action = params.action as string;
-
-    switch (action) {
-      case 'read':
-        return planReadTool.execute(params, context);
-
-      case 'update':
-        return planUpdateTool.execute(params, context);
-
-      case 'recover_recent_work':
-        return planRecoverRecentWorkTool.execute(params, context);
-
-      default:
-        return {
-          success: false,
-          error: `Unknown action: ${action}. Valid actions: read, update, recover_recent_work`,
-        };
-    }
-  },
+  category: 'planning',
+  permissionLevel: 'write',
+  allowInPlanMode: true,
 };

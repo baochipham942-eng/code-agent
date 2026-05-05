@@ -92,6 +92,7 @@ import { readXlsxSchema } from './network/readXlsx.schema';
 import { chartGenerateSchema } from './network/chartGenerate.schema';
 import { mermaidExportSchema } from './network/mermaidExport.schema';
 import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
+import { speechToTextSchema } from './network/speechToText.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -561,8 +562,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).videoGenerateModule, false);
   REGISTER_NET('text_to_speech', 'Convert text to speech audio.', 'network',
     async () => (await import('./network/wrappers')).textToSpeechModule, false);
-  REGISTER_NET('speech_to_text', 'Transcribe audio to text via cloud ASR.', 'network',
-    async () => (await import('./network/wrappers')).speechToTextModule, true);
+  registry.register(
+    speechToTextSchema,
+    async () => (await import('./network/speechToText')).speechToTextModule,
+  );
   REGISTER_NET('local_speech_to_text', 'Transcribe audio to text via local ASR.', 'read',
     async () => (await import('./network/wrappers')).localSpeechToTextModule, true);
 

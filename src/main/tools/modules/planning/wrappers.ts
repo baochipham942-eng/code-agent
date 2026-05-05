@@ -11,7 +11,6 @@
 // planModeFacade.ts），这里不再 wrap 这三个工具。
 // ============================================================================
 
-import { PlanTool } from '../../planning/PlanTool';
 import { confirmActionTool } from '../../planning/confirmAction';
 import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { exploreTool } from '../../../agent/multiagentTools/explore';
@@ -45,7 +44,7 @@ const PLAN_EXECUTE = {
 // ── 计划 facade ──
 // plan_mode facade (PlanMode / enter_plan_mode / exit_plan_mode) 已迁移到
 // native ToolModule（见 planModeFacade.ts / enterPlanMode.ts / exitPlanMode.ts）
-export const planModule = wrapLegacyTool(PlanTool, PLAN_WRITE);
+// Plan facade (read/update/recover_recent_work) 已迁移到 native，见 ./planFacade.ts
 
 // ── 任务管理 ──
 // task_list / task_get / task_create / task_update / TaskManager 已迁移到 native ToolModule

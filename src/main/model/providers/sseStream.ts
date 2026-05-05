@@ -183,19 +183,22 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           logger.warn(`[${providerName}] API 错误: ${res.statusCode}`, errorData);
           let errorMessage = `${providerName} API 错误 (${res.statusCode})`;
           try {
-            const parsed = JSON.parse(errorData);
-            if (parsed.error?.message) {
-              errorMessage = `${providerName} API (${res.statusCode}): ${parsed.error.message}`;
+            // OpenAI/兼容供应商的错误体结构基本一致：{ error: { message, type?, code? } }，
+            // 这里只用 message 一个字段。出现非常规 shape 时类型断言失败也只走 catch fallback。
+            const parsed = JSON.parse(errorData) as { error?: { message?: string } };
+            const innerMsg = parsed.error?.message;
+            if (innerMsg) {
+              errorMessage = `${providerName} API (${res.statusCode}): ${innerMsg}`;
             }
             // 400 错误诊断：区分 token 超限、无效参数等
             if (res.statusCode === 400) {
-              const errLower = (parsed.error?.message || errorData).toLowerCase();
+              const errLower = (innerMsg || errorData).toLowerCase();
               if (errLower.includes('token') || errLower.includes('context_length') || errLower.includes('max_tokens') || errLower.includes('too long') || errLower.includes('exceeds')) {
-                errorMessage = `${providerName}: 上下文 token 超限，建议压缩对话或新开会话。原始错误: ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 上下文 token 超限，建议压缩对话或新开会话。原始错误: ${innerMsg || errorData.substring(0, 200)}`;
               } else if (errLower.includes('invalid') || errLower.includes('parameter') || errLower.includes('required')) {
-                errorMessage = `${providerName}: 请求参数无效 — ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 请求参数无效 — ${innerMsg || errorData.substring(0, 200)}`;
               } else {
-                errorMessage = `${providerName}: 请求格式错误 (400) — ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 请求格式错误 (400) — ${innerMsg || errorData.substring(0, 200)}`;
               }
             }
           } catch {

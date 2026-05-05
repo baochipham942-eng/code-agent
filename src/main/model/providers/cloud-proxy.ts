@@ -325,10 +325,11 @@ async function callViaCloudProxyStreaming(
 
     // 完成工具调用
     for (const [, tc] of toolCallsInProgress) {
+      const args = JSON.parse(tc.arguments || '{}') as Record<string, unknown>;
       toolCalls.push({
         id: tc.id,
         name: tc.name,
-        arguments: JSON.parse(tc.arguments || '{}'),
+        arguments: args,
       });
     }
 

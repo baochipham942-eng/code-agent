@@ -61,7 +61,7 @@ export async function callOpenAI(
     throw new Error(`OpenAI API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }
 
@@ -123,7 +123,7 @@ export async function callGroq(
     throw new Error(`Groq API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }
 
@@ -178,7 +178,7 @@ export async function callLocal(
     throw new Error(`Local model error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }
 
@@ -240,7 +240,7 @@ export async function callQwen(
     throw new Error(`千问 API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }
 
@@ -305,7 +305,7 @@ export async function callMinimax(
     throw new Error(`MiniMax API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }
 
@@ -356,6 +356,6 @@ export async function callPerplexity(
     throw new Error(`Perplexity API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseOpenAIResponse(data);
 }

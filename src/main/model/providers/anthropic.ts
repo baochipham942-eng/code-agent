@@ -76,7 +76,8 @@ function claudeSSEStream(options: {
           logger.warn('[Claude] API error:', res.statusCode, errorData);
           let errorMessage = `Claude API error: ${res.statusCode}`;
           try {
-            const parsed = JSON.parse(errorData);
+            // Anthropic 错误体结构：{ type: 'error', error: { type, message } }
+            const parsed = JSON.parse(errorData) as { error?: { message?: string } };
             if (parsed.error?.message) {
               errorMessage = `Claude API (${res.statusCode}): ${parsed.error.message}`;
             }
@@ -487,6 +488,6 @@ export async function callClaude(
     throw new Error(`Claude API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseClaudeResponse(data);
 }

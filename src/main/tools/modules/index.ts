@@ -98,6 +98,7 @@ import { twitterFetchSchema } from './network/twitterFetch.schema';
 import { youtubeTranscriptSchema } from './network/youtubeTranscript.schema';
 import { academicSearchSchema } from './network/academicSearch.schema';
 import { pptGenerateSchema } from './network/pptGenerate.schema';
+import { pptEditSchema } from './network/pptEdit.schema';
 
 // vision/
 import { visualEditSchema } from './vision/visualEdit.schema';
@@ -660,15 +661,7 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/pptGenerate')).pptGenerateModule,
   );
   registry.register(
-    {
-      name: 'ppt_edit',
-      description: 'Edit an existing PowerPoint presentation (insert/replace/delete slides or text).',
-      inputSchema: netSchema({ file_path: { type: 'string' }, action: { type: 'string' } }),
-      category: 'network',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
-    async () => (await import('./network/wrappers')).pptEditModule,
+    pptEditSchema,
+    async () => (await import('./network/pptEdit')).pptEditModule,
   );
 }

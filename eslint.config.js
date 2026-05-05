@@ -137,7 +137,6 @@ export default tseslint.config(
       'src/main/hooks/hookManager.ts',
       'src/main/model/providerRegistry.ts',
       'src/main/model/providers/shared.ts',
-      'src/main/scheduler/TaskDAG.ts',
       'src/main/services/core/databaseService.ts',
       'src/main/services/desktop/backgroundCgEventSurface.ts',
       'src/main/services/desktop/computerSurface.ts',

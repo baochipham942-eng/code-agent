@@ -37,7 +37,13 @@ function claudeSSEStream(options: {
       return;
     }
 
-    const url = new URL(`${baseUrl}/messages`);
+    // URL 用 try-catch 兜底，畸形 baseUrl 走 reject 而非 throw
+    let url: URL;
+    try {
+      url = new URL(`${baseUrl}/messages`);
+    } catch (e) {
+      return reject(new TypeError(`Invalid baseUrl: ${baseUrl}`, { cause: e }));
+    }
     const isHttps = url.protocol === 'https:';
     const httpModule = isHttps ? https : http;
 

@@ -445,8 +445,14 @@ export class UpdateService implements Disposable {
   // ----------------------------------------------------------------------------
 
   private httpGet(url: string): Promise<string> {
+    // URL 解析提到 executor 外，避免畸形 URL throw 时绕过 listener 注册
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch (e) {
+      return Promise.reject(new TypeError(`Invalid URL: ${url}`, { cause: e }));
+    }
     return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol === 'https:' ? https : http;
 
       const options = {
@@ -495,10 +501,22 @@ export class UpdateService implements Disposable {
    * Returns the hex digest of the downloaded bytes for caller-side verification.
    */
   private downloadFile(url: string, destPath: string): Promise<string> {
+    // URL 解析提到 executor 外；createWriteStream 留在 executor 内但用 try-catch
+    // 兜底（早期失败可立即 reject，无需先创建空文件）
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch (e) {
+      return Promise.reject(new TypeError(`Invalid URL: ${url}`, { cause: e }));
+    }
     return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol === 'https:' ? https : http;
-      const file = fs.createWriteStream(destPath);
+      let file: fs.WriteStream;
+      try {
+        file = fs.createWriteStream(destPath);
+      } catch (e) {
+        return reject(e instanceof Error ? e : new Error(String(e)));
+      }
       const hasher = createHash('sha256');
 
       const startTime = Date.now();

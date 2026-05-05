@@ -1,11 +1,14 @@
 // ============================================================================
-// DOCX Generate Tool - 生成 Word 文档 (.docx)
+// docx_generate (P1 Wave 4 D2b — network/document_generation: native ToolModule)
+//
+// 把 legacy DocxGenerateTool 的 Markdown→docx 渲染管线整体搬到 native：
+// 标题 / 列表 / 粗体斜体 / 代码 / 引用 / 表格 + 4 主题（professional/academic/minimal/creative）。
+//
+// 行为保真：legacy 输出文案、emoji、metadata.attachment 形状 1:1 复刻（评测集依赖）。
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
-import { formatFileSize } from '../utils/fileSize';
 import {
   Document,
   Packer,
@@ -19,8 +22,17 @@ import {
   WidthType,
   BorderStyle,
 } from 'docx';
+import type {
+  ToolHandler,
+  ToolModule,
+  ToolContext,
+  CanUseToolFn,
+  ToolProgressFn,
+  ToolResult,
+} from '../../../protocol/tools';
+import { formatFileSize } from '../../utils/fileSize';
+import { docxGenerateSchema as schema } from './docxGenerate.schema';
 
-// Word 文档样式主题
 type DocxTheme = 'professional' | 'academic' | 'minimal' | 'creative';
 
 interface DocxGenerateParams {
@@ -31,8 +43,7 @@ interface DocxGenerateParams {
   author?: string;
 }
 
-// 主题配置
-const themeConfigs: Record<DocxTheme, {
+interface ThemeConfig {
   titleSize: number;
   headingSize: number;
   textSize: number;
@@ -40,7 +51,9 @@ const themeConfigs: Record<DocxTheme, {
   headingColor: string;
   textColor: string;
   fontFamily: string;
-}> = {
+}
+
+const themeConfigs: Record<DocxTheme, ThemeConfig> = {
   professional: {
     titleSize: 36,
     headingSize: 24,
@@ -79,13 +92,7 @@ const themeConfigs: Record<DocxTheme, {
   },
 };
 
-/**
- * 解析 Markdown 内容为文档元素
- */
-function parseMarkdownToDocElements(
-  content: string,
-  theme: typeof themeConfigs.professional
-): Paragraph[] {
+function parseMarkdownToDocElements(content: string, theme: ThemeConfig): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   const lines = content.split('\n');
 
@@ -98,10 +105,8 @@ function parseMarkdownToDocElements(
     const line = lines[i];
     const trimmed = line.trim();
 
-    // 代码块处理
     if (trimmed.startsWith('```')) {
       if (inCodeBlock) {
-        // 结束代码块
         paragraphs.push(
           new Paragraph({
             children: [
@@ -114,7 +119,7 @@ function parseMarkdownToDocElements(
             ],
             shading: { fill: 'f3f4f6' },
             spacing: { before: 200, after: 200 },
-          })
+          }),
         );
         codeBlockContent = [];
         inCodeBlock = false;
@@ -129,23 +134,17 @@ function parseMarkdownToDocElements(
       continue;
     }
 
-    // 表格处理
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
       if (!inTable) {
         inTable = true;
         tableRows = [];
       }
-      // 跳过分隔行
       if (!trimmed.match(/^\|[\s-|]+\|$/)) {
-        const cells = trimmed
-          .split('|')
-          .filter((c) => c.trim())
-          .map((c) => c.trim());
+        const cells = trimmed.split('|').filter((c) => c.trim()).map((c) => c.trim());
         tableRows.push(cells);
       }
       continue;
     } else if (inTable) {
-      // 结束表格
       if (tableRows.length > 0) {
         paragraphs.push(...createTable(tableRows, theme));
       }
@@ -153,13 +152,11 @@ function parseMarkdownToDocElements(
       inTable = false;
     }
 
-    // 空行
     if (!trimmed) {
       paragraphs.push(new Paragraph({ text: '' }));
       continue;
     }
 
-    // 一级标题
     if (trimmed.startsWith('# ')) {
       paragraphs.push(
         new Paragraph({
@@ -174,12 +171,11 @@ function parseMarkdownToDocElements(
           ],
           heading: HeadingLevel.HEADING_1,
           spacing: { before: 400, after: 200 },
-        })
+        }),
       );
       continue;
     }
 
-    // 二级标题
     if (trimmed.startsWith('## ')) {
       paragraphs.push(
         new Paragraph({
@@ -194,12 +190,11 @@ function parseMarkdownToDocElements(
           ],
           heading: HeadingLevel.HEADING_2,
           spacing: { before: 300, after: 150 },
-        })
+        }),
       );
       continue;
     }
 
-    // 三级标题
     if (trimmed.startsWith('### ')) {
       paragraphs.push(
         new Paragraph({
@@ -214,12 +209,11 @@ function parseMarkdownToDocElements(
           ],
           heading: HeadingLevel.HEADING_3,
           spacing: { before: 200, after: 100 },
-        })
+        }),
       );
       continue;
     }
 
-    // 无序列表
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       paragraphs.push(
         new Paragraph({
@@ -233,12 +227,11 @@ function parseMarkdownToDocElements(
           ],
           bullet: { level: 0 },
           spacing: { before: 50, after: 50 },
-        })
+        }),
       );
       continue;
     }
 
-    // 有序列表
     if (trimmed.match(/^\d+\.\s/)) {
       paragraphs.push(
         new Paragraph({
@@ -252,12 +245,11 @@ function parseMarkdownToDocElements(
           ],
           numbering: { reference: 'default-numbering', level: 0 },
           spacing: { before: 50, after: 50 },
-        })
+        }),
       );
       continue;
     }
 
-    // 引用块
     if (trimmed.startsWith('> ')) {
       paragraphs.push(
         new Paragraph({
@@ -273,16 +265,14 @@ function parseMarkdownToDocElements(
           indent: { left: 720 },
           shading: { fill: 'f9fafb' },
           spacing: { before: 100, after: 100 },
-        })
+        }),
       );
       continue;
     }
 
-    // 普通段落 - 处理行内格式
     paragraphs.push(createFormattedParagraph(trimmed, theme));
   }
 
-  // 处理未结束的表格
   if (inTable && tableRows.length > 0) {
     paragraphs.push(...createTable(tableRows, theme));
   }
@@ -290,16 +280,8 @@ function parseMarkdownToDocElements(
   return paragraphs;
 }
 
-/**
- * 创建格式化段落（处理粗体、斜体、代码等）
- */
-function createFormattedParagraph(
-  text: string,
-  theme: typeof themeConfigs.professional
-): Paragraph {
+function createFormattedParagraph(text: string, theme: ThemeConfig): Paragraph {
   const runs: TextRun[] = [];
-
-  // 简单处理：解析 **bold**, *italic*, `code`
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
 
   for (const part of parts) {
@@ -313,7 +295,7 @@ function createFormattedParagraph(
           size: theme.textSize * 2,
           color: theme.textColor,
           font: theme.fontFamily,
-        })
+        }),
       );
     } else if (part.startsWith('*') && part.endsWith('*')) {
       runs.push(
@@ -323,7 +305,7 @@ function createFormattedParagraph(
           size: theme.textSize * 2,
           color: theme.textColor,
           font: theme.fontFamily,
-        })
+        }),
       );
     } else if (part.startsWith('`') && part.endsWith('`')) {
       runs.push(
@@ -333,7 +315,7 @@ function createFormattedParagraph(
           size: theme.textSize * 2 - 2,
           color: 'dc2626',
           shading: { fill: 'f3f4f6' },
-        })
+        }),
       );
     } else {
       runs.push(
@@ -342,7 +324,7 @@ function createFormattedParagraph(
           size: theme.textSize * 2,
           color: theme.textColor,
           font: theme.fontFamily,
-        })
+        }),
       );
     }
   }
@@ -353,13 +335,7 @@ function createFormattedParagraph(
   });
 }
 
-/**
- * 创建表格
- */
-function createTable(
-  rows: string[][],
-  theme: typeof themeConfigs.professional
-): Paragraph[] {
+function createTable(rows: string[][], theme: ThemeConfig): Paragraph[] {
   if (rows.length === 0) return [];
 
   const table = new Table({
@@ -389,9 +365,9 @@ function createTable(
                 left: { style: BorderStyle.SINGLE, size: 1, color: 'e5e7eb' },
                 right: { style: BorderStyle.SINGLE, size: 1, color: 'e5e7eb' },
               },
-            })
+            }),
         ),
-      })
+      }),
     ),
   });
 
@@ -403,183 +379,156 @@ function createTable(
   ];
 }
 
-export const docxGenerateTool: Tool = {
-  name: 'docx_generate',
-  description: `生成 Word 文档（.docx 文件）。
+export async function executeDocxGenerate(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  canUseTool: CanUseToolFn,
+  onProgress?: ToolProgressFn,
+): Promise<ToolResult<string>> {
+  const permit = await canUseTool(schema.name, args);
+  if (!permit.allow) {
+    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+  }
+  if (ctx.abortSignal.aborted) {
+    return { ok: false, error: 'aborted', code: 'ABORTED' };
+  }
 
-支持 Markdown 格式内容，自动转换为 Word 格式：
-- 标题（# ## ###）
-- 列表（- 或 1.）
-- 粗体（**text**）、斜体（*text*）
-- 代码（\`code\`）和代码块
-- 引用（> text）
-- 表格（| col1 | col2 |）
+  onProgress?.({ stage: 'starting', detail: schema.name });
 
-**主题选项：**
-- professional: 专业商务风格（蓝色系）
-- academic: 学术论文风格（黑白，Times New Roman）
-- minimal: 极简风格（灰色系）
-- creative: 创意风格（紫色系）
+  const params = args as unknown as DocxGenerateParams;
+  const { title, content } = params;
 
-**使用示例：**
-\`\`\`
-docx_generate { "title": "项目报告", "content": "# 概述\\n这是一份报告..." }
-docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\\n- 李四", "theme": "minimal" }
-\`\`\``,
-  requiresPermission: true,
-  permissionLevel: 'write',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      title: {
-        type: 'string',
-        description: '文档标题',
-      },
-      content: {
-        type: 'string',
-        description: '文档内容（支持 Markdown 格式）',
-      },
-      theme: {
-        type: 'string',
-        enum: ['professional', 'academic', 'minimal', 'creative'],
-        description: '主题风格（默认: professional）',
-        default: 'professional',
-      },
-      output_path: {
-        type: 'string',
-        description: '输出文件路径（默认: 工作目录下的 document-{timestamp}.docx）',
-      },
-      author: {
-        type: 'string',
-        description: '文档作者（默认: Code Agent）',
-      },
-    },
-    required: ['title', 'content'],
-  },
+  if (typeof title !== 'string' || title.length === 0) {
+    return { ok: false, error: 'title is required and must be a string', code: 'INVALID_ARGS' };
+  }
+  if (typeof content !== 'string') {
+    return { ok: false, error: 'content is required and must be a string', code: 'INVALID_ARGS' };
+  }
 
-  async execute(
-    params: Record<string, unknown>,
-    context: ToolContext
-  ): Promise<ToolExecutionResult> {
-    const {
+  const theme: DocxTheme = (params.theme ?? 'professional') as DocxTheme;
+  const author = params.author ?? 'Code Agent';
+  const output_path = params.output_path;
+
+  try {
+    const themeConfig = themeConfigs[theme] || themeConfigs.professional;
+
+    const timestamp = Date.now();
+    const fileName = `document-${timestamp}.docx`;
+    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
+    const finalPath = output_path || path.join(outputDir, fileName);
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const contentParagraphs = parseMarkdownToDocElements(content, themeConfig);
+
+    const doc = new Document({
+      creator: author,
       title,
-      content,
-      theme = 'professional',
-      output_path,
-      author = 'Code Agent',
-    } = params as unknown as DocxGenerateParams;
-
-    try {
-      const themeConfig = themeConfigs[theme as DocxTheme] || themeConfigs.professional;
-
-      // 确定输出路径
-      const timestamp = Date.now();
-      const fileName = `document-${timestamp}.docx`;
-      const outputDir = output_path
-        ? path.dirname(output_path)
-        : context.workingDirectory;
-      const finalPath = output_path || path.join(outputDir, fileName);
-
-      // 确保目录存在
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      // 解析内容
-      const contentParagraphs = parseMarkdownToDocElements(content, themeConfig);
-
-      // 创建文档
-      const doc = new Document({
-        creator: author,
-        title: title,
-        description: `Generated by Code Agent`,
-        styles: {
-          default: {
-            document: {
-              run: {
-                font: themeConfig.fontFamily,
-                size: themeConfig.textSize * 2,
-              },
+      description: 'Generated by Code Agent',
+      styles: {
+        default: {
+          document: {
+            run: {
+              font: themeConfig.fontFamily,
+              size: themeConfig.textSize * 2,
             },
           },
         },
-        numbering: {
-          config: [
-            {
-              reference: 'default-numbering',
-              levels: [
-                {
-                  level: 0,
-                  format: 'decimal',
-                  text: '%1.',
-                  alignment: AlignmentType.LEFT,
-                },
-              ],
-            },
-          ],
-        },
-        sections: [
+      },
+      numbering: {
+        config: [
           {
-            children: [
-              // 标题
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: title,
-                    bold: true,
-                    size: themeConfig.titleSize * 2,
-                    color: themeConfig.titleColor,
-                    font: themeConfig.fontFamily,
-                  }),
-                ],
-                alignment: AlignmentType.CENTER,
-                spacing: { before: 400, after: 400 },
-              }),
-              // 内容
-              ...contentParagraphs,
+            reference: 'default-numbering',
+            levels: [
+              {
+                level: 0,
+                format: 'decimal',
+                text: '%1.',
+                alignment: AlignmentType.LEFT,
+              },
             ],
           },
         ],
-      });
+      },
+      sections: [
+        {
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: title,
+                  bold: true,
+                  size: themeConfig.titleSize * 2,
+                  color: themeConfig.titleColor,
+                  font: themeConfig.fontFamily,
+                }),
+              ],
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 400, after: 400 },
+            }),
+            ...contentParagraphs,
+          ],
+        },
+      ],
+    });
 
-      // 生成并保存文件
-      const buffer = await Packer.toBuffer(doc);
-      fs.writeFileSync(finalPath, buffer);
+    const buffer = await Packer.toBuffer(doc);
+    fs.writeFileSync(finalPath, buffer);
 
-      // 获取文件信息
-      const stats = fs.statSync(finalPath);
+    const stats = fs.statSync(finalPath);
 
-      return {
-        success: true,
-        output: `✅ Word 文档已生成！
+    onProgress?.({ stage: 'completing', percent: 100 });
+    ctx.logger.debug('docx_generate done', { path: finalPath, size: stats.size });
+
+    return {
+      ok: true,
+      output: `✅ Word 文档已生成！
 
 📄 文件路径: ${finalPath}
 🎨 主题风格: ${theme}
 📦 文件大小: ${formatFileSize(stats.size)}
 
 点击上方文件路径可直接打开。`,
-        metadata: {
-          filePath: finalPath,
-          fileName: path.basename(finalPath),
-          fileSize: stats.size,
-          theme,
-          attachment: {
-            id: `docx-${timestamp}`,
-            type: 'file',
-            category: 'document',
-            name: path.basename(finalPath),
-            path: finalPath,
-            size: stats.size,
-            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          },
+      meta: {
+        filePath: finalPath,
+        fileName: path.basename(finalPath),
+        fileSize: stats.size,
+        theme,
+        attachment: {
+          id: `docx-${timestamp}`,
+          type: 'file',
+          category: 'document',
+          name: path.basename(finalPath),
+          path: finalPath,
+          size: stats.size,
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         },
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        error: `Word 文档生成失败: ${message}`,
-      };
-    }
+      },
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: `Word 文档生成失败: ${message}` };
+  }
+}
+
+class DocxGenerateHandler implements ToolHandler<Record<string, unknown>, string> {
+  readonly schema = schema;
+  execute(
+    args: Record<string, unknown>,
+    ctx: ToolContext,
+    canUseTool: CanUseToolFn,
+    onProgress?: ToolProgressFn,
+  ): Promise<ToolResult<string>> {
+    return executeDocxGenerate(args, ctx, canUseTool, onProgress);
+  }
+}
+
+export const docxGenerateModule: ToolModule<Record<string, unknown>, string> = {
+  schema,
+  createHandler() {
+    return new DocxGenerateHandler();
   },
 };

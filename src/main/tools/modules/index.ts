@@ -107,7 +107,7 @@ import { ComputerTool } from '../vision/ComputerTool';
 import { computerUseTool } from '../vision/computerUse';
 import { guiAgentTool } from '../vision/guiAgent';
 import { screenshotTool } from '../vision/screenshot';
-import { exploreTool } from '../../agent/multiagentTools';
+// exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
 
 // lightMemory/
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
@@ -465,11 +465,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/confirmAction')).confirmActionModule,
   );
   registry.register(
-    legacyToolSchema(exploreTool, {
-      category: 'planning',
-      permissionLevel: 'execute',
-    }),
-    async () => (await import('./planning/wrappers')).exploreModule,
+    exploreSchema,
+    async () => (await import('./planning/explore')).exploreModule,
   );
 
   // ── batch 8: network/ wrapper（31 个，最终批）────────────────────────────

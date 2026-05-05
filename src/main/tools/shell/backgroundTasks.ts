@@ -389,10 +389,19 @@ export function cleanupTimedOutTasks(): void {
   }
 }
 
-// Start periodic cleanup
-setInterval(() => {
+// Start periodic cleanup（捕获 handle + onShutdown 注册 + .unref() 三重保护）
+const backgroundTasksCleanupTimer = setInterval(() => {
   cleanupTimedOutTasks();
 }, TASK_CLEANUP_INTERVAL);
+backgroundTasksCleanupTimer.unref();
+
+import('../../services/infra/gracefulShutdown')
+  .then(({ onShutdown }) => {
+    onShutdown('shell/backgroundTasks.cleanup', async () => {
+      clearInterval(backgroundTasksCleanupTimer);
+    });
+  })
+  .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
 
 // ============================================================================
 // Persistence (for recovery after restart)

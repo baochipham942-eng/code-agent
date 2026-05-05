@@ -30,7 +30,7 @@ import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 // Media generation / processing
 import { imageGenerateTool } from '../../media/imageGenerate';
 // image_process 已迁移到 native，见 ./imageProcess.ts
-import { imageAnalyzeTool } from '../../media/imageAnalyze';
+// image_analyze 已迁移到 native，见 ./imageAnalyze.ts
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts
 // video_generate 已迁移到 native，见 ./videoGenerate.ts
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
@@ -48,12 +48,6 @@ import { imageAnalyzeTool } from '../../media/imageAnalyze';
 
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
-const NET_NETWORK_READ = {
-  category: 'network' as const,
-  permissionLevel: 'network' as const,
-  readOnly: true,
-  allowInPlanMode: true,
-};
 const NET_WRITE = {
   category: 'network' as const,
   permissionLevel: 'write' as const,
@@ -82,7 +76,7 @@ export const xlwingsExecuteModule = wrapLegacyTool(xlwingsExecuteTool, NET_WRITE
 // ── Media (8) ───────────────────────────────────────────────────────────
 export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);
 // image_process 已迁移到 native，见 ./imageProcess.ts
-export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_READ);
+// image_analyze 已迁移到 native，见 ./imageAnalyze.ts
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts
 // video_generate 已迁移到 native，见 ./videoGenerate.ts
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts

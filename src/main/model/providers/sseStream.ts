@@ -118,7 +118,13 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       return;
     }
 
-    const url = new URL(`${baseUrl}${endpoint}`);
+    // URL 用 try-catch 兜底，畸形 baseUrl/endpoint 走 reject 而非 throw
+    let url: URL;
+    try {
+      url = new URL(`${baseUrl}${endpoint}`);
+    } catch (e) {
+      return reject(new TypeError(`Invalid baseUrl/endpoint: ${baseUrl}${endpoint}`, { cause: e }));
+    }
     const isHttps = url.protocol === 'https:';
     const httpModule = isHttps ? https : http;
 

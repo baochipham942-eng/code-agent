@@ -507,7 +507,13 @@ function createProxyFetch(): typeof globalThis.fetch | undefined {
       const body = init?.body;
 
       return new Promise<Response>((resolve, reject) => {
-        const parsedUrl = new URL(url);
+        // URL 用 try-catch 兜底，畸形 url 走 reject 而非 throw
+        let parsedUrl: URL;
+        try {
+          parsedUrl = new URL(url);
+        } catch (e) {
+          return reject(new TypeError(`Invalid URL: ${url}`, { cause: e }));
+        }
         const mod = parsedUrl.protocol === 'https:' ? https : http;
         const req = mod.request(url, { method, headers, agent: agent as never }, (res) => {
           const chunks: Buffer[] = [];

@@ -421,8 +421,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/findingsWrite')).findingsWriteModule,
   );
   registry.register(
-    { name: 'Plan', description: 'Plan tool facade — read/write/update plans.', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).planModule,
+    planFacadeSchema,
+    async () => (await import('./planning/planFacade')).planFacadeModule,
   );
   registry.register(
     planModeFacadeSchema,

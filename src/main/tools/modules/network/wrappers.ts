@@ -34,7 +34,7 @@ import { imageAnalyzeTool } from '../../media/imageAnalyze';
 import { imageAnnotateTool } from '../../media/imageAnnotate';
 import { videoGenerateTool } from '../../media/videoGenerate';
 import { textToSpeechTool } from '../../media/textToSpeech';
-import { speechToTextTool } from '../../media/speechToText';
+// speech_to_text 已迁移到 native，见 ./speechToText.ts
 import { localSpeechToTextTool } from '../../media/localSpeechToText';
 
 // Visual / chart helpers
@@ -92,7 +92,7 @@ export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_R
 export const imageAnnotateModule = wrapLegacyTool(imageAnnotateTool, NET_WRITE);
 export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);
 export const textToSpeechModule = wrapLegacyTool(textToSpeechTool, NET_NETWORK_WRITE);
-export const speechToTextModule = wrapLegacyTool(speechToTextTool, NET_NETWORK_READ);
+// speech_to_text 已迁移到 native，见 ./speechToText.ts
 export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET_READ);
 
 // ── Visual helpers (1) ──────────────────────────────────────────────────

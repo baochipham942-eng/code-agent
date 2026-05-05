@@ -449,8 +449,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/taskCreate')).taskCreateModule,
   );
   registry.register(
-    { name: 'task_update', description: 'Update a todo (status, content).', inputSchema: minSchema({ id: { type: 'string' }, status: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).taskUpdateModule,
+    taskUpdateSchema,
+    async () => (await import('./planning/taskUpdate')).taskUpdateModule,
   );
   registry.register(
     { name: 'TaskManager', description: 'Task manager facade for todos (list/create/update/get).', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },

@@ -5,6 +5,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 import { maskSensitiveData } from '../security';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import { getToolSearchService } from '../services/toolSearch';
@@ -327,19 +328,15 @@ export class MCPToolRegistry {
     logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args: redactLogArgs(args), timeoutMs });
 
     try {
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`MCP tool call timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-      });
-
-      const result = await Promise.race([
+      // withTimeout 自动清理 timer
+      const result = await withTimeout(
         client.callTool({
           name: toolName,
           arguments: args,
         }, undefined, { timeout: timeoutMs, signal: abortSignal }),
-        timeoutPromise,
-      ]);
+        timeoutMs,
+        `MCP tool call timed out after ${timeoutMs}ms`,
+      );
 
       logger.info(`MCP tool completed: ${serverName}/${toolName}`, { duration: Date.now() - startTime });
 
@@ -390,20 +387,16 @@ export class MCPToolRegistry {
     }
 
     try {
-      const retryTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`MCP tool call retry timed out after ${MCP_TIMEOUTS.TOOL_RETRY}ms`));
-        }, MCP_TIMEOUTS.TOOL_RETRY);
-      });
-
-      const retryResult = await Promise.race([
+      // withTimeout 自动清理 timer
+      const retryResult = await withTimeout(
         client.callTool(
           { name: toolName, arguments: args },
           undefined,
           { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
         ),
-        retryTimeoutPromise,
-      ]);
+        MCP_TIMEOUTS.TOOL_RETRY,
+        `MCP tool call retry timed out after ${MCP_TIMEOUTS.TOOL_RETRY}ms`,
+      );
 
       logger.info(`MCP tool retry succeeded: ${serverName}/${toolName}`);
 

@@ -18,6 +18,7 @@ import type {
   TestEventListener,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
+import { withTimeout } from '../services/infra/timeoutController';
 import { runAssertions, runExpectations } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
@@ -440,13 +441,13 @@ export class TestRunner {
         ? parseInt(process.env.CODE_AGENT_FORCE_TIMEOUT, 10)
         : null;
       const timeout = forceTimeout || testCase.timeout || this.config.defaultTimeout;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`Test timeout after ${timeout}ms`)), timeout);
-      });
 
-      // Send the test prompt (and follow-up prompts for multi-turn)
-      const agentPromise = this.agent.sendMessage(testCase.prompt);
-      const agentResult = await Promise.race([agentPromise, timeoutPromise]);
+      // Send the test prompt (withTimeout 自动清理 timer)
+      const agentResult = await withTimeout(
+        this.agent.sendMessage(testCase.prompt),
+        timeout,
+        `Test timeout after ${timeout}ms`,
+      );
 
       result.responses = agentResult.responses;
       result.toolExecutions = agentResult.toolExecutions;
@@ -460,13 +461,11 @@ export class TestRunner {
           const remainingTime = timeout - (Date.now() - startTime);
           if (remainingTime <= 0) break;
 
-          const followUpTimeout = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`Follow-up timeout after ${timeout}ms`)), remainingTime);
-          });
-          const followUpResult = await Promise.race([
+          const followUpResult = await withTimeout(
             this.agent.sendMessage(followUp),
-            followUpTimeout,
-          ]);
+            remainingTime,
+            `Follow-up timeout after ${timeout}ms`,
+          );
 
           result.responses.push(...followUpResult.responses);
           result.toolExecutions.push(...followUpResult.toolExecutions);

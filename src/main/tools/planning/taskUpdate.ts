@@ -84,7 +84,7 @@ export const taskUpdateTool: Tool = {
     }
 
     // Get sessionId from context
-    const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+    const sessionId = context.sessionId || 'default';
 
     // Check if task exists
     const existingTask = getTask(sessionId, taskId);

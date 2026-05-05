@@ -70,7 +70,7 @@ export const taskCreateTool: Tool = {
     }
 
     // Get sessionId from context
-    const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+    const sessionId = context.sessionId || 'default';
 
     // Create the task
     const task = createTask(sessionId, {

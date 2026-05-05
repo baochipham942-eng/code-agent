@@ -23,7 +23,7 @@ export const taskListTool: Tool = {
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     // Get sessionId from context
-    const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+    const sessionId = context.sessionId || 'default';
 
     const tasks = listTasks(sessionId);
 

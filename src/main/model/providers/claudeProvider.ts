@@ -77,10 +77,10 @@ function claudeSSEStream(options: {
           logger.warn('[Claude] API error:', res.statusCode, errorData);
           let errorMessage = `Claude API error: ${res.statusCode}`;
           try {
-            const parsed = JSON.parse(errorData);
             // Anthropic 官方格式: {error: {message}}；中转/代理常见: {code, message} 平级。
             // 两种都兜住，保证 error message 携带 "insufficient balance" 等关键词，
             // 下游 retryStrategy.NON_RETRYABLE_PATTERNS 才能正确识别并熔断。
+            const parsed = JSON.parse(errorData) as { error?: { message?: string }; message?: string };
             const realMessage = parsed.error?.message || parsed.message;
             if (realMessage) {
               errorMessage = `Claude API (${res.statusCode}): ${realMessage}`;
@@ -493,7 +493,7 @@ export class ClaudeProvider implements Provider {
       throw new Error(`Claude API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data: unknown = await response.json();
     return parseClaudeResponse(data);
   }
 }

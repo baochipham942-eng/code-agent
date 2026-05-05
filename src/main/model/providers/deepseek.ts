@@ -105,7 +105,7 @@ export async function callDeepSeek(
       throw new Error('Request was cancelled');
     }
     if (axios.isAxiosError(error) && error.response) {
-      const errorData = error.response.data;
+      const errorData: unknown = error.response.data;
       const errorMessage = typeof errorData === 'string'
         ? errorData
         : JSON.stringify(errorData);

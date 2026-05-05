@@ -13,7 +13,10 @@ import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 // wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
 import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
 import { parseClaudeResponse as wrapperParseClaudeResponse } from './wrappers/anthropicWrapper';
-import { parseGeminiResponse as wrapperParseGeminiResponse } from './wrappers/geminiWrapper';
+import {
+  parseGeminiResponse as wrapperParseGeminiResponse,
+  parseGeminiStreamChunk,
+} from './wrappers/geminiWrapper';
 
 export const logger = createLogger('ModelRouter');
 
@@ -139,11 +142,11 @@ export async function electronFetch(url: string, options: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): json() 返回任意 JSON，应改成 unknown 让调用方 narrow（或加 generic <T>）
 }): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
   try {
-    const response: AxiosResponse = await axios({
+    const response: AxiosResponse<unknown> = await axios({
       url,
       method: options.method || 'GET',
       headers: options.headers,
-      data: options.body ? JSON.parse(options.body) : undefined,
+      data: options.body ? (JSON.parse(options.body) as unknown) : undefined,
       timeout: PROVIDER_TIMEOUT,
       httpsAgent: getHttpsAgent(),
       validateStatus: () => true,
@@ -156,7 +159,7 @@ export async function electronFetch(url: string, options: {
       ok: response.status >= 200 && response.status < 300,
       status: response.status,
       text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
-      json: async () => response.data,
+      json: async (): Promise<unknown> => response.data,
     };
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -593,7 +596,11 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
       }
       for (const tc of m.toolCalls) {
         let input: Record<string, unknown>;
-        try { input = JSON.parse(tc.arguments); } catch { input = {}; }
+        try {
+          input = JSON.parse(tc.arguments) as Record<string, unknown>;
+        } catch {
+          input = {};
+        }
         blocks.push({ type: 'tool_use', id: normalizeToolCallId(tc.id), name: tc.name, input });
       }
       result.push({ role: 'assistant', content: blocks });
@@ -801,7 +808,7 @@ function closeOpenBrackets(str: string): string {
 export function safeJsonParse(str: string): Record<string, unknown> {
   // 策略 1: 直接解析
   try {
-    const result = JSON.parse(str);
+    const result = JSON.parse(str) as Record<string, unknown>;
     logger.debug('[safeJsonParse] Direct parse succeeded');
     return result;
   } catch (e) {
@@ -994,11 +1001,15 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
   repaired = closeOpenBrackets(repaired);
 
   try {
-    return JSON.parse(repaired);
+    return JSON.parse(repaired) as Record<string, unknown>;
   } catch {
     const lastComma = repaired.lastIndexOf(',');
     if (lastComma > 0) {
-      try { return JSON.parse(repaired.substring(0, lastComma) + '}'); } catch { /* Continue */ }
+      try {
+        return JSON.parse(repaired.substring(0, lastComma) + '}') as Record<string, unknown>;
+      } catch {
+        /* Continue */
+      }
     }
     return null;
   }
@@ -1128,18 +1139,23 @@ export async function handleGeminiStream(
       for (const line of lines) {
         if (!line.trim() || line.startsWith('data: [DONE]')) continue;
 
-        try {
-          const cleanLine = line.replace(/^data:\s*/, '');
-          if (!cleanLine) continue;
+        const cleanLine = line.replace(/^data:\s*/, '');
+        if (!cleanLine) continue;
 
-          const json = JSON.parse(cleanLine);
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            fullContent += text;
-            onStream({ type: 'text', content: text });
-          }
+        let rawJson: unknown;
+        try {
+          rawJson = JSON.parse(cleanLine);
         } catch {
           // Ignore parse errors
+          continue;
+        }
+
+        const chunk = parseGeminiStreamChunk(rawJson);
+        if (!chunk) continue;
+        const text = chunk.candidates?.[0].content?.parts?.[0]?.text;
+        if (text) {
+          fullContent += text;
+          onStream({ type: 'text', content: text });
         }
       }
     }

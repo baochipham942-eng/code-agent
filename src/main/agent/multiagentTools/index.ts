@@ -4,8 +4,7 @@
 
 // SDK-compatible Task tool — migrated to native; see src/main/tools/modules/multiagent/task.ts
 
-// Legacy explore subagent launcher (registered as protocol tool "Explore")
-export { exploreTool } from './explore';
+// Explore — migrated to native; see src/main/tools/modules/planning/explore.ts
 
 // PascalCase aliases (recommended for new code)
 // AgentSpawn / AgentMessageTool / TeammateTool / WorkflowOrchestrateTool —

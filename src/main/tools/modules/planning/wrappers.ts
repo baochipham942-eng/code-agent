@@ -12,7 +12,6 @@
 // ============================================================================
 
 import { confirmActionTool } from '../../planning/confirmAction';
-import { askUserQuestionTool } from '../../planning/askUserQuestion';
 import { exploreTool } from '../../../agent/multiagentTools/explore';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
@@ -50,6 +49,6 @@ const PLAN_EXECUTE = {
 // task_list / task_get / task_create / task_update / TaskManager 已迁移到 native ToolModule
 
 // ── 用户交互 / 探索 / 确认 ──
-export const askUserQuestionModule = wrapLegacyTool(askUserQuestionTool, PLAN_EXECUTE);
+// AskUserQuestion 已迁移到 native ToolModule，见 ./askUserQuestion.ts
 export const confirmActionModule = wrapLegacyTool(confirmActionTool, PLAN_EXECUTE);
 export const exploreModule = wrapLegacyTool(exploreTool, PLAN_EXECUTE); // 'Explore'

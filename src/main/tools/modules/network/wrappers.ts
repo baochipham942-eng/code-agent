@@ -24,7 +24,7 @@ import { pptEditTool } from '../../media/ppt/editTool';
 import { pdfGenerateTool } from '../../media/pdfGenerate';
 import { pdfCompressTool } from '../../media/pdfCompress';
 import { PdfAutomateTool } from '../../media/pdfAutomate';
-import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
+// xlwingsExecute 已迁移到 Level 2 native module（见 ./xlwingsExecute.ts）
 
 // Media generation / processing
 import { imageGenerateTool } from '../../media/imageGenerate';
@@ -81,7 +81,7 @@ export const pptEditModule = wrapLegacyTool(pptEditTool, NET_WRITE);
 export const pdfGenerateModule = wrapLegacyTool(pdfGenerateTool, NET_WRITE);
 export const pdfCompressModule = wrapLegacyTool(pdfCompressTool, NET_WRITE);
 export const pdfAutomateModule = wrapLegacyTool(PdfAutomateTool, NET_WRITE);
-export const xlwingsExecuteModule = wrapLegacyTool(xlwingsExecuteTool, NET_WRITE);
+// xlwings_execute 已迁移到 Level 2 native module（见 ./xlwingsExecute.ts）
 
 // ── Media (8) ───────────────────────────────────────────────────────────
 export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);

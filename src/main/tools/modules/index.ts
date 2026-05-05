@@ -94,6 +94,7 @@ import { mermaidExportSchema } from './network/mermaidExport.schema';
 import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { docxGenerateSchema } from './network/docxGenerate.schema';
 import { excelGenerateSchema } from './network/excelGenerate.schema';
+import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -551,8 +552,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).pdfCompressModule, false);
   REGISTER_NET('PdfAutomate', 'Unified PDF facade (generate/compress/read/merge/split/extract_tables/convert_to_docx).', 'write',
     async () => (await import('./network/wrappers')).pdfAutomateModule, false);
-  REGISTER_NET('xlwings_execute', 'Run xlwings Python script against a workbook.', 'write',
-    async () => (await import('./network/wrappers')).xlwingsExecuteModule, false);
+  registry.register(
+    xlwingsExecuteSchema,
+    async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,
+  );
 
   // Media (8)
   REGISTER_NET('image_generate', 'Generate an image (DALL-E / Stable Diffusion / etc.).', 'network',

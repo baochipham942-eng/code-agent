@@ -96,6 +96,7 @@ import { speechToTextSchema } from './network/speechToText.schema';
 import { textToSpeechSchema } from './network/textToSpeech.schema';
 import { imageProcessSchema } from './network/imageProcess.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
+import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -573,8 +574,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     speechToTextSchema,
     async () => (await import('./network/speechToText')).speechToTextModule,
   );
-  REGISTER_NET('local_speech_to_text', 'Transcribe audio to text via local ASR.', 'read',
-    async () => (await import('./network/wrappers')).localSpeechToTextModule, true);
+  registry.register(
+    localSpeechToTextSchema,
+    async () => (await import('./network/localSpeechToText')).localSpeechToTextModule,
+  );
 
   // Visual helpers (4) — chart/mermaid/qrcode 已迁移为 native，带完整 schema
   registry.register(

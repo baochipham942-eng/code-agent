@@ -187,6 +187,26 @@ npx vitest run tests/unit/tools/modules/<cat>/   # 如果有现成测试
    per-tool session（如新建临时 fs 句柄、单次 HTTP request）才能在 abort 时直接关闭。
    迁移前先确认：当前 tool 调用的下游是 singleton 还是 per-call session。
 
+5. **优先补类型而不是加 disable**（**Wave 2 document / Wave 3 multiagent + planning 实测**）：
+   PR #94 升 `no-explicit-any` 到 error 后，看到要加 disable 时**先想能否补类型**。实测：
+   - Wave 2 document 把 3 处 `zip: any` 收敛成本地 `JSZipLike` interface → **lint warnings -41**
+   - Wave 3 multiagent 0 处新 `as any`（用 `ctx.modelConfig as ModelConfig` opaque cast）
+   - Wave 3 planning 0 处新 `as any`（同模式）
+
+   **不要**用 `as unknown as X` 二步转换 escape hatch（Wave 2 excel 反例：
+   `as unknown as Record<string, unknown>` 绕过 lint 但语义模糊）。
+
+6. **opaque service handle 模式**（**Wave 3 multiagent 验证 + planning 沿用**）：
+   如果 tool 需要调 `ctx.modelConfig` / `ctx.planningService` / `ctx.resolver` /
+   `ctx.hookManager` / `ctx.subagent.*` 等 opaque handle，**直接 `as XService` cast 即可**：
+
+   ```ts
+   const modelConfig = ctx.modelConfig as ModelConfig;
+   if (!modelConfig) return { ok: false, error: '...', code: 'NOT_INITIALIZED' };
+   ```
+
+   **不需要扩展 `_helpers/` 接口**（multiagent 9 个 tool + planning 13 个 tool 都验证过 ProtocolToolContext 已结构化的 opaque 接口完全够用）。如果发现接口不全，**stop and ask** 父会话，不要顺手扩展共享层。
+
 **验证**：
 ```bash
 npm run typecheck
@@ -210,10 +230,17 @@ npx vitest run tests/unit/tools/modules/<cat>/<toolName>.test.ts
 
 **操作**：每个 native module 配 1 个 .test.ts，commit message 里写 `+N tests passed`。
 
-**验证**：
+**Mock 工厂闭包陷阱**（**Wave 3 planning 实测踩到**）：vi.mock 的 factory 是 hoisted 到文件顶部的，访问外部 const 变量会触发 `ReferenceError: <var> is not defined`。处理：
+- mock 工厂访问外部变量必须用 `vi.hoisted()` 包装
+- `beforeEach` 里 `mockFn.mockReturnValue([])` 这种 reset 调用，**变量名必须真实存在**（agent 删 vi.mock 时容易漏删 reset 调用，留下 stale reference）
+
+**验证**（**完工硬条件**）：
 ```bash
-npx vitest run tests/unit/tools/modules/<cat>/<toolName>.test.ts
+npx vitest run tests/unit/tools/modules/<cat>/<toolName>.test.ts   # category 单跑
+npx vitest run                                                     # 全量必须 pass（除 pre-existing flaky）
 ```
+
+**完工条件加全量 vitest 是 Wave 3 planning 的教训**：planning agent 单跑 `modules/planning/` 137/137 全 pass，但全量 vitest 暴露了 8 个 nudgeManager + 1 个 multiagentProtocolSchema stale reference 失败（参见 fix PR #106）。**单 cat pass 不等于全量 pass**——尤其涉及跨 cat 转移（如 Explore 从 multiagent → planning）时。
 
 **失败回退**：找出 native 实现与 legacy 的行为差异，修 native 不修测试。
 
@@ -264,6 +291,12 @@ rm src/main/tools/<legacyDir>/<file>.ts
 - 删 `tools/<cat>/index.ts`
 - 删 `tools/<cat>/` 空目录（可选，不删也行）
 - 改 `eslint.config.js` 的 `no-restricted-imports` patterns，可以选择保留也可以删（建议保留作为永久 gate）
+
+**跨 cat 转移 reference 跟进**（**Wave 3 planning 实测踩到**）：迁移涉及 tool 从一个 cat 转移到另一个 cat（如 Explore 从 multiagent → planning）时，必须 grep 全 repo 找 stale reference：
+```bash
+grep -rn "<oldToolName>\|<oldExport>" tests/ src/   # 跨 cat 测试 / 别 cat 的 import
+```
+所有 stale reference 必须同步更新到新位置。Wave 3 planning Explore 迁移就漏改了 `tests/unit/tools/multiagentProtocolSchema.test.ts` 的 `import { exploreTool }`，触发 fix PR #106。
 
 **验证**：
 ```bash
@@ -412,10 +445,13 @@ SOP：docs/migrations/legacy-tools-removal-sop.md（必读）
 完工条件（缺一不可）：
 - npm run typecheck → 0 errors
 - npx vitest run tests/unit/tools/modules/<cat>/ → 全 pass
+- **npx vitest run （全量）→ 0 fail（Wave 3 planning fix #106 教训）**
+- npm run lint → 不超 baseline error 数（PR #94 升 error 后写新 as any 必须 inline disable + TODO 或补类型，不要硬塞）
 - npm run build && npm run build:cli → success
 - madge 不超基线
 - modules/<cat>/wrappers.ts 中 wrapLegacyTool 调用数 = 0（或 wrappers.ts 整文件删除）
 - src/main/tools/<legacyDir>/ 下不再有被 modules/<cat>/ 引用的文件
+- **0 处新 `as any`**（Wave 3 multiagent + planning benchmark）；不得已用 inline disable + TODO 写明类型路径
 
 3 次连续失败请停手，把进度和卡点写到 commit message，让父会话接手。
 ```
@@ -433,6 +469,14 @@ SOP：docs/migrations/legacy-tools-removal-sop.md（必读）
   - 在 commit message / PR description 里**显式记录**这条 cross-cat 反向依赖
   - madge cycle 数量不变即可（路径变短是正向改进的证据）
   - 后续 Wave 接手时可以一并处理，但本 Wave 不动
+- **partial native 合规模式**（**Wave 2 excel + Wave 3 multiagent + Wave 3 planning 实测**）：
+  dispatcher tool 或下游接 legacy ctx 类型的 tool（如 multiagent 的 task / spawn / workflow，
+  planning 的 Explore，excel 的 generate / automate / get_range / list_sheets）可以保留
+  cross-cat dispatch（用 `buildLegacyCtxFromProtocol` 桥接），但必须：
+  - PR description 显式记录"哪些 action / tool 还 fallback legacy + 待哪个 Wave 收尾"
+  - commit message 标注 "cross-cat dispatch 模式"
+  - **不要扩展 `_helpers/`**（multiagent 已验证 ProtocolToolContext opaque 接口够用）
+  - 测试 mock 这条 dispatch 路径（mock buildLegacyCtxFromProtocol 返回值或 mock 下游 service）
 - **不要碰 ESLint gate**：`no-restricted-imports` 的 `**/tools/<cat>/**` 模式
   即使该 category 完成了，也保留作为永久护栏（防回滚）。
 - **不要重写 schema 字段名/required**：legacy 的 inputSchema 是模型可见契约，

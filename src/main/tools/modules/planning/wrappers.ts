@@ -14,7 +14,6 @@
 import { PlanTool } from '../../planning/PlanTool';
 import { confirmActionTool } from '../../planning/confirmAction';
 import { askUserQuestionTool } from '../../planning/askUserQuestion';
-import { taskUpdateTool } from '../../planning/taskUpdate';
 import { TaskManagerTool } from '../../planning/TaskManagerTool';
 import { exploreTool } from '../../../agent/multiagentTools/explore';
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
@@ -50,8 +49,7 @@ const PLAN_EXECUTE = {
 export const planModule = wrapLegacyTool(PlanTool, PLAN_WRITE);
 
 // ── 任务管理 ──
-// task_list / task_get / task_create 已迁移到 native ToolModule，见 ./taskList.ts / ./taskGet.ts / ./taskCreate.ts
-export const taskUpdateModule = wrapLegacyTool(taskUpdateTool, PLAN_WRITE);
+// task_list / task_get / task_create / task_update 已迁移到 native ToolModule
 export const taskManagerModule = wrapLegacyTool(TaskManagerTool, PLAN_WRITE);
 
 // ── 用户交互 / 探索 / 确认 ──

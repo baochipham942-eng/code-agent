@@ -24,7 +24,7 @@ import {
   downloadImageAsBase64,
   isImageUrl,
   type ImageEngine,
-} from '../imageGenerate';
+} from '../../modules/network/imageGenerate';
 import { getAuthService } from '../../../services/auth/authService';
 import { createLogger } from '../../../services/infra/logger';
 

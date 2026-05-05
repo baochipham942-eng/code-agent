@@ -27,18 +27,12 @@ vi.mock('../../../../../src/main/tools/excel/excelEdit', () => ({
   executeExcelEdit: (...args: unknown[]) => executeExcelEditMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/document/excelGenerate', () => ({
-  excelGenerateTool: {
-    name: 'excel_generate',
-    execute: (...args: unknown[]) => excelGenerateExecuteMock(...args),
-  },
+vi.mock('../../../../../src/main/tools/modules/network/excelGenerate', () => ({
+  executeExcelGenerate: (...args: unknown[]) => excelGenerateExecuteMock(...args),
 }));
 
-vi.mock('../../../../../src/main/tools/document/xlwingsExecute', () => ({
-  xlwingsExecuteTool: {
-    name: 'xlwings_execute',
-    execute: (...args: unknown[]) => xlwingsExecuteMock(...args),
-  },
+vi.mock('../../../../../src/main/tools/modules/network/xlwingsExecute', () => ({
+  executeXlwingsExecute: (...args: unknown[]) => xlwingsExecuteMock(...args),
 }));
 
 vi.mock('../../../../../src/main/tools/utils/pythonBridge', () => ({
@@ -76,7 +70,7 @@ async function run(
   canUseTool: CanUseToolFn = allowAll,
   onProgress?: (p: { stage: string; percent?: number; detail?: string }) => void,
 ) {
-  const handler = excelAutomateModule.createHandler();
+  const handler = await excelAutomateModule.createHandler();
   return handler.execute(args, ctx, canUseTool, onProgress as never);
 }
 
@@ -202,11 +196,11 @@ describe('excelAutomateModule (native)', () => {
       if (!r.ok) expect(r.code).toBe('INVALID_ARGS');
     });
 
-    it('delegates to legacy excelGenerateTool with adapted ctx', async () => {
+    it('delegates to native executeExcelGenerate', async () => {
       excelGenerateExecuteMock.mockResolvedValue({
-        success: true,
+        ok: true,
         output: 'Excel ok',
-        metadata: { filePath: '/tmp/foo.xlsx' },
+        meta: { filePath: '/tmp/foo.xlsx' },
       });
       const r = await run({
         action: 'generate',
@@ -219,9 +213,9 @@ describe('excelAutomateModule (native)', () => {
       expect(excelGenerateExecuteMock).toHaveBeenCalledTimes(1);
     });
 
-    it('propagates legacy failure as protocol error', async () => {
+    it('propagates native failure as protocol error', async () => {
       excelGenerateExecuteMock.mockResolvedValue({
-        success: false,
+        ok: false,
         error: '生成失败',
       });
       const r = await run({ action: 'generate', title: 't', data: 'd' });
@@ -269,9 +263,9 @@ describe('excelAutomateModule (native)', () => {
       if (!r.ok) expect(r.code).toBe('INVALID_ARGS');
     });
 
-    it('delegates to xlwingsExecuteTool', async () => {
+    it('delegates to native executeXlwingsExecute', async () => {
       xlwingsExecuteMock.mockResolvedValue({
-        success: true,
+        ok: true,
         output: 'xlwings ok',
       });
       const r = await run({
@@ -293,7 +287,7 @@ describe('excelAutomateModule (native)', () => {
 
     it('uses xlwings result when xlwings succeeds', async () => {
       xlwingsExecuteMock.mockResolvedValue({
-        success: true,
+        ok: true,
         output: 'sheets via xlwings',
       });
       const r = await run({ action: 'list_sheets', file_path: 'a.xlsx' });
@@ -304,7 +298,7 @@ describe('excelAutomateModule (native)', () => {
     });
 
     it('falls back to read_xlsx availableSheets when xlwings fails', async () => {
-      xlwingsExecuteMock.mockResolvedValue({ success: false, error: 'no xlwings' });
+      xlwingsExecuteMock.mockResolvedValue({ ok: false, error: 'no xlwings' });
       executeReadXlsxMock.mockResolvedValue({
         ok: true,
         output: 'first sheet',
@@ -329,7 +323,7 @@ describe('excelAutomateModule (native)', () => {
     });
 
     it('delegates to xlwings read with range', async () => {
-      xlwingsExecuteMock.mockResolvedValue({ success: true, output: 'A1:B2 data' });
+      xlwingsExecuteMock.mockResolvedValue({ ok: true, output: 'A1:B2 data' });
       const r = await run({
         action: 'get_range',
         file_path: 'a.xlsx',

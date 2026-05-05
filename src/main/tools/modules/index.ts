@@ -461,8 +461,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/askUserQuestion')).askUserQuestionModule,
   );
   registry.register(
-    { name: 'confirm_action', description: 'Ask the user to confirm an upcoming action.', inputSchema: minSchema({ action: { type: 'string' } }, ['action']), category: 'planning', permissionLevel: 'execute' },
-    async () => (await import('./planning/wrappers')).confirmActionModule,
+    confirmActionSchema,
+    async () => (await import('./planning/confirmAction')).confirmActionModule,
   );
   registry.register(
     legacyToolSchema(exploreTool, {

@@ -31,7 +31,7 @@ import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 import { imageGenerateTool } from '../../media/imageGenerate';
 // image_process 已迁移到 native，见 ./imageProcess.ts
 import { imageAnalyzeTool } from '../../media/imageAnalyze';
-import { imageAnnotateTool } from '../../media/imageAnnotate';
+// image_annotate 已迁移到 native，见 ./imageAnnotate.ts
 import { videoGenerateTool } from '../../media/videoGenerate';
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
@@ -83,7 +83,7 @@ export const xlwingsExecuteModule = wrapLegacyTool(xlwingsExecuteTool, NET_WRITE
 export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);
 // image_process 已迁移到 native，见 ./imageProcess.ts
 export const imageAnalyzeModule = wrapLegacyTool(imageAnalyzeTool, NET_NETWORK_READ);
-export const imageAnnotateModule = wrapLegacyTool(imageAnnotateTool, NET_WRITE);
+// image_annotate 已迁移到 native，见 ./imageAnnotate.ts
 export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts

@@ -95,6 +95,7 @@ import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { speechToTextSchema } from './network/speechToText.schema';
 import { textToSpeechSchema } from './network/textToSpeech.schema';
 import { imageProcessSchema } from './network/imageProcess.schema';
+import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -588,8 +589,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     qrcodeGenerateSchema,
     async () => (await import('./network/qrcodeGenerate')).qrcodeGenerateModule,
   );
-  REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
-    async () => (await import('./network/wrappers')).screenshotPageModule, true);
+  registry.register(
+    screenshotPageSchema,
+    async () => (await import('./network/screenshotPage')).screenshotPageModule,
+  );
 
   // External integrations (5) — all native ToolModule with real schemas
   registry.register(

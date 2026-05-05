@@ -6,7 +6,6 @@ import type { Message } from '../../shared/contract';
 import type {
   HookEvent,
   AnyHookContext,
-  HookExecutionResult,
   ToolHookContext,
   UserPromptContext,
   StopContext,
@@ -21,22 +20,23 @@ import type {
   PostCompactContext,
   StopFailureContext,
 } from '../protocol/events';
-import type { HookDefinition } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
 
-import { loadAllHooksConfig, matchesCondition } from './configParser';
+import { loadAllHooksConfig } from './configParser';
 import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
-import { executeScript } from './scriptExecutor';
-import { executePromptHook } from './promptHook';
-import { executeAgentHook } from './agentHook';
-import { executeHttpHook } from './httpHookExecutor';
 import {
   getBuiltinHookExecutor,
   type BuiltinHookContext,
   type BuiltinHookResult,
 } from './builtinHookExecutor';
+import {
+  executeHooks as runHooks,
+  type HookTriggerResult as EngineHookTriggerResult,
+} from './hookExecutionEngine';
 import { createLogger } from '../services/infra/logger';
+
+export type HookTriggerResult = EngineHookTriggerResult;
 
 const logger = createLogger('HookManager');
 
@@ -69,18 +69,6 @@ export interface TriggerHistoryEntry {
 
 const MAX_TRIGGER_HISTORY = 50;
 
-export interface HookTriggerResult {
-  /** Whether the action should proceed */
-  shouldProceed: boolean;
-  /** Combined message from all hooks */
-  message?: string;
-  /** Modified input (if any hook modified it) */
-  modifiedInput?: string;
-  /** Individual hook results */
-  results: HookExecutionResult[];
-  /** Total duration of all hook executions */
-  totalDuration: number;
-}
 
 // ----------------------------------------------------------------------------
 // Hook Manager
@@ -622,7 +610,7 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForTool(this.hooks, event, toolName);
-    const result = await this.executeHooks(matchingHooks, context);
+    const result = await runHooks(matchingHooks, context, this.engineEnv());
     this.recordTrigger(event, result);
     return result;
   }
@@ -639,315 +627,17 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForEvent(this.hooks, event);
-    const result = await this.executeHooks(matchingHooks, context);
+    const result = await runHooks(matchingHooks, context, this.engineEnv());
     this.recordTrigger(event, result);
     return result;
   }
 
-  /**
-   * Execute a list of merged hook configs
-   *
-   * Phase 2: Supports parallel execution when config.parallel is true
-   */
-  private async executeHooks(
-    hookConfigs: MergedHookConfig[],
-    context: AnyHookContext
-  ): Promise<HookTriggerResult> {
-    const results: HookExecutionResult[] = [];
-    let shouldProceed = true;
-    let message: string | undefined;
-    let modifiedInput: string | undefined;
-    const startTime = Date.now();
-
-    // Phase 2: 分离并行和串行 hook 配置
-    const parallelConfigs = hookConfigs.filter(c => c.parallel);
-    const sequentialConfigs = hookConfigs.filter(c => !c.parallel);
-
-    // 先执行并行 hooks
-    if (parallelConfigs.length > 0) {
-      const parallelResult = await this.executeHooksParallel(parallelConfigs, context);
-      results.push(...parallelResult.results);
-
-      if (!parallelResult.shouldProceed) {
-        shouldProceed = false;
-        message = parallelResult.message;
-      }
-      if (parallelResult.modifiedInput) {
-        modifiedInput = parallelResult.modifiedInput;
-      }
-      if (parallelResult.message) {
-        message = message ? `${message}\n${parallelResult.message}` : parallelResult.message;
-      }
-    }
-
-    // 如果被阻止，不再执行串行 hooks
-    if (!shouldProceed) {
-      return {
-        shouldProceed,
-        message,
-        modifiedInput,
-        results,
-        totalDuration: Date.now() - startTime,
-      };
-    }
-
-    // 串行执行剩余 hooks
-    for (const config of sequentialConfigs) {
-      const isObserver = config.hookType === 'observer';
-
-      for (const hook of config.hooks) {
-        const result = await this.executeHook(hook, context);
-        results.push(result);
-
-        // Observer hooks: execute for side-effects but ignore block/modify
-        if (isObserver) {
-          if (result.action === 'block') {
-            logger.info('Observer hook tried to block — ignored', { event: context.event });
-          }
-          if (result.modifiedInput) {
-            logger.info('Observer hook tried to modify input — ignored', { event: context.event });
-          }
-          // Collect messages (observer can still report)
-          if (result.message && result.action !== 'error') {
-            message = message ? `${message}\n${result.message}` : result.message;
-          }
-          continue;
-        }
-
-        // Decision hooks: normal aggregate
-        if (result.action === 'block') {
-          shouldProceed = false;
-          message = result.message || message;
-          break; // Stop on first block
-        }
-
-        if (result.action === 'continue') {
-          if (result.message) {
-            message = message ? `${message}\n${result.message}` : result.message;
-          }
-          if (result.modifiedInput) {
-            modifiedInput = result.modifiedInput;
-          }
-        }
-
-        if (result.action === 'error') {
-          logger.warn('Hook execution error', { error: result.error });
-          // Continue on error (don't block)
-        }
-      }
-
-      // Stop processing more hooks if blocked
-      if (!shouldProceed) break;
-    }
-
+  private engineEnv() {
     return {
-      shouldProceed,
-      message,
-      modifiedInput,
-      results,
-      totalDuration: Date.now() - startTime,
+      workingDirectory: this.config.workingDirectory,
+      aiCompletion: this.config.aiCompletion,
+      executedOnceHooks: this.executedOnceHooks,
     };
-  }
-
-  /**
-   * Execute hooks in parallel (Phase 2)
-   */
-  private async executeHooksParallel(
-    hookConfigs: MergedHookConfig[],
-    context: AnyHookContext
-  ): Promise<HookTriggerResult> {
-    const startTime = Date.now();
-
-    // 收集所有需要并行执行的 hooks
-    const allHooks: Array<{ config: MergedHookConfig; hook: HookDefinition }> = [];
-    for (const config of hookConfigs) {
-      for (const hook of config.hooks) {
-        allHooks.push({ config, hook });
-      }
-    }
-
-    // 并行执行所有 hooks
-    const resultPromises = allHooks.map(({ hook }) =>
-      this.executeHook(hook, context)
-    );
-
-    const results = await Promise.all(resultPromises);
-
-    // 聚合结果
-    let shouldProceed = true;
-    let message: string | undefined;
-    let modifiedInput: string | undefined;
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const isObserver = allHooks[i].config.hookType === 'observer';
-
-      if (isObserver) {
-        // Observer hooks: ignore block/modify, collect messages only
-        if (result.action === 'block') {
-          logger.info('Parallel observer hook tried to block — ignored', { event: context.event });
-        }
-        if (result.modifiedInput) {
-          logger.info('Parallel observer hook tried to modify input — ignored', { event: context.event });
-        }
-        if (result.message && result.action !== 'error') {
-          message = message ? `${message}\n${result.message}` : result.message;
-        }
-        continue;
-      }
-
-      // Decision hooks: normal aggregate
-      if (result.action === 'block') {
-        shouldProceed = false;
-        message = result.message || message;
-      }
-
-      if (result.action === 'continue' || result.action === 'allow') {
-        if (result.message) {
-          message = message ? `${message}\n${result.message}` : result.message;
-        }
-        // 注意：并行执行时，modifiedInput 可能被多个 hook 修改
-        // 这里采用最后一个非空值
-        if (result.modifiedInput) {
-          modifiedInput = result.modifiedInput;
-        }
-      }
-
-      if (result.action === 'error') {
-        logger.warn('Parallel hook execution error', { error: result.error });
-      }
-    }
-
-    return {
-      shouldProceed,
-      message,
-      modifiedInput,
-      results,
-      totalDuration: Date.now() - startTime,
-    };
-  }
-
-  /**
-   * Generate a unique ID for a hook (used for once-tracking)
-   */
-  private getHookId(hook: HookDefinition): string {
-    if (hook.type === 'command') return `command:${hook.command}`;
-    if (hook.type === 'prompt') return `prompt:${hook.prompt}`;
-    if (hook.type === 'agent') return `agent:${hook.agent}:${hook.agentPrompt || ''}`;
-    if (hook.type === 'http') return `http:${hook.url}`;
-    return `unknown:${JSON.stringify(hook)}`;
-  }
-
-  /**
-   * Execute a single hook definition
-   */
-  private async executeHook(
-    hook: HookDefinition,
-    context: AnyHookContext
-  ): Promise<HookExecutionResult> {
-    // Conditional execution: check `if` pattern before running
-    if (hook.if && 'toolName' in context) {
-      const toolInput = 'toolInput' in context ? String(context.toolInput) : '';
-      if (!matchesCondition(hook.if, (context as ToolHookContext).toolName, toolInput)) {
-        return { action: 'allow', message: 'Condition not met, skipping', duration: 0 };
-      }
-    }
-
-    // once check: skip if this hook has already been executed this session
-    if (hook.once) {
-      const hookId = this.getHookId(hook);
-      if (this.executedOnceHooks.has(hookId)) {
-        return { action: 'allow', message: 'Once-hook already executed, skipping', duration: 0 };
-      }
-      this.executedOnceHooks.add(hookId);
-    }
-
-    // async handling: fire-and-forget, return immediately
-    if (hook.async) {
-      this.executeHookCore(hook, context).catch((error) => {
-        logger.warn('Async hook execution failed', { error: (error as Error).message });
-      });
-      return { action: 'allow', message: 'Async hook fired', duration: 0 };
-    }
-
-    return this.executeHookCore(hook, context);
-  }
-
-  /**
-   * Core hook execution logic (separated for async support)
-   */
-  private async executeHookCore(
-    hook: HookDefinition,
-    context: AnyHookContext
-  ): Promise<HookExecutionResult> {
-    try {
-      if (hook.type === 'command' && hook.command) {
-        return await executeScript(
-          {
-            command: hook.command,
-            timeout: hook.timeout,
-            workingDirectory: this.config.workingDirectory,
-          },
-          context
-        );
-      }
-
-      if (hook.type === 'prompt' && hook.prompt && this.config.aiCompletion) {
-        return await executePromptHook(
-          { prompt: hook.prompt, timeout: hook.timeout },
-          context,
-          this.config.aiCompletion
-        );
-      }
-
-      // No AI completion configured for prompt hooks
-      if (hook.type === 'prompt' && !this.config.aiCompletion) {
-        logger.warn('Prompt hook configured but no AI completion function provided');
-        return {
-          action: 'allow',
-          message: 'Prompt hook skipped - no AI completion configured',
-          duration: 0,
-        };
-      }
-
-      // Agent hooks: delegate to AI with a role-based prompt
-      if (hook.type === 'agent' && hook.agent) {
-        const startTime = Date.now();
-        const result = await executeAgentHook(
-          { agent: hook.agent, agentPrompt: hook.agentPrompt, context },
-          this.config.aiCompletion
-        );
-        return {
-          action: result.success ? 'continue' : 'error',
-          message: result.output,
-          duration: Date.now() - startTime,
-        };
-      }
-
-      // HTTP hooks: POST context to remote URL
-      if (hook.type === 'http') {
-        if (!hook.url) {
-          return { action: 'error', error: 'HTTP hook missing url', duration: 0 };
-        }
-        return executeHttpHook(
-          { url: hook.url, headers: hook.headers, timeout: hook.timeout, allowedEnvVars: hook.allowedEnvVars },
-          context
-        );
-      }
-
-      return {
-        action: 'error',
-        error: 'Invalid hook configuration',
-        duration: 0,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        action: 'error',
-        error: message || 'Hook execution failed',
-        duration: 0,
-      };
-    }
   }
 
   /**

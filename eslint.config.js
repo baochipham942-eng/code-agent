@@ -134,7 +134,6 @@ export default tseslint.config(
       'src/main/agent/subagentExecutor.ts',
       'src/main/desktop/desktopActivityUnderstandingService.ts',
       'src/main/evaluation/telemetryQueryService.ts',
-      'src/main/hooks/hookManager.ts',
       'src/main/model/providerRegistry.ts',
       'src/main/model/providers/shared.ts',
       'src/main/scheduler/TaskDAG.ts',

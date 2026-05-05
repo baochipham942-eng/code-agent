@@ -28,7 +28,7 @@ import { PdfAutomateTool } from '../../media/pdfAutomate';
 import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 
 // Media generation / processing
-import { imageGenerateTool } from '../../media/imageGenerate';
+// image_generate 已迁移到 native，见 ./imageGenerate.ts
 // image_process 已迁移到 native，见 ./imageProcess.ts
 // image_analyze 已迁移到 native，见 ./imageAnalyze.ts
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts
@@ -74,7 +74,7 @@ export const pdfAutomateModule = wrapLegacyTool(PdfAutomateTool, NET_WRITE);
 export const xlwingsExecuteModule = wrapLegacyTool(xlwingsExecuteTool, NET_WRITE);
 
 // ── Media (8) ───────────────────────────────────────────────────────────
-export const imageGenerateModule = wrapLegacyTool(imageGenerateTool, NET_NETWORK_WRITE);
+// image_generate 已迁移到 native，见 ./imageGenerate.ts
 // image_process 已迁移到 native，见 ./imageProcess.ts
 // image_analyze 已迁移到 native，见 ./imageAnalyze.ts
 // image_annotate 已迁移到 native，见 ./imageAnnotate.ts

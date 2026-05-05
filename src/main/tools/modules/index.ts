@@ -100,6 +100,7 @@ import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
 import { videoGenerateSchema } from './network/videoGenerate.schema';
 import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
+import { imageGenerateSchema } from './network/imageGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -557,8 +558,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/wrappers')).xlwingsExecuteModule, false);
 
   // Media (8)
-  REGISTER_NET('image_generate', 'Generate an image (DALL-E / Stable Diffusion / etc.).', 'network',
-    async () => (await import('./network/wrappers')).imageGenerateModule, false);
+  registry.register(
+    imageGenerateSchema,
+    async () => (await import('./network/imageGenerate')).imageGenerateModule,
+  );
   registry.register(
     imageProcessSchema,
     async () => (await import('./network/imageProcess')).imageProcessModule,

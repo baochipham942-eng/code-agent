@@ -453,8 +453,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/taskUpdate')).taskUpdateModule,
   );
   registry.register(
-    { name: 'TaskManager', description: 'Task manager facade for todos (list/create/update/get).', inputSchema: minSchema({ action: { type: 'string' } }), category: 'planning', permissionLevel: 'write', allowInPlanMode: true },
-    async () => (await import('./planning/wrappers')).taskManagerModule,
+    taskManagerSchema,
+    async () => (await import('./planning/taskManager')).taskManagerModule,
   );
   registry.register(
     { name: 'AskUserQuestion', description: 'Ask the user a clarifying question and wait for their answer.', inputSchema: minSchema({ question: { type: 'string' } }, ['question']), category: 'planning', permissionLevel: 'execute' },

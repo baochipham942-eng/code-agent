@@ -95,6 +95,7 @@ import { qrcodeGenerateSchema } from './network/qrcodeGenerate.schema';
 import { docxGenerateSchema } from './network/docxGenerate.schema';
 import { excelGenerateSchema } from './network/excelGenerate.schema';
 import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
+import { pdfGenerateSchema } from './network/pdfGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -546,8 +547,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     excelGenerateSchema,
     async () => (await import('./network/excelGenerate')).excelGenerateModule,
   );
-  REGISTER_NET('pdf_generate', 'Generate a .pdf document.', 'write',
-    async () => (await import('./network/wrappers')).pdfGenerateModule, false);
+  registry.register(
+    pdfGenerateSchema,
+    async () => (await import('./network/pdfGenerate')).pdfGenerateModule,
+  );
   REGISTER_NET('pdf_compress', 'Compress an existing PDF.', 'write',
     async () => (await import('./network/wrappers')).pdfCompressModule, false);
   REGISTER_NET('PdfAutomate', 'Unified PDF facade (generate/compress/read/merge/split/extract_tables/convert_to_docx).', 'write',

@@ -98,7 +98,7 @@ const initialState = {
   sessionInfo: null as SessionInfo | null,
   objective: null as ObjectiveMetrics | null,
   previousEvaluations: [] as HistoricalEvaluation[],
-  latestEvaluation: null as unknown | null,
+  latestEvaluation: null as unknown,
   eventSummary: null as EventSummary | null,
   isLoading: false,
   error: null as string | null,

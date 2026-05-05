@@ -37,7 +37,7 @@ export const taskGetTool: Tool = {
     }
 
     // Get sessionId from context
-    const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+    const sessionId = context.sessionId || 'default';
 
     const task = getTask(sessionId, taskId);
 

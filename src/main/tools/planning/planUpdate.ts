@@ -140,7 +140,7 @@ export const planUpdateTool: Tool = {
         await planningService.plan.updatePhaseNotes(foundPhase.id, mergedNotes);
       }
 
-      const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+      const sessionId = context.sessionId || 'default';
       const stepTodoKey = getDesktopTodoKeyFromStep(foundStep);
       const matchingDesktopTask = listTasks(sessionId).find((task) =>
         isDesktopDerivedSessionTask(task)

@@ -102,7 +102,7 @@ export async function buildChatFn(opts: ChatFnBuildOptions): Promise<ChatFnBuild
  * Reads from shared MODEL_API_ENDPOINTS constants (no hard-coded URLs here).
  */
 export function resolveProviderBaseUrl(provider: string): string | null {
-  const endpoints = MODEL_API_ENDPOINTS as unknown as Record<string, string>;
+  const endpoints: Readonly<Record<string, string>> = MODEL_API_ENDPOINTS;
   return endpoints[provider] ?? null;
 }
 

@@ -457,8 +457,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/taskManager')).taskManagerModule,
   );
   registry.register(
-    { name: 'AskUserQuestion', description: 'Ask the user a clarifying question and wait for their answer.', inputSchema: minSchema({ question: { type: 'string' } }, ['question']), category: 'planning', permissionLevel: 'execute' },
-    async () => (await import('./planning/wrappers')).askUserQuestionModule,
+    askUserQuestionSchema,
+    async () => (await import('./planning/askUserQuestion')).askUserQuestionModule,
   );
   registry.register(
     { name: 'confirm_action', description: 'Ask the user to confirm an upcoming action.', inputSchema: minSchema({ action: { type: 'string' } }, ['action']), category: 'planning', permissionLevel: 'execute' },

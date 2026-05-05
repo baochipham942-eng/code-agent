@@ -35,7 +35,7 @@ import { imageAnnotateTool } from '../../media/imageAnnotate';
 import { videoGenerateTool } from '../../media/videoGenerate';
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
-import { localSpeechToTextTool } from '../../media/localSpeechToText';
+// local_speech_to_text 已迁移到 native，见 ./localSpeechToText.ts
 
 // Visual / chart helpers
 // chart_generate / mermaid_export / qrcode_generate 已迁移至原生 ToolModule
@@ -48,12 +48,6 @@ import { localSpeechToTextTool } from '../../media/localSpeechToText';
 
 import { wrapLegacyTool } from '../_helpers/legacyAdapter';
 
-const NET_READ = {
-  category: 'network' as const,
-  permissionLevel: 'read' as const,
-  readOnly: true,
-  allowInPlanMode: true,
-};
 const NET_NETWORK_READ = {
   category: 'network' as const,
   permissionLevel: 'network' as const,
@@ -93,7 +87,7 @@ export const imageAnnotateModule = wrapLegacyTool(imageAnnotateTool, NET_WRITE);
 export const videoGenerateModule = wrapLegacyTool(videoGenerateTool, NET_NETWORK_WRITE);
 // text_to_speech 已迁移到 native，见 ./textToSpeech.ts
 // speech_to_text 已迁移到 native，见 ./speechToText.ts
-export const localSpeechToTextModule = wrapLegacyTool(localSpeechToTextTool, NET_READ);
+// local_speech_to_text 已迁移到 native，见 ./localSpeechToText.ts
 
 // ── Visual helpers (0) ──────────────────────────────────────────────────
 // chart_generate / mermaid_export / qrcode_generate / screenshot_page 已全部迁移为 native

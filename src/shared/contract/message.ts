@@ -173,4 +173,6 @@ export interface Message {
   artifacts?: Artifact[];
   // 附加消息元数据（workbench 上下文快照等）
   metadata?: MessageMetadata;
+  // Anthropic prompt cache 标记 — 在 fork 共享前缀时设置
+  cache_control?: { type: 'ephemeral' };
 }

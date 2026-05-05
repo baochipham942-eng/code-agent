@@ -74,7 +74,7 @@ export const FailureAnalysisPage: React.FC = () => {
         EVALUATION_CHANNELS.GET_AXIAL_CODING as 'evaluation:get-axial-coding'
       );
       if (result && Array.isArray(result)) {
-        setAxialData(result as unknown as AxialCodingEntryIpc[]);
+        setAxialData(result as AxialCodingEntryIpc[]);
       }
     } catch {
       setAxialData([]);

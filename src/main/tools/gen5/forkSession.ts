@@ -83,11 +83,11 @@ export const forkSessionTool: Tool = {
 
   async execute(
     params: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolExecutionResult> {
     const query = params.query as string | undefined;
     const sessionId = params.session_id as string | undefined;
-    const projectPath = (params.project_path as string) || (context as unknown as Record<string, unknown>).projectPath as string | undefined;
+    const projectPath = params.project_path as string | undefined;
     const listRecent = params.list_recent as boolean | undefined;
     const limit = (params.limit as number) || 5;
 

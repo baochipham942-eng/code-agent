@@ -130,6 +130,17 @@ export function isFallbackEligible(msg: string, errCode?: string): boolean {
   return isTransientError(msg, errCode);
 }
 
+/**
+ * 标记需要跨 Provider 降级的 Error。Provider 抛此类错让上游路由切换下一个候选。
+ */
+export class FallbackEligibleError extends Error {
+  readonly fallbackEligible = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'FallbackEligibleError';
+  }
+}
+
 export async function withTransientRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions

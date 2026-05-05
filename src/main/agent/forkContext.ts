@@ -131,7 +131,7 @@ export function applyCacheControl(messages: Message[]): Message[] {
     (lastPart as Record<string, unknown>).cache_control = { type: 'ephemeral' };
   } else {
     // fallback: 在消息本身打标记
-    (lastMessage as unknown as Record<string, unknown>).cache_control = { type: 'ephemeral' };
+    lastMessage.cache_control = { type: 'ephemeral' };
   }
 
   return cloned;

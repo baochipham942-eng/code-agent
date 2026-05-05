@@ -12,7 +12,7 @@ import {
   parseContextLengthError,
 } from './shared';
 import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
-import { isFallbackEligible } from './retryStrategy';
+import { isFallbackEligible, FallbackEligibleError } from './retryStrategy';
 
 /**
  * Call Google Gemini API
@@ -106,9 +106,7 @@ export async function callGemini(
 
     // Mark fallback-eligible errors
     if (isFallbackEligible(errMsg)) {
-      const fallbackError = new Error(`Gemini request failed: ${errMsg}`);
-      (fallbackError as unknown as Record<string, unknown>).fallbackEligible = true;
-      throw fallbackError;
+      throw new FallbackEligibleError(`Gemini request failed: ${errMsg}`);
     }
 
     throw error;

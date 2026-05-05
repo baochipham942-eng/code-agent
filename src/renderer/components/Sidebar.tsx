@@ -679,7 +679,7 @@ export const Sidebar: React.FC = () => {
             <IconButton
               icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
               aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
-              onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
+              onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
               variant="ghost"
               size="sm"
               className="!p-1 opacity-0 group-hover:opacity-100"

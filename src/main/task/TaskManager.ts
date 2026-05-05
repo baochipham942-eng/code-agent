@@ -299,18 +299,22 @@ export class TaskManager extends EventEmitter {
       return;
     }
 
-    // 设置超时保护
-    const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
-        logger.warn(`Interrupt timeout for session ${sessionId}, forcing cancel`);
-        resolve();
-      }, this.config.interruptTimeout);
-    });
-
-    // 等待取消完成或超时
+    // 等待取消完成或超时（手工 clearTimeout 避免胜者侧 timer 长留）
     const cancelPromise = wrapper.orchestrator.cancel();
-
-    await Promise.race([cancelPromise, timeoutPromise]);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        cancelPromise,
+        new Promise<void>((resolve) => {
+          timeoutId = setTimeout(() => {
+            logger.warn(`Interrupt timeout for session ${sessionId}, forcing cancel`);
+            resolve();
+          }, this.config.interruptTimeout);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
 
     // executeTask owns the terminal state transition once sendMessage unwinds.
   }

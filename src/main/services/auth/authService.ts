@@ -15,6 +15,7 @@ import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { getSecureStorage } from '../core';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
+import { withTimeout } from '../infra/timeoutController';
 
 const logger = createLogger('AuthService');
 
@@ -109,13 +110,12 @@ class AuthService {
   private async validateSessionInBackground(): Promise<void> {
     try {
       const supabase = getSupabase();
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise<null>((_, reject) => {
-        setTimeout(() => reject(new Error('Session fetch timeout')), 5000);
-      });
-
-      // Promise.race 返回类型需要类型断言
-      const result = (await Promise.race([sessionPromise, timeoutPromise])) as { data: { session: { user?: SupabaseUser } | null } } | null;
+      // withTimeout 自动清理 timer，避免胜者侧 leak
+      const result = (await withTimeout(
+        supabase.auth.getSession(),
+        5000,
+        'Session fetch timeout',
+      )) as { data: { session: { user?: SupabaseUser } | null } } | null;
       const session = result?.data?.session;
       logger.info(' Background validation result:', session ? 'valid' : 'invalid');
 
@@ -552,20 +552,14 @@ class AuthService {
     const supabase = getSupabase();
 
     // Add timeout to prevent hanging
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
-    });
-
     try {
       logger.info(' Fetching profile from database...');
-      const profilePromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      // Promise.race 返回类型需要类型断言
-      const { data: profileRaw } = await Promise.race([profilePromise, timeoutPromise]) as { data: unknown };
+      // withTimeout 自动清理 timer；Supabase Builder 是 thenable，用 Promise.resolve 转 Promise
+      const { data: profileRaw } = await withTimeout(
+        Promise.resolve(supabase.from('profiles').select('*').eq('id', user.id).single()),
+        5000,
+        'Profile fetch timeout',
+      ) as { data: unknown };
       logger.info(' Profile fetched:', profileRaw ? 'found' : 'not found');
 
       const profile = profileRaw as ProfileRow | null;

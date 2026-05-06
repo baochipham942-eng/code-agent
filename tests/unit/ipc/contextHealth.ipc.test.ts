@@ -75,6 +75,29 @@ const compactMocks = vi.hoisted(() => {
 vi.mock('../../../src/main/platform', () => ({
   ipcMain: compactMocks.ipcMain,
   BrowserWindow: class MockBrowserWindow {},
+  app: {
+    getPath: vi.fn((_name: string) => '/tmp/test-userdata'),
+    getVersion: vi.fn(() => '0.0.0-test'),
+    getName: vi.fn(() => 'code-agent-test'),
+    getAppPath: vi.fn(() => '/tmp/test-app'),
+    getLocale: vi.fn(() => 'en-US'),
+    isReady: vi.fn(() => true),
+    isPackaged: false,
+    commandLine: { appendSwitch: vi.fn() },
+    on: vi.fn(),
+    once: vi.fn(),
+    off: vi.fn(),
+    removeListener: vi.fn(),
+    removeAllListeners: vi.fn(),
+    emit: vi.fn(() => false),
+    quit: vi.fn(),
+    exit: vi.fn(),
+    requestSingleInstanceLock: vi.fn(() => true),
+    setAppUserModelId: vi.fn(),
+    setAsDefaultProtocolClient: vi.fn(() => false),
+    setPath: vi.fn(),
+    whenReady: vi.fn(() => Promise.resolve()),
+  },
 }));
 
 vi.mock('../../../src/main/services', () => ({
@@ -238,7 +261,13 @@ describe('resolveContextHealthForSession', () => {
     );
 
     expect(health.breakdown.messages).toBeGreaterThan(1000);
-    expect(health.currentTokens).toBe(health.breakdown.messages);
+    // commit 2ae3efa2 后 currentTokens 加上了 toolDefinitions（每次推理都发给模型的
+    // tool schema 序列化），这里没传 systemPrompt 也没 tool result，所以
+    // currentTokens = messages + toolDefinitions。toolDefinitions 来自 ContextHealthService
+    // 自动从 tool registry 估算（小红书 session 漏算 ~14k 是修这个 bug 的初衷）。
+    expect(health.currentTokens).toBe(
+      health.breakdown.messages + (health.breakdown.toolDefinitions ?? 0)
+    );
   });
 
   it('includes the last persisted system prompt when deriving history health', async () => {
@@ -262,7 +291,12 @@ describe('resolveContextHealthForSession', () => {
     );
 
     expect(health.breakdown.systemPrompt).toBeGreaterThan(0);
-    expect(health.currentTokens).toBe(health.breakdown.systemPrompt + health.breakdown.messages);
+    // commit 2ae3efa2 后 currentTokens 加上了 toolDefinitions：systemPrompt + messages
+    // + toolResults + toolDefinitions。这里 toolResults=0，所以 currentTokens 等于
+    // systemPrompt + messages + toolDefinitions。
+    expect(health.currentTokens).toBe(
+      health.breakdown.systemPrompt + health.breakdown.messages + (health.breakdown.toolDefinitions ?? 0)
+    );
   });
 
   it('uses the session model override when estimating max context window', async () => {

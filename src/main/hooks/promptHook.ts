@@ -5,6 +5,7 @@
 
 import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 
 const logger = createLogger('PromptHook');
 
@@ -105,11 +106,12 @@ export async function executePromptHook(
       promptLength: fullPrompt.length,
     });
 
-    // Call AI for evaluation
-    const response = await Promise.race([
+    // Call AI for evaluation（withTimeout 自动清理 timer）
+    const response = await withTimeout(
       aiCompletion(fullPrompt, { timeout }),
-      createTimeout(timeout),
-    ]);
+      timeout,
+      'Timeout',
+    );
 
     const duration = Date.now() - startTime;
 
@@ -233,15 +235,6 @@ function parseAIResponse(response: string, duration: number): HookExecutionResul
     message: response.trim() || undefined,
     duration,
   };
-}
-
-/**
- * Create a timeout promise
- */
-function createTimeout(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Timeout')), ms);
-  });
 }
 
 /**

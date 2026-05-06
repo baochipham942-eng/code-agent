@@ -56,6 +56,7 @@ export class LSPServer extends EventEmitter {
   private pendingRequests = new Map<
     number,
     {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP JSON-RPC response.result 形态由 method 决定（textDocument/definition 是 Location[]、textDocument/hover 是 Hover…），应抽 LspResultMap 类型字典
       resolve: (result: any) => void;
       reject: (error: Error) => void;
     }
@@ -232,6 +233,7 @@ export class LSPServer extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP JSON-RPC message 形态由 method 决定（响应/通知/请求三种），应抽 LspMessage 联合或用 vscode-jsonrpc 类型
   private handleMessage(message: any): void {
     if ('id' in message && 'result' in message) {
       const pending = this.pendingRequests.get(message.id);
@@ -254,6 +256,7 @@ export class LSPServer extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP request params/result 形态由 method 决定，应抽 LspRequestMap 字典或用 vscode-languageserver-protocol types
   sendRequest(method: string, params: any): Promise<any> {
     if (this.state !== 'ready' && this.state !== 'initializing') {
       return Promise.reject(new Error('Server not ready'));
@@ -275,11 +278,13 @@ export class LSPServer extends EventEmitter {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sendRequest，LSP notification params 应按 method narrow
   sendNotification(method: string, params: any): void {
     const message = { jsonrpc: '2.0', method, params };
     this.sendMessage(message);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 内部方法 sendMessage 接 JSON-RPC 任意消息形态，应统一 LspMessage 类型
   private sendMessage(message: any): void {
     if (!this.process?.stdin) {
       throw new Error('Process not started');
@@ -488,6 +493,7 @@ export class LSPServerManager extends EventEmitter {
     return server?.isDocumentOpen(filePath) ?? false;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 LSPServer.sendRequest，外层 Manager 也按 method 转发，应共享 LspRequestMap 字典
   async sendRequest(filePath: string, method: string, params: any): Promise<any> {
     const server = this.getServerForFile(filePath);
     if (!server) return undefined;

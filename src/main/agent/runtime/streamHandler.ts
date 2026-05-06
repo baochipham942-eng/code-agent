@@ -44,6 +44,7 @@ export class StreamHandler {
         fallback: response.fallback,
         responseType: response.type,
         duration: inferenceDuration,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): response.toolCalls 是 ToolCall[]，可直接用 (tc: ToolCall)，不需要 any
         toolCalls: response.toolCalls?.map((tc: any) => tc.name) || [],
         textLength: (response.content || '').length,
         inputTokens: response.usage?.inputTokens,

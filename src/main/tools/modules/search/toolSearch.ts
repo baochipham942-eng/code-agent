@@ -1,8 +1,15 @@
 // ============================================================================
-// ToolSearch (P0-5 Migrated, wrapper mode)
+// ToolSearch (P1 Wave 1 — search: native ToolModule rewrite)
 //
-// 旧版: src/main/tools/search/toolSearch.ts (registered as 'ToolSearch')
-// 改造模式：wrapper — 委托给 legacy 实现，只做 4 参数签名 + canUseTool + ctx 适配
+// 旧版: src/main/tools/search/toolSearch.ts (legacy Tool + wrapLegacyTool)
+// 改造点：
+// - 4 参数签名 (args, ctx, canUseTool, onProgress)
+// - inline canUseTool 闸门 + onProgress 事件
+// - 走 ctx.logger（不再 import services/infra/logger）
+// - 错误码规范化：INVALID_ARGS / PERMISSION_DENIED / ABORTED / SEARCH_ERROR
+// - 行为保真：legacy 输出格式（中文文案、bullet、提示行）1:1 复刻
+// - self-reference 安全：直接调 getToolSearchService() 和 getMCPClient() 单例，
+//   不通过 modules/index.ts 反向解析其他 tool。
 // ============================================================================
 
 import type {
@@ -13,32 +20,154 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { toolSearchTool } from '../../search/toolSearch';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { getToolSearchService } from '../../../services/toolSearch/toolSearchService';
+import { getMCPClient } from '../../../mcp/mcpClient';
 import { toolSearchSchema as schema } from './toolSearch.schema';
+
+const MAX_RESULTS_HARD_CAP = 10;
+const DEFAULT_MAX_RESULTS = 5;
+
+interface McpDiscoveryEntry {
+  serverName: string;
+  connected: boolean;
+  toolCount: number;
+  error?: string;
+}
+
+export async function executeToolSearch(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  canUseTool: CanUseToolFn,
+  onProgress?: ToolProgressFn,
+): Promise<ToolResult<string>> {
+  const query = args.query;
+  if (typeof query !== 'string' || query.trim().length === 0) {
+    return { ok: false, error: 'query 参数必须是非空字符串', code: 'INVALID_ARGS' };
+  }
+
+  const rawMax = args.max_results;
+  const maxResults = Math.min(
+    typeof rawMax === 'number' && rawMax > 0 ? rawMax : DEFAULT_MAX_RESULTS,
+    MAX_RESULTS_HARD_CAP,
+  );
+
+  const permit = await canUseTool(schema.name, args);
+  if (!permit.allow) {
+    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+  }
+  if (ctx.abortSignal.aborted) {
+    return { ok: false, error: 'aborted', code: 'ABORTED' };
+  }
+
+  onProgress?.({ stage: 'starting', detail: schema.name });
+
+  try {
+    const service = getToolSearchService();
+    let mcpDiscovery: McpDiscoveryEntry[] = [];
+    try {
+      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query);
+    } catch (discoveryError) {
+      ctx.logger.warn('Lazy MCP discovery during tool search failed', {
+        error: discoveryError instanceof Error ? discoveryError.message : String(discoveryError),
+      });
+    }
+
+    const result = await service.searchTools(query, {
+      maxResults,
+      includeMCP: true,
+    });
+
+    onProgress?.({ stage: 'completing', percent: 100 });
+
+    if (result.tools.length === 0) {
+      const discoveryFailures = mcpDiscovery
+        .filter((discovery) => !discovery.connected || discovery.error)
+        .map((discovery) => `- ${discovery.serverName}: ${discovery.error || 'not connected'}`);
+      const discoveryHint = discoveryFailures.length > 0
+        ? `\n\nMCP 懒加载发现失败：\n${discoveryFailures.join('\n')}`
+        : '';
+      return {
+        ok: true,
+        output: `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+        meta: {
+          loadedTools: result.loadedTools,
+          totalCount: result.totalCount,
+          hasMore: result.hasMore,
+          mcpDiscovery,
+        },
+      };
+    }
+
+    const lines: string[] = [
+      `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+      '',
+    ];
+
+    for (const tool of result.tools) {
+      const sourceInfo = tool.source === 'mcp' && tool.mcpServer
+        ? ` [MCP: ${tool.mcpServer}]`
+        : '';
+      const tags = tool.tags.length > 0 ? ` (${tool.tags.join(', ')})` : '';
+      const availability = tool.loadable === false
+        ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
+        : '已加载，可直接调用';
+      lines.push(`• **${tool.name}**${sourceInfo}`);
+      lines.push(`  ${tool.description}${tags}`);
+      lines.push(`  ${availability}`);
+      if (tool.canonicalInvocation) {
+        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      }
+      lines.push('');
+    }
+
+    if (result.hasMore) {
+      lines.push(`还有 ${result.totalCount - result.tools.length} 个匹配结果，使用更具体的关键字缩小范围。`);
+    }
+
+    lines.push('');
+    if (result.loadedTools.length > 0) {
+      lines.push('已加载的工具现在可以直接使用；不可直接调用的结果只作为搜索线索。');
+    } else {
+      lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
+    }
+
+    ctx.logger.info('ToolSearch done', {
+      query,
+      loaded: result.loadedTools.length,
+      total: result.totalCount,
+    });
+
+    return {
+      ok: true,
+      output: lines.join('\n'),
+      meta: {
+        loadedTools: result.loadedTools,
+        totalCount: result.totalCount,
+        hasMore: result.hasMore,
+        mcpDiscovery,
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.logger.error('Tool search failed', { error: message });
+    return {
+      ok: false,
+      error: `工具搜索失败: ${message}`,
+      code: 'SEARCH_ERROR',
+    };
+  }
+}
 
 class ToolSearchHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
-  async execute(
+  execute(
     args: Record<string, unknown>,
     ctx: ToolContext,
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    const permit = await canUseTool(schema.name, args);
-    if (!permit.allow) {
-      return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
-    }
-    if (ctx.abortSignal.aborted) {
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
-    }
-
-    onProgress?.({ stage: 'starting', detail: 'tool search' });
-    const legacyResult = await toolSearchTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
-    onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.info('ToolSearch done', { ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return executeToolSearch(args, ctx, canUseTool, onProgress);
   }
 }
 

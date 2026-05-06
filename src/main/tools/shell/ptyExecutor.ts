@@ -481,10 +481,19 @@ export function cleanupTimedOutPtySessions(): void {
   }
 }
 
-// Start periodic cleanup
-setInterval(() => {
+// Start periodic cleanup（捕获 handle + onShutdown 注册 + .unref() 三重保护）
+const ptyCleanupTimer = setInterval(() => {
   cleanupTimedOutPtySessions();
 }, PTY_CLEANUP_INTERVAL);
+ptyCleanupTimer.unref();
+
+import('../../services/infra/gracefulShutdown')
+  .then(({ onShutdown }) => {
+    onShutdown('shell/ptyExecutor.cleanup', async () => {
+      clearInterval(ptyCleanupTimer);
+    });
+  })
+  .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
 
 // ============================================================================
 // Persistence

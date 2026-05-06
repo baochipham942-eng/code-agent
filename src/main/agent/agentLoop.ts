@@ -252,10 +252,12 @@ export class AgentLoop {
       antiScrapingHitsInRun: 0,
 
       // Thinking
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): effortLevel 类型 ThinkingEffort 是字面量联合 'low'|'medium'|'high'，'high' 应该匹配；可能是 const enum 没编译进类型，应该 import { ThinkingEffort } from 'types/agent' 后用 ThinkingEffort.High
       effortLevel: 'high' as any,
       thinkingStepCount: 0,
 
       // Interaction mode
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): interactionMode 联合应包含 'code'，同上 const enum 问题
       interactionMode: 'code' as any,
 
       // Persistent system context

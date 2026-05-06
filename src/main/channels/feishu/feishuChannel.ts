@@ -392,6 +392,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private buildCardContent(text: string, buttons?: Array<{ text: string; value: string }>): object {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 飞书卡片 element 协议有多种 tag (div/action/img/...)，应抽出 FeishuCardElement 联合类型
     const elements: any[] = [
       {
         tag: 'div',

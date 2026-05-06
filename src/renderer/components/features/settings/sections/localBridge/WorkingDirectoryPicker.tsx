@@ -37,6 +37,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
   const [isLoadingHome, setIsLoadingHome] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): bridge tool params 由 tool 决定（list_directory / read_file 等），应抽 BridgeToolParamsMap 字典按 tool narrow
   const invokeToolOnBridge = useCallback(async (tool: string, params: Record<string, any>) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;

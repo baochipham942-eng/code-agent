@@ -2,32 +2,22 @@
 // Multi-Agent Tools - 多代理工具
 // ============================================================================
 
-// SDK-compatible Task tool (simplified interface)
-export { sdkTaskTool } from './task';
+// SDK-compatible Task tool — migrated to native; see src/main/tools/modules/multiagent/task.ts
 
-// Legacy explore subagent launcher (registered as protocol tool "Explore")
-export { exploreTool } from './explore';
+// Explore — migrated to native; see src/main/tools/modules/planning/explore.ts
 
 // PascalCase aliases (recommended for new code)
-export { agentSpawnTool } from './spawnAgent';
-export { AgentMessageTool } from './agentMessage';
-export { WorkflowOrchestrateTool } from './workflowOrchestrate';
-export { TeammateTool } from './teammate';
+// AgentSpawn / AgentMessageTool / TeammateTool / WorkflowOrchestrateTool —
+// migrated to native;
+// see src/main/tools/modules/multiagent/{spawnAgent,agentMessage,teammate,workflowOrchestrate}.ts
 
-// Phase 2: Agent lifecycle tools
-export { WaitAgentTool, waitAgentTool } from './waitAgent';
-export { CloseAgentTool, closeAgentTool } from './closeAgent';
-// Phase 3: Agent communication
-export { SendInputTool, sendInputTool } from './sendInput';
+// Phase 2: Agent lifecycle tools — migrated to native; see src/main/tools/modules/multiagent/{waitAgent,closeAgent}.ts
+// Phase 3: Agent communication — migrated to native; see src/main/tools/modules/multiagent/sendInput.ts
 
-// Legacy snake_case exports (backward compatibility)
-export { spawnAgentTool } from './spawnAgent';
-export { agentMessageTool } from './agentMessage';
-export { workflowOrchestrateTool } from './workflowOrchestrate';
-export { teammateTool } from './teammate';
+// Legacy snake_case exports — all multiagent tools migrated to native; only
+// service helpers remain (see Helper exports section below).
 
-// Plan Review
-export { planReviewTool, PlanReviewTool } from './planReview';
+// Plan Review — migrated to native; see src/main/tools/modules/multiagent/planReview.ts
 
 // Helper exports
 export { getSpawnedAgent, listSpawnedAgents, getAvailableAgents } from './spawnAgent';

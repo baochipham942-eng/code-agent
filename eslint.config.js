@@ -28,8 +28,10 @@ export default tseslint.config(
       },
     },
     rules: {
-      // 禁止 any（警告级别，逐步收紧）
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // 禁止 any（强制 error，2026-05-04 P0-1 D 方案收紧）
+      // 存量 263 处 no-explicit-any 已加 inline disable + TODO（同 commit），未来新增 any 必须 inline 说明原因
+      // 5 条 no-unsafe-* 暂留 warn——根因是 IPC zod / SDK wrapper 缺失，需重构而非加注释，下一阶段处理
+      '@typescript-eslint/no-explicit-any': 'error',
 
       // 禁止不安全的类型断言（如 as any）
       // 注意：这是严格规则，新代码必须遵守

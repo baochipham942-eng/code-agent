@@ -10,6 +10,7 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 
 const logger = createLogger('useAgent');
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentEvent 在 5 个 hook 文件里各自重复定义且都用 any，应抽成 shared 类型，data 形态由 type 决定（stream_chunk/tool_call/error 等），按 type narrow
 type AgentEvent = { type: string; data: any; sessionId?: string };
 
 export function removeUncommittedAssistantDraft(

@@ -633,6 +633,7 @@ export class CronService implements Disposable {
         console.error('[CronService] Database not available, starting with empty jobs');
         return;
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): better-sqlite3 .all() 默认返回 unknown[]，应该定义 CronJobRow 接口（id/name/description/schedule_type/schedule 等列）作为 prepare 泛型
       const rows = db.prepare('SELECT * FROM cron_jobs').all() as any[];
       for (const row of rows) {
         const job: CronJobDefinition = {

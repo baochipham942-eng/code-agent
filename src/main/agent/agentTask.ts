@@ -197,8 +197,11 @@ export class AgentTask {
 
     const task = new AgentTask(meta.id, meta.sidecarMetadata);
     // Restore internal state directly (bypass state machine for loading)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _status 是 AgentTask 的 private 字段，反序列化时需要绕过；应该提供 AgentTask.fromPersisted(meta) 静态构造器代替私有字段直写
     (task as any)._status = meta.status;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 _error 私有字段直写，应通过 fromPersisted 构造器
     (task as any)._error = meta.error;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 _pendingMessages 私有字段直写，应通过 fromPersisted 构造器
     (task as any)._pendingMessages = meta.pendingMessages || [];
 
     // Restore dependency sets
@@ -213,6 +216,7 @@ export class AgentTask {
     if (existsSync(transcriptPath)) {
       const transcriptRaw = await readFile(transcriptPath, 'utf-8');
       const lines = transcriptRaw.split('\n').filter(l => l.trim());
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _transcript 私有字段直写，应通过 fromPersisted 构造器
       (task as any)._transcript = lines.map((l: string) => JSON.parse(l));
     }
 

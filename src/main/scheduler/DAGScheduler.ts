@@ -18,6 +18,7 @@ import type {
 } from '../../shared/contract/taskDAG';
 import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
+import { withTimeout } from '../services/infra/timeoutController';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
@@ -269,12 +270,17 @@ export class DAGScheduler extends EventEmitter {
           this.startTask(task);
         }
 
-        // 等待任一任务完成或间隔
+        // 等待任一任务完成或间隔（手工 clearTimeout 避免 sleep 胜者侧 timer 长留）
         if (this.runningTasks.size > 0) {
-          await Promise.race([
-            ...this.runningTasks.values(),
-            this.sleep(this.config.scheduleInterval),
-          ]);
+          let sleepId: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              ...this.runningTasks.values(),
+              new Promise<void>(resolve => { sleepId = setTimeout(resolve, this.config.scheduleInterval); }),
+            ]);
+          } finally {
+            if (sleepId) clearTimeout(sleepId);
+          }
         } else if (readyTasks.length === 0) {
           // 没有可执行任务也没有运行中的任务
           await this.sleep(this.config.scheduleInterval);
@@ -363,16 +369,13 @@ export class DAGScheduler extends EventEmitter {
         remainingBudget: context.remainingBudget,
       };
 
-      // 创建超时 Promise
+      // 执行任务（withTimeout 自动清理 timer，避免 race 胜者侧 timer 长留）
       const timeout = task.timeout || this.config.defaultTimeout;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`Task timeout after ${timeout}ms`)), timeout);
-      });
-
-      // 执行任务
-      let output: TaskOutput;
-      const executionPromise = this.executeTaskByType(task, execContext);
-      output = await Promise.race([executionPromise, timeoutPromise]);
+      const output: TaskOutput = await withTimeout(
+        this.executeTaskByType(task, execContext),
+        timeout,
+        `Task timeout after ${timeout}ms`,
+      );
 
       // 保存输出
       this.taskOutputs.set(task.id, output);

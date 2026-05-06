@@ -200,6 +200,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SETTINGS 域 'get' action 返回 AppSettings，应抽 SettingsIpcMap 让 invokeDomain narrow
         const settings = await invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
 
         // 加载语言设置

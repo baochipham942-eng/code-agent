@@ -209,6 +209,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.content,
       envelope.attachments,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): TaskManager.startTask 期望 RunOptions，AppServiceRunOptions 是其超集（多了 systemContext），应让 TaskManager 直接接受 AppServiceRunOptions 或重命名后统一
       options as any,
       this.getMessageMetadata(envelope),
     );
@@ -251,6 +252,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.content,
       envelope.attachments,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): TaskManager.interruptAndContinue 期望 RunOptions，同 startTask；统一后这里可以直接传 AppServiceRunOptions
       options as any,
       this.getMessageMetadata(envelope),
       envelope.clientMessageId,

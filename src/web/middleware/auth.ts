@@ -148,7 +148,8 @@ export function rateLimitMiddleware(req: Request, res: Response, next: NextFunct
 }
 
 // Periodic cleanup of stale rate limit entries (every 5 minutes)
-setInterval(() => {
+// 捕获 handle 用于 graceful shutdown 时清理；.unref() 保证 handle 不阻塞进程退出
+const rateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamps] of rateLimitStore) {
     const valid = timestamps.filter((t) => now - t < 120_000);
@@ -158,7 +159,17 @@ setInterval(() => {
       rateLimitStore.set(key, valid);
     }
   }
-}, 5 * 60_000).unref();
+}, 5 * 60_000);
+rateLimitCleanupTimer.unref();
+
+// Lazy import 避免 main → web 反向依赖，且 web middleware 单独跑（CLI/test）时不强求 shutdown infra
+import('../../main/services/infra/gracefulShutdown')
+  .then(({ onShutdown }) => {
+    onShutdown('web/auth.rateLimitCleanup', async () => {
+      clearInterval(rateLimitCleanupTimer);
+    });
+  })
+  .catch(() => { /* gracefulShutdown 不可用就纯靠 .unref() 兜底 */ });
 
 // ── Authentication ────────────────────────────────────────────────────────
 /** Constant-time token comparison to prevent timing attacks */

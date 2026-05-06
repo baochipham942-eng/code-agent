@@ -355,6 +355,7 @@ IMPORTANT:
           model,
           temperature: 0,
         },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): operator 是动态加载的 NutJSElectronOperator/NutJSOperator 之一，类型不重合；应在 types/guiAgent.ts 里抽个共同 OperatorLike 接口
         operator: operator as any,
         signal: abortController.signal,
         maxLoopCount: maxSteps,
@@ -385,6 +386,7 @@ IMPORTANT:
         onError: ({ error }: { error: Error }) => {
           logger.error(`GUI Agent 错误: ${error.message}`);
         },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): GUIAgentConfig 字段不完全匹配（onData 的 conversations 形状/operator 类型），需要 @ui-tars/sdk 升级或本地 wrapper
       } as any);
 
       const startTime = Date.now();

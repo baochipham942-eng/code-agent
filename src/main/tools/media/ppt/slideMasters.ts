@@ -19,6 +19,7 @@ import {
 
 // pptxgenjs accepts text-fit fields on master placeholders at runtime, but its
 // PlaceholderProps type is narrower than TextPropsOptions.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 masterDecorations.ts 的 buildDecorationObjects 返回，应抽 SlideMasterObject 联合后 SlideMasterObjects = SlideMasterObject[]
 type SlideMasterObjects = any[];
 
 function buildMasterObjects(config: MasterDecorationConfig, theme: ThemeConfig): SlideMasterObjects {

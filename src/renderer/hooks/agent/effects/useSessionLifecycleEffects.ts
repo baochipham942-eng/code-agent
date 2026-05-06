@@ -9,8 +9,10 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 
 const logger = createLogger('useAgent');
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同其他 effects hook 文件，应抽 shared AgentEvent 联合按 type narrow
 type AgentEvent = { type: string; data: any; sessionId?: string };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): error payload 历史 schema 不一（{ message }/{ code, message }/{ stack }），应抽 AgentErrorPayload 联合后用 zod 校验
 type AgentErrorPayload = Record<string, any>;
 
 function isRecord(value: unknown): value is AgentErrorPayload {

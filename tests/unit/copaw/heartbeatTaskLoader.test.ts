@@ -2,7 +2,7 @@
 // Heartbeat Task Loader Tests
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isWithinActiveHours } from '../../../src/main/cron/heartbeatTaskLoader';
 
 // Mock dependencies
@@ -26,42 +26,75 @@ vi.mock('../../../src/main/config/configPaths', () => ({
 }));
 
 describe('isWithinActiveHours', () => {
-  it('should return true when no activeHours specified', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const setNow = (h: number, m: number) => {
+    vi.setSystemTime(new Date(2026, 0, 15, h, m, 0, 0));
+  };
+
+  it('returns true when no activeHours specified', () => {
     expect(isWithinActiveHours()).toBe(true);
     expect(isWithinActiveHours(undefined)).toBe(true);
   });
 
-  it('should return true for invalid format', () => {
+  it('returns true for invalid format', () => {
     expect(isWithinActiveHours('invalid')).toBe(true);
     expect(isWithinActiveHours('08-18')).toBe(true);
   });
 
-  it('should check normal time range (not crossing midnight)', () => {
-    const now = new Date();
-    const currentH = now.getHours();
-    const currentM = now.getMinutes();
-
-    // Create a window that includes current time
-    const startH = String(Math.max(0, currentH - 1)).padStart(2, '0');
-    const endH = String(Math.min(23, currentH + 1)).padStart(2, '0');
-    expect(isWithinActiveHours(`${startH}:00-${endH}:59`)).toBe(true);
-
-    // Create a window that excludes current time (far future)
-    if (currentH < 20) {
-      expect(isWithinActiveHours('23:00-23:30')).toBe(false);
-    }
+  it('handles same-day window (08:00-18:00) with strict minute boundary', () => {
+    setNow(7, 59);
+    expect(isWithinActiveHours('08:00-18:00')).toBe(false);
+    setNow(8, 0);
+    expect(isWithinActiveHours('08:00-18:00')).toBe(true);
+    setNow(13, 30);
+    expect(isWithinActiveHours('08:00-18:00')).toBe(true);
+    setNow(18, 0);
+    expect(isWithinActiveHours('08:00-18:00')).toBe(true);
+    // same-day 保持严格分钟边界，18:01 即出窗口
+    setNow(18, 1);
+    expect(isWithinActiveHours('08:00-18:00')).toBe(false);
   });
 
-  it('should handle midnight-crossing ranges', () => {
-    const now = new Date();
-    const currentH = now.getHours();
+  it('respects explicit minute precision in same-day window (23:00-23:30)', () => {
+    setNow(23, 0);
+    expect(isWithinActiveHours('23:00-23:30')).toBe(true);
+    setNow(23, 30);
+    expect(isWithinActiveHours('23:00-23:30')).toBe(true);
+    setNow(23, 31);
+    expect(isWithinActiveHours('23:00-23:30')).toBe(false);
+    setNow(22, 59);
+    expect(isWithinActiveHours('23:00-23:30')).toBe(false);
+  });
 
-    // 22:00-06:00 range (crosses midnight)
-    if (currentH >= 22 || currentH <= 6) {
-      expect(isWithinActiveHours('22:00-06:00')).toBe(true);
-    } else {
-      expect(isWithinActiveHours('22:00-06:00')).toBe(false);
-    }
+  it('handles midnight-crossing window (22:00-06:00) inclusively across the end hour', () => {
+    setNow(21, 59);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(false);
+    setNow(22, 0);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(23, 30);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(0, 0);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(5, 59);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(6, 0);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    // 回归：旧实现这里返回 false（endMinutes=360 严格边界），现按整点小时结束语义
+    setNow(6, 30);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(6, 59);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(true);
+    setNow(7, 0);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(false);
+    setNow(12, 0);
+    expect(isWithinActiveHours('22:00-06:00')).toBe(false);
   });
 });
 

@@ -332,6 +332,7 @@ function evaluateOfficeSmokeStep(
 
 interface DevRouterDeps {
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
 }
 

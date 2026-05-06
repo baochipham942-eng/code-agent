@@ -10,7 +10,10 @@ describe('runtime follow-up helpers', () => {
     expect(isRuntimeBusyStatus('running')).toBe(true);
     expect(isRuntimeBusyStatus('paused')).toBe(true);
     expect(isRuntimeBusyStatus('queued')).toBe(true);
-    expect(isRuntimeBusyStatus('cancelling')).toBe(true);
+    // 'cancelling' 在 commit bce470a2 后从 busy 集合里分离出来：
+    // busy = 可接受补充指令的活跃态；cancelling = 不能接，专门走 isRuntimeCancellingStatus
+    // 防止用户在 cancelling 期间发补充指令而被静默吞掉。
+    expect(isRuntimeBusyStatus('cancelling')).toBe(false);
     expect(isRuntimeBusyStatus('idle')).toBe(false);
     expect(isRuntimeBusyStatus('error')).toBe(false);
   });

@@ -42,6 +42,7 @@ interface Props {
 
 export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
   const [activeTab, setActiveTab] = useState<SessionTab>('trace');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): EvalResult 类型已存在但 schema 历史多版本（aggregatedMetrics / dimensions / metrics 三种），应抽 EvalResultV2 联合或用 zod 校验后 narrow
   const [evalResult, setEvalResult] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,11 +124,13 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
   const getDimensionEntries = (): Array<[string, number]> => {
     if (!evalResult) return [];
     if (evalResult.aggregatedMetrics) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 evalResult 状态，aggregatedMetrics 元素是 number | { score: number }，narrow 后即可去掉
       return Object.entries(evalResult.aggregatedMetrics).map(([k, v]: [string, any]) => [
         k, typeof v === 'number' ? v : (v?.score ?? 0),
       ]);
     }
     if (evalResult.dimensions) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 aggregatedMetrics
       return Object.entries(evalResult.dimensions).map(([k, v]: [string, any]) => [
         k, typeof v === 'number' ? v : (v?.score ?? 0),
       ]);

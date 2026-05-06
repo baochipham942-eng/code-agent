@@ -18,6 +18,7 @@ import type {
 } from '../research/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 import { quickTask } from '../model/quickModel';
 
 const logger = createLogger('IntentClassifier');
@@ -89,12 +90,11 @@ export async function classifyIntent(
   // 避免 modelRouter 经 0ki 中转时 glm-4-flash 被 403
   try {
     const prompt = `${CLASSIFY_PROMPT}\n\n用户消息：${message}`;
-    const result = await Promise.race([
+    const result = await withTimeout(
       quickTask(prompt, 10),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Intent classification timed out')), CLASSIFY_TIMEOUT_MS)
-      ),
-    ]);
+      CLASSIFY_TIMEOUT_MS,
+      'Intent classification timed out',
+    );
 
     if (!result.success || !result.content) {
       logger.warn('Intent classification failed, defaulting to general', { error: result.error });

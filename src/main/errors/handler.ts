@@ -203,6 +203,7 @@ export function logError(error: CodeAgentError): void {
 /**
  * Wrap an async function with error handling
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 高阶函数泛型约束 `(...args: any[]) => Promise<any>` 是 TS 标准 idiom（unknown[] 不兼容 Parameters<T>），可考虑 `(...args: never[]) => Promise<unknown>` 但会破调用方推断
 export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
   fn: T,
   options: {

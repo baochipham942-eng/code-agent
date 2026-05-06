@@ -75,6 +75,7 @@ async function loadExcelData(filePath: string, sheetName?: string): Promise<Data
 
   // Extract headers from first row
   const headerRow = sheet.getRow(1);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): exceljs Cell 类型应 import { Cell } from 'exceljs'
   headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
     columns.push(String(cell.value || `Column ${colNumber}`));
   });

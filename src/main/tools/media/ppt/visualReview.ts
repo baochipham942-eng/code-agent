@@ -449,6 +449,7 @@ function parseReviewResponse(text: string): Omit<ReviewResult, 'slideIndex'> {
   return defaultResult;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): VLM 返回 JSON 形态由 prompt 决定，应抽 RawReviewJson 类型（issues[]）后用 zod 校验
 function normalizeReviewResult(raw: any): Omit<ReviewResult, 'slideIndex'> {
   const validTypes: ReviewDimensionType[] = [
     'text_readability', 'layout_precision', 'information_density',
@@ -458,7 +459,9 @@ function normalizeReviewResult(raw: any): Omit<ReviewResult, 'slideIndex'> {
   const validSeverities = ['high', 'medium', 'low'];
 
   const issues = Array.isArray(raw.issues) ? raw.issues
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): raw.issues 元素是未校验的 VLM 输出，narrow 后 i 应为 RawReviewIssue
     .filter((i: any) => i && typeof i === 'object')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 filter，i 应是 RawReviewIssue
     .map((i: any) => {
       const type: ReviewDimensionType = validTypes.includes(i.type) ? i.type : 'professional_polish';
       return {

@@ -101,7 +101,9 @@ export class CLIAgent {
     let resolvedKey = apiKey;
     if (!resolvedKey) {
       try {
-        resolvedKey = getConfigService().getApiKey(provider);
+        // provider 是 user 输入的字符串，cast 成 ModelProvider；
+        // 不在联合类型里时 main getApiKey 通过 envKeyMap 拿不到 key 直接返回 undefined
+        resolvedKey = getConfigService().getApiKey(provider as ModelConfig['provider']);
       } catch {
         // Config service not ready, keep existing key
       }

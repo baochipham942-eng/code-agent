@@ -1,5 +1,5 @@
 // ============================================================================
-// ExcelAutomate (Wave 2 — excel: native ToolModule rewrite)
+// ExcelAutomate (Wave 2 — excel: native ToolModule)
 //
 // 旧版: src/main/tools/excel/excelAutomate.ts (legacy Tool dispatcher)
 // 改造点：
@@ -9,10 +9,11 @@
 // - 行为保真：7 个 action（read / generate / edit / automate / list_sheets /
 //   get_range / validate_formulas）输出格式（中文文案、表情符号、表头）1:1 复刻
 // - 直接调下游：
-//   * read   → executeReadXlsx (native ToolModule, modules/network/readXlsx)
-//   * edit   → executeExcelEdit (legacy helper，需 legacy ctx)
-//   * generate / automate / get_range / list_sheets fallback → legacy
-//     excelGenerateTool / xlwingsExecuteTool（buildLegacyCtxFromProtocol 桥接）
+//   * read     → executeReadXlsx (native, modules/network/readXlsx)
+//   * generate → executeExcelGenerate (native, modules/network/excelGenerate) — Wave 4 D2b 升级
+//   * edit     → executeExcelEdit (legacy helper，需 legacy ctx)
+//   * automate / list_sheets / get_range → executeXlwingsExecute (native,
+//     modules/network/xlwingsExecute) — Wave 4 D2b 升级
 //   * validate_formulas → executePythonScript('excel_recalc.py', ...)
 // ============================================================================
 
@@ -26,9 +27,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { executeReadXlsx } from '../network/readXlsx';
+import { executeExcelGenerate } from '../network/excelGenerate';
+import { executeXlwingsExecute } from '../network/xlwingsExecute';
 import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
-import { excelGenerateTool } from '../../document/excelGenerate';
-import { xlwingsExecuteTool } from '../../document/xlwingsExecute';
 import { executePythonScript } from '../../utils/pythonBridge';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { excelAutomateSchema as schema } from './excelAutomate.schema';
@@ -58,6 +59,8 @@ interface FormulaValidateResult {
   status?: string;
   error_summary?: FormulaErrorRow[];
 }
+
+const allowAllChild: CanUseToolFn = async () => ({ allow: true });
 
 export async function executeExcelAutomate(
   args: Record<string, unknown>,
@@ -101,7 +104,7 @@ export async function executeExcelAutomate(
           max_rows: args.max_rows,
         },
         ctx,
-        async () => ({ allow: true }),
+        allowAllChild,
       );
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
@@ -109,7 +112,7 @@ export async function executeExcelAutomate(
     }
 
     case 'generate': {
-      // Delegate to legacy excelGenerateTool (still in tools/document/)
+      // Delegate to native excel_generate (modules/network/excelGenerate.ts)
       if (!args.title || !args.data) {
         return {
           ok: false,
@@ -117,8 +120,7 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-      const legacyResult = await excelGenerateTool.execute(
+      const result = await executeExcelGenerate(
         {
           title: args.title,
           data: args.data,
@@ -126,11 +128,12 @@ export async function executeExcelAutomate(
           output_path: args.output_path,
           sheet_name: args.sheet_name,
         },
-        legacyCtx,
+        ctx,
+        allowAllChild,
       );
       onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
-      return adaptLegacyResult(legacyResult);
+      ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
+      return result;
     }
 
     case 'edit': {
@@ -164,7 +167,7 @@ export async function executeExcelAutomate(
     }
 
     case 'automate': {
-      // Delegate to legacy xlwingsExecuteTool
+      // Delegate to native xlwings_execute (modules/network/xlwingsExecute.ts)
       if (!args.operation) {
         return {
           ok: false,
@@ -172,8 +175,7 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-      const legacyResult = await xlwingsExecuteTool.execute(
+      const result = await executeXlwingsExecute(
         {
           operation: args.operation,
           file_path: args.file_path,
@@ -187,11 +189,12 @@ export async function executeExcelAutomate(
           chart_position: args.chart_position,
           save: args.save,
         },
-        legacyCtx,
+        ctx,
+        allowAllChild,
       );
       onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
-      return adaptLegacyResult(legacyResult);
+      ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
+      return result;
     }
 
     case 'list_sheets': {
@@ -203,21 +206,21 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-      const xlResult = await xlwingsExecuteTool.execute(
+      const xlResult = await executeXlwingsExecute(
         { operation: 'list_sheets', file_path: args.file_path },
-        legacyCtx,
+        ctx,
+        allowAllChild,
       );
-      if (xlResult.success) {
+      if (xlResult.ok) {
         onProgress?.({ stage: 'completing', percent: 100 });
         ctx.logger.debug('ExcelAutomate done', { action, ok: true });
-        return adaptLegacyResult(xlResult);
+        return xlResult;
       }
       // Fallback: use read_xlsx to derive sheet names from metadata
       const readResult = await executeReadXlsx(
         { file_path: args.file_path, max_rows: 1 },
         ctx,
-        async () => ({ allow: true }),
+        allowAllChild,
       );
       if (readResult.ok && readResult.meta && Array.isArray(readResult.meta.availableSheets)) {
         const sheets = readResult.meta.availableSheets as string[];
@@ -243,19 +246,19 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-      const legacyResult = await xlwingsExecuteTool.execute(
+      const result = await executeXlwingsExecute(
         {
           operation: 'read',
           file_path: args.file_path,
           sheet: args.sheet,
           range: args.range,
         },
-        legacyCtx,
+        ctx,
+        allowAllChild,
       );
       onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
-      return adaptLegacyResult(legacyResult);
+      ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
+      return result;
     }
 
     case 'validate_formulas': {

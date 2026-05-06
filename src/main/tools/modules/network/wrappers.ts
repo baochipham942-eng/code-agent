@@ -18,8 +18,7 @@
 // （见 modules/network/{readDocument,readDocx,readPdf,readXlsx}.ts）
 
 // Document generation
-import { pptGenerateTool } from '../../media/ppt';
-import { pptEditTool } from '../../media/ppt/editTool';
+// ppt_generate / ppt_edit 已迁移为 native ToolModule（见 ./pptGenerate.ts 和 ./pptEdit.ts），P1 Wave 4 D2a
 import { docxGenerateTool } from '../../document/docxGenerate';
 import { excelGenerateTool } from '../../document/excelGenerate';
 import { pdfGenerateTool } from '../../media/pdfGenerate';
@@ -75,9 +74,8 @@ const NET_NETWORK_WRITE = {
 // ── Document reading (0) ────────────────────────────────────────────────
 // ReadDocument / read_docx / read_pdf / read_xlsx 已全部迁移为 native
 
-// ── Document generation (8) ─────────────────────────────────────────────
-export const pptGenerateModule = wrapLegacyTool(pptGenerateTool, NET_NETWORK_WRITE);
-export const pptEditModule = wrapLegacyTool(pptEditTool, NET_WRITE);
+// ── Document generation (6) ─────────────────────────────────────────────
+// ppt_generate / ppt_edit 已迁移为 native，见 ./pptGenerate.ts / ./pptEdit.ts
 export const docxGenerateModule = wrapLegacyTool(docxGenerateTool, NET_WRITE);
 export const excelGenerateModule = wrapLegacyTool(excelGenerateTool, NET_WRITE);
 export const pdfGenerateModule = wrapLegacyTool(pdfGenerateTool, NET_WRITE);

@@ -96,6 +96,8 @@ import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
 import { youtubeTranscriptSchema } from './network/youtubeTranscript.schema';
 import { academicSearchSchema } from './network/academicSearch.schema';
+import { pptGenerateSchema } from './network/pptGenerate.schema';
+import { pptEditSchema } from './network/pptEdit.schema';
 
 // vision/
 import { visualEditSchema } from './vision/visualEdit.schema';
@@ -620,27 +622,11 @@ export function registerMigratedTools(registry: ToolRegistry): void {
 
   // network (2): ppt_generate / ppt_edit
   registry.register(
-    {
-      name: 'ppt_generate',
-      description: 'Generate a PowerPoint presentation from an outline or topic.',
-      inputSchema: netSchema({ topic: { type: 'string' }, outline: { type: 'string' } }),
-      category: 'network',
-      permissionLevel: 'network',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
-    async () => (await import('./network/wrappers')).pptGenerateModule,
+    pptGenerateSchema,
+    async () => (await import('./network/pptGenerate')).pptGenerateModule,
   );
   registry.register(
-    {
-      name: 'ppt_edit',
-      description: 'Edit an existing PowerPoint presentation (insert/replace/delete slides or text).',
-      inputSchema: netSchema({ file_path: { type: 'string' }, action: { type: 'string' } }),
-      category: 'network',
-      permissionLevel: 'write',
-      readOnly: false,
-      allowInPlanMode: false,
-    },
-    async () => (await import('./network/wrappers')).pptEditModule,
+    pptEditSchema,
+    async () => (await import('./network/pptEdit')).pptEditModule,
   );
 }

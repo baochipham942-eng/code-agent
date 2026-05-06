@@ -8,6 +8,7 @@ import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
 import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator } from './shared';
+import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -188,19 +189,22 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           logger.warn(`[${providerName}] API 错误: ${res.statusCode}`, errorData);
           let errorMessage = `${providerName} API 错误 (${res.statusCode})`;
           try {
-            const parsed = JSON.parse(errorData);
-            if (parsed.error?.message) {
-              errorMessage = `${providerName} API (${res.statusCode}): ${parsed.error.message}`;
+            // OpenAI/兼容供应商的错误体结构基本一致：{ error: { message, type?, code? } }，
+            // 这里只用 message 一个字段。出现非常规 shape 时类型断言失败也只走 catch fallback。
+            const parsed = JSON.parse(errorData) as { error?: { message?: string } };
+            const innerMsg = parsed.error?.message;
+            if (innerMsg) {
+              errorMessage = `${providerName} API (${res.statusCode}): ${innerMsg}`;
             }
             // 400 错误诊断：区分 token 超限、无效参数等
             if (res.statusCode === 400) {
-              const errLower = (parsed.error?.message || errorData).toLowerCase();
+              const errLower = (innerMsg || errorData).toLowerCase();
               if (errLower.includes('token') || errLower.includes('context_length') || errLower.includes('max_tokens') || errLower.includes('too long') || errLower.includes('exceeds')) {
-                errorMessage = `${providerName}: 上下文 token 超限，建议压缩对话或新开会话。原始错误: ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 上下文 token 超限，建议压缩对话或新开会话。原始错误: ${innerMsg || errorData.substring(0, 200)}`;
               } else if (errLower.includes('invalid') || errLower.includes('parameter') || errLower.includes('required')) {
-                errorMessage = `${providerName}: 请求参数无效 — ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 请求参数无效 — ${innerMsg || errorData.substring(0, 200)}`;
               } else {
-                errorMessage = `${providerName}: 请求格式错误 (400) — ${parsed.error?.message || errorData.substring(0, 200)}`;
+                errorMessage = `${providerName}: 请求格式错误 (400) — ${innerMsg || errorData.substring(0, 200)}`;
               }
             }
           } catch {
@@ -336,124 +340,131 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             return;
           }
 
+          let rawParsed: unknown;
           try {
-            const parsed = JSON.parse(data);
-            const choice = parsed.choices?.[0];
-            const delta = choice?.delta;
-
-            // 捕获 usage
-            if (parsed.usage) {
-              usageData = {
-                inputTokens: parsed.usage.prompt_tokens || 0,
-                outputTokens: parsed.usage.completion_tokens || 0,
-              };
-            }
-
-            // 捕获 finish_reason
-            if (choice?.finish_reason) {
-              finishReason = choice.finish_reason;
-            }
-
-            if (delta) {
-              // 推理内容（DeepSeek R1 / GLM 推理模型）
-              if (delta.reasoning_content) {
-                reasoning += delta.reasoning_content;
-                if (onStream) {
-                  onStream({ type: 'reasoning', content: delta.reasoning_content });
-                }
-              }
-
-              // Kimi K2.5 的推理内容（delta.reasoning 字段）
-              if (delta.reasoning) {
-                reasoning += delta.reasoning;
-                if (onStream) {
-                  onStream({ type: 'reasoning', content: delta.reasoning });
-                }
-              }
-
-              // 文本内容
-              const textContent = delta.content;
-              if (textContent) {
-                // 追踪交错：从 tool_call 切回 text 时，开始新 text 部分
-                if (lastPartType !== 'text') {
-                  contentParts.push({ type: 'text', text: '' });
-                  lastPartType = 'text';
-                }
-                // 累积到当前 text part
-                const lastPart = contentParts[contentParts.length - 1];
-                if (lastPart?.type === 'text') {
-                  lastPart.text += textContent;
-                }
-                content += textContent;
-                charCount += textContent.length;
-                if (onStream) {
-                  onStream({ type: 'text', content: textContent });
-                  // 每 500ms 估算 token 数
-                  const now = Date.now();
-                  if (now - lastEstimateTime > 500) {
-                    lastEstimateTime = now;
-                    onStream({
-                      type: 'token_estimate',
-                      inputTokens: 0,
-                      outputTokens: Math.ceil(charCount / 4),
-                    });
-                  }
-                }
-              }
-
-              // 工具调用
-              if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const index = tc.index ?? 0;
-
-                  if (!toolCalls.has(index)) {
-                    const toolCallId = tc.id || `call_${index}`;
-                    const toolName = normalizeToolName(tc.function?.name || '');
-                    toolCalls.set(index, {
-                      id: toolCallId,
-                      name: toolName,
-                      arguments: '',
-                    });
-                    // 追踪交错：记录 tool_call 出现位置
-                    contentParts.push({ type: 'tool_call', toolCallId });
-                    lastPartType = 'tool_call';
-                    if (onStream) {
-                      onStream({
-                        type: 'tool_call_start',
-                        toolCall: {
-                          index,
-                          id: toolCallId,
-                          name: toolName,
-                        },
-                      });
-                    }
-                  }
-
-                  const existing = toolCalls.get(index)!;
-
-                  if (tc.id && existing.id.startsWith('call_')) {
-                    existing.id = tc.id;
-                  }
-                  if (tc.function?.name && !existing.name) {
-                    existing.name = normalizeToolName(tc.function.name);
-                  }
-                  if (tc.function?.arguments) {
-                    existing.arguments += tc.function.arguments;
-                    if (onStream) {
-                      onStream({
-                        type: 'tool_call_delta',
-                        toolCall: {
-                          index,
-                          argumentsDelta: tc.function.arguments,
-                        },
-                      });
-                    }
-                  }
-                }
-              }
-            }
+            rawParsed = JSON.parse(data);
           } catch {
             logger.debug(`[${providerName}] JSON 解析跳过: ${data.substring(0, 50)}`);
+            continue;
+          }
+
+          // zod 验证 + 类型 narrow（schema 失败返回 null，hot path 安全降级）
+          const chunk = parseOpenAIStreamChunk(rawParsed);
+          if (!chunk) continue;
+
+          const choice = chunk.choices?.[0];
+          const delta = choice?.delta;
+
+          // 捕获 usage
+          if (chunk.usage) {
+            usageData = {
+              inputTokens: chunk.usage.prompt_tokens ?? 0,
+              outputTokens: chunk.usage.completion_tokens ?? 0,
+            };
+          }
+
+          // 捕获 finish_reason
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+          }
+
+          if (delta) {
+            // 推理内容（DeepSeek R1 / GLM 推理模型）
+            if (delta.reasoning_content) {
+              reasoning += delta.reasoning_content;
+              if (onStream) {
+                onStream({ type: 'reasoning', content: delta.reasoning_content });
+              }
+            }
+
+            // Kimi K2.5 的推理内容（delta.reasoning 字段）
+            if (delta.reasoning) {
+              reasoning += delta.reasoning;
+              if (onStream) {
+                onStream({ type: 'reasoning', content: delta.reasoning });
+              }
+            }
+
+            // 文本内容
+            const textContent = delta.content;
+            if (textContent) {
+              // 追踪交错：从 tool_call 切回 text 时，开始新 text 部分
+              if (lastPartType !== 'text') {
+                contentParts.push({ type: 'text', text: '' });
+                lastPartType = 'text';
+              }
+              // 累积到当前 text part
+              const lastPart = contentParts[contentParts.length - 1];
+              if (lastPart?.type === 'text') {
+                lastPart.text += textContent;
+              }
+              content += textContent;
+              charCount += textContent.length;
+              if (onStream) {
+                onStream({ type: 'text', content: textContent });
+                // 每 500ms 估算 token 数
+                const now = Date.now();
+                if (now - lastEstimateTime > 500) {
+                  lastEstimateTime = now;
+                  onStream({
+                    type: 'token_estimate',
+                    inputTokens: 0,
+                    outputTokens: Math.ceil(charCount / 4),
+                  });
+                }
+              }
+            }
+
+            // 工具调用
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const index = tc.index ?? 0;
+
+                if (!toolCalls.has(index)) {
+                  const toolCallId = tc.id || `call_${index}`;
+                  const toolName = normalizeToolName(tc.function?.name || '');
+                  toolCalls.set(index, {
+                    id: toolCallId,
+                    name: toolName,
+                    arguments: '',
+                  });
+                  // 追踪交错：记录 tool_call 出现位置
+                  contentParts.push({ type: 'tool_call', toolCallId });
+                  lastPartType = 'tool_call';
+                  if (onStream) {
+                    onStream({
+                      type: 'tool_call_start',
+                      toolCall: {
+                        index,
+                        id: toolCallId,
+                        name: toolName,
+                      },
+                    });
+                  }
+                }
+
+                const existing = toolCalls.get(index)!;
+
+                if (tc.id && existing.id.startsWith('call_')) {
+                  existing.id = tc.id;
+                }
+                if (tc.function?.name && !existing.name) {
+                  existing.name = normalizeToolName(tc.function.name);
+                }
+                if (tc.function?.arguments) {
+                  existing.arguments += tc.function.arguments;
+                  if (onStream) {
+                    onStream({
+                      type: 'tool_call_delta',
+                      toolCall: {
+                        index,
+                        argumentsDelta: tc.function.arguments,
+                      },
+                    });
+                  }
+                }
+              }
+            }
           }
         }
 

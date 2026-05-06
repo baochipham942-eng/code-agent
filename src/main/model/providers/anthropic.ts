@@ -17,6 +17,7 @@ import {
   normalizeClaudeBaseUrl,
   buildToolCallFromAccumulator,
 } from './shared';
+import { parseClaudeSSEEvent } from './wrappers/anthropicWrapper';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -81,7 +82,8 @@ function claudeSSEStream(options: {
           logger.warn('[Claude] API error:', res.statusCode, errorData);
           let errorMessage = `Claude API error: ${res.statusCode}`;
           try {
-            const parsed = JSON.parse(errorData);
+            // Anthropic 错误体结构：{ type: 'error', error: { type, message } }
+            const parsed = JSON.parse(errorData) as { error?: { message?: string } };
             if (parsed.error?.message) {
               errorMessage = `Claude API (${res.statusCode}): ${parsed.error.message}`;
             }
@@ -117,25 +119,39 @@ function claudeSSEStream(options: {
           if (!line.startsWith('data:')) continue;
           const data = line.slice(5).trim();
 
+          let rawParsed: unknown;
           try {
-            const parsed = JSON.parse(data);
+            rawParsed = JSON.parse(data);
+          } catch {
+            logger.debug(`[Claude] JSON parse skipped: ${data.substring(0, 50)}`);
+            continue;
+          }
 
-            switch (currentEvent) {
+          // zod 验证 + discriminatedUnion narrow（schema 失败返回 null，hot path 安全降级）
+          const event = parseClaudeSSEEvent(currentEvent, rawParsed);
+          if (!event) continue;
+
+          {
+            switch (event.type) {
               case 'message_start': {
-                if (parsed.message?.usage) {
+                if (event.message.usage) {
                   usageData = {
-                    inputTokens: parsed.message.usage.input_tokens || 0,
-                    outputTokens: parsed.message.usage.output_tokens || 0,
+                    inputTokens: event.message.usage.input_tokens ?? 0,
+                    outputTokens: event.message.usage.output_tokens ?? 0,
                   };
                 }
                 break;
               }
 
               case 'content_block_start': {
-                const block = parsed.content_block;
-                currentBlockType = block?.type || null;
+                const block = event.content_block;
+                // server_tool_use 等未识别 block 类型保持 null，下游 contentParts 不收录（与旧行为一致）
+                currentBlockType =
+                  block.type === 'text' || block.type === 'tool_use' || block.type === 'thinking'
+                    ? block.type
+                    : null;
                 currentTextBuffer = '';
-                if (block?.type === 'tool_use') {
+                if (block.type === 'tool_use') {
                   toolCalls.set(blockIndex, {
                     id: block.id || `call_${blockIndex}`,
                     name: block.name || '',
@@ -156,8 +172,8 @@ function claudeSSEStream(options: {
               }
 
               case 'content_block_delta': {
-                const delta = parsed.delta;
-                if (delta?.type === 'text_delta' && delta.text) {
+                const delta = event.delta;
+                if (delta.type === 'text_delta' && delta.text) {
                   content += delta.text;
                   currentTextBuffer += delta.text;
                   charCount += delta.text.length;
@@ -173,7 +189,7 @@ function claudeSSEStream(options: {
                       });
                     }
                   }
-                } else if (delta?.type === 'input_json_delta' && delta.partial_json) {
+                } else if (delta.type === 'input_json_delta' && delta.partial_json) {
                   const existing = toolCalls.get(blockIndex);
                   if (existing) {
                     existing.arguments += delta.partial_json;
@@ -187,7 +203,7 @@ function claudeSSEStream(options: {
                       });
                     }
                   }
-                } else if (delta?.type === 'thinking_delta' && delta.thinking) {
+                } else if (delta.type === 'thinking_delta' && delta.thinking) {
                   thinking += delta.thinking;
                   if (onStream) {
                     onStream({ type: 'reasoning', content: delta.thinking });
@@ -213,13 +229,13 @@ function claudeSSEStream(options: {
               }
 
               case 'message_delta': {
-                if (parsed.delta?.stop_reason) {
-                  finishReason = parsed.delta.stop_reason;
+                if (event.delta.stop_reason) {
+                  finishReason = event.delta.stop_reason;
                 }
-                if (parsed.usage) {
+                if (event.usage) {
                   usageData = {
-                    inputTokens: usageData?.inputTokens || 0,
-                    outputTokens: parsed.usage.output_tokens || usageData?.outputTokens || 0,
+                    inputTokens: usageData?.inputTokens ?? 0,
+                    outputTokens: event.usage.output_tokens ?? usageData?.outputTokens ?? 0,
                   };
                 }
                 break;
@@ -266,7 +282,7 @@ function claudeSSEStream(options: {
               }
 
               case 'error': {
-                const errorMsg = parsed.error?.message || JSON.stringify(parsed);
+                const errorMsg = event.error.message || JSON.stringify(event);
                 logger.warn('[Claude] stream error event:', errorMsg);
                 if (onStream) {
                   onStream({ type: 'error', error: errorMsg });
@@ -274,9 +290,11 @@ function claudeSSEStream(options: {
                 reject(new Error(`Claude stream error: ${errorMsg}`));
                 return;
               }
+
+              case 'ping':
+                // ping 事件用于保持连接活跃，无需处理
+                break;
             }
-          } catch {
-            logger.debug(`[Claude] JSON parse skipped: ${data.substring(0, 50)}`);
           }
         }
       });
@@ -476,6 +494,6 @@ export async function callClaude(
     throw new Error(`Claude API error: ${response.status} - ${error}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   return parseClaudeResponse(data);
 }

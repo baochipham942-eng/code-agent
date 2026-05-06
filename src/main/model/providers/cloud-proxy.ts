@@ -16,6 +16,7 @@ import {
   parseContextLengthError,
   normalizeJsonSchema,
 } from './shared';
+import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
 import { getCloudApiUrl, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -243,56 +244,62 @@ async function callViaCloudProxyStreaming(
           continue;
         }
 
+        let rawParsed: unknown;
         try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-
-          if (!delta) {
-            logger.debug('[云端代理] delta 为空, parsed:', JSON.stringify(parsed).substring(0, 200));
-            continue;
-          }
-
-          // 文本内容
-          if (delta.content) {
-            fullContent += delta.content;
-            logger.debug('[云端代理] 收到文本块:', delta.content.substring(0, 50));
-            onStream({ type: 'text', content: delta.content });
-          }
-
-          // 工具调用
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const index = tc.index ?? 0;
-
-              if (!toolCallsInProgress.has(index)) {
-                toolCallsInProgress.set(index, {
-                  id: tc.id || `tool-${index}`,
-                  name: tc.function?.name || '',
-                  arguments: '',
-                });
-                onStream({
-                  type: 'tool_call_start',
-                  toolCall: { index, id: tc.id, name: tc.function?.name },
-                });
-              }
-
-              const inProgress = toolCallsInProgress.get(index)!;
-
-              if (tc.function?.name) {
-                inProgress.name = tc.function.name;
-              }
-
-              if (tc.function?.arguments) {
-                inProgress.arguments += tc.function.arguments;
-                onStream({
-                  type: 'tool_call_delta',
-                  toolCall: { index, name: inProgress.name, argumentsDelta: tc.function.arguments },
-                });
-              }
-            }
-          }
+          rawParsed = JSON.parse(data);
         } catch {
           // 忽略解析错误
+          continue;
+        }
+
+        // zod 验证 + 类型 narrow（schema 失败返回 null，hot path 安全降级）
+        const chunk = parseOpenAIStreamChunk(rawParsed);
+        if (!chunk) continue;
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) {
+          logger.debug('[云端代理] delta 为空, chunk:', JSON.stringify(chunk).substring(0, 200));
+          continue;
+        }
+
+        // 文本内容
+        if (delta.content) {
+          fullContent += delta.content;
+          logger.debug('[云端代理] 收到文本块:', delta.content.substring(0, 50));
+          onStream({ type: 'text', content: delta.content });
+        }
+
+        // 工具调用
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const index = tc.index ?? 0;
+
+            if (!toolCallsInProgress.has(index)) {
+              toolCallsInProgress.set(index, {
+                id: tc.id || `tool-${index}`,
+                name: tc.function?.name || '',
+                arguments: '',
+              });
+              onStream({
+                type: 'tool_call_start',
+                toolCall: { index, id: tc.id, name: tc.function?.name },
+              });
+            }
+
+            const inProgress = toolCallsInProgress.get(index)!;
+
+            if (tc.function?.name) {
+              inProgress.name = tc.function.name;
+            }
+
+            if (tc.function?.arguments) {
+              inProgress.arguments += tc.function.arguments;
+              onStream({
+                type: 'tool_call_delta',
+                toolCall: { index, name: inProgress.name, argumentsDelta: tc.function.arguments },
+              });
+            }
+          }
         }
       }
 
@@ -318,10 +325,11 @@ async function callViaCloudProxyStreaming(
 
     // 完成工具调用
     for (const [, tc] of toolCallsInProgress) {
+      const args = JSON.parse(tc.arguments || '{}') as Record<string, unknown>;
       toolCalls.push({
         id: tc.id,
         name: tc.name,
-        arguments: JSON.parse(tc.arguments || '{}'),
+        arguments: args,
       });
     }
 

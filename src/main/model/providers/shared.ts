@@ -9,6 +9,14 @@ import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_TIMEOUT } from '../../../shared/constants';
+// Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
+// wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
+import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
+import { parseClaudeResponse as wrapperParseClaudeResponse } from './wrappers/anthropicWrapper';
+import {
+  parseGeminiResponse as wrapperParseGeminiResponse,
+  parseGeminiStreamChunk,
+} from './wrappers/geminiWrapper';
 
 export const logger = createLogger('ModelRouter');
 
@@ -135,11 +143,11 @@ export async function electronFetch(url: string, options: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): json() 返回任意 JSON，应改成 unknown 让调用方 narrow（或加 generic <T>）
 }): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
   try {
-    const response: AxiosResponse = await axios({
+    const response: AxiosResponse<unknown> = await axios({
       url,
       method: options.method || 'GET',
       headers: options.headers,
-      data: options.body ? JSON.parse(options.body) : undefined,
+      data: options.body ? (JSON.parse(options.body) as unknown) : undefined,
       timeout: options.timeoutMs ?? PROVIDER_TIMEOUT,
       httpsAgent: getHttpsAgent(),
       validateStatus: () => true,
@@ -152,7 +160,7 @@ export async function electronFetch(url: string, options: {
       ok: response.status >= 200 && response.status < 300,
       status: response.status,
       text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
-      json: async () => response.data,
+      json: async (): Promise<unknown> => response.data,
     };
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -589,7 +597,11 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
       }
       for (const tc of m.toolCalls) {
         let input: Record<string, unknown>;
-        try { input = JSON.parse(tc.arguments); } catch { input = {}; }
+        try {
+          input = JSON.parse(tc.arguments) as Record<string, unknown>;
+        } catch {
+          input = {};
+        }
         blocks.push({ type: 'tool_use', id: normalizeToolCallId(tc.id), name: tc.name, input });
       }
       result.push({ role: 'assistant', content: blocks });
@@ -792,39 +804,12 @@ function closeOpenBrackets(str: string): string {
 }
 
 /**
- * Attempt to repair common JSON issues
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): JSON 修复返回任意 JSON，应该改成 unknown 或 generic <T>
-function repairJson(jsonStr: string): any | null {
-  try {
-    return JSON.parse(jsonStr);
-  } catch {
-    if (jsonStr.lastIndexOf('}') === -1 && jsonStr.lastIndexOf(']') === -1) {
-      return null;
-    }
-
-    const repaired = closeOpenBrackets(jsonStr);
-    try {
-      const result = JSON.parse(repaired);
-      logger.info(' Successfully repaired JSON');
-      return result;
-    } catch {
-      try {
-        const match = jsonStr.match(/^\s*\{[\s\S]*?\}(?=\s*$|\s*,|\s*\])/);
-        if (match) return JSON.parse(match[0]);
-      } catch { /* Ignore */ }
-      return null;
-    }
-  }
-}
-
-/**
  * 安全解析 JSON，支持多级备份提取策略
  */
 export function safeJsonParse(str: string): Record<string, unknown> {
   // 策略 1: 直接解析
   try {
-    const result = JSON.parse(str);
+    const result = JSON.parse(str) as Record<string, unknown>;
     logger.debug('[safeJsonParse] Direct parse succeeded');
     return result;
   } catch (e) {
@@ -1017,11 +1002,15 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
   repaired = closeOpenBrackets(repaired);
 
   try {
-    return JSON.parse(repaired);
+    return JSON.parse(repaired) as Record<string, unknown>;
   } catch {
     const lastComma = repaired.lastIndexOf(',');
     if (lastComma > 0) {
-      try { return JSON.parse(repaired.substring(0, lastComma) + '}'); } catch { /* Continue */ }
+      try {
+        return JSON.parse(repaired.substring(0, lastComma) + '}') as Record<string, unknown>;
+      } catch {
+        /* Continue */
+      }
     }
     return null;
   }
@@ -1078,160 +1067,37 @@ function extractKeyValuePairs(str: string): Record<string, unknown> | null {
 }
 
 /**
- * Parse OpenAI-compatible response
+ * Parse OpenAI-compatible response.
+ *
+ * @deprecated 实际逻辑已迁移到 `./wrappers/openaiWrapper.ts:parseOpenAIResponse`，
+ *             包含 zod schema 校验 + 旧 fallback 逻辑（normalizeToolName /
+ *             safeJsonParse repair / text-based tool call regex）。
+ *             新代码请直接 import wrapper 版本。本函数将在 PR-3 后删除。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): OpenAI Chat API response shape 应抽 OpenAiChatResponse 类型（choices/usage/system_fingerprint），或用 openai SDK 类型
-export function parseOpenAIResponse(data: any): ModelResponse {
-  const choice = data.choices?.[0];
-  if (!choice) {
-    const dataPreview = JSON.stringify(data).substring(0, 200);
-    logger.warn('[parseOpenAIResponse] No choices in response:', dataPreview);
-    throw new Error(`No response from model. Response: ${dataPreview}`);
-  }
-
-  const message = choice.message;
-
-  if (message.tool_calls && message.tool_calls.length > 0) {
-    const toolCalls: ToolCall[] = [];
-
-    for (const tc of message.tool_calls) {
-      // 规范化工具名：去掉代理层添加的 functions_ 前缀和 _N 数字后缀
-      const rawName = tc.function.name;
-      const normalizedName = rawName.startsWith('functions_')
-        ? rawName.slice('functions_'.length).replace(/_\d+$/, '') || rawName
-        : rawName;
-
-      try {
-        const args = safeJsonParse(tc.function.arguments || '{}');
-        toolCalls.push({
-          id: tc.id,
-          name: normalizedName,
-          arguments: args,
-        });
-      } catch (parseError: unknown) {
-        logger.warn(`Failed to parse tool call arguments for ${normalizedName}:`, parseError);
-        const repairedArgs = repairJson(tc.function.arguments || '{}');
-        if (repairedArgs) {
-          toolCalls.push({
-            id: tc.id,
-            name: normalizedName,
-            arguments: repairedArgs,
-          });
-        } else {
-          logger.warn(' Could not repair JSON, raw arguments:', tc.function.arguments?.substring(0, 500));
-          const content = message.content || `Tool call failed: ${tc.function.name} - Invalid JSON arguments`;
-          return { type: 'text', content };
-        }
-      }
-    }
-
-    if (toolCalls.length > 0) {
-      return { type: 'tool_use', toolCalls };
-    }
-  }
-
-  const content = message.content || '';
-
-  // Fallback: parse text-based tool calls
-  const textToolCallMatch = content.match(/Calling\s+(\w+)\s*\(/);
-  if (textToolCallMatch) {
-    const toolName = textToolCallMatch[1];
-    const callStart = content.indexOf(textToolCallMatch[0]);
-    const argsStart = callStart + textToolCallMatch[0].length;
-
-    let depth = 1;
-    let argsEnd = argsStart;
-    for (let i = argsStart; i < content.length && depth > 0; i++) {
-      if (content[i] === '{' || content[i] === '[') depth++;
-      else if (content[i] === '}' || content[i] === ']') depth--;
-      else if (content[i] === ')' && depth === 1) {
-        argsEnd = i;
-        break;
-      }
-      argsEnd = i + 1;
-    }
-
-    const argsStr = content.slice(argsStart, argsEnd);
-    try {
-      const args = safeJsonParse(argsStr);
-      logger.info(' Parsed text-based tool call:', toolName);
-      return {
-        type: 'tool_use',
-        toolCalls: [{
-          id: `text-${Date.now()}`,
-          name: toolName,
-          arguments: args,
-        }],
-      };
-    } catch (e) {
-      logger.warn(' Failed to parse text-based tool call args:', argsStr.substring(0, 100), e);
-    }
-  }
-
-  return { type: 'text', content };
+export function parseOpenAIResponse(data: unknown): ModelResponse {
+  return wrapperParseOpenAIResponse(data);
 }
 
 /**
- * Parse Claude response
+ * Parse Claude response.
+ *
+ * @deprecated 实际逻辑已迁移到 `./wrappers/anthropicWrapper.ts:parseClaudeResponse`，
+ *             含 ClaudeMessage zod schema 校验 + ContentBlock discriminatedUnion。
+ *             新代码请直接 import wrapper 版本。本函数将在 PR-3 后删除。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Anthropic Messages API response shape 应 import { Message } from '@anthropic-ai/sdk' 或抽 ClaudeMessageResponse 类型
-export function parseClaudeResponse(data: any): ModelResponse {
-  const content = data.content;
-  if (!content || content.length === 0) {
-    throw new Error('No response from model');
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Anthropic content block 是 ContentBlock 联合（text|tool_use|thinking|server_tool_use 等）
-  const toolUseBlocks = content.filter((block: any) => block.type === 'tool_use');
-  if (toolUseBlocks.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tool_use block 是 Anthropic.ToolUseBlock，应 narrow
-    const toolCalls: ToolCall[] = toolUseBlocks.map((block: any) => ({
-      id: block.id,
-      name: block.name,
-      arguments: block.input || {},
-    }));
-
-    return { type: 'tool_use', toolCalls };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 toolUseBlocks，content block 联合 narrow 后 block 是 Anthropic.TextBlock
-  const textBlocks = content.filter((block: any) => block.type === 'text');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): text block 是 Anthropic.TextBlock，narrow 后即可
-  const text = textBlocks.map((block: any) => block.text).join('\n');
-
-  return { type: 'text', content: text };
+export function parseClaudeResponse(data: unknown): ModelResponse {
+  return wrapperParseClaudeResponse(data);
 }
 
 /**
- * Parse Gemini response
+ * Parse Gemini response.
+ *
+ * @deprecated 实际逻辑已迁移到 `./wrappers/geminiWrapper.ts:parseGeminiResponse`，
+ *             含 GeminiResponse zod schema 校验。新代码请直接 import wrapper 版本。
+ *             本函数将在 PR-3 后删除。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini API response shape 应 import @google/generative-ai 类型或抽 GeminiGenerateContentResponse 类型
-export function parseGeminiResponse(data: any): ModelResponse {
-  const candidate = data.candidates?.[0];
-  if (!candidate) {
-    throw new Error('No response from Gemini');
-  }
-
-  const content = candidate.content?.parts?.[0]?.text || '';
-  const toolCalls: ToolCall[] = [];
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini parts 联合 { text? | functionCall? | inlineData? }，narrow 后 p 应是 GeminiPart
-  const functionCalls = candidate.content?.parts?.filter((p: any) => p.functionCall);
-  if (functionCalls?.length > 0) {
-    for (const fc of functionCalls) {
-      toolCalls.push({
-        id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        name: fc.functionCall.name,
-        arguments: fc.functionCall.args || {},
-      });
-    }
-  }
-
-  return {
-    type: toolCalls.length > 0 ? 'tool_use' : 'text',
-    content,
-    toolCalls,
-  };
+export function parseGeminiResponse(data: unknown): ModelResponse {
+  return wrapperParseGeminiResponse(data);
 }
 
 // ----------------------------------------------------------------------------
@@ -1274,18 +1140,23 @@ export async function handleGeminiStream(
       for (const line of lines) {
         if (!line.trim() || line.startsWith('data: [DONE]')) continue;
 
-        try {
-          const cleanLine = line.replace(/^data:\s*/, '');
-          if (!cleanLine) continue;
+        const cleanLine = line.replace(/^data:\s*/, '');
+        if (!cleanLine) continue;
 
-          const json = JSON.parse(cleanLine);
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            fullContent += text;
-            onStream({ type: 'text', content: text });
-          }
+        let rawJson: unknown;
+        try {
+          rawJson = JSON.parse(cleanLine);
         } catch {
           // Ignore parse errors
+          continue;
+        }
+
+        const chunk = parseGeminiStreamChunk(rawJson);
+        if (!chunk) continue;
+        const text = chunk.candidates?.[0].content?.parts?.[0]?.text;
+        if (text) {
+          fullContent += text;
+          onStream({ type: 'text', content: text });
         }
       }
     }

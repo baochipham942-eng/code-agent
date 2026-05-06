@@ -88,7 +88,7 @@ export async function callGemini(
       return handleGeminiStream(response.body, onStream, signal);
     }
 
-    const data = await response.json();
+    const data: unknown = await response.json();
     return parseGeminiResponse(data);
   } catch (error: unknown) {
     // Re-throw cancellation errors directly

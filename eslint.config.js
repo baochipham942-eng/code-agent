@@ -133,7 +133,6 @@ export default tseslint.config(
       'src/main/agent/parallelAgentCoordinator.ts',
       'src/main/agent/subagentExecutor.ts',
       'src/main/desktop/desktopActivityUnderstandingService.ts',
-      'src/main/evaluation/telemetryQueryService.ts',
       'src/main/model/providerRegistry.ts',
       'src/main/model/providers/shared.ts',
       'src/main/services/core/databaseService.ts',

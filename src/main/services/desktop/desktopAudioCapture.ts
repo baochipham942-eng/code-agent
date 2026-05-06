@@ -288,8 +288,11 @@ class VadStateMachine {
 // ============================================================================
 
 class VadProcessor {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): onnxruntime-node 的 InferenceSession 类型应 import { InferenceSession } from 'onnxruntime-node'，避免运行时 require()
   private session: any; // ort.InferenceSession
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): onnxruntime-node 整模块类型，应 import * as ort from 'onnxruntime-node'
   private ort: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ort.Tensor 类型，同上 import { Tensor } from 'onnxruntime-node'
   private state: any; // ort.Tensor — hidden state carried across frames
   private stateMachine: VadStateMachine;
   private initialized = false;

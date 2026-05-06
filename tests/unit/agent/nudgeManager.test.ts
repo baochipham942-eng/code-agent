@@ -24,15 +24,10 @@ vi.mock('../../../src/main/mcp/logCollector', () => ({
   },
 }));
 
-// Mock todoWrite — return empty by default, tests can override
-const mockGetCurrentTodos = vi.fn().mockReturnValue([]);
-vi.mock('../../../src/main/tools/planning/todoWrite', () => ({
-  getCurrentTodos: (...args: unknown[]) => mockGetCurrentTodos(...args),
-}));
-
-// Mock planning taskStore
+// Mock planning taskStore (legacy tools/planning/ barrel removed in P1 Wave 3 —
+// see src/main/tools/modules/planning/; getIncompleteTasks 直接来自 services)
 const mockGetIncompleteTasks = vi.fn().mockReturnValue([]);
-vi.mock('../../../src/main/tools/planning', () => ({
+vi.mock('../../../src/main/services/planning/taskStore', () => ({
   getIncompleteTasks: (...args: unknown[]) => mockGetIncompleteTasks(...args),
 }));
 
@@ -81,7 +76,6 @@ describe('NudgeManager', () => {
   beforeEach(() => {
     manager = new NudgeManager();
     vi.clearAllMocks();
-    mockGetCurrentTodos.mockReturnValue([]);
     mockGetIncompleteTasks.mockReturnValue([]);
     mockExistsSync.mockReturnValue(false);
     mockReaddirSync.mockReturnValue([]);

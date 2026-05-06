@@ -21,6 +21,7 @@ import {
   estimateModelMessageTokens,
 } from '../../../context/tokenOptimizer';
 import type { ModelMessage } from '../../../agent/loopTypes';
+import type { StreamCallback } from '../../../model/types';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { logger } from '../contextAssembly';
 import {
@@ -488,6 +489,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       );
       if (!mainModelInfo?.supportsVision) {
         const hasImages = modelMessages.some(msg =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): msg.content 已 narrow 成 array，但元素类型未细化为 ContentBlock 联合（text|image_url|tool_use 等）
           Array.isArray(msg.content) && msg.content.some((c: any) => c.type === 'image')
         );
         if (hasImages) {
@@ -557,7 +559,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // Reset partial content accumulator for this inference call
     ctx.runtime.lastStreamedContent = '';
 
-    const streamCallback = (chunk: any) => {
+    const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
         ctx.runtime.lastStreamedContent += chunk;
         ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: ctx.runtime.currentTurnId } });
@@ -660,6 +662,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }))
     );
     const outputContent = (response.content || '') +
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ModelResponse.toolCalls 类型 ToolCall[] 已存在，但这里访问 .arguments 字段时 narrow 失效；应直接用 ToolCall 类型，不需要 any
       (response.toolCalls?.map((tc: any) => JSON.stringify(tc.arguments || {})).join('') || '');
     const estimatedOutputTokens = estimateModelMessageTokens([
       { role: 'assistant', content: outputContent },

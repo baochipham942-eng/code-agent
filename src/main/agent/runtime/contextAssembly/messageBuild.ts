@@ -85,6 +85,7 @@ function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache 
 }
 
 function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): runtime.messages 类型 Message[] 已存在，find 回调可直接用 (m: Message)，不需要 any
   return [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
 }
 

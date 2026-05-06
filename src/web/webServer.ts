@@ -143,6 +143,7 @@ async function initializeServices(): Promise<void> {
   try {
     const { initSupabase } = await import('../main/services/infra/supabaseService');
     const { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } = await import('../shared/constants');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): configService.getSettings 应返回 AppSettings 类型，narrow 后即可去掉这处
     const settings = configService.getSettings() as Record<string, any>;
     const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
@@ -199,6 +200,7 @@ async function initializeServices(): Promise<void> {
   // 工具调用执行 39 turn 但 UI 占比纹丝不动）。
   try {
     const { getContextHealthService } = await import('../main/context/contextHealthService');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): web 模式的 BrowserWindow 是自定义 mock 不是 Electron.BrowserWindow，contextHealthService.setMainWindow 应该接 MockBrowserWindow|Electron.BrowserWindow 联合或 ducktype 接口
     getContextHealthService().setMainWindow(webModeWindow as any);
     logger.info('contextHealthService bound to web-mode window');
   } catch (error) {
@@ -236,7 +238,9 @@ function registerHandlers(): void {
     const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter');
     const { getDatabase } = require('../main/services/core/databaseService');
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): swarmTraceRepo 是 SwarmTraceRepo，应 import 类型；用 require() 加载所以推断不出来
     let swarmTraceRepo: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pendingApprovalRepo 是 PendingApprovalRepo，同 swarmTraceRepo
     let pendingApprovalRepo: any = null;
     try {
       const db = getDatabase();
@@ -291,6 +295,7 @@ function registerHandlers(): void {
   }
 
   const deps: IpcDependencies = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 setMainWindow，IpcDependencies.getMainWindow 返回 Electron.BrowserWindow 但 web 模式给的是 mock
     getMainWindow: () => webModeWindow as any,
     getAppService: () => null, // Web mode uses HTTP API, not AppService
     getConfigService: () => {
@@ -313,6 +318,7 @@ function registerHandlers(): void {
   // 1. 接受 ipcMain 参数的 handler — 注册到我们传入的 mockIpcMain
   // 2. 直接 import { ipcMain } from 'electron' 的 handler — 注册到 electronMock 的 ipcMain
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): mockIpcMain 类型不完整匹配 Electron.IpcMain，应该把 setupAllIpcHandlers 第一个参数改成 IpcMainLike 鸭子类型接口
   setupAllIpcHandlers(mockIpcMain as any, deps);
 
   const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE);
@@ -348,6 +354,7 @@ function registerHandlers(): void {
 
   // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
   // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 形态由 action 决定，应抽 SessionDomainPayloadMap 字典按 action narrow（同 cron.ipc.ts）
   handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
     const { action, payload } = request;
     try {
@@ -412,6 +419,7 @@ function registerHandlers(): void {
         logger.info('[webServer:session] flush previous session before switch', { currentSessionId, nextSessionId });
         try {
           // agentLoop.cancel 已改成 async (B1)，但 deps 类型签名是 cancel(): void —— 这里用 await 兼容两者
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): activeAgentLoops 的元素类型 cancel() 签名是 void，但实际实现已改 async，需要把 IAgentLoopHandle.cancel 类型改成 () => void | Promise<void>
           await Promise.resolve((agentLoop as any).cancel('session-switch'));
         } catch (err) {
           logger.warn('[webServer:session] flush previous session failed', err);
@@ -531,6 +539,7 @@ function createApp(): express.Express {
   /**
    * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient，应 import { SupabaseClient } from '@supabase/supabase-js'（同 routes/sessions.ts）
   async function getSupabaseForSession(): Promise<{ supabase: any; userId: string } | null> {
     try {
       const { getSupabase, isSupabaseInitialized } = await import('../main/services/infra/supabaseService');

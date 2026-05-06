@@ -110,6 +110,7 @@ const SAMPLE_SLIDES: StructuredSlide[] = [
     content: {
       leftPoints: ['智能代码补全', '多语言支持', '实时协作编辑'],
       rightPoints: ['自动化测试', '安全漏洞扫描', 'CI/CD 集成'],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SlideContent 联合类型里 two-column 应有 { leftPoints, rightPoints } 变体，这里是 fixture 测试数据，应该让 SlideContent 联合明确包含 two-column variant 字段
     } as any,
   },
   // 10. list
@@ -276,6 +277,7 @@ async function vlmReview(screenshots: string[], slides: StructuredSlide[]): Prom
         });
         process.stdout.write(`  [${i + 1}/${screenshots.length}] ${slideLayout}: ${review.score}/5\n`);
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): catch 形参 ts4.0+ 默认 unknown，访问 .message 应改成 `err instanceof Error ? err.message : String(err)`
     } catch (err: any) {
       console.log(`  [${i + 1}] VLM 调用失败: ${err.message}`);
       results.push({ slideIndex: i, layout: slideLayout, score: 3, issues: ['VLM 调用失败'] });

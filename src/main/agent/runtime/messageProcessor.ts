@@ -247,6 +247,7 @@ export class MessageProcessor {
     isSimpleTask: boolean,
     iterations: number,
     shouldRunHooks: boolean,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): langfuse SDK 的 trace span 类型未导入，应 import { LangfuseTraceClient } from 'langfuse' 替换 any
     langfuse: any,
   ): Promise<'break' | 'continue'> {
     if (this.ctx.isCancelled) {
@@ -375,6 +376,7 @@ export class MessageProcessor {
       iterations,
       workingDirectory: this.ctx.workingDirectory,
       injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): NudgeManager 的 onEvent 形参 { type: string; data: unknown } 是宽口，外层 ctx.onEvent 期望 AgentEvent 严格联合；应让 NudgeManager 直接接受 AgentEvent，或在外层定义 AnyEvent 类型
       onEvent: (event: { type: string; data: unknown }) => this.ctx.onEvent(event as any),
       goalTracker: this.ctx.goalTracker,
     });
@@ -471,6 +473,7 @@ export class MessageProcessor {
     response: ModelResponse,
     wasForceExecuted: boolean,
     iterations: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 handleTextResponse，langfuse SDK trace 类型应统一从 'langfuse' import
     langfuse: any,
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls!;

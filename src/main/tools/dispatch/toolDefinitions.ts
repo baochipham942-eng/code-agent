@@ -22,7 +22,8 @@ import type { ToolSchema, PermissionLevel } from '../../protocol/tools';
 import { getProtocolRegistry } from '../protocolRegistry';
 import { getCloudConfigService } from '../../services/cloud';
 import { getMCPClient } from '../../mcp';
-import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../search';
+import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../services/toolSearch/deferredTools';
+import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { isBashToolName } from '../toolNames';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';

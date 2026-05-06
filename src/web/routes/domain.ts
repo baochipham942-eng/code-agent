@@ -5,6 +5,7 @@ import { formatError } from '../helpers/utils';
 
 interface DomainDeps {
   handlers: Map<string, HandlerFn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
   logger: { warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
 }
 

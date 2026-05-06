@@ -132,6 +132,7 @@ export async function electronFetch(url: string, options: {
   body?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): json() 返回任意 JSON，应改成 unknown 让调用方 narrow（或加 generic <T>）
 }): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
   try {
     const response: AxiosResponse = await axios({
@@ -691,6 +692,7 @@ function sanitizeClaudeToolPairing(messages: ClaudeMessage[]): ClaudeMessage[] {
  * Convert messages to text-only format (for models that don't support tool calling)
  * 回退到纯文本：toolCalls → toolCallText, tool → user
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): provider 私有 wire format 不统一，应抽 OpenAIChatMessage 类型替换 any[]
 export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
   return messages.map((m) => {
     // assistant + toolCallText → 纯文本回退
@@ -725,7 +727,9 @@ export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
 /**
  * Convert messages to Gemini format
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini wire format（{ role, parts: [{ text|inlineData|functionCall|functionResponse }] }）应抽 GeminiContent 类型
 export function convertToGeminiMessages(messages: ModelMessage[]): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 GeminiContent 类型抽出后即可去掉
   const contents: any[] = [];
 
   for (const m of messages) {
@@ -790,6 +794,7 @@ function closeOpenBrackets(str: string): string {
 /**
  * Attempt to repair common JSON issues
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): JSON 修复返回任意 JSON，应该改成 unknown 或 generic <T>
 function repairJson(jsonStr: string): any | null {
   try {
     return JSON.parse(jsonStr);
@@ -1075,6 +1080,7 @@ function extractKeyValuePairs(str: string): Record<string, unknown> | null {
 /**
  * Parse OpenAI-compatible response
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): OpenAI Chat API response shape 应抽 OpenAiChatResponse 类型（choices/usage/system_fingerprint），或用 openai SDK 类型
 export function parseOpenAIResponse(data: any): ModelResponse {
   const choice = data.choices?.[0];
   if (!choice) {
@@ -1168,14 +1174,17 @@ export function parseOpenAIResponse(data: any): ModelResponse {
 /**
  * Parse Claude response
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Anthropic Messages API response shape 应 import { Message } from '@anthropic-ai/sdk' 或抽 ClaudeMessageResponse 类型
 export function parseClaudeResponse(data: any): ModelResponse {
   const content = data.content;
   if (!content || content.length === 0) {
     throw new Error('No response from model');
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Anthropic content block 是 ContentBlock 联合（text|tool_use|thinking|server_tool_use 等）
   const toolUseBlocks = content.filter((block: any) => block.type === 'tool_use');
   if (toolUseBlocks.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tool_use block 是 Anthropic.ToolUseBlock，应 narrow
     const toolCalls: ToolCall[] = toolUseBlocks.map((block: any) => ({
       id: block.id,
       name: block.name,
@@ -1185,7 +1194,9 @@ export function parseClaudeResponse(data: any): ModelResponse {
     return { type: 'tool_use', toolCalls };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 toolUseBlocks，content block 联合 narrow 后 block 是 Anthropic.TextBlock
   const textBlocks = content.filter((block: any) => block.type === 'text');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): text block 是 Anthropic.TextBlock，narrow 后即可
   const text = textBlocks.map((block: any) => block.text).join('\n');
 
   return { type: 'text', content: text };
@@ -1194,6 +1205,7 @@ export function parseClaudeResponse(data: any): ModelResponse {
 /**
  * Parse Gemini response
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini API response shape 应 import @google/generative-ai 类型或抽 GeminiGenerateContentResponse 类型
 export function parseGeminiResponse(data: any): ModelResponse {
   const candidate = data.candidates?.[0];
   if (!candidate) {
@@ -1203,6 +1215,7 @@ export function parseGeminiResponse(data: any): ModelResponse {
   const content = candidate.content?.parts?.[0]?.text || '';
   const toolCalls: ToolCall[] = [];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini parts 联合 { text? | functionCall? | inlineData? }，narrow 后 p 应是 GeminiPart
   const functionCalls = candidate.content?.parts?.filter((p: any) => p.functionCall);
   if (functionCalls?.length > 0) {
     for (const fc of functionCalls) {

@@ -310,6 +310,7 @@ Examples:
 /**
  * Validate Jupyter notebook format
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): notebook JSON schema (.ipynb v4.5) 应抽 JupyterNotebook 类型（cells/nbformat/metadata）
 function validateNotebookFormat(notebook: any): string | null {
   if (!notebook.cells || !Array.isArray(notebook.cells)) {
     return 'Invalid notebook structure: missing or invalid cells array';

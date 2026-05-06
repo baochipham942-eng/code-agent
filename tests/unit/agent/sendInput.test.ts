@@ -1,3 +1,8 @@
+// 行为级测试：在真实 SpawnGuard / ParallelAgentCoordinator 上验证
+// send_input native module 的 fallback 路径（SpawnGuard hit / ParallelAgent
+// fallback / unknown agent 三种）。
+// schema 级断言已移到 tests/unit/tools/modules/multiagent/sendInput.test.ts。
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -24,9 +29,10 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 
 import { initParallelAgentCoordinator } from '../../../src/main/agent/parallelAgentCoordinator';
 import type { AgentTask } from '../../../src/main/agent/parallelAgentCoordinator';
-import { sendInputTool } from '../../../src/main/agent/multiagentTools/sendInput';
+import { sendInputModule } from '../../../src/main/tools/modules/multiagent/sendInput';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
 import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
+import type { ToolContext, CanUseToolFn } from '../../../src/main/protocol/tools';
 
 function keepRunning(): Promise<SubagentResult> {
   return new Promise(() => {});
@@ -50,7 +56,20 @@ function registerParallelInbox(taskId: string): unknown[] {
   return queue;
 }
 
-describe('sendInputTool', () => {
+function makeCtx(): ToolContext {
+  const ctrl = new AbortController();
+  return {
+    sessionId: 'test',
+    workingDir: '/tmp/test',
+    abortSignal: ctrl.signal,
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    emit: () => void 0,
+  } as unknown as ToolContext;
+}
+
+const allowAll: CanUseToolFn = async () => ({ allow: true });
+
+describe('sendInput native module (fallback paths)', () => {
   beforeEach(() => {
     resetSpawnGuard();
     initParallelAgentCoordinator();
@@ -65,13 +84,17 @@ describe('sendInputTool', () => {
     const guard = getSpawnGuard();
     guard.register('agent-spawned', 'coder', 'continue work', keepRunning(), new AbortController());
 
-    const result = await sendInputTool.execute(
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
       { agentId: 'agent-spawned', message: 'follow up' },
-      {}
+      makeCtx(),
+      allowAll,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('Message queued for agent [agent-spawned]');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Message queued for agent [agent-spawned]');
+    }
     expect(guard.get('agent-spawned')?.messageQueue).toHaveLength(1);
     expect(guard.get('agent-spawned')?.messageQueue[0]?.payload).toBe('follow up');
   });
@@ -79,32 +102,40 @@ describe('sendInputTool', () => {
   it('falls back to the parallel executor inbox when SpawnGuard misses', async () => {
     const queue = registerParallelInbox('parallel-agent');
 
-    const result = await sendInputTool.execute(
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
       { agentId: 'parallel-agent', message: 'parallel follow up' },
-      {}
+      makeCtx(),
+      allowAll,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('Message queued for parallel agent [parallel-agent]');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Message queued for parallel agent [parallel-agent]');
+    }
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({ type: 'text', from: 'user', payload: 'parallel follow up' });
   });
 
-  it('returns a clear failure for unknown agents', async () => {
-    const result = await sendInputTool.execute(
+  it('returns NOT_FOUND for unknown agents', async () => {
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
       { agentId: 'missing-agent', message: 'hello?' },
-      {}
+      makeCtx(),
+      allowAll,
     );
 
-    expect(result).toEqual({
-      success: false,
-      error: 'Agent not found: missing-agent',
-    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_FOUND');
+      expect(result.error).toBe('Agent not found: missing-agent');
+    }
   });
 
   it('does not expose interrupt in the tool schema', () => {
-    expect(sendInputTool.inputSchema.properties).toHaveProperty('agentId');
-    expect(sendInputTool.inputSchema.properties).toHaveProperty('message');
-    expect(sendInputTool.inputSchema.properties).not.toHaveProperty('interrupt');
+    const props = sendInputModule.schema.inputSchema.properties as Record<string, unknown>;
+    expect(props).toHaveProperty('agentId');
+    expect(props).toHaveProperty('message');
+    expect(props).not.toHaveProperty('interrupt');
   });
 });

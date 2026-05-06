@@ -79,10 +79,12 @@ export const useLocalBridgeStore = create<LocalBridgeState>((set, get) => ({
   startPolling: () => {
     get().checkHealth();
     const interval = setInterval(() => get().checkHealth(), 5000);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 把 __bridgePollInterval 挂到 window 全局做单例 polling，应改为模块级 module-private 变量或扩展 Window 接口
     (window as any).__bridgePollInterval = interval;
   },
 
   stopPolling: () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 startPolling，window 上挂的 __bridgePollInterval 应该改为模块级变量或声明合并 Window
     const interval = (window as any).__bridgePollInterval;
     if (interval) clearInterval(interval);
   },

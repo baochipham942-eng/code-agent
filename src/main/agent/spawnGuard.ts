@@ -294,11 +294,16 @@ class SpawnGuard {
 
     if (promises.length === 0) return results;
 
-    // Race against timeout
-    await Promise.race([
-      Promise.allSettled(promises),
-      new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
-    ]);
+    // Race against soft timeout（手工 clearTimeout 避免胜者侧 timer 长留）
+    let softTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled(promises),
+        new Promise<void>(resolve => { softTimeoutId = setTimeout(resolve, timeoutMs); }),
+      ]);
+    } finally {
+      if (softTimeoutId) clearTimeout(softTimeoutId);
+    }
 
     // Fill in any agents that didn't complete before timeout
     for (const id of ids) {

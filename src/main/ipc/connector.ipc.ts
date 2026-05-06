@@ -361,6 +361,18 @@ function ensureConnectorStatusWatcher(
   connectorStatusWatchTimer = setInterval(() => {
     void pollAndBroadcastConnectorStatuses(getMainWindow).catch(() => {});
   }, CONNECTOR_STATUS_POLL_MS);
+  connectorStatusWatchTimer.unref?.();
+
+  void import('../services/infra/gracefulShutdown')
+    .then(({ onShutdown }) => {
+      onShutdown('ipc/connector.statusWatcher', async () => {
+        if (connectorStatusWatchTimer) {
+          clearInterval(connectorStatusWatchTimer);
+          connectorStatusWatchTimer = null;
+        }
+      });
+    })
+    .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
 }
 
 export function registerConnectorHandlers(

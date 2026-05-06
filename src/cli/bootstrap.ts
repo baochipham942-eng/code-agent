@@ -19,7 +19,11 @@ Module.prototype.require = function(id: string) {
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { getCLIConfigService, type CLIConfigService } from './config';
+// CLIConfigService 现在是 main ConfigService 的 read-only 视图（type alias）。
+// 初始化走 main initConfigService —— 4c8b5d7d 修复尾巴：消除"配置双胞胎"。
+import './config'; // 副作用：加载 .env（保持原有行为）
+import type { CLIConfigService } from './config';
+import { initConfigService as initMainConfigService } from '../main/services/core/configService';
 import { initCLIDatabase, type CLIDatabaseService } from './database';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
@@ -95,9 +99,11 @@ export async function initializeCLIServices(): Promise<void> {
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   process.env.CODE_AGENT_CLI_MODE = 'true';
 
-  // 初始化配置服务
-  configService = getCLIConfigService();
-  await configService.initialize();
+  // 初始化配置服务（main ConfigService 单例 — 与 webServer / Tauri 同源）
+  // CLI 模式下 keytar 已通过 CODE_AGENT_CLI_MODE 守卫跳过，initialize 只读 config.json
+  const mainConfigService = initMainConfigService();
+  await mainConfigService.initialize();
+  configService = mainConfigService; // 类型缩窄到 IReadConfigService（read-only 视图）
   cliLog('ConfigService initialized');
 
   // 初始化数据库
@@ -427,6 +433,7 @@ export async function cleanup(): Promise<void> {
             outputTokens: sessionData.totalOutputTokens,
             totalTokens: sessionData.totalTokens,
           },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): updateSession 第二个参数类型 SessionUpdate 没有 lastTokenUsage 字段，应该把 lastTokenUsage 加进 SessionUpdate 或 CLI Session schema
         } as any);
       }
     } catch (error) {

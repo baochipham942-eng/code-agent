@@ -34,6 +34,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
   // Listen for download events from main process
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): update 事件 data 形态由 type 决定（download_progress / download_complete / error），应抽 UpdateEvent 联合类型
     const handleUpdateEvent = (event: { type: string; data?: any }) => {
       logger.debug('Received event', { type: event.type, data: event.data });
 

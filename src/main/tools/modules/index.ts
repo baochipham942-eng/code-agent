@@ -97,6 +97,15 @@ import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
 import { pdfGenerateSchema } from './network/pdfGenerate.schema';
 import { pdfCompressSchema } from './network/pdfCompress.schema';
 import { pdfAutomateSchema } from './network/pdfAutomate.schema';
+import { speechToTextSchema } from './network/speechToText.schema';
+import { textToSpeechSchema } from './network/textToSpeech.schema';
+import { imageProcessSchema } from './network/imageProcess.schema';
+import { screenshotPageSchema } from './network/screenshotPage.schema';
+import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
+import { imageAnnotateSchema } from './network/imageAnnotate.schema';
+import { videoGenerateSchema } from './network/videoGenerate.schema';
+import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
+import { imageGenerateSchema } from './network/imageGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -438,36 +447,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./planning/explore')).exploreModule,
   );
 
-  // ── batch 8: network/ wrapper（31 个，最终批）────────────────────────────
-  // 全部用最小 schema 占位，真实 schema 由 ToolModule.schema 提供（resolve 时校验）
-  // 但 register 接口要求 schema 立即提供，所以这里给最小化的兼容定义
-  const netSchema = (props: Record<string, { type: string }> = {}, required: string[] = []) => ({
-    type: 'object' as const,
-    properties: props,
-    required,
-  });
-  const REGISTER_NET = (
-    name: string,
-    desc: string,
-    perm: 'read' | 'write' | 'network',
-    importFn: import('../../protocol/tools').ToolLoader,
-    readOnly = false,
-  ) => {
-    registry.register(
-      {
-        name,
-        description: desc,
-        inputSchema: netSchema(),
-        category: 'network',
-        permissionLevel: perm,
-        readOnly,
-        allowInPlanMode: readOnly,
-      },
-      importFn,
-    );
-  };
-
-  // HTTP / Web fetching (4) — all native (Level 1+)
+  // ── batch 8: network/ — all native modules ────────────────────────────
+  // HTTP / Web fetching (4)
   registry.register(
     webFetchSchema,
     async () => (await import('./network/webFetch')).webFetchModule,
@@ -530,22 +511,38 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
 
   // Media (8)
-  REGISTER_NET('image_generate', 'Generate an image (DALL-E / Stable Diffusion / etc.).', 'network',
-    async () => (await import('./network/wrappers')).imageGenerateModule, false);
-  REGISTER_NET('image_process', 'Process an image (resize/crop/rotate/format).', 'write',
-    async () => (await import('./network/wrappers')).imageProcessModule, false);
-  REGISTER_NET('image_analyze', 'Analyze an image with vision models.', 'network',
-    async () => (await import('./network/wrappers')).imageAnalyzeModule, true);
-  REGISTER_NET('image_annotate', 'Annotate an image (boxes, arrows, text).', 'write',
-    async () => (await import('./network/wrappers')).imageAnnotateModule, false);
-  REGISTER_NET('video_generate', 'Generate a video clip from prompt.', 'network',
-    async () => (await import('./network/wrappers')).videoGenerateModule, false);
-  REGISTER_NET('text_to_speech', 'Convert text to speech audio.', 'network',
-    async () => (await import('./network/wrappers')).textToSpeechModule, false);
-  REGISTER_NET('speech_to_text', 'Transcribe audio to text via cloud ASR.', 'network',
-    async () => (await import('./network/wrappers')).speechToTextModule, true);
-  REGISTER_NET('local_speech_to_text', 'Transcribe audio to text via local ASR.', 'read',
-    async () => (await import('./network/wrappers')).localSpeechToTextModule, true);
+  registry.register(
+    imageGenerateSchema,
+    async () => (await import('./network/imageGenerate')).imageGenerateModule,
+  );
+  registry.register(
+    imageProcessSchema,
+    async () => (await import('./network/imageProcess')).imageProcessModule,
+  );
+  registry.register(
+    imageAnalyzeSchema,
+    async () => (await import('./network/imageAnalyze')).imageAnalyzeModule,
+  );
+  registry.register(
+    imageAnnotateSchema,
+    async () => (await import('./network/imageAnnotate')).imageAnnotateModule,
+  );
+  registry.register(
+    videoGenerateSchema,
+    async () => (await import('./network/videoGenerate')).videoGenerateModule,
+  );
+  registry.register(
+    textToSpeechSchema,
+    async () => (await import('./network/textToSpeech')).textToSpeechModule,
+  );
+  registry.register(
+    speechToTextSchema,
+    async () => (await import('./network/speechToText')).speechToTextModule,
+  );
+  registry.register(
+    localSpeechToTextSchema,
+    async () => (await import('./network/localSpeechToText')).localSpeechToTextModule,
+  );
 
   // Visual helpers (4) — chart/mermaid/qrcode 已迁移为 native，带完整 schema
   registry.register(
@@ -560,8 +557,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     qrcodeGenerateSchema,
     async () => (await import('./network/qrcodeGenerate')).qrcodeGenerateModule,
   );
-  REGISTER_NET('screenshot_page', 'Take a screenshot of a webpage.', 'network',
-    async () => (await import('./network/wrappers')).screenshotPageModule, true);
+  registry.register(
+    screenshotPageSchema,
+    async () => (await import('./network/screenshotPage')).screenshotPageModule,
+  );
 
   // External integrations (5) — all native ToolModule with real schemas
   registry.register(

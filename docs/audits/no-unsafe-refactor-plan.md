@@ -11,7 +11,7 @@
 
 | 项 | 数 |
 |---|---|
-| 总 no-unsafe-* warning | **2820** (实测 main HEAD 4e6cbbff) |
+| 总 no-unsafe-* warning | **2755** (实测 origin/main `4e6cbbff` 干净状态；之前 2820 是父会话测时本地工作树有 143 脏文件污染) |
 | 涉及文件 | 211 |
 | 涉及 module | 20+ |
 | 70% 集中在 | `model/providers` + `web/routes` + `tools/lsp` + `ipc/*` |

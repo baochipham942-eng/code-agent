@@ -144,7 +144,14 @@ export class DeviationDetector {
 
       // File read/write with empty path
       if (
-        (name === 'read_file' || name === 'Read' || name === 'write_file' || name === 'Write') &&
+        (
+          name === 'read_file' ||
+          name === 'Read' ||
+          name === 'write_file' ||
+          name === 'Write' ||
+          name === 'append_file' ||
+          name === 'Append'
+        ) &&
         (!args.file_path && !args.path || (args.file_path && String(args.file_path).trim() === ''))
       ) {
         markers.push({

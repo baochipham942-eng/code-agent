@@ -576,6 +576,8 @@ const SUBAGENT_DISABLED_TOOLS = [
 const READONLY_DISABLED_TOOLS = [
   'write_file',
   'Write',
+  'append_file',
+  'Append',
   'edit_file',
   'Edit',
 ];

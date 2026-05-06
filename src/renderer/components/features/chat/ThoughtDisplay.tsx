@@ -119,34 +119,12 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
       {/* Gradient overlay effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary-500/5 via-transparent to-accent-purple/5 pointer-events-none" />
 
-      {/* Animated gradient border effect when thinking */}
-      {isThinking && (
-        <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
-          <div
-            className="absolute inset-[-2px] rounded-xl opacity-30"
-            style={{
-              background: 'linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #6366f1)',
-              backgroundSize: '300% 100%',
-              animation: 'gradient-shift 3s ease-in-out infinite',
-            }}
-          />
-        </div>
-      )}
-
       {/* Content container */}
       <div className="relative p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            {/* Brain icon with animation */}
-            <div className="relative">
-              <Brain className={`w-4 h-4 text-primary-400 ${isThinking ? 'animate-pulse' : ''}`} />
-              {isThinking && (
-                <div className="absolute inset-0 animate-ping">
-                  <Brain className="w-4 h-4 text-primary-400 opacity-40" />
-                </div>
-              )}
-            </div>
+            <Brain className={`w-4 h-4 text-primary-400 ${isThinking ? 'animate-pulse' : ''}`} />
             <span className="text-sm font-medium text-primary-400">
               {isThinking ? 'Thinking...' : 'Thought'}
             </span>
@@ -199,11 +177,6 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
 
       {/* Animation keyframes */}
       <style>{`
-        @keyframes gradient-shift {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-        }
-
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }

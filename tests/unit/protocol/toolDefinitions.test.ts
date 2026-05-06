@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLoadedDeferredToolDefinitions } from '../../../src/main/tools/dispatch/toolDefinitions';
+import {
+  getCoreToolDefinitions,
+  getLoadedDeferredToolDefinitions,
+} from '../../../src/main/tools/dispatch/toolDefinitions';
 import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
 import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
@@ -69,6 +72,12 @@ describe('toolDefinitions deferred loading', () => {
     expect(names).toContain('Task');
     expect(names).toContain('mcp__github__search_code');
     expect(definitions.find((definition) => definition.name === 'mcp__github__search_code')).toEqual(mcpToolDefinition);
+  });
+
+  it('exposes Append as a core file tool', () => {
+    const names = getCoreToolDefinitions().map((definition) => definition.name);
+    expect(names).toContain('Write');
+    expect(names).toContain('Append');
   });
 
   it('does not include selected searchable-only deferred metadata', () => {

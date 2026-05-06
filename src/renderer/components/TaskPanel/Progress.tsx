@@ -88,7 +88,7 @@ export const Progress: React.FC = () => {
                   <Check className="w-3 h-3 text-white" />
                 </div>
               ) : todo.status === 'in_progress' ? (
-                <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0 animate-pulse">
+                <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
                   <span className="text-xs font-medium text-white">
                     {todos.findIndex(item => item === todo) + 1}
                   </span>

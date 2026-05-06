@@ -21,6 +21,7 @@ import {
 // ============================================================================
 
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAME_INTERVAL_MS = 240;
 
 function StatusIndicator({ status }: { status: ToolStatus }) {
   const [frame, setFrame] = useState(0);
@@ -30,7 +31,7 @@ function StatusIndicator({ status }: { status: ToolStatus }) {
     if (status === 'pending') {
       intervalRef.current = setInterval(() => {
         setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
-      }, 80);
+      }, SPINNER_FRAME_INTERVAL_MS);
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
       };

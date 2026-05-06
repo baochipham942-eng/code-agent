@@ -21,6 +21,7 @@ const logger = createLogger('ConfirmationGate');
 const DANGEROUS_TOOLS = new Set([
   'bash', 'Bash',
   'write_file', 'Write',
+  'append_file', 'Append',
   'edit_file', 'Edit',
   'mail_send',
   'calendar_delete_event',
@@ -159,6 +160,17 @@ export class ConfirmationGate {
         };
       }
 
+      case 'append_file':
+      case 'Append': {
+        const filePath = (params.file_path || params.path) as string | undefined;
+        const content = params.content as string | undefined;
+        return {
+          type: 'diff',
+          after: content?.substring(0, 500),
+          summary: `追加文件 ${filePath || '(unknown)'} (${content?.length || 0} 字符)`,
+        };
+      }
+
       case 'bash':
       case 'Bash': {
         const command = params.command as string | undefined;
@@ -275,7 +287,12 @@ export class ConfirmationGate {
       return 'medium';
     }
 
-    if (toolName === 'write_file' || toolName === 'Write') {
+    if (
+      toolName === 'write_file' ||
+      toolName === 'Write' ||
+      toolName === 'append_file' ||
+      toolName === 'Append'
+    ) {
       return 'medium';
     }
 

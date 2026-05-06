@@ -15,6 +15,7 @@ import type { ToolGroup } from '../../../../../utils/toolGrouping';
 
 // Braille spinner for group pending state
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAME_INTERVAL_MS = 240;
 
 interface ToolCallGroupProps {
   toolCalls: ToolCall[];
@@ -95,7 +96,7 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
     if (groupStatus === 'pending') {
       const interval = setInterval(() => {
         setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
-      }, 80);
+      }, SPINNER_FRAME_INTERVAL_MS);
       return () => clearInterval(interval);
     }
   }, [groupStatus]);
@@ -229,7 +230,7 @@ function SmartGroupBlock({ group, startIndex, totalTools }: SmartGroupProps) {
     if (groupStatus === 'pending') {
       const interval = setInterval(() => {
         setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
-      }, 80);
+      }, SPINNER_FRAME_INTERVAL_MS);
       return () => clearInterval(interval);
     }
   }, [groupStatus]);

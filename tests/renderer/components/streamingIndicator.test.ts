@@ -9,21 +9,21 @@ describe('StreamingIndicator state', () => {
   it('does not show the stuck phase for a long turn while no tool is running', () => {
     const state = getStreamingIndicatorState(409 * 60 + 10);
 
-    expect(state.phase.label).toBe('处理时间较长...');
+    expect(state.phase.label).toBe('仍在处理...');
     expect(state.isStuck).toBe(false);
   });
 
   it('does not show the stuck phase when the turn is old but the running tool is fresh', () => {
     const state = getStreamingIndicatorState(120, 20);
 
-    expect(state.phase.label).toBe('处理时间较长...');
+    expect(state.phase.label).toBe('仍在处理...');
     expect(state.isStuck).toBe(false);
   });
 
   it('shows the stuck phase only after a running tool crosses the stuck threshold', () => {
     const state = getStreamingIndicatorState(120, 91);
 
-    expect(state.phase.label).toBe('工具可能卡住');
+    expect(state.phase.label).toBe('工具仍在执行');
     expect(state.isStuck).toBe(true);
   });
 

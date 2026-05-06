@@ -86,7 +86,7 @@ export class CoverageGapDetector {
     if (expect.file_contains) Object.keys(expect.file_contains).forEach((f) => assertedFiles.add(f));
 
     // Look for file-writing tool calls without corresponding assertions
-    const fileWriteTools = ['write_file', 'create_file', 'edit_file', 'Write', 'Edit'];
+    const fileWriteTools = ['write_file', 'create_file', 'append_file', 'edit_file', 'Write', 'Append', 'Edit'];
     const writtenFiles = new Set<string>();
 
     for (const exec of result.toolExecutions) {

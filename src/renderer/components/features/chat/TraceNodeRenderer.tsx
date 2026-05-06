@@ -237,7 +237,7 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 pl-3 border-l border-zinc-700">
+            <div className="mt-1.5 pl-3">
               <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-wrap font-mono">
                 {reasoningContent}
               </p>
@@ -251,7 +251,7 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
         <div className="text-zinc-200 leading-relaxed select-text">
           <MessageContent content={node.content} isUser={false} />
           {turnStreaming && (
-            <span className="inline-block w-[2px] h-[1em] bg-primary-400 align-text-bottom animate-pulse ml-0.5" />
+            <span className="sr-only">正在生成</span>
           )}
         </div>
       )}

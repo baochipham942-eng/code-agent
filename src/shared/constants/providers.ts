@@ -224,6 +224,8 @@ export const SEARCH_API_ENDPOINTS = {
  */
 export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
   xiaomi: [
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+    { provider: 'openai', model: 'gpt-5.4-mini' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
@@ -234,10 +236,13 @@ export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; m
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
   ],
   claude: [
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+    { provider: 'openai', model: 'gpt-5.4-mini' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],
   openai: [
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
     { provider: 'deepseek', model: 'deepseek-v4-flash' },
   ],

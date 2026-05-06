@@ -109,6 +109,8 @@ const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision
 const WRITE_TOOLS = new Set([
   'write_file',
   'Write',
+  'append_file',
+  'Append',
   'edit_file',
   'Edit',
 ]);

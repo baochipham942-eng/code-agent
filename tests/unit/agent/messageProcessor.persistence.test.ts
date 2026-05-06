@@ -240,4 +240,514 @@ describe('MessageProcessor persistence', () => {
       }),
     );
   });
+
+  it('boosts truncated tool calls to the provider output limit', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        blockedToolCount: 0,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'ok' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        truncated: true,
+        toolCalls: [{ id: 'tool-1', name: 'write_file', arguments: { path: '/tmp/a.html' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(ctx.modelConfig.maxTokens).toBe(131072);
+    expect(toolEngine.executeToolsWithHooks).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists a final assistant message and stops when artifact repair is already validated', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: 'artifact repair target already passes validation after blocked Read read',
+      forceFinalResponsePrompt: '<force-final-response>done</force-final-response>',
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1')
+        .mockReturnValueOnce('final-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'ok' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/game.html' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'final-message-1',
+        role: 'assistant',
+        content: '目标产物已通过交互验收，修复流程已结束。',
+      }),
+    );
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message',
+        data: expect.objectContaining({ id: 'final-message-1' }),
+      }),
+    );
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledTimes(1);
+    expect(contextAssembly.flushHookMessageBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists artifact repair target reads as an immediate anchored preview', async () => {
+    const largeHtml = [
+      '<!doctype html>',
+      '<html>',
+      '<body>',
+      '<script>',
+      `const filler = '${'x'.repeat(18000)}';`,
+      'window.__GAME_META__ = {',
+      "  progressPlan: [{ input: ['ArrowRight'], metric: 'score', expect: 'increase' }],",
+      '};',
+      'window.__GAME_TEST__ = {',
+      '  start() { return true; },',
+      '  reset() { return true; },',
+      '  snapshot() { return { score: 0 }; },',
+      '  step(input, frames) { return this.snapshot(); },',
+      '  runSmokeTest() { return { passed: false, failures: ["score"], coverage: {} }; },',
+      '};',
+      '</script>',
+      '</body>',
+      '</html>',
+    ].join('\n');
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'playability_repair',
+        blockedToolCount: 0,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      formatArtifactRepairToolResultContent: vi.fn((_result, originalContent: string) => [
+        '<artifact-repair-file-read>',
+        'Target file already read: /tmp/game.html',
+        'History preview compressed for repair mode.',
+        originalContent.slice(0, 300),
+        'Critical repair sections are preserved below. Do not re-read the target file in this repair pass; write the patch now.',
+        '</artifact-repair-file-read>',
+      ].join('\n')),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        {
+          toolCallId: 'tool-1',
+          success: true,
+          output: largeHtml,
+          metadata: {
+            preserveObservation: true,
+            evidenceKind: 'file_read',
+            filePath: '/tmp/game.html',
+          },
+        },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/game.html' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    const toolMessage = ctx.messages.find((message: any) => message.role === 'tool') as any;
+    expect(contextAssembly.formatArtifactRepairToolResultContent).toHaveBeenCalledTimes(1);
+    expect(toolMessage.content).toContain('<artifact-repair-file-read>');
+    expect(toolMessage.toolResults[0].metadata.artifactRepairPreview).toBe(true);
+    expect(toolMessage.toolResults[0].output).not.toContain('x'.repeat(4000));
+  });
+
+  it('drops tool calls that are outside the currently visible tool schema and reinfers', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        blockedToolCount: 0,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'ok' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: 'let me inspect the validator',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/validator.ts' } }],
+        runtimeDiagnostics: {
+          visibleToolNames: ['Edit', 'Write', 'Append'],
+        },
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('<tool-admission-repair>'),
+    );
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('<artifact-repair-admission-blocked>'),
+    );
+    expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
+      expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
+    );
+    expect(ctx.artifactRepairGuard.blockedToolCount).toBe(1);
+    expect(ctx.artifactRepairGuard.lastBlockedTool).toBe('Read');
+    expect(ctx.artifactRepairGuard.noOpPatchCount).toBeUndefined();
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[0]).toMatchObject({
+      role: 'assistant',
+      toolCalls: [{ id: 'tool-1', name: 'Read' }],
+    });
+    expect(ctx.messages[1]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'tool-1',
+        success: false,
+        metadata: {
+          artifactRepairGuard: expect.objectContaining({
+            blocked: true,
+            unavailableTool: true,
+            targetFile: '/tmp/game.html',
+            blockedToolCount: 1,
+          }),
+        },
+      }],
+    });
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'tool_call_end',
+        data: expect.objectContaining({
+          toolCallId: 'tool-1',
+          success: false,
+        }),
+      }),
+    );
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
+
+  it('forces the artifact repair attempt to stop after repeated unavailable tool requests', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        blockedToolCount: 1,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'ok' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: 'retry read again',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/game.html', offset: 900, limit: 120 } }],
+        runtimeDiagnostics: {
+          visibleToolNames: ['Edit', 'Write', 'Append'],
+        },
+      } as ModelResponse,
+      false,
+      2,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(ctx.artifactRepairGuard.blockedToolCount).toBe(2);
+    expect(ctx.artifactRepairGuard.noOpPatchCount).toBe(1);
+    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages[1]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'tool-1',
+        success: false,
+        metadata: {
+          artifactRepairGuard: expect.objectContaining({
+            blocked: true,
+            unavailableTool: true,
+            targetFile: '/tmp/game.html',
+            blockedToolCount: 2,
+            noOpPatchCount: 1,
+          }),
+        },
+      }],
+    });
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
 });

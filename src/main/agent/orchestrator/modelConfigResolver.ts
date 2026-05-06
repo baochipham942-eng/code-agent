@@ -7,8 +7,8 @@ import type { ConfigService } from '../../services/core/configService';
 import {
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
-  MODEL_MAX_TOKENS,
   getDefaultModelForProvider,
+  getModelMaxOutputTokens,
   getProviderInfo,
   normalizeProviderId,
 } from '../../../shared/constants';
@@ -36,6 +36,7 @@ export function resolveModelConfig(
     settings.models?.providers?.[normalizedProvider as keyof typeof settings.models.providers]
     ?? settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
   const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider);
+  const maxTokens = providerConfig?.maxTokens ?? getModelMaxOutputTokens(userModel);
 
   // 获取对应的 API Key
   const selectedApiKey = configService.getApiKey(normalizedProvider);
@@ -55,7 +56,7 @@ export function resolveModelConfig(
       apiKey: selectedApiKey,
       baseUrl: providerConfig?.baseUrl,
       temperature: 0.7,
-      maxTokens: MODEL_MAX_TOKENS.DEFAULT,
+      maxTokens,
     };
   }
 
@@ -77,7 +78,7 @@ export function resolveModelConfig(
       apiKey: undefined,
       useCloudProxy: true,
       temperature: 0.7,
-      maxTokens: MODEL_MAX_TOKENS.DEFAULT,
+      maxTokens: providerConfig?.maxTokens ?? getModelMaxOutputTokens(selectedModel),
     };
   }
 
@@ -88,7 +89,7 @@ export function resolveModelConfig(
     model: selectedModel,
     apiKey: undefined,
     temperature: 0.7,
-    maxTokens: MODEL_MAX_TOKENS.DEFAULT,
+    maxTokens: providerConfig?.maxTokens ?? getModelMaxOutputTokens(selectedModel),
   };
 }
 

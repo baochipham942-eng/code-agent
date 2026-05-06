@@ -6,7 +6,7 @@ import { createLogger } from '../../services/infra/logger';
 const logger = createLogger('FileCheckpointMiddleware');
 
 // 需要创建检查点的工具（含 PascalCase 别名）
-const FILE_WRITE_TOOLS = ['write_file', 'edit_file', 'Write', 'Edit'];
+const FILE_WRITE_TOOLS = ['write_file', 'append_file', 'edit_file', 'Write', 'Append', 'Edit'];
 
 /**
  * 检查点上下文提供者

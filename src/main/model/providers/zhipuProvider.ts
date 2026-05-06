@@ -112,6 +112,11 @@ export class ZhipuProvider extends BaseOpenAIProvider {
     const modelInfo = this.getModelInfo(config);
     const providerConfig = PROVIDER_REGISTRY.zhipu;
 
+    if (modelInfo?.costType === 'free') {
+      logger.info(`[智谱] 使用官方端点: ${MODEL_API_ENDPOINTS.zhipuOfficial}, 模型: ${config.model}`);
+      return config.baseUrl || MODEL_API_ENDPOINTS.zhipuOfficial;
+    }
+
     // Coding 套餐模型使用专用端点（0ki）
     if (modelInfo?.useCodingEndpoint && providerConfig?.codingBaseUrl) {
       logger.info(`[智谱] 使用 Coding 套餐端点: ${providerConfig.codingBaseUrl}, 模型: ${config.model}`);
@@ -124,6 +129,10 @@ export class ZhipuProvider extends BaseOpenAIProvider {
   }
 
   protected getApiKey(config: ModelConfig): string {
+    const modelInfo = this.getModelInfo(config);
+    if (modelInfo?.costType === 'free') {
+      return process.env.ZHIPU_OFFICIAL_API_KEY || config.apiKey || '';
+    }
     return config.apiKey || '';
   }
 

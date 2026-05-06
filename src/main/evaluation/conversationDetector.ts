@@ -36,8 +36,14 @@ export function detectConversationType(snapshot: SessionSnapshot): ConversationT
 
   // Coding: 有代码工具(edit/write/read_file) 或有代码块
   const hasCodeTools = toolNames.some(name =>
-    name === 'edit_file' || name === 'Edit' || name === 'write_file' || name === 'Write' ||
-    (name === 'read_file' || name === 'Read') && toolNames.some(n => n === 'edit_file' || n === 'Edit' || n === 'write_file' || n === 'Write')
+    name === 'edit_file' || name === 'Edit' ||
+    name === 'write_file' || name === 'Write' ||
+    name === 'append_file' || name === 'Append' ||
+    (name === 'read_file' || name === 'Read') && toolNames.some(n =>
+      n === 'edit_file' || n === 'Edit' ||
+      n === 'write_file' || n === 'Write' ||
+      n === 'append_file' || n === 'Append'
+    )
   );
   if (hasCodeTools || (hasCodeBlocks && hasToolCalls)) {
     return 'coding';
@@ -47,7 +53,7 @@ export function detectConversationType(snapshot: SessionSnapshot): ConversationT
   const hasCreationTools = toolNames.some(name =>
     name === 'ppt_generate' || name === 'xlwings' ||
     // write_file 用于文档（非代码场景，此时 hasCodeTools 已经为 false）
-    ((name === 'write_file' || name === 'Write') && !hasCodeTools)
+    ((name === 'write_file' || name === 'Write' || name === 'append_file' || name === 'Append') && !hasCodeTools)
   );
   if (hasCreationTools) {
     return 'creation';

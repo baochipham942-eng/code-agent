@@ -47,6 +47,9 @@ vi.mock('../../../src/main/prompts/builder', () => ({
   buildEnhancedPrompt: vi.fn(),
   needsGenerativeUI: vi.fn().mockReturnValue(false),
   GENERATIVE_UI_PROMPT: 'generative ui prompt',
+  QUESTION_FORM_PROMPT: 'question form prompt',
+  ARTIFACT_TASK_BRIEF_PROMPT: 'ARTIFACT_BRIEF_MARKER',
+  needsArtifactTaskBrief: vi.fn((message: string) => /生成|create|build|write|implement/i.test(message)),
 }));
 
 vi.mock('../../../src/main/agent/messageHandling/contextBuilder', () => ({
@@ -265,12 +268,15 @@ vi.mock('../../../src/main/agent/runtime/contextAssembly/modeInjection', () => (
 }));
 
 import { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
-import { buildEnhancedSystemPrompt } from '../../../src/main/agent/messageHandling/contextBuilder';
+import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/main/agent/messageHandling/contextBuilder';
 import { getPromptForTask } from '../../../src/main/prompts/builder';
+import { needsArtifactTaskBrief, needsGenerativeUI } from '../../../src/main/prompts/builder';
+import { buildSessionMetadataBlock } from '../../../src/main/lightMemory/sessionMetadata';
 import { loadMemoryIndex } from '../../../src/main/lightMemory/indexLoader';
 import { buildRecentConversationsBlock } from '../../../src/main/lightMemory/recentConversations';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/main/lightMemory/skillLoader';
 import { getRepoMap } from '../../../src/main/context/repoMap';
+import { getDeferredToolsSummary } from '../../../src/main/tools/dispatch/toolDefinitions';
 
 function buildMessage(id: string, role: Message['role'], content: string): Message {
   return {
@@ -384,6 +390,7 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     totalToolCallCount: 0,
     _contextOverflowRetried: false,
     _truncationRetried: false,
+    _artifactNonStreamingRetried: false,
     _networkRetried: false,
     _consecutiveTruncations: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
@@ -401,6 +408,34 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
+  vi.mocked(getPromptForTask).mockReset();
+  vi.mocked(getPromptForTask).mockReturnValue('system prompt');
+  vi.mocked(needsArtifactTaskBrief).mockReset();
+  vi.mocked(needsArtifactTaskBrief).mockImplementation((message: string) => /生成|create|build|write|implement/i.test(message));
+  vi.mocked(needsGenerativeUI).mockReset();
+  vi.mocked(needsGenerativeUI).mockReturnValue(false);
+  vi.mocked(buildEnhancedSystemPrompt).mockClear();
+  vi.mocked(injectWorkingDirectoryContext).mockReset();
+  vi.mocked(injectWorkingDirectoryContext).mockImplementation((prompt: string) => prompt);
+  vi.mocked(buildSessionMetadataBlock).mockReset();
+  vi.mocked(buildSessionMetadataBlock).mockResolvedValue('');
+  vi.mocked(loadMemoryIndex).mockReset();
+  vi.mocked(loadMemoryIndex).mockResolvedValue(null);
+  vi.mocked(loadRelevantSkills).mockReset();
+  vi.mocked(loadRelevantSkills).mockResolvedValue([]);
+  vi.mocked(buildSkillInjectionBlock).mockReset();
+  vi.mocked(buildSkillInjectionBlock).mockReturnValue(null);
+  vi.mocked(getRepoMap).mockReset();
+  vi.mocked(getRepoMap).mockResolvedValue({
+    text: '',
+    fileCount: 0,
+    symbolCount: 0,
+    estimatedTokens: 0,
+  });
+  vi.mocked(buildRecentConversationsBlock).mockReset();
+  vi.mocked(buildRecentConversationsBlock).mockResolvedValue('');
+  vi.mocked(getDeferredToolsSummary).mockReset();
+  vi.mocked(getDeferredToolsSummary).mockReturnValue('');
   vi.mocked(getContextHealthService).mockReset();
   vi.mocked(getContextHealthService).mockReturnValue({
     get: vi.fn().mockReturnValue({
@@ -523,6 +558,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       totalToolCallCount: 0,
       _contextOverflowRetried: false,
       _truncationRetried: false,
+      _artifactNonStreamingRetried: false,
       _networkRetried: false,
       _consecutiveTruncations: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
@@ -569,6 +605,671 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).not.toContain('PERSISTENT_MARKER');
   });
 
+  it('preserves artifact task brief and skips repo map for artifact generation tasks', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5200));
+    vi.mocked(needsGenerativeUI).mockReturnValueOnce(false);
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
+      {
+        filename: 'skill_big.md',
+        name: 'big-skill',
+        description: 'large irrelevant skill',
+        body: 'skill body',
+        matchScore: 1,
+      },
+    ]);
+    vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce(`<relevant_skills>${'skill '.repeat(900)}</relevant_skills>`);
+
+    const ctx = buildRuntimeContext({
+      isSimpleTaskMode: false,
+      workingDirectory: '/tmp/code-agent',
+      isDefaultWorkingDirectory: false,
+      messages: [
+        buildMessage('user-artifact', 'user', '生成一个类似超级玛丽的单文件 HTML 游戏，保存到 /tmp/game.html'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].role).toBe('system');
+    expect(modelMessages[0].content).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(modelMessages[0].content).not.toContain('<repo_map>');
+    expect(getRepoMap).not.toHaveBeenCalled();
+  });
+
+  it('keeps artifact task brief when later environment context pushes prompt past budget', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5900));
+    vi.mocked(injectWorkingDirectoryContext).mockImplementationOnce((prompt: string) => `${prompt}\n\nENV_MARKER ${'env '.repeat(500)}`);
+
+    const ctx = buildRuntimeContext({
+      isSimpleTaskMode: false,
+      workingDirectory: '/tmp/code-agent',
+      isDefaultWorkingDirectory: false,
+      messages: [
+        buildMessage('user-artifact-env', 'user', '生成一个可玩的单文件 HTML 游戏，保存到 /tmp/game.html'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].role).toBe('system');
+    expect(modelMessages[0].content).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(modelMessages[0].content).toContain('ENV_MARKER');
+    expect(ctx.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('跳过 artifact task brief'));
+  });
+
+  it('prioritizes artifact repair context over optional prompt blocks', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5400));
+    vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
+    vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(220)}</session_metadata>`);
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(220)}</memory_index>`);
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
+      {
+        filename: 'game_skill.md',
+        name: 'game artifact skill',
+        description: 'large artifact skill',
+        body: 'skill body',
+        matchScore: 1,
+      },
+    ]);
+    vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce(`<relevant_skills>${'skill '.repeat(220)}</relevant_skills>`);
+    vi.mocked(getRepoMap).mockResolvedValueOnce({
+      text: 'repo '.repeat(220),
+      fileCount: 9,
+      symbolCount: 9,
+      estimatedTokens: 220,
+    });
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce(`<recent_conversations>${'recent '.repeat(220)}</recent_conversations>`);
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('deferred '.repeat(220));
+
+    const ctx = buildRuntimeContext({
+      isSimpleTaskMode: false,
+      enableToolDeferredLoading: true,
+      workingDirectory: '/tmp/code-agent',
+      isDefaultWorkingDirectory: false,
+      messages: [
+        buildMessage('user-repair', 'user', '继续修复这个 repo code，记得 previous context'),
+      ],
+      persistentSystemContext: [
+        [
+          '<artifact-validation-failed kind="interactive_artifact">',
+          'Artifact validation failed for /tmp/game.html.',
+          '1. 缺少真实可点击开始按钮。',
+          '请直接修正现有文件，再继续验证。',
+          '</artifact-validation-failed>',
+        ].join('\n'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemPrompt = modelMessages[0].content;
+
+    expect(modelMessages[0].role).toBe('system');
+    expect(systemPrompt).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(systemPrompt).toContain('<artifact-validation-failed kind="interactive_artifact">');
+    expect(systemPrompt).toContain('缺少真实可点击开始按钮');
+    expect(systemPrompt).not.toContain('<session_metadata>');
+    expect(systemPrompt).not.toContain('<memory_index>');
+    expect(systemPrompt).not.toContain('<memory_hint>');
+    expect(systemPrompt).not.toContain('<relevant_skills>');
+    expect(systemPrompt).not.toContain('<repo_map>');
+    expect(systemPrompt).not.toContain('<recent_conversations>');
+    expect(systemPrompt).not.toContain('<deferred-tools>');
+    expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
+    expect(loadMemoryIndex).not.toHaveBeenCalled();
+    expect(loadRelevantSkills).not.toHaveBeenCalled();
+    expect(getRepoMap).not.toHaveBeenCalled();
+    expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
+    expect(getDeferredToolsSummary).not.toHaveBeenCalled();
+  });
+
+  it('compresses large target file read history during artifact repair mode', async () => {
+    const largeHtml = [
+      '<!doctype html>',
+      '<html>',
+      '<head><title>Corgi</title></head>',
+      '<body>',
+      '<script>',
+      'const filler = `' + 'x'.repeat(14000) + '`;',
+      'const levels = [{ id: "1-1", treats: [{ x: 120, y: 200 }], enemies: [{ x: 220, y: 250 }], door: { x: 420, y: 200 } }];',
+      'function updatePlayer() { player.vx += Keys.ArrowRight ? 1 : 0; player.vy += 1; }',
+      'function update() { updatePlayer(); collectTreats(); stompEnemies(); completeLevel(); }',
+      'function gameLoop() { update(); requestAnimationFrame(gameLoop); }',
+      'function collectTreats() { State.score += 1; State.abilities.doubleJump = true; }',
+      'function stompEnemies() { State.stomps = (State.stomps || 0) + 1; }',
+      'function completeLevel() { State.level += 1; }',
+      'window.__GAME_META__ = {',
+      "  progressPlan: [{ step: 1, input: ['ArrowRight'], metric: 'score', expect: 'increase' }],",
+      '};',
+      'window.__GAME_TEST__ = {',
+      '  start() { return true; },',
+      '  reset() { return true; },',
+      '  snapshot() { return { score: 0 }; },',
+      '  step() { return { score: 1 }; },',
+      '  runSmokeTest() { return { passed: false, failures: ["score"], coverage: {} }; },',
+      '};',
+      '</script>',
+      '</body>',
+      '</html>',
+    ].join('\n');
+
+    const targetFile = '/tmp/game.html';
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-repair-large', 'user', `修复 ${targetFile}`),
+        {
+          id: 'tool-message-large',
+          role: 'tool',
+          content: JSON.stringify([
+            {
+              toolCallId: 'read-target',
+              success: true,
+              output: largeHtml,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: targetFile,
+              },
+            },
+          ]),
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'read-target',
+              success: true,
+              output: largeHtml,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: targetFile,
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile,
+        attempts: 2,
+        phase: 'targeted_repair',
+        targetReadCount: 1,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const toolMessage = modelMessages.find((message) => message.role === 'tool');
+
+    expect(toolMessage?.content).toContain('<artifact-repair-file-read>');
+    expect(toolMessage?.content).toContain('Target file already read: /tmp/game.html');
+    expect(toolMessage?.content).toContain('Runtime structure index:');
+    expect(toolMessage?.content).toContain('game-update-loop: line');
+    expect(toolMessage?.content).toContain('player-physics: line');
+    expect(toolMessage?.content).toContain('Runtime anchor excerpts:');
+    expect(toolMessage?.content).toContain('Anchor player-physics around line');
+    expect(toolMessage?.content).toContain('window.__GAME_META__');
+    expect(toolMessage?.content).toContain('window.__GAME_TEST__');
+    expect(toolMessage?.content).toContain('function gameLoop()');
+    expect(toolMessage?.content).toContain('function update()');
+    expect(toolMessage?.content).toContain('function updatePlayer()');
+    expect(toolMessage?.content).toContain('Patch strategy:');
+    expect(toolMessage?.content).toContain('Do not use Read/Edit as a probe');
+    expect(toolMessage?.content).toContain('write the patch now');
+    expect(toolMessage?.content).not.toContain('x'.repeat(4000));
+  });
+
+  it('adds focused mutation hints for duplicate or shortcut-heavy artifact contracts', async () => {
+    const largeHtml = [
+      '<!doctype html>',
+      '<html>',
+      '<body>',
+      '<script>',
+      'const filler = `' + 'x'.repeat(14000) + '`;',
+      'window.__GAME_TEST__ = {',
+      '  step() { State.abilities.dash = true; return {}; },',
+      '  runSmokeTest() { mechanics.add(\"enemy_stomp\"); return { passed: true, checks: [], failures: [], coverage: {} }; },',
+      '};',
+      'window.__GAME_TEST__ = { runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; } };',
+      '</script>',
+      '</body>',
+      '</html>',
+    ].join('\n');
+
+    const targetFile = '/tmp/game.html';
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-repair-shortcut', 'user', `修复 ${targetFile}`),
+        {
+          id: 'tool-message-shortcut',
+          role: 'tool',
+          content: JSON.stringify([
+            {
+              toolCallId: 'read-target',
+              success: true,
+              output: largeHtml,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: targetFile,
+              },
+            },
+          ]),
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'read-target',
+              success: true,
+              output: largeHtml,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: targetFile,
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile,
+        attempts: 2,
+        phase: 'targeted_repair',
+        targetReadCount: 1,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const toolMessage = modelMessages.find((message) => message.role === 'tool');
+
+    expect(toolMessage?.content).toContain('Multiple interactive contract anchors found');
+    expect(toolMessage?.content).toContain('direct state grants or test-mode shortcuts');
+    expect(toolMessage?.content).toContain('existence/registration as evidence');
+    expect(toolMessage?.content).toContain('write the patch now');
+    expect((toolMessage?.content || '').length).toBeLessThan(12_000);
+  });
+
+  it('filters stale assistant tool history to the current artifact-repair allowlist', async () => {
+    const ctx = buildRuntimeContext({
+      messages: [
+        {
+          id: 'assistant-tool-history',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [
+            { id: 'tc-read', name: 'Read', arguments: { file_path: '/tmp/game.html' } },
+            { id: 'tc-edit', name: 'Edit', arguments: { file_path: '/tmp/game.html', edits: [] } },
+            { id: 'tc-bash', name: 'Bash', arguments: { command: 'npm test' } },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        patched: false,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const assistantMessage = modelMessages.find((message) => message.role === 'assistant');
+    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Edit']);
+  });
+
+  it('filters stale tool results to match the current artifact-repair allowlist', async () => {
+    const ctx = buildRuntimeContext({
+      messages: [
+        {
+          id: 'assistant-tool-history',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [
+            { id: 'tc-read', name: 'Read', arguments: { file_path: '/tmp/game.html' } },
+            { id: 'tc-write', name: 'Write', arguments: { file_path: '/tmp/game.html', content: '<html></html>' } },
+          ],
+        } as Message,
+        {
+          id: 'tool-history',
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'tc-read',
+              success: true,
+              output: 'old read result should be filtered',
+              metadata: { evidenceKind: 'file_read', filePath: '/tmp/validator.ts' },
+            },
+            {
+              toolCallId: 'tc-write',
+              success: false,
+              error: 'Artifact validation failed for /tmp/game.html.',
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        noOpPatchCount: 1,
+        patched: false,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const assistantMessage = modelMessages.find((message) => message.role === 'assistant');
+    const toolMessages = modelMessages.filter((message) => message.role === 'tool');
+
+    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Write']);
+    expect(toolMessages).toHaveLength(1);
+    expect(toolMessages[0].toolCallId).toBe('tc-write');
+    expect(toolMessages[0].content).toContain('Artifact validation failed');
+    expect(toolMessages[0].content).not.toContain('old read result should be filtered');
+  });
+
+  it('compresses failed artifact validation history instead of replaying the full repair spec', async () => {
+    const ctx = buildRuntimeContext({
+      messages: [
+        {
+          id: 'assistant-failed-repair',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [
+            {
+              id: 'tc-edit-failed',
+              name: 'Edit',
+              arguments: {
+                file_path: '/tmp/game.html',
+                edits: [{ old_text: 'start() {', new_text: 'start() { State.mode = "playing";' }],
+              },
+            },
+          ],
+        } as Message,
+        {
+          id: 'tool-failed-repair',
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'tc-edit-failed',
+              success: false,
+              error: [
+                'Artifact validation failed for /tmp/game.html.',
+                '<artifact_repair_spec>',
+                JSON.stringify({
+                  kind: 'game_artifact_repair',
+                  issues: [{ code: 'coverage_without_runtime_evidence' }],
+                  repairHints: ['x'.repeat(5000)],
+                }),
+                '</artifact_repair_spec>',
+                'The failed artifact repair patch was rolled back.',
+              ].join('\n'),
+              metadata: {
+                artifactRepairRollback: {
+                  attempted: true,
+                  applied: true,
+                  targetFile: '/tmp/game.html',
+                },
+                artifactValidation: {
+                  failed: true,
+                  attempts: 1,
+                  phase: 'baseline_repair',
+                  inferredKind: 'game',
+                  failures: [
+                    'runSmokeTest 把对象存在、机制注册或覆盖声明当成通过证据。',
+                  ],
+                  repairSpec: {
+                    kind: 'game_artifact_repair',
+                    issues: [{ code: 'coverage_without_runtime_evidence' }],
+                  },
+                },
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        noOpPatchCount: 1,
+        patched: false,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const toolMessage = modelMessages.find((message) => message.role === 'tool');
+
+    expect(toolMessage?.content).toContain('<artifact-validation-failed-history>');
+    expect(toolMessage?.content).toContain('coverage_without_runtime_evidence');
+    expect(toolMessage?.content).toContain('The failed patch was rolled back');
+    expect(toolMessage?.content).not.toContain('<artifact_repair_spec>');
+    expect(toolMessage?.content).not.toContain('x'.repeat(1000));
+  });
+
+  it('preserves small exact ranged target-file reads before write-priority artifact repair', async () => {
+    const exactContract = [
+      'window.__GAME_TEST__ = {',
+      '  runSmokeTest() {',
+      '    const before = this.snapshot();',
+      '    const after = this.step({ ArrowRight: true }, 80);',
+      "    if (after.playerX > before.playerX) coverage.mechanics.push('movement');",
+      '  }',
+      '};',
+      'FILLER '.repeat(200),
+    ].join('\n');
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-repair-ranged-read', 'user', 'fix the game contract'),
+        {
+          id: 'assistant-read-range',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [
+            {
+              id: 'tc-read-range',
+              name: 'Read',
+              arguments: { file_path: '/tmp/game.html', offset: 1086, limit: 200 },
+            },
+          ],
+        } as Message,
+        {
+          id: 'tool-read-range',
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'tc-read-range',
+              success: true,
+              output: exactContract,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: '/tmp/game.html',
+                rangedRead: true,
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        targetRangedReadCount: 1,
+        activeIssueCodes: ['coverage_without_runtime_evidence'],
+        patched: false,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\ncoverage_without_runtime_evidence\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const toolMessage = modelMessages.find((message) => message.role === 'tool');
+
+    expect(toolMessage?.content).toContain('window.__GAME_TEST__ = {');
+    expect(toolMessage?.content).toContain("coverage.mechanics.push('movement')");
+    expect(toolMessage?.content).not.toContain('<artifact-repair-file-read>');
+    expect(toolMessage?.content).not.toContain('History preview compressed for repair mode');
+  });
+
+  it('compresses large ranged target-file reads once artifact repair is write-priority', async () => {
+    const largeRangedContract = [
+      'window.__GAME_TEST__ = {',
+      '  step(input, frames) { return this.snapshot(); },',
+      '  runSmokeTest() {',
+      '    const before = this.snapshot();',
+      '    const after = this.step({ ArrowRight: true }, 80);',
+      "    if (after.playerX > before.playerX) coverage.mechanics.push('movement');",
+      '    return { passed: true, checks: [], failures: [], coverage: {} };',
+      '  }',
+      '};',
+      'start() { return this.snapshot(); },',
+      'reset() { return this.snapshot(); },',
+      'FILLER '.repeat(3_000),
+    ].join('\n');
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-repair-ranged-large', 'user', 'fix the game contract'),
+        {
+          id: 'assistant-read-range-large',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [
+            {
+              id: 'tc-read-range-large',
+              name: 'Read',
+              arguments: { file_path: '/tmp/game.html', offset: 1040, limit: 600 },
+            },
+          ],
+        } as Message,
+        {
+          id: 'tool-read-range-large',
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'tc-read-range-large',
+              success: true,
+              output: largeRangedContract,
+              metadata: {
+                preserveObservation: true,
+                evidenceKind: 'file_read',
+                filePath: '/tmp/game.html',
+                rangedRead: true,
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        targetRangedReadCount: 1,
+        preferTargetedEdit: true,
+        noOpPatchCount: 1,
+        activeIssueCodes: ['coverage_without_runtime_evidence'],
+        patched: false,
+      },
+      persistentSystemContext: [
+        '<artifact-validation-failed kind="interactive_artifact">\ncoverage_without_runtime_evidence\n</artifact-validation-failed>',
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const toolMessage = modelMessages.find((message) => message.role === 'tool');
+
+    expect(toolMessage?.content).toContain('<artifact-repair-file-read>');
+    expect(toolMessage?.content).toContain('History preview compressed for repair mode');
+    expect(toolMessage?.content).toContain('write the patch now');
+    expect(toolMessage?.content).toContain('repair runtime can expand it to the balanced contract region');
+    expect(toolMessage?.content).not.toContain('FILLER '.repeat(500));
+    expect((toolMessage?.content || '').length).toBeLessThan(12_000);
+  });
+
+  it('keeps normal code task prompt block injection unchanged', async () => {
+    vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
+    vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce('<session_metadata>normal</session_metadata>');
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('<memory_index>normal memory</memory_index>');
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
+      {
+        filename: 'perf.md',
+        name: 'perf',
+        description: 'performance skill',
+        body: 'measure performance',
+        matchScore: 1,
+      },
+    ]);
+    vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce('<relevant_skills>perf</relevant_skills>');
+    vi.mocked(getRepoMap).mockResolvedValueOnce({
+      text: 'repo map normal',
+      fileCount: 1,
+      symbolCount: 1,
+      estimatedTokens: 20,
+    });
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('<recent_conversations>normal</recent_conversations>');
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('browser: deferred');
+
+    const ctx = buildRuntimeContext({
+      isSimpleTaskMode: false,
+      enableToolDeferredLoading: true,
+      workingDirectory: '/tmp/code-agent',
+      isDefaultWorkingDirectory: false,
+      messages: [
+        buildMessage('user-normal-context', 'user', '继续修复 repo code bug，记得 previous context'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemPrompt = modelMessages[0].content;
+
+    expect(systemPrompt).toContain('<session_metadata>normal</session_metadata>');
+    expect(systemPrompt).toContain('<memory_index>normal memory</memory_index>');
+    expect(systemPrompt).toContain('<relevant_skills>perf</relevant_skills>');
+    expect(systemPrompt).toContain('<repo_map>');
+    expect(systemPrompt).toContain('repo map normal');
+    expect(systemPrompt).toContain('<recent_conversations>normal</recent_conversations>');
+    expect(systemPrompt).toContain('<deferred-tools>');
+    expect(systemPrompt).toContain('browser: deferred');
+  });
+
   it('reuses heavy prompt blocks within a user turn and invalidates compression on transcript change', async () => {
     const runtimeSessionId = `session-cache-${Date.now()}`;
     const messages: Message[] = [
@@ -590,6 +1291,10 @@ describe('ContextAssembly.buildModelMessages()', () => {
     });
 
     vi.mocked(buildEnhancedSystemPrompt).mockClear();
+    vi.mocked(loadMemoryIndex).mockClear();
+    vi.mocked(loadRelevantSkills).mockClear();
+    vi.mocked(getRepoMap).mockClear();
+    vi.mocked(buildRecentConversationsBlock).mockClear();
     vi.mocked(loadMemoryIndex).mockResolvedValue('memory index');
     vi.mocked(loadRelevantSkills).mockResolvedValue([
       {
@@ -608,6 +1313,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       estimatedTokens: 20,
     });
     vi.mocked(buildRecentConversationsBlock).mockResolvedValue('<recent_conversations>recent</recent_conversations>');
+    vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
 
     const ctx = {
       systemPrompt: '',
@@ -700,6 +1406,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       totalToolCallCount: 0,
       _contextOverflowRetried: false,
       _truncationRetried: false,
+      _artifactNonStreamingRetried: false,
       _networkRetried: false,
       _consecutiveTruncations: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,

@@ -8,6 +8,7 @@ import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/con
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { openAISSEStream } from './sseStream';
+import { electronFetch, parseOpenAIResponse } from './shared';
 import { withTransientRetry } from './retryStrategy';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
@@ -46,7 +47,7 @@ export abstract class BaseOpenAIProvider implements Provider {
     return undefined;
   }
 
-  /** API 路径（可选 override），默认使用 openAISSEStream 的 /chat/completions */
+  /** API 路径（可选 override），默认使用 /chat/completions */
   protected getEndpoint(): string | undefined {
     return undefined;
   }
@@ -118,6 +119,41 @@ export abstract class BaseOpenAIProvider implements Provider {
     }
 
     const requestBody = this.buildRequestBody(messages, tools, config);
+    const forceNonStreaming = options?.forceNonStreaming === true;
+
+    if (forceNonStreaming) {
+      requestBody.stream = false;
+      delete requestBody.stream_options;
+      logger.info(`[${this.name}] 请求: model=${requestBody.model}, baseUrl=${baseUrl}, stream=false`);
+
+      return withTransientRetry(
+        async () => {
+          const response = await electronFetch(`${baseUrl}${this.getEndpoint() || '/chat/completions'}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+              ...(this.getExtraHeaders() || {}),
+            },
+            body: JSON.stringify(requestBody),
+            signal,
+            timeoutMs: options?.requestTimeoutMs,
+          });
+
+          if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`${this.name} API error: ${response.status} - ${error}`);
+          }
+
+          return parseOpenAIResponse(await response.json());
+        },
+        {
+          providerName: this.name,
+          signal,
+          maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
+        },
+      );
+    }
 
     logger.info(`[${this.name}] 请求: model=${requestBody.model}, baseUrl=${baseUrl}, stream=true`);
 
@@ -131,11 +167,18 @@ export abstract class BaseOpenAIProvider implements Provider {
         signal,
         onSnapshot: options?.onSnapshot,
         snapshotIntervalMs: options?.snapshotIntervalMs,
+        timeout: options?.requestTimeoutMs,
+        firstByteTimeout: options?.firstByteTimeoutMs,
+        inactivityTimeout: options?.inactivityTimeoutMs,
         agent: this.getAgent(),
         extraHeaders: this.getExtraHeaders(),
         endpoint: this.getEndpoint(),
       }),
-      { providerName: this.name, signal }
+      {
+        providerName: this.name,
+        signal,
+        maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
+      }
     );
   }
 }

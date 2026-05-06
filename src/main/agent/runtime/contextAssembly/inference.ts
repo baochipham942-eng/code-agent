@@ -16,13 +16,288 @@ import {
   stripImagesFromMessages,
   extractUserRequestText,
 } from '../../../agent/messageHandling/converter';
+import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import {
   estimateModelMessageTokens,
 } from '../../../context/tokenOptimizer';
+import type { ModelMessage } from '../../../agent/loopTypes';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { logger } from '../contextAssembly';
+import {
+  getArtifactRepairTargetReadBudget,
+  getArtifactRepairTargetRangedReadBudget,
+  seedArtifactRepairGuardFromContext,
+} from '../artifactRepairGuard';
+
+const ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST = new Set([
+  'Edit',
+  'edit_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST = new Set([
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+  'Bash',
+  'bash',
+]);
+
+const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
+const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
+const ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS = 8_192;
+const ARTIFACT_REPAIR_WRITE_MAX_TOKENS = 65_536;
+const ARTIFACT_REPAIR_TARGETED_ISSUE_CODES = new Set([
+  'coverage_without_runtime_evidence',
+  'shortcut_state_mutation',
+  'missing_controls_metadata',
+  'missing_coverage_metadata',
+  'missing_reachability_metadata',
+  'missing_quality_metadata',
+]);
+
+function getNetworkRetryBudget(errMsg: string, errCode: string | undefined, artifactRepairActive: boolean): number {
+  if (!artifactRepairActive) return 1;
+
+  const isSlowProviderTimeout =
+    /request timeout|timeout after \d+ms|timed out/i.test(errMsg)
+    || /ETIMEDOUT/i.test(errCode || '');
+  if (isSlowProviderTimeout) return 1;
+
+  const isFastConnectionFailure =
+    /TLS connection|network socket disconnected|socket hang up|ECONNRESET|ECONNREFUSED|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac/i.test(errMsg)
+    || /ECONNRESET|ECONNREFUSED/i.test(errCode || '');
+  if (isFastConnectionFailure) return 2;
+
+  return 1;
+}
+
+function isArtifactRepairReadBudgetExhausted(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard) return false;
+  const targetReadCount = ctx.runtime.artifactRepairGuard?.targetReadCount ?? 0;
+  return targetReadCount >= getArtifactRepairTargetReadBudget(guard);
+}
+
+function isArtifactRepairRangedReadBudgetExhausted(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard) return false;
+  const targetRangedReadCount = ctx.runtime.artifactRepairGuard?.targetRangedReadCount ?? 0;
+  return targetRangedReadCount >= getArtifactRepairTargetRangedReadBudget(guard);
+}
+
+function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {
+  return Boolean(ctx.runtime.artifactRepairGuard?.targetFile);
+}
+
+function hasTargetedArtifactRepairIssue(ctx: ContextAssemblyCtx): boolean {
+  const issueCodes = ctx.runtime.artifactRepairGuard?.activeIssueCodes || [];
+  return issueCodes.some((code) => ARTIFACT_REPAIR_TARGETED_ISSUE_CODES.has(code));
+}
+
+function shouldExposeTargetedArtifactRepairRead(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard || guard.patched) return false;
+  if (
+    guard.preferTargetedEdit
+    || (guard.noOpPatchCount ?? 0) >= 1
+    || (guard.blockedToolCount ?? 0) >= 2
+    || (guard.editAnchorFailureCount ?? 0) >= 1
+  ) {
+    return false;
+  }
+  const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(ctx);
+
+  return hasTargetedArtifactRepairIssue(ctx)
+    && isArtifactRepairReadBudgetExhausted(ctx)
+    && hasRangedReadLeft;
+}
+
+function shouldPreferTargetedArtifactRepair(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard || guard.patched) return false;
+  return Boolean(guard.preferTargetedEdit)
+    || (hasTargetedArtifactRepairIssue(ctx) && isArtifactRepairReadBudgetExhausted(ctx));
+}
+
+function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard) return false;
+  if (shouldExposeTargetedArtifactRepairRead(ctx)) return false;
+  return (guard.noOpPatchCount ?? 0) >= 1
+    || Boolean(guard.preferTargetedEdit)
+    || isArtifactRepairReadBudgetExhausted(ctx)
+    || isArtifactRepairRangedReadBudgetExhausted(ctx)
+    || (guard.blockedToolCount ?? 0) >= 2;
+}
+
+function isArtifactRepairFullRewritePriority(ctx: ContextAssemblyCtx): boolean {
+  if (!isArtifactRepairWritePriority(ctx)) return false;
+  const toolAllowlist = getArtifactRepairToolAllowlist(ctx);
+  return toolAllowlist.has('Write') || toolAllowlist.has('write_file');
+}
+
+function getArtifactRepairToolAllowlist(ctx: ContextAssemblyCtx): Set<string> {
+  if (ctx.runtime.artifactRepairGuard?.patched) {
+    return ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST;
+  }
+  if (shouldExposeTargetedArtifactRepairRead(ctx)) {
+    return ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST;
+  }
+  if (shouldPreferTargetedArtifactRepair(ctx)) {
+    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
+  }
+  if (isArtifactRepairWritePriority(ctx)) {
+    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
+  }
+  const blockedToolCount = ctx.runtime.artifactRepairGuard?.blockedToolCount ?? 0;
+  if (blockedToolCount >= 1) return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
+  return ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST;
+}
+
+function filterToolsForArtifactRepair<T extends { name: string }>(
+  tools: T[],
+  ctx: ContextAssemblyCtx,
+): T[] {
+  const allowlist = getArtifactRepairToolAllowlist(ctx);
+  return tools.filter((tool) => allowlist.has(tool.name));
+}
+
+function capArtifactRepairMaxTokens(
+  ctx: ContextAssemblyCtx,
+  config: typeof ctx.runtime.modelConfig,
+): typeof ctx.runtime.modelConfig {
+  if (!ctx.runtime.artifactRepairGuard) return config;
+  const currentMaxTokens = config.maxTokens;
+  if (typeof currentMaxTokens !== 'number') return config;
+
+  const cap = isArtifactRepairFullRewritePriority(ctx)
+    ? ARTIFACT_REPAIR_WRITE_MAX_TOKENS
+    : isArtifactRepairWritePriority(ctx)
+      ? ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS
+      : ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS;
+  if (currentMaxTokens <= cap) return config;
+  return {
+    ...config,
+    maxTokens: cap,
+  };
+}
+
+function normalizeModelMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return String(content || '');
+  }
+}
+
+function truncateArtifactRepairEvidence(content: string, limit: number): string {
+  if (content.length <= limit) return content;
+  const head = Math.floor(limit * 0.72);
+  const tail = Math.max(800, limit - head - 160);
+  return [
+    content.slice(0, head),
+    `\n...[compact artifact repair retry omitted ${content.length - head - tail} chars]...\n`,
+    content.slice(-tail),
+  ].join('');
+}
+
+function buildCompactArtifactRepairWriteRetryMessages(
+  ctx: ContextAssemblyCtx,
+  messages: ModelMessage[],
+  errorMessage: string,
+): ModelMessage[] {
+  const guard = ctx.runtime.artifactRepairGuard;
+  const targetFile = guard?.targetFile || 'target artifact';
+  const activeIssueCodes = guard?.activeIssueCodes?.length
+    ? guard.activeIssueCodes.join(', ')
+    : 'unknown';
+
+  const systemMessage: ModelMessage = {
+    role: 'system',
+    content: [
+      '<artifact-repair-compact-write-retry>',
+      'The previous artifact repair write-priority inference timed out before emitting a patch.',
+      `Timeout: ${errorMessage.split('\n')[0]?.slice(0, 240) || 'provider timeout'}`,
+      `Target file: ${targetFile}`,
+      `Active issue codes: ${activeIssueCodes}`,
+      'Available action: call exactly one mutation tool, preferably Edit. Do not call Read, Bash, Write, Task, or validator tools.',
+      'Use the target evidence below. If replacing an interactive test contract, a short old_text anchor around `window.__GAME_TEST__ = {` or `window.__INTERACTIVE_TEST__ = {` is acceptable; the runtime can expand the anchor to the balanced contract region.',
+      'For malformed_test_contract, replace the full active test-contract region in one balanced Edit and remove duplicate orphaned start/reset/snapshot/step/runSmokeTest methods after the contract closes.',
+      'The patch must remove direct ability/reward grants, test-mode auto collection/progression, and coverage based only on existence/registration. Prove gameplay through before/after snapshot changes driven by step/input.',
+      '</artifact-repair-compact-write-retry>',
+    ].join('\n'),
+  };
+
+  const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+  const evidenceCandidates = messages
+    .filter((message) => {
+      if (message.role !== 'tool' && message.role !== 'system') return false;
+      const content = normalizeModelMessageContent(message.content);
+      return /artifact-repair|artifact-validation|window\.__(?:GAME|INTERACTIVE)_TEST__|runSmokeTest|function\s+update|Treat collection|Door check|Stomp from above/i.test(content);
+    })
+    .slice(-5);
+
+  const evidenceMessages: ModelMessage[] = [];
+  let usedChars = 0;
+  for (const message of evidenceCandidates) {
+    const content = normalizeModelMessageContent(message.content);
+    const remaining = Math.max(1_200, 10_000 - usedChars);
+    if (usedChars >= 10_000) break;
+    const compact = truncateArtifactRepairEvidence(content, Math.min(3_500, remaining));
+    usedChars += compact.length;
+    evidenceMessages.push({
+      role: message.role,
+      content: compact,
+    } as ModelMessage);
+  }
+
+  return [
+    systemMessage,
+    ...(lastUser ? [{ role: 'user', content: truncateArtifactRepairEvidence(normalizeModelMessageContent(lastUser.content), 1_200) } as ModelMessage] : []),
+    ...evidenceMessages,
+  ];
+}
 
 export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
+  seedArtifactRepairGuardFromContext(ctx.runtime);
+
   // 根据配置决定使用全量工具还是核心+延迟工具
   let tools;
   if (ctx.runtime.enableToolDeferredLoading) {
@@ -46,8 +321,21 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   }
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
+  if (isArtifactRepairMode(ctx)) {
+    const before = tools.length;
+    const blockedToolCount = ctx.runtime.artifactRepairGuard?.blockedToolCount ?? 0;
+    tools = filterToolsForArtifactRepair(tools, ctx);
+    logger.info(
+      `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (blockedToolCount=${blockedToolCount})`,
+    );
+  }
 
-  let modelMessages = await ctx.buildModelMessages();
+  let modelMessages: ModelMessage[] = [];
+  let effectiveTools = tools;
+  let effectiveConfig = ctx.runtime.modelConfig;
+  let artifactRequest = false;
+
+  modelMessages = await ctx.buildModelMessages();
   if (ctx.runtime.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,
@@ -89,9 +377,13 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     startTime,
   });
 
+  const artifactRepairWritePriority = isArtifactRepairWritePriority(ctx);
+  const artifactRepairFullRewritePriority = isArtifactRepairFullRewritePriority(ctx);
+  let requestConfigForRetry: typeof ctx.runtime.modelConfig = effectiveConfig;
+
   try {
     // Capability detection and model fallback
-    let effectiveConfig = ctx.runtime.modelConfig;
+    effectiveConfig = ctx.runtime.modelConfig;
     const lastUserMessage = modelMessages.filter(m => m.role === 'user').pop();
     const currentTurnMessages = lastUserMessage ? [lastUserMessage] : [];
     const requiredCapabilities = ctx.runtime.modelRouter.detectRequiredCapabilities(currentTurnMessages);
@@ -99,6 +391,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     let visionFallbackSucceeded = false;
 
     const userRequestText = extractUserRequestText(lastUserMessage);
+    artifactRequest = needsArtifactTaskBrief(userRequestText);
     const needsToolForImage = /标[注记]|画框|框[出住]|圈[出住]|矩形|annotate|mark|highlight|draw/i.test(userRequestText);
 
     if (needsToolForImage && requiredCapabilities.includes('vision')) {
@@ -204,7 +497,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }
     }
 
-    let effectiveTools = tools;
+    effectiveTools = tools;
     if (ctx.runtime.forceFinalResponseReason) {
       effectiveTools = [];
       logger.warn('[AgentLoop] Force-final-response active; tool list disabled', {
@@ -264,62 +557,66 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // Reset partial content accumulator for this inference call
     ctx.runtime.lastStreamedContent = '';
 
+    const streamCallback = (chunk: any) => {
+      if (typeof chunk === 'string') {
+        ctx.runtime.lastStreamedContent += chunk;
+        ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: ctx.runtime.currentTurnId } });
+      } else if (chunk.type === 'text') {
+        ctx.runtime.lastStreamedContent += chunk.content;
+        ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
+      } else if (chunk.type === 'reasoning') {
+        // 推理模型的思考过程 (glm-4.7 等)
+        ctx.runtime.onEvent({ type: 'stream_reasoning', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
+      } else if (chunk.type === 'tool_call_start') {
+        ctx.runtime.onEvent({
+          type: 'stream_tool_call_start',
+          data: {
+            index: chunk.toolCall?.index,
+            id: chunk.toolCall?.id,
+            name: chunk.toolCall?.name,
+            turnId: ctx.runtime.currentTurnId,
+          },
+        });
+      } else if (chunk.type === 'tool_call_delta') {
+        ctx.runtime.onEvent({
+          type: 'stream_tool_call_delta',
+          data: {
+            index: chunk.toolCall?.index,
+            name: chunk.toolCall?.name,
+            argumentsDelta: chunk.toolCall?.argumentsDelta,
+            turnId: ctx.runtime.currentTurnId,
+          },
+        });
+      } else if (chunk.type === 'usage') {
+        // SSE 实时 usage 数据（API 返回的真实 token 用量）
+        ctx.runtime.onEvent({
+          type: 'stream_usage',
+          data: {
+            inputTokens: chunk.inputTokens || 0,
+            outputTokens: chunk.outputTokens || 0,
+            turnId: ctx.runtime.currentTurnId,
+          },
+        });
+      } else if (chunk.type === 'token_estimate') {
+        // SSE 实时 token 估算（每 500ms 基于字符数估算）
+        ctx.runtime.onEvent({
+          type: 'stream_token_estimate',
+          data: {
+            inputTokens: chunk.inputTokens || 0,
+            outputTokens: chunk.outputTokens || 0,
+            turnId: ctx.runtime.currentTurnId,
+          },
+        });
+      }
+    };
+
+    const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
+    requestConfigForRetry = requestConfig;
     const response = await ctx.runtime.modelRouter.inference(
       modelMessages,
       effectiveTools,
-      effectiveConfig,
-      (chunk: any) => {
-        if (typeof chunk === 'string') {
-          ctx.runtime.lastStreamedContent += chunk;
-          ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: ctx.runtime.currentTurnId } });
-        } else if (chunk.type === 'text') {
-          ctx.runtime.lastStreamedContent += chunk.content;
-          ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
-        } else if (chunk.type === 'reasoning') {
-          // 推理模型的思考过程 (glm-4.7 等)
-          ctx.runtime.onEvent({ type: 'stream_reasoning', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
-        } else if (chunk.type === 'tool_call_start') {
-          ctx.runtime.onEvent({
-            type: 'stream_tool_call_start',
-            data: {
-              index: chunk.toolCall?.index,
-              id: chunk.toolCall?.id,
-              name: chunk.toolCall?.name,
-              turnId: ctx.runtime.currentTurnId,
-            },
-          });
-        } else if (chunk.type === 'tool_call_delta') {
-          ctx.runtime.onEvent({
-            type: 'stream_tool_call_delta',
-            data: {
-              index: chunk.toolCall?.index,
-              name: chunk.toolCall?.name,
-              argumentsDelta: chunk.toolCall?.argumentsDelta,
-              turnId: ctx.runtime.currentTurnId,
-            },
-          });
-        } else if (chunk.type === 'usage') {
-          // SSE 实时 usage 数据（API 返回的真实 token 用量）
-          ctx.runtime.onEvent({
-            type: 'stream_usage',
-            data: {
-              inputTokens: chunk.inputTokens || 0,
-              outputTokens: chunk.outputTokens || 0,
-              turnId: ctx.runtime.currentTurnId,
-            },
-          });
-        } else if (chunk.type === 'token_estimate') {
-          // SSE 实时 token 估算（每 500ms 基于字符数估算）
-          ctx.runtime.onEvent({
-            type: 'stream_token_estimate',
-            data: {
-              inputTokens: chunk.inputTokens || 0,
-              outputTokens: chunk.outputTokens || 0,
-              turnId: ctx.runtime.currentTurnId,
-            },
-          });
-        }
-      },
+      requestConfig,
+      streamCallback,
       ctx.runtime.abortController.signal,
       {
         onSnapshot: createSnapshotHandler(
@@ -327,8 +624,30 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           ctx.runtime.currentTurnId,
           ctx.runtime.workingDirectory,
         ),
+        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+        artifactRepairWritePriority,
+        artifactRepairFullRewritePriority,
       },
     );
+    response.runtimeDiagnostics = {
+      ...response.runtimeDiagnostics,
+      visibleToolNames: effectiveTools.map((tool) => tool.name),
+      artifactRepairGuard: ctx.runtime.artifactRepairGuard
+        ? {
+            targetFile: ctx.runtime.artifactRepairGuard.targetFile,
+            attempts: ctx.runtime.artifactRepairGuard.attempts,
+            phase: ctx.runtime.artifactRepairGuard.phase,
+            blockedToolCount: ctx.runtime.artifactRepairGuard.blockedToolCount,
+            targetReadCount: ctx.runtime.artifactRepairGuard.targetReadCount,
+            targetRangedReadCount: ctx.runtime.artifactRepairGuard.targetRangedReadCount,
+            patched: ctx.runtime.artifactRepairGuard.patched,
+            noOpPatchCount: ctx.runtime.artifactRepairGuard.noOpPatchCount,
+            editAnchorFailureCount: ctx.runtime.artifactRepairGuard.editAnchorFailureCount,
+            preferTargetedEdit: ctx.runtime.artifactRepairGuard.preferTargetedEdit,
+            activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
+          }
+        : undefined,
+    };
 
     ctx.runtime.abortController = null;
     logger.debug('[AgentLoop] Model response received:', response.type);
@@ -427,21 +746,132 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       return { type: 'text', content: '' };
     }
 
-    // 网络/TLS 瞬态错误：在 agentLoop 层再重试一次（provider 层重试已耗尽后的最后兜底）
+    // 网络/TLS 瞬态错误：在 agentLoop 层做有限重试（provider 层重试已耗尽后的最后兜底）
     const errMsg = error instanceof Error ? error.message : String(error);
     const errCode = (error as NodeJS.ErrnoException).code;
-    const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac|network socket disconnected/i.test(errMsg)
+    const isIncompleteToolStream = /stream ended before \[DONE\] with tool calls|refusing to execute incomplete tool arguments|invalid streamed tool arguments/i.test(errMsg);
+    if (isIncompleteToolStream && artifactRequest && !ctx.runtime._artifactNonStreamingRetried) {
+      ctx.runtime._artifactNonStreamingRetried = true;
+      logger.warn('[AgentLoop] Artifact tool stream ended incomplete; retrying once with non-streaming inference');
+      logCollector.agent('WARN', 'Artifact tool stream incomplete; retrying non-streaming');
+      ctx.runtime.onEvent({
+        type: 'notification',
+        data: {
+          message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
+        },
+      } as AgentEvent);
+      try {
+        const retryResult = await ctx.runtime.modelRouter.inference(
+          modelMessages,
+          effectiveTools,
+          effectiveConfig,
+          undefined,
+          undefined,
+          { forceNonStreaming: true, disableProviderTransientRetry: true },
+        );
+        ctx.runtime._artifactNonStreamingRetried = false;
+        return retryResult;
+      } catch (retryErr) {
+        ctx.runtime._artifactNonStreamingRetried = false;
+        logger.error('[AgentLoop] Artifact non-streaming retry also failed:', retryErr);
+      }
+    }
+    const isSlowProviderTimeout =
+      /request timeout|timeout after \d+ms|timed out/i.test(errMsg)
+      || /ETIMEDOUT/i.test(errCode || '');
+    const shouldCompactRetryArtifactRepairWrite =
+      Boolean(ctx.runtime.artifactRepairGuard)
+      && artifactRepairWritePriority
+      && isSlowProviderTimeout
+      && !ctx.runtime._artifactRepairCompactWriteRetried;
+    if (shouldCompactRetryArtifactRepairWrite) {
+      ctx.runtime._artifactRepairCompactWriteRetried = true;
+      logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
+      logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
+      try {
+        const compactMessages = buildCompactArtifactRepairWriteRetryMessages(ctx, modelMessages, errMsg);
+        const compactConfig = {
+          ...requestConfigForRetry,
+          maxTokens: Math.min(
+            typeof requestConfigForRetry.maxTokens === 'number' ? requestConfigForRetry.maxTokens : ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS,
+            ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS,
+          ),
+        };
+        const compactAbortController = new AbortController();
+        ctx.runtime.abortController = compactAbortController;
+        const retryResult = await ctx.runtime.modelRouter.inference(
+          compactMessages,
+          effectiveTools,
+          compactConfig,
+          undefined,
+          compactAbortController.signal,
+          {
+            artifactRepairActive: true,
+            artifactRepairWritePriority: true,
+            artifactRepairFullRewritePriority,
+            forceNonStreaming: true,
+            disableProviderTransientRetry: true,
+            requestTimeoutMs: 90_000,
+            firstByteTimeoutMs: 20_000,
+            inactivityTimeoutMs: 45_000,
+          },
+        );
+        ctx.runtime.abortController = null;
+        ctx.runtime._artifactRepairCompactWriteRetried = false;
+        retryResult.runtimeDiagnostics = {
+          ...retryResult.runtimeDiagnostics,
+          visibleToolNames: effectiveTools.map((tool) => tool.name),
+          artifactRepairCompactWriteRetry: true,
+          artifactRepairGuard: ctx.runtime.artifactRepairGuard
+            ? {
+                targetFile: ctx.runtime.artifactRepairGuard.targetFile,
+                attempts: ctx.runtime.artifactRepairGuard.attempts,
+                phase: ctx.runtime.artifactRepairGuard.phase,
+                blockedToolCount: ctx.runtime.artifactRepairGuard.blockedToolCount,
+                targetReadCount: ctx.runtime.artifactRepairGuard.targetReadCount,
+                targetRangedReadCount: ctx.runtime.artifactRepairGuard.targetRangedReadCount,
+                patched: ctx.runtime.artifactRepairGuard.patched,
+                noOpPatchCount: ctx.runtime.artifactRepairGuard.noOpPatchCount,
+                editAnchorFailureCount: ctx.runtime.artifactRepairGuard.editAnchorFailureCount,
+                preferTargetedEdit: ctx.runtime.artifactRepairGuard.preferTargetedEdit,
+                activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
+              }
+            : undefined,
+        };
+        return retryResult;
+      } catch (retryErr) {
+        ctx.runtime.abortController = null;
+        ctx.runtime._artifactRepairCompactWriteRetried = false;
+        logger.error('[AgentLoop] Compact artifact repair write retry also failed:', retryErr);
+      }
+    }
+    const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac|network socket disconnected|request timeout|timeout after \d+ms|timed out/i.test(errMsg)
       || /ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(errCode || '');
-    if (isNetworkError && !ctx.runtime._networkRetried) {
+    const maxNetworkRetries = getNetworkRetryBudget(
+      errMsg,
+      errCode,
+      Boolean(ctx.runtime.artifactRepairGuard),
+    );
+    const networkRetryCount = ctx.runtime._networkRetryCount ?? (ctx.runtime._networkRetried ? 1 : 0);
+    const shouldRetryNetworkError =
+      isNetworkError
+      && networkRetryCount < maxNetworkRetries
+      && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
+    if (shouldRetryNetworkError) {
       ctx.runtime._networkRetried = true;
-      logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference once...`);
+      ctx.runtime._networkRetryCount = networkRetryCount + 1;
+      logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime._networkRetryCount}/${maxNetworkRetries})...`);
       await new Promise(r => setTimeout(r, 2000));
       try {
         const retryResult = await ctx.inference();
         ctx.runtime._networkRetried = false;
+        ctx.runtime._networkRetryCount = 0;
         return retryResult;
       } catch (retryErr) {
-        ctx.runtime._networkRetried = false;
+        if ((ctx.runtime._networkRetryCount ?? 0) >= maxNetworkRetries) {
+          ctx.runtime._networkRetried = false;
+          ctx.runtime._networkRetryCount = 0;
+        }
         logger.error('[AgentLoop] Network retry also failed:', retryErr);
       }
     }

@@ -300,10 +300,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         clearAuthTokenReloadAttempt();
 
         // 读取 SSE 流并分发事件到 listeners
-        if (response.body) {
+      if (response.body) {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
+          let streamSessionId = sessionId;
 
           const processStream = async () => {
             let currentEvent = '';  // 移到 while 外面，防止跨 chunk 时 event/data 分属不同 read() 导致丢失
@@ -320,10 +321,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                       } else if (line.startsWith('data: ') && currentEvent) {
                         try {
                           const data = JSON.parse(line.slice(6));
-                          const sessionId = data?.sessionId;
+                          const currentSessionId = data?.sessionId;
+                          if (currentSessionId) streamSessionId = currentSessionId;
                           const cbs = listeners.get('agent:event');
                           if (cbs) {
-                            cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId }));
+                            cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId: currentSessionId }));
                           }
                         } catch { /* ignore */ }
                         currentEvent = '';
@@ -333,7 +335,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                   // 流结束兜底：确保 agent_complete 被派发（防止后端异常退出时状态卡住）
                   const completeCbs = listeners.get('agent:event');
                   if (completeCbs) {
-                    completeCbs.forEach((cb) => cb({ type: 'stream_end', data: {} }));
+                    completeCbs.forEach((cb) => cb({
+                      type: 'stream_end',
+                      data: streamSessionId ? { sessionId: streamSessionId } : {},
+                      sessionId: streamSessionId,
+                    }));
                   }
                   break;
                 }
@@ -347,6 +353,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                   } else if (line.startsWith('data: ') && currentEvent) {
                     try {
                       const data = JSON.parse(line.slice(6));
+                      const currentSessionId = data?.sessionId;
+                      if (currentSessionId) streamSessionId = currentSessionId;
 
                       // ── Local Bridge 拦截: tool_call_local 事件 ──
                       if (currentEvent === 'tool_call_local') {
@@ -358,13 +366,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                       }
 
                       // 将 SSE 事件转发到 agent:event listeners
-                      const sessionId = data?.sessionId;
                       const cbs = listeners.get('agent:event');
                       if (currentEvent !== 'stream_chunk') {
-                        console.debug('[HttpTransport] Dispatching SSE event:', currentEvent, sessionId ? `(session: ${sessionId})` : '');
+                        console.debug('[HttpTransport] Dispatching SSE event:', currentEvent, currentSessionId ? `(session: ${currentSessionId})` : '');
                       }
                       if (cbs) {
-                        cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId }));
+                        cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId: currentSessionId }));
                       }
                     } catch {
                       // 忽略解析错误
@@ -380,6 +387,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                 errorCbs.forEach((cb) => cb({
                   type: 'error',
                   data: { message: err instanceof Error ? err.message : 'Stream error' },
+                  sessionId: streamSessionId,
                 }));
               }
             }

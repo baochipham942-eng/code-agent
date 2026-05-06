@@ -15,6 +15,10 @@ import { isProtocolToolName } from '../../tools/protocolRegistry';
 
 const logger = createLogger('ToolSearchService');
 
+function normalizeToolName(name: string): string {
+  return name.trim();
+}
+
 /**
  * ToolSearchService - 工具搜索和延迟加载管理
  *
@@ -158,10 +162,29 @@ export class ToolSearchService {
    * 直接选择工具
    */
   selectTool(toolName: string): ToolSearchResult {
-    const meta = this.deferredToolIndex.get(toolName) || this.mcpToolsMeta.get(toolName);
+    const normalizedToolName = normalizeToolName(toolName);
+    if (isCoreToolName(normalizedToolName)) {
+      logger.info(`Selected core tool already available: ${normalizedToolName}`);
+      return {
+        tools: [{
+          name: normalizedToolName,
+          description: '核心工具，始终随模型请求发送；无需通过 ToolSearch 加载。',
+          score: 1,
+          source: 'builtin',
+          tags: [],
+          loadable: true,
+          canonicalInvocation: normalizedToolName,
+        }],
+        hasMore: false,
+        totalCount: 1,
+        loadedTools: [],
+      };
+    }
+
+    const meta = this.deferredToolIndex.get(normalizedToolName) || this.mcpToolsMeta.get(normalizedToolName);
 
     if (!meta) {
-      logger.warn(`Tool not found: ${toolName}`);
+      logger.warn(`Tool not found: ${normalizedToolName}`);
       return {
         tools: [],
         hasMore: false,
@@ -177,9 +200,9 @@ export class ToolSearchService {
     const loadedTools = loadable ? [meta.name] : [];
     if (loadedTools.length > 0) {
       this.loadedDeferredTools.add(meta.name);
-      logger.info(`Selected and loaded tool: ${toolName}`);
+      logger.info(`Selected and loaded tool: ${normalizedToolName}`);
     } else {
-      logger.info(`Selected tool is searchable but not loadable as a callable tool: ${toolName}`);
+      logger.info(`Selected tool is searchable but not loadable as a callable tool: ${normalizedToolName}`);
     }
 
     return {

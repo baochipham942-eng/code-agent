@@ -32,17 +32,23 @@ export class StreamHandler {
    * Emit model_response event and accumulate token usage.
    */
   emitModelResponse(response: ModelResponse, inferenceDuration: number): void {
+    const actualProvider = response.actualProvider ?? response.fallback?.to.provider ?? this.ctx.modelConfig.provider;
+    const actualModel = response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model;
     this.ctx.onEvent({
       type: 'model_response',
       data: {
-        model: this.ctx.modelConfig.model,
-        provider: this.ctx.modelConfig.provider,
+        model: actualModel,
+        provider: actualProvider,
+        requestedModel: this.ctx.modelConfig.model,
+        requestedProvider: this.ctx.modelConfig.provider,
+        fallback: response.fallback,
         responseType: response.type,
         duration: inferenceDuration,
         toolCalls: response.toolCalls?.map((tc: any) => tc.name) || [],
         textLength: (response.content || '').length,
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,
+        runtimeDiagnostics: response.runtimeDiagnostics,
       },
     });
 

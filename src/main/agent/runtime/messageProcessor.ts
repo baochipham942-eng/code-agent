@@ -27,6 +27,7 @@ import { MODEL_MAX_TOKENS, getModelMaxOutputTokens } from '../../../shared/const
 import {
   sanitizeBrowserComputerToolArguments,
   sanitizeBrowserComputerToolResult,
+  sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
@@ -47,7 +48,8 @@ import { applyGroundTruthGate } from './groundTruthGate';
 const logger = createLogger('MessageProcessor');
 
 function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> | undefined {
-  return sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
+  const browserSafeArgs = sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
+  return sanitizeLargeTextToolArguments(toolCall.name, browserSafeArgs);
 }
 
 function sanitizeToolResultForObservation(
@@ -62,6 +64,84 @@ function sanitizeToolResultForObservation(
 
 function shouldPreserveToolObservation(result: ToolResult): boolean {
   return result.metadata?.preserveObservation === true;
+}
+
+function isArtifactRepairTargetFileRead(result: ToolResult): boolean {
+  return result.success === true
+    && typeof result.output === 'string'
+    && result.metadata?.evidenceKind === 'file_read'
+    && typeof result.metadata?.filePath === 'string';
+}
+
+function buildForcedFinalAssistantContent(reason: string): string {
+  if (reason.includes('artifact repair target already passes validation')) {
+    return '目标产物已通过交互验收，修复流程已结束。';
+  }
+  return '任务已结束，已停止继续调用工具。执行记录和产物已保留。';
+}
+
+function buildArtifactRepairAdmissionRecoveryPrompt(
+  targetFile: string,
+  requestedNames: string,
+  allowedNames: string,
+  blockedToolCount: number,
+): string {
+  return [
+    '<artifact-repair-admission-blocked>',
+    `You are already inside artifact repair mode for ${targetFile}.`,
+    `Your previous tool call requested unavailable tools: ${requestedNames}.`,
+    `Only these tools are currently available: ${allowedNames}.`,
+    'Do not repeat the unavailable tool call.',
+    blockedToolCount >= 2
+      ? 'The read/source-exploration budget is exhausted. Your next action must use Edit or Append on the target artifact.'
+      : 'Your next action must patch the target artifact using the currently available file mutation tools.',
+    'Use the target HTML file and validator failure summary already in context. Do not inspect validator/runtime sources.',
+    '</artifact-repair-admission-blocked>',
+  ].join('\n');
+}
+
+function activateArtifactRepairAdmissionStop(
+  ctx: RuntimeContext,
+  targetFile: string,
+  requestedNames: string,
+): void {
+  ctx.forceFinalResponseReason = `artifact repair unavailable tool repeated: ${requestedNames}`;
+  ctx.forceFinalResponsePrompt = [
+    '<force-final-response reason="artifact-repair-tool-admission">',
+    `Artifact repair mode is active for ${targetFile}.`,
+    `The model repeatedly requested unavailable tool(s): ${requestedNames}.`,
+    'Stop this attempt now instead of spending another model request on the same blocked action.',
+    'Report that the target artifact still needs a mutation patch and that no target file change was applied.',
+    '</force-final-response>',
+  ].join('\n');
+}
+
+function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: ToolResult): boolean {
+  if (!result.success) return false;
+  if (toolCall.name !== 'Bash' && toolCall.name !== 'bash') return false;
+  const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command.trim() : '';
+  if (!command) return false;
+  return /^mkdir\s+-p\s+/.test(command);
+}
+
+function extractArtifactFilePathFromMessages(messages: Message[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role !== 'user') continue;
+    const rawContent: unknown = message.content;
+    const content = typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? rawContent.map((part: unknown) => {
+          if (!part || typeof part !== 'object') return '';
+          const textPart = part as { type?: unknown; text?: unknown };
+          return textPart.type === 'text' && typeof textPart.text === 'string' ? textPart.text : '';
+        }).join('\n')
+        : '';
+    const matches = extractAbsoluteFilePaths(content).filter((candidate) => /\.(html?|tsx?|jsx?|css|md)$/i.test(candidate));
+    if (matches.length > 0) return matches[0];
+  }
+  return null;
 }
 
 /**
@@ -394,6 +474,109 @@ export class MessageProcessor {
     langfuse: any,
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls!;
+    const visibleToolNames = new Set(response.runtimeDiagnostics?.visibleToolNames || []);
+    const unavailableToolCalls = visibleToolNames.size > 0
+      ? toolCalls.filter((toolCall) => !visibleToolNames.has(toolCall.name))
+      : [];
+
+  if (unavailableToolCalls.length > 0) {
+      const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
+      const allowedNames = [...visibleToolNames].join(', ') || 'none';
+      const guard = this.ctx.artifactRepairGuard;
+      const blockedToolCount = (guard?.blockedToolCount ?? 0) + 1;
+      if (guard) {
+        guard.blockedToolCount = blockedToolCount;
+        guard.lastBlockedTool = requestedNames;
+        if (blockedToolCount >= 2) {
+          guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
+        }
+      }
+      const recoveryPrompt = guard?.targetFile
+        ? buildArtifactRepairAdmissionRecoveryPrompt(
+            guard.targetFile,
+            requestedNames,
+            allowedNames,
+            blockedToolCount,
+          )
+        : null;
+      this.contextAssembly.injectSystemMessage(
+        [
+          '<tool-admission-repair>',
+          `The previous tool call requested unavailable tools: ${requestedNames}.`,
+          `Only these tools are currently available: ${allowedNames}.`,
+          'Do not repeat the unavailable tool call. Pick the next action only from the currently available tools.',
+          recoveryPrompt || '',
+          '</tool-admission-repair>',
+        ].filter(Boolean).join('\n'),
+      );
+      if (recoveryPrompt) {
+        this.contextAssembly.pushPersistentSystemContext(recoveryPrompt);
+      }
+      const assistantMsg: Message = {
+        id: this.contextAssembly.generateId(),
+        role: 'assistant',
+        content: response.content || '',
+        timestamp: Date.now(),
+        toolCalls: sanitizeToolCallsForHistory(toolCalls),
+        thinking: response.thinking,
+        effortLevel: this.ctx.effortLevel,
+        inputTokens: response.usage?.inputTokens,
+        outputTokens: response.usage?.outputTokens,
+      };
+      await this.contextAssembly.addAndPersistMessage(assistantMsg);
+      this.ctx.onEvent({ type: 'message', data: assistantMsg });
+
+      const syntheticResults: ToolResult[] = toolCalls.map((toolCall) => {
+        const blocked = unavailableToolCalls.some((blockedCall) => blockedCall.id === toolCall.id);
+        return {
+          toolCallId: toolCall.id,
+          success: false,
+          error: blocked
+            ? [
+              `Tool ${toolCall.name} is not available in the current repair step.`,
+              `Available tools: ${allowedNames}.`,
+              recoveryPrompt || 'Use the currently visible tools only.',
+            ].join('\n')
+            : 'Skipped because the same model response included unavailable repair tools.',
+          duration: 0,
+          metadata: {
+            artifactRepairGuard: {
+              blocked: true,
+              unavailableTool: blocked,
+              targetFile: guard?.targetFile,
+              phase: guard?.phase,
+              attempts: guard?.attempts,
+              blockedToolCount: guard?.blockedToolCount ?? blockedToolCount,
+              lastBlockedTool: requestedNames,
+              targetReadCount: guard?.targetReadCount,
+              targetRangedReadCount: guard?.targetRangedReadCount,
+              noOpPatchCount: guard?.noOpPatchCount,
+            },
+          },
+        };
+      });
+      const toolMsg: Message = {
+        id: this.contextAssembly.generateId(),
+        role: 'tool',
+        content: JSON.stringify(syntheticResults),
+        timestamp: Date.now(),
+        toolResults: syntheticResults,
+      };
+      await this.contextAssembly.addAndPersistMessage(toolMsg);
+      const sanitizedResults = sanitizeToolResultsForHistoryWithCalls(syntheticResults, toolCalls);
+      this.ctx.onEvent({ type: 'message', data: toolMsg });
+      sanitizedResults.forEach((result) => {
+        this.ctx.onEvent({
+          type: 'tool_call_end',
+          data: sanitizeToolResultForObservation(
+            toolCalls.find((toolCall) => toolCall.id === result.toolCallId),
+            result,
+          ),
+        });
+      });
+      return 'continue';
+    }
+
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
     this.ctx.totalToolCallCount += toolCalls.length;
@@ -408,17 +591,22 @@ export class MessageProcessor {
 
       // 提高 maxTokens 防止后续截断
       const currentMax = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
-      const boostedMax = Math.min(currentMax * 2, MODEL_MAX_TOKENS.EXTENDED);
+      const boostedMax = Math.max(currentMax, getModelMaxOutputTokens(this.ctx.modelConfig.model));
       if (boostedMax > currentMax) {
         this.ctx.modelConfig.maxTokens = boostedMax;
         logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
       }
 
-      const writeFileCall = toolCalls.find((tc: ToolCall) => tc.name === 'write_file' || tc.name === 'Write');
+      const writeFileCall = toolCalls.find((tc: ToolCall) =>
+        tc.name === 'write_file' ||
+        tc.name === 'Write' ||
+        tc.name === 'append_file' ||
+        tc.name === 'Append'
+      );
       if (writeFileCall) {
         const content = writeFileCall.arguments?.content as string;
         if (content) {
-          logger.warn(`write_file content length: ${content.length} chars - may be truncated!`);
+          logger.warn(`${writeFileCall.name} content length: ${content.length} chars - may be truncated!`);
           this.contextAssembly.injectSystemMessage(this.generateTruncationWarning());
         }
       } else {
@@ -575,9 +763,31 @@ export class MessageProcessor {
     });
 
     const sanitizedResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
+    const artifactRepairResults = this.ctx.artifactRepairGuard
+      ? sanitizedResults.map((result: ToolResult) => {
+          if (!isArtifactRepairTargetFileRead(result)) {
+            return result;
+          }
+          const output = this.contextAssembly.formatArtifactRepairToolResultContent(
+            result,
+            result.output || result.error || '',
+          );
+          if (output === result.output) {
+            return result;
+          }
+          return {
+            ...result,
+            output,
+            metadata: {
+              ...result.metadata,
+              artifactRepairPreview: true,
+            },
+          };
+        })
+      : sanitizedResults;
 
     // Compress tool results to save tokens
-    const compressedResults = sanitizedResults.map((result: ToolResult) => {
+    const compressedResults = artifactRepairResults.map((result: ToolResult) => {
       if (shouldPreserveToolObservation(result)) {
         return result;
       }
@@ -601,7 +811,38 @@ export class MessageProcessor {
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);
 
+    const artifactDirOnlyBootstrap = toolCalls.length === 1
+      && toolResults.length === 1
+      && isArtifactDirectoryBootstrapOnly(toolCalls[0], toolResults[0]);
+
+    if (artifactDirOnlyBootstrap) {
+      const artifactFilePath = extractArtifactFilePathFromMessages(this.ctx.messages);
+      if (artifactFilePath) {
+        this.contextAssembly.injectSystemMessage(
+          [
+            '<artifact-file-write-required>',
+            `目标产物文件是 ${artifactFilePath}。目录已经存在，下一步必须直接写这个文件本身。`,
+            '不要再次调用 mkdir，不要只输出计划，不要停留在目录准备。',
+            '如果文件非常大：先 Write 一个最小可运行骨架到该路径，再用 Append 连续补完，并在最后一个 Append 上设置 final=true；如果完整单文件已经准备好且体量适中，可以直接一次 Write。',
+            '</artifact-file-write-required>',
+          ].join('\n')
+        );
+      }
+    }
+
     if (this.ctx.forceFinalResponseReason) {
+      const finalMessage: Message = {
+        id: this.contextAssembly.generateId(),
+        role: 'assistant',
+        content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
+        timestamp: Date.now(),
+        effortLevel: this.ctx.effortLevel,
+      };
+      await this.contextAssembly.addAndPersistMessage(finalMessage);
+      this.ctx.onEvent({ type: 'message', data: finalMessage });
+
+      this.ctx.forceFinalResponseReason = undefined;
+      this.ctx.forceFinalResponsePrompt = undefined;
       this.contextAssembly.flushHookMessageBuffer();
       langfuse.endSpan(this.ctx.currentIterationSpanId, {
         type: 'tool_calls',
@@ -614,7 +855,7 @@ export class MessageProcessor {
         type: 'turn_end',
         data: { turnId: this.ctx.currentTurnId },
       });
-      return 'continue';
+      return 'break';
     }
 
     // === Stagnation detection ===
@@ -768,8 +1009,8 @@ export class MessageProcessor {
     this.ctx.telemetryAdapter.onModelCall(this.ctx.currentTurnId, {
       id: `mc-${this.ctx.currentTurnId}-${iterations}`,
       timestamp: Date.now(),
-      provider: this.ctx.modelConfig.provider,
-      model: this.ctx.modelConfig.model,
+      provider: response.actualProvider ?? response.fallback?.to.provider ?? this.ctx.modelConfig.provider,
+      model: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
       temperature: this.ctx.modelConfig.temperature,
       maxTokens: this.ctx.modelConfig.maxTokens,
       inputTokens: effectiveInputTokens,

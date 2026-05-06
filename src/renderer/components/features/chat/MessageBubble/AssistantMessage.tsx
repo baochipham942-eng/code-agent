@@ -214,7 +214,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 pl-3 border-l border-zinc-700">
+            <div className="mt-1.5 pl-3">
               <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-wrap font-mono">
                 {reasoningContent}
               </p>

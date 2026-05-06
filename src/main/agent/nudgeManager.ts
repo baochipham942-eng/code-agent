@@ -308,7 +308,10 @@ export class NudgeManager {
       && this.goalVerificationCount < this.maxGoalVerifications) {
       const summary = ctx.goalTracker.getGoalSummary();
       const hasWriteAction = summary.completed.some(a =>
-        a === 'edit_file' || a === 'Edit' || a === 'write_file' || a === 'Write' || a === 'bash' || a === 'Bash'
+        a === 'edit_file' || a === 'Edit' ||
+        a === 'write_file' || a === 'Write' ||
+        a === 'append_file' || a === 'Append' ||
+        a === 'bash' || a === 'Bash'
       );
       if (!hasWriteAction && ctx.iterations > 1) {
         this.goalVerificationCount++;

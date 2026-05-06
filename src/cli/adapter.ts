@@ -54,6 +54,8 @@ export class CLIAgent {
   /** Real token usage from stream_usage events */
   private realInputTokens: number = 0;
   private realOutputTokens: number = 0;
+  /** Last run-level error event, used to keep agent_complete from masking failures. */
+  private runErrorMessage: string | null = null;
 
   private systemPrompt: string | undefined;
 
@@ -132,6 +134,7 @@ export class CLIAgent {
     this.pendingAgentCalls.clear();
     this.toolCallNames.clear();
     this.turnStartTime = 0;
+    this.runErrorMessage = null;
 
     // 确保有会话
     if (!this.sessionId) {
@@ -317,6 +320,12 @@ export class CLIAgent {
       // （两个 assistant 消息 back-to-back，API 400: tool_call_ids without response）
     }
 
+    // 错误处理：记录到 run 结果，等待 agent_complete 统一收口
+    if (event.type === 'error') {
+      this.runErrorMessage = event.data?.message || 'Agent run failed';
+      logger.warn('Agent error event', { message: this.runErrorMessage });
+    }
+
     // MetricsCollector: track context compression and errors
     if (this.metricsCollector) {
       if (event.type === 'context_compressed') {
@@ -334,17 +343,12 @@ export class CLIAgent {
     // Agent 完成
     if (event.type === 'agent_complete') {
       this.finishRun({
-        success: true,
+        success: !this.runErrorMessage,
         output: this.lastContent || this.getLastAssistantMessage()?.content,
+        ...(this.runErrorMessage ? { error: this.runErrorMessage } : {}),
         toolsUsed: [...new Set(this.toolsUsed)],
         duration: Date.now() - this.startTime,
       });
-    }
-
-    // 错误处理
-    if (event.type === 'error') {
-      // 不立即结束，让 agent_complete 处理
-      logger.warn('Agent error event', { message: event.data?.message });
     }
   }
 

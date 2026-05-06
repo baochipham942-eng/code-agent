@@ -170,7 +170,7 @@ export class CLIConfigService {
    * 获取 API Key
    */
   getApiKey(provider: string): string {
-    const envKeys: Record<string, string> = {
+    const envKeys: Record<string, string | string[]> = {
       deepseek: 'DEEPSEEK_API_KEY',
       openai: 'OPENAI_API_KEY',
       zhipu: 'ZHIPU_API_KEY',
@@ -178,12 +178,16 @@ export class CLIConfigService {
       anthropic: 'ANTHROPIC_API_KEY',
       groq: 'GROQ_API_KEY',
       google: 'GOOGLE_API_KEY',
-      moonshot: 'KIMI_K25_API_KEY',  // Kimi K2.5
+      moonshot: ['MOONSHOT_API_KEY', 'KIMI_K25_API_KEY'],
+      xiaomi: 'XIAOMI_API_KEY',
     };
 
     const envKey = envKeys[provider.toLowerCase()];
-    if (envKey && process.env[envKey]) {
-      return process.env[envKey] as string;
+    const candidates = Array.isArray(envKey) ? envKey : envKey ? [envKey] : [];
+    for (const candidate of candidates) {
+      if (process.env[candidate]) {
+        return process.env[candidate] as string;
+      }
     }
 
     return '';

@@ -3,11 +3,13 @@
 // ============================================================================
 
 export { BASH_TOOL_DESCRIPTION } from './bash';
+export { FILE_WRITE_TOOL_DESCRIPTION } from './fileWrite';
 export { EDIT_TOOL_DESCRIPTION } from './edit';
 export { TASK_TOOL_DESCRIPTION } from './task';
 export { EXCEL_TOOL_DESCRIPTION } from './excel';
 
 import { BASH_TOOL_DESCRIPTION } from './bash';
+import { FILE_WRITE_TOOL_DESCRIPTION } from './fileWrite';
 import { EDIT_TOOL_DESCRIPTION } from './edit';
 import { TASK_TOOL_DESCRIPTION } from './task';
 import { EXCEL_TOOL_DESCRIPTION } from './excel';
@@ -20,6 +22,7 @@ import { EXCEL_TOOL_DESCRIPTION } from './excel';
 
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
   bash: BASH_TOOL_DESCRIPTION,
+  Write: FILE_WRITE_TOOL_DESCRIPTION,
   Edit: EDIT_TOOL_DESCRIPTION,
   Task: TASK_TOOL_DESCRIPTION,
   ExcelAutomate: EXCEL_TOOL_DESCRIPTION,

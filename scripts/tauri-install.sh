@@ -10,6 +10,32 @@ BUNDLE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle"
 APP_NAME="Code Agent"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+mark_target_unindexed() {
+  mkdir -p "$PROJECT_ROOT/src-tauri/target"
+  touch "$PROJECT_ROOT/src-tauri/target/.metadata_never_index" 2>/dev/null || true
+}
+
+unregister_app_path() {
+  local app_path="$1"
+
+  [ -x "$LSREGISTER" ] || return 0
+  "$LSREGISTER" -u "$app_path" >/dev/null 2>&1 || true
+}
+
+unregister_duplicate_app_entries() {
+  [ -x "$LSREGISTER" ] || return 0
+
+  "$LSREGISTER" -dump 2>/dev/null \
+    | awk -F'path:[[:space:]]*' '/path:.*Code Agent\.app/ { print $2 }' \
+    | sed -E 's/ \([^)]*\)$//' \
+    | while IFS= read -r app_path; do
+        [ -z "$app_path" ] && continue
+        [ "$app_path" = "/Applications/$APP_NAME.app" ] && continue
+        unregister_app_path "$app_path"
+      done
+}
 
 strip_local_secrets() {
   local app_path="$1"
@@ -30,6 +56,7 @@ resign_app_if_possible() {
 }
 
 # 关闭正在运行的实例
+mark_target_unindexed
 pkill -f "$APP_NAME" 2>/dev/null || true
 sleep 1
 
@@ -49,6 +76,7 @@ else
 fi
 
 # 清理构建产物中的 .app（Spotlight 会索引到导致重复）
+unregister_app_path "$BUNDLE_DIR/macos/$APP_NAME.app"
 rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app"
 rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app.tar.gz"
 rm -rf "$PROJECT_ROOT/release/"*"/$APP_NAME.app"
@@ -61,5 +89,8 @@ done
 for vol in /Volumes/dmg.*; do
   [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
 done
+
+unregister_duplicate_app_entries
+"$LSREGISTER" -f "/Applications/$APP_NAME.app" >/dev/null 2>&1 || true
 
 echo "Done. Launch from Spotlight or: open '/Applications/$APP_NAME.app'"

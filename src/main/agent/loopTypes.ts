@@ -100,12 +100,33 @@ export interface ModelResponse {
   toolCalls?: ToolCall[];
   truncated?: boolean;
   finishReason?: string;
+  actualProvider?: string;
+  actualModel?: string;
+  fallback?: {
+    from: { provider: string; model?: string };
+    to: { provider: string; model?: string };
+    reason: string;
+    category: string;
+  };
   // Adaptive Thinking: 思考过程
   thinking?: string;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number };
   // 内容块顺序（text 和 tool_call 的交错顺序）
   contentParts?: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
+  runtimeDiagnostics?: {
+    visibleToolNames?: string[];
+    artifactRepairGuard?: {
+      targetFile?: string;
+      attempts?: number;
+      phase?: string;
+      blockedToolCount?: number;
+      targetReadCount?: number;
+      targetRangedReadCount?: number;
+      patched?: boolean;
+      noOpPatchCount?: number;
+    };
+  };
 }
 
 /**
@@ -281,7 +302,7 @@ export const READ_ONLY_TOOLS = ['read_file', 'Read', 'glob', 'Glob', 'grep', 'Gr
 /**
  * Write tools for anti-pattern tracking
  */
-export const WRITE_TOOLS = ['write_file', 'Write', 'edit_file', 'Edit'];
+export const WRITE_TOOLS = ['write_file', 'Write', 'append_file', 'Append', 'edit_file', 'Edit'];
 
 /**
  * Verification tools for checkpoint tracking

@@ -1,5 +1,5 @@
 // useAgentConversationStreamEffects - turn_start, stream_chunk, stream_reasoning, turn_end, message, routing_resolved
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
@@ -11,6 +11,192 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 const logger = createLogger('useAgent');
 
 type AgentEvent = { type: string; data: any; sessionId?: string };
+
+export function removeUncommittedAssistantDraft(
+  messages: Message[],
+  draftMessageId: string | null | undefined,
+): Message[] {
+  if (!draftMessageId) return messages;
+
+  const draft = messages.find((message) => message.id === draftMessageId);
+  if (!draft || draft.role !== 'assistant') return messages;
+
+  const hasToolCalls = (draft.toolCalls?.length || 0) > 0;
+  if (hasToolCalls) return messages;
+
+  return messages.filter((message) => message.id !== draftMessageId);
+}
+
+export interface ConversationStreamState {
+  currentTurnMessageId: string | null;
+  committedAssistantMessageIds: Set<string>;
+}
+
+interface ConversationStreamEventActions {
+  addMessage: (message: Message) => void;
+  updateMessage: (id: string, updates: Partial<Message>) => void;
+  setMessages: (messages: Message[]) => void;
+  getMessages: () => Message[];
+  queueUpdate: (update: Parameters<AgentEffectsProps['queueUpdate']>[0]) => void;
+  now?: () => number;
+  generateId?: () => string;
+}
+
+export function applyConversationStreamEvent(
+  event: AgentEvent,
+  state: ConversationStreamState,
+  actions: ConversationStreamEventActions,
+): void {
+  const now = actions.now ?? Date.now;
+  const makeId = actions.generateId ?? generateMessageId;
+  const getFreshMessages = actions.getMessages;
+
+  switch (event.type) {
+    case 'turn_start':
+      if (
+        state.currentTurnMessageId &&
+        !state.committedAssistantMessageIds.has(state.currentTurnMessageId)
+      ) {
+        const messages = getFreshMessages();
+        const cleanedMessages = removeUncommittedAssistantDraft(
+          messages,
+          state.currentTurnMessageId,
+        );
+        if (cleanedMessages !== messages) {
+          actions.setMessages(cleanedMessages);
+        }
+      }
+
+      {
+        const turnId = event.data?.turnId || makeId();
+        const newMessage: Message = {
+          id: turnId,
+          role: 'assistant',
+          content: '',
+          timestamp: now(),
+          toolCalls: [],
+        };
+        actions.addMessage(newMessage);
+        state.currentTurnMessageId = turnId;
+        state.committedAssistantMessageIds.delete(turnId);
+      }
+      break;
+
+    case 'stream_chunk':
+      if (event.data?.content) {
+        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+        const freshMsgs = getFreshMessages();
+        const targetMessage = targetMessageId
+          ? freshMsgs.find(m => m.id === targetMessageId)
+          : freshMsgs[freshMsgs.length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          actions.queueUpdate({
+            type: 'append',
+            messageId: targetMessage.id,
+            content: event.data.content,
+          });
+        } else {
+          const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
+          if (lastMessage?.role === 'assistant') {
+            const hasCompletedToolCalls = lastMessage.toolCalls?.some(
+              (tc: ToolCall) => tc.result !== undefined
+            );
+            if (hasCompletedToolCalls) {
+              const newMessage: Message = {
+                id: makeId(),
+                role: 'assistant',
+                content: event.data.content,
+                timestamp: now(),
+                toolCalls: [],
+              };
+              actions.addMessage(newMessage);
+              state.currentTurnMessageId = newMessage.id;
+              state.committedAssistantMessageIds.delete(newMessage.id);
+            } else {
+              actions.queueUpdate({
+                type: 'append',
+                messageId: lastMessage.id,
+                content: event.data.content,
+              });
+            }
+          }
+        }
+      }
+      break;
+
+    case 'message':
+      if (event.data) {
+        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+        const targetMessage = targetMessageId
+          ? getFreshMessages().find(m => m.id === targetMessageId)
+          : getFreshMessages()[getFreshMessages().length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          state.committedAssistantMessageIds.add(targetMessage.id);
+          if (event.data.id) {
+            state.committedAssistantMessageIds.add(event.data.id);
+          }
+
+          const existingContent = targetMessage.content || '';
+          const newContent = event.data.content || '';
+
+          let mergedToolCalls = targetMessage.toolCalls;
+          if (event.data.toolCalls && event.data.toolCalls.length > 0) {
+            const existingToolCalls = targetMessage.toolCalls || [];
+            if (existingToolCalls.length > 0) {
+              const fromEvent = new Map<string, ToolCall>(
+                event.data.toolCalls.map((tc: ToolCall) => [tc.id, tc] as [string, ToolCall]),
+              );
+              mergedToolCalls = existingToolCalls.map((existing: ToolCall) => {
+                const fresh = fromEvent.get(existing.id);
+                if (!fresh) return existing;
+                return {
+                  ...existing,
+                  shortDescription: fresh.shortDescription ?? existing.shortDescription,
+                  targetContext: fresh.targetContext ?? existing.targetContext,
+                  expectedOutcome: fresh.expectedOutcome ?? existing.expectedOutcome,
+                  arguments: fresh.arguments ?? existing.arguments,
+                };
+              });
+              const existingIds = new Set(existingToolCalls.map((tc: ToolCall) => tc.id));
+              const newOnes = event.data.toolCalls.filter(
+                (tc: ToolCall) => !existingIds.has(tc.id)
+              );
+              if (newOnes.length > 0) {
+                mergedToolCalls = [...mergedToolCalls, ...newOnes];
+              }
+            } else {
+              mergedToolCalls = event.data.toolCalls;
+            }
+          }
+
+          actions.updateMessage(targetMessage.id, {
+            content: existingContent.length >= newContent.length ? existingContent : newContent,
+            toolCalls: mergedToolCalls,
+          });
+        }
+      }
+      break;
+
+    case 'stream_reasoning':
+      if (event.data?.content) {
+        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+        const targetMessage = targetMessageId
+          ? getFreshMessages().find(m => m.id === targetMessageId)
+          : getFreshMessages()[getFreshMessages().length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          actions.queueUpdate({
+            type: 'append',
+            messageId: targetMessage.id,
+            reasoning: event.data.content,
+          });
+        }
+      }
+      break;
+  }
+}
 
 export const useConversationStreamEffects = ({
   addMessage,
@@ -26,6 +212,8 @@ export const useConversationStreamEffects = ({
   setSessionTaskProgress,
   setSessionTaskComplete,
 }: AgentEffectsProps) => {
+  const committedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
@@ -52,19 +240,26 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
-          {
-            const turnId = event.data?.turnId || generateMessageId();
-            const newMessage: Message = {
-              id: turnId,
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              toolCalls: [],
-            };
-            addMessage(newMessage);
-            currentTurnMessageIdRef.current = turnId;
-            logger.debug('turn_start - created message', { turnId, sessionId: eventSessionId });
-          }
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
+          logger.debug('turn_start - created message', { turnId: currentTurnMessageIdRef.current, sessionId: eventSessionId });
           break;
 
         case 'stream_chunk':
@@ -73,45 +268,25 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
-          if (event.data?.content) {
-            const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
-            const freshMsgs = getFreshMessages();
-            const targetMessage = targetMessageId
-              ? freshMsgs.find(m => m.id === targetMessageId)
-              : freshMsgs[freshMsgs.length - 1];
-
-            if (targetMessage?.role === 'assistant') {
-              queueUpdate({
-                type: 'append',
-                messageId: targetMessage.id,
-                content: event.data.content,
-              });
-            } else {
-              const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
-              if (lastMessage?.role === 'assistant') {
-                const hasCompletedToolCalls = lastMessage.toolCalls?.some(
-                  (tc: ToolCall) => tc.result !== undefined
-                );
-                if (hasCompletedToolCalls) {
-                  const newMessage: Message = {
-                    id: generateMessageId(),
-                    role: 'assistant',
-                    content: event.data.content,
-                    timestamp: Date.now(),
-                    toolCalls: [],
-                  };
-                  addMessage(newMessage);
-                  currentTurnMessageIdRef.current = newMessage.id;
-                } else {
-                  queueUpdate({
-                    type: 'append',
-                    messageId: lastMessage.id,
-                    content: event.data.content,
-                  });
-                }
-              }
-            }
-          }
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
           break;
 
         case 'message':
@@ -120,59 +295,25 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
-          if (event.data) {
-            const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
-            const targetMessage = targetMessageId
-              ? getFreshMessages().find(m => m.id === targetMessageId)
-              : getFreshMessages()[getFreshMessages().length - 1];
-
-            if (targetMessage?.role === 'assistant') {
-              const existingContent = targetMessage.content || '';
-              const newContent = event.data.content || '';
-
-              let mergedToolCalls = targetMessage.toolCalls;
-              if (event.data.toolCalls && event.data.toolCalls.length > 0) {
-                const existingToolCalls = targetMessage.toolCalls || [];
-                if (existingToolCalls.length > 0) {
-                  // streaming 期间 in-memory ToolCall 缺产品视角语义字段（_meta envelope
-                  // 抽取在前端 stream_tool_call_delta 已尽力，但模型不 emit 时仍空），
-                  // message 事件传来的版本经过 main 进程 sanitize / 兜底，shortDescription
-                  // 等字段更完整。把这些字段 merge 进 existing，但保留 streaming 时
-                  // 已经写好的 result。
-                  const fromEvent = new Map<string, ToolCall>(
-                    event.data.toolCalls.map((tc: ToolCall) => [tc.id, tc] as [string, ToolCall]),
-                  );
-                  mergedToolCalls = existingToolCalls.map((existing: ToolCall) => {
-                    const fresh = fromEvent.get(existing.id);
-                    if (!fresh) return existing;
-                    return {
-                      ...existing,
-                      shortDescription: fresh.shortDescription ?? existing.shortDescription,
-                      targetContext: fresh.targetContext ?? existing.targetContext,
-                      expectedOutcome: fresh.expectedOutcome ?? existing.expectedOutcome,
-                      // arguments 用 main 进程 sanitize 过的版本（已剥 _meta、过滤敏感）
-                      arguments: fresh.arguments ?? existing.arguments,
-                    };
-                  });
-                  // 追加 event 中存在但 existing 没有的（极少见，但保住兼容）
-                  const existingIds = new Set(existingToolCalls.map((tc: ToolCall) => tc.id));
-                  const newOnes = event.data.toolCalls.filter(
-                    (tc: ToolCall) => !existingIds.has(tc.id)
-                  );
-                  if (newOnes.length > 0) {
-                    mergedToolCalls = [...mergedToolCalls, ...newOnes];
-                  }
-                } else {
-                  mergedToolCalls = event.data.toolCalls;
-                }
-              }
-
-              updateMessage(targetMessage.id, {
-                content: existingContent.length >= newContent.length ? existingContent : newContent,
-                toolCalls: mergedToolCalls,
-              });
-            }
-          }
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
           break;
 
         case 'turn_end':
@@ -208,20 +349,25 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
-          if (event.data?.content) {
-            const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
-            const targetMessage = targetMessageId
-              ? getFreshMessages().find(m => m.id === targetMessageId)
-              : getFreshMessages()[getFreshMessages().length - 1];
-
-            if (targetMessage?.role === 'assistant') {
-              queueUpdate({
-                type: 'append',
-                messageId: targetMessage.id,
-                reasoning: event.data.content,
-              });
-            }
-          }
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
           break;
       }
     });

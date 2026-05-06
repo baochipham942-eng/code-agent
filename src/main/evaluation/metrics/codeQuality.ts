@@ -24,7 +24,7 @@ export class CodeQualityEvaluator implements DimensionEvaluator {
     const suggestions: string[] = [];
 
     // 筛选代码相关的工具调用
-    const codeTools = ['write_file', 'edit_file', 'read_file', 'bash'];
+    const codeTools = ['write_file', 'append_file', 'edit_file', 'read_file', 'write', 'append', 'edit', 'read', 'bash'];
     const codeToolCalls = snapshot.toolCalls.filter((c) =>
       codeTools.some((t) => c.name.toLowerCase().includes(t))
     );
@@ -48,7 +48,7 @@ export class CodeQualityEvaluator implements DimensionEvaluator {
 
     // 3. 写入操作数量
     const writeCalls = codeToolCalls.filter((c) =>
-      c.name.toLowerCase().includes('write')
+      c.name.toLowerCase().includes('write') || c.name.toLowerCase().includes('append')
     );
     subMetrics.push({ name: '写入操作', value: writeCalls.length, unit: '次' });
 

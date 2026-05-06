@@ -430,6 +430,7 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     _contextOverflowRetried: false,
     _truncationRetried: false,
+    _artifactNonStreamingRetried: false,
     _networkRetried: false,
     _consecutiveTruncations: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,

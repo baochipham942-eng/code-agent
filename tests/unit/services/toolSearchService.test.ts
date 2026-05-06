@@ -60,6 +60,28 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('Task')).toBe(true);
   });
 
+  it('treats core tools selected via ToolSearch as already available', () => {
+    const service = new ToolSearchService();
+
+    const result = service.selectTool('Bash');
+
+    expect(result.loadedTools).toEqual([]);
+    expect(result.tools[0]).toMatchObject({
+      name: 'Bash',
+      loadable: true,
+      canonicalInvocation: 'Bash',
+    });
+    expect(service.isToolLoaded('Bash')).toBe(true);
+  });
+
+  it('formats selected core tools as a successful no-op load', async () => {
+    const result = await toolSearchTool.execute({ query: 'select:Bash' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('核心工具');
+    expect(result.output).toContain('调用入口：Bash');
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 
@@ -126,10 +148,10 @@ describe('ToolSearchService loadable results', () => {
   it('formats not-callable search hits without saying every result is callable', async () => {
     const result = await toolSearchTool.execute({ query: 'desktop', max_results: 1 }, {} as any);
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('不可直接调用');
-    expect(result.output).toContain('没有新工具被加载');
-    expect(result.output).not.toContain('这些工具现在可以直接使用');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('不可直接调用');
+    expect(result.error).toContain('没有新工具被加载');
+    expect(result.error).not.toContain('这些工具现在可以直接使用');
   });
 
   it('formats virtual skill hits with their real invocation entry point', async () => {
@@ -138,9 +160,9 @@ describe('ToolSearchService loadable results', () => {
 
     const result = await toolSearchTool.execute({ query: 'commit', max_results: 1 }, {} as any);
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('不可直接调用');
-    expect(result.output).toContain('调用入口：Skill({"command":"commit"})');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('不可直接调用');
+    expect(result.error).toContain('调用入口：Skill({"command":"commit"})');
   });
 
   it('keeps lazy MCP discovery metadata when search returns no tools', async () => {
@@ -153,9 +175,9 @@ describe('ToolSearchService loadable results', () => {
 
     const result = await toolSearchTool.execute({ query: 'sequential-nohit', max_results: 1 }, {} as any);
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('MCP 懒加载发现失败');
-    expect(result.output).toContain('sequential-thinking: spawn failed');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('MCP 懒加载发现失败');
+    expect(result.error).toContain('sequential-thinking: spawn failed');
     expect(result.metadata).toMatchObject({
       mcpDiscovery: [{
         serverName: 'sequential-thinking',

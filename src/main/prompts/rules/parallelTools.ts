@@ -18,7 +18,7 @@ export const PARALLEL_TOOLS_RULES = `
 **需顺序执行的示例：**
 - Read → Edit（必须先读取才能编辑）
 - git add → git commit（必须先暂存才能提交）
-- mkdir → Write 到新目录（必须先创建目录）
+- 手动 mkdir → 非文件工具写入（只有目标工具不能自动建目录时才需要）
 - glob 找文件 → Read 读取找到的文件
 
 **批处理示例：**

@@ -42,7 +42,7 @@ export class XiaomiProvider extends BaseOpenAIProvider {
         ? convertToOpenAIMessages(messages, { thinkingMode: this.isThinkingMode(config) })
         : convertToTextOnlyMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || XIAOMI_DEFAULT_MODEL),
+      max_completion_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || XIAOMI_DEFAULT_MODEL),
       stream: true,
       stream_options: { include_usage: true },
     };

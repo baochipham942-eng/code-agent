@@ -171,51 +171,59 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    const workflowName = params.workflow as string;
-    const task = params.task as string;
-    const customStages = params.stages as WorkflowStage[] | undefined;
-    const parallel = params.parallel !== false;
+    return executeWorkflowOrchestrate(params, context);
+  },
+};
 
-    // Check for required context
-    if (!context.modelConfig) {
+export async function executeWorkflowOrchestrate(
+  params: Record<string, unknown>,
+  context: ToolContext
+): Promise<ToolExecutionResult> {
+  const workflowName = params.workflow as string;
+  const task = params.task as string;
+  const customStages = params.stages as WorkflowStage[] | undefined;
+  const parallel = params.parallel !== false;
+
+  // Check for required context
+  if (!context.modelConfig) {
+    return {
+      success: false,
+      error: 'workflow_orchestrate requires modelConfig in context',
+    };
+  }
+
+  // Get workflow definition
+  let workflow: WorkflowTemplate;
+  if (workflowName === 'custom') {
+    if (!customStages || customStages.length === 0) {
       return {
         success: false,
-        error: 'workflow_orchestrate requires modelConfig in context',
+        error: 'Custom workflow requires stages array',
       };
     }
-
-    // Get workflow definition
-    let workflow: WorkflowTemplate;
-    if (workflowName === 'custom') {
-      if (!customStages || customStages.length === 0) {
-        return {
-          success: false,
-          error: 'Custom workflow requires stages array',
-        };
-      }
-      workflow = {
-        name: 'Custom Workflow',
-        description: 'User-defined workflow',
-        stages: customStages,
+    workflow = {
+      name: 'Custom Workflow',
+      description: 'User-defined workflow',
+      stages: customStages,
+    };
+  } else {
+    // Use type-safe built-in workflow lookup
+    const builtInWorkflow = getBuiltInWorkflow(workflowName);
+    if (!builtInWorkflow) {
+      const availableWorkflows = listBuiltInWorkflows().map(w => w.id).join(', ');
+      return {
+        success: false,
+        error: `Unknown workflow: ${workflowName}. Available: ${availableWorkflows}`,
       };
-    } else {
-      // Use type-safe built-in workflow lookup
-      const builtInWorkflow = getBuiltInWorkflow(workflowName);
-      if (!builtInWorkflow) {
-        const availableWorkflows = listBuiltInWorkflows().map(w => w.id).join(', ');
-        return {
-          success: false,
-          error: `Unknown workflow: ${workflowName}. Available: ${availableWorkflows}`,
-        };
-      }
-      workflow = builtInWorkflow;
     }
+    workflow = builtInWorkflow;
+  }
 
-    // Legacy roles support - empty since all agents are now unified in PREDEFINED_AGENTS
-    const legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }> = {};
-    const results: StageResult[] = [];
-    // 使用结构化上下文替代纯文本输出
-    const stageContexts: Map<string, StageContext> = new Map();
+  // Legacy roles support - empty since all agents are now unified in PREDEFINED_AGENTS
+  const legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }> = {};
+  const results: StageResult[] = [];
+  // 使用结构化上下文替代纯文本输出
+  const stageContexts: Map<string, StageContext> = new Map();
 
     logger.info('[Workflow] 开始执行工作流', {
       name: workflow.name,
@@ -289,8 +297,7 @@ ${stagesSummary}`,
         error: `Workflow failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
-  },
-};
+}
 
 // Build execution groups based on dependencies
 function buildExecutionGroups(stages: WorkflowStage[]): WorkflowStage[][] {

@@ -32,6 +32,7 @@ import {
   stripInternalFormatMimicry as stripInternalFormatMimicryImpl,
   detectTaskPatterns as detectTaskPatternsImpl,
   getCurrentAttachments as getCurrentAttachmentsImpl,
+  formatArtifactRepairToolResultContent as formatArtifactRepairToolResultContentImpl,
 } from './contextAssembly/messageBuild';
 import {
   updateContextHealth as updateContextHealthImpl,
@@ -103,6 +104,9 @@ export interface ContextTranscriptEntry extends ProjectableMessage {
   attachments?: Message['attachments'];
   toolCalls?: Message['toolCalls'];
   thinking?: string;
+  preserveObservation?: boolean;
+  evidenceKind?: string;
+  filePath?: string;
 }
 
 // Re-export types for backward compatibility
@@ -144,6 +148,10 @@ export interface ContextAssemblyCtx {
   checkAndAutoCompress(): Promise<void>;
   shouldThink(hasErrors: boolean): boolean;
   generateThinkingPrompt(toolCalls: ToolCall[], toolResults: ToolResult[]): string;
+  formatArtifactRepairToolResultContent(
+    result: { output?: string; error?: string; metadata?: Record<string, any> },
+    originalContent: string,
+  ): string;
 }
 
 // ----------------------------------------------------------------------------
@@ -210,6 +218,7 @@ export class ContextAssembly {
       checkAndAutoCompress: this.checkAndAutoCompress.bind(this),
       shouldThink: this.shouldThink.bind(this),
       generateThinkingPrompt: this.generateThinkingPrompt.bind(this),
+      formatArtifactRepairToolResultContent: this.formatArtifactRepairToolResultContent.bind(this),
     };
   }
 
@@ -292,6 +301,13 @@ export class ContextAssembly {
 
   getCurrentAttachments(): CurrentAttachment[] {
     return getCurrentAttachmentsImpl(this.makeCtx());
+  }
+
+  formatArtifactRepairToolResultContent(
+    result: { output?: string; error?: string; metadata?: Record<string, any> },
+    originalContent: string,
+  ): string {
+    return formatArtifactRepairToolResultContentImpl(this.makeCtx(), result, originalContent);
   }
 
   async addAndPersistMessage(message: Message): Promise<void> {

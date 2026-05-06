@@ -18,6 +18,9 @@ import {
 } from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
+const moduleDir = typeof __dirname === 'string'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 // ============================================================================
 // Security Utilities
@@ -90,7 +93,7 @@ function loadEnvFile(): void {
 
   const possiblePaths = [
     path.join(process.cwd(), '.env'),                              // Development: project root
-    path.join(__dirname, '../../..', '.env'),                       // Development: relative to dist
+    path.join(moduleDir, '../../..', '.env'),                       // Development: relative to dist
     path.join(resourcesPath, '.env'),                               // Production: Resources folder
     path.join(userDataPath, '.env'),                                // Production: user data folder
     path.join(appPath, '.env'),                                     // Production: app.asar

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Brain, AlertTriangle, StopCircle } from 'lucide-react';
+import { Brain, LoaderCircle, AlertTriangle, StopCircle } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 
 interface StreamingIndicatorProps {
@@ -16,9 +16,9 @@ interface StreamingIndicatorProps {
 // 默认态 0-30s 保持 Codex 式克制：dots + 灰字；30s+ 再升级图标和颜色
 const PHASES = [
   { threshold: 0,  label: '思考中...',       color: 'text-zinc-400', icon: null },
-  { threshold: 30, label: '深度分析中...',    color: 'text-zinc-300', icon: Brain },
-  { threshold: 60, label: '处理时间较长...',  color: 'text-amber-400', icon: AlertTriangle },
-  { threshold: 90, label: '工具可能卡住',    color: 'text-red-400', icon: AlertTriangle },
+  { threshold: 30, label: '分析中...',       color: 'text-zinc-300', icon: Brain },
+  { threshold: 60, label: '仍在处理...',      color: 'text-zinc-400', icon: LoaderCircle },
+  { threshold: 90, label: '工具仍在执行',      color: 'text-amber-300', icon: AlertTriangle },
 ] as const;
 
 const STUCK_THRESHOLD_SECONDS = 90;
@@ -95,7 +95,11 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({ startTim
     <div className="flex items-center gap-2 py-1">
       {/* Phase icon or pulsing dots for initial phase */}
       {Icon ? (
-        <Icon className={`w-3.5 h-3.5 ${phase.color} ${phase.color.includes('amber') || phase.color.includes('red') ? '' : 'animate-pulse'}`} />
+        <Icon
+          className={`w-3.5 h-3.5 ${phase.color} ${
+            Icon === LoaderCircle ? 'animate-spin' : phase.color.includes('red') ? '' : 'animate-pulse'
+          }`}
+        />
       ) : (
         <div className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
@@ -110,14 +114,14 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({ startTim
       {/* Elapsed timer */}
       <span className="text-xs font-mono text-zinc-500">已运行 {formatElapsed(elapsed)}</span>
 
-      {/* Force stop button for stuck state */}
+      {/* Force stop button for truly long-running tool executions */}
       {isStuck && onForceStop && (
         <button
           onClick={onForceStop}
-          className="flex items-center gap-1 px-2 py-0.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded transition-colors"
+          className="flex items-center gap-1 px-2 py-0.5 text-xs text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded transition-colors"
         >
           <StopCircle className="w-3 h-3" />
-          Force Stop
+          停止
         </button>
       )}
     </div>

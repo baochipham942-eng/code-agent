@@ -18,6 +18,8 @@ import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
+import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
+import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -43,6 +45,35 @@ import { XiaomiProvider } from './providers/xiaomiProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
+
+const ARTIFACT_PROVIDER_TIMEOUT_MS = 600_000;
+const ARTIFACT_FIRST_BYTE_TIMEOUT_MS = 20_000;
+const ARTIFACT_INACTIVITY_TIMEOUT_MS = 120_000;
+const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS = 90_000;
+const ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS = 15_000;
+const ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS = 45_000;
+const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS = 180_000;
+const ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS = 30_000;
+const ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS = 90_000;
+const ARTIFACT_REPAIR_WRITE_TIMEOUT_MS = 240_000;
+const ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS = 30_000;
+const ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS = 120_000;
+const ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS = process.env.NODE_ENV === 'test'
+  ? [0, 0]
+  : [1_000, 2_500];
+const PERSISTENT_PROVIDER_ERROR_PATTERN = /401|403|unauthorized|forbidden|incorrect api key|invalid[_ ]api[_ ]key|model_not_allowed|subscription plan does not include access|insufficient balance|余额不足/i;
+const ARTIFACT_UNUSABLE_RESPONSE_PATTERN = /empty artifact response/i;
+
+type ProviderFallbackCategory =
+  | 'timeout'
+  | 'rate_limit'
+  | 'quota'
+  | 'auth'
+  | 'provider_unavailable'
+  | 'network'
+  | 'artifact_response'
+  | 'model'
+  | 'unknown';
 
 // ----------------------------------------------------------------------------
 // Model Router
@@ -70,6 +101,29 @@ export class ModelRouter {
     ['volcengine', new VolcengineProvider()],
     ['xiaomi', new XiaomiProvider()],
   ]);
+
+  private recordProviderHardFailure(provider: string): void {
+    getProviderHealthMonitor().recordFailure(provider);
+    getProviderHealthMonitor().recordFailure(provider);
+    getProviderHealthMonitor().recordFailure(provider);
+  }
+
+  private classifyProviderFallbackReason(message: string, code?: string): ProviderFallbackCategory {
+    const normalized = `${message} ${code || ''}`.toLowerCase();
+    if (/timeout|timed out|etimedout|first-byte timeout|inactivity timeout/.test(normalized)) return 'timeout';
+    if (/429|rate.?limit|too many requests|requests per minute/.test(normalized)) return 'rate_limit';
+    if (/402|insufficient[_ ]quota|insufficient balance|payment required|quota exceeded|billing|credit|余额不足/.test(normalized)) return 'quota';
+    if (/401|403|unauthorized|forbidden|invalid[_ ]api[_ ]key|invalid token|authentication/.test(normalized)) return 'auth';
+    if (/no available accounts|503|502|504|service unavailable|bad gateway|gateway timeout|overloaded|capacity/.test(normalized)) return 'provider_unavailable';
+    if (/econnreset|econnrefused|enotfound|eai_again|socket hang up|socket disconnected|secure tls connection|network request failed|network error|fetch failed/.test(normalized)) return 'network';
+    if (ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(message)) return 'artifact_response';
+    if (/model_not_allowed|model.*(?:deprecated|decommissioned|retired|not found|does not exist)/.test(normalized)) return 'model';
+    return 'unknown';
+  }
+
+  private formatFallbackReason(message: string): string {
+    return message.split('\n')[0]?.slice(0, 240) || 'unknown';
+  }
 
   // --------------------------------------------------------------------------
   // Public Methods
@@ -189,6 +243,62 @@ export class ModelRouter {
     } catch {
       return undefined;
     }
+  }
+
+  private getArtifactWriteRequiredPreferredConfig(
+    messages: ModelMessage[],
+    config: ModelConfig,
+  ): ModelConfig | null {
+    if (!this.hasArtifactFileWriteRequiredMarker(messages)) return null;
+    if (this.isArtifactLikeRequest(messages)) return null;
+
+    const chain = this.getFallbackChainForRequest(messages, config.provider);
+    if (!chain || chain.length === 0) return null;
+
+    for (const fallback of chain) {
+      const fallbackProvider = fallback.provider as ModelProvider;
+      const fallbackHealth = getProviderHealthMonitor().getHealth(fallback.provider);
+      if (fallbackHealth?.status === 'unavailable') continue;
+
+      const apiKey = getConfigService().getApiKey(fallbackProvider);
+      if (!apiKey) continue;
+
+      logger.info(
+        `[ModelRouter] Artifact write-required follow-up detected; preferring ${fallback.provider}/${fallback.model} over ${config.provider}/${config.model}`
+      );
+
+      return {
+        ...config,
+        provider: fallbackProvider,
+        model: fallback.model,
+        apiKey,
+        maxTokens: getModelMaxOutputTokens(fallback.model),
+      };
+    }
+
+    return null;
+  }
+
+  private getFallbackChainForRequest(
+    messages: ModelMessage[],
+    provider: ModelProvider,
+  ): Array<{ provider: string; model: string }> {
+    const chain = PROVIDER_FALLBACK_CHAIN[provider];
+    if (!chain || chain.length === 0) return [];
+    if (!this.isArtifactLikeRequest(messages)) return chain;
+
+    const artifactPriority = new Map([
+      ['zhipu', 0],
+      ['deepseek', 1],
+      ['openai', 2],
+      ['moonshot', 3],
+    ]);
+
+    return [...chain].sort((a, b) => {
+      const aRank = artifactPriority.get(a.provider) ?? 99;
+      const bRank = artifactPriority.get(b.provider) ?? 99;
+      return aRank - bRank;
+    });
   }
 
   /**
@@ -318,6 +428,8 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
+    const normalizedOptions = this.normalizeInferenceOptions(messages, onStream, options);
+
     // Check for cancellation before starting
     if (signal?.aborted) {
       throw new Error('Request was cancelled before starting');
@@ -326,7 +438,7 @@ export class ModelRouter {
     // 如果启用云端代理，走云端 model-proxy
     if (config.useCloudProxy) {
       const modelInfo = this.getModelInfo(config.provider, config.model);
-      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal, options);
+      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal, normalizedOptions);
     }
 
     // Inference cache (non-streaming only)
@@ -359,7 +471,8 @@ export class ModelRouter {
         }
         if (canUseFreeModel) {
           try {
-            const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal, options);
+            const result = await this._callProviderWithArtifactFallback(messages, tools, adaptedConfig, onStream, signal, normalizedOptions);
+            this.assertUsableArtifactResponse(messages, result, adaptedConfig);
             adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
             // Cache non-streaming text responses
             if (!onStream && result.type === 'text') {
@@ -383,13 +496,16 @@ export class ModelRouter {
       }
     }
 
+    const effectiveConfig = this.getArtifactWriteRequiredPreferredConfig(messages, config) ?? config;
+
     try {
-      const result = await this._callProvider(messages, tools, config, onStream, signal, options);
+      const result = await this._callProviderWithArtifactFallback(messages, tools, effectiveConfig, onStream, signal, normalizedOptions);
+      this.assertUsableArtifactResponse(messages, result, effectiveConfig);
 
       // Cache non-streaming text responses
       if (!onStream && result.type === 'text') {
         const cache = getInferenceCache();
-        const cacheKey = cache.computeKey(messages, config);
+        const cacheKey = cache.computeKey(messages, effectiveConfig);
         cache.set(cacheKey, result);
       }
 
@@ -399,16 +515,45 @@ export class ModelRouter {
       const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
       const errCode = (primaryErr as NodeJS.ErrnoException).code;
 
+      if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(errMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(errMsg)) {
+        this.recordProviderHardFailure(effectiveConfig.provider);
+      }
+
       if (!isFallbackEligible(errMsg, errCode)) {
         throw primaryErr;
       }
 
-      const chain = PROVIDER_FALLBACK_CHAIN[config.provider];
+      const fallbackCategory = this.classifyProviderFallbackReason(errMsg, errCode);
+      const fallbackReason = this.formatFallbackReason(errMsg);
+
+      if (this.shouldKeepArtifactRequestOnSelectedProvider(messages, fallbackCategory)) {
+        const selectedProviderRetry = await this.retrySelectedProviderForArtifactTransient(
+          messages,
+          tools,
+          effectiveConfig,
+          fallbackCategory,
+          onStream,
+          signal,
+          normalizedOptions,
+        );
+        if (selectedProviderRetry) {
+          return selectedProviderRetry;
+        }
+
+        logger.warn(
+          `[ModelRouter] Provider ${effectiveConfig.provider} hit artifact transient error; keeping selected provider/model instead of cross-provider fallback: ${fallbackReason}`
+        );
+        throw primaryErr;
+      }
+
+      const chain = this.getFallbackChainForRequest(messages, effectiveConfig.provider);
       if (!chain || chain.length === 0) {
         throw primaryErr;
       }
 
-      logger.warn(`[ModelRouter] Provider ${config.provider} exhausted, trying fallback chain...`);
+      logger.warn(
+        `[ModelRouter] Provider ${effectiveConfig.provider} fallback triggered (${fallbackCategory}): ${fallbackReason}`
+      );
 
       for (const fallback of chain) {
         // Skip providers that are known to be unavailable
@@ -422,7 +567,7 @@ export class ModelRouter {
         if (!fallbackApiKey) continue;
 
         const fallbackConfig: ModelConfig = {
-          ...config,
+          ...effectiveConfig,
           provider: fallback.provider as ModelProvider,
           model: fallback.model,
           apiKey: fallbackApiKey,
@@ -430,13 +575,25 @@ export class ModelRouter {
         };
 
         try {
-          logger.warn(`[ModelRouter] Fallback → ${fallback.provider}/${fallback.model}`);
-          const result = await this._callProvider(messages, tools, fallbackConfig, onStream, signal, options);
+          logger.warn(
+            `[ModelRouter] Fallback → ${fallback.provider}/${fallback.model} (reason=${fallbackCategory})`
+          );
+          const result = await this._callProviderWithArtifactFallback(messages, tools, fallbackConfig, onStream, signal, normalizedOptions);
+          this.assertUsableArtifactResponse(messages, result, fallbackConfig);
+          const fallbackMetadata = {
+            from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
+            to: { provider: fallback.provider, model: fallback.model },
+            reason: fallbackReason,
+            category: fallbackCategory,
+          };
+          result.actualProvider = fallback.provider;
+          result.actualModel = fallback.model;
+          result.fallback = fallbackMetadata;
 
           // Cache non-streaming text responses
           if (!onStream && result.type === 'text') {
             const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, config);
+            const cacheKey = cache.computeKey(messages, effectiveConfig);
             cache.set(cacheKey, result);
           }
 
@@ -444,15 +601,19 @@ export class ModelRouter {
           try {
             const { broadcastToRenderer } = await import('../platform/windowBridge');
             broadcastToRenderer?.('provider:fallback', {
-              from: { provider: config.provider, model: config.model },
+              from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
               to: { provider: fallback.provider, model: fallback.model },
-              reason: errMsg?.split('\n')[0] || 'unknown',
+              reason: fallbackReason,
+              category: fallbackCategory,
             });
           } catch { /* push failure must not affect main flow */ }
 
           return result;
         } catch (fallbackErr) {
           const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(fbMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(fbMsg)) {
+            this.recordProviderHardFailure(fallback.provider);
+          }
           logger.warn(`[ModelRouter] Fallback ${fallback.provider} failed: ${fbMsg.split('\n')[0]}`);
           continue;
         }
@@ -478,7 +639,398 @@ export class ModelRouter {
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
-    return provider.inference(messages, tools, config, onStream, signal, options);
+    const timeoutMs = options?.requestTimeoutMs;
+    const timedAbort = typeof timeoutMs === 'number' && timeoutMs > 0
+      ? createTimedAbortController(timeoutMs, { label: `model-router:${config.provider}/${config.model}` })
+      : null;
+    const combined = timedAbort
+      ? signal
+        ? combineAbortSignals(signal, timedAbort.controller.signal)
+        : timedAbort.controller
+      : null;
+    const effectiveSignal = combined?.signal ?? signal;
+    try {
+      if (effectiveSignal?.aborted) {
+        throw new Error('Request was cancelled before starting');
+      }
+      return await provider.inference(messages, tools, config, onStream, effectiveSignal, options);
+    } catch (error) {
+      if (timedAbort?.controller.signal.aborted && !signal?.aborted) {
+        throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      timedAbort?.cleanup();
+    }
+  }
+
+  private async _callProviderWithArtifactFallback(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback,
+    signal?: AbortSignal,
+    options?: InferenceOptions,
+  ): Promise<ModelResponse> {
+    try {
+      return await this._callProvider(messages, tools, config, onStream, signal, options);
+    } catch (err) {
+      if (!this.shouldRetryArtifactNonStreaming(messages, err, onStream, signal, options)) {
+        throw err;
+      }
+
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        `[ModelRouter] Artifact stream failed on ${config.provider}/${config.model}; retrying once with non-streaming: ${errMsg.split('\n')[0]}`
+      );
+
+      return this._callProvider(
+        messages,
+        tools,
+        config,
+        undefined,
+        signal,
+        {
+          ...options,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+        },
+      );
+    }
+  }
+
+  private shouldRetryArtifactNonStreaming(
+    messages: ModelMessage[],
+    err: unknown,
+    onStream?: StreamCallback,
+    signal?: AbortSignal,
+    options?: InferenceOptions,
+  ): boolean {
+    if (!onStream) return false;
+    if (signal?.aborted) return false;
+    if (options?.forceNonStreaming === true) return false;
+    if (!this.isArtifactLikeRequest(messages)) return false;
+    if (this.hasArtifactRepairToolBlockedMarker(messages)) return false;
+
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return /stream inactivity timeout|first-byte timeout|流式响应无内容|stream ended before \[DONE\]|refusing to execute incomplete tool arguments|invalid streamed tool arguments/i.test(errMsg);
+  }
+
+  private shouldKeepArtifactRequestOnSelectedProvider(
+    messages: ModelMessage[],
+    fallbackCategory: ProviderFallbackCategory,
+  ): boolean {
+    if (!this.isArtifactLikeRequest(messages)) return false;
+    return fallbackCategory !== 'quota'
+      && fallbackCategory !== 'auth'
+      && fallbackCategory !== 'model'
+      && fallbackCategory !== 'artifact_response';
+  }
+
+  private shouldRetrySelectedArtifactProvider(fallbackCategory: ProviderFallbackCategory): boolean {
+    return fallbackCategory === 'provider_unavailable'
+      || fallbackCategory === 'network'
+      || fallbackCategory === 'rate_limit';
+  }
+
+  private async retrySelectedProviderForArtifactTransient(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    fallbackCategory: ProviderFallbackCategory,
+    onStream?: StreamCallback,
+    signal?: AbortSignal,
+    options?: InferenceOptions,
+  ): Promise<ModelResponse | null> {
+    if (options?.artifactRepairActive === true) return null;
+    if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory)) return null;
+    if (signal?.aborted) return null;
+
+    for (let attempt = 0; attempt < ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length; attempt++) {
+      const delay = ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS[attempt];
+      logger.warn(
+        `[ModelRouter] Retrying selected artifact provider ${config.provider}/${config.model} after transient ${fallbackCategory} (${attempt + 1}/${ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length})`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (signal?.aborted) return null;
+
+      try {
+        return await this._callProviderWithArtifactFallback(messages, tools, config, onStream, signal, options);
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        logger.warn(
+          `[ModelRouter] Selected artifact provider retry ${attempt + 1} failed: ${retryMsg.split('\n')[0]}`
+        );
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeInferenceOptions(
+    messages: ModelMessage[],
+    onStream?: StreamCallback,
+    options?: InferenceOptions,
+  ): InferenceOptions | undefined {
+    if (options?.artifactRepairActive === true && options?.forceNonStreaming !== true) {
+      const writePriority = options?.artifactRepairWritePriority === true;
+      const fullRewritePriority = options?.artifactRepairFullRewritePriority === true;
+      logger.info(fullRewritePriority
+        ? '[ModelRouter] Runtime artifact repair full-rewrite guard active; preferring non-streaming inference with artifact timeout'
+        : writePriority
+          ? '[ModelRouter] Runtime artifact repair write-priority guard active; preferring non-streaming inference with targeted write timeout'
+          : '[ModelRouter] Runtime artifact repair guard active; preferring non-streaming inference with shorter timeout');
+      return {
+        ...options,
+        forceNonStreaming: true,
+        disableProviderTransientRetry: true,
+        requestTimeoutMs: options?.requestTimeoutMs ?? (
+          fullRewritePriority
+            ? ARTIFACT_REPAIR_WRITE_TIMEOUT_MS
+            : writePriority
+              ? ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS
+              : ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS
+        ),
+        firstByteTimeoutMs: options?.firstByteTimeoutMs ?? (
+          fullRewritePriority
+            ? ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS
+            : writePriority
+              ? ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS
+              : ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS
+        ),
+        inactivityTimeoutMs: options?.inactivityTimeoutMs ?? (
+          fullRewritePriority
+            ? ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS
+            : writePriority
+              ? ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS
+              : ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS
+        ),
+      };
+    }
+
+    if (this.hasArtifactRepairToolBlockedMarker(messages)) {
+      logger.info('[ModelRouter] Artifact repair blocked-tool recovery detected; using shorter streaming timeout');
+      return {
+        ...options,
+        disableProviderTransientRetry: true,
+        requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
+        firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
+        inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
+      };
+    }
+
+    if (this.hasArtifactValidationFailureMarker(messages)) {
+      logger.info('[ModelRouter] Artifact validation repair turn detected; preferring non-streaming inference with shorter timeout');
+      return {
+        ...options,
+        forceNonStreaming: true,
+        disableProviderTransientRetry: true,
+        requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
+        firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
+        inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
+      };
+    }
+
+    if (this.hasExplicitArtifactRepairIntent(messages)) {
+      logger.info('[ModelRouter] Explicit artifact repair turn detected; preferring non-streaming inference with shorter timeout');
+      return {
+        ...options,
+        forceNonStreaming: true,
+        disableProviderTransientRetry: true,
+        requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
+        firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
+        inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
+      };
+    }
+
+    if (this.shouldPreferNonStreamingArtifactFileTurn(messages, onStream, options)) {
+      logger.info('[ModelRouter] Artifact file-generation turn detected; preferring non-streaming inference for stable tool arguments');
+      return {
+        ...options,
+        forceNonStreaming: true,
+        disableProviderTransientRetry: true,
+        requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
+        firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
+        inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,
+      };
+    }
+
+    const shouldDisableProviderRetry =
+      Boolean(onStream) &&
+      options?.forceNonStreaming !== true &&
+      this.isArtifactLikeRequest(messages);
+
+    if (!this.shouldPreferNonStreamingArtifactTurn(messages, onStream, options)) {
+      return shouldDisableProviderRetry
+        ? {
+            ...options,
+            disableProviderTransientRetry: true,
+            requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
+            firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
+            inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,
+          }
+        : options;
+    }
+
+    logger.info('[ModelRouter] Artifact follow-up turn detected; preferring non-streaming inference for stable tool arguments');
+    return {
+      ...options,
+      forceNonStreaming: true,
+      disableProviderTransientRetry: true,
+      requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
+      firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
+      inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,
+    };
+  }
+
+  private assertUsableArtifactResponse(
+    messages: ModelMessage[],
+    response: ModelResponse,
+    config: ModelConfig,
+  ): void {
+    if (!this.isArtifactLikeRequest(messages)) return;
+    if (!this.isEmptyTextResponse(response)) return;
+
+    throw new Error(
+      `empty artifact response from ${config.provider}/${config.model}: model returned no text and no tool calls for an artifact request`
+    );
+  }
+
+  private isEmptyTextResponse(response: ModelResponse): boolean {
+    if (response.type !== 'text') return false;
+    if (response.toolCalls && response.toolCalls.length > 0) return false;
+    return !response.content || response.content.trim().length === 0;
+  }
+
+  private isArtifactLikeRequest(messages: ModelMessage[]): boolean {
+    if (this.hasArtifactRepairContextMarker(messages)) return true;
+
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'user') continue;
+
+      const text = this.extractMessageText(message);
+      if (needsArtifactTaskBrief(text)) return true;
+    }
+    return false;
+  }
+
+  private hasArtifactRepairContextMarker(messages: ModelMessage[]): boolean {
+    return messages.some((message) => {
+      const text = this.extractMessageText(message);
+      return text.includes('<artifact-validation-failed')
+        || text.includes('<artifact-repair-')
+        || text.includes('<tool-admission-repair>')
+        || text.includes('Artifact validation failed for ');
+    });
+  }
+
+  private shouldPreferNonStreamingArtifactFileTurn(
+    messages: ModelMessage[],
+    onStream?: StreamCallback,
+    options?: InferenceOptions,
+  ): boolean {
+    if (!onStream) return false;
+    if (options?.forceNonStreaming === true) return false;
+    if (!this.isArtifactLikeRequest(messages)) return false;
+    return this.hasExplicitFileArtifactIntent(messages);
+  }
+
+  private hasArtifactRepairToolBlockedMarker(messages: ModelMessage[]): boolean {
+    return messages.some((message) => {
+      if (message.role !== 'system' && message.role !== 'tool') return false;
+      const text = this.extractMessageText(message);
+      return text.includes('<artifact-repair-recovery>')
+        || text.includes('<artifact-repair-admission-blocked>')
+        || text.includes('<artifact-repair-tool-blocked>');
+    });
+  }
+
+  private hasArtifactValidationFailureMarker(messages: ModelMessage[]): boolean {
+    return messages.some((message) => {
+      if (message.role !== 'system' && message.role !== 'tool') return false;
+      const text = this.extractMessageText(message);
+      return text.includes('<artifact-validation-failed');
+    });
+  }
+
+  private hasExplicitFileArtifactIntent(messages: ModelMessage[]): boolean {
+    const explicitFileIntentPattern = /保存到|写到|写入|输出到|生成到|单文件|single[-\s]?file|\.html\b|\.tsx?\b|\.jsx?\b|\.css\b|\.md\b|\/[\w.-]+|\\[\w .-]+|file path|save (it )?to|write (it )?to/i;
+
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'user' && message.role !== 'system') continue;
+      const text = this.extractMessageText(message);
+      if (!text) continue;
+      if (text.includes('<artifact-file-write-required>')) return true;
+      if (message.role === 'user' && explicitFileIntentPattern.test(text)) return true;
+    }
+
+    return false;
+  }
+
+  private hasExplicitArtifactRepairIntent(messages: ModelMessage[]): boolean {
+    const repairIntentPattern = /\b(fix|repair|patch|correct|restore)\b|修复|修正|修好|改好|失败|不通过|报错|不过/i;
+    const artifactTargetPattern = /\b\w[\w.-]*\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)\b|\/[\w .@-]+\/[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)|\\[\w .@-]+\\[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)/i;
+
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'user' && message.role !== 'system') continue;
+      const text = this.extractMessageText(message);
+      if (!text) continue;
+      if (repairIntentPattern.test(text) && artifactTargetPattern.test(text)) return true;
+    }
+
+    return false;
+  }
+
+  private hasArtifactFileWriteRequiredMarker(messages: ModelMessage[]): boolean {
+    return messages.some((message) =>
+      message.role === 'system' &&
+      this.extractMessageText(message).includes('<artifact-file-write-required>')
+    );
+  }
+
+  private shouldPreferNonStreamingArtifactTurn(
+    messages: ModelMessage[],
+    onStream?: StreamCallback,
+    options?: InferenceOptions,
+  ): boolean {
+    if (!onStream) return false;
+    if (options?.forceNonStreaming === true) return false;
+    if (!this.isArtifactLikeRequest(messages)) return false;
+    if (!this.hasToolResultContext(messages)) return false;
+    return this.hasIncompleteArtifactToolStream(messages);
+  }
+
+  private hasToolResultContext(messages: ModelMessage[]): boolean {
+    return messages.some((message) => message.role === 'tool');
+  }
+
+  private hasIncompleteArtifactToolStream(messages: ModelMessage[]): boolean {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'tool') continue;
+
+      const content = this.extractMessageText(message).toLowerCase();
+      return (
+        content.includes('stream ended before [done]') ||
+        content.includes('invalid streamed tool arguments') ||
+        content.includes('refusing to execute incomplete tool arguments') ||
+        content.includes('工具参数不完整') ||
+        content.includes('代码完整性警告')
+      );
+    }
+    return false;
+  }
+
+  private extractMessageText(message: ModelMessage): string {
+    if (typeof message.content === 'string') return message.content;
+    return message.content
+      .filter((part) => part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n');
   }
 
   /**

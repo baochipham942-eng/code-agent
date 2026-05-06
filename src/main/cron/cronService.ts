@@ -6,7 +6,7 @@ import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -19,6 +19,7 @@ import type {
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 
 const execAsync = promisify(exec);
 
@@ -584,12 +585,12 @@ export class CronService implements Disposable {
 
     return sessionManager.createSession({
       title: `[Cron] ${definition.name}`,
-      modelConfig: {
+      modelConfig: resolveSessionDefaultModelConfig({
         provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature ?? 0.7,
-        maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
-      },
+        maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens,
+      }),
       workingDirectory: currentSession?.workingDirectory,
     });
   }

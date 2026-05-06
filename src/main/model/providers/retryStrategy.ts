@@ -51,6 +51,8 @@ const TRANSIENT_PATTERNS = [
   '流式响应无内容',
   'first-byte timeout',
   'stream inactivity timeout',
+  'timeout of ',
+  'empty artifact response',
   '502',
   '503',
   '504',

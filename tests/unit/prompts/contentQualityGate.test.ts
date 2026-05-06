@@ -87,6 +87,14 @@ describe('detectTaskFeatures — 内容类型识别', () => {
     expect(features.isPPTTask).toBe(true);
     expect(features.isDataTask).toBe(false);
   });
+
+  it('游戏生成请求不会误触发既有内容类型提醒', () => {
+    const features = detectTaskFeatures('生成一个类似超级玛丽的游戏，主角是一只柯基');
+    expect(features.isPPTTask).toBe(false);
+    expect(features.isDataTask).toBe(false);
+    expect(features.isDocumentTask).toBe(false);
+    expect(features.isImageTask).toBe(false);
+  });
 });
 
 // ============================================================================
@@ -121,6 +129,13 @@ describe('getSystemReminders — 内容类型提醒注入', () => {
   it('普通任务 → 不注入内容类型提醒', () => {
     const reminders = getSystemReminders('你好');
     expect(reminders.length).toBe(0);
+  });
+
+  it('游戏生成请求不走旧的内容类型提醒词表', () => {
+    const reminders = getSystemReminders('生成一个类似超级玛丽的游戏，主角是一只柯基');
+    expect(reminders.some((r) => r.includes('PPT 生成任务'))).toBe(false);
+    expect(reminders.some((r) => r.includes('数据处理任务'))).toBe(false);
+    expect(reminders.some((r) => r.includes('图像生成任务'))).toBe(false);
   });
 
   it('内容类型提醒互斥（PPT 优先于 data）', () => {

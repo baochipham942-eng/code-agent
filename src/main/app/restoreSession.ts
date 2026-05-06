@@ -14,7 +14,7 @@ import {
   type PlanningService,
 } from '../planning';
 import { buildRecoveredWorkSuggestions } from '../planning/recoveredWorkOrchestrator';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { getMainWindow } from './window';
 
 const logger = createLogger('Bootstrap:Session');
@@ -55,12 +55,12 @@ export async function initializeSession(
 
     const session = await sessionManager.createSession({
       title: 'New Session',
-      modelConfig: {
-        provider: settings.model?.provider || DEFAULT_PROVIDER,
-        model: settings.model?.model || DEFAULT_MODELS.chat,
-        temperature: settings.model?.temperature || 0.7,
-        maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
-      },
+      modelConfig: resolveSessionDefaultModelConfig({
+        provider: settings.model?.provider,
+        model: settings.model?.model,
+        temperature: settings.model?.temperature,
+        maxTokens: settings.model?.maxTokens,
+      }),
       workingDirectory,
     });
     sessionManager.setCurrentSession(session.id);

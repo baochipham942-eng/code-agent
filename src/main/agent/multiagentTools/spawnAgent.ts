@@ -171,30 +171,38 @@ When NOT to spawn:
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    const parallel = params.parallel as boolean | undefined;
-    const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
+    return executeSpawnAgent(params, context);
+  },
+};
 
-    // Check for required context
-    if (!context.modelConfig) {
-      return {
-        success: false,
-        error: 'spawn_agent requires modelConfig in context',
-      };
-    }
+export async function executeSpawnAgent(
+  params: Record<string, unknown>,
+  context: ToolContext
+): Promise<ToolExecutionResult> {
+  const parallel = params.parallel as boolean | undefined;
+  const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
 
-    // Handle parallel execution mode
-    if (parallel && agents && agents.length > 0) {
-      return executeParallelAgents(agents, context);
-    }
+  // Check for required context
+  if (!context.modelConfig) {
+    return {
+      success: false,
+      error: 'spawn_agent requires modelConfig in context',
+    };
+  }
 
-    // Single agent mode
-    const role = params.role as string;
-    const task = params.task as string;
-    const customPrompt = params.customPrompt as string | undefined;
-    const customTools = params.customTools as string[] | undefined;
-    const maxBudget = params.maxBudget as number | undefined;
-    const waitForCompletion = params.waitForCompletion !== false;
-    const maxIterations = (params.maxIterations as number) || 20;
+  // Handle parallel execution mode
+  if (parallel && agents && agents.length > 0) {
+    return executeParallelAgents(agents, context);
+  }
+
+  // Single agent mode
+  const role = params.role as string;
+  const task = params.task as string;
+  const customPrompt = params.customPrompt as string | undefined;
+  const customTools = params.customTools as string[] | undefined;
+  const maxBudget = params.maxBudget as number | undefined;
+  const waitForCompletion = params.waitForCompletion !== false;
+  const maxIterations = (params.maxIterations as number) || 20;
 
     // Validate required params for single agent
     if (!task) {
@@ -475,8 +483,7 @@ Use wait_agent to block until done, or close_agent to cancel.`,
         error: `Failed to spawn agent: ${errorMsg}`,
       };
     }
-  },
-};
+}
 
 /**
  * Backward-compatible type for spawned agent status.

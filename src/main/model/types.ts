@@ -62,12 +62,37 @@ export interface ModelResponse {
   toolCalls?: ToolCall[];
   truncated?: boolean;
   finishReason?: string;
+  actualProvider?: string;
+  actualModel?: string;
+  fallback?: {
+    from: { provider: string; model?: string };
+    to: { provider: string; model?: string };
+    reason: string;
+    category: string;
+  };
   // Adaptive Thinking: 思考过程
   thinking?: string;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number };
   // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
   contentParts?: ResponseContentPart[];
+  runtimeDiagnostics?: {
+    visibleToolNames?: string[];
+    artifactRepairCompactWriteRetry?: boolean;
+    artifactRepairGuard?: {
+      targetFile?: string;
+      attempts?: number;
+      phase?: string;
+      blockedToolCount?: number;
+      targetReadCount?: number;
+      targetRangedReadCount?: number;
+      patched?: boolean;
+      noOpPatchCount?: number;
+      editAnchorFailureCount?: number;
+      preferTargetedEdit?: boolean;
+      activeIssueCodes?: string[];
+    };
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -98,6 +123,14 @@ export type StreamCallback = (chunk: string | StreamChunk) => void;
 export interface InferenceOptions {
   onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;
   snapshotIntervalMs?: number;
+  forceNonStreaming?: boolean;
+  artifactRepairActive?: boolean;
+  artifactRepairWritePriority?: boolean;
+  artifactRepairFullRewritePriority?: boolean;
+  disableProviderTransientRetry?: boolean;
+  requestTimeoutMs?: number;
+  firstByteTimeoutMs?: number;
+  inactivityTimeoutMs?: number;
 }
 
 // ----------------------------------------------------------------------------

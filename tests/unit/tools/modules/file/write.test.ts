@@ -170,6 +170,38 @@ describe('writeModule (native)', () => {
       expect(result.ok).toBe(true);
       expect(await fs.readFile(file, 'utf-8')).toBe('');
     });
+
+      it('accepts a complete medium-sized generated artifact in one Write call', async () => {
+        const file = path.join(tmpDir, 'huge.html');
+        const handler = await writeModule.createHandler();
+        const result = await handler.execute(
+          { file_path: file, content: '<html>' + 'a'.repeat(13000) + '</html>' },
+          makeCtx(),
+          allowAll,
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('Accepted large generated artifact in one complete Write');
+          expect(result.meta?.largeSingleWriteArtifact).toBe(true);
+        }
+        expect(await fs.readFile(file, 'utf-8')).toContain('<html>');
+      });
+
+      it('rejects oversized new artifact writes and asks for Append', async () => {
+        const file = path.join(tmpDir, 'too-huge.html');
+        const handler = await writeModule.createHandler();
+        const result = await handler.execute(
+          { file_path: file, content: '<html>' + 'a'.repeat(170000) + '</html>' },
+          makeCtx(),
+          allowAll,
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('PREFER_APPEND_FOR_LARGE_ARTIFACT');
+          expect(result.error).toContain('Append');
+          expect(result.meta?.maxSingleWriteChars).toBe(160000);
+        }
+      });
   });
 
   describe('code completeness detection', () => {

@@ -15,6 +15,8 @@ import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
+const SKILL_METADATA_CACHE_VERSION = 1;
+const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v1.json';
 
 export interface SkillDiscoveryServiceOptions {
   includeClaudeLegacySkills?: boolean;
@@ -41,6 +43,18 @@ interface LibraryMeta {
   version?: string;
 }
 
+interface SkillMetadataCacheEntry {
+  source: SkillSource;
+  mtimeMs: number;
+  size: number;
+  skill: ParsedSkill;
+}
+
+interface SkillMetadataCachePayload {
+  version: number;
+  entries: Record<string, SkillMetadataCacheEntry>;
+}
+
 /**
  * Skill 发现服务
  *
@@ -57,6 +71,14 @@ class SkillDiscoveryService {
   private initialized = false;
   private workingDirectory = '';
   private readonly includeClaudeLegacySkills: boolean;
+  private readonly metadataCachePath = path.join(
+    getUserConfigDir(),
+    'cache',
+    SKILL_METADATA_CACHE_FILE
+  );
+  private metadataCache = new Map<string, SkillMetadataCacheEntry>();
+  private metadataCacheLoaded = false;
+  private metadataCacheDirty = false;
   /** 初始化中的 promise，用于 fire-and-forget 场景下的并发锁 */
   private initPromise: Promise<void> | null = null;
 
@@ -92,6 +114,7 @@ class SkillDiscoveryService {
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
     this.skills.clear();
+    await this.loadMetadataCache();
 
     // 1. 加载内置 Skills（最低优先级）
     await this.loadBuiltinSkills();
@@ -125,6 +148,7 @@ class SkillDiscoveryService {
     }
 
     this.initialized = true;
+    await this.persistMetadataCache();
     logger.info('Skill discovery completed', {
       total: this.skills.size,
       skills: Array.from(this.skills.keys()),
@@ -235,7 +259,7 @@ class SkillDiscoveryService {
         }
 
         try {
-          const skill = await parseSkillMetadataOnly(skillDir, source);
+          const skill = await this.readSkillMetadata(skillDir, source);
           this.skills.set(skill.name, skill);
           logger.debug('Loaded skill', {
             name: skill.name,
@@ -321,6 +345,7 @@ class SkillDiscoveryService {
 
     // 重新加载
     await this.loadFromLibraries();
+    await this.persistMetadataCache();
 
     logger.info('Libraries refreshed', {
       librarySkills: Array.from(this.skills.values()).filter(
@@ -409,6 +434,108 @@ class SkillDiscoveryService {
       userInvocable: this.getUserInvocableSkills().length,
       modelAvailable: this.getSkillsForContext().length,
     };
+  }
+
+  private getMetadataCacheKey(skillPath: string, source: SkillSource): string {
+    return `${source}:${path.resolve(skillPath)}`;
+  }
+
+  private cloneCachedSkill(skill: ParsedSkill, basePathOverride?: string): ParsedSkill {
+    return {
+      ...skill,
+      basePath: basePathOverride ?? skill.basePath,
+      allowedTools: [...skill.allowedTools],
+      metadata: skill.metadata ? { ...skill.metadata } : undefined,
+      bins: skill.bins ? [...skill.bins] : undefined,
+      envVars: skill.envVars ? [...skill.envVars] : undefined,
+      references: skill.references ? [...skill.references] : undefined,
+      promptContent: '',
+      loaded: false,
+      referenceContents: undefined,
+      dependencyStatus: undefined,
+    };
+  }
+
+  private async loadMetadataCache(): Promise<void> {
+    if (this.metadataCacheLoaded) return;
+
+    try {
+      const content = await fs.readFile(this.metadataCachePath, 'utf-8');
+      const payload = JSON.parse(content) as SkillMetadataCachePayload;
+      if (payload.version === SKILL_METADATA_CACHE_VERSION && payload.entries) {
+        this.metadataCache = new Map(Object.entries(payload.entries));
+      }
+      logger.debug('Loaded skill metadata cache', {
+        entries: this.metadataCache.size,
+        path: this.metadataCachePath,
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code !== 'ENOENT') {
+        logger.warn('Failed to load skill metadata cache', {
+          path: this.metadataCachePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } finally {
+      this.metadataCacheLoaded = true;
+    }
+  }
+
+  private async persistMetadataCache(): Promise<void> {
+    if (!this.metadataCacheLoaded || !this.metadataCacheDirty) return;
+
+    const payload: SkillMetadataCachePayload = {
+      version: SKILL_METADATA_CACHE_VERSION,
+      entries: Object.fromEntries(this.metadataCache.entries()),
+    };
+
+    try {
+      await fs.mkdir(path.dirname(this.metadataCachePath), { recursive: true });
+      await fs.writeFile(this.metadataCachePath, JSON.stringify(payload, null, 2), 'utf-8');
+      this.metadataCacheDirty = false;
+      logger.debug('Persisted skill metadata cache', {
+        entries: this.metadataCache.size,
+        path: this.metadataCachePath,
+      });
+    } catch (error) {
+      logger.warn('Failed to persist skill metadata cache', {
+        path: this.metadataCachePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async readSkillMetadata(skillDir: string, source: SkillSource): Promise<ParsedSkill> {
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    const stat = await fs.stat(skillPath);
+    const cacheKey = this.getMetadataCacheKey(skillPath, source);
+    const cached = this.metadataCache.get(cacheKey);
+
+    if (
+      cached &&
+      cached.source === source &&
+      cached.mtimeMs === stat.mtimeMs &&
+      cached.size === stat.size
+    ) {
+      const skill = this.cloneCachedSkill(cached.skill, skillDir);
+      logger.debug('Loaded skill metadata from cache', {
+        name: skill.name,
+        source,
+        path: skillDir,
+      });
+      return skill;
+    }
+
+    const parsed = await parseSkillMetadataOnly(skillDir, source);
+    this.metadataCache.set(cacheKey, {
+      source,
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      skill: this.cloneCachedSkill(parsed, skillDir),
+    });
+    this.metadataCacheDirty = true;
+    return parsed;
   }
 }
 

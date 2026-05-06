@@ -131,6 +131,7 @@ export async function electronFetch(url: string, options: {
   headers?: Record<string, string>;
   body?: string;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
   try {
     const response: AxiosResponse = await axios({
@@ -138,7 +139,7 @@ export async function electronFetch(url: string, options: {
       method: options.method || 'GET',
       headers: options.headers,
       data: options.body ? JSON.parse(options.body) : undefined,
-      timeout: PROVIDER_TIMEOUT,
+      timeout: options.timeoutMs ?? PROVIDER_TIMEOUT,
       httpsAgent: getHttpsAgent(),
       validateStatus: () => true,
       maxContentLength: Infinity,

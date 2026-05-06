@@ -14,6 +14,7 @@ export const CORE_TOOLS: string[] = [
   'Bash',
   'Read',
   'Write',
+  'Append',
   'Edit',
 
   // Gen 2: 代码搜索
@@ -604,6 +605,7 @@ export const TOOL_ALIASES: Record<string, string> = {
   // snake_case → PascalCase (legacy compatibility)
   read_file: 'Read',
   write_file: 'Write',
+  append_file: 'Append',
   edit_file: 'Edit',
   list_directory: 'ListDirectory',
   web_search: 'WebSearch',
@@ -619,6 +621,7 @@ export const TOOL_ALIASES: Record<string, string> = {
   glob: 'Glob',
   read: 'Read',
   write: 'Write',
+  append: 'Append',
   edit: 'Edit',
   // Multi-agent aliases
   spawn_agent: 'AgentSpawn',

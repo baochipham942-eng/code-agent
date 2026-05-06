@@ -67,6 +67,14 @@ describe('Retry Strategy', () => {
         expect(isTransientError('流式响应无内容')).toBe(true);
       });
 
+      it('should detect empty artifact response', () => {
+        expect(isTransientError('empty artifact response from xiaomi/mimo-v2.5-pro')).toBe(true);
+      });
+
+      it('should detect axios timeout errors', () => {
+        expect(isTransientError('Network request failed: timeout of 45000ms exceeded')).toBe(true);
+      });
+
       it('should detect HTTP 502', () => {
         expect(isTransientError('502 Bad Gateway')).toBe(true);
       });

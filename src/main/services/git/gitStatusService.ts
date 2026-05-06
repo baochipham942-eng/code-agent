@@ -14,6 +14,7 @@ const logger = createLogger('GitStatusService');
 const FILE_MODIFYING_TOOLS = new Set([
   'Bash',
   'Write',
+  'Append',
   'Edit',
 ]);
 

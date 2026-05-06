@@ -13,7 +13,7 @@ import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
 import { IngressPipeline, type IngressMessage } from './ingressPipeline';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -498,12 +498,12 @@ export class ChannelAgentBridge {
 
   private getChannelModelConfig(): ModelConfig {
     const settings = this.config.configService.getSettings();
-    return {
-      provider: settings.model?.provider || DEFAULT_PROVIDER,
-      model: settings.model?.model || DEFAULT_MODELS.chat,
-      temperature: settings.model?.temperature || 0.7,
-      maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
-    };
+    return resolveSessionDefaultModelConfig({
+      provider: settings.model?.provider,
+      model: settings.model?.model,
+      temperature: settings.model?.temperature,
+      maxTokens: settings.model?.maxTokens,
+    });
   }
 
   /**

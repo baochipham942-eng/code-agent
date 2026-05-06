@@ -128,8 +128,8 @@ export const toolSearchTool: Tool = {
 
       // 命中匹配但全部 loadable=false → 没有可调用工具,视作失败让模型换路径,
       // 避免它把"看到工具描述"误读为"可以调用了",反复换关键字搜同一片不可调用区。
-      const noToolsLoaded = result.loadedTools.length === 0;
-      if (noToolsLoaded) {
+      const hasUsableCallableTool = result.loadedTools.length > 0 || result.tools.some((tool) => tool.loadable === true);
+      if (!hasUsableCallableTool) {
         return {
           success: false,
           error: lines.join('\n'),

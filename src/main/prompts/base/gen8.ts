@@ -9,7 +9,7 @@ export const TOOLS_PROMPT = `
 
 | Tool | Use |
 |------|-----|
-| Read / Write / Edit | File ops (Edit requires prior Read) |
+| Read / Write / Append / Edit | File ops (Append large generated artifacts; Edit requires prior Read) |
 | Bash | Shell commands (git/npm/test) |
 | Glob / Grep | File discovery / content search |
 | WebSearch | Web info lookup |

@@ -22,6 +22,7 @@ import { notebookEditSchema } from './file/notebookEdit.schema';
 import { readClipboardSchema } from './file/readClipboard.schema';
 import { readSchema } from './file/read.schema';
 import { writeSchema } from './file/write.schema';
+import { appendSchema } from './file/append.schema';
 import { globSchema } from './file/glob.schema';
 
 // shell/
@@ -660,6 +661,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     writeSchema,
     async () => (await import('./file/write')).writeModule,
+  );
+  registry.register(
+    appendSchema,
+    async () => (await import('./file/append')).appendModule,
   );
   registry.register(
     globSchema,

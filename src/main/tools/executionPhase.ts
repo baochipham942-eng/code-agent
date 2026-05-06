@@ -55,6 +55,7 @@ const EXPLORE_TOOLS = new Set([
 
 const EDIT_TOOLS = new Set([
   'Write',
+  'Append',
   'Edit',
   'notebook_edit',
   'findings_write',

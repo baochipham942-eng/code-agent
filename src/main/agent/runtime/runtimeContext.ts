@@ -115,6 +115,22 @@ export interface RuntimeContext {
   pendingRuntimeDiagnostics: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;
+  artifactRepairGuard?: {
+    targetFile: string;
+    attempts: number;
+    phase: string;
+    blockedToolCount?: number;
+    lastBlockedTool?: string;
+    targetReadCount?: number;
+    targetRangedReadCount?: number;
+    patched?: boolean;
+    noOpPatchCount?: number;
+    editAnchorFailureCount?: number;
+    preferTargetedEdit?: boolean;
+    lastFailedPatchFingerprint?: string;
+    activeIssueCodes?: string[];
+    lastSuggestedRangedReadWindows?: string[];
+  };
 
   // --- Turn tracking ---
   turnStartTime: number;
@@ -160,7 +176,10 @@ export interface RuntimeContext {
   // --- Context recovery ---
   _contextOverflowRetried: boolean;
   _truncationRetried: boolean;
+  _artifactNonStreamingRetried: boolean;
+  _artifactRepairCompactWriteRetried: boolean;
   _networkRetried: boolean;
+  _networkRetryCount?: number;
   _consecutiveTruncations: number;
   MAX_CONSECUTIVE_TRUNCATIONS: number;
 

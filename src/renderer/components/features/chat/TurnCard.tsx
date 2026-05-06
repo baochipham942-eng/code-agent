@@ -102,11 +102,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       </div>
 
       {/* Content */}
-      <div
-        className={`space-y-2 ${
-          isStreaming ? 'border-l-2 border-primary-500/30 pl-2' : ''
-        }`}
-      >
+      <div className="space-y-2">
         {/* User message always at top */}
         {foldedView?.userNode && (
           <TraceNodeRenderer

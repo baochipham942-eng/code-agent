@@ -152,7 +152,7 @@ export const TOOL_DISCIPLINE = `
 
 <use_parallel_tool_calls>
 Call multiple tools in a single response when they are independent of each other.
-Sequential only when there is a data dependency (e.g., read -> edit, mkdir -> write).
+Sequential only when there is a data dependency (e.g., read -> edit, glob -> read found files).
 
 Parallel: git status + git diff, read fileA + read fileB, multiple Task dispatches
 Sequential: Read -> Edit, Glob -> Read found files, git add -> git commit

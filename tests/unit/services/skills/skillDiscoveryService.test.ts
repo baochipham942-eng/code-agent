@@ -108,4 +108,40 @@ describe('SkillDiscoveryService Claude legacy isolation', () => {
 
     expect(service.getSkill('user-claude')?.source).toBe('user');
   });
+
+  it('reuses cached metadata on the next initialize without rereading unchanged SKILL.md files', async () => {
+    await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-code-agent');
+
+    const firstService = new SkillDiscoveryService({ includeClaudeLegacySkills: true });
+    await firstService.initialize(projectDir);
+
+    const cachePath = path.join(
+      homeDir,
+      '.code-agent',
+      'cache',
+      'skill-metadata-index-v1.json',
+    );
+    const cacheContent = await fs.readFile(cachePath, 'utf-8');
+    expect(cacheContent).toContain('user-claude');
+    expect(cacheContent).toContain('project-code-agent');
+
+    const legacySkillPath = path.join(homeDir, '.claude', 'skills', 'user-claude', 'SKILL.md');
+    const projectSkillPath = path.join(projectDir, '.code-agent', 'skills', 'project-code-agent', 'SKILL.md');
+    await fs.chmod(legacySkillPath, 0o000);
+    await fs.chmod(projectSkillPath, 0o000);
+
+    const secondService = new SkillDiscoveryService({ includeClaudeLegacySkills: true });
+    try {
+      await secondService.initialize(projectDir);
+
+      expect(secondService.getAllSkills().map((skill) => skill.name).sort()).toEqual([
+        'project-code-agent',
+        'user-claude',
+      ]);
+    } finally {
+      await fs.chmod(legacySkillPath, 0o600);
+      await fs.chmod(projectSkillPath, 0o600);
+    }
+  });
 });

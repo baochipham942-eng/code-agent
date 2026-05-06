@@ -19,6 +19,8 @@ import {
   needsGenerativeUI,
   GENERATIVE_UI_PROMPT,
   QUESTION_FORM_PROMPT,
+  ARTIFACT_TASK_BRIEF_PROMPT,
+  needsArtifactTaskBrief,
 } from '../../../prompts/builder';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
@@ -31,8 +33,11 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { createHash } from 'crypto';
+import { isAbsolute, resolve as resolvePath } from 'path';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from '../contextAssembly';
+import { getArtifactRepairTargetReadBudget } from '../artifactRepairGuard';
+import { getArtifactRepairTargetRangedReadBudget } from '../artifactRepairGuard';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 
 const DYNAMIC_PROMPT_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -41,6 +46,13 @@ const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
 const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
 const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
+const ARTIFACT_REPAIR_CONTEXT_PATTERN =
+  /artifact[-\s_]*(validation|repair)|artifact validation failed|artifact repair|<artifact-validation-failed\b|artifactValidation[^]*failed/i;
+const ARTIFACT_REPAIR_FILE_READ_CHAR_THRESHOLD = 12_000;
+const ARTIFACT_REPAIR_HISTORY_CHAR_BUDGET = 16_000;
+const ARTIFACT_REPAIR_WRITE_NOW_CHAR_BUDGET = 10_000;
+const ARTIFACT_REPAIR_MAX_PREVIEW_LINE_CHARS = 240;
+const ARTIFACT_REPAIR_EXACT_RANGED_READ_PRESERVE_CHAR_LIMIT = 8_000;
 
 type RuntimeAssemblyCache = {
   dynamicPrompt?: {
@@ -57,6 +69,10 @@ type RuntimeAssemblyCache = {
   };
 };
 
+type PromptAppendPolicy =
+  | { kind: 'optional' }
+  | { kind: 'required'; trimCandidates?: string[] };
+
 const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
 
 function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache {
@@ -72,7 +88,484 @@ function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
   return [...ctx.runtime.messages].reverse().find((m: any) => m.role === 'user');
 }
 
-function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string): string {
+function isArtifactRepairContent(content: unknown): boolean {
+  return typeof content === 'string' && ARTIFACT_REPAIR_CONTEXT_PATTERN.test(content);
+}
+
+function hasRecentArtifactRepairToolFailure(ctx: ContextAssemblyCtx): boolean {
+  const recentMessages = ctx.runtime.messages.slice(-8);
+  for (const message of recentMessages) {
+    if (message.role === 'tool') {
+      if (isArtifactRepairContent(message.content)) return true;
+      for (const result of message.toolResults ?? []) {
+        if (result.success === false && (isArtifactRepairContent(result.error) || isArtifactRepairContent(result.output))) {
+          return true;
+        }
+        if ((result.metadata as any)?.artifactValidation?.failed === true) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function getArtifactRepairContext(ctx: ContextAssemblyCtx): string[] {
+  return ctx.getBudgetedPersistentSystemContext().filter(isArtifactRepairContent);
+}
+
+function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {
+  return getArtifactRepairContext(ctx).length > 0 || hasRecentArtifactRepairToolFailure(ctx);
+}
+
+function resolveArtifactRepairPath(ctx: ContextAssemblyCtx, filePath: string): string {
+  return isAbsolute(filePath)
+    ? filePath
+    : resolvePath(ctx.runtime.workingDirectory || process.cwd(), filePath);
+}
+
+function getArtifactRepairTargetFile(ctx: ContextAssemblyCtx): string | null {
+  return typeof ctx.runtime.artifactRepairGuard?.targetFile === 'string'
+    ? ctx.runtime.artifactRepairGuard.targetFile
+    : null;
+}
+
+function getArtifactRepairHistoryToolAllowlist(ctx: ContextAssemblyCtx): Set<string> | null {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard) return null;
+  if (guard.patched) {
+    return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file', 'Bash', 'bash']);
+  }
+  if ((guard.noOpPatchCount ?? 0) >= 1) {
+    return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+  }
+  const targetReadCount = guard.targetReadCount ?? 0;
+  if (targetReadCount >= getArtifactRepairTargetReadBudget(guard)) {
+    return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+  }
+  return new Set(['Read', 'read_file', 'Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+}
+
+function mergeLineRanges(ranges: Array<[number, number]>): Array<[number, number]> {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && start <= end);
+  if (sorted.length === 0) return [];
+
+  const merged: Array<[number, number]> = [sorted[0]];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const [start, end] = sorted[index];
+    const last = merged[merged.length - 1];
+    if (start <= last[1] + 1) {
+      last[1] = Math.max(last[1], end);
+      continue;
+    }
+    merged.push([start, end]);
+  }
+  return merged;
+}
+
+function findBraceBoundedRange(lines: string[], startIndex: number, contextBefore = 4, contextAfter = 4): [number, number] {
+  let depth = 0;
+  let sawOpeningBrace = false;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    for (const char of line) {
+      if (char === '{') {
+        depth += 1;
+        sawOpeningBrace = true;
+      } else if (char === '}') {
+        depth -= 1;
+      }
+    }
+    if (sawOpeningBrace && depth <= 0) {
+      return [
+        Math.max(0, startIndex - contextBefore),
+        Math.min(lines.length - 1, index + contextAfter),
+      ];
+    }
+  }
+
+  return [
+    Math.max(0, startIndex - contextBefore),
+    Math.min(lines.length - 1, startIndex + 80),
+  ];
+}
+
+function findFirstLineIndex(lines: string[], patterns: RegExp[]): number {
+  for (const pattern of patterns) {
+    const lineIndex = lines.findIndex((line) => pattern.test(line));
+    if (lineIndex >= 0) return lineIndex;
+  }
+  return -1;
+}
+
+function buildArtifactRepairMutationHints(lines: string[]): string[] {
+  const hints: string[] = [
+    'Patch strategy:',
+    '- Prefer one focused Edit or one complete Write of the target HTML.',
+    '- Repair the embedded test contract against real gameplay state; do not add test-only shortcuts.',
+    '- Remove duplicate or dangling contract blocks if the file contains more than one window.__GAME_TEST__ / window.__INTERACTIVE_TEST__ object.',
+    '- For a full contract replacement, you may use a short old_text anchor around window.__GAME_TEST__ / window.__INTERACTIVE_TEST__; the repair runtime can expand it to the balanced contract region.',
+  ];
+
+  const contractLines = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => /window\.__GAME_TEST__|window\.__INTERACTIVE_TEST__/.test(line))
+    .map(({ index }) => index + 1);
+  if (contractLines.length > 1) {
+    hints.push(`- Multiple interactive contract anchors found at lines ${contractLines.join(', ')}; keep one coherent contract at the end of the document.`);
+  }
+
+  if (lines.some((line) => /Auto-collect|Auto-reach|test mode|State\.abilities\.[A-Za-z0-9_]+\s*=\s*true/.test(line))) {
+    hints.push('- Existing contract appears to contain direct state grants or test-mode shortcuts; replace them with input-driven snapshot comparisons.');
+  }
+
+  if (lines.some((line) => /exists|present|registered|mechanics\.add|risks\.add|rewards\.add/.test(line))) {
+    hints.push('- Existing smoke coverage appears to record existence/registration as evidence; change coverage to only count observed before/after state changes.');
+  }
+
+  return hints;
+}
+
+function buildArtifactRepairStructureIndex(lines: string[]): string[] {
+  const anchors: Array<[string, RegExp[]]> = [
+    ['metadata', [/window\.__GAME_META__/, /window\.__INTERACTIVE_META__/]],
+    ['levels-data', [/\b(?:const|let|var)\s+levels\s*=/i, /\blevels\s*:\s*\[/i, /\bauthoredLevels\b/i]],
+    ['game-start', [/\bstart\(\)\s*\{/, /\bstartGame\s*\(/i]],
+    ['game-update-loop', [/\bfunction\s+gameLoop\b/i, /\brequestAnimationFrame\s*\(/i]],
+    ['runtime-update', [/\bfunction\s+update\b/i, /\bupdateGame\s*\(/i]],
+    ['player-physics', [/\bPlayer\.update\s*\(/, /\b[Pp]layer\.vy\b/, /\b[Pp]layer\.jump(?:sLeft)?\b/i, /\b[Pp]layer\.dash/i, /\bupdatePlayer\s*\(/i]],
+    ['collision-rewards', [/\bTreat collection\b/i, /\bt\.ability\b/, /\bState\.abilities\[/, /\bState\.collectedTreats\b/, /\bcollect\w*\s*\(/i]],
+    ['collision-risks', [/\bStomp from above\b/i, /\b[Pp]layer\.die\(/, /\bHazard collision\b/i, /\bstomp\w*\s*\(/i]],
+    ['level-progress', [/\bDoor check\b/i, /\bState\.mode\s*=\s*['"]levelComplete['"]/, /\bloadLevel\s*\(\s*State\.level\s*\+\s*1/i, /\bcompleteLevel\s*\(/i]],
+    ['test-contract', [/window\.__GAME_TEST__/, /window\.__INTERACTIVE_TEST__/]],
+    ['contract-step', [/\bstep\(/]],
+    ['contract-smoke', [/\brunSmokeTest\(\)\s*\{/]],
+  ];
+
+  const rows: string[] = [];
+  for (const [label, patterns] of anchors) {
+    const index = findFirstLineIndex(lines, patterns);
+    if (index >= 0) rows.push(`- ${label}: line ${index + 1}`);
+  }
+  return rows;
+}
+
+function buildArtifactRepairAnchorExcerpts(lines: string[]): string[] {
+  const anchors: Array<[string, RegExp[]]> = [
+    ['levels-data', [/\b(?:const|let|var)\s+levels\s*=/i, /\blevels\s*:\s*\[/i, /\bauthoredLevels\b/i]],
+    ['game-update-loop', [/\bfunction\s+gameLoop\b/i, /\brequestAnimationFrame\s*\(/i]],
+    ['runtime-update', [/\bfunction\s+update\b/i, /\bupdateGame\s*\(/i]],
+    ['player-physics', [/\bPlayer\.update\s*\(/, /\b[Pp]layer\.vy\b/, /\b[Pp]layer\.jump(?:sLeft)?\b/i, /\b[Pp]layer\.dash/i, /\bupdatePlayer\s*\(/i]],
+    ['collision-rewards', [/\bTreat collection\b/i, /\bt\.ability\b/, /\bState\.abilities\[/, /\bState\.collectedTreats\b/, /\bcollect\w*\s*\(/i]],
+    ['collision-risks', [/\bStomp from above\b/i, /\b[Pp]layer\.die\(/, /\bHazard collision\b/i, /\bstomp\w*\s*\(/i]],
+    ['level-progress', [/\bDoor check\b/i, /\bState\.mode\s*=\s*['"]levelComplete['"]/, /\bloadLevel\s*\(\s*State\.level\s*\+\s*1/i, /\bcompleteLevel\s*\(/i]],
+    ['test-contract', [/window\.__GAME_TEST__/, /window\.__INTERACTIVE_TEST__/]],
+    ['contract-step', [/\bstep\(/]],
+    ['contract-smoke', [/\brunSmokeTest\(\)\s*\{/]],
+  ];
+
+  const rows: string[] = [];
+  const usedRanges = new Set<string>();
+  for (const [label, patterns] of anchors) {
+    const index = findFirstLineIndex(lines, patterns);
+    if (index < 0) continue;
+    const start = Math.max(0, index - 1);
+    const end = Math.min(lines.length - 1, index + 3);
+    const rangeKey = `${start}:${end}`;
+    if (usedRanges.has(rangeKey)) continue;
+    usedRanges.add(rangeKey);
+    rows.push(`Anchor ${label} around line ${index + 1}:`);
+    for (let lineIndex = start; lineIndex <= end; lineIndex += 1) {
+      rows.push(`${lineIndex + 1}: ${trimArtifactRepairPreviewLine(lines[lineIndex])}`);
+    }
+  }
+  return rows;
+}
+
+export function buildArtifactRepairFileReadPreview(ctx: ContextAssemblyCtx, content: string, filePath: string): string {
+  if (content.length <= ARTIFACT_REPAIR_FILE_READ_CHAR_THRESHOLD) {
+    return content;
+  }
+
+  const lines = content.split('\n');
+  const headRange: [number, number] = [0, Math.min(lines.length - 1, 39)];
+  const structureIndex = buildArtifactRepairStructureIndex(lines);
+  const anchorExcerpts = buildArtifactRepairAnchorExcerpts(lines);
+  const guard = ctx.runtime.artifactRepairGuard;
+  const writeOnlyNow = isArtifactRepairWriteOnlyNow(ctx);
+  const mutationHints = buildArtifactRepairMutationHints(lines);
+  const historyCharBudget = writeOnlyNow ? ARTIFACT_REPAIR_WRITE_NOW_CHAR_BUDGET : ARTIFACT_REPAIR_HISTORY_CHAR_BUDGET;
+  const reservedPreviewChars = structureIndex.join('\n').length + anchorExcerpts.join('\n').length + mutationHints.join('\n').length + 1_800;
+  const sectionBudget = Math.max(6_000, historyCharBudget - reservedPreviewChars);
+  const anchorPatterns = [
+    /window\.__GAME_META__/,
+    /window\.__INTERACTIVE_META__/,
+    /\b(?:const|let|var)\s+levels\s*=/i,
+    /\blevels\s*:\s*\[/i,
+    /progressPlan\s*:/,
+    /window\.__GAME_TEST__/,
+    /window\.__INTERACTIVE_TEST__/,
+    /\bfunction\s+gameLoop\b/i,
+    /\bfunction\s+update\b/i,
+    /\bupdateGame\s*\(/i,
+    /\bPlayer\.update\s*\(/,
+    /\b[Pp]layer\.vy\b/,
+    /\b[Pp]layer\.jump(?:sLeft)?\b/i,
+    /\b[Pp]layer\.dash/i,
+    /\bupdatePlayer\s*\(/i,
+    /\bTreat collection\b/i,
+    /\bt\.ability\b/,
+    /\bState\.abilities\[/,
+    /\bState\.collectedTreats\b/,
+    /\bcollect\w*\s*\(/i,
+    /\bStomp from above\b/i,
+    /\b[Pp]layer\.die\(/,
+    /\bHazard collision\b/i,
+    /\bstomp\w*\s*\(/i,
+    /\bDoor check\b/i,
+    /\bState\.mode\s*=\s*['"]levelComplete['"]/,
+    /\bloadLevel\s*\(\s*State\.level\s*\+\s*1/i,
+    /\bcompleteLevel\s*\(/i,
+    /\bstart\(\)\s*\{/,
+    /\breset\(/,
+    /\bsnapshot\(\)\s*\{/,
+    /\bstep\(/,
+    /\brunSmokeTest\(\)\s*\{/,
+  ];
+  const anchorRanges: Array<[number, number]> = [];
+
+  for (const pattern of anchorPatterns) {
+    const lineIndex = lines.findIndex((line) => pattern.test(line));
+    if (lineIndex < 0) continue;
+    const isRepairContractFunction =
+      /\b(step|runSmokeTest)\s*\(/.test(lines[lineIndex]) ||
+      /\b(start|reset|snapshot)\s*\(/.test(lines[lineIndex]);
+    const isRuntimeFunction =
+      /\bfunction\s+(?:gameLoop|update|updateGame|updatePlayer)\b/i.test(lines[lineIndex]) ||
+      /\b(?:updateGame|updatePlayer)\s*\(/i.test(lines[lineIndex]);
+    anchorRanges.push(isRepairContractFunction
+      ? findBraceBoundedRange(lines, lineIndex)
+      : isRuntimeFunction
+        ? findBraceBoundedRange(lines, lineIndex, 4, 8)
+      : [
+          Math.max(0, lineIndex - 6),
+          Math.min(lines.length - 1, lineIndex + 18),
+        ]);
+  }
+
+  if (anchorRanges.length === 0) {
+    anchorRanges.push([
+      Math.max(0, lines.length - 80),
+      lines.length - 1,
+    ]);
+  }
+
+  const mergedRanges = mergeLineRanges([headRange, ...anchorRanges]);
+  const sections: string[] = [];
+  let usedChars = 0;
+  let omittedLines = 0;
+
+  for (const [start, end] of mergedRanges) {
+    const sectionText = lines.slice(start, end + 1).map(trimArtifactRepairPreviewLine).join('\n').trimEnd();
+    if (!sectionText) continue;
+    if (usedChars + sectionText.length > sectionBudget && sections.length > 0) {
+      omittedLines += end - start + 1;
+      continue;
+    }
+    sections.push(sectionText);
+    usedChars += sectionText.length;
+  }
+
+  const coveredLines = mergedRanges.reduce((count, [start, end]) => count + (end - start + 1), 0);
+  const remainingLines = Math.max(0, lines.length - coveredLines + omittedLines);
+  const footer = writeOnlyNow
+    ? 'Critical repair sections are preserved below. Do not re-read the target file in this repair pass; write the patch now.'
+    : remainingLines > 0
+      ? `...[omitted ${remainingLines} lines from history; at most one exact ranged read is available if the patch anchor is missing]...`
+      : 'All critical repair sections preserved in history preview; re-read the target file only if you need exact anchors.';
+
+  return [
+    '<artifact-repair-file-read>',
+    `Target file already read: ${filePath}`,
+    `History preview compressed for repair mode (${lines.length} lines, ${content.length} chars).`,
+    'Runtime structure index:',
+    ...structureIndex,
+    'Runtime anchor excerpts:',
+    ...anchorExcerpts,
+    ...mutationHints,
+    'The preview includes runtime anchors and the test contract. Do not use Read/Edit as a probe to discover names or line positions.',
+    ...sections.flatMap((section, index) => [
+      `Section ${index + 1}:`,
+      section,
+    ]),
+    footer,
+    '</artifact-repair-file-read>',
+  ].join('\n');
+}
+
+function isArtifactRepairRangedReadResult(result: { metadata?: Record<string, any> }): boolean {
+  const metadata = result.metadata || {};
+  if (metadata.rangedRead === true) return true;
+  const offset = metadata.offset;
+  const limit = metadata.limit;
+  return typeof offset === 'number'
+    || typeof offset === 'string'
+    || typeof limit === 'number'
+    || typeof limit === 'string';
+}
+
+function isArtifactRepairWriteOnlyNow(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard) return false;
+  const readBudgetExhausted = (guard.targetReadCount ?? 0) >= getArtifactRepairTargetReadBudget(guard);
+  const rangedReadBudgetExhausted = (guard.targetRangedReadCount ?? 0) >= getArtifactRepairTargetRangedReadBudget(guard);
+  return (guard.noOpPatchCount ?? 0) >= 1
+    || readBudgetExhausted
+    || rangedReadBudgetExhausted
+    || (guard.blockedToolCount ?? 0) >= 2
+    || guard.preferTargetedEdit === true;
+}
+
+function shouldPreserveExactArtifactRepairRangedRead(
+  ctx: ContextAssemblyCtx,
+  result: { metadata?: Record<string, any> },
+  originalContent: string,
+): boolean {
+  if (!isArtifactRepairRangedReadResult(result)) return false;
+  if (isArtifactRepairWriteOnlyNow(ctx)) return false;
+  return originalContent.length <= ARTIFACT_REPAIR_EXACT_RANGED_READ_PRESERVE_CHAR_LIMIT;
+}
+
+function trimArtifactRepairPreviewLine(line: string): string {
+  if (line.length <= ARTIFACT_REPAIR_MAX_PREVIEW_LINE_CHARS) {
+    return line;
+  }
+
+  const keepHead = Math.max(80, Math.floor(ARTIFACT_REPAIR_MAX_PREVIEW_LINE_CHARS * 0.7));
+  const keepTail = Math.max(32, ARTIFACT_REPAIR_MAX_PREVIEW_LINE_CHARS - keepHead - 40);
+  return `${line.slice(0, keepHead)} ...[trimmed ${line.length - keepHead - keepTail} chars]... ${line.slice(-keepTail)}`;
+}
+
+function buildArtifactRepairBlockedHistory(result: { metadata?: Record<string, any> }, originalContent: string): string {
+  const guard = result.metadata?.artifactRepairGuard;
+  const blockedTool = typeof guard?.lastBlockedTool === 'string' ? guard.lastBlockedTool : 'tool';
+  const blockedToolCount = typeof guard?.blockedToolCount === 'number' ? guard.blockedToolCount : null;
+  return [
+    '<artifact-repair-tool-blocked>',
+    `Blocked ${blockedTool}${blockedToolCount ? ` (${blockedToolCount})` : ''} during repair mode.`,
+    'Do not inspect validator/runtime sources again.',
+    'Use the target HTML file and validator output only.',
+    originalContent,
+    '</artifact-repair-tool-blocked>',
+  ].join('\n');
+}
+
+function buildArtifactRepairValidationFailureHistory(
+  ctx: ContextAssemblyCtx,
+  result: { metadata?: Record<string, any> },
+  originalContent: string,
+): string {
+  const validation = result.metadata?.artifactValidation;
+  const rollback = result.metadata?.artifactRepairRollback;
+  const repairSpec = validation?.repairSpec;
+  const issueCodes = Array.isArray(repairSpec?.issues)
+    ? repairSpec.issues
+        .map((issue: any) => typeof issue?.code === 'string' ? issue.code : null)
+        .filter(Boolean)
+    : [];
+  const failures: string[] = Array.isArray(validation?.failures)
+    ? validation.failures.filter((failure: unknown): failure is string => typeof failure === 'string')
+    : [];
+  const targetFile = typeof rollback?.targetFile === 'string'
+    ? rollback.targetFile
+    : getArtifactRepairTargetFile(ctx) || 'target artifact';
+  const lines = [
+    '<artifact-validation-failed-history>',
+    `Target file: ${targetFile}`,
+    typeof validation?.attempts === 'number' ? `attempts: ${validation.attempts}` : null,
+    typeof validation?.phase === 'string' ? `repair phase: ${validation.phase}` : null,
+    rollback?.applied === true
+      ? 'The failed patch was rolled back; edit from the last valid pre-patch file state.'
+      : rollback?.attempted === true
+        ? 'Rollback was attempted but did not apply; inspect only the target artifact if needed.'
+        : null,
+    issueCodes.length > 0 ? `Issue codes: ${issueCodes.join(', ')}` : null,
+    ...failures.slice(0, 4).map((failure, index) => `${index + 1}. ${failure}`),
+    'Full repair spec is already injected as the current system repair instruction; do not re-process duplicated history.',
+    'Next action: patch the target HTML contract/gameplay directly with Edit or Append, then validate.',
+    '</artifact-validation-failed-history>',
+  ].filter((line): line is string => typeof line === 'string' && line.length > 0);
+
+  if (lines.length <= 7 && originalContent.length < 1_500) {
+    return originalContent;
+  }
+  return lines.join('\n');
+}
+
+export function formatArtifactRepairToolResultContent(
+  ctx: ContextAssemblyCtx,
+  result: { output?: string; error?: string; metadata?: Record<string, any> },
+  originalContent: string,
+): string {
+  const targetFile = getArtifactRepairTargetFile(ctx);
+  if (!targetFile) return originalContent;
+
+  if (result.metadata?.artifactRepairGuard?.blocked === true) {
+    return buildArtifactRepairBlockedHistory(result, originalContent);
+  }
+
+  if (result.metadata?.artifactValidation?.failed === true) {
+    return buildArtifactRepairValidationFailureHistory(ctx, result, originalContent);
+  }
+
+  const filePath = typeof result.metadata?.filePath === 'string' ? result.metadata.filePath : null;
+  if (
+    result.metadata?.evidenceKind === 'file_read' &&
+    filePath &&
+    resolveArtifactRepairPath(ctx, filePath) === targetFile
+  ) {
+    if (shouldPreserveExactArtifactRepairRangedRead(ctx, result, originalContent)) {
+      return originalContent;
+    }
+    return buildArtifactRepairFileReadPreview(ctx, originalContent, filePath);
+  }
+
+  return originalContent;
+}
+
+function getAllowedArtifactRepairToolCallIds(ctx: ContextAssemblyCtx, messages: Message[]): Set<string> | null {
+  const allowlist = getArtifactRepairHistoryToolAllowlist(ctx);
+  if (!allowlist) return null;
+
+  const allowedIds = new Set<string>();
+  const targetFile = getArtifactRepairTargetFile(ctx);
+  for (const message of messages) {
+    if (!message.toolCalls?.length) continue;
+    for (const toolCall of message.toolCalls) {
+      const toolName = toolCall.name;
+      const filePath = typeof toolCall.arguments?.file_path === 'string'
+        ? toolCall.arguments.file_path
+        : typeof toolCall.arguments?.path === 'string'
+          ? toolCall.arguments.path
+          : null;
+      const isTargetRead =
+        targetFile &&
+        (toolName === 'Read' || toolName === 'read_file') &&
+        filePath &&
+        resolveArtifactRepairPath(ctx, filePath) === targetFile;
+
+      if (allowlist.has(toolName) || isTargetRead) {
+        allowedIds.add(toolCall.id);
+      }
+    }
+  }
+  return allowedIds;
+}
+
+function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string, artifactRepairMode: boolean): string {
   return [
     ctx.runtime.sessionId,
     ctx.runtime.agentId || '',
@@ -82,6 +575,7 @@ function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string):
     String(ctx.runtime.enableToolDeferredLoading),
     ctx.runtime.modelConfig.model || '',
     getLastUserMessage(ctx)?.id || '',
+    artifactRepairMode ? 'artifact-repair' : 'normal',
     userQuery,
   ].join('\u0000');
 }
@@ -105,10 +599,81 @@ function appendPromptBlockWithinBudget(
   return nextPrompt;
 }
 
+function appendRequiredPromptBlock(
+  prompt: string,
+  block: string,
+  label: string,
+  ctx?: ContextAssemblyCtx,
+): string {
+  const nextPrompt = `${prompt}\n\n${block}`;
+  const nextTokens = estimateTokens(nextPrompt);
+  if (nextTokens > MAX_SYSTEM_PROMPT_TOKENS) {
+    logger.warn(
+      `[ContextAssembly] Preserving required ${label}: system prompt budget is ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+    );
+    ctx?.runtime.pendingRuntimeDiagnostics.push(
+      `上下文预算保留必需 ${label}：预计 ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+    );
+  }
+  return nextPrompt;
+}
+
+function removePromptBlock(prompt: string, block: string | null | undefined): string {
+  if (!block) return prompt;
+  const escapedBlock = block.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return prompt
+    .replace(new RegExp(`\\n\\n${escapedBlock}`), '')
+    .replace(new RegExp(`^${escapedBlock}\\n\\n`), '')
+    .replace(new RegExp(`^${escapedBlock}$`), '');
+}
+
+function appendPromptBlockWithinBudgetWithStatus(
+  prompt: string,
+  block: string | null | undefined,
+  label: string,
+  appendedBlocks: Map<string, string>,
+  ctx?: ContextAssemblyCtx,
+  policy: PromptAppendPolicy = { kind: 'optional' },
+): { prompt: string; appended: boolean; trimmed?: string[] } {
+  if (!block) {
+    return { prompt, appended: false, trimmed: [] };
+  }
+  const nextPrompt = appendPromptBlockWithinBudget(prompt, block, label, ctx);
+  if (nextPrompt !== prompt) {
+    return { prompt: nextPrompt, appended: true, trimmed: [] };
+  }
+  if (policy.kind !== 'required') {
+    return { prompt, appended: false, trimmed: [] };
+  }
+
+  const trimmed: string[] = [];
+  let workingPrompt = prompt;
+  for (const candidate of policy.trimCandidates ?? []) {
+    const candidateBlock = appendedBlocks.get(candidate);
+    if (!candidateBlock) continue;
+    const nextCandidatePrompt = removePromptBlock(workingPrompt, candidateBlock);
+    if (nextCandidatePrompt === workingPrompt) continue;
+    workingPrompt = nextCandidatePrompt;
+    appendedBlocks.delete(candidate);
+    trimmed.push(candidate);
+    const retriedPrompt = appendPromptBlockWithinBudget(workingPrompt, block, label, ctx);
+    if (retriedPrompt !== workingPrompt) {
+      return { prompt: retriedPrompt, appended: true, trimmed };
+    }
+  }
+
+  return {
+    prompt: appendRequiredPromptBlock(workingPrompt, block, label, ctx),
+    appended: true,
+    trimmed,
+  };
+}
+
 async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<string> {
   const lastUserMessage = getLastUserMessage(ctx);
   const userQuery = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
-  const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery);
+  const artifactRepairMode = isArtifactRepairMode(ctx);
+  const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery, artifactRepairMode);
   const cache = getRuntimeAssemblyCache(ctx);
   const cached = cache.dynamicPrompt;
   const now = Date.now();
@@ -120,6 +685,30 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   // Use optimized prompt based on task complexity
   let systemPrompt = getPromptForTask();
+  const appendedBlocks = new Map<string, string>();
+  const shouldInjectArtifactBrief = artifactRepairMode || (typeof userQuery === 'string' && needsArtifactTaskBrief(userQuery));
+  const shouldInjectGenerativeUI = typeof userQuery === 'string' && needsGenerativeUI(userQuery);
+
+  if (shouldInjectArtifactBrief) {
+    const result = appendPromptBlockWithinBudgetWithStatus(
+      systemPrompt,
+      ARTIFACT_TASK_BRIEF_PROMPT,
+      'artifact task brief',
+      appendedBlocks,
+      ctx,
+      { kind: 'required', trimCandidates: ['repo map', 'skills', 'recent conversations', 'deferred tools'] },
+    );
+    systemPrompt = result.prompt;
+    if (result.appended) {
+      appendedBlocks.set('artifact task brief', ARTIFACT_TASK_BRIEF_PROMPT);
+      logger.debug(
+        `[ContextAssembly] Artifact task brief prompt injected (${artifactRepairMode ? 'repair mode' : 'intent matched'})`,
+      );
+      if (result.trimmed?.length) {
+        logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve artifact brief: ${result.trimmed.join(', ')}`);
+      }
+    }
+  }
 
   const genNum = 8;
   if (genNum >= 3 && !ctx.runtime.isSimpleTaskMode) {
@@ -131,16 +720,18 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   systemPrompt += buildRuntimeModeBlock();
 
   // 注入 Session Metadata（使用频率/行为模式，借鉴 ChatGPT Layer 2）
-  systemPrompt = appendPromptBlockWithinBudget(
-    systemPrompt,
-    await buildSessionMetadataBlock(),
-    'session metadata',
-    ctx,
-  );
+  if (!artifactRepairMode) {
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      await buildSessionMetadataBlock(),
+      'session metadata',
+      ctx,
+    );
+  }
 
   // 注入轻量记忆索引（File-as-Memory）
   // 先做意图判断，避免每轮无条件读 INDEX.md。
-  if (typeof userQuery === 'string' && MEMORY_INTENT_PATTERN.test(userQuery)) {
+  if (!artifactRepairMode && typeof userQuery === 'string' && MEMORY_INTENT_PATTERN.test(userQuery)) {
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
       systemPrompt = appendPromptBlockWithinBudget(
@@ -151,7 +742,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       );
       logger.debug('[ContextAssembly] memory_index injected (intent matched)');
     }
-  } else {
+  } else if (!artifactRepairMode) {
     // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查，不读取索引文件。
     systemPrompt = appendPromptBlockWithinBudget(
       systemPrompt,
@@ -162,12 +753,15 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   }
 
   // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配
-  if (!ctx.runtime.isSimpleTaskMode && userQuery) {
+  if (!artifactRepairMode && !ctx.runtime.isSimpleTaskMode && userQuery) {
     try {
       const skills = await loadRelevantSkills(userQuery);
       const skillBlock = buildSkillInjectionBlock(skills);
       if (skillBlock) {
         systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills', ctx);
+        if (systemPrompt.includes(skillBlock)) {
+          appendedBlocks.set('skills', skillBlock);
+        }
         logger.debug(
           `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
         );
@@ -183,7 +777,9 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   if (
     ctx.runtime.workingDirectory &&
     !ctx.runtime.isSimpleTaskMode &&
-    REPO_MAP_INTENT_PATTERN.test(userQuery)
+    REPO_MAP_INTENT_PATTERN.test(userQuery) &&
+    !shouldInjectArtifactBrief &&
+    !artifactRepairMode
   ) {
     try {
       const repoMapResult = await getRepoMap({
@@ -199,6 +795,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
           ctx,
         );
         if (systemPrompt !== before) {
+          appendedBlocks.set('repo map', `<repo_map>\n${repoMapResult.text}\n</repo_map>`);
           logger.debug(`[ContextAssembly] RepoMap injected: ${repoMapResult.fileCount} files, ${repoMapResult.symbolCount} symbols, ~${repoMapResult.estimatedTokens} tokens`);
         }
       }
@@ -208,39 +805,53 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   }
 
   // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）
-  if (RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery)) {
+  if (!artifactRepairMode && RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery)) {
+    const recentConversationsBlock = await buildRecentConversationsBlock();
     systemPrompt = appendPromptBlockWithinBudget(
       systemPrompt,
-      await buildRecentConversationsBlock(),
+      recentConversationsBlock,
       'recent conversations',
       ctx,
     );
+    if (recentConversationsBlock && systemPrompt.includes(recentConversationsBlock)) {
+      appendedBlocks.set('recent conversations', recentConversationsBlock);
+    }
   }
 
   // 按意图注入 Generative UI 能力说明（~700 tok）+ Design brief 收集规则（~250 tok）
-  if (typeof userQuery === 'string' && needsGenerativeUI(userQuery)) {
+  if (shouldInjectGenerativeUI) {
     systemPrompt = appendPromptBlockWithinBudget(systemPrompt, GENERATIVE_UI_PROMPT, 'generative UI', ctx);
+    if (systemPrompt.includes(GENERATIVE_UI_PROMPT)) {
+      appendedBlocks.set('generative UI', GENERATIVE_UI_PROMPT);
+    }
     // 同条件注入 question-form 规则——LLM 看到 design-brief reminder 时会按规则跳过 form。
     systemPrompt = appendPromptBlockWithinBudget(systemPrompt, QUESTION_FORM_PROMPT, 'question form', ctx);
+    if (systemPrompt.includes(QUESTION_FORM_PROMPT)) {
+      appendedBlocks.set('question form', QUESTION_FORM_PROMPT);
+    }
     logger.debug('[ContextAssembly] GenerativeUI + QuestionForm prompts injected (intent matched)');
   }
 
   // 注入延迟工具提示
-  if (ctx.runtime.enableToolDeferredLoading) {
+  if (!artifactRepairMode && ctx.runtime.enableToolDeferredLoading) {
     const deferredToolsSummary = getDeferredToolsSummary();
     if (deferredToolsSummary) {
-      systemPrompt = appendPromptBlockWithinBudget(
-        systemPrompt,
-        `<deferred-tools>
+      const deferredToolsBlock = `<deferred-tools>
 除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
 
 ${deferredToolsSummary}
 
 用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
-</deferred-tools>`,
+</deferred-tools>`;
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        deferredToolsBlock,
         'deferred tools',
         ctx,
       );
+      if (systemPrompt.includes(deferredToolsBlock)) {
+        appendedBlocks.set('deferred tools', deferredToolsBlock);
+      }
     }
   }
 
@@ -353,13 +964,20 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // 拼接持久化系统上下文（任务指导、模式 reminder 等）
   // 这些信息每轮推理都需要可见，而非作为消息历史被淹没
   const persistentSystemContext = ctx.getBudgetedPersistentSystemContext();
+  const artifactRepairContext = getArtifactRepairContext(ctx);
+  const artifactRepairContextSet = new Set(artifactRepairContext);
   for (let index = 0; index < persistentSystemContext.length; index += 1) {
-    systemPrompt = appendPromptBlockWithinBudget(
+    const contextBlock = persistentSystemContext[index];
+    const repairContext = artifactRepairContextSet.has(contextBlock);
+    const result = appendPromptBlockWithinBudgetWithStatus(
       systemPrompt,
-      persistentSystemContext[index],
+      contextBlock,
       `persistent system context #${index + 1}`,
+      new Map(),
       ctx,
+      repairContext ? { kind: 'required' } : { kind: 'optional' },
     );
+    systemPrompt = result.prompt;
   }
 
   // Check system prompt length and warn if too long
@@ -502,7 +1120,12 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     } else if (entry.role === 'assistant' && entry.toolCalls?.length) {
       // 过滤掉已废弃工具的历史调用，避免模型从上下文中误判这些工具仍可用
       const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
-      const tcs = entry.toolCalls.filter(tc => !REMOVED_TOOLS.has(tc.name));
+      const repairHistoryAllowlist = getArtifactRepairHistoryToolAllowlist(ctx);
+      const tcs = entry.toolCalls.filter((tc) => {
+        if (REMOVED_TOOLS.has(tc.name)) return false;
+        if (!repairHistoryAllowlist) return true;
+        return repairHistoryAllowlist.has(tc.name);
+      });
       if (tcs.length === 0 && !entry.content) continue;
       modelMessages.push({
         role: 'assistant',
@@ -551,6 +1174,10 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 }
 
 export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages: Message[]): ContextTranscriptEntry[] {
+  const artifactRepairMode = isArtifactRepairMode(ctx);
+  const allowedArtifactRepairToolCallIds = artifactRepairMode
+    ? getAllowedArtifactRepairToolCallIds(ctx, messages)
+    : null;
   let turnIndex = 0;
   let hasSeenUserTurn = false;
   const entries: ContextTranscriptEntry[] = [];
@@ -571,17 +1198,40 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
 
     if (message.role === 'tool' && message.toolResults?.length) {
       entries.push(
-        ...message.toolResults.map((result, index) => ({
-          ...baseEntry,
-          id: `${message.id}::tool-result::${result.toolCallId || index}`,
-          role: 'tool',
-          content: result.output || result.error || '',
-          toolCallId: result.toolCallId,
-          toolError: !result.success,
-          preserveObservation: result.metadata?.preserveObservation === true,
-          evidenceKind: result.metadata?.evidenceKind,
-          filePath: result.metadata?.filePath,
-        })),
+      ...message.toolResults
+          .filter((result) => {
+            if (!allowedArtifactRepairToolCallIds) return true;
+            if (!result.toolCallId) return true;
+            const targetFile = getArtifactRepairTargetFile(ctx);
+            const resultFilePath = typeof result.metadata?.filePath === 'string'
+              ? result.metadata.filePath
+              : null;
+            if (result.metadata?.evidenceKind === 'file_read' && resultFilePath) {
+              if (!targetFile) return false;
+              return resolveArtifactRepairPath(ctx, resultFilePath) === targetFile && result.success === true;
+            }
+            const isTargetFileRead =
+              result.metadata?.evidenceKind === 'file_read' &&
+              resultFilePath &&
+              targetFile &&
+              resolveArtifactRepairPath(ctx, resultFilePath) === targetFile &&
+              result.success === true;
+            if (isTargetFileRead) return true;
+            return allowedArtifactRepairToolCallIds.has(result.toolCallId);
+          })
+          .map((result, index) => ({
+            ...baseEntry,
+            id: `${message.id}::tool-result::${result.toolCallId || index}`,
+            role: 'tool',
+            content: artifactRepairMode
+              ? formatArtifactRepairToolResultContent(ctx, result, result.output || result.error || '')
+              : (result.output || result.error || ''),
+            toolCallId: result.toolCallId,
+            toolError: !result.success,
+            preserveObservation: result.metadata?.preserveObservation === true,
+            evidenceKind: typeof result.metadata?.evidenceKind === 'string' ? result.metadata.evidenceKind : undefined,
+            filePath: typeof result.metadata?.filePath === 'string' ? result.metadata.filePath : undefined,
+          })),
       );
       continue;
     }

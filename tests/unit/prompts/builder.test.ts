@@ -19,6 +19,8 @@ import {
   buildDynamicPrompt,
   buildDynamicPromptV2,
   buildPromptWithRules,
+  ARTIFACT_TASK_BRIEF_PROMPT,
+  needsArtifactTaskBrief,
 } from '../../../src/main/prompts/builder';
 import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
 import {
@@ -57,6 +59,12 @@ describe('Prompt Builder', () => {
     it('should include edit tool description', () => {
       const prompt = buildPrompt();
       expect(prompt).toContain(EDIT_TOOL_DESCRIPTION);
+    });
+
+    it('should include append guidance for large generated artifacts', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain('Use `Append` for very large generated artifacts');
+      expect(prompt).toContain('A complete medium-sized single-file app/game may be written in one `Write` call');
     });
 
     it('should include task tool description', () => {
@@ -187,6 +195,38 @@ describe('Prompt Builder', () => {
         maxReminderTokens: 500,
       });
       expect(result.tokenBudget).toBe(500);
+    });
+  });
+
+  describe('needsArtifactTaskBrief', () => {
+    it('matches artifact creation requests', () => {
+      expect(needsArtifactTaskBrief('生成一个类似超级玛丽的游戏，主角是一只柯基')).toBe(true);
+      expect(needsArtifactTaskBrief('build an interactive dashboard for sales')).toBe(true);
+      expect(needsArtifactTaskBrief('write a project report')).toBe(true);
+    });
+
+    it('matches artifact repair requests that target a concrete file', () => {
+      expect(needsArtifactTaskBrief('修复 /tmp/game.html 这个单文件 HTML 游戏，并验证失败原因')).toBe(true);
+      expect(needsArtifactTaskBrief('fix /tmp/report.md and verify the artifact output')).toBe(true);
+    });
+
+    it('does not match plain chat', () => {
+      expect(needsArtifactTaskBrief('你好')).toBe(false);
+      expect(needsArtifactTaskBrief('继续')).toBe(false);
+      expect(needsArtifactTaskBrief('修复一下这个想法')).toBe(false);
+    });
+  });
+
+  describe('ARTIFACT_TASK_BRIEF_PROMPT', () => {
+    it('includes chunked assembly guidance for large artifacts', () => {
+      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Use chunked assembly');
+      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Append ordered chunks');
+    });
+
+    it('includes deterministic game test contract guidance', () => {
+      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('reset(levelOrScenario?)');
+      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('step(inputState, frames)');
+      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('every authored level');
     });
   });
 

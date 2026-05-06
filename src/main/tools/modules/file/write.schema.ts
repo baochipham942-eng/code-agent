@@ -6,7 +6,10 @@ export const writeSchema: ToolSchema = {
   description:
     'Writes a file to the local filesystem. Overwrites existing files. ' +
     'IMPORTANT: You MUST read the file first before writing to it — use Edit for modifications ' +
-    'instead, which only sends the diff. Only use Write for new files or complete rewrites.',
+    'instead, which only sends the diff. Use Write for new files or complete rewrites. ' +
+    'For large generated artifacts such as full HTML/CSS/JS apps, games, documents, or data files, ' +
+    'prefer Append chunks when the content is very large. Complete medium-sized artifacts are accepted ' +
+    'in one Write call when the whole content is already available.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -20,11 +23,13 @@ export const writeSchema: ToolSchema = {
       },
       content: {
         type: 'string',
-        description:
-          'The complete file content to write. MUST be a string (not an object or array). ' +
-          'This will REPLACE the entire file content, not append. ' +
-          'For JSON files, use JSON.stringify() format. ' +
-          'For code files, include proper indentation and newlines.',
+          description:
+            'The complete file content to write. MUST be a string (not an object or array). ' +
+            'This will REPLACE the entire file content, not append. ' +
+            'For very large generated artifacts, use Append for subsequent chunks. ' +
+            'For a medium-sized single-file app/game, a complete one-shot Write is acceptable. ' +
+            'For JSON files, use JSON.stringify() format. ' +
+            'For code files, include proper indentation and newlines.',
       },
     },
     required: ['file_path', 'content'],

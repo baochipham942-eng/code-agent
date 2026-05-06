@@ -75,7 +75,7 @@ export class TaskCompletionEvaluator implements DimensionEvaluator {
     if (lastMsg?.role === 'assistant') signals++;
 
     // 信号2: 有文件产出（如果任务涉及文件操作）
-    const writeTools = ['write_file', 'edit_file'];
+    const writeTools = ['write_file', 'append_file', 'edit_file', 'write', 'append', 'edit'];
     const hasFileOutput = snapshot.toolCalls.some(
       (c) => writeTools.some((t) => c.name.toLowerCase().includes(t)) && c.success
     );

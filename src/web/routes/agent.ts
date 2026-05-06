@@ -25,7 +25,7 @@ export interface PendingLocalToolCall {
 }
 
 interface AgentRouterDeps {
-  activeAgentLoops: Map<string, { cancel(): void }>;
+  activeAgentLoops: Map<string, { cancel(reason?: string): void | Promise<void> }>;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
   tryGetSessionManager: () => Promise<any>;
@@ -150,7 +150,31 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const taskId = `task-${Date.now()}`;
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = req.body.sessionId || `web-session-${Date.now()}`;
-    sendSSE(res, 'task_start', { taskId, prompt, sessionId });
+    let runSettled = false;
+    let clientDisconnected = false;
+
+    const canWriteSSE = () => !res.writableEnded && !res.destroyed;
+    const emitSSE = (event: string, data: unknown) => {
+      if (!canWriteSSE()) return;
+      try {
+        sendSSE(res, event, data);
+      } catch (error) {
+        logger.warn(`[AgentRouter] Failed to write SSE event ${event} for ${sessionId}:`, error);
+      }
+    };
+    const cancelForDisconnect = () => {
+      if (runSettled || clientDisconnected) return;
+      clientDisconnected = true;
+      const activeLoop = activeAgentLoops.get(sessionId);
+      if (!activeLoop) return;
+      logger.warn(`[AgentRouter] SSE client disconnected, cancelling active run for ${sessionId}`);
+      void Promise.resolve(activeLoop.cancel('user')).catch((error) => {
+        logger.warn(`[AgentRouter] Failed to cancel disconnected run for ${sessionId}:`, error);
+      });
+    };
+
+    res.once('close', cancelForDisconnect);
+    emitSSE('task_start', { taskId, prompt, sessionId });
 
     try {
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
@@ -269,7 +293,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             const bridgeTool = mapToolName(toolName);
             const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-            sendSSE(res, 'tool_call_local', {
+            emitSSE('tool_call_local', {
               toolCallId,
               tool: bridgeTool,
               originalTool: toolName,
@@ -327,7 +351,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         const eventData = Array.isArray(event.data)
           ? { items: event.data, sessionId }
           : event.data ? { ...event.data, sessionId } : { sessionId };
-        sendSSE(res, event.type, eventData);
+        emitSSE(event.type, eventData);
         if (event.type === 'agent_cancelled') {
           runCancelled = true;
         }
@@ -391,7 +415,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           if (!event.data.success) {
             consecutiveToolFailures++;
             if (consecutiveToolFailures >= 2) {
-              sendSSE(res, 'tool_warning', {
+              emitSSE('tool_warning', {
                 message: `工具连续 ${consecutiveToolFailures} 次失败: ${event.data.error || 'unknown'}`,
                 level: 'warning',
                 sessionId,
@@ -405,6 +429,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 存储当前 agentLoop 引用，供 cancel 使用
       activeAgentLoops.set(sessionId, agentLoop);
+      if (clientDisconnected) {
+        logger.warn(`[AgentRouter] Client already disconnected before run started; cancelling ${sessionId}`);
+        await Promise.resolve(agentLoop.cancel('user'));
+      }
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
       if (history.length === 0) {
@@ -645,13 +673,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // session:updated 和 session:list-updated 已在 agentLoop.run() 之前广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      sendSSE(res, 'agent_complete', { sessionId });
+      emitSSE('agent_complete', { sessionId });
     } catch (error) {
-      sendSSE(res, 'error', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        sessionId,
-      });
+      if (!clientDisconnected) {
+        emitSSE('error', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          sessionId,
+        });
+      }
     } finally {
+      runSettled = true;
+      res.off('close', cancelForDisconnect);
       activeAgentLoops.delete(sessionId);
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -659,7 +691,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         const collector = getTelemetryCollector();
         collector.endSession(sessionId);
       } catch { /* telemetry cleanup failure is non-fatal */ }
-      res.end();
+      if (canWriteSSE()) {
+        res.end();
+      }
     }
   });
 

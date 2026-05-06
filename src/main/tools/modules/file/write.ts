@@ -35,6 +35,8 @@ import { writeSchema as schema } from './write.schema';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
+const LARGE_ARTIFACT_WRITE_NOTICE_CHAR_LIMIT = 12_000;
+const MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT = 160_000;
 
 const CODE_EXTENSIONS = new Set([
   '.html', '.htm', '.js', '.ts', '.jsx', '.tsx',
@@ -64,6 +66,20 @@ interface CompletenessCheck {
   isComplete: boolean;
   issues: string[];
   fileType: string;
+}
+
+function isGeneratedCodeArtifact(filePath: string, existed: boolean): boolean {
+  if (existed) return false;
+  const ext = path.extname(filePath).toLowerCase();
+  return CODE_EXTENSIONS.has(ext);
+}
+
+function isLargeSingleWriteArtifact(filePath: string, content: string, existed: boolean): boolean {
+  return isGeneratedCodeArtifact(filePath, existed) && content.length > LARGE_ARTIFACT_WRITE_NOTICE_CHAR_LIMIT;
+}
+
+function shouldRejectOversizedSingleWriteArtifact(filePath: string, content: string, existed: boolean): boolean {
+  return isGeneratedCodeArtifact(filePath, existed) && content.length > MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT;
 }
 
 function checkCodeCompleteness(content: string, filePath: string): CompletenessCheck {
@@ -258,6 +274,23 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         // 不存在，正常创建
       }
 
+      const largeSingleWriteArtifact = isLargeSingleWriteArtifact(filePath, content, existed);
+      if (shouldRejectOversizedSingleWriteArtifact(filePath, content, existed)) {
+        return {
+          ok: false,
+          error:
+            `Write payload exceeds the safe single-call artifact limit ` +
+            `(${content.length}/${MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT} chars). ` +
+            'Use Write for the initial chunk, then Append ordered chunks and set final=true on the last chunk.',
+          code: 'PREFER_APPEND_FOR_LARGE_ARTIFACT',
+          meta: {
+            outputPath: filePath,
+            contentLength: content.length,
+            maxSingleWriteChars: MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT,
+          },
+        };
+      }
+
       await atomicWriteFile(filePath, content, 'utf-8');
       const action = existed ? 'Updated' : 'Created';
 
@@ -274,16 +307,24 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: true,
             output:
-              `${action} file: ${filePath} (${content.length} bytes)\n\n` +
+              `${action} file: ${filePath} (${content.length} chars)\n\n` +
               `⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
               `问题:\n${check.issues.map((i) => `- ${i}`).join('\n')}\n\n` +
               `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
-            meta: { outputPath: filePath, completenessIssues: check.issues },
+            meta: {
+              outputPath: filePath,
+              completenessIssues: check.issues,
+              largeSingleWriteArtifact,
+              contentLength: content.length,
+            },
           };
         }
       }
 
-      let output = `${action} file: ${filePath} (${content.length} bytes)`;
+      let output = `${action} file: ${filePath} (${content.length} chars)`;
+      if (largeSingleWriteArtifact) {
+        output += `\nAccepted large generated artifact in one complete Write (${content.length} chars).`;
+      }
 
       // LSP 诊断闭环
       try {
@@ -300,7 +341,11 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       return {
         ok: true,
         output,
-        meta: { outputPath: filePath },
+        meta: {
+          outputPath: filePath,
+          largeSingleWriteArtifact,
+          contentLength: content.length,
+        },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

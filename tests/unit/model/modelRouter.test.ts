@@ -12,6 +12,11 @@ import {
 } from '../../../src/shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
 
+const healthMonitorMock = {
+  getHealth: vi.fn().mockReturnValue(null),
+  recordFailure: vi.fn(),
+};
+
 // --------------------------------------------------------------------------
 // Mocks
 // --------------------------------------------------------------------------
@@ -75,6 +80,15 @@ vi.mock('../../../src/main/model/adaptiveRouter', () => ({
   }),
 }));
 
+vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+  getProviderHealthMonitor: () => healthMonitorMock,
+}));
+
+const broadcastToRendererMock = vi.fn();
+vi.mock('../../../src/main/platform/windowBridge', () => ({
+  broadcastToRenderer: broadcastToRendererMock,
+}));
+
 // Mock retryStrategy
 vi.mock('../../../src/main/model/providers/retryStrategy', () => ({
   isFallbackEligible: vi.fn().mockReturnValue(true),
@@ -85,6 +99,8 @@ describe('ModelRouter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    healthMonitorMock.getHealth.mockReturnValue(null);
+    broadcastToRendererMock.mockReset();
     router = new ModelRouter();
   });
 
@@ -325,6 +341,648 @@ describe('ModelRouter', () => {
       );
     });
 
+    it('should pass forceNonStreaming inference options to provider', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const options = { forceNonStreaming: true };
+
+      await router.inference([{ role: 'user', content: 'write a single html game' }], [], config, undefined, undefined, options);
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        undefined,
+        options,
+      );
+    });
+
+    it('should prefer non-streaming for explicit file artifact generation turns', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+      const options = { snapshotIntervalMs: 1000 };
+
+      await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        config,
+        onStream,
+        undefined,
+        options,
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
+    it('should keep artifact follow-up turns streaming when prior tool results are healthy and no explicit file target exists', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+      const options = { snapshotIntervalMs: 1000 };
+
+      await router.inference(
+        [
+          { role: 'user', content: '请生成一个可玩的互动游戏' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Bash', arguments: '{"command":"mkdir -p /tmp"}' }] },
+          { role: 'tool', content: 'success', toolCallId: 'call-1' },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        options,
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
+    it('should prefer non-streaming for artifact follow-up after incomplete streamed tool args', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+      const options = { snapshotIntervalMs: 1000 };
+
+      await router.inference(
+        [
+          { role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Write', arguments: '{"file_path":"/tmp/game.html","content":"<html>' }] },
+          { role: 'tool', content: 'refusing to execute incomplete tool arguments', toolCallId: 'call-1', toolError: true },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        options,
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
+    it('should prefer non-streaming for artifact follow-up when file-write-required marker is injected', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+      const options = { snapshotIntervalMs: 1000 };
+
+      await router.inference(
+        [
+          { role: 'user', content: '请生成一个可玩的互动游戏' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Bash', arguments: '{"command":"mkdir -p /tmp/out"}' }] },
+          { role: 'tool', content: 'success', toolCallId: 'call-1' },
+          { role: 'system', content: '<artifact-file-write-required>\n目标产物文件是 /tmp/out/game.html。目录已经存在，下一步必须直接写这个文件本身。\n</artifact-file-write-required>' },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        options,
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
+    it('should use non-streaming inference when runtime artifact repair guard is active', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [{ role: 'user', content: '修复这个游戏，让它通过验收' }],
+        [],
+        config,
+        onStream,
+        undefined,
+        { snapshotIntervalMs: 1000, artifactRepairActive: true },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          artifactRepairActive: true,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 90_000,
+          firstByteTimeoutMs: 15_000,
+          inactivityTimeoutMs: 45_000,
+        },
+      );
+    });
+
+    it('should give write-priority artifact repair turns enough time for complete HTML replacement', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await router.inference(
+        [{ role: 'user', content: '修复这个 HTML 游戏并通过 validator' }],
+        [{ name: 'Write', description: 'write', inputSchema: {} } as any],
+        config,
+        vi.fn(),
+        undefined,
+        {
+          artifactRepairActive: true,
+          artifactRepairWritePriority: true,
+          artifactRepairFullRewritePriority: true,
+        },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Array),
+        config,
+        expect.any(Function),
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          artifactRepairActive: true,
+          artifactRepairWritePriority: true,
+          artifactRepairFullRewritePriority: true,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 240_000,
+          firstByteTimeoutMs: 30_000,
+          inactivityTimeoutMs: 120_000,
+        }),
+      );
+    });
+
+    it('should give targeted artifact repair write-priority enough time for structured Edit payloads', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await router.inference(
+        [{ role: 'user', content: '修复这个 HTML 游戏并通过 validator' }],
+        [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+        config,
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, artifactRepairWritePriority: true },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Array),
+        config,
+        expect.any(Function),
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          artifactRepairActive: true,
+          artifactRepairWritePriority: true,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 180_000,
+          firstByteTimeoutMs: 30_000,
+          inactivityTimeoutMs: 90_000,
+        }),
+      );
+    });
+
+    it('should use a shorter streaming timeout for blocked-tool artifact repair recovery turns', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [
+          { role: 'user', content: '请修复 /tmp/game.html 这个单文件 HTML 游戏' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Read', arguments: '{"file_path":"/tmp/game.html"}' }] },
+          { role: 'tool', content: '<artifact-repair-tool-blocked>\nRead is limited to the target artifact file during repair.\n</artifact-repair-tool-blocked>', toolCallId: 'call-1', toolError: true },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        { snapshotIntervalMs: 1000 },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 90_000,
+          firstByteTimeoutMs: 15_000,
+          inactivityTimeoutMs: 45_000,
+        },
+      );
+    });
+
+    it('should not retry blocked-tool artifact repair stream timeouts with non-streaming', async () => {
+      const provider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi stream inactivity timeout (45000ms)')),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [
+            { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏' },
+            {
+              role: 'tool',
+              content: '<artifact-repair-tool-blocked>\nRead is limited to the target artifact file during repair.\n</artifact-repair-tool-blocked>',
+              toolCallId: 'call-1',
+              toolError: true,
+            },
+          ],
+          [],
+          config,
+          vi.fn(),
+        ),
+      ).rejects.toThrow('Xiaomi stream inactivity timeout');
+
+      expect(provider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep blocked-tool artifact repair timeouts on the selected provider instead of cross-provider fallback', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi stream inactivity timeout (45000ms)')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [
+            { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏' },
+            {
+              role: 'system',
+              content: '<artifact-repair-admission-blocked>\nOnly Write or Append is available.\n</artifact-repair-admission-blocked>',
+            },
+          ],
+          [],
+          config,
+          vi.fn(),
+        ),
+      ).rejects.toThrow('Xiaomi stream inactivity timeout');
+
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should keep concrete artifact repair requests on the selected provider instead of cross-provider fallback', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Client network socket disconnected before secure TLS connection was established')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [
+            {
+              role: 'user',
+              content: [
+                '修复 /tmp/game.html 这个单文件 HTML 产物。直接编辑文件并验证，不要只解释。',
+                '当前 validator 失败摘要：',
+                '1. control_no_state_change',
+              ].join('\n'),
+            },
+          ],
+          [],
+          config,
+          vi.fn(),
+        ),
+      ).rejects.toThrow('Client network socket disconnected before secure TLS connection was established');
+
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(3);
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should use a shorter non-streaming timeout after artifact validation failures', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [
+          { role: 'user', content: '请修复 /tmp/game.html 这个单文件 HTML 游戏' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Edit', arguments: '{"file_path":"/tmp/game.html"}' }] },
+          { role: 'tool', content: 'Artifact validation failed for /tmp/game.html.\nGame artifact validation failed for game; repair 1 issue: control_no_state_change.', toolCallId: 'call-1', toolError: true },
+          { role: 'system', content: '<artifact-validation-failed kind="interactive_artifact">\nattempts: 1\nrepair phase: baseline_repair\ntarget file: /tmp/game.html\n1. control_no_state_change\n</artifact-validation-failed>' },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        { snapshotIntervalMs: 1000 },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 90_000,
+          firstByteTimeoutMs: 15_000,
+          inactivityTimeoutMs: 45_000,
+        },
+      );
+    });
+
+    it('should use a shorter non-streaming timeout for explicit artifact repair requests before validation markers exist', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [{ role: 'user', content: '修复 /tmp/game.html 这个已经存在的单文件 HTML 互动游戏，必须直接编辑文件。' }],
+        [],
+        config,
+        onStream,
+        undefined,
+        { snapshotIntervalMs: 1000 },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 90_000,
+          firstByteTimeoutMs: 15_000,
+          inactivityTimeoutMs: 45_000,
+        },
+      );
+    });
+
+    it('should abort provider inference when requestTimeoutMs is reached', async () => {
+      const provider = {
+        inference: vi.fn((_messages, _tools, _config, _onStream, signal: AbortSignal) => new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('provider observed abort')), { once: true });
+        })),
+      } as any;
+      (router as any).providers.set('minimax', provider);
+
+      const config: ModelConfig = {
+        provider: 'minimax',
+        model: 'MiniMax-Text-01',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [{ role: 'user', content: 'ping without artifact intent' }],
+          [],
+          config,
+          undefined,
+          undefined,
+          { requestTimeoutMs: 1, disableProviderTransientRetry: true },
+        ),
+      ).rejects.toThrow('minimax request timeout after 1ms');
+
+      expect(provider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep artifact write-required turns on the selected provider until it actually fails', async () => {
+      const xiaomiProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'should not run', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', xiaomiProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await router.inference(
+        [
+          { role: 'user', content: '请生成一个可玩的互动游戏' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'Bash', arguments: '{"command":"mkdir -p /tmp/out"}' }] },
+          { role: 'tool', content: 'success', toolCallId: 'call-1' },
+          { role: 'system', content: '<artifact-file-write-required>\n目标产物文件是 /tmp/out/game.html。目录已经存在，下一步必须直接写这个文件本身。\n</artifact-file-write-required>' },
+        ],
+        [],
+        config,
+        vi.fn(),
+        undefined,
+        { snapshotIntervalMs: 1000 },
+      );
+
+      expect(xiaomiProvider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        expect.any(Function),
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          forceNonStreaming: true,
+          requestTimeoutMs: 600_000,
+        }),
+      );
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+    });
+
     it('should throw for unsupported provider', async () => {
       const config: ModelConfig = {
         provider: 'nonexistent' as ModelProvider,
@@ -348,6 +1006,10 @@ describe('ModelRouter', () => {
       expect(PROVIDER_FALLBACK_CHAIN[DEFAULT_PROVIDER]).toBeDefined();
       expect(PROVIDER_FALLBACK_CHAIN.moonshot).toBeDefined();
       expect(PROVIDER_FALLBACK_CHAIN.deepseek).toBeDefined();
+      expect(PROVIDER_FALLBACK_CHAIN.xiaomi?.[0]).toEqual({
+        provider: 'zhipu',
+        model: 'glm-4.7-flash',
+      });
 
       // Each chain entry should have provider and model
       for (const [, chain] of Object.entries(PROVIDER_FALLBACK_CHAIN)) {
@@ -363,6 +1025,414 @@ describe('ModelRouter', () => {
         const selfInChain = chain.find(f => f.provider === provider);
         expect(selfInChain).toBeUndefined();
       }
+    });
+
+    it('should retry artifact-like streamed requests with non-streaming before fallback', async () => {
+      const provider = {
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('xiaomi stream inactivity timeout (120000ms)'))
+          .mockResolvedValueOnce({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个可玩的互动游戏' }],
+        [],
+        config,
+        onStream,
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'ok' });
+      expect(provider.inference).toHaveBeenCalledTimes(2);
+      expect(provider.inference).toHaveBeenNthCalledWith(
+        1,
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+      expect(provider.inference).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        expect.any(AbortSignal),
+        {
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
+    it('should keep artifact timeout on the selected provider instead of cross-provider fallback', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('xiaomi stream inactivity timeout (120000ms)')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-k2-0711-preview',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await expect(
+        router.inference(
+          [{ role: 'user', content: '生成一个带多关卡的互动游戏' }],
+          [],
+          config,
+          onStream,
+        )
+      ).rejects.toThrow('xiaomi stream inactivity timeout');
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
+      expect(primaryProvider.inference).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        expect.any(AbortSignal),
+        {
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should skip selected-provider artifact retry when artifact repair is active', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('xiaomi request timeout after 90000ms')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [{ role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' }],
+          [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+          config,
+          vi.fn(),
+          undefined,
+          { artifactRepairActive: true, artifactRepairWritePriority: true },
+        ),
+      ).rejects.toThrow('xiaomi request timeout after 90000ms');
+
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should retry the selected artifact provider on transient provider_unavailable errors before giving up', async () => {
+      const primaryProvider = {
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('Xiaomi API error: 502 - bad gateway'))
+          .mockResolvedValueOnce({ type: 'text', content: 'recovered on retry', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '生成一个多轮修复的 HTML 游戏并保存到 /tmp/game.html' }],
+        [],
+        {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+        },
+        vi.fn(),
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'recovered on retry' });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('classifies quota fallback reasons distinctly from timeout exhaustion wording', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback ok', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '生成一个 HTML 游戏' }],
+        [],
+        {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+        },
+        vi.fn(),
+      );
+
+      expect(result.fallback).toMatchObject({
+        category: 'quota',
+        to: { provider: 'zhipu', model: 'glm-4.7-flash' },
+      });
+      expect(broadcastToRendererMock).toHaveBeenCalledWith(
+        'provider:fallback',
+        expect.objectContaining({
+          category: 'quota',
+          reason: expect.stringContaining('insufficient balance'),
+        }),
+      );
+    });
+
+    it('should treat empty artifact responses as provider failure and fall back', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback artifact plan', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        config,
+        vi.fn(),
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'fallback artifact plan' });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep transient artifact provider errors on the selected provider instead of fallback', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 502 - bad gateway')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference(
+          [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+          [],
+          config,
+          vi.fn(),
+        )
+      ).rejects.toThrow('Xiaomi API error: 502');
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should retry selected artifact provider even when no cross-provider fallback chain exists', async () => {
+      const primaryProvider = {
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('Network request failed: socket hang up'))
+          .mockResolvedValueOnce({ type: 'text', content: 'recovered without fallback chain', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('minimax', primaryProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，并通过 validator' }],
+        [],
+        {
+          provider: 'minimax',
+          model: 'MiniMax-Text-01',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+        },
+        vi.fn(),
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'recovered without fallback chain' });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('reorders persistent artifact fallback chain to prefer deepseek before moonshot', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('zhipu temporary failure')),
+      } as any;
+      const deepseekProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'deepseek artifact fallback', finishReason: 'stop' }),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'moonshot should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('deepseek', deepseekProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        config,
+        vi.fn(),
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'deepseek artifact fallback' });
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+      expect(deepseekProvider.inference).toHaveBeenCalledTimes(1);
+      expect(moonshotProvider.inference).not.toHaveBeenCalled();
+    });
+
+    it('should skip empty fallback artifact responses and try the next fallback provider', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const openaiProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'call-1', name: 'Write', arguments: {} }], finishReason: 'tool_calls' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('openai', openaiProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        config,
+        vi.fn(),
+      );
+
+      expect(result.type).toBe('tool_use');
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+      expect(openaiProvider.inference).toHaveBeenCalledTimes(1);
+      expect(moonshotProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks providers unavailable after repeated empty artifact responses', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'call-1', name: 'Write', arguments: {} }], finishReason: 'tool_calls' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+      healthMonitorMock.getHealth.mockImplementation((provider: string) => {
+        if (provider === 'openai') {
+          return { status: 'unavailable' };
+        }
+        return null;
+      });
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        config,
+        vi.fn(),
+      );
+
+      expect(result.type).toBe('tool_use');
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi');
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('zhipu');
+      expect(moonshotProvider.inference).toHaveBeenCalledTimes(1);
     });
   });
 

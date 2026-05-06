@@ -9,6 +9,7 @@ import { createLogger } from '../../services/infra/logger';
 import {
   sanitizeBrowserComputerToolArguments,
   sanitizeBrowserComputerToolResult,
+  sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
 import * as fs from 'fs';
 
@@ -99,10 +100,16 @@ export function sanitizeToolCallsForHistory(toolCalls: ToolCall[] | undefined): 
   if (!toolCalls) {
     return toolCalls;
   }
-  return toolCalls.map((toolCall) => ({
-    ...toolCall,
-    arguments: sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments,
-  }));
+  return toolCalls.map((toolCall) => {
+    const sanitizedArgs = sanitizeLargeTextToolArguments(
+      toolCall.name,
+      sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments,
+    );
+    return {
+      ...toolCall,
+      arguments: sanitizedArgs || toolCall.arguments,
+    };
+  });
 }
 
 /**

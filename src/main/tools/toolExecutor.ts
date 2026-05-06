@@ -661,6 +661,18 @@ export class ToolExecutor {
           },
         };
 
+      case 'append_file':
+      case 'Append':
+        return {
+          type: 'file_write',
+          tool: tool.name,
+          details: {
+            path: params.file_path,
+            contentLength: (params.content as string)?.length || 0,
+            final: params.final === true,
+          },
+        };
+
       case 'edit_file':
       case 'Edit':
         return {

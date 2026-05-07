@@ -38,6 +38,7 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { createHash } from 'crypto';
+import { REPAIR_PROMPT_LIMITS } from '../../../../shared/constants/repair';
 import { isAbsolute, resolve as resolvePath } from 'path';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from '../contextAssembly';
@@ -606,10 +607,11 @@ function extractArtifactRepairTargetFromContext(blocks: string[]): string | null
   return null;
 }
 
-function pushUniqueLimited(target: string[], value: string, limit = 6): void {
+function pushUniqueLimited(target: string[], value: string, limit = REPAIR_PROMPT_LIMITS.HISTORY_ITEM_LIMIT): void {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (!normalized || target.includes(normalized) || target.length >= limit) return;
-  target.push(normalized.length > 260 ? `${normalized.slice(0, 257)}...` : normalized);
+  const maxLength = REPAIR_PROMPT_LIMITS.HISTORY_ITEM_CHARS;
+  target.push(normalized.length > maxLength ? `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...` : normalized);
 }
 
 function getRecentArtifactRepairValidationFailures(ctx: ContextAssemblyCtx): string[] {

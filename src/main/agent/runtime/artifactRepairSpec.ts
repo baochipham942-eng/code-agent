@@ -1,9 +1,23 @@
 import type { GameArtifactValidationSummary } from './gameArtifactValidator';
 import { REPAIR_PROMPT_LIMITS } from '../../../shared/constants/repair';
+import { gameSubtypeRegistry } from './game/registry';
+// side-effect import — PlatformerChecker 自注册并提供 platformer-specific repair codes
+import './game/platformer/PlatformerChecker';
+import {
+  classifyPlatformerFailure,
+  PLATFORMER_REPAIR_CODE_SET,
+  PLATFORMER_REPAIR_CODES,
+  type PlatformerRepairCode,
+} from './game/platformer/repairCodes';
 
 export type ArtifactRepairIssueSeverity = 'error' | 'warning';
 
-export type ArtifactRepairIssueCode =
+/**
+ * 通用（跨 subtype）的 issue code — Phase 2 task C 之后这里只剩 7 个生成/合约
+ * 层面的结构错误。subtype-specific code（platformer 的 missing_gameplay_mechanics
+ * 等）由各自 checker 持有，通过 union 合并到对外类型里。
+ */
+export type GenericArtifactRepairIssueCode =
   | 'lost_interactive_contract'
   | 'missing_contract_start'
   | 'missing_contract_snapshot'
@@ -22,9 +36,6 @@ export type ArtifactRepairIssueCode =
   | 'html_incomplete'
   | 'trailing_after_html'
   | 'canvas_not_responsive'
-  | 'missing_gameplay_mechanics'
-  | 'gameplay_mechanics_without_runtime_evidence'
-  | 'ability_gate_without_reachability'
   | 'missing_user_input'
   | 'missing_controls_metadata'
   | 'missing_coverage_metadata'
@@ -32,6 +43,10 @@ export type ArtifactRepairIssueCode =
   | 'missing_quality_metadata'
   | 'frontend_visual_smoke_failed'
   | 'generic_validation_failure';
+
+export type ArtifactRepairIssueCode =
+  | GenericArtifactRepairIssueCode
+  | PlatformerRepairCode;
 
 export interface ArtifactRepairIssue {
   code: ArtifactRepairIssueCode;
@@ -67,6 +82,30 @@ function compactText(value: string, maxLength: number = MAX_EVIDENCE_LENGTH): st
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 }
 
+/**
+ * 把 platformer-specific failure 文本扔给 PlatformerChecker（通过 repairCodes 表）。
+ *
+ * 任务 C 之前是直接写在 classifyFailure 的巨型 if-else 里；现在 subtype 知识在
+ * 各 checker 自己的 repairCodes.ts 里。返回 undefined 表示 "我不认这条"，
+ * 让 classifyFailure 继续往下匹配通用 code。
+ *
+ * 当前只接 platformer；后续 runner / tower-defense 加进来时，这里改成遍历 registry。
+ */
+function classifyFailureViaRegistry(text: string): FailureClassification | undefined {
+  const platformerEntry = classifyPlatformerFailure(text);
+  if (platformerEntry) {
+    // 通过 registry.get('platformer') 拿 repair instruction —
+    // 即使 PlatformerChecker.repairGuidance 被覆盖，这里也能拿到最新版本。
+    const checker = gameSubtypeRegistry.get('platformer');
+    const fromChecker = checker?.repairGuidance(platformerEntry.code);
+    return {
+      code: platformerEntry.code,
+      repairInstruction: fromChecker ?? platformerEntry.repairInstruction,
+    };
+  }
+  return undefined;
+}
+
 function classifyFailure(failure: string): FailureClassification {
   const text = compactText(failure, 1000);
 
@@ -100,24 +139,10 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Fix the rendered frontend, not only the metadata: load the HTML in a browser, resolve console/page errors, ensure canvas or DOM content is visible and nonblank, and keep the game contract attached to the same rendered state.',
     };
   }
-  if (/platformer[\s\S]{0,120}缺少 gameplayMechanics|gameplayMechanics[\s\S]{0,120}缺少 (?:enemies|blocks|abilities|gates|comboChallenge|stompable enemy|bumpable\/question block)|comboChallenge 必须组合/i.test(text)) {
-    return {
-      code: 'missing_gameplay_mechanics',
-      repairInstruction: 'Add platformer gameplayMechanics to __GAME_META__ with enemies, blocks, abilities, gates, and comboChallenge, then implement those objects in live collision/update logic instead of only declaring them.',
-    };
-  }
-  if (/gate 必须在获得技能后改变|requiresAbility|blocksAccessTo|技能.*(?:路线|可达|route)|ability 必须通过真实输入获得|Gate remained locked|gate remained locked/i.test(text)) {
-    return {
-      code: 'ability_gate_without_reachability',
-      repairInstruction: 'Make one ability change movement or interaction rules and unlock a real gated route. snapshot() should expose abilities and gate/route state, and runSmokeTest() must prove ability false->true followed by gate/route unreachable->reachable.',
-    };
-  }
-  if (/gameplayMechanics 缺少 runtime 证据|stompable enemy 必须通过 step\/runSmokeTest|bumpable\/question block 必须通过 step\/runSmokeTest|comboChallenge coverage 必须证明|Failed to bump block|Failed to stomp enemy|bump block or gain ability/i.test(text)) {
-    return {
-      code: 'gameplay_mechanics_without_runtime_evidence',
-      repairInstruction: 'Repair runSmokeTest() so it drives step() through stomp enemy, bump block, gain ability, unlock gate/route, and combo challenge, recording coverage only after before/after snapshot changes prove each mechanic.',
-    };
-  }
+  // subtype-specific failure 优先走 registry — platformer 的失败码（missing_gameplay_mechanics
+  // 等）从 PlatformerChecker 拿，主入口不再持有 platformer 关键词。
+  const subtypeMatch = classifyFailureViaRegistry(text);
+  if (subtypeMatch) return subtypeMatch;
   if (
     /缺少通用交互测试合约|没有找到 runSmokeTest/i.test(text)
     || /(?:缺少|missing|不存在|not found|没有|未找到)[\s\S]{0,80}window\.__(?:INTERACTIVE|GAME)_TEST__/i.test(text)
@@ -243,11 +268,71 @@ function classifyFailure(failure: string): FailureClassification {
   };
 }
 
+/** 通用 issue code 列表 — 用于动态拼装 directCodePattern */
+const GENERIC_ISSUE_CODES: readonly GenericArtifactRepairIssueCode[] = [
+  'lost_interactive_contract',
+  'missing_contract_start',
+  'missing_contract_snapshot',
+  'missing_contract_smoke',
+  'missing_test_contract',
+  'malformed_test_contract',
+  'missing_snapshot_metric',
+  'non_executable_reachability_input',
+  'control_no_state_change',
+  'level_coverage_incomplete',
+  'smoke_missing_coverage',
+  'shortcut_state_mutation',
+  'coverage_without_runtime_evidence',
+  'input_normalizer_missing',
+  'run_smoke_failed',
+  'html_incomplete',
+  'trailing_after_html',
+  'canvas_not_responsive',
+  'missing_user_input',
+  'missing_controls_metadata',
+  'missing_coverage_metadata',
+  'missing_reachability_metadata',
+  'missing_quality_metadata',
+  'frontend_visual_smoke_failed',
+  'generic_validation_failure',
+];
+
+/**
+ * 通用候选行筛选关键词。subtype-specific 关键词不写在这里，由 registry
+ * 的 checker 通过 `classifyFailure` 自己识别。
+ */
+const GENERIC_CANDIDATE_KEYWORDS =
+  /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i;
+
+/**
+ * 动态拼装 directCodePattern：generic 列表 + 所有已注册 subtype 的 codes。
+ *
+ * subtype-specific code 集合通过 `subtypeRepairCodes()` 拿（当前只接 platformer，
+ * 后续每加一个 subtype 在该 helper 内补一行 import + 合并即可，主流程不动）。
+ */
+function buildDirectCodePattern(): RegExp {
+  const allCodes = [...new Set([...GENERIC_ISSUE_CODES, ...subtypeRepairCodes()])];
+  return new RegExp(`\\b(${allCodes.join('|')})\\b`, 'g');
+}
+
+/**
+ * 收集 subtype-specific 的 repair codes — 当前只接 platformer。
+ *
+ * 后续 runner / tower-defense 加进来时，每个 subtype 在自己的 repairCodes.ts
+ * 提供 export，这里 import 进来再 concat 即可（与 buildSubtypeRegistryClassifiers
+ * 同样的模式，主入口零 platformer 关键词依旧成立）。
+ */
+function subtypeRepairCodes(): string[] {
+  // checker 必须先注册到 registry，才把它的 codes 算进 directCodePattern；
+  // 这样测试 / 临时 stub 可以通过 clear() 清空 registry 来隔离。
+  if (gameSubtypeRegistry.list().length === 0) return [];
+  return PLATFORMER_REPAIR_CODES.map((entry) => entry.code);
+}
+
 export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRepairIssueCode[] {
   if (!text.trim()) return [];
   const issueCodes = new Set<ArtifactRepairIssueCode>();
-  const directCodePattern =
-    /\b(lost_interactive_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|missing_test_contract|malformed_test_contract|missing_snapshot_metric|non_executable_reachability_input|control_no_state_change|level_coverage_incomplete|smoke_missing_coverage|shortcut_state_mutation|coverage_without_runtime_evidence|input_normalizer_missing|run_smoke_failed|html_incomplete|trailing_after_html|canvas_not_responsive|missing_gameplay_mechanics|gameplay_mechanics_without_runtime_evidence|ability_gate_without_reachability|missing_user_input|missing_controls_metadata|missing_coverage_metadata|missing_reachability_metadata|missing_quality_metadata|frontend_visual_smoke_failed|generic_validation_failure)\b/g;
+  const directCodePattern = buildDirectCodePattern();
 
   for (const match of text.matchAll(directCodePattern)) {
     issueCodes.add(match[1] as ArtifactRepairIssueCode);
@@ -257,8 +342,11 @@ export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRep
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
     .filter(Boolean)
-    .filter((line) =>
-      /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|platformer|stompable|comboChallenge|requiresAbility|blocksAccessTo|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i.test(line),
+    .filter(
+      (line) =>
+        GENERIC_CANDIDATE_KEYWORDS.test(line) ||
+        // subtype checker 的 pattern 命中也算候选行（避免漏掉只含 platformer 关键词的描述）
+        classifyFailureViaRegistry(line) !== undefined,
     );
 
   for (const line of candidateLines.length > 0 ? candidateLines : [text]) {
@@ -303,7 +391,12 @@ function mergeIssues(failures: string[]): ArtifactRepairIssue[] {
 }
 
 function messageForCode(code: ArtifactRepairIssueCode): string {
-  switch (code) {
+  // subtype-specific code 走 registry — 文案归 PlatformerChecker 持有
+  if (PLATFORMER_REPAIR_CODE_SET.has(code as PlatformerRepairCode)) {
+    const entry = PLATFORMER_REPAIR_CODES.find((e) => e.code === code);
+    if (entry) return entry.message;
+  }
+  switch (code as GenericArtifactRepairIssueCode) {
     case 'lost_interactive_contract':
       return 'Interactive artifact contract was removed during repair.';
     case 'html_incomplete':
@@ -312,12 +405,6 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
       return 'Content exists after the closing HTML tag.';
     case 'canvas_not_responsive':
       return 'Canvas layout is not responsive to the browser viewport.';
-    case 'missing_gameplay_mechanics':
-      return 'Platformer gameplay mechanics contract is missing or incomplete.';
-    case 'gameplay_mechanics_without_runtime_evidence':
-      return 'Platformer gameplay mechanics are declared without runtime evidence.';
-    case 'ability_gate_without_reachability':
-      return 'Platformer ability does not prove gated route reachability.';
     case 'missing_test_contract':
       return 'Interactive test contract is missing.';
     case 'malformed_test_contract':
@@ -405,19 +492,49 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
       'Frontend validation is browser evidence. Fix actual page load/render problems: remove thrown errors, keep the canvas framed in desktop and mobile viewports, draw nonblank content after start/reset/step, and expose __GAME_META__/__GAME_TEST__ on the same window used by the rendered game.',
     );
   }
-  if (issues.some((issue) => issue.code === 'missing_gameplay_mechanics')) {
-    hints.push(
-      'Platformer metadata template: __GAME_META__.gameplayMechanics arrays only, never an object map; include stomp enemy, bump block, ability, reachableTarget gate, and comboChallenge.',
-      'Implement collision code: stomp enemy -> enemiesDefeated/player.vy, bump block -> spawnedReward, ability false->true, gate -> reachableTarget or routeReachable.',
-    );
+  // subtype-specific hints — 走各 checker 自己的 repairCodes 表
+  hints.push(...collectSubtypeRepairHints(issues));
+  return hints;
+}
+
+/**
+ * 把 issues 里 subtype-specific 的失败码翻成 repair hints。
+ *
+ * 当前只接 platformer；未来加 runner / tower-defense 时把分支补全即可。
+ * 多个相同 issue 命中时只展开一次（按 code 去重），保持 hint 列表稳定。
+ */
+function collectSubtypeRepairHints(issues: readonly ArtifactRepairIssue[]): string[] {
+  const seen = new Set<string>();
+  const hints: string[] = [];
+
+  // platformer：missing_gameplay_mechanics 用专属 hints；
+  // gameplay_mechanics_without_runtime_evidence + ability_gate_without_reachability
+  // 共享 runtime 证据 hints（与原 buildRepairHints 行为一致）。
+  if (issues.some((i) => i.code === 'missing_gameplay_mechanics')) {
+    const entry = PLATFORMER_REPAIR_CODES.find((e) => e.code === 'missing_gameplay_mechanics');
+    if (entry) appendUnique(hints, seen, entry.hints);
   }
-  if (issues.some((issue) => issue.code === 'gameplay_mechanics_without_runtime_evidence' || issue.code === 'ability_gate_without_reachability')) {
-    hints.push(
-      'Smoke template: snapshot before/after real step() calls, then prove stompEnemy, bumpBlock, gainAbility, unlockGate, comboChallenge only after assertions pass.',
-      'If smoke says "Failed to bump block", "Failed to stomp enemy", or gate remained locked, move block/enemy/gate into a reachable real-controls path before claiming coverage.',
-    );
+  if (
+    issues.some(
+      (i) =>
+        i.code === 'gameplay_mechanics_without_runtime_evidence' ||
+        i.code === 'ability_gate_without_reachability',
+    )
+  ) {
+    // 这两条共用同一组 hints — 取 ability_gate_without_reachability 的（与原逻辑一致）
+    const entry = PLATFORMER_REPAIR_CODES.find((e) => e.code === 'ability_gate_without_reachability');
+    if (entry) appendUnique(hints, seen, entry.hints);
   }
   return hints;
+}
+
+function appendUnique(target: string[], seen: Set<string>, items: readonly string[]): void {
+  for (const item of items) {
+    if (!seen.has(item)) {
+      seen.add(item);
+      target.push(item);
+    }
+  }
 }
 
 function buildSummary(summary: GameArtifactValidationSummary, issues: ArtifactRepairIssue[]): string {

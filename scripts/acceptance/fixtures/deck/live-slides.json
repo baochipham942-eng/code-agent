@@ -1,0 +1,66 @@
+[
+  {
+    "index": 1,
+    "layout": "cover",
+    "title": "AI Coding 工具 2026 简报",
+    "subtitle": "市场格局与团队选型建议",
+    "bullets": [],
+    "footnote": ""
+  },
+  {
+    "index": 2,
+    "layout": "content",
+    "title": "背景概述",
+    "subtitle": "",
+    "bullets": [
+      "AI Coding 工具从代码补全演进到端到端 Agent",
+      "评测体系尚未收敛，团队选型缺乏一致基线",
+      "本简报锚定 2026 年 4 月主流工具的共性与差异"
+    ],
+    "footnote": ""
+  },
+  {
+    "index": 3,
+    "layout": "content",
+    "title": "数据分析报告",
+    "subtitle": "",
+    "bullets": [
+      "Claude Code 周活 230 万，环比增长 18%",
+      "Cursor 用户 85 万，环比增长 12%",
+      "Replit Agent 跑通率 62%，对照基线 41%"
+    ],
+    "footnote": ""
+  },
+  {
+    "index": 4,
+    "layout": "content",
+    "title": "团队接入路径",
+    "subtitle": "",
+    "bullets": [
+      "评估：锚定团队语料、评测集与红线",
+      "试点：选一条业务线跑四周 A/B",
+      "推广：把 winning 工具沉淀到 onboarding"
+    ],
+    "footnote": ""
+  },
+  {
+    "index": 5,
+    "layout": "content",
+    "title": "总结回顾",
+    "subtitle": "",
+    "bullets": [
+      "选型不是选最强，而是选与团队评测体系匹配的",
+      "BoN 与 self-repair 上限是工具基础能力，非加分项",
+      "下一阶段重点是把多 Agent 协作流程标准化"
+    ],
+    "footnote": ""
+  },
+  {
+    "index": 6,
+    "layout": "content",
+    "title": "致谢",
+    "subtitle": "",
+    "bullets": [],
+    "footnote": "lin@porsche.cn"
+  }
+]

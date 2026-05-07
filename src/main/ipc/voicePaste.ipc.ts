@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { promisify } from 'util';
 import { getConfigService } from '../services/core/configService';
+import { DEFAULT_MODELS } from '../../shared/constants';
 import Groq from 'groq-sdk';
 
 const execFileAsync = promisify(execFile);
@@ -77,11 +78,11 @@ async function transcribeAudio(wavPath: string, language: string = 'zh'): Promis
 const MODEL_API_ENDPOINTS = {
   zhipu: {
     url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-4-flash',
+    model: DEFAULT_MODELS.quick,
   },
   kimi: {
     url: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'moonshot-v1-8k',
+    model: DEFAULT_MODELS.compact,
   }
 };
 
@@ -323,9 +324,14 @@ export function registerVoicePasteHandlers(ipcMain_: typeof ipcMain): void {
 
   ipcMain_.handle('voice-paste:toggle', async () => {
     // Allow renderer to trigger toggle programmatically
-    globalShortcut.isRegistered('CommandOrControl+`') &&
+    if (globalShortcut.isRegistered('CommandOrControl+`')) {
       // Simulate the shortcut callback
-      (isRecording ? stopRecording() : startRecording());
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
     return { isRecording };
   });
 }

@@ -244,6 +244,13 @@ describe('pdfAutomateModule (native dispatcher)', () => {
       if (result.ok) {
         expect(result.output).toContain('PDF 拆分完成');
         expect(result.output).toContain('p1.pdf (1-5, 5 页)');
+        expect(result.meta?.artifacts).toMatchObject([
+          { kind: 'document', sourceTool: 'PdfAutomate', path: '/tmp/work/p1.pdf' },
+          { kind: 'document', sourceTool: 'PdfAutomate', path: '/tmp/work/p2.pdf' },
+        ]);
+        expect(result.meta?.pdfAutomateAction).toBe('split');
+        expect(result.meta?.resultCount).toBe(2);
+        expect(result.meta?.contentLength).toBe(result.output.length);
       }
     });
   });

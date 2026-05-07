@@ -146,6 +146,16 @@ describe('mailDraftModule (native)', () => {
             summary: 'To: a@x.com',
           },
         });
+        expect(result.meta).toMatchObject({
+          action: 'draft_message',
+          connector: 'mail',
+          saved: true,
+          subject: 'Draft',
+          to: ['a@x.com'],
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('draft_message');
       }
       expect(execMock).toHaveBeenCalledWith('draft_message', validArgs);
     });

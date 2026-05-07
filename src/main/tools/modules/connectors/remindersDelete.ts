@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
 
 async function executeRemindersDelete(
@@ -50,11 +51,34 @@ async function executeRemindersDelete(
       deleted: boolean;
     };
     ctx.logger.debug('reminders_delete', { id: reminder.id, list: reminder.list });
+    const output = `已删除提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}`;
 
     return {
       ok: true,
-      output: `已删除提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}`,
-      meta: { id: reminder.id, deleted: reminder.deleted },
+      output,
+      meta: {
+        action: 'delete_reminder',
+        connector: 'reminders',
+        id: reminder.id,
+        list: reminder.list,
+        title: reminder.title,
+        deleted: reminder.deleted,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `reminder-delete-${reminder.id}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'reminders',
+            action: 'delete_reminder',
+            id: reminder.id,
+            deleted: reminder.deleted,
+          },
+        }),
+      },
     };
   } catch (error) {
     return {

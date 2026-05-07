@@ -162,6 +162,18 @@ describe('mermaidExportModule (native)', () => {
         const meta = result.meta as Record<string, unknown>;
         expect(meta.format).toBe('png');
         expect(meta.chartType).toBe('流程图');
+        expect(meta.artifact).toMatchObject({
+          kind: 'image',
+          sourceTool: 'mermaid_export',
+          path: expect.stringMatching(/^\/tmp\/work\/mermaid-\d+\.png$/),
+          mimeType: 'image/png',
+          sizeBytes: 2048,
+          metadata: {
+            chartType: '流程图',
+            format: 'png',
+            theme: 'default',
+          },
+        });
       }
       expect(writeFileSyncMock).toHaveBeenCalledTimes(1);
     });

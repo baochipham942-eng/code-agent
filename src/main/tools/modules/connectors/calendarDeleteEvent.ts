@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 
 async function executeCalendarDeleteEvent(
@@ -50,11 +51,34 @@ async function executeCalendarDeleteEvent(
       deleted: boolean;
     };
     ctx.logger.debug('calendar_delete_event', { uid: event.uid, calendar: event.calendar });
+    const output = `已删除日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}`;
 
     return {
       ok: true,
-      output: `已删除日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}`,
-      meta: { uid: event.uid, deleted: event.deleted },
+      output,
+      meta: {
+        action: 'delete_event',
+        connector: 'calendar',
+        uid: event.uid,
+        calendar: event.calendar,
+        title: event.title,
+        deleted: event.deleted,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `calendar-event-delete-${event.uid}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'calendar',
+            action: 'delete_event',
+            uid: event.uid,
+            deleted: event.deleted,
+          },
+        }),
+      },
     };
   } catch (error) {
     return {

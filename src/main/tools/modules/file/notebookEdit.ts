@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { notebookEditSchema as schema } from './notebookEdit.schema';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 
 interface NotebookCell {
   id?: string;
@@ -245,7 +246,31 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('NotebookEdit done', { resolvedPath, mode: actualEditMode });
 
-    return { ok: true, output: `${resultMessage} in ${path.basename(resolvedPath)}` };
+    const artifact = await createFileArtifact(resolvedPath, schema.name, ctx, {
+      kind: 'text',
+      mimeType: 'application/x-ipynb+json',
+      metadata: {
+        action: actualEditMode,
+        operation: 'notebook_edit',
+        path: resolvedPath,
+        cellIndex,
+        cellCount: notebook.cells.length,
+      },
+    }).catch(() => undefined);
+
+    return {
+      ok: true,
+      output: `${resultMessage} in ${path.basename(resolvedPath)}`,
+      meta: {
+        action: actualEditMode,
+        operation: 'notebook_edit',
+        path: resolvedPath,
+        changedFiles: [resolvedPath],
+        cellIndex,
+        cellCount: notebook.cells.length,
+        ...(artifact ? { artifact } : {}),
+      },
+    };
   }
 }
 

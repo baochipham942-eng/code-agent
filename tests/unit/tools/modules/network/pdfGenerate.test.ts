@@ -165,6 +165,19 @@ describe('pdfGenerateModule (native)', () => {
         expect(meta.theme).toBe('default');
         expect(meta.pageSize).toBe('A4');
         expect(meta.fileSize).toBe(2048);
+        expect(meta.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'pdf_generate',
+          path: '/tmp/work/报告.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 2048,
+          metadata: {
+            title: '报告',
+            pageCount: 1,
+            theme: 'default',
+            pageSize: 'A4',
+          },
+        });
         const att = meta.attachment as Record<string, string | number>;
         expect(att.mimeType).toBe('application/pdf');
         expect(att.category).toBe('document');

@@ -15,8 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { computerUseTool } from '../../vision/computerUse';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { computerUseSchema as schema } from './computerUse.schema';
+import { adaptVisionLegacyResult } from './resultMeta';
 
 class ComputerUseHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +42,7 @@ class ComputerUseHandler implements ToolHandler<Record<string, unknown>, string>
     const legacyResult = await computerUseTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('computer_use done', { action, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return adaptVisionLegacyResult(legacyResult, { tool: schema.name, args, ctx });
   }
 }
 

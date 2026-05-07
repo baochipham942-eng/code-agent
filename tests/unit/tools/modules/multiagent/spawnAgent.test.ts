@@ -138,7 +138,15 @@ describe('spawn_agent dispatch to legacy execute', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.output).toBe('spawned');
-      expect(result.meta).toEqual({ agentId: 'a1' });
+      expect(result.meta).toMatchObject({
+        agentId: 'a1',
+        action: 'spawn',
+        status: 'completed',
+        targets: ['coder'],
+        counts: { agents: 1 },
+        result: { agentId: 'a1' },
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'spawn_agent' }),
+      });
     }
     expect(executeSpawnAgentMock).toHaveBeenCalledWith(
       { role: 'coder', task: 'do thing' },
@@ -147,6 +155,31 @@ describe('spawn_agent dispatch to legacy execute', () => {
     expect(buildLegacyCtxMock).toHaveBeenCalled();
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'spawn_agent' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
+  });
+
+  it('normalizes public role aliases before dispatching to legacy spawn', async () => {
+    executeSpawnAgentMock.mockResolvedValue({
+      success: true,
+      output: 'spawned',
+      metadata: { agentId: 'a2' },
+    });
+    const handler = await agentSpawnModule.createHandler();
+    const result = await handler.execute(
+      { role: 'explorer', task: 'inspect', agents: [{ role: 'planner', task: 'plan' }] },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(executeSpawnAgentMock).toHaveBeenCalledWith(
+      { role: 'explore', task: 'inspect', agents: [{ role: 'plan', task: 'plan' }] },
+      expect.objectContaining({ workingDirectory: '/tmp/test' }),
+    );
+    if (result.ok) {
+      expect(result.meta).toMatchObject({
+        targets: ['explore', 'plan'],
+      });
+    }
   });
 
   it('legacy failure → ok=false + error 透传', async () => {

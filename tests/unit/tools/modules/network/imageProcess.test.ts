@@ -102,6 +102,21 @@ describe('image_process — execute', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'image_process',
+        path: '/tmp/work/photo_convert.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 4096,
+        metadata: {
+          action: 'convert',
+          inputPath: '/abs/photo.png',
+          originalSize: 4096,
+          width: 800,
+          height: 600,
+          format: 'webp',
+        },
+      });
       expect(result.meta?.format).toBe('webp');
       expect(result.meta?.action).toBe('convert');
       expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');

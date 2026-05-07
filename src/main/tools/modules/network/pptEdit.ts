@@ -18,6 +18,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { pptEditSchema as schema } from './pptEdit.schema';
 
 type EditAction =
@@ -239,7 +240,23 @@ export async function executePptEdit(
 标题字体: ${styleConfig.fontTitle}
 正文字体: ${styleConfig.fontBody}
 深色主题: ${styleConfig.isDark ? '是' : '否'}`,
-          meta: { styleConfig },
+          meta: {
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'text',
+              sessionId: ctx.sessionId,
+              name: `PPT style: ${file_path}`,
+              mimeType: 'application/json',
+              contentLength: JSON.stringify(styleConfig).length,
+              preview: JSON.stringify(styleConfig).slice(0, 500),
+              metadata: { action, filePath: file_path },
+            }),
+            styleConfig,
+            action,
+            filePath: file_path,
+            contentLength: JSON.stringify(styleConfig).length,
+            truncated: false,
+          },
         };
       }
 
@@ -368,12 +385,33 @@ export async function executePptEdit(
           ok: true,
           output,
           meta: {
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'text',
+              sessionId: ctx.sessionId,
+              name: `PPT analysis: ${file_path}`,
+              mimeType: 'text/markdown',
+              contentLength: output.length,
+              preview: output.slice(0, 500),
+              metadata: {
+                action,
+                filePath: file_path,
+                slideCount,
+                masterCount: masterFiles.length,
+                layoutCount: layoutFiles.length,
+              },
+            }),
             slideCount,
             slides,
             fonts: [...fonts],
             themeColors,
             masterCount: masterFiles.length,
             layoutCount: layoutFiles.length,
+            action,
+            filePath: file_path,
+            resultCount: slideCount,
+            contentLength: output.length,
+            truncated: false,
           },
         };
       }
@@ -413,7 +451,24 @@ export async function executePptEdit(
     return {
       ok: true,
       output: `${resultMessage}\nSnapshot: ${snapshot.id}`,
-      meta: { snapshotId: snapshot.id, action, slideIndex: slide_index, filePath: file_path },
+      meta: {
+        artifact: await createFileArtifact(file_path, schema.name, ctx, {
+          kind: 'document',
+          mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          metadata: {
+            action,
+            slideIndex: slide_index,
+            snapshotId: snapshot.id,
+          },
+        }),
+        snapshotId: snapshot.id,
+        action,
+        slideIndex: slide_index,
+        filePath: file_path,
+        outputPath: file_path,
+        contentLength: fs.statSync(file_path).size,
+        truncated: false,
+      },
     };
   } catch (error: unknown) {
     restoreLatest(file_path);

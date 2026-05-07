@@ -168,6 +168,19 @@ describe('academicSearchModule (native)', () => {
         expect(result.output).toContain('Attention Is All You Need');
         expect(result.output).toContain('Transformer Variants');
         expect(result.output).toContain('Alice Researcher');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'search',
+          sourceTool: 'academic_search',
+          mimeType: 'text/markdown',
+          metadata: {
+            query: 'attention',
+            source: 'arxiv',
+            resultCount: 2,
+          },
+        });
+        expect(result.meta?.resultCount).toBe(2);
+        expect(result.meta?.contentLength).toBe(result.output.length);
+        expect(result.meta?.truncated).toBe(false);
       }
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(String(fetchMock.mock.calls[0][0])).toContain('arxiv');

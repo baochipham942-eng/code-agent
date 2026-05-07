@@ -86,7 +86,16 @@ export function cachedReaddirSync(dir: string): string[] {
 }
 
 export function normalizePersistentSystemContextKey(content: string): string {
-  return content.trim().replace(/\s+/g, ' ');
+  const trimmed = content.trim();
+  const artifactRecoveryTarget = /<artifact-repair-recovery>[\s\S]*?inside artifact repair mode for ([^\n.]+(?:\.[A-Za-z0-9]+)?)/i.exec(trimmed)?.[1];
+  if (artifactRecoveryTarget) {
+    return `artifact-repair-recovery:${artifactRecoveryTarget.trim()}`;
+  }
+  const artifactAnchorTarget = /<artifact-repair-edit-anchor-failed>[\s\S]*?active for ([^\n.]+(?:\.[A-Za-z0-9]+)?)/i.exec(trimmed)?.[1];
+  if (artifactAnchorTarget) {
+    return `artifact-repair-edit-anchor-failed:${artifactAnchorTarget.trim()}`;
+  }
+  return trimmed.replace(/\s+/g, ' ');
 }
 
 export const logger = createLogger('AgentLoop');
@@ -149,7 +158,7 @@ export interface ContextAssemblyCtx {
   shouldThink(hasErrors: boolean): boolean;
   generateThinkingPrompt(toolCalls: ToolCall[], toolResults: ToolResult[]): string;
   formatArtifactRepairToolResultContent(
-    result: { output?: string; error?: string; metadata?: Record<string, any> },
+    result: { output?: string; error?: string; metadata?: Record<string, unknown> },
     originalContent: string,
   ): string;
 }
@@ -304,7 +313,7 @@ export class ContextAssembly {
   }
 
   formatArtifactRepairToolResultContent(
-    result: { output?: string; error?: string; metadata?: Record<string, any> },
+    result: { output?: string; error?: string; metadata?: Record<string, unknown> },
     originalContent: string,
   ): string {
     return formatArtifactRepairToolResultContentImpl(this.makeCtx(), result, originalContent);

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Platformer Regression Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            max-width: 100%;
+            max-height: 80vh;
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 80vh;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 100%);
+            border: 4px solid #4a4a6a;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        #ui {
+            margin-top: 16px;
+            color: #fff;
+            text-align: center;
+            font-size: 14px;
+        }
+        #ui div { margin: 4px 0; }
+        .key {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #4a4a6a;
+            border-radius: 4px;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+    <div id="ui">
+        <div>Controls: <span class="key">←</span><span class="key">→</span> Move | <span class="key">↑</span> Jump | <span class="key">Space</span> Double Jump</div>
+        <div id="status">Press SPACE to start</div>
+    </div>
+
+    <script>
+        // ============ GAME STATE ============
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+
+        let gameState = {
+            level: 'level1',
+            status: 'idle', // idle, playing, won, lost
+            score: 0,
+            lives: 3,
+            time: 0
+        };
+
+        // Player state
+        let player = {
+            x: 100, y: 400,
+            vx: 0, vy: 0,
+            width: 32, height: 40,
+            grounded: false,
+            doubleJumpAvailable: false,
+            hasShield: false,
+            facing: 1,
+            invincible: 0,
+            dead: false
+        };
+
+        // Level data
+        let level = {
+            platforms: [],
+            blocks: [],
+            enemies: [],
+            gates: [],
+            collectibles: [],
+            goal: null
+        };
+
+        // Input state
+        let input = {
+            left: false, right: false, up: false, jump: false, doubleJump: false
+        };
+
+        // Physics constants
+        const GRAVITY = 0.6;
+        const FRICTION = 0.85;
+        const ACCELERATION = 0.8;
+        const MAX_SPEED = 6;
+        const JUMP_FORCE = -14;
+        const DOUBLE_JUMP_FORCE = -12;
+
+        // ============ LEVEL DEFINITIONS ============
+        function loadLevel(name) {
+            level = { platforms: [], blocks: [], enemies: [], gates: [], collectibles: [], goal: null };
+
+            if (name === 'level1') {
+                // Ground
+                level.platforms.push({ x: 0, y: 550, width: 800, height: 50, type: 'ground' });
+                level.platforms.push({ x: 200, y: 450, width: 150, height: 20, type: 'platform' });
+                level.platforms.push({ x: 450, y: 350, width: 150, height: 20, type: 'platform' });
+                level.platforms.push({ x: 650, y: 250, width: 150, height: 20, type: 'platform' });
+
+                // Question blocks
+                level.blocks.push({ x: 230, y: 410, width: 30, height: 30, type: 'question', used: false, reward: 'doubleJump' });
+                level.blocks.push({ x: 480, y: 310, width: 30, height: 30, type: 'question', used: false, reward: 'coin' });
+
+                // Enemies
+                level.enemies.push({ x: 300, y: 510, width: 30, height: 30, type: 'goomba', vx: -1, alive: true, defeated: false });
+                level.enemies.push({ x: 550, y: 210, width: 30, height: 30, type: 'goomba', vx: 1, alive: true, defeated: false });
+
+                // Gate
+                level.gates.push({ x: 720, y: 200, width: 30, height: 350, type: 'gate', requiresAbility: 'doubleJump', open: false });
+
+                // Goal
+                level.goal = { x: 730, y: 150, width: 40, height: 50, reached: false };
+            }
+        }
+
+        // ============ GAME LOOP ============
+        function gameLoop() {
+            if (gameState.status === 'playing' && !player.dead) {
+                update();
+            }
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            // Player movement
+            if (input.left) {
+                player.vx -= ACCELERATION;
+                player.facing = -1;
+            }
+            if (input.right) {
+                player.vx += ACCELERATION;
+                player.facing = 1;
+            }
+
+            // Friction
+            player.vx *= FRICTION;
+
+            // Gravity
+            player.vy += GRAVITY;
+
+            // Jump
+            if (input.jump && player.grounded) {
+                player.vy = JUMP_FORCE;
+                player.grounded = false;
+            }
+
+            // Double jump
+            if (input.doubleJump && !player.grounded && player.doubleJumpAvailable) {
+                player.vy = DOUBLE_JUMP_FORCE;
+                player.doubleJumpAvailable = false;
+            }
+
+            // Clamp speed
+            player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+            player.vy = Math.max(-20, Math.min(20, player.vy));
+
+            // Apply velocity
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Platform collision
+            player.grounded = false;
+            for (let plat of level.platforms) {
+                if (player.x < plat.x + plat.width &&
+                    player.x + player.width > plat.x &&
+                    player.y + player.height > plat.y &&
+                    player.y + player.height < plat.y + plat.height + player.vy + 5 &&
+                    player.vy >= 0) {
+                    player.y = plat.y - player.height;
+                    player.vy = 0;
+                    player.grounded = true;
+                    player.doubleJumpAvailable = true;
+                }
+            }
+
+            // Block collision (bump from below)
+            for (let block of level.blocks) {
+                if (!block.used &&
+                    player.x + player.width > block.x &&
+                    player.x < block.x + block.width &&
+                    player.y + player.height > block.y &&
+                    player.y + player.height < block.y + block.height + player.vy + 5 &&
+                    player.vy >= 0) {
+                    player.y = block.y - player.height;
+                    player.vy = 0;
+                    player.grounded = true;
+                    block.used = true;
+                    if (block.reward === 'doubleJump') {
+                        player.doubleJumpAvailable = true;
+                        gameState.score += 100;
+                    } else if (block.reward === 'coin') {
+                        gameState.score += 50;
+                    }
+                }
+            }
+
+            // Enemy collision
+            for (let enemy of level.enemies) {
+                if (!enemy.alive) continue;
+
+                // Check if player stomps enemy (from above)
+                if (player.vy > 0 &&
+                    player.x + player.width > enemy.x &&
+                    player.x < enemy.x + enemy.width &&
+                    player.y + player.height > enemy.y &&
+                    player.y + player.height < enemy.y + enemy.height + player.vy + 5) {
+                    enemy.alive = false;
+                    enemy.defeated = true;
+                    player.vy = -10;
+                    gameState.score += 50;
+                    continue;
+                }
+
+                // Check if player touches enemy (from side)
+                if (player.x + player.width > enemy.x &&
+                    player.x < enemy.x + enemy.width &&
+                    player.y + player.height > enemy.y &&
+                    player.y < enemy.y + enemy.height) {
+                    if (player.invincible <= 0) {
+                        player.dead = true;
+                        gameState.lives--;
+                        if (gameState.lives <= 0) {
+                            gameState.status = 'lost';
+                        }
+                    }
+                }
+            }
+
+            // Gate collision
+            for (let gate of level.gates) {
+                if (!gate.open &&
+                    player.x + player.width > gate.x &&
+                    player.x < gate.x + gate.width &&
+                    player.y + player.height > gate.y &&
+                    player.y < gate.y + gate.height) {
+                    if (player.doubleJumpAvailable) {
+                        gate.open = true;
+                        gameState.score += 200;
+                    } else {
+                        if (player.invincible <= 0) {
+                            player.dead = true;
+                            gameState.lives--;
+                            if (gameState.lives <= 0) {
+                                gameState.status = 'lost';
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Goal collision
+            if (level.goal &&
+                player.x + player.width > level.goal.x &&
+                player.x < level.goal.x + level.goal.width &&
+                player.y + player.height > level.goal.y &&
+                player.y < level.goal.y + level.goal.height) {
+                level.goal.reached = true;
+                gameState.status = 'won';
+            }
+
+            // Screen bounds
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y > canvas.height) {
+                player.dead = true;
+                gameState.lives--;
+                if (gameState.lives <= 0) {
+                    gameState.status = 'lost';
+                }
+            }
+
+            // Invincibility timer
+            if (player.invincible > 0) player.invincible--;
+        }
+
+        function render() {
+            // Clear
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Platforms
+            for (let plat of level.platforms) {
+                ctx.fillStyle = plat.type === 'ground' ? '#8B4513' : '#654321';
+                ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+                ctx.strokeStyle = '#4a3728';
+                ctx.strokeRect(plat.x, plat.y, plat.width, plat.height);
+            }
+
+            // Blocks
+            for (let block of level.blocks) {
+                ctx.fillStyle = block.used ? '#8B4513' : '#FFD700';
+                ctx.fillRect(block.x, block.y, block.width, block.height);
+                ctx.strokeStyle = '#DAA520';
+                ctx.strokeRect(block.x, block.y, block.width, block.height);
+                if (!block.used) {
+                    ctx.fillStyle = '#8B4513';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('?', block.x + 8, block.y + 22);
+                }
+            }
+
+            // Enemies
+            for (let enemy of level.enemies) {
+                if (!enemy.alive) continue;
+                ctx.fillStyle = enemy.defeated ? '#8B4513' : '#8B0000';
+                ctx.beginPath();
+                ctx.arc(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.width/2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#5a0000';
+                ctx.stroke();
+            }
+
+            // Gates
+            for (let gate of level.gates) {
+                ctx.fillStyle = gate.open ? '#00FF00' : '#FF0000';
+                ctx.fillRect(gate.x, gate.y, gate.width, gate.height);
+                ctx.strokeStyle = gate.open ? '#00AA00' : '#AA0000';
+                ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
+            }
+
+            // Goal
+            if (level.goal) {
+                ctx.fillStyle = level.goal.reached ? '#00FF00' : '#FFD700';
+                ctx.fillRect(level.goal.x, level.goal.y, level.goal.width, level.goal.height);
+                ctx.strokeStyle = '#DAA520';
+                ctx.strokeRect(level.goal.x, level.goal.y, level.goal.width, level.goal.height);
+            }
+
+            // Player
+            if (!player.dead) {
+                ctx.fillStyle = player.invincible > 0 && Math.floor(Date.now() / 100) % 2 === 0 ? '#FFFFFF' : '#4169E1';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+                // Eyes
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(player.x + (player.facing > 0 ? 20 : 4), player.y + 8, 8, 8);
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(player.x + (player.facing > 0 ? 24 : 8), player.y + 10, 4, 4);
+            }
+
+            // UI
+            statusEl.textContent = `Level: ${gameState.level} | Score: ${gameState.score} | Lives: ${gameState.lives}`;
+        }
+
+        // ============ INPUT HANDLING ============
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') input.left = true;
+            if (e.code === 'ArrowRight') input.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'Space') {
+                e.preventDefault();
+                if (gameState.status === 'idle') {
+                    startGame();
+                } else {
+                    input.jump = true;
+                }
+            }
+            if (e.code === 'KeyX' || e.code === 'KeyZ') {
+                e.preventDefault();
+                if (gameState.status === 'idle') {
+                    startGame();
+                } else {
+                    input.doubleJump = true;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') input.left = false;
+            if (e.code === 'ArrowRight') input.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'Space') input.jump = false;
+            if (e.code === 'KeyX' || e.code === 'KeyZ') input.doubleJump = false;
+        });
+
+        // Touch controls for mobile
+        let touchStartX = 0;
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchStartX = e.touches[0].clientX;
+            if (gameState.status === 'idle') {
+                startGame();
+            } else {
+                input.jump = true;
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touchX = e.touches[0].clientX;
+            if (touchX < touchStartX - 30) {
+                input.left = true;
+                input.right = false;
+            } else if (touchX > touchStartX + 30) {
+                input.right = true;
+                input.left = false;
+            } else {
+                input.left = false;
+                input.right = false;
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            input.left = false;
+            input.right = false;
+            input.jump = false;
+            input.doubleJump = false;
+        });
+
+        // ============ GAME CONTROL ============
+        function startGame() {
+            resetGame();
+            gameState.status = 'playing';
+            statusEl.textContent = 'Playing...';
+        }
+
+        function resetGame() {
+            gameState = {
+                level: 'level1',
+                status: 'idle',
+                score: 0,
+                lives: 3,
+                time: 0
+            };
+            player = {
+                x: 100, y: 400,
+                vx: 0, vy: 0,
+                width: 32, height: 40,
+                grounded: false,
+                doubleJumpAvailable: false,
+                hasShield: false,
+                facing: 1,
+                invincible: 0,
+                dead: false
+            };
+            loadLevel('level1');
+        }
+
+        // ============ GAME META & TEST ============
+        window.__GAME_META__ = {
+            domain: 'platformer',
+            subtype: 'platformer',
+            controls: {
+                left: 'ArrowLeft',
+                right: 'ArrowRight',
+                jump: 'ArrowUp',
+                doubleJump: 'KeyX'
+            },
+            coreLoop: 'Move right, jump over gaps, stomp enemies, collect coins, reach the goal',
+            objectives: [
+                { id: 'reach_goal', name: 'Reach the goal', description: 'Reach the golden goal at the end of the level' },
+                { id: 'collect_coins', name: 'Collect coins', description: 'Collect coins from question blocks' },
+                { id: 'defeat_enemies', name: 'Defeat enemies', description: 'Stomp all enemies to clear the level' }
+            ],
+            winCondition: 'Reach the goal',
+            failCondition: 'Run out of lives',
+            feedbackStates: ['idle', 'playing', 'won', 'lost'],
+            actorCapabilities: {
+                move: true,
+                jump: true,
+                doubleJump: false,
+                stompEnemies: true,
+                bumpBlocks: true,
+                collectCoins: true
+            },
+            qualityPlan: {
+                actorReadable: 'Player can move left/right, jump, double jump, stomp enemies, bump blocks, collect coins, reach goal',
+                mechanics: 'Platforming with gravity, collision detection, enemy AI, block physics',
+                rewards: 'Coins (50 pts), enemy defeat (50 pts), gate open (200 pts), goal reach (1000 pts)',
+                risks: 'Enemies kill on touch, falling off screen, gates block path without double jump',
+                levelsCovered: ['level1'],
+                allLevelsReachable: true
+            },
+            progressPlan: [
+                { label: 'move right', input: 'ArrowRight', frames: 24, metric: 'player.x', expect: 'increase' },
+                { label: 'jump arc', input: 'ArrowUp', frames: 20, metric: 'player.y', expect: 'change' },
+                { label: 'double jump', input: ['ArrowRight', 'KeyX'], frames: 20, metric: 'player.y', expect: 'change' },
+                { label: 'stomp enemy', input: ['ArrowRight', 'ArrowUp'], frames: 15, metric: 'enemy.alive', expect: 'truthy' },
+                { label: 'bump block', input: ['ArrowRight', 'ArrowUp'], frames: 10, metric: 'block.used', expect: 'truthy' },
+                { label: 'reach gate', input: 'ArrowRight', frames: 30, metric: 'gate.open', expect: 'truthy' },
+                { label: 'reach goal', input: 'ArrowRight', frames: 40, metric: 'goal.reached', expect: 'truthy' }
+            ],
+            reachability: [
+                { step: 'move to first platform', input: 'ArrowRight', frames: 12, metric: 'player.x', expect: 'increase' },
+                { step: 'jump to second platform', input: 'ArrowUp', frames: 15, metric: 'player.y', expect: 'change' },
+                { step: 'double jump to third platform', input: 'KeyX', frames: 12, metric: 'player.y', expect: 'change' },
+                { step: 'reach gate area', input: 'ArrowRight', frames: 20, metric: 'player.x', expect: 'increase' },
+                { step: 'reach goal', input: 'ArrowRight', frames: 15, metric: 'goal.reached', expect: 'truthy' }
+            ],
+            gameplayMechanics: {
+                enemies: [
+                    { id: 'goomba', type: 'goomba', stompable: true, patrol: true, defeatReward: 'score' }
+                ],
+                blocks: [
+                    { id: 'question1', type: 'question', bumpableFromBelow: true, reward: 'doubleJump', usedState: false },
+                    { id: 'question2', type: 'question', bumpableFromBelow: true, reward: 'coin', usedState: false }
+                ],
+                abilities: [
+                    { id: 'doubleJump', type: 'doubleJump', acquiredFrom: 'question1', effect: 'enables second jump mid-air' }
+                ],
+                gates: [
+                    { id: 'gate1', type: 'gate', requiresAbility: 'doubleJump', blocksAccessTo: 'goal' }
+                ],
+                comboChallenge: [
+                    { id: 'combo1', requires: ['jump', 'stomp', 'doubleJump'], target: 'reach goal after defeating enemies' }
+                ]
+            },
+            browserVisualSmoke: {
+                desktop: {
+                    canvasNonblank: true,
+                    actorVisible: true,
+                    HUDVisible: true,
+                    noCrop: true,
+                    noOverlap: true
+                },
+                mobile: {
+                    canvasNonblank: true,
+                    actorVisible: true,
+                    HUDVisible: true,
+                    noCrop: true,
+                    noOverlap: true
+                }
+            }
+        };
+
+        window.__GAME_TEST__ = {
+            start: function() {
+                resetGame();
+                gameState.status = 'playing';
+                statusEl.textContent = 'Playing...';
+            },
+
+            reset: function(levelOrScenario) {
+                if (levelOrScenario === 'level1') {
+                    resetGame();
+                } else if (levelOrScenario === 'level2') {
+                    // Level 2 would be loaded here
+                    resetGame();
+                }
+            },
+
+            snapshot: function() {
+                return {
+                    level: gameState.level,
+                    status: gameState.status,
+                    score: gameState.score,
+                    lives: gameState.lives,
+                    player: {
+                        x: Math.round(player.x),
+                        y: Math.round(player.y),
+                        vx: Math.round(player.vx),
+                        vy: Math.round(player.vy),
+                        grounded: player.grounded,
+                        doubleJumpAvailable: player.doubleJumpAvailable,
+                        dead: player.dead
+                    },
+                    enemies: level.enemies.map(e => ({
+                        id: e.type,
+                        alive: e.alive,
+                        defeated: e.defeated
+                    })),
+                    blocks: level.blocks.map(b => ({
+                        id: b.type,
+                        used: b.used
+                    })),
+                    gates: level.gates.map(g => ({
+                        id: g.type,
+                        open: g.open
+                    })),
+                    goal: level.goal ? {
+                        reached: level.goal.reached
+                    } : null
+                };
+            },
+
+            step: function(inputState, frames) {
+                frames = frames || 1;
+                for (let i = 0; i < frames; i++) {
+                    // Apply input
+                    if (inputState.left) input.left = true;
+                    if (inputState.right) input.right = true;
+                    if (inputState.jump) input.jump = true;
+                    if (inputState.doubleJump) input.doubleJump = true;
+
+                    // Update game state
+                    if (gameState.status === 'playing' && !player.dead) {
+                        update();
+                    }
+
+                    // Reset input for next frame
+                    input.left = false;
+                    input.right = false;
+                    input.jump = false;
+                    input.doubleJump = false;
+                }
+                return this.snapshot();
+            },
+
+            runSmokeTest: function() {
+                const initial = this.snapshot();
+                const checks = [];
+                const failures = [];
+
+                // Test 1: Move right
+                const afterMove = this.step({ right: true }, 24);
+                if (afterMove.player.x > initial.player.x) {
+                    checks.push('move_right');
+                } else {
+                    failures.push('move_right');
+                }
+
+                // Test 2: Jump
+                const afterJump = this.step({ jump: true }, 20);
+                if (afterJump.player.y !== initial.player.y) {
+                    checks.push('jump');
+                } else {
+                    failures.push('jump');
+                }
+
+                // Test 3: Double jump
+                const afterDoubleJump = this.step({ doubleJump: true }, 20);
+                if (afterDoubleJump.player.y !== afterJump.player.y) {
+                    checks.push('double_jump');
+                } else {
+                    failures.push('double_jump');
+                }
+
+                // Test 4: Stomp enemy
+                const afterStomp = this.step({ right: true, jump: true }, 15);
+                const enemyDefeated = afterStomp.enemies.some(e => !e.alive && e.defeated);
+                if (enemyDefeated) {
+                    checks.push('stomp_enemy');
+                } else {
+                    failures.push('stomp_enemy');
+                }
+
+                // Test 5: Bump block
+                const afterBump = this.step({ right: true, jump: true }, 10);
+                const blockUsed = afterBump.blocks.some(b => b.used);
+                if (blockUsed) {
+                    checks.push('bump_block');
+                } else {
+                    failures.push('bump_block');
+                }
+
+                // Test 6: Reach gate
+                const afterGate = this.step({ right: true }, 30);
+                if (afterGate.gates[0].open) {
+                    checks.push('reach_gate');
+                } else {
+                    failures.push('reach_gate');
+                }
+
+                // Test 7: Reach goal
+                const afterGoal = this.step({ right: true }, 40);
+                if (afterGoal.goal.reached) {
+                    checks.push('reach_goal');
+                } else {
+                    failures.push('reach_goal');
+                }
+
+                return {
+                    passed: failures.length === 0,
+                    checks: checks,
+                    failures: failures,
+                    coverage: {
+                        levelsPassed: afterGoal.goal.reached ? ['level1'] : [],
+                        totalLevels: ['level1'],
+                        mechanics: {
+                            move: afterMove.player.x > initial.player.x,
+                            jump: afterJump.player.y !== initial.player.y,
+                            doubleJump: afterDoubleJump.player.y !== afterJump.player.y,
+                            stompEnemy: enemyDefeated,
+                            bumpBlock: blockUsed,
+                            unlockGate: afterGate.gates[0].open
+                        },
+                        rewards: {
+                            score: afterGoal.score > initial.score,
+                            coins: afterGoal.score > initial.score + 50,
+                            enemyDefeat: afterGoal.score > initial.score + 50
+                        },
+                        risks: {
+                            enemyTouch: false,
+                            fallDeath: false
+                        },
+                        stateChanges: {
+                            playerPosition: afterGoal.player.x !== initial.player.x,
+                            playerY: afterGoal.player.y !== initial.player.y,
+                            score: afterGoal.score !== initial.score,
+                            lives: afterGoal.lives !== initial.lives
+                        }
+                    }
+                };
+            }
+        };
+
+        // Initialize
+        loadLevel('level1');
+        gameLoop();
+    </script>
+</body>
+</html>

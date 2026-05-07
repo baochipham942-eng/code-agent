@@ -80,6 +80,26 @@ describe('toolDefinitions deferred loading', () => {
     expect(names).toContain('Append');
   });
 
+  it('keeps core tools out of loaded deferred definitions after ToolSearch hits', async () => {
+    const service = getToolSearchService();
+    await service.searchTools('TaskManager', { maxResults: 3, includeMCP: false });
+
+    const definitions = getLoadedDeferredToolDefinitions();
+
+    expect(definitions.map((definition) => definition.name)).not.toContain('TaskManager');
+  });
+
+  it('includes canonical multiagent tools loaded through PascalCase aliases', () => {
+    const service = getToolSearchService();
+    service.selectTool('WaitAgent');
+    service.selectTool('WorkflowOrchestrate');
+
+    const names = getLoadedDeferredToolDefinitions().map((definition) => definition.name);
+
+    expect(names).toContain('wait_agent');
+    expect(names).toContain('workflow_orchestrate');
+  });
+
   it('does not include selected searchable-only deferred metadata', () => {
     const service = getToolSearchService();
     service.selectTool('desktop_context_now');

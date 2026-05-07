@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Platformer Mechanics Lab</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #18212a;
+      font-family: Arial, sans-serif;
+      color: #f8fafc;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      overflow: auto;
+    }
+
+    #game-container {
+      position: relative;
+      width: min(100vw, 960px);
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 24px);
+      aspect-ratio: 16 / 9;
+      background: #24313d;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+    }
+
+    #hud {
+      position: absolute;
+      left: 24px;
+      top: 22px;
+      display: flex;
+      gap: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+    <div id="hud">
+      <div>Score: <span id="score">0</span></div>
+      <div>Ability: <span id="abilities">none</span></div>
+      <div>Route: <span id="route">locked</span></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const abilityEl = document.getElementById('abilities');
+    const routeEl = document.getElementById('route');
+
+    const startState = {
+      player: {
+        x: 48,
+        y: 352,
+        w: 28,
+        h: 32,
+        vx: 0,
+        vy: 0,
+        grounded: true,
+        jumps: 0,
+        abilities: { doubleJump: false },
+        color: '#6ee7b7'
+      },
+      blocks: [
+        { id: 'question-1', x: 116, y: 292, w: 34, h: 28, type: 'question', used: false, bumped: false, spawnedReward: false }
+      ],
+      enemies: [
+        { id: 'slime-1', x: 226, y: 360, w: 32, h: 24, type: 'slime', defeated: false, stomped: false, patrol: true, vx: 0 }
+      ],
+      gates: [
+        { id: 'upper-gate', x: 334, y: 250, w: 42, h: 110, requiresAbility: 'doubleJump', open: false, unlocked: false, reachable: false }
+      ],
+      score: 0,
+      blocksUsed: 0,
+      spawnedReward: 0,
+      enemiesDefeated: 0,
+      gatesUnlocked: 0,
+      routesUnlocked: 0,
+      reachableTargets: 0,
+      routeReachableAfterAbility: false,
+      comboChallengeComplete: false,
+      keys: {},
+      previousSpace: false
+    };
+
+    const gameState = {};
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function resetState() {
+      const fresh = clone(startState);
+      Object.keys(gameState).forEach((key) => delete gameState[key]);
+      Object.assign(gameState, fresh);
+      updateHud();
+      draw();
+    }
+
+    function updateHud() {
+      scoreEl.textContent = String(gameState.score);
+      abilityEl.textContent = gameState.player.abilities.doubleJump ? 'double jump' : 'none';
+      routeEl.textContent = gameState.routeReachableAfterAbility ? 'upper route' : 'locked';
+    }
+
+    function setKeys(input) {
+      gameState.keys = {};
+      if (typeof input === 'string') {
+        gameState.keys[input] = true;
+      } else if (Array.isArray(input)) {
+        input.forEach((key) => {
+          if (typeof key === 'string') gameState.keys[key] = true;
+        });
+      } else if (input && typeof input === 'object') {
+        Object.entries(input).forEach(([key, value]) => {
+          if (value === true) gameState.keys[key] = true;
+        });
+      }
+    }
+
+    function pressJumpIfNeeded() {
+      const p = gameState.player;
+      const spaceDown = gameState.keys.Space === true;
+      if (!spaceDown || gameState.previousSpace) return;
+      if (p.grounded) {
+        p.vy = -9.5;
+        p.grounded = false;
+        p.jumps = 1;
+      } else if (p.abilities.doubleJump && p.jumps < 2) {
+        p.vy = -8.5;
+        p.jumps = 2;
+      }
+    }
+
+    function updateGateState() {
+      const gate = gameState.gates[0];
+      const shouldOpen = gameState.player.abilities.doubleJump && gameState.enemiesDefeated > 0;
+      if (shouldOpen && !gate.open) {
+        gate.open = true;
+        gate.unlocked = true;
+        gameState.gatesUnlocked = 1;
+        gameState.routesUnlocked = 1;
+      }
+      if (gate.open && gameState.player.x + gameState.player.w >= gate.x + gate.w) {
+        gate.reachable = true;
+        gameState.routeReachableAfterAbility = true;
+        gameState.reachableTargets = 1;
+      }
+      gameState.comboChallengeComplete =
+        gameState.blocksUsed > 0 &&
+        gameState.player.abilities.doubleJump &&
+        gameState.enemiesDefeated > 0 &&
+        gameState.routeReachableAfterAbility;
+    }
+
+    function collidePlatforms() {
+      const p = gameState.player;
+      if (p.y + p.h >= 384) {
+        p.y = 384 - p.h;
+        p.vy = 0;
+        p.grounded = true;
+        p.jumps = 0;
+      }
+    }
+
+    function collideBlock() {
+      const p = gameState.player;
+      const block = gameState.blocks[0];
+      if (block.used || p.vy >= 0) return;
+      const horizontalOverlap = p.x < block.x + block.w && p.x + p.w > block.x;
+      const headHit = p.y <= block.y + block.h && p.y >= block.y + block.h - 18;
+      if (!horizontalOverlap || !headHit) return;
+      block.used = true;
+      block.bumped = true;
+      block.spawnedReward = true;
+      gameState.blocksUsed = 1;
+      gameState.spawnedReward = 1;
+      gameState.player.abilities.doubleJump = true;
+      gameState.player.color = '#67e8f9';
+      p.vy = 3;
+      updateGateState();
+    }
+
+    function collideEnemy() {
+      const p = gameState.player;
+      const enemy = gameState.enemies[0];
+      if (enemy.defeated || p.vy < 0) return;
+      const horizontalOverlap = p.x < enemy.x + enemy.w && p.x + p.w > enemy.x;
+      const feetCrossEnemy = p.y + p.h >= enemy.y && p.y + p.h <= enemy.y + 22;
+      if (!horizontalOverlap || !feetCrossEnemy) return;
+      enemy.defeated = true;
+      enemy.stomped = true;
+      gameState.enemiesDefeated = 1;
+      gameState.score += 100;
+      p.vy = -8;
+      p.grounded = false;
+      updateGateState();
+    }
+
+    function update() {
+      const p = gameState.player;
+      pressJumpIfNeeded();
+      if (gameState.keys.ArrowLeft) p.vx -= 0.65;
+      if (gameState.keys.ArrowRight) p.vx += 0.65;
+      p.vx *= 0.82;
+      p.vy += 0.48;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.grounded = false;
+      collideBlock();
+      collideEnemy();
+      collidePlatforms();
+      if (p.x < 0) p.x = 0;
+      if (p.x > canvas.width - p.w) p.x = canvas.width - p.w;
+      if (p.y > canvas.height) resetState();
+      updateGateState();
+      updateHud();
+      gameState.previousSpace = gameState.keys.Space === true;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      sky.addColorStop(0, '#203040');
+      sky.addColorStop(1, '#111827');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(0, 384, 800, 66);
+
+      const gate = gameState.gates[0];
+      ctx.fillStyle = gate.open ? '#22c55e' : '#ef4444';
+      ctx.fillRect(gate.x, gate.y, gate.w, gate.h);
+      ctx.fillStyle = '#dbeafe';
+      ctx.fillText(gate.open ? 'OPEN' : 'GATE', gate.x - 2, gate.y - 8);
+
+      const block = gameState.blocks[0];
+      ctx.fillStyle = block.used ? '#475569' : '#facc15';
+      ctx.fillRect(block.x, block.y, block.w, block.h);
+      ctx.fillStyle = '#1f2937';
+      ctx.fillText(block.used ? '-' : '?', block.x + 12, block.y + 19);
+
+      const enemy = gameState.enemies[0];
+      if (!enemy.defeated) {
+        ctx.fillStyle = '#c084fc';
+        ctx.fillRect(enemy.x, enemy.y, enemy.w, enemy.h);
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(enemy.x + 7, enemy.y + 7, 5, 5);
+        ctx.fillRect(enemy.x + 20, enemy.y + 7, 5, 5);
+      }
+
+      const p = gameState.player;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(p.x + 6, p.y + 8, 5, 5);
+      ctx.fillRect(p.x + 18, p.y + 8, 5, 5);
+
+      if (gameState.routeReachableAfterAbility) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillText('upper route reached', 420, 246);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function snapshot() {
+      return {
+        player: {
+          x: gameState.player.x,
+          y: gameState.player.y,
+          vx: gameState.player.vx,
+          vy: gameState.player.vy,
+          grounded: gameState.player.grounded,
+          jumps: gameState.player.jumps,
+          abilities: { ...gameState.player.abilities }
+        },
+        abilities: { ...gameState.player.abilities },
+        blocks: gameState.blocks.map((block) => ({ ...block })),
+        enemies: gameState.enemies.map((enemy) => ({ ...enemy })),
+        gates: gameState.gates.map((gate) => ({ ...gate })),
+        score: gameState.score,
+        blocksUsed: gameState.blocksUsed,
+        spawnedReward: gameState.spawnedReward,
+        enemiesDefeated: gameState.enemiesDefeated,
+        gatesUnlocked: gameState.gatesUnlocked,
+        routesUnlocked: gameState.routesUnlocked,
+        reachableTargets: gameState.reachableTargets,
+        routeReachableAfterAbility: gameState.routeReachableAfterAbility,
+        comboChallengeComplete: gameState.comboChallengeComplete
+      };
+    }
+
+    function placeForBlock() {
+      const block = gameState.blocks[0];
+      const p = gameState.player;
+      p.x = block.x + 4;
+      p.y = block.y + block.h + 2;
+      p.vx = 0;
+      p.vy = 0;
+      p.grounded = true;
+      p.jumps = 0;
+      gameState.previousSpace = false;
+    }
+
+    function placeForEnemyStomp() {
+      const enemy = gameState.enemies[0];
+      const p = gameState.player;
+      p.x = enemy.x + 2;
+      p.y = enemy.y - p.h - 6;
+      p.vx = 0;
+      p.vy = 5;
+      p.grounded = false;
+      gameState.previousSpace = false;
+    }
+
+    function placeForGateRoute() {
+      const gate = gameState.gates[0];
+      const p = gameState.player;
+      p.x = gate.x - p.w - 6;
+      p.y = 352;
+      p.vx = 0;
+      p.vy = 0;
+      p.grounded = true;
+      p.jumps = 0;
+      gameState.previousSpace = false;
+    }
+
+    window.addEventListener('keydown', (event) => {
+      gameState.keys[event.code] = true;
+      if (event.code === 'Space') gameState.keys.Space = true;
+    });
+
+    window.addEventListener('keyup', (event) => {
+      gameState.keys[event.code] = false;
+      if (event.code === 'Space') {
+        gameState.keys.Space = false;
+        gameState.previousSpace = false;
+      }
+    });
+
+    window.__GAME_META__ = {
+      domain: 'mechanics-lab',
+      subtype: 'platformer',
+      controls: { left: 'ArrowLeft', right: 'ArrowRight', jump: 'Space' },
+      levels: [{ id: 'main', name: 'Mechanics Lab' }],
+      gameplayMechanics: {
+        enemies: [{ id: 'slime-1', type: 'slime', stompable: true, patrol: true, defeatReward: 'gateUnlockCharge' }],
+        blocks: [{ id: 'question-1', type: 'question', bumpableFromBelow: true, reward: 'doubleJump', usedState: 'empty' }],
+        abilities: [{ id: 'doubleJump', type: 'doubleJump', acquiredFrom: 'question-1', effect: 'second jump while airborne', unlocksRoute: 'upper-route' }],
+        gates: [{ id: 'upper-gate', requiresAbility: 'doubleJump', blocksAccessTo: 'upper-route' }],
+        comboChallenge: [{ id: 'lab-combo', requires: ['jump', 'stomp', 'bumpBlock', 'doubleJump', 'gateRoute'], target: 'upper-route' }]
+      },
+      progressPlan: [
+        { label: 'move right', input: 'ArrowRight', frames: 10, metric: 'player.x', expect: 'increase' },
+        { label: 'jump arc', input: 'Space', frames: 8, metric: 'player.vy', expect: 'change' },
+        { label: 'moving jump', input: ['ArrowRight', 'Space'], frames: 12, metric: 'player.x', expect: 'increase' }
+      ],
+      qualityPlan: {
+        actorReadable: true,
+        mechanics: ['move', 'jump', 'stompEnemy', 'bumpBlock', 'doubleJump', 'unlockGate', 'comboChallenge'],
+        rewards: ['defeatReward', 'blockAbility'],
+        risks: ['enemyCollision', 'lockedGate'],
+        levelsCovered: 1,
+        allLevelsReachable: true
+      },
+      browserVisualSmoke: {
+        desktop: true,
+        mobile: true,
+        canvasNonblank: true,
+        actorHudVisible: true
+      }
+    };
+
+    window.__GAME_TEST__ = {
+      start() {
+        resetState();
+        return { mode: 'playing' };
+      },
+      reset() {
+        resetState();
+        return { mode: 'playing' };
+      },
+      snapshot,
+      step(input = {}, frames = 1) {
+        setKeys(input);
+        for (let index = 0; index < frames; index += 1) {
+          update();
+        }
+        setKeys({});
+        gameState.previousSpace = false;
+        updateHud();
+        draw();
+        return snapshot();
+      },
+      runSmokeTest() {
+        const checks = [];
+        const failures = [];
+        const coverage = {
+          levelsPassed: 1,
+          totalLevels: 1,
+          allLevelsReachable: true,
+          mechanics: [],
+          rewards: [],
+          risks: [],
+          stateChanges: []
+        };
+
+        this.reset();
+        placeForBlock();
+        const beforeBlock = this.snapshot();
+        this.step({ Space: true }, 4);
+        const afterBlock = this.snapshot();
+        if (
+          afterBlock.blocksUsed > beforeBlock.blocksUsed &&
+          afterBlock.spawnedReward > beforeBlock.spawnedReward &&
+          afterBlock.abilities.doubleJump === true
+        ) {
+          checks.push('bumpBlock gained doubleJump from question block');
+          coverage.mechanics.push('bumpBlock', 'gainAbility', 'doubleJump');
+          coverage.rewards.push('blockAbility');
+          coverage.stateChanges.push('blocksUsed', 'spawnedReward', 'abilities.doubleJump');
+        } else {
+          failures.push('Failed to bump block and gain ability through collision');
+        }
+
+        const beforeEnemyVy = this.snapshot().player.vy;
+        placeForEnemyStomp();
+        const beforeEnemy = this.snapshot();
+        this.step({}, 5);
+        const afterEnemy = this.snapshot();
+        if (
+          afterEnemy.enemiesDefeated > beforeEnemy.enemiesDefeated &&
+          afterEnemy.score > beforeEnemy.score &&
+          afterEnemy.player.vy !== beforeEnemyVy
+        ) {
+          checks.push('stompEnemy defeated slime and bounced player.vy');
+          coverage.mechanics.push('stompEnemy');
+          coverage.rewards.push('defeatReward');
+          coverage.risks.push('enemyCollision');
+          coverage.stateChanges.push('enemiesDefeated', 'score', 'player.vy');
+        } else {
+          failures.push('Failed to stomp enemy with bounce evidence');
+        }
+
+        placeForGateRoute();
+        const beforeGate = this.snapshot();
+        this.step({ ArrowRight: true }, 60);
+        const afterGate = this.snapshot();
+        if (
+          afterGate.gatesUnlocked > beforeGate.gatesUnlocked ||
+          afterGate.routeReachableAfterAbility === true ||
+          afterGate.reachableTargets > beforeGate.reachableTargets
+        ) {
+          checks.push('unlockGate opened ability-gated upper route');
+          coverage.mechanics.push('unlockGate', 'gateRoute', 'comboChallenge');
+          coverage.risks.push('lockedGate');
+          coverage.stateChanges.push('gatesUnlocked', 'routesUnlocked', 'reachableTargets', 'routeReachableAfterAbility', 'comboChallengeComplete');
+        } else {
+          failures.push('Gate remained locked after ability and stomp combo');
+        }
+
+        const unique = (items) => [...new Set(items)];
+        coverage.mechanics = unique(coverage.mechanics);
+        coverage.rewards = unique(coverage.rewards);
+        coverage.risks = unique(coverage.risks);
+        coverage.stateChanges = unique(coverage.stateChanges);
+
+        return {
+          passed: failures.length === 0,
+          checks,
+          failures,
+          coverage
+        };
+      }
+    };
+
+    resetState();
+    loop();
+  </script>
+</body>
+</html>

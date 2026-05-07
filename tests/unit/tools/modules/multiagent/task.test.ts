@@ -202,6 +202,44 @@ describe('Task happy / failure', () => {
       expect(result.output).toContain('- Iterations: 5');
       expect(result.output).toContain('- Tools used: read, edit');
       expect(result.output).toContain('- Cost: $0.0123');
+      expect(result.meta).toMatchObject({
+        tool: 'Task',
+        category: 'multiagent',
+        action: 'task',
+        agentId: 'coder',
+        status: 'completed',
+        targets: ['coder'],
+        counts: { iterations: 5, tools: 2 },
+        request: {
+          args: {
+            prompt: { type: 'string', length: 8, preview: 'do thing' },
+            subagent_type: 'coder',
+            description: { type: 'string', length: 5, preview: 'short' },
+          },
+        },
+        bridge: { protocolContext: true, legacyContext: false },
+        artifactRole: 'multiagent-result',
+        result: {
+          agentName: 'Coder',
+          subagentType: 'coder',
+          description: 'short',
+          output: 'all done',
+          iterations: 5,
+          toolsUsed: ['read', 'edit'],
+          cost: 0.0123,
+        },
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'Task' }),
+        artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'Task' })],
+      });
+      expect(result.meta.artifact).toMatchObject({
+        metadata: expect.objectContaining({
+          tool: 'Task',
+          action: 'task',
+          status: 'completed',
+          targets: ['coder'],
+          counts: { iterations: 5, tools: 2 },
+        }),
+      });
     }
     expect(taskDedupMock.completeTask).toHaveBeenCalledWith('hash-1', 'all done');
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'Task' });
@@ -225,6 +263,21 @@ describe('Task happy / failure', () => {
     if (!result.ok) {
       expect(result.code).toBe('DOMAIN_ERROR');
       expect(result.error).toContain('rate limit');
+      expect(result.meta).toMatchObject({
+        tool: 'Task',
+        action: 'task',
+        status: 'failed',
+        agentId: 'coder',
+        targets: ['coder'],
+        counts: { iterations: 0, tools: 0 },
+        request: {
+          args: {
+            prompt: { type: 'string', length: 8, preview: 'do thing' },
+            subagent_type: 'coder',
+          },
+        },
+        bridge: { protocolContext: true, legacyContext: false },
+      });
     }
     expect(taskDedupMock.failTask).toHaveBeenCalled();
   });

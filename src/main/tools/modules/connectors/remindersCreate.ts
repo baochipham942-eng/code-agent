@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersCreateSchema as schema } from './remindersCreate.schema';
 
 async function executeRemindersCreate(
@@ -52,13 +53,19 @@ async function executeRemindersCreate(
     const notes = typeof args.notes === 'string' ? args.notes : '';
     const remindAtMs = typeof args.remind_at_ms === 'number' ? args.remind_at_ms : null;
     const remindAtText = remindAtMs ? new Date(remindAtMs).toLocaleString('zh-CN') : '';
+    const output = `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
 
     return {
       ok: true,
-      output: `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`,
+      output,
       meta: {
+        action: 'create_reminder',
+        connector: 'reminders',
         list: reminder.list,
         title: reminder.title,
+        completed: reminder.completed,
+        remindAtMs,
+        notes,
         previewItem: {
           kind: 'reminder',
           title: reminder.title,
@@ -78,6 +85,23 @@ async function executeRemindersCreate(
           ],
           priority: 80,
         },
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `reminder-${reminder.title}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'reminders',
+            action: 'create_reminder',
+            list: reminder.list,
+            title: reminder.title,
+            completed: reminder.completed,
+            remindAtMs,
+          },
+        }),
       },
     };
   } catch (error) {

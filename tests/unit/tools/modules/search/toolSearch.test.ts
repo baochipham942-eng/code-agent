@@ -171,6 +171,11 @@ describe('toolSearchModule (native)', () => {
         expect(result.meta?.mcpDiscovery).toEqual([
           { serverName: 'sequential-thinking', connected: false, toolCount: 0, error: 'spawn failed' },
         ]);
+        expect(result.meta?.query).toBe('sequential-nohit');
+        expect(result.meta?.results).toEqual([]);
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('search');
+        expect(artifact.metadata?.resultCount).toBe(0);
       }
     });
 
@@ -226,6 +231,12 @@ describe('toolSearchModule (native)', () => {
         expect(result.output).toContain('调用入口：mcp__github__search_code');
         expect(result.output).toContain('已加载的工具现在可以直接使用');
         expect(result.meta?.loadedTools).toEqual(['mcp__github__search_code']);
+        expect(result.meta?.query).toBe('search_code');
+        expect(Array.isArray(result.meta?.results)).toBe(true);
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('search');
+        expect(artifact.metadata?.resultCount).toBe(1);
+        expect(artifact.metadata?.loadedCount).toBe(1);
       }
     });
 

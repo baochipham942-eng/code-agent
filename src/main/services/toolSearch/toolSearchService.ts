@@ -9,14 +9,14 @@ import type {
   DeferredToolMeta,
   ToolSearchQueryMode,
 } from '../../../shared/contract/toolSearch';
-import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName } from './deferredTools';
+import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
 import { createLogger } from '../infra/logger';
 import { isProtocolToolName } from '../../tools/protocolRegistry';
 
 const logger = createLogger('ToolSearchService');
 
 function normalizeToolName(name: string): string {
-  return name.trim();
+  return resolveToolAlias(name.trim());
 }
 
 /**
@@ -128,11 +128,11 @@ export class ToolSearchService {
       const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
       const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
 
-      if (loadable) {
+      if (loadable && !isCoreToolName(meta.name)) {
         this.loadedDeferredTools.add(meta.name);
         loadedTools.push(meta.name);
       } else {
-        logger.debug(`ToolSearch match is not loadable as a callable tool: ${meta.name}: ${notCallableReason}`);
+        logger.debug(`ToolSearch match is not loaded as a deferred tool: ${meta.name}: ${notCallableReason || 'core tool already available'}`);
       }
 
       return {

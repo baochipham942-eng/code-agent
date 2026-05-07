@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 
 async function executeRemindersUpdate(
@@ -50,11 +51,34 @@ async function executeRemindersUpdate(
       completed: boolean;
     };
     ctx.logger.debug('reminders_update', { id: reminder.id, list: reminder.list });
+    const output = `已更新提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
 
     return {
       ok: true,
-      output: `已更新提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`,
-      meta: { id: reminder.id, completed: reminder.completed },
+      output,
+      meta: {
+        action: 'update_reminder',
+        connector: 'reminders',
+        id: reminder.id,
+        list: reminder.list,
+        title: reminder.title,
+        completed: reminder.completed,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `reminder-update-${reminder.id}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'reminders',
+            action: 'update_reminder',
+            id: reminder.id,
+            completed: reminder.completed,
+          },
+        }),
+      },
     };
   } catch (error) {
     return {

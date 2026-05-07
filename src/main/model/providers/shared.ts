@@ -531,54 +531,93 @@ function sanitizeToolCallOrder(messages: OpenAIMessage[]): OpenAIMessage[] {
     }
   }
 
-  // Layer 3: 孤立 tool_call 检测 — 为缺失响应的 tool_call 合成占位 tool 消息
-  // 原因：compaction 可能删除旧 tool 响应，留下孤立的 assistant(tool_calls)
-  // 合成占位比删除 tool_call 更安全（OpenAI 协议不允许修改 assistant.tool_calls 数组）
-  const allToolResponseIds = new Set<string>();
-  for (const m of result) {
-    if (m.role === 'tool' && m.tool_call_id) {
-      allToolResponseIds.add(m.tool_call_id);
-    }
+  const repaired = repairOpenAIToolMessagePairing(result);
+  if (repaired.synthesizedPlaceholders > 0) {
+    logger.info(`[sanitizeToolCallOrder] Synthesized ${repaired.synthesizedPlaceholders} placeholder tool responses for orphaned tool_calls`);
+  }
+  if (repaired.demotedToolMessages > 0) {
+    logger.info(`[sanitizeToolCallOrder] Demoted ${repaired.demotedToolMessages} orphaned tool messages without matching assistant tool_calls`);
   }
 
-  const placeholders: OpenAIMessage[] = [];
-  for (const m of result) {
-    if (m.role === 'assistant' && m.tool_calls?.length) {
-      for (const tc of m.tool_calls) {
-        if (!allToolResponseIds.has(tc.id)) {
-          placeholders.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: '[context compacted]',
-          });
-          allToolResponseIds.add(tc.id); // 防止重复合成
+  return repaired.messages;
+}
+
+function stringifyOpenAIContent(content: OpenAIMessage['content']): string {
+  if (typeof content === 'string') return content;
+  if (content === null) return '';
+  return JSON.stringify(content);
+}
+
+function demoteOrphanedToolMessage(message: OpenAIMessage): OpenAIMessage {
+  const header = message.tool_call_id
+    ? `[orphaned tool result omitted from structured tool channel: ${message.tool_call_id}]`
+    : '[orphaned tool result omitted from structured tool channel]';
+  return {
+    role: 'user',
+    content: `${header}\n${stringifyOpenAIContent(message.content)}`,
+  };
+}
+
+function repairOpenAIToolMessagePairing(messages: OpenAIMessage[]): {
+  messages: OpenAIMessage[];
+  synthesizedPlaceholders: number;
+  demotedToolMessages: number;
+} {
+  const repaired: OpenAIMessage[] = [];
+  let pendingToolCallIds: Set<string> | null = null;
+  let synthesizedPlaceholders = 0;
+  let demotedToolMessages = 0;
+
+  const flushPendingPlaceholders = (): void => {
+    if (!pendingToolCallIds || pendingToolCallIds.size === 0) {
+      pendingToolCallIds = null;
+      return;
+    }
+    for (const toolCallId of pendingToolCallIds) {
+      repaired.push({
+        role: 'tool',
+        tool_call_id: toolCallId,
+        content: '[context compacted]',
+      });
+      synthesizedPlaceholders += 1;
+    }
+    pendingToolCallIds = null;
+  };
+
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      flushPendingPlaceholders();
+      repaired.push(message);
+      pendingToolCallIds = new Set(message.tool_calls.map((toolCall) => toolCall.id));
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      if (
+        pendingToolCallIds &&
+        message.tool_call_id &&
+        pendingToolCallIds.has(message.tool_call_id)
+      ) {
+        repaired.push(message);
+        pendingToolCallIds.delete(message.tool_call_id);
+        if (pendingToolCallIds.size === 0) {
+          pendingToolCallIds = null;
         }
+        continue;
       }
+
+      flushPendingPlaceholders();
+      repaired.push(demoteOrphanedToolMessage(message));
+      demotedToolMessages += 1;
+      continue;
     }
+
+    flushPendingPlaceholders();
+    repaired.push(message);
   }
 
-  if (placeholders.length > 0) {
-    // 将占位消息插入到对应 assistant 消息之后（而非末尾），以满足协议的顺序要求
-    for (const ph of placeholders) {
-      // 找到对应 assistant 消息的位置
-      const assistantIdx = result.findIndex(
-        m => m.role === 'assistant' && m.tool_calls?.some((tc: OpenAIToolCall) => tc.id === ph.tool_call_id)
-      );
-      if (assistantIdx >= 0) {
-        // 在 assistant 之后、下一个 non-tool 消息之前插入
-        let insertIdx = assistantIdx + 1;
-        while (insertIdx < result.length && result[insertIdx].role === 'tool') {
-          insertIdx++;
-        }
-        result.splice(insertIdx, 0, ph);
-      } else {
-        result.push(ph);
-      }
-    }
-    logger.info(`[sanitizeToolCallOrder] Synthesized ${placeholders.length} placeholder tool responses for orphaned tool_calls`);
-  }
-
-  return result;
+  flushPendingPlaceholders();
+  return { messages: repaired, synthesizedPlaceholders, demotedToolMessages };
 }
 
 /**

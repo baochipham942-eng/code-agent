@@ -202,6 +202,15 @@ describe('mcpInvokeModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('DOMAIN_ERROR');
         expect(result.error).toBe('Tool execution failed: invalid path');
+        expect(result.meta).toMatchObject({
+          server: 'filesystem',
+          toolName: 'read_file',
+          action: 'invoke',
+          resultKind: 'process-output',
+          count: 0,
+          truncated: false,
+          errorCode: 'DOMAIN_ERROR',
+        });
       }
     });
 
@@ -287,7 +296,28 @@ describe('mcpInvokeModule (native)', () => {
         expect(result.output).toBe('file contents');
         expect(result.meta?.server).toBe('filesystem');
         expect(result.meta?.tool).toBe('read_file');
+        expect(result.meta?.toolName).toBe('read_file');
+        expect(result.meta?.action).toBe('invoke');
+        expect(result.meta?.resultKind).toBe('process-output');
+        expect(result.meta?.count).toBe(1);
+        expect(result.meta?.truncated).toBe(false);
         expect(result.meta?.duration).toBe(42);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'process-output',
+          sourceTool: 'mcp',
+          mimeType: 'text/plain',
+          contentLength: 'file contents'.length,
+          metadata: expect.objectContaining({
+            mcpToolCall: true,
+            server: 'filesystem',
+            toolName: 'read_file',
+            action: 'invoke',
+            resultKind: 'process-output',
+            count: 1,
+            truncated: false,
+          }),
+        });
+        expect(result.meta?.artifact).toHaveProperty('artifactId');
       }
     });
 
@@ -298,7 +328,14 @@ describe('mcpInvokeModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const result = await run(VALID_ARGS);
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toBe('执行成功');
+      if (result.ok) {
+        expect(result.output).toBe('执行成功');
+        expect(result.meta?.count).toBe(1);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'process-output',
+          metadata: expect.objectContaining({ mcpToolCall: true }),
+        });
+      }
     });
 
     it('passes empty arguments object when args.arguments missing', async () => {

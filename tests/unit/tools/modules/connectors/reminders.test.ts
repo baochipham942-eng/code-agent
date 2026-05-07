@@ -95,9 +95,25 @@ describe('remindersModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
-    it('returns NOT_INITIALIZED when connector missing', async () => {
+    it('returns unavailable status when get_status connector is missing', async () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Reminders connector: unavailable');
+        expect(result.meta).toMatchObject({
+          status: {
+            connected: false,
+            unavailable: true,
+            capabilities: [],
+          },
+        });
+      }
+    });
+
+    it('returns NOT_INITIALIZED when data action connector is missing', async () => {
+      getMock.mockReturnValue(undefined);
+      const result = await run({ action: 'list_lists' });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
@@ -121,6 +137,14 @@ describe('remindersModule (native)', () => {
         expect(result.output).toContain('Reminders connector: connected');
         expect(result.output).toContain('EventKit OK');
         expect(result.output).toContain('Capabilities: read, write');
+        expect(result.meta).toMatchObject({
+          action: 'get_status',
+          connector: 'reminders',
+          status: { connected: true, detail: 'EventKit OK', capabilities: ['read', 'write'] },
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('get_status');
       }
     });
 
@@ -156,6 +180,14 @@ describe('remindersModule (native)', () => {
         expect(result.output).toContain('提醒事项 (2)');
         expect(result.output).toContain('#r1 [Work] Ship PR');
         expect(result.output).toContain('#r2 [Work] Deploy (completed)');
+        expect(result.meta).toMatchObject({
+          action: 'list_reminders',
+          connector: 'reminders',
+          count: 2,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.count).toBe(2);
       }
     });
 

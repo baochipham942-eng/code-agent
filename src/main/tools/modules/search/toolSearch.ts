@@ -22,6 +22,7 @@ import type {
 } from '../../../protocol/tools';
 import { getToolSearchService } from '../../../services/toolSearch/toolSearchService';
 import { getMCPClient } from '../../../mcp/mcpClient';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { toolSearchSchema as schema } from './toolSearch.schema';
 
 const MAX_RESULTS_HARD_CAP = 10;
@@ -86,14 +87,35 @@ export async function executeToolSearch(
       const discoveryHint = discoveryFailures.length > 0
         ? `\n\nMCP 懒加载发现失败：\n${discoveryFailures.join('\n')}`
         : '';
+      const output = `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`;
       return {
         ok: true,
-        output: `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+        output,
         meta: {
+          query,
+          maxResults,
+          results: [],
           loadedTools: result.loadedTools,
           totalCount: result.totalCount,
           hasMore: result.hasMore,
           mcpDiscovery,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'search',
+            sessionId: ctx.sessionId,
+            name: `tool-search-${query}`,
+            mimeType: 'text/markdown',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              query,
+              maxResults,
+              totalCount: result.totalCount,
+              loadedCount: result.loadedTools.length,
+              resultCount: 0,
+              mcpDiscoveryCount: mcpDiscovery.length,
+            },
+          }),
         },
       };
     }
@@ -137,14 +159,35 @@ export async function executeToolSearch(
       total: result.totalCount,
     });
 
+    const output = lines.join('\n');
     return {
       ok: true,
-      output: lines.join('\n'),
+      output,
       meta: {
+        query,
+        maxResults,
+        results: result.tools,
         loadedTools: result.loadedTools,
         totalCount: result.totalCount,
         hasMore: result.hasMore,
         mcpDiscovery,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'search',
+          sessionId: ctx.sessionId,
+          name: `tool-search-${query}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            query,
+            maxResults,
+            totalCount: result.totalCount,
+            resultCount: result.tools.length,
+            loadedCount: result.loadedTools.length,
+            mcpDiscoveryCount: mcpDiscovery.length,
+          },
+        }),
       },
     };
   } catch (error) {

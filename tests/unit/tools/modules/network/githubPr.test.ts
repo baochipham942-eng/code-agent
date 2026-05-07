@@ -323,6 +323,23 @@ describe('githubPrModule (native)', () => {
         expect(result.output).toContain('First');
         expect(result.output).toContain('#2');
         expect(result.output).toContain('Second');
+        expect(result.meta).toMatchObject({
+          action: 'list',
+          state: 'open',
+          count: 2,
+          prs: [
+            { number: 1, title: 'First' },
+            { number: 2, title: 'Second' },
+          ],
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'search',
+          sourceTool: 'github_pr',
+          metadata: expect.objectContaining({
+            action: 'list',
+            count: 2,
+          }),
+        });
       }
     });
 
@@ -330,7 +347,19 @@ describe('githubPrModule (native)', () => {
       execResponses.push({ match: 'gh pr list', result: { stdout: '[]', stderr: '' } });
       const result = await run({ action: 'list' });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toContain('没有找到');
+      if (result.ok) {
+        expect(result.output).toContain('没有找到');
+        expect(result.meta).toMatchObject({
+          action: 'list',
+          state: 'open',
+          count: 0,
+          prs: [],
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'search',
+          sourceTool: 'github_pr',
+        });
+      }
     });
   });
 

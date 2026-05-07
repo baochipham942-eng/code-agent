@@ -32,6 +32,37 @@ import type {
 import { executeSpawnAgent as executeSpawnAgentLegacy } from '../../../agent/multiagentTools/spawnAgent';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
+import { withMultiagentMeta } from './resultMeta';
+
+const ROLE_ALIASES: Record<string, string> = {
+  explorer: 'explore',
+  planner: 'plan',
+};
+
+function normalizeRole(role: unknown): unknown {
+  if (typeof role !== 'string') return role;
+  return ROLE_ALIASES[role] ?? ROLE_ALIASES[role.toLowerCase()] ?? role;
+}
+
+function normalizeSpawnArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    ...args,
+    role: normalizeRole(args.role),
+  };
+
+  if (Array.isArray(args.agents)) {
+    normalized.agents = args.agents.map((agent) => {
+      if (!agent || typeof agent !== 'object') return agent;
+      const item = agent as Record<string, unknown>;
+      return {
+        ...item,
+        role: normalizeRole(item.role),
+      };
+    });
+  }
+
+  return normalized;
+}
 
 async function runSpawnAgent(
   args: Record<string, unknown>,
@@ -58,11 +89,32 @@ async function runSpawnAgent(
   }
 
   onProgress?.({ stage: 'starting', detail: schemaName });
+  const normalizedArgs = normalizeSpawnArgs(args);
   const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-  const legacyResult = await executeSpawnAgentLegacy(args, legacyCtx);
+  const legacyResult = await executeSpawnAgentLegacy(normalizedArgs, legacyCtx);
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.debug(`${schemaName} done`, { ok: legacyResult.success });
-  return adaptLegacyResult(legacyResult);
+  const result = adaptLegacyResult(legacyResult);
+  const legacyAgentId = legacyResult.metadata?.agentId;
+  return withMultiagentMeta(result, ctx, schemaName, {
+    action: 'spawn',
+    status: result.ok ? 'completed' : 'failed',
+    agentId: typeof normalizedArgs.agentId === 'string'
+      ? normalizedArgs.agentId
+      : (typeof legacyAgentId === 'string' ? legacyAgentId : undefined),
+    targets: [
+      ...(typeof normalizedArgs.role === 'string' ? [normalizedArgs.role] : []),
+      ...(Array.isArray(normalizedArgs.agents)
+        ? normalizedArgs.agents
+          .map((agent) => (agent && typeof agent === 'object' && 'role' in agent ? (agent as { role?: unknown }).role : undefined))
+          .filter((role): role is string => typeof role === 'string')
+        : []),
+    ],
+    counts: {
+      agents: Array.isArray(normalizedArgs.agents) ? normalizedArgs.agents.length : (typeof normalizedArgs.role === 'string' ? 1 : undefined),
+    },
+    result: legacyResult.metadata ?? {},
+  }, `${schemaName} result`);
 }
 
 function makeHandler(schema: ToolSchema): ToolHandler<Record<string, unknown>, string> {

@@ -95,9 +95,25 @@ describe('calendarModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
-    it('returns NOT_INITIALIZED when connector missing', async () => {
+    it('returns unavailable status when get_status connector is missing', async () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Calendar connector: unavailable');
+        expect(result.meta).toMatchObject({
+          status: {
+            connected: false,
+            unavailable: true,
+            capabilities: [],
+          },
+        });
+      }
+    });
+
+    it('returns NOT_INITIALIZED when data action connector is missing', async () => {
+      getMock.mockReturnValue(undefined);
+      const result = await run({ action: 'list_calendars' });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
@@ -121,6 +137,14 @@ describe('calendarModule (native)', () => {
         expect(result.output).toContain('Calendar connector: connected');
         expect(result.output).toContain('EventKit OK');
         expect(result.output).toContain('Capabilities: read, write');
+        expect(result.meta).toMatchObject({
+          action: 'get_status',
+          connector: 'calendar',
+          status: { connected: true, detail: 'EventKit OK', capabilities: ['read', 'write'] },
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('get_status');
       }
     });
 
@@ -170,6 +194,14 @@ describe('calendarModule (native)', () => {
         expect(result.output).toContain('| Zoom');
         expect(result.output).toContain('uid: evt-1');
         expect(result.output).toContain('[Home] Dinner');
+        expect(result.meta).toMatchObject({
+          action: 'list_events',
+          connector: 'calendar',
+          count: 2,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.count).toBe(2);
       }
     });
 

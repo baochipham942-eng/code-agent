@@ -156,6 +156,15 @@ Product Manager with 14 years of experience.
       if (result.ok) {
         expect(result.output).toContain('Product Manager');
         expect(result.output).toContain('name: User Role');
+        expect(result.meta).toMatchObject({
+          filename: 'user_role.md',
+          bytes: content.length,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; path?: string; mimeType?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.mimeType).toBe('text/markdown');
+        expect(artifact.path).toBe(path.join(memDir, 'user_role.md'));
+        expect(artifact.metadata?.filename).toBe('user_role.md');
       }
     });
 

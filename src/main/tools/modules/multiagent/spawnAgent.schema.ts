@@ -35,14 +35,14 @@ When NOT to spawn:
 - Run reviewer in parallel with ongoing implementation
 
 ## Available roles
-- explorer: Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.
+- explore (alias: explorer): Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.
 - coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.
 - reviewer: Code review and quality checks. Read-only.
-- planner: Architecture design and task decomposition. Full context.
+- plan (alias: planner): Architecture design and task decomposition. Full context.
 - awaiter: Long-running command monitor (tests, builds, deploys). Uses fast model, high iteration limit. Spawn in background and continue other work.
 
 ## Parameters
-- role: Agent role (explorer/coder/reviewer/planner or custom name)
+- role: Agent role (explore/coder/reviewer/plan/awaiter, aliases explorer/planner accepted)
 - task: Concrete task description (be specific and self-contained)
 - parallel: Set true + agents array for multiple agents with dependencies
 - waitForCompletion: false to run in background (default true)

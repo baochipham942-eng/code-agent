@@ -155,6 +155,19 @@ describe('image_generate — execute', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
+      const imageBase64 = result.meta?.imageBase64 as string;
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'image_generate',
+        mimeType: 'image/png',
+        contentLength: imageBase64.length,
+        metadata: {
+          model: 'cogview-4-250304',
+          engine: 'cogview',
+          aspectRatio: '1:1',
+          embeddedBase64: true,
+        },
+      });
       expect(result.meta?.engine).toBe('cogview');
       expect(result.meta?.model).toBe('cogview-4-250304');
       expect(result.meta?.imageBase64).toContain('data:image/png;base64,');
@@ -189,6 +202,18 @@ describe('image_generate — execute', () => {
     expect(result.ok).toBe(true);
     expect(writeFileSyncMock).toHaveBeenCalled();
     if (result.ok) {
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'image_generate',
+        path: '/tmp/work/out.png',
+        mimeType: 'image/png',
+        sizeBytes: 1,
+        metadata: {
+          model: 'cogview-4-250304',
+          engine: 'cogview',
+          aspectRatio: '1:1',
+        },
+      });
       expect(result.meta?.imagePath).toBe('/tmp/work/out.png');
       expect(result.meta?.imageBase64).toBeUndefined();
     }

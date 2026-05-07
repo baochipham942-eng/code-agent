@@ -23,6 +23,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { localSpeechToTextSchema as schema } from './localSpeechToText.schema';
 
 const execFileAsync = promisify(execFile);
@@ -250,11 +251,33 @@ export async function executeLocalSpeechToText(
         ok: true,
         output: text,
         meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `Local transcript: ${path.basename(filePath)}`,
+            mimeType: outputFormat === 'text' ? 'text/plain' : 'text/vtt',
+            contentLength: text.length,
+            preview: text.slice(0, 500),
+            metadata: {
+              sourcePath: filePath,
+              model: path.basename(modelPath),
+              language,
+              outputFormat,
+              translate: params.translate === true,
+              mediaKind: 'audio',
+              artifactRole: 'transcript',
+            },
+          }),
           filePath,
+          sourcePath: filePath,
+          mediaKind: 'audio',
           model: path.basename(modelPath),
           language,
           outputFormat,
           textLength: text.length,
+          contentLength: text.length,
+          truncated: false,
           processingTimeMs: processingTime,
         },
       };

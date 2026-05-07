@@ -138,6 +138,20 @@ describe('wait_agent behavior', () => {
       expect(result.output).toContain('✅ [a1] coder — completed (500ms)');
       expect(result.output).toContain('Result: done');
       expect(result.output).toContain('Stats: 3 iterations, 2 tools, $0.1234');
+      expect(result.meta).toMatchObject({
+        action: 'wait',
+        status: 'completed',
+        targets: ['a1'],
+        counts: { agents: 1, completed: 1 },
+        result: [
+          expect.objectContaining({
+            agentId: 'a1',
+            status: 'completed',
+            duration: 500,
+          }),
+        ],
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'wait_agent' }),
+      });
     }
   });
 

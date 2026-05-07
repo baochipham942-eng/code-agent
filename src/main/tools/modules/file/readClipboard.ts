@@ -19,14 +19,47 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { readClipboardSchema as schema } from './readClipboard.schema';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 
 const MAX_TEXT_LEN = 50000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-function readImageFromClipboard(): ToolResult<string> {
+function buildClipboardMeta(
+  ctx: ToolContext,
+  output: string,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...metadata,
+    artifact: createVirtualArtifact({
+      sourceTool: schema.name,
+      kind: metadata.kind === 'image' ? 'image' : 'text',
+      sessionId: ctx.sessionId,
+      name: `clipboard-${String(metadata.format ?? metadata.kind ?? 'content')}`,
+      mimeType: metadata.kind === 'image' ? 'image/png' : 'text/plain',
+      contentLength: output.length,
+      preview: output.slice(0, 500),
+      metadata: {
+        source: 'clipboard',
+        ...metadata,
+      },
+    }),
+  };
+}
+
+function readImageFromClipboard(ctx: ToolContext): ToolResult<string> {
   const image = clipboard.readImage();
   if (image.isEmpty()) {
-    return { ok: true, output: '[Clipboard contains no image]' };
+    const output = '[Clipboard contains no image]';
+    return {
+      ok: true,
+      output,
+      meta: buildClipboardMeta(ctx, output, {
+        kind: 'image',
+        format: 'image',
+        empty: true,
+      }),
+    };
   }
   const size = image.getSize();
   const pngBuffer = image.toPNG();
@@ -38,9 +71,18 @@ function readImageFromClipboard(): ToolResult<string> {
       code: 'IMAGE_TOO_LARGE',
     };
   }
+  const output = `[Clipboard Image]\nSize: ${size.width}x${size.height} pixels\nFormat: PNG\nData (base64): ${base64}`;
   return {
     ok: true,
-    output: `[Clipboard Image]\nSize: ${size.width}x${size.height} pixels\nFormat: PNG\nData (base64): ${base64}`,
+    output,
+    meta: buildClipboardMeta(ctx, output, {
+      kind: 'image',
+      format: 'image',
+      width: size.width,
+      height: size.height,
+      bytes: pngBuffer.byteLength,
+      base64Length: base64.length,
+    }),
   };
 }
 
@@ -79,30 +121,67 @@ class ReadClipboardHandler implements ToolHandler<Record<string, unknown>, strin
         if (!text || text.trim().length === 0) {
           const html = clipboard.readHTML();
           if (html && html.trim().length > 0) {
-            return { ok: true, output: `[Clipboard HTML Content]\n${html}` };
+            const output = `[Clipboard HTML Content]\n${html}`;
+            return {
+              ok: true,
+              output,
+              meta: buildClipboardMeta(ctx, output, {
+                kind: 'text',
+                format: 'html',
+                contentLength: html.length,
+                truncated: false,
+                availableFormats,
+              }),
+            };
           }
           if (format === 'auto' && hasImage) {
-            return readImageFromClipboard();
+            return readImageFromClipboard(ctx);
           }
-          return { ok: true, output: '[Clipboard is empty or contains no text]' };
+          const output = '[Clipboard is empty or contains no text]';
+          return {
+            ok: true,
+            output,
+            meta: buildClipboardMeta(ctx, output, {
+              kind: 'text',
+              format,
+              empty: true,
+              availableFormats,
+            }),
+          };
         }
         const truncated = text.length > MAX_TEXT_LEN;
         const out = truncated
           ? text.substring(0, MAX_TEXT_LEN) + `\n\n... (truncated, total ${text.length} characters)`
           : text;
+        const output = `[Clipboard Text Content (${text.length} chars)]\n${out}`;
         return {
           ok: true,
-          output: `[Clipboard Text Content (${text.length} chars)]\n${out}`,
+          output,
+          meta: buildClipboardMeta(ctx, output, {
+            kind: 'text',
+            format: 'text',
+            contentLength: text.length,
+            returnedLength: out.length,
+            truncated,
+            availableFormats,
+          }),
         };
       }
 
       if (format === 'image' || (format === 'auto' && hasImage && !hasText)) {
-        return readImageFromClipboard();
+        return readImageFromClipboard(ctx);
       }
 
+      const output = `[Clipboard is empty]\nAvailable formats: ${availableFormats.join(', ') || 'none'}`;
       return {
         ok: true,
-        output: `[Clipboard is empty]\nAvailable formats: ${availableFormats.join(', ') || 'none'}`,
+        output,
+        meta: buildClipboardMeta(ctx, output, {
+          kind: 'text',
+          format,
+          empty: true,
+          availableFormats,
+        }),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

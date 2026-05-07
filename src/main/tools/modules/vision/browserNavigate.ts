@@ -15,8 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { browserNavigateTool } from '../../vision/browserNavigate';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { browserNavigateSchema as schema } from './browserNavigate.schema';
+import { adaptVisionLegacyResult } from './resultMeta';
 
 class BrowserNavigateHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +42,7 @@ class BrowserNavigateHandler implements ToolHandler<Record<string, unknown>, str
     const legacyResult = await browserNavigateTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('browser_navigate done', { action, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return adaptVisionLegacyResult(legacyResult, { tool: schema.name, args, ctx });
   }
 }
 

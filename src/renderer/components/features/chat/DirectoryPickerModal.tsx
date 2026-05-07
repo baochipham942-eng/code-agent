@@ -120,7 +120,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     init();
     // Reset selection on open
     setSelectedPath(null);
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const toggleExpand = async (path: string) => {
     const updateNodes = async (nodes: DirNode[]): Promise<DirNode[]> => {

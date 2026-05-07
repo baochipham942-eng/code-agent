@@ -48,7 +48,7 @@ const MessageSchema = z
     role: z.string().optional(),
     content: z.string().nullable().optional(),
     reasoning_content: z.string().optional(),
-    tool_calls: z.array(ToolCallSchema).optional(),
+    tool_calls: z.array(ToolCallSchema).nullable().optional(),
   })
   .passthrough();
 
@@ -75,7 +75,7 @@ export const OpenAIChatCompletionSchema = z
     created: z.number().optional(),
     model: z.string().optional(),
     choices: z.array(ChoiceSchema),
-    usage: UsageSchema.optional(),
+    usage: UsageSchema.nullable().optional(),
   })
   .passthrough();
 
@@ -86,42 +86,48 @@ export type OpenAIMessage = z.infer<typeof MessageSchema>;
 // ── stream chunk schemas ──────────────────────────────────────────────────
 const StreamToolCallDeltaSchema = z
   .object({
-    index: z.number().optional(),
-    id: z.string().optional(),
-    type: z.literal('function').optional(),
+    index: z.number().nullable().optional(),
+    id: z.string().nullable().optional(),
+    type: z.literal('function').nullable().optional(),
     function: z
       .object({
-        name: z.string().optional(),
-        arguments: z.string().optional(),
+        name: z.string().nullable().optional(),
+        arguments: z.string().nullable().optional(),
       })
       .passthrough()
+      .nullable()
       .optional(),
   })
   .passthrough();
 
 const StreamDeltaSchema = z
   .object({
-    role: z.string().optional(),
+    role: z.string().nullable().optional(),
     content: z.string().nullable().optional(),
-    reasoning_content: z.string().optional(),
+    reasoning_content: z.string().nullable().optional(),
     // Kimi K2.5 的 reasoning 字段名跟 DeepSeek/GLM 不同
-    reasoning: z.string().optional(),
-    tool_calls: z.array(StreamToolCallDeltaSchema).optional(),
+    reasoning: z.string().nullable().optional(),
+    tool_calls: z.array(StreamToolCallDeltaSchema).nullable().optional(),
   })
   .passthrough();
 
 const StreamChoiceSchema = z
   .object({
-    index: z.number().optional(),
-    delta: StreamDeltaSchema.optional(),
+    index: z.number().nullable().optional(),
+    delta: StreamDeltaSchema.nullable().optional(),
     finish_reason: z.string().nullable().optional(),
   })
   .passthrough();
 
 export const OpenAIStreamChunkSchema = z
   .object({
-    choices: z.array(StreamChoiceSchema).optional(),
-    usage: UsageSchema.optional(),
+    choices: z
+      .array(StreamChoiceSchema.nullable())
+      .optional()
+      .transform((choices) =>
+        choices?.filter((choice): choice is z.infer<typeof StreamChoiceSchema> => choice !== null),
+      ),
+    usage: UsageSchema.nullable().optional(),
   })
   .passthrough();
 

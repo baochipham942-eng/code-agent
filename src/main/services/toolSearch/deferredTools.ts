@@ -13,6 +13,7 @@ export const CORE_TOOLS: string[] = [
   // Gen 1: 基础文件操作
   'Bash',
   'Read',
+  'Blob',
   'Write',
   'Append',
   'Edit',
@@ -537,17 +538,38 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
-    name: 'AgentMessage',
+    name: 'agent_message',
     shortDescription: '向代理发送消息',
     tags: ['multiagent'],
-    aliases: ['message', 'send'],
+    aliases: ['AgentMessage', 'message', 'send'],
     source: 'builtin',
   },
   {
-    name: 'WorkflowOrchestrate',
+    name: 'send_input',
+    shortDescription: '向运行中的子代理发送输入',
+    tags: ['multiagent'],
+    aliases: ['SendInput', 'message', 'send'],
+    source: 'builtin',
+  },
+  {
+    name: 'wait_agent',
+    shortDescription: '等待子代理完成并读取结果',
+    tags: ['multiagent'],
+    aliases: ['WaitAgent', 'wait', 'await agent'],
+    source: 'builtin',
+  },
+  {
+    name: 'close_agent',
+    shortDescription: '关闭运行中的子代理',
+    tags: ['multiagent'],
+    aliases: ['CloseAgent', 'close', 'stop agent'],
+    source: 'builtin',
+  },
+  {
+    name: 'workflow_orchestrate',
     shortDescription: '编排多代理工作流',
     tags: ['multiagent', 'planning'],
-    aliases: ['workflow', 'orchestrate', 'dag'],
+    aliases: ['WorkflowOrchestrate', 'workflow', 'orchestrate', 'dag'],
     source: 'builtin',
   },
 
@@ -625,10 +647,16 @@ export const TOOL_ALIASES: Record<string, string> = {
   edit: 'Edit',
   // Multi-agent aliases
   spawn_agent: 'AgentSpawn',
-  agent_message: 'AgentMessage',
-  send_input: 'SendInput',
-  wait_agent: 'WaitAgent',
-  close_agent: 'CloseAgent',
+  AgentMessage: 'agent_message',
+  agent_message: 'agent_message',
+  SendInput: 'send_input',
+  send_input: 'send_input',
+  WaitAgent: 'wait_agent',
+  wait_agent: 'wait_agent',
+  CloseAgent: 'close_agent',
+  close_agent: 'close_agent',
+  WorkflowOrchestrate: 'workflow_orchestrate',
+  workflow_orchestrate: 'workflow_orchestrate',
 };
 
 /**

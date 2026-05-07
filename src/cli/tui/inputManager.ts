@@ -7,6 +7,14 @@ import type { TUIScreen } from './screen';
 export type InputSubmitHandler = (text: string) => void;
 export type InputCancelHandler = () => void;
 
+function stripNonPrintableAscii(text: string): string {
+  return Array.from(text).filter((char) => {
+    const code = char.charCodeAt(0);
+    return code > 31;
+  }).join('');
+}
+
+
 /**
  * Raw-mode input manager for the TUI.
  * Handles character-by-character input, cursor movement, history, paste.
@@ -180,7 +188,7 @@ export class InputManager {
 
   private insertText(text: string): void {
     // Filter out non-printable characters
-    const clean = text.replace(/[\x00-\x1f]/g, '');
+    const clean = stripNonPrintableAscii(text);
     if (!clean) return;
     this.buffer = this.buffer.slice(0, this.cursor) + clean + this.buffer.slice(this.cursor);
     this.cursor += clean.length;

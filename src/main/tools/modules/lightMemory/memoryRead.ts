@@ -21,6 +21,7 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 
 const schema: ToolSchema = {
   name: 'MemoryRead',
@@ -84,7 +85,25 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
       const content = await fs.readFile(filePath, 'utf-8');
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('MemoryRead done', { filename: sanitized, bytes: content.length });
-      return { ok: true, output: content };
+      const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+        kind: 'text',
+        mimeType: 'text/markdown',
+        metadata: {
+          filename: sanitized,
+          memoryDir: getMemoryDir(),
+          bytes: Buffer.byteLength(content, 'utf8'),
+        },
+      });
+      return {
+        ok: true,
+        output: content,
+        meta: {
+          filename: sanitized,
+          path: filePath,
+          bytes: Buffer.byteLength(content, 'utf8'),
+          artifact,
+        },
+      };
     } catch (err: unknown) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {

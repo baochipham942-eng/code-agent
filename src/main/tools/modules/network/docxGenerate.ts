@@ -31,6 +31,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { docxGenerateSchema as schema } from './docxGenerate.schema';
 
 type DocxTheme = 'professional' | 'academic' | 'minimal' | 'creative';
@@ -492,6 +493,17 @@ export async function executeDocxGenerate(
 
 点击上方文件路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'document',
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          sizeBytes: stats.size,
+          metadata: {
+            title,
+            theme,
+            author,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

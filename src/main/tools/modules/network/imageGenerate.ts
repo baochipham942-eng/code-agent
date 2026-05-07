@@ -28,6 +28,7 @@ import { safeExecDetached } from '../../../utils/safeShell';
 import { getConfigService } from '../../../services';
 import { getAuthService } from '../../../services/auth/authService';
 import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
 
 export type ImageEngine = 'cogview' | 'flux' | 'cloud';
@@ -151,6 +152,11 @@ function addStyleSuffix(prompt: string, style: string): string {
 
 export function isImageUrl(data: string): boolean {
   return data.startsWith('http://') || data.startsWith('https://');
+}
+
+function getDataUrlMimeType(data: string): string | undefined {
+  const match = data.match(/^data:([^;,]+)[;,]/);
+  return match?.[1];
 }
 
 export async function downloadImageAsBase64(
@@ -535,6 +541,7 @@ export async function executeImageGenerate(
     }
 
     let imagePath: string | undefined;
+    let savedImageSizeBytes: number | undefined;
     if (outputPath) {
       const resolvedPath = path.isAbsolute(outputPath)
         ? outputPath
@@ -546,8 +553,10 @@ export async function executeImageGenerate(
       }
 
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      fs.writeFileSync(resolvedPath, Buffer.from(base64Data, 'base64'));
+      const imageBuffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync(resolvedPath, imageBuffer);
       imagePath = resolvedPath;
+      savedImageSizeBytes = imageBuffer.length;
 
       if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(resolvedPath)) {
         const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
@@ -565,6 +574,36 @@ export async function executeImageGenerate(
       ok: true,
       output: imagePath ? `图片生成成功。Saved to: ${imagePath}` : '图片生成成功。',
       meta: {
+        artifact: imagePath
+          ? await createFileArtifact(imagePath, schema.name, ctx, {
+            kind: 'image',
+            mimeType: getDataUrlMimeType(imageBase64),
+            sizeBytes: savedImageSizeBytes,
+            metadata: {
+              model: actualModel,
+              engine,
+              aspectRatio,
+              generationTimeMs: generationTime,
+              isAdmin,
+            },
+          })
+          : createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'image',
+            sessionId: ctx.sessionId,
+            name: 'generated-image',
+            url: isImageUrl(imageBase64) ? imageBase64 : undefined,
+            mimeType: getDataUrlMimeType(imageBase64) ?? 'image/png',
+            contentLength: imageBase64.length,
+            metadata: {
+              model: actualModel,
+              engine,
+              aspectRatio,
+              generationTimeMs: generationTime,
+              isAdmin,
+              embeddedBase64: !isImageUrl(imageBase64),
+            },
+          }),
         model: actualModel,
         engine,
         originalPrompt: params.prompt,

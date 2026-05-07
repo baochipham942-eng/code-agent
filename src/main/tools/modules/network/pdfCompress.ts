@@ -22,6 +22,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { pdfCompressSchema as schema } from './pdfCompress.schema';
 
 const execFileAsync = promisify(execFile);
@@ -173,10 +174,31 @@ Windows: 从 https://www.ghostscript.com 下载安装`,
 📦 大小: ${formatFileSize(originalSize)}
 💡 提示: 该文件可能已经过压缩或主要包含矢量内容。`,
         meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'document',
+            sessionId: ctx.sessionId,
+            name: path.basename(absInputPath),
+            mimeType: 'application/pdf',
+            contentLength: originalSize,
+            metadata: {
+              filePath: absInputPath,
+              originalSize,
+              newSize: originalSize,
+              quality,
+              compressionRatio: 0,
+              optimized: true,
+            },
+          }),
           filePath: absInputPath,
+          outputPath: absInputPath,
           originalSize,
           newSize: originalSize,
+          fileSize: originalSize,
+          quality,
           compressionRatio: 0,
+          contentLength: originalSize,
+          truncated: false,
         },
       };
     }
@@ -202,12 +224,27 @@ Windows: 从 https://www.ghostscript.com 下载安装`,
 🎯 质量: ${QUALITY_DESCRIPTIONS[quality]}
 📂 路径: ${absOutputPath}`,
       meta: {
+        artifact: await createFileArtifact(absOutputPath, schema.name, ctx, {
+          kind: 'document',
+          mimeType: 'application/pdf',
+          metadata: {
+            inputPath: absInputPath,
+            originalSize,
+            newSize,
+            quality,
+            compressionRatio: Number(reduction),
+          },
+        }),
         filePath: absOutputPath,
+        outputPath: absOutputPath,
         fileName: path.basename(absOutputPath),
         fileSize: newSize,
         originalSize,
+        newSize,
         quality,
         compressionRatio: Number(reduction),
+        contentLength: newSize,
+        truncated: false,
         attachment: {
           id: `pdf-${Date.now()}`,
           type: 'file',

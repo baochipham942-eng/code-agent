@@ -143,4 +143,76 @@ describe('createAgentRouter', () => {
       expect(mockCancel).toHaveBeenCalledWith('user');
     });
   });
+
+  it('preserves structured artifact metadata from tool_call_end in the SSE-backed session cache', async () => {
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'tool_call_start',
+          data: {
+            id: 'tool-read-1',
+            name: 'Read',
+          },
+        });
+        onEvent({
+          type: 'tool_call_end',
+          data: {
+            toolCallId: 'tool-read-1',
+            success: true,
+            output: '# Report',
+            metadata: {
+              artifact: {
+                artifactId: 'artifact-read-report',
+                kind: 'text',
+                sourceTool: 'Read',
+                createdAt: '2026-05-07T00:00:00.000Z',
+                name: 'report.md',
+                path: 'reports/report.md',
+              },
+            },
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: {
+            content: '已读取报告。',
+          },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '读取 reports/report.md',
+        sessionId: 'session-artifact-route',
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('tool_call_end');
+
+    const cached = sessionMessages.get('session-artifact-route') || [];
+    const assistant = cached.find((message) => message.role === 'assistant');
+    expect(assistant?.toolCalls?.[0]).toMatchObject({
+      id: 'tool-read-1',
+      name: 'Read',
+      result: {
+        success: true,
+        output: '# Report',
+        metadata: {
+          artifact: {
+            artifactId: 'artifact-read-report',
+            kind: 'text',
+            sourceTool: 'Read',
+            name: 'report.md',
+            path: 'reports/report.md',
+          },
+        },
+      },
+    });
+  });
 });

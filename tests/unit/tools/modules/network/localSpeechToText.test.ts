@@ -106,6 +106,20 @@ describe('local_speech_to_text — execute', () => {
     if (result.ok) {
       expect(result.output).toContain('你好世界');
       expect(result.meta?.outputFormat).toBe('text');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'local_speech_to_text',
+        mimeType: 'text/plain',
+        metadata: {
+          sourcePath: '/abs/audio.wav',
+          mediaKind: 'audio',
+          outputFormat: 'text',
+          artifactRole: 'transcript',
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('audio');
+      expect(result.meta?.contentLength).toBe(result.output.length);
+      expect(result.meta?.truncated).toBe(false);
     }
   });
 

@@ -145,6 +145,16 @@ describe('pptGenerateModule (native)', () => {
         expect(result.output.length).toBeGreaterThan(0);
         expect(result.meta?.mode).toBe('preview');
         expect(typeof result.meta?.slidesCount).toBe('number');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'ppt_generate',
+          mimeType: 'text/markdown',
+          metadata: {
+            topic: '单元测试主题',
+            mode: 'preview',
+          },
+        });
+        expect(result.meta?.contentLength).toBe(result.output.length);
       }
     });
 
@@ -164,6 +174,15 @@ describe('pptGenerateModule (native)', () => {
         expect(result.output).toContain('第二页');
         expect(result.output).toContain('📝');
         expect(result.meta?.slidesCount).toBe(2);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'ppt_generate',
+          metadata: {
+            topic: '结构化预览',
+            slidesCount: 2,
+            mode: 'preview',
+          },
+        });
       }
     });
 

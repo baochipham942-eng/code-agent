@@ -10,7 +10,11 @@ import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
 import { GENERATIVE_UI_PROMPT } from './generativeUI';
 import { QUESTION_FORM_PROMPT } from './questionForm';
-import { ARTIFACT_TASK_BRIEF_PROMPT, needsArtifactTaskBrief } from './artifactGeneration';
+import {
+  ARTIFACT_TASK_BRIEF_PROMPT,
+  GAME_ARTIFACT_CONTRACT_PROMPT,
+  needsArtifactTaskBrief,
+} from './artifactGeneration';
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
 import { applyOverlays, type OverlayConfig } from './overlayEngine';
 import { type PromptProfile, type PromptContext, getProfileOverlays } from './profiles';
@@ -170,7 +174,7 @@ export function needsGenerativeUI(message: string): boolean {
 
 export { GENERATIVE_UI_PROMPT };
 export { QUESTION_FORM_PROMPT };
-export { ARTIFACT_TASK_BRIEF_PROMPT, needsArtifactTaskBrief };
+export { ARTIFACT_TASK_BRIEF_PROMPT, GAME_ARTIFACT_CONTRACT_PROMPT, needsArtifactTaskBrief };
 
 export const SYSTEM_PROMPT: string = buildPrompt();
 

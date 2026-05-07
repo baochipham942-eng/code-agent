@@ -115,6 +115,21 @@ describe('video_generate — execute', () => {
       expect(result.meta?.videoUrl).toBe('https://cdn/video.mp4');
       expect(result.meta?.coverUrl).toBe('https://cdn/cover.jpg');
       expect(result.meta?.aspectRatio).toBe('16:9');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'video',
+        sourceTool: 'video_generate',
+        url: 'https://cdn/video.mp4',
+        mimeType: 'video/mp4',
+        metadata: {
+          taskId: 'task-abc',
+          mediaKind: 'video',
+          duration: 5,
+          fps: 30,
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('video');
+      expect(result.meta?.contentLength).toBe(result.output.length);
+      expect(result.meta?.truncated).toBe(false);
     }
   });
 
@@ -157,6 +172,17 @@ describe('video_generate — execute', () => {
     expect(writeFileSyncMock).toHaveBeenCalled();
     if (result.ok) {
       expect(result.meta?.videoPath).toBe('/tmp/work/video.mp4');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'video',
+        sourceTool: 'video_generate',
+        path: '/tmp/work/video.mp4',
+        mimeType: 'video/mp4',
+        metadata: {
+          taskId: 't1',
+          mediaKind: 'video',
+        },
+      });
+      expect(result.meta?.outputPath).toBe('/tmp/work/video.mp4');
     }
   });
 

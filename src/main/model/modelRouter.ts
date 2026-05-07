@@ -525,6 +525,19 @@ export class ModelRouter {
 
       const fallbackCategory = this.classifyProviderFallbackReason(errMsg, errCode);
       const fallbackReason = this.formatFallbackReason(errMsg);
+      const artifactLikeRequest = this.isArtifactLikeRequest(messages);
+      const artifactRepairActive = normalizedOptions?.artifactRepairActive === true;
+
+      if (
+        artifactRepairActive
+        && artifactLikeRequest
+        && !this.shouldRetrySelectedArtifactProvider(fallbackCategory)
+      ) {
+        logger.warn(
+          `[ModelRouter] Artifact repair failed with non-transient ${fallbackCategory}; keeping selected provider/model: ${fallbackReason}`
+        );
+        throw primaryErr;
+      }
 
       if (this.shouldKeepArtifactRequestOnSelectedProvider(messages, fallbackCategory)) {
         const selectedProviderRetry = await this.retrySelectedProviderForArtifactTransient(
@@ -540,10 +553,16 @@ export class ModelRouter {
           return selectedProviderRetry;
         }
 
+        if (!this.shouldAllowArtifactFallbackAfterSelectedRetry(fallbackCategory, normalizedOptions)) {
+          logger.warn(
+            `[ModelRouter] Provider ${effectiveConfig.provider} hit artifact transient error; keeping selected provider/model instead of cross-provider fallback: ${fallbackReason}`
+          );
+          throw primaryErr;
+        }
+
         logger.warn(
-          `[ModelRouter] Provider ${effectiveConfig.provider} hit artifact transient error; keeping selected provider/model instead of cross-provider fallback: ${fallbackReason}`
+          `[ModelRouter] Selected artifact provider retry exhausted; allowing cross-provider fallback for ${fallbackCategory}: ${fallbackReason}`
         );
-        throw primaryErr;
       }
 
       const chain = this.getFallbackChainForRequest(messages, effectiveConfig.provider);
@@ -733,6 +752,14 @@ export class ModelRouter {
       || fallbackCategory === 'rate_limit';
   }
 
+  private shouldAllowArtifactFallbackAfterSelectedRetry(
+    fallbackCategory: ProviderFallbackCategory,
+    options?: InferenceOptions,
+  ): boolean {
+    return options?.artifactRepairActive === true
+      && this.shouldRetrySelectedArtifactProvider(fallbackCategory);
+  }
+
   private async retrySelectedProviderForArtifactTransient(
     messages: ModelMessage[],
     tools: ToolDefinition[],
@@ -742,7 +769,6 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse | null> {
-    if (options?.artifactRepairActive === true) return null;
     if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory)) return null;
     if (signal?.aborted) return null;
 
@@ -759,9 +785,14 @@ export class ModelRouter {
         return await this._callProviderWithArtifactFallback(messages, tools, config, onStream, signal, options);
       } catch (retryErr) {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        const retryCode = (retryErr as NodeJS.ErrnoException).code;
+        const retryCategory = this.classifyProviderFallbackReason(retryMsg, retryCode);
         logger.warn(
           `[ModelRouter] Selected artifact provider retry ${attempt + 1} failed: ${retryMsg.split('\n')[0]}`
         );
+        if (!this.shouldRetrySelectedArtifactProvider(retryCategory)) {
+          throw retryErr;
+        }
       }
     }
 
@@ -976,7 +1007,7 @@ export class ModelRouter {
 
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i];
-      if (message.role !== 'user' && message.role !== 'system') continue;
+      if (message.role !== 'user') continue;
       const text = this.extractMessageText(message);
       if (!text) continue;
       if (repairIntentPattern.test(text) && artifactTargetPattern.test(text)) return true;

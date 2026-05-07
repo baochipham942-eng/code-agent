@@ -10,6 +10,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { appendSchema as schema } from './append.schema';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -107,7 +108,19 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
         output:
           `Appended file: ${filePath} (${content.length} chars appended, ${stat.size} bytes total` +
           `${final ? ', final chunk' : ''})`,
-        meta: { outputPath: filePath, final },
+        meta: {
+          artifact: await createFileArtifact(filePath, schema.name, ctx, {
+            metadata: {
+              final,
+              appendedChars: content.length,
+              appendedBytes: Buffer.byteLength(content, 'utf-8'),
+            },
+          }),
+          outputPath: filePath,
+          final,
+          contentLength: content.length,
+          fileSize: stat.size,
+        },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

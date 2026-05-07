@@ -143,6 +143,19 @@ describe('docxGenerateModule (native)', () => {
         const meta = result.meta as Record<string, unknown>;
         expect(meta.theme).toBe('professional');
         expect(meta.fileSize).toBe(4096);
+        expect(meta.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'docx_generate',
+          path: expect.stringMatching(/^\/tmp\/work\/document-\d+\.docx$/),
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          sizeBytes: 4096,
+          metadata: {
+            title: '报告',
+            theme: 'professional',
+            author: 'Code Agent',
+          },
+        });
         const att = meta.attachment as Record<string, string | number>;
         expect(att.mimeType).toBe(
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

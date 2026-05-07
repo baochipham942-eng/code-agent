@@ -19,6 +19,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
 interface DirEntry {
@@ -104,6 +105,35 @@ function formatEntries(entries: DirEntry[], indent = ''): string {
   return lines.join('\n');
 }
 
+function flattenEntries(entries: DirEntry[], depth = 0): Array<{
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  depth: number;
+}> {
+  const flat: Array<{
+    name: string;
+    path: string;
+    isDirectory: boolean;
+    size?: number;
+    depth: number;
+  }> = [];
+  for (const entry of entries) {
+    flat.push({
+      name: entry.name,
+      path: entry.path,
+      isDirectory: entry.isDirectory,
+      size: entry.size,
+      depth,
+    });
+    if (entry.children) {
+      flat.push(...flattenEntries(entry.children, depth + 1));
+    }
+  }
+  return flat;
+}
+
 class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -134,9 +164,42 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     try {
       const entries = await listDir(dirPath, recursive, maxDepth, 0);
       const output = formatEntries(entries);
+      const flatEntries = flattenEntries(entries);
+      const directoryCount = flatEntries.filter(entry => entry.isDirectory).length;
+      const fileCount = flatEntries.length - directoryCount;
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.info('ListDirectory done', { dirPath, count: entries.length, recursive });
-      return { ok: true, output };
+      return {
+        ok: true,
+        output,
+        meta: {
+          dirPath,
+          recursive,
+          maxDepth,
+          entryCount: flatEntries.length,
+          fileCount,
+          directoryCount,
+          entries: flatEntries.slice(0, 500),
+          entriesTruncated: flatEntries.length > 500,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `Directory: ${path.basename(dirPath) || dirPath}`,
+            mimeType: 'text/plain',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              dirPath,
+              recursive,
+              maxDepth,
+              entryCount: flatEntries.length,
+              fileCount,
+              directoryCount,
+            },
+          }),
+        },
+      };
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {

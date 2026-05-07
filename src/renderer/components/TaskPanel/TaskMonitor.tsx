@@ -218,6 +218,37 @@ export const TaskMonitor: React.FC = () => {
               </span>
             </div>
           ))}
+          {taskProgress && taskProgress.phase !== 'completed' && (
+            <div className="mt-1.5 border-t border-zinc-800/80 pt-1.5">
+              <div className="flex items-center gap-2 py-0.5">
+                {taskProgressStatus(taskProgress.phase) === 'failed' ? (
+                  <div className="w-4 h-4 rounded-full bg-red-500/15 flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
+                  </div>
+                ) : taskProgress.phase === 'tool_pending' || taskProgress.phase === 'tool_running' ? (
+                  <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0">
+                    <Wrench className="w-2.5 h-2.5 text-primary-400" />
+                  </div>
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                    <Loader2 className="w-2.5 h-2.5 text-primary-400 animate-spin" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs truncate ${
+                    taskProgressStatus(taskProgress.phase) === 'failed' ? 'text-red-300' : 'text-zinc-200'
+                  }`}>
+                    {taskProgressTitle(taskProgress)}
+                  </div>
+                  {taskProgressDetails(taskProgress).length > 0 && (
+                    <div className="mt-0.5 text-[10px] text-zinc-600 truncate">
+                      {taskProgressDetails(taskProgress).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
       ) : taskProgress ? (
@@ -372,6 +403,7 @@ export const TaskMonitor: React.FC = () => {
           <CurrentTurnArtifactOwnershipCard
             artifactView={currentTurnArtifactOwnership}
             previewItems={workspacePreviewItems}
+            workingDirectory={workingDirectory}
             onOpenPreview={openPreviewWorkspace}
           />
         ) : outputs.count > 0 ? (
@@ -405,17 +437,29 @@ export const TaskMonitor: React.FC = () => {
 function findPreviewItemForPath(
   previewItems: WorkspacePreviewItem[],
   path?: string,
+  workingDirectory?: string | null,
 ): WorkspacePreviewItem | null {
   if (!path) return null;
-  return previewItems.find((item) => item.file?.path === path) || null;
+  const normalizedPath = resolveArtifactPath(path, workingDirectory);
+  return previewItems.find((item) => item.file?.path === normalizedPath) || null;
+}
+
+function resolveArtifactPath(path: string, workingDirectory?: string | null): string {
+  const trimmed = path.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.startsWith('/') || trimmed.startsWith('~') || /^[a-z]+:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return workingDirectory ? `${workingDirectory.replace(/\/+$/, '')}/${trimmed}` : trimmed;
 }
 
 function findPreviewItemForArtifact(
   previewItems: WorkspacePreviewItem[],
   artifact: TurnArtifactOwnershipItem,
+  workingDirectory?: string | null,
 ): WorkspacePreviewItem | null {
   if (artifact.path) {
-    const byPath = findPreviewItemForPath(previewItems, artifact.path);
+    const byPath = findPreviewItemForPath(previewItems, artifact.path, workingDirectory);
     if (byPath) return byPath;
   }
   return previewItems.find((item) => item.title === artifact.label) || null;
@@ -912,10 +956,12 @@ function CurrentTurnRoutingEvidenceCard({
 function CurrentTurnArtifactOwnershipCard({
   artifactView,
   previewItems,
+  workingDirectory,
   onOpenPreview,
 }: {
   artifactView: NonNullable<ReturnType<typeof useCurrentTurnArtifactOwnership>>;
   previewItems: WorkspacePreviewItem[];
+  workingDirectory?: string | null;
   onOpenPreview: (itemId?: string | null) => void;
 }) {
   return (
@@ -933,7 +979,7 @@ function CurrentTurnArtifactOwnershipCard({
           <CurrentTurnArtifactOwnershipRow
             key={`${item.kind}-${item.label}-${index}`}
             item={item}
-            previewItem={findPreviewItemForArtifact(previewItems, item)}
+            previewItem={findPreviewItemForArtifact(previewItems, item, workingDirectory)}
             onOpenPreview={onOpenPreview}
           />
         ))}
@@ -965,7 +1011,10 @@ function CurrentTurnArtifactOwnershipRow({
 
   if (!previewItem) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
+      <div
+        className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
+        title={item.path || item.url || item.label}
+      >
         {row}
       </div>
     );
@@ -976,7 +1025,7 @@ function CurrentTurnArtifactOwnershipRow({
       type="button"
       onClick={() => onOpenPreview(previewItem.id)}
       className="flex w-full items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 text-left hover:border-cyan-500/25 hover:bg-cyan-500/[0.045]"
-      title={item.path || item.label}
+      title={item.path || item.url || item.label}
     >
       {row}
       <Eye className="ml-auto h-3 w-3 flex-shrink-0 text-cyan-400/70" />

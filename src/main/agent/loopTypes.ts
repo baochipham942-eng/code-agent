@@ -125,6 +125,9 @@ export interface ModelResponse {
       targetRangedReadCount?: number;
       patched?: boolean;
       noOpPatchCount?: number;
+      editAnchorFailureCount?: number;
+      preferTargetedEdit?: boolean;
+      activeIssueCodes?: string[];
     };
   };
 }

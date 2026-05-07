@@ -122,6 +122,17 @@ describe('remindersDeleteModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('已删除提醒：');
         expect(result.output).toContain('#r1 [Work] Ship PR');
+        expect(result.meta).toMatchObject({
+          action: 'delete_reminder',
+          connector: 'reminders',
+          id: 'r1',
+          list: 'Work',
+          title: 'Ship PR',
+          deleted: true,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('delete_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('delete_reminder', validArgs);
     });

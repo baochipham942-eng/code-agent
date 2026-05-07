@@ -13,10 +13,15 @@
  * These characters can cause EINVAL errors when passed to child_process.spawn()
  * on Windows and other strict environments.
  */
+function isDisallowedEnvControlChar(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return code === 127 || (code < 32 && code !== 9 && code !== 10 && code !== 13);
+}
+
 export function sanitizeEnvValue(value: string): string {
   // Remove C0 control chars (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F) and DEL (0x7F)
   // Preserve: \t (0x09), \n (0x0A), \r (0x0D) as they are valid whitespace
-  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  return Array.from(value).filter((char) => !isDisallowedEnvControlChar(char)).join('');
 }
 
 /**

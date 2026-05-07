@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Platformer Regression Test</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:sans-serif;overflow:hidden}
+.game-wrapper{position:relative;width:100%;max-width:800px;aspect-ratio:800/500;background:#1a1a2e;border:2px solid #e94560;border-radius:8px;overflow:hidden}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;background:#1a1a2e}
+#hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:6px 12px;color:#fff;font-size:14px;font-weight:bold;text-shadow:1px 1px 2px #000;pointer-events:none;z-index:10}
+#hud span{background:rgba(0,0,0,0.5);padding:2px 8px;border-radius:4px}
+#controls{position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:12px;z-index:10;pointer-events:none}
+#controls button{pointer-events:auto;background:rgba(233,69,96,0.7);border:2px solid #e94560;color:#fff;font-size:18px;padding:8px 18px;border-radius:8px;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+#controls button:active{background:#e94560}
+@media(max-width:500px){#controls button{padding:6px 14px;font-size:16px}#hud{font-size:12px;padding:4px 8px}}
+</style>
+</head>
+<body>
+<div class="game-wrapper">
+  <canvas id="gc" width="800" height="500"></canvas>
+  <div id="hud"><span id="hudScore">Score: 0</span><span id="hudAbility">Ability: none</span><span id="hudLevel">Level 1</span></div>
+  <div id="controls">
+    <button id="btnLeft">◀</button>
+    <button id="btnJump">▲</button>
+    <button id="btnRight">▶</button>
+  </div>
+</div>
+<script>
+(function(){
+const canvas=document.getElementById('gc');
+const ctx=canvas.getContext('2d');
+const W=800,H=500;
+const GRAVITY=0.5,FRICTION=0.82,MAX_SPEED=5,JUMP_FORCE=-10,STOMP_BOUNCE=-7;
+
+// ----- LEVEL DATA -----
+const LEVELS=[
+  {
+    name:'Level 1 - Intro',
+    playerStart:{x:60,y:380},
+    goal:{x:740,y:380,w:30,h:30},
+    platforms:[
+      {x:0,y:440,w:200,h:20},
+      {x:280,y:440,w:240,h:20},
+      {x:600,y:440,w:200,h:20},
+      {x:100,y:340,w:80,h:16},
+      {x:350,y:300,w:80,h:16},
+      {x:550,y:340,w:80,h:16},
+      {x:700,y:280,w:60,h:16},
+    ],
+    enemies:[
+      {x:320,y:420,w:28,h:24,type:'goomba',alive:true,patrolDir:1,patrolMin:290,patrolMax:380},
+    ],
+    blocks:[
+      {x:200,y:300,w:28,h:28,type:'question',hit:false,spawned:false},
+    ],
+    abilityGates:[
+      {x:680,y:380,w:20,h:60,requires:'doubleJump',open:false},
+    ],
+    abilityChest:{x:520,y:300,w:28,h:28,opened:false,grants:'doubleJump'},
+    comboZone:{x:150,y:320,w:60,h:20,label:'combo'},
+  },
+  {
+    name:'Level 2 - Challenge',
+    playerStart:{x:60,y:380},
+    goal:{x:740,y:380,w:30,h:30},
+    platforms:[
+      {x:0,y:440,w:200,h:20},
+      {x:280,y:440,w:240,h:20},
+      {x:600,y:440,w:200,h:20},
+      {x:120,y:340,w:80,h:16},
+      {x:300,y:280,w:80,h:16},
+      {x:480,y:340,w:80,h:16},
+      {x:650,y:260,w:60,h:16},
+    ],
+    enemies:[
+      {x:340,y:420,w:28,h:24,type:'goomba',alive:true,patrolDir:1,patrolMin:310,patrolMax:400},
+      {x:500,y:420,w:28,h:24,type:'goomba',alive:true,patrolDir:-1,patrolMin:470,patrolMax:560},
+    ],
+    blocks:[
+      {x:220,y:260,w:28,h:28,type:'question',hit:false,spawned:false},
+    ],
+    abilityGates:[
+      {x:660,y:340,w:20,h:100,requires:'doubleJump',open:false},
+    ],
+    abilityChest:{x:440,y:260,w:28,h:28,opened:false,grants:'doubleJump'},
+    comboZone:{x:160,y:300,w:60,h:20,label:'combo'},
+  }
+];
+
+// ----- GAME STATE -----
+let game={
+  level:0,
+  player:{x:60,y:380,w:24,h:32,vx:0,vy:0,onGround:false,jumps:0,maxJumps:1,ability:'none',score:0,alive:true},
+  platforms:[],
+  enemies:[],
+  blocks:[],
+  abilityGates:[],
+  abilityChest:null,
+  comboZone:null,
+  goal:null,
+  keys:{left:false,right:false,jump:false},
+  camera:{x:0},
+  won:false,
+  frame:0,
+};
+
+function loadLevel(idx){
+  const d=LEVELS[idx];
+  game.level=idx;
+  game.player={x:d.playerStart.x,y:d.playerStart.y,w:24,h:32,vx:0,vy:0,onGround:false,jumps:0,maxJumps:1,ability:'none',score:game.player.score||0,alive:true};
+  game.platforms=d.platforms.map(p=>({...p}));
+  game.enemies=d.enemies.map(e=>({...e}));
+  game.blocks=d.blocks.map(b=>({...b}));
+  game.abilityGates=d.abilityGates.map(g=>({...g}));
+  game.abilityChest=d.abilityChest?{...d.abilityChest}:null;
+  game.comboZone=d.comboZone?{...d.comboZone}:null;
+  game.goal={...d.goal};
+  game.keys={left:false,right:false,jump:false};
+  game.camera={x:0};
+  game.won=false;
+  game.frame=0;
+  updateHUD();
+}
+
+function updateHUD(){
+  document.getElementById('hudScore').textContent='Score: '+game.player.score;
+  document.getElementById('hudAbility').textContent='Ability: '+(game.player.ability||'none');
+  document.getElementById('hudLevel').textContent=LEVELS[game.level].name;
+}
+
+// ----- COLLISION -----
+function rectOverlap(a,b){
+  return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+}
+
+function resolveCollisions(p){
+  p.onGround=false;
+  // platforms
+  for(let pl of game.platforms){
+    if(!rectOverlap(p,pl)) continue;
+    const overlapX=Math.min(p.x+p.w-pl.x,pl.x+pl.w-p.x);
+    const overlapY=Math.min(p.y+p.h-pl.y,pl.y+pl.h-p.y);
+    if(overlapX<overlapY){
+      // horizontal
+      if(p.x<pl.x) p.x=pl.x-p.w;
+      else p.x=pl.x+pl.w;
+      p.vx=0;
+    }else{
+      // vertical
+      if(p.y<pl.y){
+        p.y=pl.y-p.h;
+        p.vy=0;
+        p.onGround=true;
+        p.jumps=0;
+      }else{
+        p.y=pl.y+pl.h;
+        p.vy=0;
+      }
+    }
+  }
+  // gates
+  for(let g of game.abilityGates){
+    if(g.open) continue;
+    if(!rectOverlap(p,g)) continue;
+    if(p.ability===g.requires){
+      g.open=true;
+    }else{
+      // push player back
+      if(p.vx>0) p.x=g.x-p.w-2;
+      else p.x=g.x+g.w+2;
+      p.vx*=-0.5;
+    }
+  }
+}
+
+// ----- UPDATE -----
+function update(){
+  if(!game.player.alive||game.won) return;
+  const p=game.player;
+  game.frame++;
+
+  // input
+  if(game.keys.left) p.vx-=0.8;
+  if(game.keys.right) p.vx+=0.8;
+  p.vx*=FRICTION;
+  p.vx=Math.max(-MAX_SPEED,Math.min(MAX_SPEED,p.vx));
+
+  // jump
+  if(game.keys.jump&&p.onGround){
+    p.vy=JUMP_FORCE;
+    p.onGround=false;
+    p.jumps=1;
+  }else if(game.keys.jump&&p.ability==='doubleJump'&&p.jumps<2&&!p.onGround){
+    p.vy=JUMP_FORCE*0.85;
+    p.jumps=2;
+  }
+
+  // gravity
+  p.vy+=GRAVITY;
+  if(p.vy>12) p.vy=12;
+
+  // move
+  p.x+=p.vx;
+  p.y+=p.vy;
+
+  // bounds
+  if(p.x<0) p.x=0;
+  if(p.x>W-p.w) p.x=W-p.w;
+  if(p.y>H+50){p.alive=false;return;}
+
+  resolveCollisions(p);
+
+  // enemies
+  for(let e of game.enemies){
+    if(!e.alive) continue;
+    e.x+=e.patrolDir*1.2;
+    if(e.x<=e.patrolMin||e.x+e.w>=e.patrolMax) e.patrolDir*=-1;
+    if(rectOverlap(p,e)){
+      // stomp check
+      if(p.vy>0&&p.y+p.h-e.y<20){
+        e.alive=false;
+        p.vy=STOMP_BOUNCE;
+        p.score+=100;
+        updateHUD();
+      }else{
+        p.alive=false;
+      }
+    }
+  }
+
+  // blocks (bump from below)
+  for(let b of game.blocks){
+    if(b.hit) continue;
+    if(rectOverlap(p,b)&&p.vy<0&&p.y>b.y+b.h-10){
+      b.hit=true;
+      b.spawned=true;
+      p.score+=50;
+      p.vy=2;
+      updateHUD();
+    }
+  }
+
+  // ability chest
+  if(game.abilityChest&&!game.abilityChest.opened){
+    const c=game.abilityChest;
+    if(rectOverlap(p,c)){
+      game.abilityChest.opened=true;
+      p.ability=c.grants;
+      p.maxJumps=2;
+      p.score+=200;
+      updateHUD();
+    }
+  }
+
+  // goal
+  if(rectOverlap(p,game.goal)){
+    game.won=true;
+    p.score+=500;
+    updateHUD();
+  }
+
+  // camera
+  game.camera.x=Math.max(0,Math.min(p.x-W/2,800-W));
+}
+
+// ----- RENDER -----
+function render(){
+  ctx.clearRect(0,0,W,H);
+  const p=game.player;
+  // sky gradient
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#1a1a2e');
+  grad.addColorStop(1,'#16213e');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H);
+
+  // platforms
+  ctx.fillStyle='#0f3460';
+  for(let pl of game.platforms){
+    ctx.fillRect(pl.x,pl.y,pl.w,pl.h);
+    ctx.strokeStyle='#e94560';
+    ctx.lineWidth=1;
+    ctx.strokeRect(pl.x,pl.y,pl.w,pl.h);
+  }
+
+  // enemies
+  for(let e of game.enemies){
+    if(!e.alive) continue;
+    ctx.fillStyle='#e94560';
+    ctx.fillRect(e.x,e.y,e.w,e.h);
+    ctx.fillStyle='#fff';
+    ctx.fillRect(e.x+4,e.y+4,6,6);
+    ctx.fillRect(e.x+e.w-10,e.y+4,6,6);
+  }
+
+  // blocks
+  for(let b of game.blocks){
+    ctx.fillStyle=b.hit?'#533483':'#e94560';
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+    ctx.strokeStyle='#fff';
+    ctx.lineWidth=1;
+    if(!b.hit){
+      ctx.fillStyle='#fff';
+      ctx.font='16px sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText('?',b.x+b.w/2,b.y+b.h-6);
+    }
+  }
+
+  // ability chest
+  if(game.abilityChest&&!game.abilityChest.opened){
+    const c=game.abilityChest;
+    ctx.fillStyle='#ffd700';
+    ctx.fillRect(c.x,c.y,c.w,c.h);
+    ctx.fillStyle='#000';
+    ctx.font='14px sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('★',c.x+c.w/2,c.y+c.h-6);
+  }
+
+  // gates
+  for(let g of game.abilityGates){
+    if(g.open){
+      ctx.fillStyle='rgba(0,255,100,0.3)';
+      ctx.fillRect(g.x,g.y,g.w,g.h);
+    }else{
+      ctx.fillStyle='#533483';
+      ctx.fillRect(g.x,g.y,g.w,g.h);
+      ctx.fillStyle='#fff';
+      ctx.font='10px sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText('🔒',g.x+g.w/2,g.y+g.h/2+4);
+    }
+  }
+
+  // combo zone
+  if(game.comboZone){
+    const cz=game.comboZone;
+    ctx.fillStyle='rgba(255,215,0,0.15)';
+    ctx.fillRect(cz.x,cz.y,cz.w,cz.h);
+    ctx.strokeStyle='rgba(255,215,0,0.4)';
+    ctx.lineWidth=1;
+    ctx.setLineDash([4,4]);
+    ctx.strokeRect(cz.x,cz.y,cz.w,cz.h);
+    ctx.setLineDash([]);
+  }
+
+  // goal
+  ctx.fillStyle='#0f0';
+  ctx.fillRect(game.goal.x,game.goal.y,game.goal.w,game.goal.h);
+  ctx.fillStyle='#fff';
+  ctx.font='16px sans-serif';
+  ctx.textAlign='center';
+  ctx.fillText('🏁',game.goal.x+game.goal.w/2,game.goal.y+game.goal.h-4);
+
+  // player
+  if(p.alive){
+    ctx.fillStyle='#00d2ff';
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+    ctx.fillStyle='#fff';
+    ctx.fillRect(p.x+4,p.y+4,6,6);
+    ctx.fillRect(p.x+p.w-10,p.y+4,6,6);
+    ctx.fillStyle='#e94560';
+    ctx.fillRect(p.x+2,p.y+p.h-4,p.w-4,4);
+    if(p.ability==='doubleJump'){
+      ctx.fillStyle='rgba(255,215,0,0.3)';
+      ctx.beginPath();
+      ctx.arc(p.x+p.w/2,p.y+p.h/2,20,0,Math.PI*2);
+      ctx.fill();
+    }
+  }else{
+    ctx.fillStyle='#e94560';
+    ctx.font='24px sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('💀',W/2,H/2-20);
+    ctx.fillStyle='#fff';
+    ctx.font='16px sans-serif';
+    ctx.fillText('Press R to restart',W/2,H/2+20);
+  }
+
+  if(game.won){
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#ffd700';
+    ctx.font='32px sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('🎉 LEVEL COMPLETE! 🎉',W/2,H/2);
+    ctx.fillStyle='#fff';
+    ctx.font='16px sans-serif';
+    ctx.fillText('Press R for next level',W/2,H/2+40);
+  }
+}
+
+// ----- GAME LOOP -----
+function gameLoop(){
+  update();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ----- INPUT -----
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key==='a') game.keys.left=true;
+  if(e.key==='ArrowRight'||e.key==='d') game.keys.right=true;
+  if(e.key==='ArrowUp'||e.key==='w'||e.key===' ') game.keys.jump=true;
+  if(e.key==='r'||e.key==='R'){
+    if(game.won&&game.level<LEVELS.length-1){
+      loadLevel(game.level+1);
+    }else{
+      loadLevel(game.level);
+    }
+  }
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft'||e.key==='a') game.keys.left=false;
+  if(e.key==='ArrowRight'||e.key==='d') game.keys.right=false;
+  if(e.key==='ArrowUp'||e.key==='w'||e.key===' ') game.keys.jump=false;
+});
+
+// touch controls
+document.getElementById('btnLeft').addEventListener('touchstart',e=>{e.preventDefault();game.keys.left=true});
+document.getElementById('btnLeft').addEventListener('touchend',e=>{e.preventDefault();game.keys.left=false});
+document.getElementById('btnRight').addEventListener('touchstart',e=>{e.preventDefault();game.keys.right=true});
+document.getElementById('btnRight').addEventListener('touchend',e=>{e.preventDefault();game.keys.right=false});
+document.getElementById('btnJump').addEventListener('touchstart',e=>{e.preventDefault();game.keys.jump=true});
+document.getElementById('btnJump').addEventListener('touchend',e=>{e.preventDefault();game.keys.jump=false});
+
+// mouse down/up for desktop click-hold
+['btnLeft','btnRight','btnJump'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener('mousedown',()=>{
+    if(id==='btnLeft') game.keys.left=true;
+    if(id==='btnRight') game.keys.right=true;
+    if(id==='btnJump') game.keys.jump=true;
+  });
+  el.addEventListener('mouseup',()=>{
+    if(id==='btnLeft') game.keys.left=false;
+    if(id==='btnRight') game.keys.right=false;
+    if(id==='btnJump') game.keys.jump=false;
+  });
+  el.addEventListener('mouseleave',()=>{
+    if(id==='btnLeft') game.keys.left=false;
+    if(id==='btnRight') game.keys.right=false;
+    if(id==='btnJump') game.keys.jump=false;
+  });
+});
+
+// ----- SNAPSHOT -----
+function snapshot(){
+  const p=game.player;
+  return {
+    player:{x:Math.round(p.x),y:Math.round(p.y),vx:Math.round(p.vx*10)/10,vy:Math.round(p.vy*10)/10,onGround:p.onGround,alive:p.alive,jumps:p.jumps,ability:p.ability},
+    score:p.score,
+    enemies:game.enemies.map(e=>({x:Math.round(e.x),alive:e.alive})),
+    blocks:game.blocks.map(b=>({hit:b.hit,spawned:b.spawned})),
+    abilityChest:game.abilityChest?{opened:game.abilityChest.opened}:null,
+    gates:game.abilityGates.map(g=>({open:g.open,requires:g.requires})),
+    won:game.won,
+    level:game.level,
+    frame:game.frame,
+  };
+}
+
+// ----- STEP -----
+function step(inputState,frames){
+  frames=frames||1;
+  // apply input
+  if(typeof inputState==='string'){
+    // single key
+    const prevKeys={...game.keys};
+    game.keys={left:false,right:false,jump:false};
+    if(inputState==='ArrowLeft'||inputState==='a') game.keys.left=true;
+    if(inputState==='ArrowRight'||inputState==='d') game.keys.right=true;
+    if(inputState==='ArrowUp'||inputState==='w'||inputState===' ') game.keys.jump=true;
+    for(let i=0;i<frames;i++) update();
+    game.keys=prevKeys;
+  }else if(Array.isArray(inputState)){
+    const prevKeys={...game.keys};
+    game.keys={left:false,right:false,jump:false};
+    for(let k of inputState){
+      if(k==='ArrowLeft'||k==='a') game.keys.left=true;
+      if(k==='ArrowRight'||k==='d') game.keys.right=true;
+      if(k==='ArrowUp'||k==='w'||k===' ') game.keys.jump=true;
+    }
+    for(let i=0;i<frames;i++) update();
+    game.keys=prevKeys;
+  }else if(typeof inputState==='object'&&inputState!==null){
+    const prevKeys={...game.keys};
+    game.keys={left:!!inputState.left,right:!!inputState.right,jump:!!inputState.jump};
+    for(let i=0;i<frames;i++) update();
+    game.keys=prevKeys;
+  }else{
+    for(let i=0;i<frames;i++) update();
+  }
+  return snapshot();
+}
+
+// ----- RESET -----
+function reset(levelOrScenario){
+  const idx=(levelOrScenario!==undefined&&levelOrScenario!==null)?levelOrScenario:0;
+  loadLevel(Math.min(idx,LEVELS.length-1));
+  return snapshot();
+}
+
+// ----- START -----
+function start(){
+  loadLevel(0);
+  return snapshot();
+}
+
+// ----- SMOKE TEST -----
+function runSmokeTest(){
+  const failures=[];
+  const checks=[];
+
+  // 1. Stomp enemy
+  reset(0);
+  // move right toward enemy at x~320
+  step('ArrowRight',50);
+  const beforeStomp=snapshot();
+  // jump then land on enemy
+  step(['ArrowRight','ArrowUp'],5);
+  step('ArrowRight',30);
+  const afterStomp=snapshot();
+  const enemyDead=afterStomp.enemies.some(e=>!e.alive);
+  if(enemyDead){
+    checks.push('stomp enemy: enemy defeated');
+  }else{
+    failures.push('stomp enemy: enemy not defeated');
+  }
+  const scoreAfterStomp=afterStomp.score>beforeStomp.score;
+  if(scoreAfterStomp) checks.push('stomp enemy: score increased');
+  else failures.push('stomp enemy: score did not increase');
+
+  // 2. Bump question block
+  reset(0);
+  // move under block at x=200,y=300
+  step('ArrowRight',25);
+  // jump up from below
+  step('ArrowUp',15);
+  const afterBump=snapshot();
+  const blockHit=afterBump.blocks.some(b=>b.hit);
+  if(blockHit) checks.push('bump block: question block hit');
+  else failures.push('bump block: question block not hit');
+  if(afterBump.score>0) checks.push('bump block: score increased');
+  else failures.push('bump block: score did not increase');
+
+  // 3. Gain ability (doubleJump)
+  reset(0);
+  // move to ability chest at x=520
+  step('ArrowRight',90);
+  const beforeChest=snapshot();
+  step('ArrowRight',10);
+  const afterChest=snapshot();
+  if(afterChest.player.ability==='doubleJump'){
+    checks.push('gain ability: doubleJump acquired');
+  }else{
+    failures.push('gain ability: doubleJump not acquired');
+  }
+  if(afterChest.abilityChest&&afterChest.abilityChest.opened){
+    checks.push('gain ability: chest opened');
+  }else{
+    failures.push('gain ability: chest not opened');
+  }
+
+  // 4. Unlock gate/route (need doubleJump, gate at x=680)
+  reset(0);
+  // get ability first
+  step('ArrowRight',95);
+  // now go to gate
+  step('ArrowRight',30);
+  const beforeGate=snapshot();
+  step('ArrowRight',10);
+  const afterGate=snapshot();
+  const gateOpen=afterGate.gates.some(g=>g.open);
+  if(gateOpen) checks.push('unlock gate: gate opened with doubleJump');
+  else failures.push('unlock gate: gate did not open');
+
+  // 5. Combo challenge: jump + stomp enemy + use ability
+  reset(0);
+  // get ability
+  step('ArrowRight',95);
+  // move back left toward enemy
+  step('ArrowLeft',40);
+  const beforeCombo=snapshot();
+  // jump + right toward enemy
+  step(['ArrowRight','ArrowUp'],8);
+  step('ArrowRight',25);
+  const afterCombo=snapshot();
+  const comboEnemyDead=afterCombo.enemies.some(e=>!e.alive);
+  const comboScoreUp=afterCombo.score>beforeCombo.score;
+  if(comboEnemyDead) checks.push('combo challenge: enemy stomped in combo');
+  else failures.push('combo challenge: enemy not stomped');
+  if(comboScoreUp) checks.push('combo challenge: score increased');
+  else failures.push('combo challenge: score did not increase');
+
+  // coverage
+  const coverage={
+    mechanics:['stomp_enemy','bump_block','gain_ability','unlock_gate','combo_challenge'],
+    rewards:['score_increase_on_stomp','score_increase_on_bump','score_increase_on_ability','score_increase_on_goal'],
+    risks:['enemy_hazard','fall_death'],
+    stateChanges:{
+      enemy_alive_to_dead:enemyDead,
+      block_unhit_to_hit:blockHit,
+      ability_none_to_doubleJump:afterChest.player.ability==='doubleJump',
+      gate_locked_to_open:gateOpen,
+      score_increased:comboScoreUp,
+    },
+  };
+
+  return {
+    passed:failures.length===0,
+    checks,
+    failures,
+    coverage,
+  };
+}
+
+// ----- EXPOSE -----
+window.__GAME_META__={
+  domain:'platformer',
+  subtype:'platformer',
+  controls:{left:'ArrowLeft',right:'ArrowRight',jump:'ArrowUp'},
+  levels:LEVELS.map((l,i)=>({id:i,name:l.name})),
+  qualityPlan:{
+    actorReadable:'player visible as blue rectangle with eyes and red belt',
+    mechanics:'gravity, friction, jump, stomp, block bump, ability chest, gate unlock, combo zone',
+    rewards:'score on stomp(+100), bump block(+50), ability chest(+200), goal(+500)',
+    risks:'enemy touch kills, fall off bottom kills',
+    levelsCovered:'2 levels with increasing challenge',
+    allAuthoredLevelsReachable:'player can reach goal in each level with skill',
+  },
+  progressPlan:[
+    {label:'move right',input:'ArrowRight',frames:30,metric:'player.x',expect:'increase'},
+    {label:'jump arc',input:['ArrowRight','ArrowUp'],frames:15,metric:'player.y',expect:'change'},
+    {label:'stomp enemy',input:'ArrowRight',frames:60,metric:'enemies[0].alive',expect:'false'},
+    {label:'bump block',input:'ArrowUp',frames:20,metric:'blocks[0].hit',expect:'true'},
+    {label:'gain ability',input:'ArrowRight',frames:100,metric:'player.ability',expect:'doubleJump'},
+    {label:'unlock gate',input:'ArrowRight',frames:130,metric:'gates[0].open',expect:'true'},
+    {label:'combo challenge',input:['ArrowRight','ArrowUp'],frames:40,metric:'score',expect:'increase'},
+  ],
+  browserVisualSmoke:{
+    desktop:'canvas nonblank, player visible, HUD shows Score/Ability/Level',
+    mobile:'canvas nonblank, touch controls visible, no crop',
+  },
+  gameplayMechanics:{
+    enemies:[{id:'goomba_0',type:'goomba',stompable:true,patrol:true,defeatReward:100}],
+    blocks:[{id:'question_0',type:'question',bumpableFromBelow:true,reward:50,usedState:'hit'}],
+    abilities:[{id:'doubleJump',type:'doubleJump',acquiredFrom:'abilityChest',effect:'allows second jump in air',unlocksRoute:'abilityGate'}],
+    gates:[{id:'gate_0',requiresAbility:'doubleJump',blocksAccessTo:'goal area'}],
+    comboChallenge:[{id:'combo_0',requires:['jump','stomp','doubleJump'],target:'defeat enemy after gaining doubleJump'}],
+  },
+};
+
+window.__GAME_TEST__={start,reset,snapshot,step,runSmokeTest};
+
+// ----- INIT -----
+loadLevel(0);
+gameLoop();
+
+})();
+</script>
+</body>
+</html>

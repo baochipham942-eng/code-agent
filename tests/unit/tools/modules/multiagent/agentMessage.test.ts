@@ -105,6 +105,16 @@ describe('agent_message behavior', () => {
       expect(result.output).toContain('🔄 [a1] coder - running');
       expect(result.output).toContain('✅ [a2] reviewer - completed');
       expect(result.output).toMatch(/Task: a{50}\.\.\./); // 50 字符 + ...
+      expect(result.meta).toMatchObject({
+        action: 'list',
+        status: 'listed',
+        targets: ['a1', 'a2'],
+        counts: { agents: 2, running: 1, completed: 1 },
+        artifact: expect.objectContaining({
+          kind: 'text',
+          sourceTool: 'agent_message',
+        }),
+      });
     }
   });
 
@@ -181,6 +191,20 @@ describe('agent_message behavior', () => {
       expect(result.output).toContain('Agent [a1] Result:');
       expect(result.output).toContain('Task: do thing');
       expect(result.output).toContain('output text');
+      expect(result.meta).toMatchObject({
+        action: 'result',
+        agentId: 'a1',
+        status: 'completed',
+        targets: ['a1'],
+        result: {
+          task: 'do thing',
+          output: 'output text',
+        },
+        artifact: expect.objectContaining({
+          kind: 'text',
+          sourceTool: 'agent_message',
+        }),
+      });
     }
   });
 

@@ -144,6 +144,16 @@ describe('mailSendModule (native)', () => {
         expect(result.output).not.toContain('CC:');
         expect(result.output).not.toContain('BCC:');
         expect(result.output).not.toContain('Attachments:');
+        expect(result.meta).toMatchObject({
+          action: 'send_message',
+          connector: 'mail',
+          sent: true,
+          subject: 'Hi',
+          toCount: 1,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('send_message');
       }
       expect(execMock).toHaveBeenCalledWith('send_message', validArgs);
     });

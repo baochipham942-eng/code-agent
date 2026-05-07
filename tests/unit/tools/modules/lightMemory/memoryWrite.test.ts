@@ -186,7 +186,19 @@ describe('memoryWriteModule (native)', () => {
         content: 'Product Manager with 14 years experience',
       });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toContain('user_role.md');
+      if (result.ok) {
+        expect(result.output).toContain('user_role.md');
+        expect(result.meta).toMatchObject({
+          action: 'write',
+          filename: 'user_role.md',
+          memoryType: 'user',
+        });
+        const artifact = result.meta?.artifact as { kind?: string; path?: string; mimeType?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.mimeType).toBe('text/markdown');
+        expect(artifact.path).toBe(path.join(memDir, 'user_role.md'));
+        expect(artifact.metadata?.action).toBe('write');
+      }
 
       const fileContent = await fs.readFile(path.join(memDir, 'user_role.md'), 'utf-8');
       expect(fileContent).toContain('---');
@@ -275,6 +287,16 @@ describe('memoryWriteModule (native)', () => {
 
       const result = await runWrite({ action: 'delete', filename: 'to_delete.md' });
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta).toMatchObject({
+          action: 'delete',
+          filename: 'to_delete.md',
+          existed: true,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('delete');
+      }
 
       const existsAfter = await fs
         .stat(path.join(memDir, 'to_delete.md'))
@@ -313,6 +335,13 @@ describe('memoryWriteModule (native)', () => {
 
       const result = await runWrite({ action: 'delete', filename: 'nonexistent.md' });
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta).toMatchObject({
+          action: 'delete',
+          filename: 'nonexistent.md',
+          existed: false,
+        });
+      }
     });
   });
 

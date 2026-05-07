@@ -89,7 +89,6 @@ export const PreviewPanel: React.FC = () => {
     if (!activeTab) return;
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.id, activeTab?.isLoaded]);
 
   const loadContent = async (tabId: string, filePath: string) => {

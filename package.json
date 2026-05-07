@@ -38,6 +38,8 @@
     "acceptance:mail": "node node_modules/jiti/bin/jiti.js scripts/acceptance/mail-smoke.ts",
     "acceptance:calendar": "node node_modules/jiti/bin/jiti.js scripts/acceptance/calendar-smoke.ts",
     "acceptance:reminders": "node node_modules/jiti/bin/jiti.js scripts/acceptance/reminders-smoke.ts",
+    "acceptance:platformer-gameplay-generation": "node node_modules/jiti/bin/jiti.js scripts/acceptance/platformer-gameplay-generation.ts",
+    "acceptance:platformer-gameplay-validate": "node node_modules/jiti/bin/jiti.js scripts/acceptance/platformer-gameplay-generation.ts --validate-only --artifact games/generated-platformer-mechanics.html",
     "test:generations": "vitest run tests/generations",
     "test:all": "npm run test",
     "build:worker": "mkdir -p dist/main dist/cli && touch dist/main/worker-sandbox.cjs dist/cli/worker-sandbox.cjs",

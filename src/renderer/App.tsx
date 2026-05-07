@@ -100,6 +100,10 @@ export const App: React.FC = () => {
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
   const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && workbenchTabs.length > 0;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
+  const showNarrowWorkbench =
+    !showWorkbench &&
+    workbenchTabs.length > 0 &&
+    (isPreviewActive || activeWorkbenchTab === 'workspace-preview');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
@@ -400,6 +404,21 @@ export const App: React.FC = () => {
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
 
+  const renderWorkbenchContent = () => (
+    <div className="flex flex-col h-full bg-zinc-900">
+      <WorkbenchTabs />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {activeWorkbenchTab === 'task' && <TaskPanel />}
+        {activeWorkbenchTab === 'skills' && <SkillsPanel />}
+        {activeWorkbenchTab === 'files' && (
+          <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
+        )}
+        {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
+        {isPreviewActive && <PreviewPanel />}
+      </div>
+    </div>
+  );
+
   return (
     <ErrorBoundary>
       <MemoryLearningProvider>
@@ -428,7 +447,7 @@ export const App: React.FC = () => {
                 <PanelGroup orientation="horizontal" className="flex-1" id="main-layout">
                   <Panel minSize="30" id="chat">
                     <div className="flex flex-col h-full min-w-0 bg-zinc-900">
-                      <ChatView />
+                      {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
                     </div>
                   </Panel>
 
@@ -437,18 +456,7 @@ export const App: React.FC = () => {
                   )}
                   {showWorkbench && (
                     <Panel defaultSize="22" minSize="15" maxSize="45" id="right-panel">
-                      <div className="flex flex-col h-full bg-zinc-900">
-                        <WorkbenchTabs />
-                        <div className="flex-1 min-h-0 overflow-hidden">
-                          {activeWorkbenchTab === 'task' && <TaskPanel />}
-                          {activeWorkbenchTab === 'skills' && <SkillsPanel />}
-                          {activeWorkbenchTab === 'files' && (
-                            <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
-                          )}
-                          {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
-                          {isPreviewActive && <PreviewPanel />}
-                        </div>
-                      </div>
+                      {renderWorkbenchContent()}
                     </Panel>
                   )}
                 </PanelGroup>

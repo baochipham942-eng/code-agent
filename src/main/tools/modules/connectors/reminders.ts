@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
@@ -24,6 +25,33 @@ interface ReminderItem {
 
 function formatReminder(reminder: ReminderItem): string {
   return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+}
+
+function buildRemindersMeta(
+  ctx: ToolContext,
+  action: string,
+  output: string,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    action,
+    connector: 'reminders',
+    ...metadata,
+    artifact: createVirtualArtifact({
+      sourceTool: schema.name,
+      kind: 'text',
+      sessionId: ctx.sessionId,
+      name: `reminders-${action}`,
+      mimeType: 'text/markdown',
+      contentLength: output.length,
+      preview: output.slice(0, 500),
+      metadata: {
+        connector: 'reminders',
+        action,
+        ...metadata,
+      },
+    }),
+  };
 }
 
 async function executeReminders(
@@ -53,6 +81,20 @@ async function executeReminders(
 
   const connector = getConnectorRegistry().get('reminders');
   if (!connector) {
+    if (action === 'get_status') {
+      const status = {
+        connected: false,
+        detail: 'Reminders connector is not configured in this runtime.',
+        capabilities: [] as string[],
+        unavailable: true,
+      };
+      const output = `Reminders connector: unavailable\n${status.detail}\nCapabilities: none`;
+      return {
+        ok: true,
+        output,
+        meta: buildRemindersMeta(ctx, action, output, { status }),
+      };
+    }
     return { ok: false, error: 'Reminders connector is not available.', code: 'NOT_INITIALIZED' };
   }
 
@@ -62,32 +104,35 @@ async function executeReminders(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const output = `Reminders connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
       return {
         ok: true,
-        output: `Reminders connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`,
-        meta: { status },
+        output,
+        meta: buildRemindersMeta(ctx, action, output, { status }),
       };
     }
 
     if (action === 'list_lists') {
       const lists = result.data as string[];
+      const output = lists.length > 0
+        ? `可用提醒列表 (${lists.length})：\n- ${lists.join('\n- ')}`
+        : '没有找到可访问的提醒列表。';
       return {
         ok: true,
-        output: lists.length > 0
-          ? `可用提醒列表 (${lists.length})：\n- ${lists.join('\n- ')}`
-          : '没有找到可访问的提醒列表。',
-        meta: { count: lists.length },
+        output,
+        meta: buildRemindersMeta(ctx, action, output, { count: lists.length, lists }),
       };
     }
 
     // list_reminders
     const reminders = result.data as ReminderItem[];
+    const output = reminders.length > 0
+      ? `提醒事项 (${reminders.length})：\n${reminders.map(formatReminder).join('\n')}`
+      : '没有找到匹配的提醒。';
     return {
       ok: true,
-      output: reminders.length > 0
-        ? `提醒事项 (${reminders.length})：\n${reminders.map(formatReminder).join('\n')}`
-        : '没有找到匹配的提醒。',
-      meta: { count: reminders.length },
+      output,
+      meta: buildRemindersMeta(ctx, action, output, { count: reminders.length, reminders }),
     };
   } catch (error) {
     return {

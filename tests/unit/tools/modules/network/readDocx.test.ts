@@ -155,6 +155,18 @@ describe('readDocxModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('hello');
         expect(result.output).toContain('格式: text');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'read_docx',
+          path: '/abs/doc.docx',
+          preview: 'hello',
+          metadata: {
+            format: 'text',
+            charCount: 5,
+            wordCount: 1,
+            lineCount: 1,
+          },
+        });
       }
     });
 

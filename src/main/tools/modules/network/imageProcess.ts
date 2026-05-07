@@ -23,6 +23,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { imageProcessSchema as schema } from './imageProcess.schema';
 
 const SUPPORTED_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'tiff'];
@@ -221,6 +222,20 @@ export async function executeImageProcess(
 
 点击上方路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType: `image/${outputFormat === 'jpg' ? 'jpeg' : outputFormat}`,
+          sizeBytes: outputStats.size,
+          metadata: {
+            action,
+            inputPath: absInputPath,
+            originalSize,
+            width: outputMetadata.width,
+            height: outputMetadata.height,
+            format: outputFormat,
+            compressionRatio: Number(compressionRatio),
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: outputStats.size,

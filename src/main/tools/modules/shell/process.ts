@@ -19,9 +19,11 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { processSchema as schema } from './process.schema';
 import {
   getAllBackgroundTasks,
+  getBackgroundTask,
   getTaskOutput,
   killBackgroundTask,
   isTaskId,
@@ -40,11 +42,31 @@ import {
 
 const DEFAULT_POLL_TIMEOUT = 30000;
 
+function processArtifact(
+  ctx: ToolContext,
+  action: string,
+  name: string,
+  output: string,
+  metadata: Record<string, unknown>,
+  kind: 'process-output' | 'process-log' = 'process-output',
+) {
+  return createVirtualArtifact({
+    sourceTool: schema.name,
+    kind,
+    sessionId: ctx.sessionId,
+    name,
+    mimeType: 'text/plain',
+    contentLength: output.length,
+    preview: output.slice(0, 500),
+    metadata: { action, ...metadata },
+  });
+}
+
 // ----------------------------------------------------------------------------
 // Action handlers — 每个 action 对应 legacy sub tool 的 execute 逻辑
 // ----------------------------------------------------------------------------
 
-function handleList(args: Record<string, unknown>): ToolResult<string> {
+function handleList(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   const filter = (args.filter as string | undefined) ?? 'all';
   const backgroundTasks = getAllBackgroundTasks();
   const ptySessions = getAllPtySessions();
@@ -84,6 +106,18 @@ function handleList(args: Record<string, unknown>): ToolResult<string> {
     return {
       ok: true,
       output: `No processes found${filter !== 'all' ? ` matching filter: ${filter}` : ''}.`,
+      meta: {
+        action: 'list',
+        status: 'empty',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [],
+        counts: { processes: 0, background: 0, pty: 0 },
+        artifact: processArtifact(ctx, 'list', 'Process list', `No processes found${filter !== 'all' ? ` matching filter: ${filter}` : ''}.`, {
+          filter,
+          counts: { processes: 0, background: 0, pty: 0 },
+        }),
+      },
     };
   }
 
@@ -102,10 +136,30 @@ Use Process action=poll <id> to get new output.
 Use Process action=log <id> to get full log.
 Use Process action=kill <id> to terminate a running process.`;
 
-  return { ok: true, output };
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'list',
+      status: 'listed',
+      session: ctx.sessionId,
+      thread: ctx.currentToolCallId,
+      targets: filtered.map((p) => p.id),
+      counts: {
+        processes: filtered.length,
+        background: filtered.filter((p) => p.type === 'background').length,
+        pty: filtered.filter((p) => p.type === 'pty').length,
+        running: filtered.filter((p) => p.status === 'running').length,
+        completed: filtered.filter((p) => p.status === 'completed').length,
+        failed: filtered.filter((p) => p.status === 'failed').length,
+      },
+      result: filtered,
+      artifact: processArtifact(ctx, 'list', 'Process list', output, { filter, processes: filtered }),
+    },
+  };
 }
 
-async function handlePoll(args: Record<string, unknown>): Promise<ToolResult<string>> {
+async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   const sessionId = args.session_id as string | undefined;
   const block = Boolean(args.block);
   const timeout = (args.timeout as number | undefined) ?? DEFAULT_POLL_TIMEOUT;
@@ -120,9 +174,21 @@ async function handlePoll(args: Record<string, unknown>): Promise<ToolResult<str
       if (!output) {
         return { ok: false, error: `PTY session not found: ${sessionId}`, code: 'NOT_FOUND' };
       }
+      const text = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
       return {
         ok: true,
-        output: `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`,
+        output: text,
+        meta: {
+          action: 'poll',
+          session: ctx.sessionId,
+          thread: ctx.currentToolCallId,
+          targets: [sessionId],
+          sessionId,
+          status: output.status,
+          duration: output.duration,
+          result: output,
+          artifact: processArtifact(ctx, 'poll', `Process poll: ${sessionId}`, text, { sessionId, status: output.status }),
+        },
       };
     }
     const result = pollPtySession(sessionId);
@@ -130,9 +196,21 @@ async function handlePoll(args: Record<string, unknown>): Promise<ToolResult<str
       return { ok: false, error: result.error ?? 'poll failed', code: 'POLL_FAILED' };
     }
     const hasNewData = result.data && result.data.length > 0;
+    const text = `Status: ${result.status}\nExit Code: ${result.exitCode ?? 'N/A'}\nNew Output: ${hasNewData ? 'Yes' : 'No'}\n\n${hasNewData ? result.data : '(no new output)'}`;
     return {
       ok: true,
-      output: `Status: ${result.status}\nExit Code: ${result.exitCode ?? 'N/A'}\nNew Output: ${hasNewData ? 'Yes' : 'No'}\n\n${hasNewData ? result.data : '(no new output)'}`,
+      output: text,
+      meta: {
+        action: 'poll',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [sessionId],
+        sessionId,
+        status: result.status,
+        counts: { bytes: result.data?.length ?? 0 },
+        result,
+        artifact: processArtifact(ctx, 'poll', `Process poll: ${sessionId}`, text, { sessionId, status: result.status }),
+      },
     };
   }
 
@@ -141,16 +219,36 @@ async function handlePoll(args: Record<string, unknown>): Promise<ToolResult<str
     if (!output) {
       return { ok: false, error: `Task not found: ${sessionId}`, code: 'NOT_FOUND' };
     }
+    const text = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
+    const task = getBackgroundTask(sessionId);
     return {
       ok: true,
-      output: `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`,
+      output: text,
+      meta: {
+        action: 'poll',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [sessionId],
+        taskId: sessionId,
+        status: output.status,
+        duration: output.duration,
+        logPath: task?.outputFile,
+        result: output,
+        artifact: task?.outputFile
+          ? await createFileArtifact(task.outputFile, schema.name, ctx, {
+            kind: 'process-log',
+            mimeType: 'text/plain',
+            metadata: { action: 'poll', taskId: sessionId, status: output.status, duration: output.duration },
+          }).catch(() => processArtifact(ctx, 'poll', `Process poll: ${sessionId}`, text, { taskId: sessionId, status: output.status }))
+          : processArtifact(ctx, 'poll', `Process poll: ${sessionId}`, text, { taskId: sessionId, status: output.status }),
+      },
     };
   }
 
   return { ok: false, error: `No process found with ID: ${sessionId}`, code: 'NOT_FOUND' };
 }
 
-async function handleLog(args: Record<string, unknown>): Promise<ToolResult<string>> {
+async function handleLog(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   const sessionId = args.session_id as string | undefined;
   const tail = args.tail as number | undefined;
 
@@ -161,7 +259,23 @@ async function handleLog(args: Record<string, unknown>): Promise<ToolResult<stri
   // Try PTY session first
   const ptyResult = getPtySessionLog(sessionId, tail);
   if (ptyResult.success) {
-    return { ok: true, output: `Log for PTY session ${sessionId}:\n\n${ptyResult.log}` };
+    const log = ptyResult.log ?? '';
+    const output = `Log for PTY session ${sessionId}:\n\n${log}`;
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'log',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [sessionId],
+        sessionId,
+        status: 'logged',
+        counts: { lines: log.split('\n').length },
+        result: { log },
+        artifact: processArtifact(ctx, 'log', `PTY log: ${sessionId}`, output, { sessionId }, 'process-log'),
+      },
+    };
   }
 
   // Try background task
@@ -172,16 +286,36 @@ async function handleLog(args: Record<string, unknown>): Promise<ToolResult<stri
       const lines = log.split('\n');
       log = lines.slice(-tail).join('\n');
     }
+    const output = `Log for background task ${sessionId}:\nStatus: ${taskOutput.status}\nExit Code: ${taskOutput.exitCode ?? 'N/A'}\n\n${log}`;
+    const task = getBackgroundTask(sessionId);
     return {
       ok: true,
-      output: `Log for background task ${sessionId}:\nStatus: ${taskOutput.status}\nExit Code: ${taskOutput.exitCode ?? 'N/A'}\n\n${log}`,
+      output,
+      meta: {
+        action: 'log',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [sessionId],
+        taskId: sessionId,
+        status: taskOutput.status,
+        duration: taskOutput.duration,
+        logPath: task?.outputFile,
+        result: { ...taskOutput, log },
+        artifact: task?.outputFile
+          ? await createFileArtifact(task.outputFile, schema.name, ctx, {
+            kind: 'process-log',
+            mimeType: 'text/plain',
+            metadata: { action: 'log', taskId: sessionId, status: taskOutput.status, duration: taskOutput.duration },
+          }).catch(() => processArtifact(ctx, 'log', `Background task log: ${sessionId}`, output, { taskId: sessionId }, 'process-log'))
+          : processArtifact(ctx, 'log', `Background task log: ${sessionId}`, output, { taskId: sessionId }, 'process-log'),
+      },
     };
   }
 
   return { ok: false, error: `No process found with ID: ${sessionId}`, code: 'NOT_FOUND' };
 }
 
-function handleWrite(args: Record<string, unknown>): ToolResult<string> {
+function handleWrite(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   const sessionId = args.session_id as string | undefined;
   const data = args.data as string | undefined;
 
@@ -211,10 +345,23 @@ function handleWrite(args: Record<string, unknown>): ToolResult<string> {
     return { ok: false, error: result.error ?? 'write failed', code: 'WRITE_FAILED' };
   }
 
-  return { ok: true, output: `Wrote ${processedData.length} bytes to PTY session ${sessionId}.` };
+  return {
+    ok: true,
+    output: `Wrote ${processedData.length} bytes to PTY session ${sessionId}.`,
+    meta: {
+      action: 'write',
+      session: ctx.sessionId,
+      thread: ctx.currentToolCallId,
+      targets: [sessionId],
+      sessionId,
+      status: 'written',
+      counts: { bytes: processedData.length },
+      result: { bytesWritten: processedData.length },
+    },
+  };
 }
 
-function handleSubmit(args: Record<string, unknown>): ToolResult<string> {
+function handleSubmit(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   const sessionId = args.session_id as string | undefined;
   const input = args.input as string | undefined;
 
@@ -238,10 +385,20 @@ function handleSubmit(args: Record<string, unknown>): ToolResult<string> {
   return {
     ok: true,
     output: `Submitted input to PTY session ${sessionId}: "${input.substring(0, 50)}${input.length > 50 ? '...' : ''}"`,
+    meta: {
+      action: 'submit',
+      session: ctx.sessionId,
+      thread: ctx.currentToolCallId,
+      targets: [sessionId],
+      sessionId,
+      status: 'submitted',
+      counts: { bytes: input.length },
+      result: { submitted: true },
+    },
   };
 }
 
-function handleKill(args: Record<string, unknown>): ToolResult<string> {
+function handleKill(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   // 兼容 session_id 和 task_id 两个参数名
   const id = (args.session_id as string | undefined) ?? (args.task_id as string | undefined);
   if (!id) {
@@ -254,7 +411,19 @@ function handleKill(args: Record<string, unknown>): ToolResult<string> {
     if (!result.success) {
       return { ok: false, error: result.error ?? 'kill pty failed', code: 'KILL_FAILED' };
     }
-    return { ok: true, output: result.message ?? `Killed PTY session: ${id}` };
+    return {
+      ok: true,
+      output: result.message ?? `Killed PTY session: ${id}`,
+      meta: {
+        action: 'kill',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [id],
+        sessionId: id,
+        status: 'killed',
+        result,
+      },
+    };
   }
 
   if (isTaskId(id)) {
@@ -262,13 +431,25 @@ function handleKill(args: Record<string, unknown>): ToolResult<string> {
     if (!result.success) {
       return { ok: false, error: result.error ?? 'kill task failed', code: 'KILL_FAILED' };
     }
-    return { ok: true, output: result.message ?? `Killed task: ${id}` };
+    return {
+      ok: true,
+      output: result.message ?? `Killed task: ${id}`,
+      meta: {
+        action: 'kill',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        targets: [id],
+        taskId: id,
+        status: 'killed',
+        result,
+      },
+    };
   }
 
   return { ok: false, error: `No process found with ID: ${id}`, code: 'NOT_FOUND' };
 }
 
-async function handleOutput(args: Record<string, unknown>): Promise<ToolResult<string>> {
+async function handleOutput(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   // Output 兼容 task_id 和 session_id（legacy task_output 用 task_id）
   const id = (args.task_id as string | undefined) ?? (args.session_id as string | undefined);
   const block = args.block !== false; // default true
@@ -278,7 +459,21 @@ async function handleOutput(args: Record<string, unknown>): Promise<ToolResult<s
     // No id → list all tasks（沿用 task_output 的 list 行为）
     const tasks = getAllBackgroundTasks();
     if (tasks.length === 0) {
-      return { ok: true, output: 'No background tasks found.' };
+      const output = 'No background tasks found.';
+      return {
+        ok: true,
+        output,
+        meta: {
+          action: 'output',
+          session: ctx.sessionId,
+          thread: ctx.currentToolCallId,
+          status: 'empty',
+          targets: [],
+          counts: { tasks: 0 },
+          result: [],
+          artifact: processArtifact(ctx, 'output', 'Background task output list', output, { tasks: [] }),
+        },
+      };
     }
     const lines = [`Found ${tasks.length} background task(s):\n`];
     for (const task of tasks) {
@@ -294,7 +489,21 @@ async function handleOutput(args: Record<string, unknown>): Promise<ToolResult<s
       }
       lines.push('');
     }
-    return { ok: true, output: lines.join('\n') };
+    const output = lines.join('\n');
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'output',
+        session: ctx.sessionId,
+        thread: ctx.currentToolCallId,
+        status: 'listed',
+        targets: tasks.map((task) => task.taskId),
+        counts: { tasks: tasks.length, running: tasks.filter((task) => task.status === 'running').length },
+        result: tasks,
+        artifact: processArtifact(ctx, 'output', 'Background task output list', output, { tasks }),
+      },
+    };
   }
 
   if (!isTaskId(id)) {
@@ -319,10 +528,30 @@ async function handleOutput(args: Record<string, unknown>): Promise<ToolResult<s
   lines.push('--- Output ---');
   lines.push(result.output || '(no output)');
 
+  const output = lines.join('\n');
+  const task = getBackgroundTask(id);
   return {
     ok: true,
-    output: lines.join('\n'),
-    meta: { taskId: id, status: result.status, exitCode: result.exitCode, duration: result.duration },
+    output,
+    meta: {
+      action: 'output',
+      session: ctx.sessionId,
+      thread: ctx.currentToolCallId,
+      targets: [id],
+      taskId: id,
+      status: result.status,
+      exitCode: result.exitCode,
+      duration: result.duration,
+      logPath: task?.outputFile,
+      result,
+      artifact: task?.outputFile
+        ? await createFileArtifact(task.outputFile, schema.name, ctx, {
+          kind: 'process-log',
+          mimeType: 'text/plain',
+          metadata: { action: 'output', taskId: id, status: result.status, exitCode: result.exitCode, duration: result.duration },
+        }).catch(() => processArtifact(ctx, 'output', `Task output: ${id}`, output, { taskId: id, status: result.status }))
+        : processArtifact(ctx, 'output', `Task output: ${id}`, output, { taskId: id, status: result.status }),
+    },
   };
 }
 
@@ -359,25 +588,25 @@ class ProcessHandler implements ToolHandler<Record<string, unknown>, string> {
     try {
       switch (action) {
         case 'list':
-          result = handleList(args);
+          result = handleList(args, ctx);
           break;
         case 'poll':
-          result = await handlePoll(args);
+          result = await handlePoll(args, ctx);
           break;
         case 'log':
-          result = await handleLog(args);
+          result = await handleLog(args, ctx);
           break;
         case 'write':
-          result = handleWrite(args);
+          result = handleWrite(args, ctx);
           break;
         case 'submit':
-          result = handleSubmit(args);
+          result = handleSubmit(args, ctx);
           break;
         case 'kill':
-          result = handleKill(args);
+          result = handleKill(args, ctx);
           break;
         case 'output':
-          result = await handleOutput(args);
+          result = await handleOutput(args, ctx);
           break;
         default:
           return {

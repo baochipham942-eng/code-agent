@@ -20,6 +20,7 @@ import type {
 import { getSpawnedAgent, listSpawnedAgents } from '../../../agent/multiagentTools/spawnAgent';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { agentMessageSchema as schema } from './agentMessage.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';
 const VALID_ACTIONS: readonly MessageAction[] = ['status', 'list', 'result', 'cancel'];
@@ -55,7 +56,14 @@ export async function executeAgentMessage(
       case 'list': {
         const agents = listSpawnedAgents();
         if (agents.length === 0) {
-          return { ok: true, output: 'No agents have been spawned in this session.' };
+          const output = 'No agents have been spawned in this session.';
+          return withMultiagentMeta(
+            { ok: true, output },
+            ctx,
+            schema.name,
+            { action, status: 'empty', agents: [], counts: { agents: 0 } },
+            'Spawned agents',
+          );
         }
         const agentList = agents
           .map((a) => {
@@ -65,14 +73,32 @@ export async function executeAgentMessage(
    Task: ${a.task?.substring(0, 50)}${(a.task?.length || 0) > 50 ? '...' : ''}`;
           })
           .join('\n\n');
-        return { ok: true, output: `Spawned Agents (${agents.length}):\n\n${agentList}` };
+        const output = `Spawned Agents (${agents.length}):\n\n${agentList}`;
+        return withMultiagentMeta(
+          { ok: true, output },
+          ctx,
+          schema.name,
+          {
+            action,
+            status: 'listed',
+            agents,
+            targets: agents.map((a) => a.id),
+            counts: {
+              agents: agents.length,
+              running: agents.filter((a) => a.status === 'running').length,
+              completed: agents.filter((a) => a.status === 'completed').length,
+              failed: agents.filter((a) => a.status === 'failed').length,
+            },
+          },
+          'Spawned agents',
+        );
       }
 
       case 'status': {
         if (!agentId) return { ok: false, error: 'agentId required for status action', code: 'INVALID_ARGS' };
         const agent = getSpawnedAgent(agentId);
         if (!agent) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Agent Status:
 - ID: ${agent.id}
@@ -81,7 +107,18 @@ export async function executeAgentMessage(
 - Task: ${agent.task}
 ${agent.error ? `- Error: ${agent.error}` : ''}
 ${agent.result ? `- Has Result: Yes (use action='result' to retrieve)` : ''}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId,
+          status: agent.status,
+          targets: [agentId],
+          result: {
+            role: agent.role,
+            task: agent.task,
+            hasResult: Boolean(agent.result),
+            error: agent.error,
+          },
+        }, `Agent status: ${agentId}`);
       }
 
       case 'result': {
@@ -89,12 +126,18 @@ ${agent.result ? `- Has Result: Yes (use action='result' to retrieve)` : ''}`,
         const agent = getSpawnedAgent(agentId);
         if (!agent) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
         if (agent.status === 'running') {
-          return { ok: true, output: `Agent [${agentId}] is still running. Check back later.` };
+          return withMultiagentMeta(
+            { ok: true, output: `Agent [${agentId}] is still running. Check back later.` },
+            ctx,
+            schema.name,
+            { action, agentId, status: agent.status, targets: [agentId], result: { ready: false } },
+            `Agent result: ${agentId}`,
+          );
         }
         if (agent.status === 'failed') {
           return { ok: false, error: `Agent [${agentId}] failed: ${agent.error ?? 'unknown'}`, code: 'DOMAIN_ERROR' };
         }
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Agent [${agentId}] Result:
 
@@ -102,7 +145,16 @@ Task: ${agent.task}
 
 Output:
 ${agent.result || '(no output)'}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId,
+          status: agent.status,
+          targets: [agentId],
+          result: {
+            task: agent.task,
+            output: agent.result || '',
+          },
+        }, `Agent result: ${agentId}`);
       }
 
       case 'cancel': {
@@ -111,13 +163,25 @@ ${agent.result || '(no output)'}`,
         const managed = guard.get(agentId);
         if (!managed) return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
         if (managed.status !== 'running') {
-          return {
+          return withMultiagentMeta({
             ok: true,
             output: `Agent [${agentId}] is not running (status: ${managed.status})`,
-          };
+          }, ctx, schema.name, {
+            action,
+            agentId,
+            status: managed.status,
+            targets: [agentId],
+            result: { cancelled: false },
+          }, `Agent cancel: ${agentId}`);
         }
         guard.cancel(agentId);
-        return { ok: true, output: `Agent [${agentId}] cancelled via abort signal.` };
+        return withMultiagentMeta(
+          { ok: true, output: `Agent [${agentId}] cancelled via abort signal.` },
+          ctx,
+          schema.name,
+          { action, agentId, status: 'cancelled', targets: [agentId], result: { cancelled: true } },
+          `Agent cancel: ${agentId}`,
+        );
       }
     }
   })();

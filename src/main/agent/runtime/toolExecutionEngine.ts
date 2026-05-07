@@ -105,9 +105,10 @@ import {
   getArtifactRepairTargetRangedReadBudget,
   isSameArtifactRepairPath,
   seedArtifactRepairGuardFromContext,
+  shouldAllowFullArtifactRewriteDuringRepair,
 } from './artifactRepairGuard';
 import { detectStructuredToolFailure } from './toolResultNormalization';
-import { validateGameArtifact } from './gameArtifactValidator';
+import { validateGameArtifact, type BrowserVisualSmokeSummary } from './gameArtifactValidator';
 
 const logger = createLogger('AgentLoop');
 
@@ -293,6 +294,8 @@ async function maybeFinishArtifactRepairIfAlreadyValid(
     const validation = await validateGameArtifact(guard.targetFile, {
       runRuntimeSmoke: true,
       runtimeSmokeTimeoutMs: 7000,
+      runBrowserVisualSmoke: true,
+      browserVisualSmokeTimeoutMs: 10000,
     });
     if (!validation.shouldValidate || !validation.passed) {
       return false;
@@ -637,7 +640,7 @@ function maybeRepairArtifactContractEditAnchors(
   if (!modifiedPath || !isSameArtifactRepairPath(ctx, modifiedPath, guard.targetFile)) return toolCall;
 
   const edits = Array.isArray(toolCall.arguments?.edits) ? toolCall.arguments.edits : null;
-  if (!edits || edits.length !== 1) return toolCall;
+  if (edits?.length !== 1) return toolCall;
 
   const edit = edits[0] as Record<string, unknown>;
   const oldText = typeof edit.old_text === 'string' ? edit.old_text : '';
@@ -905,7 +908,7 @@ function mergeArtifactRepairReadWindows(windows: ArtifactRepairReadWindow[]): Ar
 
   for (const window of sorted) {
     const previous = merged[merged.length - 1];
-    if (!previous || previous.kind !== window.kind || window.start > previous.end + 30) {
+    if (previous?.kind !== window.kind || window.start > previous.end + 30) {
       merged.push({ ...window });
       continue;
     }
@@ -1089,6 +1092,7 @@ function exposesInteractiveArtifactContract(content: string): boolean {
 function isTargetedEditPreferredArtifactRepair(
   guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
 ): boolean {
+  if (shouldAllowFullArtifactRewriteDuringRepair(guard)) return false;
   if (guard.preferTargetedEdit) return true;
   const issueCodes = guard.activeIssueCodes || [];
   return issueCodes.some((code) =>
@@ -1198,6 +1202,11 @@ function buildArtifactRepairEditAnchorFailurePrompt(
   issueCodes: string[] = [],
 ): string {
   const scopeHints: string[] = [];
+  const allowFullRewrite = issueCodes.some((code) =>
+    code === 'missing_gameplay_mechanics'
+    || code === 'gameplay_mechanics_without_runtime_evidence'
+    || code === 'ability_gate_without_reachability'
+  );
   const duplicateContractHints: string[] = [
     'If the failing anchor appears multiple times, replace a larger unique enclosing region instead of retrying the inner snippet.',
     'For game contract repairs, replace the enclosing `window.__GAME_TEST__ = { ... }` block or a larger unique region that stops before the autotest footer.',
@@ -1231,8 +1240,12 @@ function buildArtifactRepairEditAnchorFailurePrompt(
     'Do not repeat the same Edit shape or short old_text anchors.',
     ...scopeHints,
     ...duplicateContractHints,
-    'Use a more specific Edit with surrounding context from the target contract/metadata block. If you need a lookup, use one ranged Read with offset/limit around the existing contract block.',
-    'Do not use Write to replace the complete target HTML just because an Edit anchor was ambiguous.',
+    allowFullRewrite
+      ? 'Because this failure spans platformer gameplay metadata, live runtime mechanics, and smoke evidence, a complete Write is allowed if a balanced targeted Edit would be brittle. The Write must be one complete HTML document with the live game and test contract intact.'
+      : 'Use a more specific Edit with surrounding context from the target contract/metadata block. If you need a lookup, use one ranged Read with offset/limit around the existing contract block.',
+    allowFullRewrite
+      ? 'Do not emit a partial fragment. If using Write, replace the full artifact with a playable platformer that proves stomp, bump block, ability acquisition, gated route unlock, and comboChallenge through before/after snapshot evidence.'
+      : 'Do not use Write to replace the complete target HTML just because an Edit anchor was ambiguous.',
     'The replacement must preserve the playable game and fix __GAME_TEST__/__INTERACTIVE_TEST__ using real input-driven snapshot changes.',
     '</artifact-repair-edit-anchor-failed>',
   ].join('\n');
@@ -1248,6 +1261,34 @@ function buildArtifactRepairRepeatedPatchPrompt(targetFile: string): string {
     'The repair must fix the live game/test contract with input-driven snapshot changes instead of a direct state grant or placeholder probe.',
     '</artifact-repair-repeated-failed-patch>',
   ].join('\n');
+}
+
+function formatBrowserVisualEvidenceForRepair(browserVisualSmoke?: BrowserVisualSmokeSummary): string[] {
+  if (!browserVisualSmoke) return [];
+  const diagnostics = browserVisualSmoke.diagnostics;
+  const lines = [
+    'Frontend browser validation evidence:',
+    `- attempted=${browserVisualSmoke.attempted}, passed=${browserVisualSmoke.passed}${browserVisualSmoke.skipped ? ', skipped=true' : ''}`,
+    ...browserVisualSmoke.checks.slice(0, 4).map((check) => `- ${check}`),
+    ...browserVisualSmoke.failures.slice(0, 4).map((failure) => `- ${failure}`),
+  ];
+
+  if (diagnostics) {
+    lines.push(
+      `- title=${diagnostics.title || '(empty)'}, metaPresent=${diagnostics.metaPresent === true}, testPresent=${diagnostics.testPresent === true}`,
+      `- canvasCount=${diagnostics.canvasCount ?? 0}, nonblankCanvasCount=${diagnostics.nonblankCanvasCount ?? 0}, visibleElements=${diagnostics.visibleElements ?? 0}`,
+    );
+  }
+
+  return lines;
+}
+
+function isPlatformerStructuralGameplayRepair(issueCodes: readonly string[] = []): boolean {
+  return issueCodes.some((code) =>
+    code === 'missing_gameplay_mechanics'
+    || code === 'gameplay_mechanics_without_runtime_evidence'
+    || code === 'ability_gate_without_reachability',
+  );
 }
 
 function enforceArtifactRepairRepeatedPatchGuard(ctx: RuntimeContext, toolCall: ToolCall): string | null {
@@ -1326,7 +1367,7 @@ function restoreArtifactRepairRollbackSnapshot(
   snapshot: ArtifactRepairRollbackSnapshot | null,
   absolutePath: string,
 ): boolean {
-  if (!snapshot || snapshot.filePath !== absolutePath) return false;
+  if (snapshot?.filePath !== absolutePath) return false;
   try {
     writeFileSync(snapshot.filePath, snapshot.content, 'utf-8');
     return true;
@@ -1339,7 +1380,7 @@ async function refreshArtifactRepairReadStateAfterRollback(
   snapshot: ArtifactRepairRollbackSnapshot | null,
   absolutePath: string,
 ): Promise<void> {
-  if (!snapshot || snapshot.filePath !== absolutePath) return;
+  if (snapshot?.filePath !== absolutePath) return;
   await fileReadTracker.recordReadWithStats(absolutePath);
 }
 
@@ -1493,8 +1534,13 @@ function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCall): st
   ].join(' ');
 }
 
-function buildArtifactRepairRecoveryPrompt(targetFile: string, blockedToolCount: number): string {
+function buildArtifactRepairRecoveryPrompt(
+  targetFile: string,
+  blockedToolCount: number,
+  issueCodes: readonly string[] = [],
+): string {
   const repeated = blockedToolCount >= 2;
+  const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
   return [
     '<artifact-repair-recovery>',
     `You are already inside artifact repair mode for ${targetFile}.`,
@@ -1508,9 +1554,17 @@ function buildArtifactRepairRecoveryPrompt(targetFile: string, blockedToolCount:
         ? 'Bash is unavailable until after you edit the target HTML file.'
         : 'If you need one more lookup, read only the target HTML file.',
     repeated
-      ? 'Your next action must be Edit or Append on the target HTML file now; replace a larger unique region such as the full `window.__GAME_TEST__ = { ... }` block. If duplicate orphaned `start/reset/snapshot/step/runSmokeTest` methods appear after the contract closes, remove that orphaned tail in the same edit.'
+      ? platformerStructuralRepair
+        ? 'Your next action must be Edit, Append, or a complete Write on the target HTML file now. Because this is a platformer gameplay-structure repair, a complete Write is allowed when the existing level layout, collision code, and smoke path are coupled.'
+        : 'Your next action must be Edit or Append on the target HTML file now; replace a larger unique region such as the full `window.__GAME_TEST__ = { ... }` block. If duplicate orphaned `start/reset/snapshot/step/runSmokeTest` methods appear after the contract closes, remove that orphaned tail in the same edit.'
       : 'Your next action should be Edit or Append on the target HTML file. Do not make comment-only, version-only, dummy, or placeholder edits.',
     'If the active issue is malformed_test_contract, do not patch an inner method. Replace the full balanced `window.__GAME_TEST__ = { ... }` / `window.__INTERACTIVE_TEST__ = { ... }` region and remove any duplicate orphaned contract methods that follow it.',
+    ...(platformerStructuralRepair
+      ? [
+          'For platformer gameplay repair, fix the live mechanic path and the smoke evidence together: stomp must defeat an enemy and bounce/vy, bump must change block/reward state, ability must change player abilities, and the gate/route must become reachable after the ability or reward.',
+          'Do not only rewrite runSmokeTest coverage. Move or reshape block/enemy/gate layout, collision bounds, or deterministic control path until before/after snapshot evidence proves the mechanic.',
+        ]
+      : []),
     'A valid repair must change gameplay state, __GAME_TEST__/__INTERACTIVE_TEST__, progressPlan, snapshot, step, reset, runSmokeTest, or authored level progression.',
     'Keep start/reset/step/snapshot/runSmokeTest wired to the same live game state as the playable loop; do not add placeholder markers, direct grants, or evidence-only coverage.',
     'For coverage_without_runtime_evidence, remove coverage branches based on object existence, level loading, enemy/spike/item presence, or registered mechanics; only add coverage after before/after snapshot values change through step(input, frames).',
@@ -1544,12 +1598,15 @@ function buildArtifactRepairInstruction(
   attempts: number,
   phase: ArtifactRepairPhase,
   repairSpecBlock: string,
+  browserVisualSmoke?: BrowserVisualSmokeSummary,
+  issueCodes: readonly ArtifactRepairIssueCode[] = [],
 ): string {
   const issueSummary = failures
     .map((failure, index) => `${index + 1}. ${failure}`)
     .join('\n');
   const phaseLine = `repair phase: ${phase}`;
   const attemptsLine = `attempts: ${attempts}`;
+  const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
 
   if (attempts >= 3) {
     return [
@@ -1560,13 +1617,21 @@ function buildArtifactRepairInstruction(
       '同一个 artifact 文件已经连续多次 validation failed。',
       issueSummary,
       repairSpecBlock,
+      ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
       '下一步最多只允许再 Read 一次这个目标文件，用来定位需要修改的片段。',
       'Repair 权限已经收窄到目标文件和验证命令；上面的失败摘要和 artifact_repair_spec 已经足够。',
       'Read 之后必须直接对这个文件做局部 Edit / Append，逐项补齐上面列出的 contract、metric 或 coverage 问题。',
       '如果需要确认修复结果，直接运行 validator；不要在修改前继续换只读工具兜圈子。',
       '不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；start/reset/step/snapshot/runSmokeTest 必须驱动同一份游戏状态。',
       'coverage 只能在真实输入后的 before/after snapshot 变化分支里添加；enemy_present、spikes_present、ability exists、door reachable、mechanics registered 这类存在性兜底不能算通过证据。',
-      '不要重写整页，不要改无关样式、文案或玩法；只有 HTML 结构已经损坏时才允许大段重写。',
+      platformerStructuralRepair
+        ? '这是平台玩法结构性失败；如果局部补丁会继续保留不可达的布局或碰撞路径，可以完整 Write 目标 HTML，但必须保留单文件游戏、真实玩法和测试合约。'
+        : '不要重写整页，不要改无关样式、文案或玩法；只有 HTML 结构已经损坏时才允许大段重写。',
+      ...(platformerStructuralRepair
+        ? [
+            '完整修复必须同时改 live level layout / collision / step / snapshot / runSmokeTest，让踩怪、顶砖、拿技能、解锁 gate 都由真实输入触发，并由 before/after snapshot 证明。',
+          ]
+        : []),
       '修完后再验证，答案里不要把未修的问题包装成后续优化。',
       '</artifact-validation-failed>',
     ].join('\n');
@@ -1581,9 +1646,15 @@ function buildArtifactRepairInstruction(
       '这次只能修当前失败对应的范围，不要泛化成整页重做。',
       issueSummary,
       repairSpecBlock,
+      ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
       '下一步只允许改这个文件，并且只修上面列出的 contract、metric 或 coverage 缺口。',
       'Repair 权限已经收窄到目标文件和验证命令；优先依据失败摘要直接补丁式修改目标文件。',
       '下一步动作必须是 Edit / Append / Bash(validator) 之一，不要在只读工具里循环；需要锚点时只做一次 ranged Read。',
+      ...(platformerStructuralRepair
+        ? [
+            '平台玩法结构性失败可以用完整 Write 替换目标 HTML；不要只修 coverage 字段，必须让 live physics 路径和 runSmokeTest 走同一套状态。',
+          ]
+        : []),
       '不要把 __GAME_TEST__/__INTERACTIVE_TEST__ 改成脱离真实运行时的假 harness；必须驱动同一份 live game state。',
       'coverage 只能来自真实状态变化：移动坐标改变、得分增加、能力从 false 变 true、生命减少、关卡或模式通过门/目标规则改变。',
       '不要把对象存在、关卡加载成功、敌人/尖刺/能力道具存在、门存在或机制注册写进 coverage 当作通过。',
@@ -1600,6 +1671,12 @@ function buildArtifactRepairInstruction(
     '你刚生成的是游戏或强交互 HTML，但当前交付还不满足真实可操作标准。',
     issueSummary,
     repairSpecBlock,
+    ...formatBrowserVisualEvidenceForRepair(browserVisualSmoke),
+    ...(platformerStructuralRepair
+      ? [
+          '平台玩法修复必须把布局、碰撞、奖励、能力和 gate 路线一起修到可达；只声明 gameplayMechanics 或只改 coverage 不算修复。',
+        ]
+      : []),
     '请直接修正现有文件，再继续验证；不要把这些缺口解释成未来优化项。',
     'runSmokeTest 的 coverage 只能记录由真实 step(input, frames) 触发的 before/after snapshot 变化，不能记录存在性或注册信息。',
     '优先依据失败摘要直接修改目标文件；如需确认结果，运行验证命令。',
@@ -1945,6 +2022,7 @@ export class ToolExecutionEngine {
         const recoveryPrompt = buildArtifactRepairRecoveryPrompt(
           guard.targetFile,
           guard.blockedToolCount ?? blockedToolCount,
+          guard.activeIssueCodes,
         );
         if (!alreadyValid) {
           if (softBlock && guard) {
@@ -1995,7 +2073,7 @@ export class ToolExecutionEngine {
       this.contextAssembly.injectSystemMessage(repeatedArtifactRepairPatchBlock);
       if (guard?.targetFile) {
         this.contextAssembly.pushPersistentSystemContext(
-          buildArtifactRepairRecoveryPrompt(guard.targetFile, blockedToolCount),
+          buildArtifactRepairRecoveryPrompt(guard.targetFile, blockedToolCount, guard.activeIssueCodes),
         );
         this.ctx.needsReinference = true;
       }
@@ -2212,7 +2290,7 @@ export class ToolExecutionEngine {
         guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
         guard.lastBlockedTool = toolCall.name;
         guard.editAnchorFailureCount = (guard.editAnchorFailureCount ?? 0) + 1;
-        guard.preferTargetedEdit = true;
+        guard.preferTargetedEdit = !shouldAllowFullArtifactRewriteDuringRepair(guard);
       }
         toolResult.metadata = {
           ...toolResult.metadata,
@@ -2236,7 +2314,7 @@ export class ToolExecutionEngine {
             buildArtifactRepairEditAnchorFailurePrompt(guard.targetFile, toolResult.error, guard.activeIssueCodes),
           );
           this.contextAssembly.pushPersistentSystemContext(
-            buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.blockedToolCount ?? 1),
+            buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.blockedToolCount ?? 1, guard.activeIssueCodes),
           );
         }
         this.ctx.needsReinference = true;
@@ -2459,20 +2537,35 @@ export class ToolExecutionEngine {
             if (!shouldRunValidation) {
               // Keep chunked assembly quiet until the artifact is actually complete.
             } else {
-              const validation = effectiveProbe.passed
-                ? await validateGameArtifact(absolutePath, {
-                    runRuntimeSmoke: true,
-                    runtimeSmokeTimeoutMs: 7000,
-                  })
-                : effectiveProbe;
+              this.runFinalizer.emitTaskProgress(
+                'tool_running',
+                effectiveProbe.passed
+                  ? '正在运行 artifact 可玩性验收...'
+                  : 'artifact 结构验收失败，正在准备修复上下文...',
+              );
+              const rawValidation = await validateGameArtifact(absolutePath, {
+                runRuntimeSmoke: true,
+                runtimeSmokeTimeoutMs: 7000,
+                runBrowserVisualSmoke: true,
+                browserVisualSmokeTimeoutMs: 10000,
+              });
+              const validation = repairTargetLostValidation && !rawValidation.shouldValidate
+                ? buildRepairTargetLostValidationFailure(rawValidation)
+                : rawValidation;
               const appendFinalHint = artifactCompletedWithoutFinal
                 ? '检测到文件已经完整闭合，但这次 Append 没有设置 final=true；收尾块必须显式标 final=true，不能绕过最终验收。'
                 : null;
 
               if (validation.shouldValidate && !validation.passed) {
+                this.runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
                 const rollbackApplied = restoreArtifactRepairRollbackSnapshot(artifactRepairRollbackSnapshot, absolutePath);
                 if (rollbackApplied) {
                   await refreshArtifactRepairReadStateAfterRollback(artifactRepairRollbackSnapshot, absolutePath);
+                } else {
+                  // Repair mode may intentionally spend the target read budget because
+                  // the failed write content is already in conversation context. Keep
+                  // Edit's fileReadTracker safety state in sync with that decision.
+                  await fileReadTracker.recordReadWithStats(absolutePath);
                 }
                 const rollbackValidation = rollbackApplied
                   ? await validateGameArtifact(absolutePath)
@@ -2540,7 +2633,15 @@ export class ToolExecutionEngine {
                     rollbackApplied
                       ? '本次修复补丁没有通过 artifact validation，已自动回滚到补丁前的目标文件状态；下一轮不要基于失败补丁继续修改。'
                       : '本次修复补丁没有通过 artifact validation，且自动回滚失败；继续前必须先确认目标文件当前状态。',
-                    buildArtifactRepairInstruction(absolutePath, validation.failures, attempts, phase, repairSpecBlock),
+                    buildArtifactRepairInstruction(
+                      absolutePath,
+                      validation.failures,
+                      attempts,
+                      phase,
+                      repairSpecBlock,
+                      validation.browserVisualSmoke,
+                      repairSpec.issues.map((issue) => issue.code),
+                    ),
                   ].join('\n')
                 );
                 toolResult.success = false;
@@ -2560,10 +2661,13 @@ export class ToolExecutionEngine {
                     inferredKind: validation.inferredKind,
                     failures: validation.failures,
                     checks: validation.checks,
+                    runtimeSmoke: validation.runtimeSmoke,
+                    browserVisualSmoke: validation.browserVisualSmoke,
                     repairSpec,
                   },
                 };
               } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
+                this.runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
                 getArtifactValidationFailureMap(this.ctx).delete(absolutePath);
                 if (this.ctx.artifactRepairGuard?.targetFile === absolutePath) {
                   this.ctx.artifactRepairGuard = undefined;

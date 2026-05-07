@@ -87,7 +87,7 @@ export async function classifyIntent(
   }
 
   // Step 2: LLM classification — 走 quickModel 直连官方 bigmodel.cn，
-  // 避免 modelRouter 经 0ki 中转时 glm-4-flash 被 403
+  // 避免 modelRouter 经 0ki 中转时 quick model 被 403
   try {
     const prompt = `${CLASSIFY_PROMPT}\n\n用户消息：${message}`;
     const result = await withTimeout(

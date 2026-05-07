@@ -21,6 +21,7 @@ import type {
 } from '../../../protocol/tools';
 import { gitWorktreeSchema as schema } from './gitWorktree.schema';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 
 const execAsync = promisify(exec);
 
@@ -38,9 +39,30 @@ interface Worktree {
   branch: string;
 }
 
-async function handleList(cwd: string): Promise<ToolResult<string>> {
+async function handleList(cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const { stdout } = await execGit('git worktree list --porcelain', cwd);
-  if (!stdout.trim()) return { ok: true, output: '没有工作树。' };
+  if (!stdout.trim()) {
+    const output = '没有工作树。';
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'list',
+        count: 0,
+        worktrees: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'process-output',
+          sessionId: ctx.sessionId,
+          name: 'git-worktree-list',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: { action: 'list', count: 0, worktrees: [] },
+        }),
+      },
+    };
+  }
 
   const worktrees: Worktree[] = [];
   let current: Record<string, string> = {};
@@ -85,10 +107,28 @@ async function handleList(cwd: string): Promise<ToolResult<string>> {
     output += `  HEAD: ${wt.head.substring(0, 8)}\n\n`;
   }
 
-  return { ok: true, output, meta: { count: worktrees.length, worktrees } };
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'list',
+      count: worktrees.length,
+      worktrees,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-worktree-list',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'list', count: worktrees.length, worktrees },
+      }),
+    },
+  };
 }
 
-async function handleAdd(args: Record<string, unknown>, cwd: string): Promise<ToolResult<string>> {
+async function handleAdd(args: Record<string, unknown>, cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const newBranch = args.new_branch as string | undefined;
   const branch = args.branch as string | undefined;
   const base = args.base as string | undefined;
@@ -120,10 +160,26 @@ async function handleAdd(args: Record<string, unknown>, cwd: string): Promise<To
   const { stdout, stderr } = await execGit(cmd.join(' '), cwd);
   const output = (stdout + '\n' + stderr).trim();
 
+  const finalOutput = `工作树创建成功:\n路径: ${worktreePath}\n分支: ${newBranch || branch}\n\n${output}`;
   return {
     ok: true,
-    output: `工作树创建成功:\n路径: ${worktreePath}\n分支: ${newBranch || branch}\n\n${output}`,
-    meta: { path: worktreePath, branch: newBranch || branch },
+    output: finalOutput,
+    meta: {
+      action: 'add',
+      path: worktreePath,
+      branch: newBranch || branch,
+      status: 'created',
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-worktree-add',
+        mimeType: 'text/plain',
+        contentLength: finalOutput.length,
+        preview: finalOutput.slice(0, 1000),
+        metadata: { action: 'add', path: worktreePath, branch: newBranch || branch, status: 'created' },
+      }),
+    },
   };
 }
 
@@ -131,6 +187,7 @@ async function handleRemove(
   args: Record<string, unknown>,
   cwd: string,
   canUseTool: CanUseToolFn,
+  ctx: ToolContext,
 ): Promise<ToolResult<string>> {
   const targetPath = args.path as string | undefined;
   const force = Boolean(args.force);
@@ -155,23 +212,74 @@ async function handleRemove(
 
   await execGit(cmd.join(' '), cwd);
 
+  const output = `工作树已删除: ${targetPath}`;
   return {
     ok: true,
-    output: `工作树已删除: ${targetPath}`,
-    meta: { path: targetPath },
+    output,
+    meta: {
+      action: 'remove',
+      path: targetPath,
+      status: 'removed',
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-worktree-remove',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output,
+        metadata: { action: 'remove', path: targetPath, status: 'removed' },
+      }),
+    },
   };
 }
 
-async function handlePrune(cwd: string): Promise<ToolResult<string>> {
+async function handlePrune(cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const { stdout: dryRun } = await execGit('git worktree prune --dry-run', cwd);
 
   if (!dryRun.trim()) {
-    return { ok: true, output: '没有需要清理的工作树引用。' };
+    const output = '没有需要清理的工作树引用。';
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'prune',
+        status: 'clean',
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'process-output',
+          sessionId: ctx.sessionId,
+          name: 'git-worktree-prune',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: { action: 'prune', status: 'clean' },
+        }),
+      },
+    };
   }
 
   await execGit('git worktree prune', cwd);
 
-  return { ok: true, output: `已清理过期的工作树引用:\n${dryRun.trim()}` };
+  const output = `已清理过期的工作树引用:\n${dryRun.trim()}`;
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'prune',
+      status: 'pruned',
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-worktree-prune',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'prune', status: 'pruned' },
+      }),
+    },
+  };
 }
 
 class GitWorktreeHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -203,16 +311,16 @@ class GitWorktreeHandler implements ToolHandler<Record<string, unknown>, string>
       let result: ToolResult<string>;
       switch (action) {
         case 'list':
-          result = await handleList(ctx.workingDir);
+          result = await handleList(ctx.workingDir, ctx);
           break;
         case 'add':
-          result = await handleAdd(args, ctx.workingDir);
+          result = await handleAdd(args, ctx.workingDir, ctx);
           break;
         case 'remove':
-          result = await handleRemove(args, ctx.workingDir, canUseTool);
+          result = await handleRemove(args, ctx.workingDir, canUseTool, ctx);
           break;
         case 'prune':
-          result = await handlePrune(ctx.workingDir);
+          result = await handlePrune(ctx.workingDir, ctx);
           break;
         default:
           return { ok: false, error: `未知操作: ${action}`, code: 'INVALID_ACTION' };

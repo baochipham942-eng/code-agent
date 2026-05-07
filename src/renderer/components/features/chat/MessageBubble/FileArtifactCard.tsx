@@ -86,7 +86,12 @@ export const FileArtifactCard: React.FC<Props> = ({ items }) => {
 
           {item.path && (
             <button
-              onClick={() => openPreview(item.path!)}
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openPreview(item.path!);
+              }}
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700 transition-colors flex-shrink-0"
               title="在预览面板打开"
             >

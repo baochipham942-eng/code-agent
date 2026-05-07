@@ -7,6 +7,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
+import { DEFAULT_MODELS } from '../../shared/constants';
 
 const logger = createLogger('CronIPC');
 
@@ -96,7 +97,7 @@ export function registerCronHandlers(): void {
           const router = new ModelRouter();
           const response = await router.chat({
             provider: 'zhipu',
-            model: 'glm-4-flash',
+            model: DEFAULT_MODELS.quick,
             messages: [
               { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT },
               { role: 'user', content: prompt.trim() },

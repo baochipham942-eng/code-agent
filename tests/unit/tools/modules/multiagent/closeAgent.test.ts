@@ -123,6 +123,15 @@ describe('close_agent behavior', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.output).toBe('Agent [a1] (explorer) cancelled. Running agents: 2');
+      expect(result.meta).toMatchObject({
+        action: 'close',
+        agentId: 'a1',
+        status: 'cancelled',
+        targets: ['a1'],
+        counts: { running: 2 },
+        result: { cancelled: true, role: 'explorer' },
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'close_agent' }),
+      });
     }
     expect(guard.cancel).toHaveBeenCalledWith('a1');
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'close_agent' });

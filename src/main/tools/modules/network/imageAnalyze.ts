@@ -29,6 +29,7 @@ import {
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
 } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageAnalyzeSchema as schema } from './imageAnalyze.schema';
 
 const CONFIG = {
@@ -397,7 +398,28 @@ export async function executeImageAnalyze(
         ok: true,
         output: `📷 图片分析结果\n文件: ${path.basename(absPath)}\n耗时: ${elapsed}s\n\n${content}`,
         meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `Image analysis: ${path.basename(absPath)}`,
+            mimeType: 'text/markdown',
+            contentLength: content.length,
+            preview: content.slice(0, 500),
+            metadata: {
+              imagePath: absPath,
+              prompt,
+              detail,
+              mediaKind: 'image',
+            },
+          }),
           path: absPath,
+          imagePath: absPath,
+          prompt,
+          detail,
+          mediaKind: 'image',
+          contentLength: content.length,
+          truncated: false,
           elapsedSeconds: parseFloat(elapsed),
         },
       };
@@ -467,9 +489,30 @@ export async function executeImageAnalyze(
         ok: true,
         output,
         meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `Image filter: ${filter.slice(0, 80)}`,
+            mimeType: 'text/markdown',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              filter,
+              total: imagePaths.length,
+              matched: matched.length,
+              failed: failed.length,
+              mediaKind: 'image',
+            },
+          }),
           total: imagePaths.length,
           matched: matched.length,
           failed: failed.length,
+          filter,
+          mediaKind: 'image',
+          resultCount: matched.length,
+          contentLength: output.length,
+          truncated: false,
           matchedPaths: matched.map((r) => r.path),
           elapsedSeconds: parseFloat(elapsed),
         },

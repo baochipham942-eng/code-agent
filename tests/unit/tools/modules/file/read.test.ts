@@ -117,6 +117,11 @@ describe('readModule (native)', () => {
         expect(result.output).toContain('1\tline1');
         expect(result.output).toContain('2\tline2');
         expect(result.output).toContain('3\tline3');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'Read',
+          path: file,
+        });
       }
     });
 

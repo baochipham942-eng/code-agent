@@ -25,6 +25,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageAnnotateSchema as schema } from './imageAnnotate.schema';
 
 const CONFIG = {
@@ -484,9 +485,28 @@ export async function executeImageAnnotate(
         ok: true,
         output: `📝 图片内容分析（无法精确标注）:\n\n${description}\n\n⚠️ 如需精确的矩形框标注，请配置百度 OCR API：\n- BAIDU_OCR_API_KEY: 百度云 API Key\n- BAIDU_OCR_SECRET_KEY: 百度云 Secret Key\n\n申请地址: https://cloud.baidu.com/product/ocr`,
         meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `Image annotation analysis: ${path.basename(imagePath)}`,
+            mimeType: 'text/markdown',
+            contentLength: description.length,
+            preview: description.slice(0, 500),
+            metadata: {
+              imagePath,
+              query: params.query,
+              ocrMethod,
+              mediaKind: 'image',
+            },
+          }),
           imagePath,
           description,
           ocrMethod,
+          query: params.query,
+          mediaKind: 'image',
+          contentLength: description.length,
+          truncated: false,
           processingTimeMs: Date.now() - startTime,
         },
       };
@@ -536,16 +556,51 @@ export async function executeImageAnnotate(
 
     const processingTime = Date.now() - startTime;
     onProgress?.({ stage: 'completing', percent: 100 });
+    const artifact = annotatedPath
+      ? await createFileArtifact(annotatedPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType,
+          metadata: {
+            imagePath,
+            query: params.query,
+            ocrMethod,
+            regionCount: regions.length,
+            mediaKind: 'image',
+          },
+        })
+      : createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `Image annotations: ${path.basename(imagePath)}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            imagePath,
+            query: params.query,
+            ocrMethod,
+            regionCount: regions.length,
+            mediaKind: 'image',
+          },
+        });
 
     return {
       ok: true,
       output,
       meta: {
+        artifact,
         imagePath,
         annotatedPath,
         description,
         regions,
+        regionCount: regions.length,
         ocrMethod,
+        query: params.query,
+        mediaKind: 'image',
+        outputPath: annotatedPath,
+        contentLength: output.length,
+        truncated: false,
         processingTimeMs: processingTime,
         attachment: annotatedPath
           ? {

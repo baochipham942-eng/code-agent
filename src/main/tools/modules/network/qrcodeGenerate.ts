@@ -16,6 +16,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { qrcodeGenerateSchema as schema } from './qrcodeGenerate.schema';
 
 interface QRCodeGenerateParams {
@@ -106,6 +107,16 @@ async function executeQrcodeGenerate(
 
 点击上方路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType: 'image/png',
+          sizeBytes: stats.size,
+          metadata: {
+            contentType,
+            size,
+            margin,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

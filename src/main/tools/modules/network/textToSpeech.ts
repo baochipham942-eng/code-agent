@@ -19,6 +19,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { textToSpeechSchema as schema } from './textToSpeech.schema';
 
 const CONFIG = {
@@ -208,17 +209,53 @@ export async function executeTextToSpeech(
     }
 
     onProgress?.({ stage: 'completing', percent: 100 });
+    const mimeType = format === 'wav' ? 'audio/wav' : 'audio/pcm';
+    const artifact = outputPath
+      ? await createFileArtifact(outputPath, schema.name, ctx, {
+          kind: 'audio',
+          mimeType,
+          metadata: {
+            textLength: params.text.length,
+            voice: params.voice || CONFIG.DEFAULT_VOICE,
+            speed: params.speed ?? CONFIG.DEFAULT_SPEED,
+            format,
+            mediaKind: 'audio',
+            model: CONFIG.MODEL,
+          },
+        })
+      : createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'audio',
+          sessionId: ctx.sessionId,
+          name: `Speech audio (${format})`,
+          mimeType,
+          contentLength: audioData.length,
+          metadata: {
+            textLength: params.text.length,
+            voice: params.voice || CONFIG.DEFAULT_VOICE,
+            speed: params.speed ?? CONFIG.DEFAULT_SPEED,
+            format,
+            embeddedBase64: true,
+            mediaKind: 'audio',
+            model: CONFIG.MODEL,
+          },
+        });
 
     return {
       ok: true,
       output,
       meta: {
+        artifact,
         outputPath,
         textLength: params.text.length,
         audioSizeBytes: audioData.length,
         voice: params.voice || CONFIG.DEFAULT_VOICE,
         speed: params.speed ?? CONFIG.DEFAULT_SPEED,
         format,
+        mimeType,
+        mediaKind: 'audio',
+        contentLength: audioData.length,
+        truncated: !outputPath,
         processingTimeMs: processingTime,
         model: CONFIG.MODEL,
       },

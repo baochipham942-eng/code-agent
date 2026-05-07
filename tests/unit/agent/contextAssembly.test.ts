@@ -267,7 +267,8 @@ vi.mock('../../../src/main/agent/runtime/contextAssembly/modeInjection', () => (
   maybeInjectThinking: vi.fn(),
 }));
 
-import { ContextAssembly } from '../../../src/main/agent/runtime/contextAssembly';
+import { ContextAssembly, MAX_SYSTEM_PROMPT_TOKENS } from '../../../src/main/agent/runtime/contextAssembly';
+import { estimateTokens } from '../../../src/main/context/tokenOptimizer';
 import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/main/agent/messageHandling/contextBuilder';
 import { getPromptForTask } from '../../../src/main/prompts/builder';
 import { needsArtifactTaskBrief, needsGenerativeUI } from '../../../src/main/prompts/builder';
@@ -605,9 +606,11 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).not.toContain('PERSISTENT_MARKER');
   });
 
-  it('preserves artifact task brief and skips repo map for artifact generation tasks', async () => {
-    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5200));
-    vi.mocked(needsGenerativeUI).mockReturnValueOnce(false);
+  it('injects compact game contract and skips optional prompt blocks for game artifact generation tasks', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(4800));
+    vi.mocked(needsGenerativeUI).mockReturnValueOnce(true);
+    vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(300)}</session_metadata>`);
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(300)}</memory_index>`);
     vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
       {
         filename: 'skill_big.md',
@@ -618,13 +621,16 @@ describe('ContextAssembly.buildModelMessages()', () => {
       },
     ]);
     vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce(`<relevant_skills>${'skill '.repeat(900)}</relevant_skills>`);
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce(`<recent_conversations>${'recent '.repeat(300)}</recent_conversations>`);
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('deferred '.repeat(300));
 
     const ctx = buildRuntimeContext({
       isSimpleTaskMode: false,
+      enableToolDeferredLoading: true,
       workingDirectory: '/tmp/code-agent',
       isDefaultWorkingDirectory: false,
       messages: [
-        buildMessage('user-artifact', 'user', '生成一个类似超级玛丽的单文件 HTML 游戏，保存到 /tmp/game.html'),
+        buildMessage('user-artifact', 'user', '继续生成一个类似超级玛丽的单文件 HTML 游戏，记得 previous context，保存到 /tmp/game.html'),
       ],
     });
 
@@ -632,14 +638,52 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
 
     expect(modelMessages[0].role).toBe('system');
-    expect(modelMessages[0].content).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(modelMessages[0].content).toContain('## Game Artifact Contract');
+    expect(modelMessages[0].content).toContain('window.__GAME_META__');
+    expect(modelMessages[0].content).toContain('validator-readable authored unit field');
+    expect(modelMessages[0].content).toContain('levels');
+    expect(modelMessages[0].content).toContain('segments');
+    expect(modelMessages[0].content).toContain('scenarios');
+    expect(modelMessages[0].content).toContain('qualityPlan');
+    expect(modelMessages[0].content).toContain('acceptance');
+    expect(modelMessages[0].content).toContain('progressPlan');
+    expect(modelMessages[0].content).toContain('generic `progress`');
+    expect(modelMessages[0].content).toContain('Reachability steps must be short');
+    expect(modelMessages[0].content).toContain('Platformers must include acceleration/friction');
+    expect(modelMessages[0].content).toContain('Gameplay Mechanics Contract');
+    expect(modelMessages[0].content).toContain('gameplayMechanics');
+    expect(modelMessages[0].content).toContain('stompable enemy');
+    expect(modelMessages[0].content).toContain('bumpable/question block');
+    expect(modelMessages[0].content).toContain('comboChallenge');
+    expect(modelMessages[0].content).toContain('browserVisualSmoke');
+    expect(modelMessages[0].content).toContain('start()');
+    expect(modelMessages[0].content).toContain('reset(levelOrScenario?)');
+    expect(modelMessages[0].content).toContain('snapshot()');
+    expect(modelMessages[0].content).toContain('step(inputState, frames?)');
+    expect(modelMessages[0].content).toContain('runSmokeTest()');
+    expect(modelMessages[0].content).toContain('input-driven');
+    expect(modelMessages[0].content).not.toContain('ARTIFACT_BRIEF_MARKER');
+    expect(modelMessages[0].content).not.toContain('<session_metadata>');
+    expect(modelMessages[0].content).not.toContain('<memory_index>');
+    expect(modelMessages[0].content).not.toContain('<memory_hint>');
+    expect(modelMessages[0].content).not.toContain('<relevant_skills>');
     expect(modelMessages[0].content).not.toContain('<repo_map>');
+    expect(modelMessages[0].content).not.toContain('<recent_conversations>');
+    expect(modelMessages[0].content).not.toContain('generative ui prompt');
+    expect(modelMessages[0].content).not.toContain('question form prompt');
+    expect(modelMessages[0].content).not.toContain('<deferred-tools>');
+    expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
+    expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
+    expect(loadMemoryIndex).not.toHaveBeenCalled();
+    expect(loadRelevantSkills).not.toHaveBeenCalled();
     expect(getRepoMap).not.toHaveBeenCalled();
+    expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
+    expect(getDeferredToolsSummary).not.toHaveBeenCalled();
   });
 
-  it('keeps artifact task brief when later environment context pushes prompt past budget', async () => {
-    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5900));
-    vi.mocked(injectWorkingDirectoryContext).mockImplementationOnce((prompt: string) => `${prompt}\n\nENV_MARKER ${'env '.repeat(500)}`);
+  it('keeps compact game contract when later environment context is added', async () => {
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(4800));
+    vi.mocked(injectWorkingDirectoryContext).mockImplementationOnce((prompt: string) => `${prompt}\n\nENV_MARKER ${'env '.repeat(120)}`);
 
     const ctx = buildRuntimeContext({
       isSimpleTaskMode: false,
@@ -654,9 +698,13 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
 
     expect(modelMessages[0].role).toBe('system');
-    expect(modelMessages[0].content).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(modelMessages[0].content).toContain('## Game Artifact Contract');
+    expect(modelMessages[0].content).toContain('window.__GAME_META__');
+    expect(modelMessages[0].content).toContain('start()');
     expect(modelMessages[0].content).toContain('ENV_MARKER');
     expect(ctx.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('跳过 artifact task brief'));
+    expect(ctx.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('保留必需 game artifact contract'));
+    expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
   });
 
   it('prioritizes artifact repair context over optional prompt blocks', async () => {
@@ -707,7 +755,9 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const systemPrompt = modelMessages[0].content;
 
     expect(modelMessages[0].role).toBe('system');
-    expect(systemPrompt).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(systemPrompt).toContain('## Game Artifact Repair Contract');
+    expect(systemPrompt).toContain('window.__GAME_META__');
+    expect(systemPrompt).toContain('start()');
     expect(systemPrompt).toContain('<artifact-validation-failed kind="interactive_artifact">');
     expect(systemPrompt).toContain('缺少真实可点击开始按钮');
     expect(systemPrompt).not.toContain('<session_metadata>');
@@ -723,6 +773,114 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(getRepoMap).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
     expect(getDeferredToolsSummary).not.toHaveBeenCalled();
+  });
+
+  it('keeps non-game artifact repair on the generic artifact brief', async () => {
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-dashboard-repair', 'user', '修复 /tmp/dashboard.html 这个交互页面'),
+      ],
+      persistentSystemContext: [
+        [
+          '<artifact-validation-failed kind="interactive_artifact">',
+          'Artifact validation failed for /tmp/dashboard.html.',
+          '1. 缺少真实可点击开始按钮。',
+          '</artifact-validation-failed>',
+        ].join('\n'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemPrompt = modelMessages[0].content;
+
+    expect(systemPrompt).toContain('ARTIFACT_BRIEF_MARKER');
+    expect(systemPrompt).not.toContain('## Game Artifact Contract');
+    expect(systemPrompt).toContain('<artifact-repair-focus>');
+  });
+
+  it('adds focused repair instructions when artifact validation names a target and failures', async () => {
+    const targetFile = '/tmp/game.html';
+    const ctx = buildRuntimeContext({
+      messages: [
+        buildMessage('user-repair-focus', 'user', `修复 ${targetFile}`),
+        {
+          id: 'tool-repair-focus',
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolResults: [
+            {
+              toolCallId: 'tc-edit-failed',
+              success: false,
+              error: 'Artifact validation failed for /tmp/game.html.',
+              metadata: {
+                artifactValidation: {
+                  failed: true,
+                  attempts: 2,
+                  phase: 'targeted_repair',
+                  failures: [
+                    'runSmokeTest records enemy_present instead of input-driven before/after state changes.',
+                  ],
+                  repairSpec: {
+                    issues: [{ code: 'coverage_without_runtime_evidence' }],
+                  },
+                },
+              },
+            },
+          ],
+        } as Message,
+      ],
+      artifactRepairGuard: {
+        targetFile,
+        attempts: 2,
+        phase: 'targeted_repair',
+        targetReadCount: 1,
+        targetRangedReadCount: 1,
+        noOpPatchCount: 1,
+        blockedToolCount: 2,
+        activeIssueCodes: [
+          'coverage_without_runtime_evidence',
+          'missing_contract_start',
+          'missing_coverage_metadata',
+          'smoke_missing_coverage',
+          'control_no_state_change',
+        ],
+        patched: false,
+      },
+      persistentSystemContext: [
+        [
+          '<artifact-validation-failed kind="interactive_artifact">',
+          'attempts: 2',
+          'repair phase: targeted_repair',
+          `target file: ${targetFile}`,
+          '1. runSmokeTest records enemy_present instead of input-driven before/after state changes.',
+          '</artifact-validation-failed>',
+        ].join('\n'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemPrompt = modelMessages[0].content;
+
+    expect(systemPrompt).toContain('<artifact-repair-focus>');
+    expect(systemPrompt).toContain(`Target file: ${targetFile}`);
+    expect(systemPrompt).toContain('Repair phase: targeted_repair');
+    expect(systemPrompt).toContain('Validation failures to fix now:');
+    expect(systemPrompt).toContain('runSmokeTest records enemy_present instead of input-driven before/after state changes.');
+    expect(systemPrompt).toContain('Active issue codes: coverage_without_runtime_evidence');
+    expect(systemPrompt).toContain('Direct repair requirements:');
+    expect(systemPrompt).toContain('missing_contract_start: add a real `start()` method');
+    expect(systemPrompt).toContain('missing_coverage_metadata: add literal `window.__GAME_META__`');
+    expect(systemPrompt).toContain('validator-readable authored units');
+    expect(systemPrompt).toContain('`levels`, `segments`, `scenarios`');
+    expect(systemPrompt).toContain('smoke_missing_coverage: make `runSmokeTest()` return structured input-driven coverage');
+    expect(systemPrompt).toContain('reachability_evidence: every `progressPlan` / `reachability` step');
+    expect(systemPrompt).toContain('Edit or Append the target file now');
+    expect(systemPrompt).toContain('Do not use Grep, Glob, Task, ToolSearch');
+    expect(systemPrompt).toContain(`Patch ${targetFile} directly`);
+    expect(systemPrompt).toContain('Keep the interactive contract tied to live gameplay state');
   });
 
   it('compresses large target file read history during artifact repair mode', async () => {

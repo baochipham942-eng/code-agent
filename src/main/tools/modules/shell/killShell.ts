@@ -19,6 +19,7 @@ import {
   killBackgroundTask,
   isTaskId,
   getAllBackgroundTasks,
+  getBackgroundTask,
 } from '../../shell/backgroundTasks';
 
 class KillShellHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -77,8 +78,22 @@ class KillShellHandler implements ToolHandler<Record<string, unknown>, string> {
     onProgress?.({ stage: 'completing', percent: 100 });
 
     if (result.success) {
+      const task = getBackgroundTask(taskId);
       ctx.logger.info('kill_shell done', { taskId });
-      return { ok: true, output: result.message || `Successfully killed task: ${taskId}` };
+      return {
+        ok: true,
+        output: result.message || `Successfully killed task: ${taskId}`,
+        meta: {
+          action: 'kill',
+          taskId,
+          status: 'killed',
+          targets: [taskId],
+          session: ctx.sessionId,
+          thread: ctx.currentToolCallId,
+          logPath: task?.outputFile,
+          result,
+        },
+      };
     } else {
       ctx.logger.warn('kill_shell failed', { taskId, error: result.error });
       return { ok: false, error: result.error || 'Failed to kill task', code: 'KILL_FAILED' };

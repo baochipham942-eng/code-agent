@@ -5,47 +5,80 @@
 export const ARTIFACT_TASK_BRIEF_PROMPT = `
 ## Artifact Task Brief
 
-When the user asks you to create, generate, build, write, design, or implement an artifact, first infer a compact task brief before choosing tools. Use the brief privately unless showing it helps the user.
+When the user asks you to create, generate, build, write, design, or implement an artifact, infer a compact private brief before choosing tools. Do not show it unless it helps the user.
 
 Brief fields:
 - artifactKind: document | image | presentation | data_workbook | interactive_app | code_project | other
-- domain: the real domain of the artifact, such as game, dashboard, editor, report, automation, visualization
-- subtype: a useful subtype when the domain has one, such as platformer, runner, tower_defense, puzzle, form, landing_page
-- coreLoop: for games or interactive apps, the repeated action cycle the user should actually experience
-- requiredMechanics: concrete mechanics implied by the user's reference, not just visual theme
+- domain/subtype: the real domain and useful subtype
+- coreLoop: for interactive work, the repeated user action cycle
+- promisedContent: concrete mechanics, sections, data, states, or outputs implied by the request
 - validationPlan: what must be checked before claiming the artifact works
 
-For large generated artifacts:
-- Do not put a very large complete HTML/CSS/JS/document artifact into one Write call. If the complete single-file artifact is already available and medium-sized, one Write call is acceptable.
-- If the target file path is explicit, start creating that file in the first tool-writing turn. The file tools create parent directories automatically, so do not spend a separate turn only making directories.
+Writing rules:
+- If the target path is explicit, write that file in the first tool-writing turn. File tools create parent directories.
+- Do not spend a separate shell/tool turn on mkdir for the target directory; Write/Append create parent directories.
+- A complete medium single-file artifact may use one Write call.
 - Use chunked assembly: Write the initial skeleton or first chunk, then Append ordered chunks, and set \`final: true\` only on the last Append.
-- If the last Append closes the document or otherwise makes the artifact runnable/complete, that same Append must include \`final: true\`. Do not leave a complete deliverable behind with \`final\` omitted.
-- Keep each Write/Append content argument reasonably small and coherent: metadata/bootstrap, markup, styles, data, mechanics, validation helpers, closing tags.
-- After the final chunk, verify the created file with Read, Bash, or browser/computer tools as appropriate before final response.
+- If an Append closes or completes the deliverable, that same call is final.
+- Keep chunks coherent: metadata/bootstrap, markup, styles, data, logic, validation helpers, closing tags.
+- After the final chunk, verify with Read, Bash, browser, or computer tools as appropriate.
 
-For games:
-- Treat references to an existing genre or game as mechanics to translate, not just skins. Infer the relevant mechanics from the user's request instead of relying on a fixed keyword list.
-- If there are authored levels, stages, scenarios, or missions, every one must be beatable/recoverable under the artifact's own rules. If content is procedural, every generated segment must preserve local solvability and fair reaction windows.
-- Named or implied upgrades, power-ups, inventory, enemies, hazards, scoring, health, checkpoints, win states, fail states, objectives, and progression must change real runtime state.
-- Make the first playable screen prove the fantasy immediately: the primary actor must be recognizable, the player must have a real control loop, and at least one reward/upgrade plus one risk/constraint must already exist on screen when the request implies them. Do not ship placeholder boxes or "logic only" demos for character or genre game requests.
-- Use metadata to describe the promises you are making. Include a \`qualityPlan\` or \`acceptance\` object with fields such as \`actorReadable\`, \`mechanics\`, \`rewards\`, \`risks\`, \`levelsCovered\`, and \`allAuthoredLevelsReachable\`. Keep it generic to the built game instead of hardcoding a genre vocabulary.
-- Expose validation metadata in the artifact as \`window.__GAME_META__\`, \`window.__INTERACTIVE_META__\`, or a JSON script block. Include domain, subtype, controls, core loop, objectives/scenarios/levels/segments, player or primary actor capabilities, win/fail conditions, feedback states, and reachability/progress assumptions.
-- Include a generic reachability/progress plan in metadata, using fields like \`reachability\`, \`acceptance\`, \`smokePlan\`, or \`progressPlan\`. Each step must use executable inputs and exact state fields, such as \`{ input: "ArrowRight", metric: "progress", expect: "increase" }\` or \`{ input: ["ArrowRight", "Space"], metric: "state", expect: "gameWon" }\`.
-- In reachability/progress metadata:
-  - \`input\`, \`key\`, \`control\`, or \`code\` must be real controls that can be dispatched from the browser, using the same key values exposed in \`controls\`. Good: \`ArrowRight\`, \`Space\`, \`["ArrowRight","Space"]\`. Bad: \`"reach flag"\`, \`"collect mushroom"\`, \`"move+collect"\`.
-  - \`metric\` must be an exact \`snapshot()\` field or path, such as \`playerX\`, \`powerUp\`, \`state\`, \`score\`, or \`progress\`. Do not invent metric names that are absent from \`snapshot()\`.
-  - \`expect\` should be one of \`increase\`, \`decrease\`, \`change\`, \`truthy\`, or an exact literal target value like \`"gameWon"\`, \`"doublejump"\`, \`true\`, or \`3\`.
-- Expose a small runtime test contract as \`window.__INTERACTIVE_TEST__\` or \`window.__GAME_TEST__\`:
-  - \`start()\`: starts the artifact from a clean initial state.
-  - \`reset(levelOrScenario?)\`: for authored levels, stages, scenarios, or missions, resets deterministically to the requested authored unit by id/name/index so validation can prove each one is reachable.
-  - \`step(inputState, frames?)\`: advances the same game state used by real input handlers. Prefer this for deterministic headless tests and keep it consistent with keyboard/pointer controls.
-  - \`snapshot()\`: returns structured state for the primary actor/object, progress, score/reward, status, and visible feedback.
-  - \`runSmokeTest()\`: programmatically performs the core interaction for a few seconds and returns \`{ passed, checks, failures, coverage }\`. It must prove that user input changes state, produces visible/meaningful feedback, exercises requested mechanics/rewards/risks when present, and can make progress toward objectives.
-- The test contract must not cheat on behalf of the player. \`step()\` may advance deterministic physics/input, but it must not auto-collect rewards from generous distances, auto-reach goals, auto-open doors, auto-win, or grant abilities outside the same collision and progression rules used by real play. \`runSmokeTest()\` must not count existence, registration, or metadata as proof of rewards/risks/mechanics; it should compare before/after \`snapshot()\` state caused by simulated player inputs.
-- If the artifact has a real-time loop, make \`runSmokeTest()\` deterministic in headless mode. Prefer driving \`step(inputState, frames)\` directly, or pause the main loop during the test. Do not rely only on unresolved \`requestAnimationFrame\` waits.
-- Make \`runSmokeTest().checks\` and \`failures\` plain strings, not rich objects.
-- The \`coverage\` payload should be structured enough for the runtime to inspect. Prefer generic fields like \`levelsPassed\`, \`totalLevels\`, \`mechanics\`, \`rewards\`, \`risks\`, \`stateChanges\`, and \`allLevelsReachable\`. If the game has authored multi-level content, \`levelsPassed\` must cover every authored level before you claim the artifact is complete, and \`reset(levelOrScenario?)\` must let validation drive those authored units directly.
-- Validate launch, controls, visible state changes, requested mechanics, win/fail paths, and reachability for all authored levels/scenarios/segments before final response. Do not claim a game works just because event listeners, a render loop, or metadata exist.
+For generated games, also follow the compact Game Artifact Contract block exactly.
+`.trim();
+
+export const GAME_ARTIFACT_CONTRACT_PROMPT = `
+## Game Artifact Contract
+
+For generated or repaired browser games, produce a playable file plus a machine-checkable contract.
+
+Build rules:
+- Translate genre/reference into mechanics, not only visual skin.
+- First screen shows actor, controls, feedback, reward/risk; score, health, objectives, win/fail, and progression update runtime state.
+- Canvas layout scales to viewport with max-width/max-height, aspect-ratio, height:auto; narrow windows must not crop playfield or HUD.
+- Platformers must include acceleration/friction, gravity, jump buffering or coyote time, recovery, and input-driven collision with platforms, hazards, rewards, and goals.
+- Gameplay Mechanics Contract for platformers: implement a stompable enemy, a bumpable/question block, a movement/interaction-changing ability, an ability-gated route, and one comboChallenge that combines jump with at least two of enemy/block/ability/gate play.
+
+Metadata required:
+- Add literal \`window.__GAME_META__\` or \`window.__INTERACTIVE_META__\`.
+- Include domain, subtype, dispatchable controls, coreLoop, objectives, win/fail, feedback states, and actor capabilities. Controls need real values such as \`{ left: 'ArrowLeft', right: 'ArrowRight', jump: 'Space' }\`.
+- Include one validator-readable authored unit field: \`levels\`, \`segments\`, \`scenarios\`, \`stages\`, \`missions\`, or \`objectives\`, with id/name/index.
+- For subtype \`platformer\`, use exact shape \`gameplayMechanics: { enemies: [], blocks: [], abilities: [], gates: [], comboChallenge: [] }\`; each field is an array even when it has one item, never an object map. Fill stompable/defeatReward, bumpableFromBelow/reward/usedState, acquiredFrom/effect/unlocksRoute, requiresAbility/blocksAccessTo, requires/target. Use doubleJump, dash, shield, magnet, groundPound, or wallJump.
+- Include \`qualityPlan\` or \`acceptance\` for actorReadable, mechanics, rewards, risks, levelsCovered, allAuthoredLevelsReachable.
+- Include literal \`progressPlan\` or \`reachability\`; inputs come from controls, never \`'none'\`; generic \`progress\`, \`coverage\`, \`objectives\`, \`coreLoop\`, or \`qualityPlan\` does not satisfy this field.
+- Each step uses metadata controls, a \`snapshot()\` metric path, and expect increase/decrease/change/truthy or literal target. Example:
+  \`progressPlan: [{ label: 'move right', input: 'ArrowRight', frames: 24, metric: 'player.x', expect: 'increase' }, { label: 'jump arc', input: ['ArrowRight', 'Space'], frames: 20, metric: 'player.y', expect: 'change' }]\`
+- Reachability steps must be short, deterministic, and locally true: use real snapshot paths such as \`player.x\`, \`player.vy\`, \`enemiesDefeated\`, \`blocksUsed\`, \`abilities.doubleJump\`, \`gatesUnlocked\`, \`routesUnlocked\`; do not expect score/progress/win/gate/ability changes unless that exact input window triggers live collision.
+- For platformers, nearby authored smoke scenarios like \`reset('stomp')\`, \`reset('bumpBlock')\`, \`reset('gainAbility')\`, and \`reset('unlockGate')\` are better than long full-level treks, but they must still use live physics/collision.
+
+Runtime required:
+- Expose test contract methods: \`start()\`, \`reset(levelOrScenario?)\`, \`snapshot()\`, \`step(inputState, frames?)\`, \`runSmokeTest()\`.
+- \`start()\` creates clean playable state; \`reset(levelOrScenario?)\` selects an authored unit; \`snapshot()\` returns actor, progress, score/reward, status, level/scenario, and metadata metrics.
+- \`step(inputState, frames?)\` drives real keyboard/pointer rules, accepts semantic controls plus real key codes, and must not auto-collect, auto-win, auto-open, auto-reach, or grant abilities.
+- \`runSmokeTest()\` drives \`step()\`, compares before/after \`snapshot()\`, and returns \`{ passed, checks, failures, coverage }\` with string-array \`checks\`/\`failures\`. Fail on missing expected changes.
+- Coverage must be input-driven and structured: levelsPassed, totalLevels, mechanics, rewards, risks, stateChanges, allLevelsReachable. Use named arrays/maps, not counts or object existence.
+- For platformers, \`runSmokeTest()\` proves gameplayMechanics with before/after snapshots: stomp enemy defeated plus player bounce/vy, bump block used/spawnedReward, ability changes, gate/route reachability after ability, and comboChallenge sequence.
+- If authored levels/scenarios/segments exist, smoke coverage must reset and exercise every authored unit before claiming completion.
+- Include browserVisualSmoke expectations when visual: desktop/mobile viewport, canvasNonblank, actor/HUD visible, no crop/overlap.
+`.trim();
+
+export const GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT = `
+## Game Artifact Repair Contract
+
+Patch only the generated HTML and the validator-relevant metadata/test contract.
+- Keep the playfield visible in narrow browser windows: add responsive canvas/wrapper CSS with max-width/max-height/aspect-ratio/height:auto instead of shipping a fixed 800px canvas that can be cropped.
+- Metadata must expose \`window.__GAME_META__\` / \`window.__INTERACTIVE_META__\` with controls, validator-readable authored units (\`levels\`, \`segments\`, \`scenarios\`, \`stages\`, \`missions\`, or \`objectives\`), \`progressPlan\` or \`reachability\` steps, and \`qualityPlan\` or \`acceptance\`.
+- Use the exact field name \`progressPlan\` or \`reachability\`; do not rename it to \`progress\`, \`coverage\`, or \`qualityPlan\`.
+- Do not use \`input: 'none'\` in \`progressPlan\` / \`reachability\`; every step must be executable with declared controls.
+- Every reachability metric must exist in \`snapshot()\` and change within the declared frames; do not assert \`score increase\` after generic movement/jump.
+- For platformers, add/repair \`gameplayMechanics\` with enemies, blocks, abilities, gates, and comboChallenge, wired to real \`step()\` gameplay and \`runSmokeTest()\` before/after snapshot evidence.
+- Platformer \`gameplayMechanics.enemies\`, \`blocks\`, \`abilities\`, \`gates\`, and \`comboChallenge\` must be arrays; do not repair them as \`{ enemies: { ... } }\` or keyed object maps.
+- If the full level path is too long, repair platformers with deterministic authored scenarios for stomp, bumpBlock, gainAbility, unlockGate, and comboChallenge using the live rules.
+- Test contract must expose \`start()\`, \`reset(levelOrScenario?)\`, \`snapshot()\`, \`step(inputState, frames?)\`, and \`runSmokeTest()\`.
+- \`step(inputState, frames?)\` must accept the semantic control names in metadata and the real key codes/aliases; repair mismatches such as metadata declaring \`ArrowRight\` while step only reads \`right\`.
+- \`runSmokeTest()\` coverage must use \`mechanics\`, \`rewards\`, \`risks\`, \`stateChanges\`, \`levelsPassed\`, \`totalLevels\`, and \`allLevelsReachable\`; coverage fields must list evidence names or boolean evidence maps, never numeric counts.
+- Platformer coverage must prove stompEnemy, bumpBlock, gainAbility, unlockGate/routeReachableAfterAbility, and comboChallenge, with stateChanges for enemiesDefeated, player.vy/bounce, blocksUsed/spawnedReward, abilities, and gates/routes.
+- \`runSmokeTest()\` must return \`checks\` and \`failures\` as string arrays, not numeric counts, and each assertion should fail only when the observed before/after state contradicts the expected result.
+- Only record coverage after before/after \`snapshot()\` changes driven by \`step()\` or real controls. No direct score/progress/level/win/unlock grants, and no existence-only coverage.
 `.trim();
 
 export function needsArtifactTaskBrief(message: string): boolean {
@@ -58,4 +91,9 @@ export function needsArtifactTaskBrief(message: string): boolean {
   const hasArtifactTarget = /\b\w[\w.-]*\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)\b|\/[\w .@-]+\/[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)|\\[\w .@-]+\\[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)/i.test(message);
 
   return hasRepairIntent && hasArtifactTarget;
+}
+
+export function needsGameArtifactContract(message: string): boolean {
+  if (!message) return false;
+  return needsArtifactTaskBrief(message) && /游戏|game|platformer|runner|tower[_\s-]?defense|puzzle|rpg|shooter|mario|超级玛丽|关卡|level|stage|scenario|mission/i.test(message);
 }

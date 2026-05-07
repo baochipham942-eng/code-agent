@@ -157,6 +157,17 @@ describe('readPdfModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('PDF summary');
         expect(result.output).toContain('视觉模型');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'read_pdf',
+          path: '/abs/doc.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 1024 * 1024,
+          metadata: {
+            processingMethod: 'vision',
+            fileSizeMB: 1,
+          },
+        });
       }
     });
 

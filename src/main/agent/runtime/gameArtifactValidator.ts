@@ -1,7 +1,14 @@
 import { createHash } from 'crypto';
-import { readFile } from 'fs/promises';
+import { spawn, type ChildProcess } from 'child_process';
+import { readFile, mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import {
+  buildSystemChromeCdpArgs,
+  findAvailablePort,
+  resolveBrowserProvider,
+} from '../../services/infra/browserProvider';
 
 export interface GameArtifactValidationSummary {
   shouldValidate: boolean;
@@ -12,11 +19,14 @@ export interface GameArtifactValidationSummary {
   failures: string[];
   checks: string[];
   runtimeSmoke?: RuntimeSmokeSummary;
+  browserVisualSmoke?: BrowserVisualSmokeSummary;
 }
 
 export interface GameArtifactValidationOptions {
   runRuntimeSmoke?: boolean;
   runtimeSmokeTimeoutMs?: number;
+  runBrowserVisualSmoke?: boolean;
+  browserVisualSmokeTimeoutMs?: number;
 }
 
 export interface RuntimeSmokeSummary {
@@ -26,10 +36,46 @@ export interface RuntimeSmokeSummary {
   checks: string[];
 }
 
+export interface BrowserVisualSmokeSummary {
+  attempted: boolean;
+  skipped?: boolean;
+  passed: boolean;
+  failures: string[];
+  checks: string[];
+  diagnostics?: BrowserVisualSmokeDiagnostics;
+}
+
+export interface BrowserVisualSmokeDiagnostics {
+  title?: string;
+  metaPresent?: boolean;
+  testPresent?: boolean;
+  canvasCount?: number;
+  nonblankCanvasCount?: number;
+  visibleElements?: number;
+  bodyTextLength?: number;
+  consoleErrors?: string[];
+  pageErrors?: string[];
+  viewports?: Array<{
+    name: string;
+    width: number;
+    height: number;
+    canvasCount: number;
+    nonblankCanvasCount: number;
+    visibleElements: number;
+    horizontalOverflow: boolean;
+  }>;
+}
+
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
 const DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS = 7000;
+const DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS = 10000;
 const VALIDATION_CACHE_MAX_ENTRIES = 32;
 const validationCache = new Map<string, GameArtifactValidationSummary>();
+
+const BROWSER_VISUAL_SMOKE_VIEWPORTS = [
+  { name: 'desktop', width: 1280, height: 720 },
+  { name: 'mobile', width: 390, height: 780 },
+] as const;
 
 function cloneRuntimeSmoke(summary: RuntimeSmokeSummary): RuntimeSmokeSummary {
   return {
@@ -40,12 +86,35 @@ function cloneRuntimeSmoke(summary: RuntimeSmokeSummary): RuntimeSmokeSummary {
   };
 }
 
+function cloneBrowserVisualSmoke(summary: BrowserVisualSmokeSummary): BrowserVisualSmokeSummary {
+  return {
+    attempted: summary.attempted,
+    skipped: summary.skipped,
+    passed: summary.passed,
+    failures: [...summary.failures],
+    checks: [...summary.checks],
+    diagnostics: summary.diagnostics
+      ? {
+          ...summary.diagnostics,
+          consoleErrors: summary.diagnostics.consoleErrors ? [...summary.diagnostics.consoleErrors] : undefined,
+          pageErrors: summary.diagnostics.pageErrors ? [...summary.diagnostics.pageErrors] : undefined,
+          viewports: summary.diagnostics.viewports
+            ? summary.diagnostics.viewports.map((viewport) => ({ ...viewport }))
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
 function cloneValidationSummary(summary: GameArtifactValidationSummary): GameArtifactValidationSummary {
   return {
     ...summary,
     failures: [...summary.failures],
     checks: [...summary.checks],
     runtimeSmoke: summary.runtimeSmoke ? cloneRuntimeSmoke(summary.runtimeSmoke) : undefined,
+    browserVisualSmoke: summary.browserVisualSmoke
+      ? cloneBrowserVisualSmoke(summary.browserVisualSmoke)
+      : undefined,
   };
 }
 
@@ -58,11 +127,16 @@ function makeValidationCacheKey(
   const runtimeTimeoutMs = options.runRuntimeSmoke
     ? options.runtimeSmokeTimeoutMs ?? DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS
     : 0;
+  const visualTimeoutMs = options.runBrowserVisualSmoke
+    ? options.browserVisualSmokeTimeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS
+    : 0;
   return [
     path.resolve(filePath),
     contentHash,
     options.runRuntimeSmoke ? 'runtime' : 'static',
     runtimeTimeoutMs,
+    options.runBrowserVisualSmoke ? 'visual' : 'no-visual',
+    visualTimeoutMs,
   ].join('\0');
 }
 
@@ -102,6 +176,8 @@ const INTERACTIVE_TEST_START_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,3000}\bstart\s*[:=]\s*(?:async\s*)?(?:function|\(?)/i,
   /__INTERACTIVE_TEST__[\s\S]{0,3000}\bstart\s*\(/i,
   /__GAME_TEST__[\s\S]{0,3000}\bstart\s*\(/i,
+  /__INTERACTIVE_TEST__\s*=\s*\{[\s\S]{0,1000}\bstart\s*(?:,|\})/i,
+  /__GAME_TEST__\s*=\s*\{[\s\S]{0,1000}\bstart\s*(?:,|\})/i,
 ];
 
 const INTERACTIVE_TEST_SNAPSHOT_PATTERNS = [
@@ -109,6 +185,8 @@ const INTERACTIVE_TEST_SNAPSHOT_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,3000}\bsnapshot\s*[:=]\s*(?:async\s*)?(?:function|\(?)/i,
   /__INTERACTIVE_TEST__[\s\S]{0,3000}\bsnapshot\s*\(/i,
   /__GAME_TEST__[\s\S]{0,3000}\bsnapshot\s*\(/i,
+  /__INTERACTIVE_TEST__\s*=\s*\{[\s\S]{0,1000}\bsnapshot\s*(?:,|\})/i,
+  /__GAME_TEST__\s*=\s*\{[\s\S]{0,1000}\bsnapshot\s*(?:,|\})/i,
 ];
 
 const INTERACTIVE_TEST_RESET_PATTERNS = [
@@ -116,6 +194,8 @@ const INTERACTIVE_TEST_RESET_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,3000}\breset\s*[:=]\s*(?:async\s*)?(?:function|\(?)/i,
   /__INTERACTIVE_TEST__[\s\S]{0,3000}\breset\s*\(/i,
   /__GAME_TEST__[\s\S]{0,3000}\breset\s*\(/i,
+  /__INTERACTIVE_TEST__\s*=\s*\{[\s\S]{0,1000}\breset\s*(?:,|\})/i,
+  /__GAME_TEST__\s*=\s*\{[\s\S]{0,1000}\breset\s*(?:,|\})/i,
 ];
 
 const INTERACTIVE_TEST_STEP_PATTERNS = [
@@ -123,6 +203,8 @@ const INTERACTIVE_TEST_STEP_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,3000}\bstep\s*[:=]\s*(?:async\s*)?(?:function|\(?)/i,
   /__INTERACTIVE_TEST__[\s\S]{0,3000}\bstep\s*\(/i,
   /__GAME_TEST__[\s\S]{0,3000}\bstep\s*\(/i,
+  /__INTERACTIVE_TEST__\s*=\s*\{[\s\S]{0,1000}\bstep\s*(?:,|\})/i,
+  /__GAME_TEST__\s*=\s*\{[\s\S]{0,1000}\bstep\s*(?:,|\})/i,
 ];
 
 const INTERACTIVE_TEST_SMOKE_PATTERNS = [
@@ -130,6 +212,8 @@ const INTERACTIVE_TEST_SMOKE_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,5000}\brunSmokeTest\s*[:=]\s*(?:async\s*)?(?:function|\(?)/i,
   /__INTERACTIVE_TEST__[\s\S]{0,5000}\brunSmokeTest\s*\(/i,
   /__GAME_TEST__[\s\S]{0,5000}\brunSmokeTest\s*\(/i,
+  /__INTERACTIVE_TEST__\s*=\s*\{[\s\S]{0,1000}\brunSmokeTest\s*(?:,|\})/i,
+  /__GAME_TEST__\s*=\s*\{[\s\S]{0,1000}\brunSmokeTest\s*(?:,|\})/i,
 ];
 
 const CONTROL_PATTERNS = [
@@ -164,6 +248,11 @@ const META_REACHABILITY_PATTERNS = [
   /__INTERACTIVE_TEST__[\s\S]{0,5000}\b(reachability|acceptance|smokePlan|progressPlan|validation)\b/i,
 ];
 
+const META_REACHABILITY_NEAR_MISS_PATTERNS = [
+  /__(?:GAME|INTERACTIVE)_META__[\s\S]{0,4000}(?:\b(?:progress|coverage)\s*:|["'](?:progress|coverage)["']\s*:)/i,
+  /(?:game|interactive)-meta[\s\S]{0,4000}"(?:progress|coverage)"\s*:/i,
+];
+
 const META_QUALITY_PATTERNS = [
   /__GAME_META__[\s\S]{0,4000}\b(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)\b/i,
   /game-meta[\s\S]{0,4000}"(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)"/i,
@@ -172,6 +261,13 @@ const META_QUALITY_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,5000}\b(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)\b/i,
   /__INTERACTIVE_TEST__[\s\S]{0,5000}\b(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)\b/i,
 ];
+
+const PLATFORMER_META_PATTERNS = [
+  /__(?:GAME|INTERACTIVE)_META__[\s\S]{0,2500}\b(?:subtype|genre|type)\s*:\s*['"`]platformer['"`]/i,
+  /(?:game|interactive)-meta[\s\S]{0,2500}"(?:subtype|genre|type)"\s*:\s*"platformer"/i,
+];
+
+const PLATFORMER_ABILITY_PATTERN = /\b(doubleJump|double-jump|dash|shield|magnet|groundPound|ground-pound|wallJump|wall-jump)\b/i;
 
 const STRONG_INTERACTIVE_PATTERNS = [
   /window\.__INTERACTIVE_TEST__/i,
@@ -294,6 +390,7 @@ function findOpeningBrace(content: string, startIndex: number): number {
 
 function extractFunctionSnippet(content: string, functionName: string): string {
   const patterns = [
+    new RegExp(`\\b${functionName}\\s*[:=]\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>\\s*\\{`, 'i'),
     new RegExp(`\\b${functionName}\\s*[:=]\\s*(?:async\\s*)?(?:function\\s*)?\\([^)]*\\)\\s*\\{`, 'i'),
     new RegExp(`\\b${functionName}\\s*\\([^)]*\\)\\s*\\{`, 'i'),
   ];
@@ -403,6 +500,11 @@ function extractInteractiveContractSnippet(content: string): ContractSnippet | n
     || findBalancedObjectAssignmentSnippet(content, /window\.__GAME_TEST__\s*=\s*\{/i);
 }
 
+function extractGameMetadataSnippet(content: string): ContractSnippet | null {
+  return findBalancedObjectAssignmentSnippet(content, /window\.__GAME_META__\s*=\s*\{/i)
+    || findBalancedObjectAssignmentSnippet(content, /window\.__INTERACTIVE_META__\s*=\s*\{/i);
+}
+
 function hasOrphanedContractTail(content: string, contractSnippet: ContractSnippet | null): boolean {
   if (!contractSnippet) return false;
   const trailingBeforeScriptFooter = content
@@ -416,6 +518,128 @@ function hasLargeProximityShortcut(snippet: string): boolean {
     .map((match) => Number(match[1]))
     .filter((value) => Number.isFinite(value));
   return thresholds.some((value) => value >= 160);
+}
+
+function findLargeFixedCanvas(content: string): { width?: number; height?: number } | null {
+  for (const match of content.matchAll(/<canvas\b[^>]*>/gi)) {
+    const tag = match[0];
+    const width = Number(/\bwidth\s*=\s*["']?(\d+)/i.exec(tag)?.[1]);
+    const height = Number(/\bheight\s*=\s*["']?(\d+)/i.exec(tag)?.[1]);
+    if ((Number.isFinite(width) && width >= 700) || (Number.isFinite(height) && height >= 450)) {
+      return {
+        width: Number.isFinite(width) ? width : undefined,
+        height: Number.isFinite(height) ? height : undefined,
+      };
+    }
+  }
+  return null;
+}
+
+function hasResponsiveCanvasSizing(content: string): boolean {
+  const canvasResponsivePattern =
+    /(?:canvas|#game|#gameCanvas|\.game-canvas|\.canvas-wrap|\.game-wrap|\.viewport)[\s\S]{0,700}(?:max-width\s*:\s*[^;}]*(?:100%|100vw|calc|min|clamp)|max-height\s*:\s*[^;}]*(?:100%|100vh|calc|min|clamp)|width\s*:\s*[^;}]*(?:100%|100vw|calc|min|clamp)|height\s*:\s*auto|aspect-ratio\s*:|vmin|dvh|svh)/i;
+  const inlineResponsivePattern =
+    /<canvas\b[^>]*\bstyle\s*=\s*["'][^"']*(?:max-width\s*:\s*[^;"']*(?:100%|100vw|calc|min|clamp)|width\s*:\s*[^;"']*(?:100%|100vw|calc|min|clamp)|height\s*:\s*auto|aspect-ratio\s*:)[^"']*["']/i;
+  return canvasResponsivePattern.test(content) || inlineResponsivePattern.test(content);
+}
+
+function hasCanvasViewportCroppingRisk(content: string): boolean {
+  return /\boverflow\s*:\s*hidden\b/i.test(content)
+    || /(?:body|html|\.viewport|\.game-wrap|\.canvas-wrap)[\s\S]{0,400}\bheight\s*:\s*(?:100vh|100dvh|100svh)\b/i.test(content)
+    || /(?:body|html|\.viewport|\.game-wrap|\.canvas-wrap)[\s\S]{0,400}\b(?:display\s*:\s*flex|place-items\s*:\s*center|align-items\s*:\s*center|justify-content\s*:\s*center)\b/i.test(content);
+}
+
+function hasDirectRunSmokeStateMutation(snippet: string): boolean {
+  return snippet
+    .split(/[;\n]/)
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+    .filter((statement) => !/^(?:const|let|var)\s+\w+\b/.test(statement))
+    .some((statement) =>
+      /\b(?:currentLevel|currentStage|currentMission|levelIndex|stageIndex|missionIndex)\s*(?:=|\+=|\+\+|--)/i.test(statement) ||
+      /\b(?:loadLevel|nextLevel|completeLevel|winGame|finishGame)\s*\(/i.test(statement) ||
+      /\b(?:mode|status|state)\s*=\s*['"`](?:won|win|complete|completed|cleared|success|levelComplete|gameWon)['"`]/i.test(statement) ||
+      /\b(?:state|gameState|player|hero|actor|game|world|level|stage|mission|progress)\b[\w$.[\]'"]*\.\s*(?:score|points|coins|progress|cleared|completed|unlocked|won)\s*=\s*(?:true|\d+|['"`][^'"`]+['"`])/i.test(statement)
+    );
+}
+
+function isPlatformerArtifact(content: string, filePath: string): boolean {
+  const metadataSnippet = extractGameMetadataSnippet(content)?.text || content;
+  if (PLATFORMER_META_PATTERNS.some((pattern) => pattern.test(metadataSnippet))) {
+    return true;
+  }
+  if (/\bplatformer\b/i.test(path.basename(filePath)) && /window\.__(?:GAME|INTERACTIVE)_META__/i.test(content)) {
+    return true;
+  }
+  return false;
+}
+
+function hasGameplayMechanicsArray(snippet: string, field: string): boolean {
+  return new RegExp(`["']?${field}["']?\\s*:\\s*\\[`, 'i').test(snippet);
+}
+
+function countComboAxes(snippet: string): number {
+  return [
+    /\b(?:stomp|stompable|enemy|enemies)\b/i,
+    /\b(?:block|blocks|bump|question)\b/i,
+    PLATFORMER_ABILITY_PATTERN,
+    /\b(?:gate|route|unlock)\b/i,
+  ].filter((pattern) => pattern.test(snippet)).length;
+}
+
+function validatePlatformerGameplayMechanics(content: string, filePath: string): { failures: string[]; checks: string[] } {
+  if (!isPlatformerArtifact(content, filePath)) {
+    return { failures: [], checks: [] };
+  }
+
+  const failures: string[] = [];
+  const checks: string[] = ['platformer gameplay mechanics contract applies'];
+  const metadataSnippet = extractGameMetadataSnippet(content)?.text || content;
+  const gameplayIndex = metadataSnippet.search(/\bgameplayMechanics\b/i);
+  const gameplaySnippet = gameplayIndex >= 0
+    ? metadataSnippet.slice(gameplayIndex, Math.min(metadataSnippet.length, gameplayIndex + 7000))
+    : '';
+
+  if (!gameplaySnippet) {
+    failures.push('platformer 缺少 gameplayMechanics 元数据；请在 __GAME_META__ 中声明并实现 enemies、blocks、abilities、gates、comboChallenge。');
+    return { failures, checks };
+  }
+
+  checks.push('platformer gameplayMechanics metadata detected');
+
+  for (const field of ['enemies', 'blocks', 'abilities', 'gates', 'comboChallenge']) {
+    if (!hasGameplayMechanicsArray(gameplaySnippet, field)) {
+      failures.push(`platformer gameplayMechanics 缺少 ${field} 数组；平台游戏必须声明并实现 enemies、blocks、abilities、gates、comboChallenge，单个机制也要写成数组，不能写成对象 map。`);
+    }
+  }
+
+  if (!/\benemies\b[\s\S]{0,1800}(?:\bstompable\s*:\s*true|["']stompable["']\s*:\s*true|\bstomp\b|stompableEnemy)/i.test(gameplaySnippet)) {
+    failures.push('platformer gameplayMechanics.enemies 缺少 stompable enemy；请添加可踩踏敌人，并让踩踏改变 enemy defeated 状态与玩家 bounce/vy。');
+  }
+
+  if (!/\bblocks\b[\s\S]{0,1800}(?:\bbumpableFromBelow\s*:\s*true|["']bumpableFromBelow["']\s*:\s*true|\bbumpable\b|\bquestion\b|questionBlock)/i.test(gameplaySnippet)) {
+    failures.push('platformer gameplayMechanics.blocks 缺少 bumpable/question block；请添加可从下方顶起的砖块，并产生 used/broken/reward 状态。');
+  }
+
+  if (!/\babilities\b[\s\S]{0,2200}/i.test(gameplaySnippet) || !PLATFORMER_ABILITY_PATTERN.test(gameplaySnippet)) {
+    failures.push('platformer gameplayMechanics.abilities 缺少改变规则的技能；至少添加 doubleJump、dash、shield、magnet、groundPound 或 wallJump 之一。');
+  }
+
+  if (!/\babilities\b[\s\S]{0,2200}\b(?:effect|unlocksRoute|acquiredFrom)\b/i.test(gameplaySnippet)) {
+    failures.push('platformer gameplayMechanics.abilities 缺少 acquiredFrom/effect/unlocksRoute；技能必须说明来源、效果以及它改变哪条路线或交互规则。');
+  }
+
+  if (!/\bgates\b[\s\S]{0,1800}\brequiresAbility\b[\s\S]{0,900}\bblocksAccessTo\b/i.test(gameplaySnippet)) {
+    failures.push('platformer gameplayMechanics.gates 缺少 requiresAbility 和 blocksAccessTo；至少有一段区域必须通过技能或奖励才能到达或通过。');
+  }
+
+  const comboMatch = /\bcomboChallenge\b[\s\S]{0,2200}/i.exec(gameplaySnippet);
+  const comboSnippet = comboMatch?.[0] || '';
+  if (!/\bjump\b/i.test(comboSnippet) || countComboAxes(comboSnippet) < 2) {
+    failures.push('platformer gameplayMechanics.comboChallenge 必须组合 jump，并至少再组合 stomp/enemy、block bump、ability 或 gate route 中的两类。');
+  }
+
+  return { failures, checks };
 }
 
 function validateTestContractIntegrity(content: string, contractSnippet?: ContractSnippet | null): { failures: string[]; checks: string[] } {
@@ -457,6 +681,10 @@ function validateTestContractIntegrity(content: string, contractSnippet?: Contra
       failures.push('runSmokeTest 直接授予能力、道具或库存状态后再验证机制；这不能证明玩家能在真实流程里获得该能力。请用输入和碰撞先获得能力，再验证能力生效。');
     }
 
+    if (hasDirectRunSmokeStateMutation(smokeSnippet)) {
+      failures.push('runSmokeTest 直接修改进度、分数、关卡、胜利或解锁状态后再声明通过；这不能证明玩家能用真实输入完成该链路。请通过 start/reset/step/snapshot 驱动真实玩法，并用 before/after snapshot 证明变化。');
+    }
+
     const coverageFromExistence =
       /\b(?:find|some|filter)\s*\([\s\S]{0,500}\b(?:ability|power|reward|collectible|item|upgrade)\b[\s\S]{0,900}\b(?:rewards|mechanics|stateChanges|coverage)\s*\.\s*(?:add|push)\s*\(/i.test(smokeSnippet) ||
       /\b(?:exists|present|defined|registered)\b[\s\S]{0,220}\b(?:mechanics?|risks?|rewards?|coverage|ability|upgrade|item)\b/i.test(smokeSnippet) ||
@@ -471,11 +699,55 @@ function validateTestContractIntegrity(content: string, contractSnippet?: Contra
 
 async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<RuntimeSmokeSummary> {
   let browser: import('playwright').Browser | null = null;
+  let chromeProcess: ChildProcess | null = null;
+  let profileDir: string | null = null;
 
   try {
     const { chromium } = await import('playwright');
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+    const resolution = resolveBrowserProvider();
+    let page: import('playwright').Page | null = null;
+
+    if (resolution.provider === 'system-chrome-cdp' && !resolution.missingExecutable && resolution.systemExecutable) {
+      try {
+        const port = await findAvailablePort();
+        profileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-runtime-'));
+        chromeProcess = spawn(
+          resolution.systemExecutable,
+          [
+            ...buildSystemChromeCdpArgs({
+              cdpPort: port,
+              profileDir,
+              headless: true,
+              viewport: { width: 900, height: 700 },
+            }),
+            'about:blank',
+          ],
+          { stdio: ['ignore', 'ignore', 'ignore'] },
+        );
+        await waitForCdpEndpoint(port, chromeProcess, Math.min(timeoutMs, 8000));
+        browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        const context = browser.contexts()[0] || await browser.newContext({
+          viewport: { width: 900, height: 700 },
+        });
+        page = context.pages()[0] || await context.newPage();
+        await page.setViewportSize({ width: 900, height: 700 });
+      } catch {
+        await browser?.close().catch(() => undefined);
+        browser = null;
+        await stopChromeProcess(chromeProcess).catch(() => undefined);
+        chromeProcess = null;
+        if (profileDir) {
+          await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+          profileDir = null;
+        }
+      }
+    }
+
+    if (!page) {
+      browser = await chromium.launch({ headless: true });
+      page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+    }
+
     await page.goto(pathToFileURL(filePath).href, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
     const smokeTimeoutMs = Math.min(timeoutMs, 5000);
@@ -522,6 +794,30 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         );
         const controls = collectStrings(meta.controls);
         const keyControls = [...new Set(collectControlKeys(meta.controls).filter((control) => /^[A-Za-z0-9_+-]+$/.test(control)))];
+        const controlAliases = {};
+        const addControlAlias = (inputKey, alias) => {
+          if (typeof inputKey !== 'string' || typeof alias !== 'string') return;
+          const key = inputKey.trim();
+          const normalizedAlias = alias.trim();
+          if (!key || !normalizedAlias) return;
+          if (!controlAliases[key]) controlAliases[key] = [];
+          if (!controlAliases[key].includes(normalizedAlias)) controlAliases[key].push(normalizedAlias);
+        };
+        const registerControlAliases = (value) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+          for (const [alias, mappedValue] of Object.entries(value)) {
+            addControlAlias(alias, alias);
+            for (const key of collectControlKeys(mappedValue)) {
+              addControlAlias(key, alias);
+            }
+          }
+        };
+        registerControlAliases(meta.controls);
+        addControlAlias('ArrowLeft', 'left');
+        addControlAlias('ArrowRight', 'right');
+        addControlAlias('ArrowUp', 'jump');
+        addControlAlias('Space', 'jump');
+        addControlAlias(' ', 'jump');
         const reachabilityPlan = (
           Array.isArray(meta.reachability) ? meta.reachability
             : Array.isArray(meta.acceptance) ? meta.acceptance
@@ -562,11 +858,196 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         while (authoredUnitTargets.length < declaredAuthoredCount) {
           authoredUnitTargets.push(authoredUnitTargets.length);
         }
-        const listFrom = (value) => {
+        const listFrom = (value, keyPath = '') => {
           if (!value) return [];
-          if (Array.isArray(value)) return value.filter(Boolean).map(String);
-          if (typeof value === 'object') return Object.values(value).flatMap(listFrom);
+          if (Array.isArray(value)) return value.filter(Boolean).flatMap((item) => listFrom(item, keyPath));
+          if (typeof value === 'object') {
+            return Object.entries(value).flatMap(([key, childValue]) => {
+              const childPath = keyPath ? keyPath + '.' + key : key;
+              if (childValue === true) return [childPath];
+              if (childValue === false || childValue === null || typeof childValue === 'undefined') return [];
+              return listFrom(childValue, childPath);
+            });
+          }
+          if (typeof value === 'boolean') return value ? (keyPath ? [keyPath] : ['true']) : [];
           return [String(value)];
+        };
+        const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+        const textFrom = (value) => {
+          try {
+            return JSON.stringify(value || {}).toLowerCase();
+          } catch {
+            return String(value || '').toLowerCase();
+          }
+        };
+        const anyTextMatches = (value, patterns) => patterns.some((pattern) => pattern.test(textFrom(value)));
+        const isNegativeEvidence = (value) => (
+          /(?:^|[\s:,[({=;-])(?:false|fail|failed|failure|missing|not|none|no)(?:$|[\s:,\])}.!;=-])|缺少|失败|未通过|没有|不能|无法/i
+            .test(String(value || '').toLowerCase())
+        );
+        const collectEvidenceStrings = (smoke, coverage) => {
+          if (!smoke || smoke.passed !== true) return '';
+          return [
+            ...listFrom(coverage && coverage.mechanics),
+            ...listFrom(coverage && coverage.rewards),
+            ...listFrom(coverage && coverage.risks),
+            ...listFrom(coverage && coverage.stateChanges),
+            ...listFrom(coverage && coverage.gameplayMechanics),
+            ...listFrom(coverage && coverage.mechanicsEvidence),
+            ...listFrom(smoke && smoke.checks),
+            ...listFrom(smoke && smoke.observations),
+          ].filter((item) => !isNegativeEvidence(item)).join(' | ').toLowerCase();
+        };
+        const findNumericValue = (value, keyPatterns) => {
+          let found;
+          const visit = (current, key = '') => {
+            if (typeof found === 'number') return;
+            if (typeof current === 'number' && keyPatterns.some((pattern) => pattern.test(key))) {
+              found = current;
+              return;
+            }
+            if (!current || typeof current !== 'object') return;
+            for (const [childKey, childValue] of Object.entries(current)) {
+              visit(childValue, childKey);
+            }
+          };
+          visit(value);
+          return typeof found === 'number' ? found : 0;
+        };
+        const countMatchingObjects = (value, predicate) => {
+          let count = 0;
+          const visit = (current, key = '') => {
+            if (!current || typeof current !== 'object') return;
+            if (predicate(current, key)) count += 1;
+            for (const [childKey, childValue] of Object.entries(current)) {
+              visit(childValue, childKey);
+            }
+          };
+          visit(value);
+          return count;
+        };
+        const countDefeatedEnemies = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
+          const objectText = textFrom(object);
+          const keyText = String(key).toLowerCase();
+          const enemyish = /enemy|enemies|stomp/.test(keyText + ' ' + objectText);
+          if (!enemyish) return false;
+          return object.defeated === true
+            || object.stomped === true
+            || object.alive === false
+            || /defeated|stomped|squashed/.test(String(object.state || object.status || '').toLowerCase());
+        });
+        const countUsedBlocks = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
+          const objectText = textFrom(object);
+          const keyText = String(key).toLowerCase();
+          const blockish = /block|brick|question/.test(keyText + ' ' + objectText);
+          if (!blockish) return false;
+          return object.used === true
+            || object.broken === true
+            || object.bumped === true
+            || /used|broken|bumped|empty/.test(String(object.state || object.status || '').toLowerCase());
+        });
+        const countOpenGates = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
+          const objectText = textFrom(object);
+          const keyText = String(key).toLowerCase();
+          const gateish = /gate|door|route/.test(keyText + ' ' + objectText);
+          if (!gateish) return false;
+          return object.open === true
+            || object.unlocked === true
+            || object.reachable === true
+            || /open|unlocked|reachable|passed/.test(String(object.state || object.status || '').toLowerCase());
+        });
+        const snapshotAbilities = (snapshot) => {
+          const playerAbilities = readMetric(snapshot, 'player.abilities');
+          const directAbilities = readMetric(snapshot, 'abilities');
+          return typeof playerAbilities !== 'undefined' ? playerAbilities : directAbilities;
+        };
+        const validatePlatformerGameplayRuntimeEvidence = (gameplayMechanics, beforeSnapshot, afterSnapshot, smoke, coverage) => {
+          if (!isPlainObject(gameplayMechanics)) return;
+          const evidence = collectEvidenceStrings(smoke, coverage);
+          const hasEvidence = (patterns) => patterns.some((pattern) => pattern.test(evidence));
+          const enemyDelta =
+            findNumericValue(afterSnapshot, [/enemiesdefeated/i, /defeatedenemies/i, /stompedenemies/i, /^stomps?$/i])
+            > findNumericValue(beforeSnapshot, [/enemiesdefeated/i, /defeatedenemies/i, /stompedenemies/i, /^stomps?$/i])
+            || countDefeatedEnemies(afterSnapshot) > countDefeatedEnemies(beforeSnapshot)
+            || hasEvidence([/stomp/, /enemy[_ -]?defeat/, /defeated[_ -]?enemy/]);
+          const bounceEvidence =
+            JSON.stringify(readMetric(beforeSnapshot, 'player.vy')) !== JSON.stringify(readMetric(afterSnapshot, 'player.vy'))
+            || hasEvidence([/bounce/, /stomp[_ -]?bounce/, /\bvy\b/, /vertical[_ -]?velocity/]);
+          if (enemyDelta && bounceEvidence) {
+            checks.push('platformer gameplay runtime covered stompable enemy with defeated/bounce evidence');
+          } else {
+            failures.push('platformer gameplayMechanics 缺少 runtime 证据：stompable enemy 必须通过 step/runSmokeTest 让 enemy defeated 或 enemiesDefeated 增加，并证明 player bounce/vy 变化。');
+          }
+
+          const blockDelta =
+            findNumericValue(afterSnapshot, [/blocksbumped/i, /blocksused/i, /blockhits/i, /spawnedrewards/i])
+            > findNumericValue(beforeSnapshot, [/blocksbumped/i, /blocksused/i, /blockhits/i, /spawnedrewards/i])
+            || countUsedBlocks(afterSnapshot) > countUsedBlocks(beforeSnapshot)
+            || hasEvidence([/bump[_ -]?block/, /question[_ -]?block/, /block[_ -]?(used|broken|bumped)/, /spawned[_ -]?reward/]);
+          if (blockDelta) {
+            checks.push('platformer gameplay runtime covered bumpable block evidence');
+          } else {
+            failures.push('platformer gameplayMechanics 缺少 runtime 证据：bumpable/question block 必须通过 step/runSmokeTest 变成 used/broken/bumped，或产生 spawnedReward。');
+          }
+
+          const beforeAbilities = snapshotAbilities(beforeSnapshot);
+          const afterAbilities = snapshotAbilities(afterSnapshot);
+          const abilityEvidence = hasEvidence([
+            /gain[_ -]?ability/,
+            /ability[_ -]?gain/,
+            /abilities?\.?double[_ -]?jump/,
+            /double[_ -]?jump/,
+            /dash/,
+            /shield/,
+            /magnet/,
+            /ground[_ -]?pound/,
+            /wall[_ -]?jump/,
+          ]);
+          const abilityChanged =
+            JSON.stringify(beforeAbilities) !== JSON.stringify(afterAbilities)
+            || abilityEvidence;
+          if (abilityChanged && abilityEvidence) {
+            checks.push('platformer gameplay runtime covered ability acquisition evidence');
+          } else {
+            failures.push('platformer gameplayMechanics 缺少 runtime 证据：ability 必须通过真实输入获得，并让 snapshot().abilities 或 snapshot().player.abilities 发生变化。');
+          }
+
+          const gateEvidence = hasEvidence([
+            /unlock[_ -]?gate/,
+            /gate[_ -]?unlock/,
+            /gates?\./,
+            /route[_ -]?reachable/,
+            /reachable[_ -]?route/,
+            /reachable[_ -]?target/,
+            /routes?unlocked/,
+            /routeReachableAfterAbility/i,
+          ]);
+          const gateDelta =
+            findNumericValue(afterSnapshot, [/gatesunlocked/i, /routesunlocked/i, /reachabletargets/i])
+            > findNumericValue(beforeSnapshot, [/gatesunlocked/i, /routesunlocked/i, /reachabletargets/i])
+            || countOpenGates(afterSnapshot) > countOpenGates(beforeSnapshot)
+            || gateEvidence;
+          if (abilityChanged && abilityEvidence && gateDelta && gateEvidence) {
+            checks.push('platformer gameplay runtime covered ability-gated route evidence');
+          } else {
+            failures.push('platformer gameplayMechanics 缺少 runtime 证据：gate 必须在获得技能后改变 unlocked/open/reachable route 或 reachableTarget 状态。');
+          }
+
+          const comboRequires = textFrom(gameplayMechanics.comboChallenge);
+          const comboText = evidence;
+          const comboHasJump = /jump/.test(comboText);
+          const comboAxisCount = [
+            /stomp|enemy/,
+            /block|bump|question/,
+            /ability|abilities|double[_ -]?jump|doublejump|dash|shield|magnet|ground[_ -]?pound|groundpound|wall[_ -]?jump|walljump/,
+            /gate|route|unlock|reachable/,
+          ].filter((pattern) => pattern.test(comboText)).length;
+          const comboCovered = /combo|challenge|sequence/.test(comboText) && comboHasJump && comboAxisCount >= 2 && /requires|target/.test(comboRequires);
+          if (comboCovered) {
+            checks.push('platformer gameplay runtime covered comboChallenge evidence');
+          } else {
+            failures.push('platformer gameplayMechanics 缺少 runtime 证据：comboChallenge coverage 必须证明 jump 加 stomp/block/ability/gate 中至少两类的组合挑战。');
+          }
         };
         const executableKeySet = new Set(keyControls);
         const collectActionStrings = (value) => {
@@ -616,7 +1097,10 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         };
         const driveKeys = async (keys, frames) => {
           const inputState = {};
-          for (const key of keys) inputState[key] = true;
+          for (const key of keys) {
+            inputState[key] = true;
+            for (const alias of controlAliases[key] || []) inputState[alias] = true;
+          }
 
           if (hasStep) {
             for (let frame = 0; frame < frames; frame++) {
@@ -644,7 +1128,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         };
         const readMetric = (snapshot, key) => {
           if (!snapshot || typeof snapshot !== 'object') return undefined;
-          return key.split('.').reduce((current, part) => {
+          return String(key).replace(/\\[(\\d+)\\]/g, '.$1').split('.').reduce((current, part) => {
             if (!current || typeof current !== 'object') return undefined;
             return current[part];
           }, snapshot);
@@ -739,7 +1223,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
 
             await resetToUnit(unitIndex, unitTarget);
             if (reachabilityPlan.length === 0) {
-              failures.push('元数据没有暴露 reachability/acceptance/progressPlan，无法验证目标或场景是否可推进。');
+              failures.push('元数据没有暴露 reachability/acceptance/progressPlan/validation 数组，无法验证目标或场景是否可推进；__GAME_META__.progress 或 coverage 对象不算可执行验收计划。');
               return false;
             }
 
@@ -800,13 +1284,21 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             authoredUnitsExercised = declaredAuthoredCount <= 1 ? defaultPathPassed : false;
           }
 
+          const beforeSmokeSnapshot = await Promise.resolve(contract.snapshot());
           const smokeResult = await Promise.race([
             Promise.resolve(contract.runSmokeTest({ timeoutMs: innerTimeoutMs })),
             timeout,
           ]);
+          const afterSmokeSnapshot = await Promise.resolve(contract.snapshot());
           const smoke = smokeResult && typeof smokeResult === 'object'
             ? smokeResult
             : { passed: false, failures: ['runSmokeTest 没有返回结构化结果。'] };
+          if (smoke.passed === true && !Array.isArray(smoke.checks)) {
+            failures.push('runSmokeTest.checks 必须是字符串数组，不能返回数字、布尔值或对象计数。');
+          }
+          if (smoke.passed === true && !Array.isArray(smoke.failures)) {
+            failures.push('runSmokeTest.failures 必须是字符串数组；通过时请返回空数组。');
+          }
           if (Array.isArray(smoke.checks)) checks.push(...smoke.checks.map(String));
           if (Array.isArray(smoke.observations)) checks.push(...smoke.observations.map(String));
           if (Array.isArray(smoke.failures)) failures.push(...smoke.failures.map(String));
@@ -816,6 +1308,19 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
           if (!coverage) {
             failures.push('runSmokeTest 缺少 coverage，无法证明玩法、奖励/风险或关卡覆盖。');
           } else {
+            const coverageValueNamesEvidence = (fieldName, value) => {
+              if (typeof value === 'undefined' || value === null) return;
+              if (Array.isArray(value) || isPlainObject(value)) return;
+              failures.push(
+                'runSmokeTest coverage.' + fieldName +
+                ' 必须列出已验证的机制名称或布尔证据对象，不能只返回数字、布尔值或 total 计数。'
+              );
+            };
+            coverageValueNamesEvidence('mechanics', coverage.mechanics);
+            coverageValueNamesEvidence('rewards', coverage.rewards);
+            coverageValueNamesEvidence('risks', coverage.risks);
+            coverageValueNamesEvidence('stateChanges', coverage.stateChanges);
+
             const mechanicsPromised = listFrom(qualityPlan.mechanics || meta.requiredMechanics || meta.mechanics);
             const rewardsPromised = listFrom(qualityPlan.rewards || meta.rewards || meta.powerUps || meta.collectibles);
             const risksPromised = listFrom(qualityPlan.risks || meta.risks || meta.hazards || meta.enemies);
@@ -863,6 +1368,17 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
 
             if (stateChangesCovered.length > 0) {
               checks.push('coverage included state changes: ' + stateChangesCovered.join(', '));
+            }
+
+            const subtype = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
+            if (subtype.includes('platformer') && meta.gameplayMechanics && typeof meta.gameplayMechanics === 'object') {
+              validatePlatformerGameplayRuntimeEvidence(
+                meta.gameplayMechanics,
+                beforeSmokeSnapshot,
+                afterSmokeSnapshot,
+                smoke,
+                coverage
+              );
             }
           }
           const metricCoveredBySmoke = (metric) => {
@@ -920,6 +1436,346 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
     };
   } finally {
     await browser?.close().catch(() => undefined);
+    await stopChromeProcess(chromeProcess).catch(() => undefined);
+    if (profileDir) {
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+}
+
+async function waitForCdpEndpoint(port: number, chromeProcess: ChildProcess, timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+  const endpoint = `http://127.0.0.1:${port}/json/version`;
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (chromeProcess.exitCode !== null || chromeProcess.signalCode !== null) {
+      throw new Error(`System Chrome exited before CDP became ready (code=${chromeProcess.exitCode ?? 'null'}, signal=${chromeProcess.signalCode ?? 'null'})`);
+    }
+
+    try {
+      const response = await fetch(endpoint);
+      if (response.ok) return;
+    } catch (error) {
+      lastError = error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError || 'unknown error');
+  throw new Error(`Timed out waiting for Chrome CDP endpoint on port ${port}: ${message}`);
+}
+
+async function stopChromeProcess(chromeProcess: ChildProcess | null): Promise<void> {
+  if (!chromeProcess || chromeProcess.killed || chromeProcess.exitCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      if (chromeProcess.exitCode === null && !chromeProcess.killed) {
+        chromeProcess.kill('SIGKILL');
+      }
+      resolve();
+    }, 2000);
+
+    chromeProcess.once('close', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+
+    chromeProcess.kill('SIGTERM');
+  });
+}
+
+async function runBrowserVisualSmoke(
+  filePath: string,
+  timeoutMs: number,
+): Promise<BrowserVisualSmokeSummary> {
+  const resolution = resolveBrowserProvider();
+  if (resolution.provider === 'system-chrome-cdp' && (resolution.missingExecutable || !resolution.systemExecutable)) {
+    return {
+      attempted: false,
+      skipped: true,
+      passed: true,
+      failures: [],
+      checks: [
+        `browser visual smoke skipped: ${resolution.recommendedAction || 'System Chrome executable is missing.'}`,
+      ],
+    };
+  }
+
+  const checks: string[] = [];
+  const failures: string[] = [];
+  const viewportDiagnostics: NonNullable<BrowserVisualSmokeDiagnostics['viewports']> = [];
+  let latestTitle = '';
+  let latestBodyTextLength = 0;
+  let latestVisibleElements = 0;
+  let metaPresent = false;
+  let testPresent = false;
+  let totalCanvasCount = 0;
+  let totalNonblankCanvasCount = 0;
+  let browser: import('playwright').Browser | null = null;
+  let chromeProcess: ChildProcess | null = null;
+  let profileDir: string | null = null;
+  let stderr = '';
+
+  try {
+    const { chromium } = await import('playwright');
+    const startedAt = Date.now();
+    const remaining = () => Math.max(1200, timeoutMs - (Date.now() - startedAt));
+    let page: import('playwright').Page;
+
+    if (resolution.provider === 'system-chrome-cdp') {
+      const port = await findAvailablePort();
+      const visualProfileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-visual-'));
+      profileDir = visualProfileDir;
+      const executable = resolution.systemExecutable;
+      if (!executable) {
+        throw new Error(resolution.recommendedAction || 'System Chrome executable is missing.');
+      }
+      const chromeArgs = [
+        ...buildSystemChromeCdpArgs({
+          cdpPort: port,
+          profileDir: visualProfileDir,
+          headless: true,
+          viewport: { width: 1280, height: 720 },
+        }),
+        pathToFileURL(filePath).href,
+      ];
+
+      const spawnedChrome = spawn(executable, chromeArgs, {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      chromeProcess = spawnedChrome;
+      spawnedChrome.stderr?.on('data', (chunk) => {
+        stderr += String(chunk);
+        if (stderr.length > 12000) stderr = stderr.slice(-12000);
+      });
+
+      await waitForCdpEndpoint(port, spawnedChrome, Math.min(remaining(), 8000));
+      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      const context = browser.contexts()[0] || await browser.newContext({
+        viewport: { width: 1280, height: 720 },
+      });
+      page = context.pages()[0] || await context.newPage();
+    } else {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 720 },
+      });
+      page = await context.newPage();
+    }
+
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on('pageerror', (error) => {
+      pageErrors.push(error.message);
+    });
+
+    for (const viewport of BROWSER_VISUAL_SMOKE_VIEWPORTS) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto(pathToFileURL(filePath).href, {
+        waitUntil: 'domcontentloaded',
+        timeout: remaining(),
+      });
+      await page.waitForTimeout(350);
+
+      const probe = await page.evaluate((viewportName) => {
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        const documentElement = document.documentElement;
+        const body = document.body;
+        const canvases = [...document.querySelectorAll('canvas')].map((canvas) => {
+          const rect = canvas.getBoundingClientRect();
+          const visibleWidth = Math.max(0, Math.min(rect.right, viewport.width) - Math.max(rect.left, 0));
+          const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.height) - Math.max(rect.top, 0));
+          const visibleArea = visibleWidth * visibleHeight;
+          const area = Math.max(0, rect.width * rect.height);
+          let coloredPixels = 0;
+          let sampledPixels = 0;
+          let sampleError: string | null = null;
+
+          try {
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            if (context && canvas.width > 0 && canvas.height > 0) {
+              const columns = Math.min(10, Math.max(1, Math.floor(canvas.width / 40)));
+              const rows = Math.min(10, Math.max(1, Math.floor(canvas.height / 40)));
+              for (let row = 0; row < rows; row += 1) {
+                for (let column = 0; column < columns; column += 1) {
+                  const x = Math.min(canvas.width - 1, Math.floor((column + 0.5) * canvas.width / columns));
+                  const y = Math.min(canvas.height - 1, Math.floor((row + 0.5) * canvas.height / rows));
+                  const pixel = context.getImageData(x, y, 1, 1).data;
+                  sampledPixels += 1;
+                  if (pixel[3] > 8 && pixel[0] + pixel[1] + pixel[2] > 28) {
+                    coloredPixels += 1;
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            sampleError = error instanceof Error ? error.message : String(error);
+          }
+
+          return {
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            visibleRatio: area > 0 ? visibleArea / area : 0,
+            internalWidth: canvas.width,
+            internalHeight: canvas.height,
+            sampledPixels,
+            coloredPixels,
+            sampleError,
+          };
+        });
+        const visibleElements = [...document.body.querySelectorAll('*')]
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width > 4
+              && rect.height > 4
+              && style.visibility !== 'hidden'
+              && style.display !== 'none'
+              && rect.bottom >= 0
+              && rect.right >= 0
+              && rect.top <= viewport.height
+              && rect.left <= viewport.width;
+          })
+          .length;
+        const metadataWindow = window as Window & {
+          __GAME_META__?: unknown;
+          __INTERACTIVE_META__?: unknown;
+          __GAME_TEST__?: unknown;
+          __INTERACTIVE_TEST__?: unknown;
+        };
+
+        return {
+          viewportName,
+          viewport,
+          title: document.title,
+          bodyTextLength: body?.innerText?.trim().length || 0,
+          metaPresent: Boolean(metadataWindow.__GAME_META__ || metadataWindow.__INTERACTIVE_META__),
+          testPresent: Boolean(metadataWindow.__GAME_TEST__ || metadataWindow.__INTERACTIVE_TEST__),
+          documentWidth: documentElement.scrollWidth,
+          documentHeight: documentElement.scrollHeight,
+          horizontalOverflow: documentElement.scrollWidth > viewport.width + 4,
+          canvases,
+          visibleElements,
+        };
+      }, viewport.name);
+
+      const canvasCount = probe.canvases.length;
+      const visibleCanvasCount = probe.canvases.filter((canvas) =>
+        canvas.width >= 16
+        && canvas.height >= 16
+        && canvas.visibleRatio >= 0.82,
+      ).length;
+      const sampledCanvases = probe.canvases.filter((canvas) => canvas.sampledPixels > 0);
+      const coloredCanvases = sampledCanvases.filter((canvas) => canvas.coloredPixels > 0);
+      const horizontallyClippedCanvas = probe.canvases.some((canvas) =>
+        canvas.left < -4 || canvas.right > probe.viewport.width + 4,
+      );
+
+      latestTitle = probe.title || latestTitle;
+      latestBodyTextLength = probe.bodyTextLength;
+      latestVisibleElements = probe.visibleElements;
+      metaPresent = metaPresent || probe.metaPresent;
+      testPresent = testPresent || probe.testPresent;
+      totalCanvasCount = Math.max(totalCanvasCount, canvasCount);
+      totalNonblankCanvasCount = Math.max(totalNonblankCanvasCount, coloredCanvases.length);
+      viewportDiagnostics.push({
+        name: viewport.name,
+        width: probe.viewport.width,
+        height: probe.viewport.height,
+        canvasCount,
+        nonblankCanvasCount: coloredCanvases.length,
+        visibleElements: probe.visibleElements,
+        horizontalOverflow: probe.horizontalOverflow,
+      });
+
+      if (canvasCount > 0 && visibleCanvasCount === 0) {
+        failures.push(`${viewport.name} visual smoke found canvas elements but none are visibly framed in the viewport.`);
+      } else if (canvasCount > 0) {
+        checks.push(`${viewport.name} visual smoke framed ${visibleCanvasCount}/${canvasCount} canvas element(s)`);
+      }
+
+      if (sampledCanvases.length > 0 && coloredCanvases.length === 0) {
+        failures.push(`${viewport.name} visual smoke sampled canvas pixels but found no nonblank rendered content.`);
+      } else if (coloredCanvases.length > 0) {
+        checks.push(`${viewport.name} visual smoke found nonblank canvas pixels`);
+      }
+
+      if (canvasCount === 0 && probe.bodyTextLength === 0 && probe.visibleElements < 2) {
+        failures.push(`${viewport.name} visual smoke found no canvas and too little visible DOM content.`);
+      } else if (canvasCount === 0) {
+        checks.push(`${viewport.name} visual smoke found visible DOM content`);
+      }
+
+      if (probe.horizontalOverflow && horizontallyClippedCanvas) {
+        failures.push(`${viewport.name} visual smoke detected horizontal canvas overflow; the game is likely cropped in this viewport.`);
+      } else {
+        checks.push(`${viewport.name} visual smoke detected no horizontal canvas cropping`);
+      }
+    }
+
+    if (pageErrors.length > 0) {
+      failures.push(`browser visual smoke saw runtime page errors: ${pageErrors.slice(0, 3).join(' | ')}`);
+    }
+    if (consoleErrors.length > 0) {
+      failures.push(`browser visual smoke saw console errors: ${consoleErrors.slice(0, 3).join(' | ')}`);
+    }
+
+    if (failures.length === 0) {
+      checks.unshift(
+        resolution.provider === 'playwright-bundled'
+          ? 'browser visual smoke passed via Playwright bundled Chromium'
+          : 'browser visual smoke passed via system Chrome CDP',
+      );
+    }
+
+    return {
+      attempted: true,
+      passed: failures.length === 0,
+      failures,
+      checks,
+      diagnostics: {
+        title: latestTitle,
+        metaPresent,
+        testPresent,
+        canvasCount: totalCanvasCount,
+        nonblankCanvasCount: totalNonblankCanvasCount,
+        visibleElements: latestVisibleElements,
+        bodyTextLength: latestBodyTextLength,
+        consoleErrors: consoleErrors.slice(0, 5),
+        pageErrors: pageErrors.slice(0, 5),
+        viewports: viewportDiagnostics,
+      },
+    };
+  } catch (error) {
+    return {
+      attempted: true,
+      passed: false,
+      failures: [
+        `无法运行 browser visual smoke: ${error instanceof Error ? error.message : String(error)}${stderr ? `\n${stderr.slice(-1200)}` : ''}`,
+      ],
+      checks,
+    };
+  } finally {
+    await browser?.close().catch(() => undefined);
+    await stopChromeProcess(chromeProcess).catch(() => undefined);
+    if (profileDir) {
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }
 
@@ -989,6 +1845,16 @@ export async function validateGameArtifact(
     failures.push('HTML 在 </html> 之后还有非空内容；浏览器会忽略这部分脚本或数据，说明分块追加位置错误。');
   }
 
+  const largeFixedCanvas = findLargeFixedCanvas(content);
+  if (largeFixedCanvas && hasCanvasViewportCroppingRisk(content) && !hasResponsiveCanvasSizing(content)) {
+    const dimensions = [largeFixedCanvas.width, largeFixedCanvas.height]
+      .filter((value) => typeof value === 'number')
+      .join('x');
+    failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 加 max-width/max-height/aspect-ratio/height:auto 等缩放约束。`);
+  } else if (largeFixedCanvas && hasResponsiveCanvasSizing(content)) {
+    checks.push('responsive canvas sizing detected');
+  }
+
   const hasStepProbe = INTERACTIVE_TEST_STEP_PATTERNS.some((pattern) => pattern.test(content));
   const hasResetProbe = INTERACTIVE_TEST_RESET_PATTERNS.some((pattern) => pattern.test(content));
 
@@ -1011,7 +1877,11 @@ export async function validateGameArtifact(
   }
 
   if (!META_REACHABILITY_PATTERNS.some((pattern) => pattern.test(content))) {
-    failures.push('缺少 reachability/acceptance/progressPlan 元数据；工程层无法验证目标、场景或关卡能被推进。');
+    if (META_REACHABILITY_NEAR_MISS_PATTERNS.some((pattern) => pattern.test(content))) {
+      failures.push('发现 progress/coverage 说明，但缺少 reachability/acceptance/progressPlan/validation 元数据；__GAME_META__.progress 或 coverage 对象不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。');
+    } else {
+      failures.push('缺少 reachability/acceptance/progressPlan/validation 元数据；工程层无法验证目标、场景或关卡能被推进。');
+    }
   } else {
     checks.push('reachability/progress metadata detected');
   }
@@ -1021,6 +1891,10 @@ export async function validateGameArtifact(
   } else {
     checks.push('quality/acceptance metadata detected');
   }
+
+  const platformerGameplayMechanics = validatePlatformerGameplayMechanics(content, filePath);
+  checks.push(...platformerGameplayMechanics.checks);
+  failures.push(...platformerGameplayMechanics.failures);
 
   if (!INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content))) {
     failures.push('缺少通用交互测试合约 window.__INTERACTIVE_TEST__ 或 window.__GAME_TEST__，工程层无法真实启动、输入并读取状态变化。');
@@ -1070,12 +1944,36 @@ export async function validateGameArtifact(
   }
 
   let runtimeSmoke: RuntimeSmokeSummary | undefined;
-  if (options.runRuntimeSmoke && failures.length === 0 && hasSmokeProbe) {
+  if (options.runRuntimeSmoke && isComplete && hasSmokeProbe) {
     runtimeSmoke = await runRuntimeSmoke(filePath, options.runtimeSmokeTimeoutMs ?? DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS);
     if (runtimeSmoke.passed) {
       checks.push(...runtimeSmoke.checks);
     } else {
       failures.push(...runtimeSmoke.failures);
+    }
+  }
+
+  let browserVisualSmoke: BrowserVisualSmokeSummary | undefined;
+  if (options.runBrowserVisualSmoke) {
+    if (!isComplete) {
+      browserVisualSmoke = {
+        attempted: false,
+        skipped: true,
+        passed: true,
+        failures: [],
+        checks: ['browser visual smoke skipped: HTML is incomplete; finish the document before frontend validation.'],
+      };
+      checks.push(...browserVisualSmoke.checks);
+    } else {
+      browserVisualSmoke = await runBrowserVisualSmoke(
+        filePath,
+        options.browserVisualSmokeTimeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
+      );
+      if (browserVisualSmoke.passed) {
+        checks.push(...browserVisualSmoke.checks);
+      } else {
+        failures.push(...browserVisualSmoke.failures);
+      }
     }
   }
 
@@ -1088,5 +1986,6 @@ export async function validateGameArtifact(
     failures,
     checks,
     runtimeSmoke,
+    browserVisualSmoke,
   });
 }

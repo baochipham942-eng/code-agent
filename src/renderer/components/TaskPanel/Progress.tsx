@@ -45,8 +45,8 @@ export const Progress: React.FC = () => {
   const visibleTodos = showAll ? todos : todos.slice(0, INITIAL_VISIBLE);
   const hiddenCount = todos.length - INITIAL_VISIBLE;
 
-  // 是否有实时进度要显示（只有当没有 todos 且有 taskProgress 时才显示）
-  const showRealtimeProgress = totalCount === 0 && taskProgress && taskProgress.phase !== 'completed';
+  // 有 todos 时也显示实时进度，避免长 artifact 生成状态被任务列表盖住。
+  const showRealtimeProgress = taskProgress && taskProgress.phase !== 'completed';
 
   // 是否有工具执行耗时要显示
   const showToolElapsed = toolProgress && toolProgress.elapsedMs >= 5000;
@@ -128,7 +128,7 @@ export const Progress: React.FC = () => {
         </div>
       )}
 
-      {/* Realtime progress - when no todos */}
+      {/* Realtime progress */}
       {isExpanded && showRealtimeProgress && (
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3 py-1.5">

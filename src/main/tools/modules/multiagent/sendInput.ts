@@ -22,6 +22,7 @@ import type {
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { getParallelAgentCoordinator } from '../../../agent/parallelAgentCoordinator';
 import { sendInputSchema as schema } from './sendInput.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 export async function executeSendInput(
   args: Record<string, unknown>,
@@ -56,10 +57,17 @@ export async function executeSendInput(
     const sentToParallelAgent = getParallelAgentCoordinator().sendMessage(agentId, message);
     if (sentToParallelAgent) {
       onProgress?.({ stage: 'completing', percent: 100 });
-      return {
+      return withMultiagentMeta({
         ok: true,
         output: `Message queued for parallel agent [${agentId}]. It will be delivered at the start of the next iteration.`,
-      };
+      }, ctx, schema.name, {
+        action: 'send',
+        agentId,
+        status: 'queued',
+        targets: [agentId],
+        counts: { bytes: message.length },
+        result: { queued: true, route: 'parallel' },
+      }, `Send input: ${agentId}`);
     }
     return { ok: false, error: `Agent not found: ${agentId}`, code: 'NOT_FOUND' };
   }
@@ -76,10 +84,17 @@ export async function executeSendInput(
   onProgress?.({ stage: 'completing', percent: 100 });
   if (sent) {
     ctx.logger.debug('send_input done', { agentId, role: agent.role });
-    return {
+    return withMultiagentMeta({
       ok: true,
       output: `Message queued for agent [${agentId}] (${agent.role}). It will be delivered at the start of the next iteration.`,
-    };
+    }, ctx, schema.name, {
+      action: 'send',
+      agentId,
+      status: 'queued',
+      targets: [agentId],
+      counts: { bytes: message.length },
+      result: { queued: true, route: 'spawnGuard', role: agent.role },
+    }, `Send input: ${agentId}`);
   }
   return {
     ok: false,

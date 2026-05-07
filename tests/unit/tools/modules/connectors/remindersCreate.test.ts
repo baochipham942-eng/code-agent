@@ -135,6 +135,16 @@ describe('remindersCreateModule (native)', () => {
           subtitle: 'Work',
           status: 'ready',
         });
+        expect(result.meta).toMatchObject({
+          action: 'create_reminder',
+          connector: 'reminders',
+          list: 'Work',
+          title: 'Ship PR',
+          completed: false,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('create_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('create_reminder', validArgs);
     });

@@ -123,6 +123,17 @@ describe('remindersUpdateModule (native)', () => {
         expect(result.output).toContain('已更新提醒：');
         expect(result.output).toContain('#r1 [Work] Ship PR');
         expect(result.output).not.toContain('(completed)');
+        expect(result.meta).toMatchObject({
+          action: 'update_reminder',
+          connector: 'reminders',
+          id: 'r1',
+          list: 'Work',
+          title: 'Ship PR',
+          completed: false,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('update_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ list: 'Work', reminder_id: 'r1' }));
     });

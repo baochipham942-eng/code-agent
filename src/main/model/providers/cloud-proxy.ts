@@ -273,16 +273,18 @@ async function callViaCloudProxyStreaming(
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             const index = tc.index ?? 0;
+            const toolCallId = tc.id ?? undefined;
+            const toolCallName = tc.function?.name ?? undefined;
 
             if (!toolCallsInProgress.has(index)) {
               toolCallsInProgress.set(index, {
-                id: tc.id || `tool-${index}`,
-                name: tc.function?.name || '',
+                id: toolCallId || `tool-${index}`,
+                name: toolCallName || '',
                 arguments: '',
               });
               onStream({
                 type: 'tool_call_start',
-                toolCall: { index, id: tc.id, name: tc.function?.name },
+                toolCall: { index, id: toolCallId, name: toolCallName },
               });
             }
 

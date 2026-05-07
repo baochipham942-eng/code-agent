@@ -22,6 +22,7 @@ import { readSchema } from './file/read.schema';
 import { writeSchema } from './file/write.schema';
 import { appendSchema } from './file/append.schema';
 import { globSchema } from './file/glob.schema';
+import { blobSchema } from './file/blob.schema';
 
 // shell/
 import { killShellSchema } from './shell/killShell.schema';
@@ -611,6 +612,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     globSchema,
     async () => (await import('./file/glob')).globModule,
+  );
+  registry.register(
+    blobSchema,
+    async () => (await import('./file/blob')).blobModule,
   );
 
   // shell (2): Bash / Grep

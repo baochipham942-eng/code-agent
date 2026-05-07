@@ -10,8 +10,6 @@
 //
 // ============================================================================
 
-/// <reference path="../types/electron.d.ts" />
-
 import { hasNativeBridge, getApiBaseUrl } from './transport';
 import { createHttpCodeAgentAPI, createHttpDomainAPI } from './httpTransport';
 

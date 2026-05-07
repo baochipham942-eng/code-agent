@@ -125,6 +125,18 @@ describe('globModule (native)', () => {
         expect(result.output).toContain('b.ts');
         expect(result.output).toContain('c.ts');
         expect(result.output).not.toContain('d.md');
+        expect(result.meta).toMatchObject({
+          pattern: '**/*.ts',
+          searchPath: tmpDir,
+          totalMatches: 3,
+          returned: 3,
+          truncated: false,
+          matches: expect.arrayContaining(['a.ts', 'b.ts', 'sub/c.ts']),
+          artifact: expect.objectContaining({
+            kind: 'search',
+            sourceTool: 'Glob',
+          }),
+        });
       }
     });
 
@@ -151,7 +163,18 @@ describe('globModule (native)', () => {
         allowAll,
       );
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toBe('No files matched the pattern');
+      if (result.ok) {
+        expect(result.output).toBe('No files matched the pattern');
+        expect(result.meta).toMatchObject({
+          totalMatches: 0,
+          returned: 0,
+          matches: [],
+          artifact: expect.objectContaining({
+            kind: 'search',
+            sourceTool: 'Glob',
+          }),
+        });
+      }
     });
 
     it('defaults path to ctx.workingDir', async () => {

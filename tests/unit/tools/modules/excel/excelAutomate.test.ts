@@ -250,9 +250,54 @@ describe('excelAutomateModule (native)', () => {
         dry_run: true,
       });
       expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.meta).toMatchObject({
+          changeCount: 1,
+          action: 'edit',
+          operation: 'excel_edit',
+          path: '/tmp/a.xlsx',
+          outputPath: '/tmp/a.xlsx',
+          operationCount: 1,
+          dryRun: true,
+          changedFiles: [],
+        });
+        expect(r.meta?.artifact).toBeUndefined();
+      }
       expect(executeExcelEditMock).toHaveBeenCalledTimes(1);
       const [params] = executeExcelEditMock.mock.calls[0];
       expect(params).toMatchObject({ file_path: 'a.xlsx', dry_run: true });
+    });
+
+    it('adds spreadsheet artifact metadata when edit writes a workbook', async () => {
+      executeExcelEditMock.mockResolvedValue({
+        success: true,
+        output: 'edit done',
+        metadata: { changeCount: 1 },
+      });
+      const r = await run({
+        action: 'edit',
+        file_path: 'a.xlsx',
+        operations: [{ action: 'set_cell', cell: 'A1', value: 1 }],
+      });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.meta).toMatchObject({
+          action: 'edit',
+          operation: 'excel_edit',
+          path: '/tmp/a.xlsx',
+          outputPath: '/tmp/a.xlsx',
+          changedFiles: ['/tmp/a.xlsx'],
+          artifact: {
+            kind: 'spreadsheet',
+            sourceTool: 'ExcelAutomate',
+            path: '/tmp/a.xlsx',
+            metadata: {
+              action: 'edit',
+              operation: 'excel_edit',
+            },
+          },
+        });
+      }
     });
   });
 

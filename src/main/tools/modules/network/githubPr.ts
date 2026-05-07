@@ -16,6 +16,7 @@ import type {
 } from '../../../protocol/tools';
 import { getPRLinkService } from '../../../services/github/prLinkService';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { githubPrSchema as schema } from './githubPr.schema';
 
 const execAsync = promisify(exec);
@@ -276,7 +277,27 @@ async function handleList(
   const prs = JSON.parse(stdout);
 
   if (prs.length === 0) {
-    return { ok: true, output: '没有找到匹配的 PR' };
+    const output = '没有找到匹配的 PR';
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'list',
+        state,
+        count: 0,
+        prs: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'search',
+          sessionId: ctx.sessionId,
+          name: 'github-pr-list',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: { action: 'list', state, count: 0 },
+        }),
+      },
+    };
   }
 
   let output = `找到 ${prs.length} 个 PR:\n\n`;
@@ -294,8 +315,24 @@ async function handleList(
     output,
     meta: {
       count: prs.length,
+      action: 'list',
+      state,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prs: prs.map((p: any) => ({ number: p.number, title: p.title })),
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'search',
+        sessionId: ctx.sessionId,
+        name: 'github-pr-list',
+        mimeType: 'text/markdown',
+        contentLength: output.length,
+        preview: output.slice(0, 500),
+        metadata: {
+          action: 'list',
+          state,
+          count: prs.length,
+        },
+      }),
     },
   };
 }

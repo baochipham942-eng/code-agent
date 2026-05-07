@@ -29,6 +29,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpUnifiedSchema as schema } from './mcpUnified.schema';
 import { executeMcpInvoke } from './mcpInvoke';
 import { executeMcpAddServer } from './mcpAddServer';
@@ -81,20 +82,61 @@ function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.message === 'aborted';
 }
 
+function withUnifiedActionMeta(
+  result: ToolResult<string>,
+  action: MCPAction,
+): ToolResult<string> {
+  const errorCode = result.ok ? undefined : result.code;
+  return {
+    ...result,
+    meta: {
+      ...(result.meta ?? {}),
+      action,
+      ...(errorCode ? { errorCode } : {}),
+    },
+  } as ToolResult<string>;
+}
+
 // ----------------------------------------------------------------------------
 // Action: list_tools (1:1 from legacy mcpListToolsTool)
 // ----------------------------------------------------------------------------
 
-function actionListTools(args: Record<string, unknown>): ToolResult<string> {
+function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   const filterServer = typeof args.server === 'string' ? args.server : undefined;
 
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
 
   if (status.connectedServers.length === 0) {
+    const output = '当前没有已连接的 MCP 服务器。';
     return {
       ok: true,
-      output: '当前没有已连接的 MCP 服务器。',
+      output,
+      meta: {
+        server: filterServer,
+        action: 'list_tools',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        connectedServers: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: 'MCP tools',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: {
+            mcpToolList: true,
+            server: filterServer,
+            action: 'list_tools',
+            resultKind: 'text',
+            count: 0,
+            truncated: false,
+          },
+        }),
+      },
     };
   }
 
@@ -148,14 +190,47 @@ function actionListTools(args: Record<string, unknown>): ToolResult<string> {
     }
   }
 
-  return { ok: true, output: lines.join('\n') };
+  const output = lines.join('\n');
+  const returnedCount = Object.values(toolsByServer).reduce((sum, serverTools) => sum + serverTools.length, 0);
+
+  return {
+    ok: true,
+    output,
+    meta: {
+      server: filterServer,
+      action: 'list_tools',
+      resultKind: 'text',
+      count: returnedCount,
+      totalCount: status.toolCount,
+      truncated: false,
+      connectedServers: status.connectedServers,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'text',
+        sessionId: ctx.sessionId,
+        name: filterServer ? `MCP tools: ${filterServer}` : 'MCP tools',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 500),
+        metadata: {
+          mcpToolList: true,
+          server: filterServer,
+          action: 'list_tools',
+          resultKind: 'text',
+          count: returnedCount,
+          totalCount: status.toolCount,
+          truncated: false,
+        },
+      }),
+    },
+  };
 }
 
 // ----------------------------------------------------------------------------
 // Action: list_resources (1:1 from legacy mcpListResourcesTool)
 // ----------------------------------------------------------------------------
 
-function actionListResources(args: Record<string, unknown>): ToolResult<string> {
+function actionListResources(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
   const filterServer = typeof args.server === 'string' ? args.server : undefined;
   const mcpClient = getMCPClient();
   const resources = mcpClient.getResources();
@@ -165,11 +240,36 @@ function actionListResources(args: Record<string, unknown>): ToolResult<string> 
     : resources;
 
   if (filtered.length === 0) {
+    const output = filterServer
+      ? `服务器 '${filterServer}' 没有提供资源。`
+      : '当前没有可用的 MCP 资源。';
     return {
       ok: true,
-      output: filterServer
-        ? `服务器 '${filterServer}' 没有提供资源。`
-        : '当前没有可用的 MCP 资源。',
+      output,
+      meta: {
+        server: filterServer,
+        action: 'list_resources',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: filterServer ? `MCP resources: ${filterServer}` : 'MCP resources',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: {
+            mcpResource: true,
+            server: filterServer,
+            action: 'list_resources',
+            resultKind: 'text',
+            count: 0,
+            truncated: false,
+          },
+        }),
+      },
     };
   }
 
@@ -200,7 +300,40 @@ function actionListResources(args: Record<string, unknown>): ToolResult<string> 
     lines.push('');
   }
 
-  return { ok: true, output: lines.join('\n') };
+  const output = lines.join('\n');
+
+  return {
+    ok: true,
+    output,
+    meta: {
+      server: filterServer,
+      action: 'list_resources',
+      resultKind: 'text',
+      count: filtered.length,
+      totalCount: resources.length,
+      truncated: false,
+      resourceUris: filtered.map((resource) => resource.uri),
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'text',
+        sessionId: ctx.sessionId,
+        name: filterServer ? `MCP resources: ${filterServer}` : 'MCP resources',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 500),
+        metadata: {
+          mcpResource: true,
+          server: filterServer,
+          action: 'list_resources',
+          resultKind: 'text',
+          count: filtered.length,
+          totalCount: resources.length,
+          truncated: false,
+          resourceUris: filtered.map((resource) => resource.uri),
+        },
+      }),
+    },
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -216,7 +349,21 @@ async function actionReadResource(
 
   if (typeof server !== 'string' || server.length === 0 ||
       typeof uri !== 'string' || uri.length === 0) {
-    return { ok: false, error: '缺少必需参数: server 和 uri', code: 'INVALID_ARGS' };
+    return {
+      ok: false,
+      error: '缺少必需参数: server 和 uri',
+      code: 'INVALID_ARGS',
+      meta: {
+        server: typeof server === 'string' ? server : undefined,
+        resourceUri: typeof uri === 'string' ? uri : undefined,
+        uri: typeof uri === 'string' ? uri : undefined,
+        action: 'read_resource',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        errorCode: 'INVALID_ARGS',
+      },
+    };
   }
 
   const mcpClient = getMCPClient();
@@ -226,6 +373,16 @@ async function actionReadResource(
       ok: false,
       error: `MCP 服务器 '${server}' 未连接`,
       code: 'NOT_INITIALIZED',
+      meta: {
+        server,
+        resourceUri: uri,
+        uri,
+        action: 'read_resource',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        errorCode: 'NOT_INITIALIZED',
+      },
     };
   }
 
@@ -234,17 +391,69 @@ async function actionReadResource(
     return {
       ok: true,
       output: content,
-      meta: { server, uri },
+      meta: {
+        server,
+        uri,
+        resourceUri: uri,
+        action: 'read_resource',
+        resultKind: 'text',
+        count: content.length > 0 ? 1 : 0,
+        truncated: false,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `MCP resource: ${uri}`,
+          url: uri,
+          mimeType: 'text/plain',
+          contentLength: content.length,
+          preview: content.slice(0, 500),
+          metadata: {
+            mcpResource: true,
+            server,
+            uri,
+            resourceUri: uri,
+            action: 'read_resource',
+            resultKind: 'text',
+            count: content.length > 0 ? 1 : 0,
+            truncated: false,
+          },
+        }),
+      },
     };
   } catch (error: unknown) {
     if (isAbortError(error) || ctx.abortSignal.aborted) {
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
+      return {
+        ok: false,
+        error: 'aborted',
+        code: 'ABORTED',
+        meta: {
+          server,
+          uri,
+          resourceUri: uri,
+          action: 'read_resource',
+          resultKind: 'text',
+          count: 0,
+          truncated: false,
+          errorCode: 'ABORTED',
+        },
+      };
     }
     const errorMessage = error instanceof Error ? error.message : '未知错误';
     return {
       ok: false,
       error: `读取资源失败: ${errorMessage}`,
       code: 'DOMAIN_ERROR',
+      meta: {
+        server,
+        uri,
+        resourceUri: uri,
+        action: 'read_resource',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        errorCode: 'DOMAIN_ERROR',
+      },
     };
   }
 }
@@ -253,7 +462,7 @@ async function actionReadResource(
 // Action: status (1:1 from legacy mcpGetStatusTool)
 // ----------------------------------------------------------------------------
 
-function actionStatus(): ToolResult<string> {
+function actionStatus(ctx: ToolContext): ToolResult<string> {
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
 
@@ -269,7 +478,33 @@ function actionStatus(): ToolResult<string> {
   return {
     ok: true,
     output,
-    meta: { ...status },
+    meta: {
+      ...status,
+      action: 'status',
+      resultKind: 'text',
+      count: status.connectedServers.length,
+      truncated: false,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'text',
+        sessionId: ctx.sessionId,
+        name: 'MCP status',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output,
+        metadata: {
+          mcpStatus: true,
+          action: 'status',
+          resultKind: 'text',
+          count: status.connectedServers.length,
+          truncated: false,
+          connectedServers: status.connectedServers,
+          toolCount: status.toolCount,
+          resourceCount: status.resourceCount,
+          promptCount: status.promptCount,
+        },
+      }),
+    },
   };
 }
 
@@ -311,22 +546,22 @@ export async function executeMcpUnified(
 
   switch (action as MCPAction) {
     case 'invoke':
-      result = await executeMcpInvoke(args, ctx, noopCanUse);
+      result = withUnifiedActionMeta(await executeMcpInvoke(args, ctx, noopCanUse), action as MCPAction);
       break;
     case 'add_server':
-      result = await executeMcpAddServer(args, ctx, noopCanUse);
+      result = withUnifiedActionMeta(await executeMcpAddServer(args, ctx, noopCanUse), action as MCPAction);
       break;
     case 'list_tools':
-      result = actionListTools(args);
+      result = actionListTools(args, ctx);
       break;
     case 'list_resources':
-      result = actionListResources(args);
+      result = actionListResources(args, ctx);
       break;
     case 'read_resource':
       result = await actionReadResource(args, ctx);
       break;
     case 'status':
-      result = actionStatus();
+      result = actionStatus(ctx);
       break;
   }
 

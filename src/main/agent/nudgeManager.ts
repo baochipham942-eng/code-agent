@@ -81,6 +81,7 @@ export class NudgeManager {
   private _requirementVerificationDone: boolean = false;
   private _enhancedValidationDone: boolean = false;
   private _lastStructureInfo: string | null = null;
+  private _enforceTaskCompletion: boolean = false;
 
   // ── Shared detector ──
   private antiPatternDetector: AntiPatternDetector;
@@ -123,6 +124,7 @@ export class NudgeManager {
     this._enhancedValidationDone = false;
     this._lastStructureInfo = null;
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
+    this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(userMessage);
 
     // P5-3: snapshot initial data files
     try {
@@ -219,8 +221,11 @@ export class NudgeManager {
       }
     }
 
-    // P2 Nudge: Check for incomplete todos AND tasks in complex tasks
-    if (!ctx.isSimpleTaskMode && this.todoNudgeCount < this.maxTodoNudges) {
+    // P2 Nudge: Check for incomplete todos AND tasks in complex tasks.
+    // Keep this tied to explicit task-management turns. Otherwise unrelated
+    // stale planning items can hijack a completed answer, as seen in UI smoke
+    // sessions where a subagent called task_list only as part of its own prompt.
+    if (!ctx.isSimpleTaskMode && this._enforceTaskCompletion && this.todoNudgeCount < this.maxTodoNudges) {
       const todos = getCurrentTodos(ctx.sessionId);
       const incompleteTodos = todos.filter(t => t.status !== 'completed');
       const incompleteTasks = getIncompleteTasks(ctx.sessionId);

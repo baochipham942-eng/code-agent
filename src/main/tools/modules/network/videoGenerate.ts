@@ -24,6 +24,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import { DEFAULT_MODELS } from '../../../../shared/constants';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
 
 const TIMEOUT_MS = {
@@ -424,18 +425,60 @@ export async function executeVideoGenerate(
     const output = videoPath
       ? `视频生成成功，已保存到: ${videoPath}`
       : `视频生成成功。\n视频 URL: ${taskResult.videoUrl}\n封面 URL: ${taskResult.coverUrl}`;
+    const artifact = videoPath
+      ? await createFileArtifact(videoPath, schema.name, ctx, {
+          kind: 'video',
+          mimeType: 'video/mp4',
+          metadata: {
+            prompt: params.prompt,
+            expandedPrompt,
+            taskId,
+            coverUrl: taskResult.coverUrl,
+            aspectRatio: params.aspect_ratio || '16:9',
+            duration: params.duration || 5,
+            fps: params.fps || 30,
+            mediaKind: 'video',
+          },
+        })
+      : createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'video',
+          sessionId: ctx.sessionId,
+          name: `Generated video: ${params.prompt.slice(0, 80)}`,
+          url: taskResult.videoUrl,
+          mimeType: 'video/mp4',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            prompt: params.prompt,
+            expandedPrompt,
+            taskId,
+            coverUrl: taskResult.coverUrl,
+            aspectRatio: params.aspect_ratio || '16:9',
+            duration: params.duration || 5,
+            fps: params.fps || 30,
+            mediaKind: 'video',
+          },
+        });
 
     return {
       ok: true,
       output,
       meta: {
+        artifact,
         videoUrl: taskResult.videoUrl,
         coverUrl: taskResult.coverUrl,
         videoPath,
+        outputPath: videoPath,
         prompt: params.prompt,
+        expandedPrompt,
+        taskId,
         aspectRatio: params.aspect_ratio || '16:9',
         duration: params.duration || 5,
         fps: params.fps || 30,
+        mediaKind: 'video',
+        contentLength: output.length,
+        truncated: false,
         generationTimeMs: generationTime,
       },
     };

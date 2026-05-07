@@ -101,7 +101,10 @@ export function getDeferredToolDefinitions(): ToolDefinition[] {
 export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
   const registry = getProtocolRegistry();
   const toolSearchService = getToolSearchService();
-  const loadedNames = new Set(toolSearchService.getLoadedDeferredTools());
+  const core = new Set(CORE_TOOLS);
+  const loadedNames = new Set(
+    toolSearchService.getLoadedDeferredTools().filter((name) => !core.has(name)),
+  );
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
   const protocolDefinitions = registry

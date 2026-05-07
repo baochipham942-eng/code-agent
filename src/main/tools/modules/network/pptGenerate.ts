@@ -51,6 +51,7 @@ import {
   convertToScreenshots,
 } from '../../media/ppt/visualReview';
 import { VLM_REQUEST_TIMEOUT } from '../../media/ppt/constants';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { pptGenerateSchema as schema, LEGACY_PPT_GENERATE_ENV } from './pptGenerate.schema';
 
 interface DesignPptArtifact {
@@ -232,11 +233,25 @@ export async function executePptGenerate(
 
 点击文件路径可直接打开。`,
         meta: {
+          artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+            kind: 'document',
+            mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            metadata: {
+              mode: 'template',
+              templatePath: template_path,
+              slidesCount: result.slidesProcessed,
+              placeholdersReplaced: result.placeholdersReplaced,
+            },
+          }),
           filePath: finalPath,
+          outputPath: finalPath,
           fileName: path.basename(finalPath),
           fileSize: stats.size,
           slidesCount: result.slidesProcessed,
           mode: 'template',
+          resultCount: result.slidesProcessed,
+          contentLength: stats.size,
+          truncated: false,
           attachment: {
             id: `ppt-${timestamp}`,
             type: 'file',
@@ -355,7 +370,7 @@ export async function executePptGenerate(
     // ===== Design Mode =====
     if (mode === 'design' && ctx.modelCallback) {
       const { executeDesignMode } = await import('../../media/ppt/designMode');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+
       const pptxgenPath = require.resolve('pptxgenjs/package.json');
       const designResult = await executeDesignMode({
         topic,
@@ -386,7 +401,20 @@ export async function executePptGenerate(
           ok: true,
           output: `PPT 已生成（Design Mode，${designResult.iterations} 轮迭代${researchInfo}）\n\n文件: ${finalPath}\n主题: ${themeConfig.name} (${theme})\n幻灯片: ${designResult.slidesCount || slides_count} 页\n大小: ${formatFileSize(stats.size)}\n\n点击文件路径可直接打开。`,
           meta: {
+            artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+              kind: 'document',
+              mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              metadata: {
+                mode: 'design',
+                topic,
+                theme,
+                slidesCount: designResult.slidesCount || slides_count,
+                iterations: designResult.iterations,
+                designArtifactPath: designArtifact.artifactPath,
+              },
+            }),
             filePath: finalPath,
+            outputPath: finalPath,
             fileName: path.basename(finalPath),
             fileSize: stats.size,
             slidesCount: designResult.slidesCount || slides_count,
@@ -398,6 +426,9 @@ export async function executePptGenerate(
             designSlideCodePath: designArtifact.artifact.slideCodePath,
             designPromptPath: designArtifact.artifact.promptPath,
             designScreenshots: designArtifact.artifact.screenshots,
+            resultCount: designResult.slidesCount || slides_count,
+            contentLength: stats.size,
+            truncated: false,
             previewItem: {
               id: `design-ppt:${timestamp}`,
               kind: 'design_ppt',
@@ -563,17 +594,50 @@ export async function executePptGenerate(
         return {
           ok: true,
           output: previewText,
-          meta: { slidesCount: totalSlides, mode: 'preview' },
+          meta: {
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'text',
+              sessionId: ctx.sessionId,
+              name: `PPT preview: ${topic}`,
+              mimeType: 'text/markdown',
+              contentLength: previewText.length,
+              preview: previewText.slice(0, 500),
+              metadata: { topic, slidesCount: totalSlides, mode: 'preview' },
+            }),
+            slidesCount: totalSlides,
+            mode: 'preview',
+            resultCount: totalSlides,
+            contentLength: previewText.length,
+            truncated: false,
+          },
         };
       }
       const lines = (structuredSlides || []).map((s, i) => {
         const notes = s.speakerNotes ? ' 📝' : '';
         return `[${i + 1}] ${s.title} (${s.layout})${notes}`;
       });
+      const previewOutput = `预览（${totalSlides} 页）\n\n${lines.join('\n')}`;
       return {
         ok: true,
-        output: `预览（${totalSlides} 页）\n\n${lines.join('\n')}`,
-        meta: { slidesCount: totalSlides, mode: 'preview' },
+        output: previewOutput,
+        meta: {
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `PPT preview: ${topic}`,
+            mimeType: 'text/markdown',
+            contentLength: previewOutput.length,
+            preview: previewOutput.slice(0, 500),
+            metadata: { topic, slidesCount: totalSlides, mode: 'preview' },
+          }),
+          slidesCount: totalSlides,
+          mode: 'preview',
+          resultCount: totalSlides,
+          contentLength: previewOutput.length,
+          truncated: false,
+        },
       };
     }
 
@@ -667,7 +731,21 @@ export async function executePptGenerate(
 
 点击文件路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'document',
+          mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          metadata: {
+            mode: structuredSlides ? 'structured' : 'generate',
+            topic,
+            theme,
+            slidesCount: totalSlides,
+            chartMode: chart_mode,
+            hasResearch: !!researchContext,
+            hasSpeakerNotes: notesCount > 0,
+          },
+        }),
         filePath: finalPath,
+        outputPath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,
         slidesCount: totalSlides,
@@ -675,6 +753,9 @@ export async function executePptGenerate(
         chartMode: chart_mode,
         hasResearch: !!researchContext,
         hasSpeakerNotes: notesCount > 0,
+        resultCount: totalSlides,
+        contentLength: stats.size,
+        truncated: false,
         ...(designFallback ? {
           requestedMode: designFallback.requestedMode,
           fallbackFrom: 'design',

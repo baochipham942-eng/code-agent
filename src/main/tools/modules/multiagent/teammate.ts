@@ -25,6 +25,7 @@ import type {
 import { getTeammateService } from '../../../agent/teammate';
 import type { TeammateMessageType } from '../../../agent/teammate';
 import { teammateSchema as schema } from './teammate.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 type TeammateAction =
   | 'send' | 'coordinate' | 'handoff' | 'query' | 'respond'
@@ -110,13 +111,20 @@ export async function executeTeammate(
           requiresResponse: action === 'query',
         });
 
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Message sent to ${targetAgent.name} (${to})
 Type: ${action}
 Message ID: ${msg.id}
 Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId: currentAgentId,
+          status: 'sent',
+          targets: [to],
+          counts: { bytes: message.length },
+          result: { messageId: msg.id, type: typeMap[action], taskId },
+        }, `Teammate ${action}: ${to}`);
       }
 
       case 'respond': {
@@ -124,12 +132,19 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
         if (!message) return { ok: false, error: "'message' parameter required for respond action", code: 'INVALID_ARGS' };
         if (!responseTo) return { ok: false, error: "'responseTo' parameter required for respond action", code: 'INVALID_ARGS' };
         const msg = service.respond(currentAgentId, to, message, responseTo);
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Response sent to ${to}
 In reply to: ${responseTo}
 Message ID: ${msg.id}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId: currentAgentId,
+          status: 'sent',
+          targets: [to],
+          counts: { bytes: message.length },
+          result: { messageId: msg.id, responseTo },
+        }, `Teammate response: ${to}`);
       }
 
       case 'broadcast': {
@@ -142,18 +157,31 @@ Message ID: ${msg.id}`,
           taskId,
         });
         const agentCount = service.listAgents().length - 1;
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Broadcast sent to ${agentCount} agents
 Message ID: ${msg.id}
 Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId: currentAgentId,
+          status: 'sent',
+          targets: ['all'],
+          counts: { agents: agentCount, bytes: message.length },
+          result: { messageId: msg.id, taskId },
+        }, 'Teammate broadcast');
       }
 
       case 'inbox': {
         const messages = service.getInbox(currentAgentId);
         if (messages.length === 0) {
-          return { ok: true, output: 'No messages in inbox.' };
+          return withMultiagentMeta(
+            { ok: true, output: 'No messages in inbox.' },
+            ctx,
+            schema.name,
+            { action, agentId: currentAgentId, status: 'empty', counts: { messages: 0 }, result: [] },
+            'Teammate inbox',
+          );
         }
         const messageList = messages
           .map((m) => {
@@ -172,13 +200,32 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
    Content: ${m.content.substring(0, 80)}${m.content.length > 80 ? '...' : ''}`;
           })
           .join('\n\n');
-        return { ok: true, output: `Inbox (${messages.length} messages):\n\n${messageList}` };
+        return withMultiagentMeta(
+          { ok: true, output: `Inbox (${messages.length} messages):\n\n${messageList}` },
+          ctx,
+          schema.name,
+          {
+            action,
+            agentId: currentAgentId,
+            status: 'listed',
+            targets: messages.map((m) => m.from),
+            counts: { messages: messages.length },
+            result: messages,
+          },
+          'Teammate inbox',
+        );
       }
 
       case 'agents': {
         const agents = service.listAgents();
         if (agents.length === 0) {
-          return { ok: true, output: 'No agents registered.' };
+          return withMultiagentMeta(
+            { ok: true, output: 'No agents registered.' },
+            ctx,
+            schema.name,
+            { action, agentId: currentAgentId, status: 'empty', counts: { agents: 0 }, result: [] },
+            'Teammate agents',
+          );
         }
         const agentList = agents
           .map((a) => {
@@ -190,14 +237,33 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
    Last active: ${new Date(a.lastActiveAt).toLocaleTimeString()}`;
           })
           .join('\n\n');
-        return { ok: true, output: `Registered Agents (${agents.length}):\n\n${agentList}` };
+        return withMultiagentMeta(
+          { ok: true, output: `Registered Agents (${agents.length}):\n\n${agentList}` },
+          ctx,
+          schema.name,
+          {
+            action,
+            agentId: currentAgentId,
+            status: 'listed',
+            targets: agents.map((a) => a.id),
+            counts: { agents: agents.length },
+            result: agents,
+          },
+          'Teammate agents',
+        );
       }
 
       case 'history': {
         if (!to) {
           const history = service.getHistory(20);
           if (history.length === 0) {
-            return { ok: true, output: 'No message history.' };
+            return withMultiagentMeta(
+              { ok: true, output: 'No message history.' },
+              ctx,
+              schema.name,
+              { action, agentId: currentAgentId, status: 'empty', counts: { messages: 0 }, result: [] },
+              'Teammate history',
+            );
           }
           const historyList = history
             .map((m) => {
@@ -206,11 +272,30 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
               return `[${new Date(m.timestamp).toLocaleTimeString()}] ${fromName} → ${toName}: ${m.content.substring(0, 60)}${m.content.length > 60 ? '...' : ''}`;
             })
             .join('\n');
-          return { ok: true, output: `Recent Messages (${history.length}):\n\n${historyList}` };
+          return withMultiagentMeta(
+            { ok: true, output: `Recent Messages (${history.length}):\n\n${historyList}` },
+            ctx,
+            schema.name,
+            {
+              action,
+              agentId: currentAgentId,
+              status: 'listed',
+              targets: [...new Set(history.flatMap((m) => [m.from, m.to]))],
+              counts: { messages: history.length },
+              result: history,
+            },
+            'Teammate history',
+          );
         }
         const conversation = service.getConversation(currentAgentId, to, 20);
         if (conversation.length === 0) {
-          return { ok: true, output: `No conversation history with ${to}.` };
+          return withMultiagentMeta(
+            { ok: true, output: `No conversation history with ${to}.` },
+            ctx,
+            schema.name,
+            { action, agentId: currentAgentId, status: 'empty', targets: [to], counts: { messages: 0 }, result: [] },
+            `Teammate history: ${to}`,
+          );
         }
         const toAgent = service.getAgent(to);
         const toName = toAgent?.name || to;
@@ -222,10 +307,17 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
             return `[${new Date(m.timestamp).toLocaleTimeString()}] ${name} ${direction} ${m.content.substring(0, 80)}${m.content.length > 80 ? '...' : ''}`;
           })
           .join('\n');
-        return {
+        return withMultiagentMeta({
           ok: true,
           output: `Conversation with ${toName} (${conversation.length} messages):\n\n${conversationList}`,
-        };
+        }, ctx, schema.name, {
+          action,
+          agentId: currentAgentId,
+          status: 'listed',
+          targets: [to],
+          counts: { messages: conversation.length },
+          result: conversation,
+        }, `Teammate history: ${to}`);
       }
     }
   })();

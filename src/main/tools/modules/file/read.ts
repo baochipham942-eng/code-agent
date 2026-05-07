@@ -30,6 +30,7 @@ import type {
 } from '../../../protocol/tools';
 import { fileReadTracker } from '../../fileReadTracker';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
 
 const BINARY_REDIRECTS: Record<string, string> = {
@@ -198,7 +199,12 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         lines: selectedLines.length,
         totalLines: lines.length,
       });
-      return { ok: true, output: result };
+      const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+        kind: 'text',
+        mimeType: 'text/plain',
+        preview: result.slice(0, 500),
+      });
+      return { ok: true, output: result, meta: { artifact } };
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {

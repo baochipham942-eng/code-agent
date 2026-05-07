@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -465,7 +465,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).toContain('Other 53');
   });
 
-  it('keeps todos as the highest priority over task progress and tool activity', () => {
+  it('keeps todos primary while preserving live task progress', () => {
     statusRailTodosState.items = [
       {
         status: 'in_progress',
@@ -496,7 +496,7 @@ describe('TaskMonitor scope inspector slice', () => {
 
     expect(html).toContain('正在生成文档');
     expect(html).toContain('0/1');
-    expect(html).not.toContain('生成回复中');
+    expect(html).toContain('生成回复中');
     expect(html).not.toContain('工具活动');
     expect(html).not.toContain('文件读取活动');
   });

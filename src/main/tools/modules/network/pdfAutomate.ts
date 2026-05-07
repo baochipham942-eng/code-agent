@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { executePythonScript } from '../../utils/pythonBridge';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { executePdfGenerate } from './pdfGenerate';
 import { executePdfCompress } from './pdfCompress';
 import { executeReadPdf } from './readPdf';
@@ -76,6 +77,27 @@ function resolveAbs(p: string, ctx: ToolContext): string {
   return path.isAbsolute(p) ? p : path.join(ctx.workingDir, p);
 }
 
+function withPdfAutomateMeta(
+  result: ToolResult<string>,
+  action: PdfAction,
+): ToolResult<string> {
+  if (!result.ok) return result;
+  const meta = (result.meta ?? {}) as Record<string, unknown>;
+  const existingArtifacts = Array.isArray(meta.artifacts)
+    ? meta.artifacts
+    : meta.artifact
+      ? [meta.artifact]
+      : undefined;
+  return {
+    ...result,
+    meta: {
+      ...meta,
+      pdfAutomateAction: action,
+      ...(existingArtifacts ? { artifacts: existingArtifacts } : {}),
+    },
+  };
+}
+
 export async function executePdfAutomate(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -112,7 +134,7 @@ export async function executePdfAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      return executePdfGenerate(
+      const result = await executePdfGenerate(
         {
           title: params.title,
           content: params.content,
@@ -125,6 +147,7 @@ export async function executePdfAutomate(
         canUseTool,
         onProgress,
       );
+      return withPdfAutomateMeta(result, action);
     }
 
     case 'compress': {
@@ -135,7 +158,7 @@ export async function executePdfAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      return executePdfCompress(
+      const result = await executePdfCompress(
         {
           input_path: params.input_path,
           output_path: params.output_path,
@@ -145,6 +168,7 @@ export async function executePdfAutomate(
         canUseTool,
         onProgress,
       );
+      return withPdfAutomateMeta(result, action);
     }
 
     case 'read': {
@@ -155,12 +179,13 @@ export async function executePdfAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      return executeReadPdf(
+      const result = await executeReadPdf(
         { file_path: params.file_path, prompt: params.prompt },
         ctx,
         canUseTool,
         onProgress,
       );
+      return withPdfAutomateMeta(result, action);
     }
 
     case 'merge': {
@@ -198,7 +223,26 @@ export async function executePdfAutomate(
       return {
         ok: true,
         output: `✅ PDF 合并完成！\n\n📄 输入: ${inputFiles.length} 个文件\n📄 输出: ${resolvedOutput}\n📦 大小: ${((result.file_size as number) / 1024).toFixed(1)} KB`,
-        meta: { ...(result as Record<string, unknown>), outputPath: resolvedOutput },
+        meta: {
+          ...(result as Record<string, unknown>),
+          artifact: await createFileArtifact(resolvedOutput, schema.name, ctx, {
+            kind: 'document',
+            mimeType: 'application/pdf',
+            metadata: {
+              action,
+              inputFiles: resolvedFiles,
+              outputPath: resolvedOutput,
+              fileSize: result.file_size,
+            },
+          }),
+          action,
+          pdfAutomateAction: action,
+          inputFiles: resolvedFiles,
+          outputPath: resolvedOutput,
+          resultCount: 1,
+          contentLength: result.file_size as number | undefined,
+          truncated: false,
+        },
       };
     }
 
@@ -245,12 +289,34 @@ export async function executePdfAutomate(
       const outputInfo = outputs
         .map((o) => `  - ${o.output_path} (${o.pages}, ${o.page_count} 页)`)
         .join('\n');
+      const splitOutput = `✅ PDF 拆分完成！\n\n📄 源文件: ${path.basename(resolvedInput)} (${result.total_pages} 页)\n📑 输出:\n${outputInfo}`;
 
       onProgress?.({ stage: 'completing', percent: 100 });
       return {
         ok: true,
-        output: `✅ PDF 拆分完成！\n\n📄 源文件: ${path.basename(resolvedInput)} (${result.total_pages} 页)\n📑 输出:\n${outputInfo}`,
-        meta: result as Record<string, unknown>,
+        output: splitOutput,
+        meta: {
+          ...(result as Record<string, unknown>),
+          artifacts: await Promise.all(outputs.map((o) =>
+            createFileArtifact(o.output_path, schema.name, ctx, {
+              kind: 'document',
+              mimeType: 'application/pdf',
+              metadata: {
+                action,
+                inputPath: resolvedInput,
+                pages: o.pages,
+                pageCount: o.page_count,
+              },
+            }),
+          )),
+          action,
+          pdfAutomateAction: action,
+          inputPath: resolvedInput,
+          resultCount: outputs.length,
+          outputPaths: outputs.map((o) => o.output_path),
+          contentLength: splitOutput.length,
+          truncated: false,
+        },
       };
     }
 
@@ -298,7 +364,34 @@ export async function executePdfAutomate(
       }
 
       onProgress?.({ stage: 'completing', percent: 100 });
-      return { ok: true, output, meta: result as Record<string, unknown> };
+      return {
+        ok: true,
+        output,
+        meta: {
+          ...(result as Record<string, unknown>),
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'spreadsheet',
+            sessionId: ctx.sessionId,
+            name: `PDF tables: ${path.basename(resolvedInput)}`,
+            mimeType: 'text/markdown',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              action,
+              inputPath: resolvedInput,
+              tableCount: result.total_tables,
+              pages: params.pages,
+            },
+          }),
+          action,
+          pdfAutomateAction: action,
+          inputPath: resolvedInput,
+          resultCount: result.total_tables as number,
+          contentLength: output.length,
+          truncated: false,
+        },
+      };
     }
 
     case 'convert_to_docx': {
@@ -336,7 +429,28 @@ export async function executePdfAutomate(
       return {
         ok: true,
         output: `✅ PDF 已转换为 DOCX！\n\n📄 输入: ${path.basename(resolvedInput)}\n📄 输出: ${result.output_path}\n📦 大小: ${((result.file_size as number) / 1024).toFixed(1)} KB`,
-        meta: { ...(result as Record<string, unknown>), outputPath: result.output_path as string },
+        meta: {
+          ...(result as Record<string, unknown>),
+          artifact: await createFileArtifact(result.output_path as string, schema.name, ctx, {
+            kind: 'document',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            metadata: {
+              action,
+              inputPath: resolvedInput,
+              outputPath: result.output_path,
+              fileSize: result.file_size,
+              startPage: params.start_page,
+              endPage: params.end_page,
+            },
+          }),
+          action,
+          pdfAutomateAction: action,
+          inputPath: resolvedInput,
+          outputPath: result.output_path as string,
+          resultCount: 1,
+          contentLength: result.file_size as number | undefined,
+          truncated: false,
+        },
       };
     }
   }

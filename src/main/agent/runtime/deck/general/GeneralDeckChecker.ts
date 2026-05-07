@@ -27,6 +27,7 @@ import type {
   SlideScope,
 } from '../types';
 import { NARRATIVE_PROBES } from './narrativeProbes';
+import { SCHEMA_PROBE } from './schemaProbe';
 
 // ---------------------------------------------------------------------------
 // Scope resolution — pick which slides a declarative probe should evaluate
@@ -135,20 +136,25 @@ function evaluateProbe(
 
 export class GeneralDeckChecker implements DeckSubtypeChecker {
   readonly subtype = 'general';
-  readonly probes: readonly DeckProbeDeclaration[] = NARRATIVE_PROBES;
+  /**
+   * Probes 顺序：schema (cheap, structural) → narrative (regex / windowing).
+   * 顺序不影响判定（aggregation 只看 passed/failed），但保留顺序对调试输出更直观。
+   */
+  readonly probes: readonly DeckProbeDeclaration[] = [SCHEMA_PROBE, ...NARRATIVE_PROBES];
 
   validate(deck: DeckArtifactInput): DeckCheckResult {
-    // 边界 case：空 deck 早 return（镜像 narrativeValidator.validateNarrative 行为）
-    if (deck.legacy.length === 0) {
-      return {
-        passed: true,
-        probes: this.probes.map((p) => ({ probe: p.id, passed: true })),
-        failures: [],
-        subtype: this.subtype,
-      };
-    }
+    // schema 与 narrative 用各自的 vacuous-pass 短路：
+    // - schema: structured 为空 → SCHEMA_PROBE 内部 vacuously pass
+    // - narrative: legacy 为空 → 镜像 narrativeValidator.validateNarrative 早 return
+    //   不能用统一的"deck 全空就 short-circuit"，否则 structured 有错+legacy 空时 schema 会被误吞
+    const schemaResult = evaluateProbe(SCHEMA_PROBE, deck);
 
-    const probeResults = this.probes.map((p) => evaluateProbe(p, deck));
+    const narrativeResults: DeckProbeResult[] =
+      deck.legacy.length === 0
+        ? NARRATIVE_PROBES.map((p) => ({ probe: p.id, passed: true }))
+        : NARRATIVE_PROBES.map((p) => evaluateProbe(p, deck));
+
+    const probeResults: DeckProbeResult[] = [schemaResult, ...narrativeResults];
     const failures = probeResults
       .filter((r) => !r.passed && r.failure)
       .map((r) => r.failure as string);

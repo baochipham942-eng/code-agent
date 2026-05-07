@@ -10,8 +10,9 @@ import {
   resolveBrowserProvider,
 } from '../../services/infra/browserProvider';
 import { gameSubtypeRegistry } from './game/registry';
-// side-effect import — PlatformerChecker 自注册到 gameSubtypeRegistry
+// side-effect import — 各 subtype checker 自注册到 gameSubtypeRegistry
 import './game/platformer/PlatformerChecker';
+import './game/runner/RunnerChecker';
 
 /**
  * Inline runtime probe 透传给 TS 侧的 subtype dispatch 数据。

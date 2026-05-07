@@ -15,6 +15,10 @@ import {
 } from './_helpers.ts';
 import { StandaloneAgentAdapter } from '../../src/main/testing/agentAdapter.ts';
 import { validateGameArtifact } from '../../src/main/agent/runtime/gameArtifactValidator.ts';
+import {
+  ACCEPTANCE_DEFAULTS,
+  type AcceptanceMonotonicMode,
+} from '../../src/shared/constants/acceptance.ts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '../..');
@@ -33,7 +37,7 @@ const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   zhipu: ['ZHIPU_API_KEY'],
 };
 
-type ValidationSummary = {
+export type ValidationSummary = {
   artifactPath: string;
   passed: boolean;
   failures: string[];
@@ -45,13 +49,58 @@ type ValidationSummary = {
   browserChecks?: string[];
 };
 
-type AcceptanceOutput = {
+export type GenerationOutcome = {
+  responses: string[];
+  toolCount: number;
+  errors: string[];
+};
+
+export type CandidateResult = {
+  candidateId: string;
+  artifactPath: string;
+  generation: GenerationOutcome | null;
+  generationError?: string;
+  validation: ValidationSummary;
+  score: number;
+  passCount: number;
+  failCount: number;
+};
+
+export type RoundResult = {
+  round: number;
+  candidates: CandidateResult[];
+  selected: CandidateResult;
+  passCount: number;
+  failCount: number;
+  fullyPassed: boolean;
+  /** Set when monotonicity gate detects regression vs. previous round */
+  regressionAgainstPrevious?: {
+    previousPassCount: number;
+    previousFailCount: number;
+    regressedChecks: string[];
+  };
+};
+
+export type AcceptanceLoopOutput = {
+  rounds: RoundResult[];
+  finalResult: RoundResult;
+  passedRound?: number;
+  bonN: number;
+  repairCap: number;
+  monotonicMode: AcceptanceMonotonicMode;
+  escalated: boolean;
+  escalationReason?: string;
+};
+
+type AcceptanceCliOutput = {
   mode: 'validate-only' | 'generate-and-validate';
   provider?: string;
   model?: string;
   generation?: string;
-  generationResult: Awaited<ReturnType<typeof runAgentGeneration>> | null;
-  generationError?: string;
+  bonN: number;
+  repairCap: number;
+  monotonicMode: AcceptanceMonotonicMode;
+  loop?: AcceptanceLoopOutput;
   validation: ValidationSummary;
   startedAt: string;
   finishedAt: string;
@@ -71,11 +120,22 @@ Options:
   --model <id>           Model id. Default: PLATFORMER_GAMEPLAY_MODEL or google/gemini-3-flash-preview.
   --generation <id>      Agent generation. Default: gen8.
   --generation-timeout <ms>
-                       Max time to wait for agent generation. Default: 120000.
+                       Max time to wait for one agent generation. Default: 120000.
   --timeout <ms>         Runtime smoke timeout. Default: 10000.
+  --bon-n <number>       Best-of-N candidate count. Default: ${ACCEPTANCE_DEFAULTS.BON_N}.
+                       env: ACCEPTANCE_BON_N. Use --bon-n 1 to restore old single-shot.
+  --repair-cap <number>  Max repair rounds after first BoN attempt. Default: ${ACCEPTANCE_DEFAULTS.REPAIR_CAP}.
+                       env: ACCEPTANCE_REPAIR_CAP. Use --repair-cap 0 to disable repair.
+  --strict-monotonic     Hard fail when a round regresses vs previous (PASS count drops).
+                       Default: warn-and-discard regressed round, retry with prior prompt.
   --report [path]        Write a Markdown evidence report. If no path is provided, use <artifact>.validation.md.
   --json                 Print JSON summary only.
   --help                 Show this help.
+
+Hard rules enforced (see docs/audits/2026-05-07-game-acceptance-architecture.md §7):
+  - Best-of-N defaults to ${ACCEPTANCE_DEFAULTS.BON_N} candidates per round (execution-filter score).
+  - Repair loop hard upper limit ${ACCEPTANCE_DEFAULTS.REPAIR_CAP} rounds, then escalate.
+  - Probe-pass monotonicity gate catches v25 -> v26 type silent regressions.
 
 What it validates:
   - a real agent can generate a single-file platformer artifact at the target path
@@ -133,7 +193,7 @@ async function runAgentGeneration(options: {
   model: string;
   apiKey: string;
   generation: string;
-}): Promise<{ responses: string[]; toolCount: number; errors: string[] }> {
+}): Promise<GenerationOutcome> {
   await fs.mkdir(path.dirname(options.artifactPath), { recursive: true });
   await fs.rm(options.artifactPath, { force: true });
 
@@ -174,12 +234,15 @@ async function withTimeout<T>(
   }
 }
 
-async function validateArtifact(artifactPath: string, timeoutMs: number): Promise<ValidationSummary> {
+export async function validateArtifact(
+  artifactPath: string,
+  timeoutMs: number,
+): Promise<ValidationSummary> {
   const validation = await validateGameArtifact(artifactPath, {
     runRuntimeSmoke: true,
     runtimeSmokeTimeoutMs: timeoutMs,
     runBrowserVisualSmoke: true,
-    browserVisualSmokeTimeoutMs: Math.max(timeoutMs, 10000),
+    browserVisualSmokeTimeoutMs: Math.max(timeoutMs, ACCEPTANCE_DEFAULTS.CANDIDATE_BROWSER_TIMEOUT_MS),
   });
 
   return {
@@ -193,6 +256,316 @@ async function validateArtifact(artifactPath: string, timeoutMs: number): Promis
     browserFailures: validation.browserVisualSmoke?.failures,
     browserChecks: validation.browserVisualSmoke?.checks,
   };
+}
+
+/**
+ * Execution-filter score for a candidate's validation summary.
+ * Higher is better. 设计原则：先看运行时（最贵的信号），再看 browser smoke，
+ * 最后用 (totalChecks - failureCount) 做 tie-breaker。
+ *
+ * 不重新发明分数 — 直接用 validator 已经返回的 runtimePassed / browserPassed +
+ * runtimeChecks / runtimeFailures + browserChecks / browserFailures 推算。
+ */
+export function scoreCandidate(summary: ValidationSummary): {
+  score: number;
+  passCount: number;
+  failCount: number;
+} {
+  const runtimePassed = summary.runtimePassed === true ? 1 : 0;
+  const browserPassed = summary.browserPassed === true ? 1 : 0;
+
+  const runtimeChecks = summary.runtimeChecks?.length ?? 0;
+  const runtimeFailures = summary.runtimeFailures?.length ?? 0;
+  const browserChecks = summary.browserChecks?.length ?? 0;
+  const browserFailures = summary.browserFailures?.length ?? 0;
+  const staticFailures = summary.failures?.length ?? 0;
+
+  const passCount =
+    Math.max(0, runtimeChecks - runtimeFailures) +
+    Math.max(0, browserChecks - browserFailures);
+  const failCount = runtimeFailures + browserFailures + staticFailures;
+  const totalChecks = runtimeChecks + browserChecks;
+
+  const score =
+    runtimePassed * 1000 +
+    browserPassed * 100 +
+    Math.max(0, totalChecks - failCount);
+
+  return { score, passCount, failCount };
+}
+
+/** 把一条 candidate 的检查结果转成可对比的 PASS check 集合 — 用于 monotonicity 退化诊断。 */
+function passingCheckSet(summary: ValidationSummary): Set<string> {
+  const failures = new Set<string>([
+    ...(summary.runtimeFailures ?? []),
+    ...(summary.browserFailures ?? []),
+  ]);
+  const passing = new Set<string>();
+  for (const check of summary.runtimeChecks ?? []) {
+    if (!failures.has(check)) passing.add(`runtime:${check}`);
+  }
+  for (const check of summary.browserChecks ?? []) {
+    if (!failures.has(check)) passing.add(`browser:${check}`);
+  }
+  return passing;
+}
+
+export type GenerateCandidateFn = (params: {
+  candidateIndex: number;
+  artifactPath: string;
+  round: number;
+}) => Promise<{
+  generation: GenerationOutcome | null;
+  generationError?: string;
+  /** Path of the artifact actually written by this candidate */
+  artifactPath: string;
+}>;
+
+/**
+ * Run one round of best-of-N. Generates up to N candidates sequentially.
+ * Short-circuits as soon as a candidate fully passes (runtimePassed && browserPassed && static passed).
+ */
+export async function runBestOfN(params: {
+  bonN: number;
+  round: number;
+  baseArtifactPath: string;
+  runtimeTimeoutMs: number;
+  generate: GenerateCandidateFn;
+  validate?: (artifactPath: string, timeoutMs: number) => Promise<ValidationSummary>;
+}): Promise<RoundResult> {
+  const validate = params.validate ?? validateArtifact;
+  const candidates: CandidateResult[] = [];
+
+  for (let i = 0; i < params.bonN; i += 1) {
+    const candidateId = `r${params.round}c${i}`;
+    let generation: GenerationOutcome | null = null;
+    let generationError: string | undefined;
+    let artifactPath = params.baseArtifactPath;
+
+    try {
+      const result = await params.generate({
+        candidateIndex: i,
+        artifactPath: params.baseArtifactPath,
+        round: params.round,
+      });
+      generation = result.generation;
+      generationError = result.generationError;
+      artifactPath = result.artifactPath;
+    } catch (error) {
+      generationError = error instanceof Error ? error.message : String(error);
+    }
+
+    let validation: ValidationSummary;
+    const exists = await fileExists(artifactPath);
+    if (!exists) {
+      validation = {
+        artifactPath,
+        passed: false,
+        failures: [
+          generationError
+            ? `Artifact was not written; generation failed: ${generationError}`
+            : 'Artifact was not written.',
+        ],
+      };
+    } else {
+      validation = await validate(artifactPath, params.runtimeTimeoutMs);
+    }
+
+    const { score, passCount, failCount } = scoreCandidate(validation);
+    candidates.push({
+      candidateId,
+      artifactPath,
+      generation,
+      generationError,
+      validation,
+      score,
+      passCount,
+      failCount,
+    });
+
+    // Short-circuit on full PASS — no point generating more candidates.
+    if (validation.passed && validation.runtimePassed && validation.browserPassed) {
+      break;
+    }
+  }
+
+  // Pick highest score; tie-broken by candidate order (first wins).
+  const selected = [...candidates].sort((a, b) => b.score - a.score)[0];
+  if (!selected) {
+    throw new Error('runBestOfN produced zero candidates — bonN must be >= 1');
+  }
+  const fullyPassed =
+    selected.validation.passed === true &&
+    selected.validation.runtimePassed === true &&
+    selected.validation.browserPassed === true;
+
+  return {
+    round: params.round,
+    candidates,
+    selected,
+    passCount: selected.passCount,
+    failCount: selected.failCount,
+    fullyPassed,
+  };
+}
+
+/**
+ * Diff two rounds: which checks were passing in `previous` but are no longer passing in `current`?
+ */
+export function diffRegressedChecks(previous: RoundResult, current: RoundResult): string[] {
+  const prev = passingCheckSet(previous.selected.validation);
+  const curr = passingCheckSet(current.selected.validation);
+  const regressed: string[] = [];
+  for (const check of prev) {
+    if (!curr.has(check)) regressed.push(check);
+  }
+  return regressed.sort();
+}
+
+/**
+ * Orchestrate Best-of-N + repair-loop hard cap + monotonicity gate.
+ *
+ * - Round 0 is the initial BoN attempt (always runs).
+ * - If round 0 fully passes → return immediately.
+ * - Otherwise enter repair loop, max `repairCap` rounds.
+ * - Each round runs BoN and is compared against the previous round's selected candidate.
+ * - Monotonicity:
+ *   - 'warn' (default): if regression detected, log and discard this round (do not advance).
+ *     Loop continues; next round still consumes from repairCap budget.
+ *   - 'strict': hard fail with regression listed.
+ */
+export async function runAcceptanceLoop(params: {
+  bonN: number;
+  repairCap: number;
+  monotonicMode: AcceptanceMonotonicMode;
+  baseArtifactPath: string;
+  runtimeTimeoutMs: number;
+  generate: GenerateCandidateFn;
+  validate?: (artifactPath: string, timeoutMs: number) => Promise<ValidationSummary>;
+  /** Optional logger — defaults to console.error so JSON-only stdout stays clean. */
+  log?: (message: string) => void;
+}): Promise<AcceptanceLoopOutput> {
+  const log = params.log ?? ((msg) => console.error(msg));
+  const rounds: RoundResult[] = [];
+
+  // Round 0: initial BoN
+  const round0 = await runBestOfN({
+    bonN: params.bonN,
+    round: 0,
+    baseArtifactPath: params.baseArtifactPath,
+    runtimeTimeoutMs: params.runtimeTimeoutMs,
+    generate: params.generate,
+    validate: params.validate,
+  });
+  rounds.push(round0);
+  log(formatRoundLine(round0, params.bonN));
+
+  if (round0.fullyPassed) {
+    return {
+      rounds,
+      finalResult: round0,
+      passedRound: 0,
+      bonN: params.bonN,
+      repairCap: params.repairCap,
+      monotonicMode: params.monotonicMode,
+      escalated: false,
+    };
+  }
+
+  // Repair rounds
+  let baselineRound = round0;
+  for (let attempt = 1; attempt <= params.repairCap; attempt += 1) {
+    const round = await runBestOfN({
+      bonN: params.bonN,
+      round: attempt,
+      baseArtifactPath: params.baseArtifactPath,
+      runtimeTimeoutMs: params.runtimeTimeoutMs,
+      generate: params.generate,
+      validate: params.validate,
+    });
+
+    const regressed = diffRegressedChecks(baselineRound, round);
+    if (regressed.length > 0) {
+      round.regressionAgainstPrevious = {
+        previousPassCount: baselineRound.passCount,
+        previousFailCount: baselineRound.failCount,
+        regressedChecks: regressed,
+      };
+    }
+
+    rounds.push(round);
+
+    if (regressed.length > 0 && params.monotonicMode === 'strict') {
+      const reason = formatRegressionMessage(baselineRound, round, regressed);
+      log(`[acceptance] STRICT monotonic regression detected at round ${attempt}:\n${reason}`);
+      log(formatRoundLine(round, params.bonN));
+      return {
+        rounds,
+        finalResult: round,
+        bonN: params.bonN,
+        repairCap: params.repairCap,
+        monotonicMode: params.monotonicMode,
+        escalated: true,
+        escalationReason: `monotonic regression at round ${attempt}: ${regressed.join(', ')}`,
+      };
+    }
+
+    if (regressed.length > 0) {
+      // warn-mode: log but do NOT advance baseline; next iteration is compared against the same baseline.
+      log(formatRoundLine(round, params.bonN, ' [REGRESSED — discarded, retaining baseline]'));
+      log(`[acceptance] WARN monotonic regression at round ${attempt}: ${regressed.join(', ')}`);
+      // Do NOT update baselineRound, so subsequent rounds are still compared against the last good state.
+    } else {
+      log(formatRoundLine(round, params.bonN));
+      baselineRound = round;
+    }
+
+    if (round.fullyPassed) {
+      return {
+        rounds,
+        finalResult: round,
+        passedRound: attempt,
+        bonN: params.bonN,
+        repairCap: params.repairCap,
+        monotonicMode: params.monotonicMode,
+        escalated: false,
+      };
+    }
+  }
+
+  // Repair cap reached without PASS — escalate.
+  const finalRound = rounds[rounds.length - 1];
+  const reason =
+    'repair cap reached, escalate to architecture review (do not retry blindly — see docs/audits/2026-05-07-game-acceptance-architecture.md §7)';
+  log(`[acceptance] ${reason}`);
+  return {
+    rounds,
+    finalResult: finalRound,
+    bonN: params.bonN,
+    repairCap: params.repairCap,
+    monotonicMode: params.monotonicMode,
+    escalated: true,
+    escalationReason: reason,
+  };
+}
+
+function formatRoundLine(round: RoundResult, bonN: number, suffix = ''): string {
+  const tag = round.fullyPassed ? '[SELECTED, full PASS]' : '[SELECTED]';
+  return `Round ${round.round} (best of ${bonN}): PASS=${round.passCount} FAIL=${round.failCount} (candidate=${round.selected.candidateId})  ${tag}${suffix}`;
+}
+
+function formatRegressionMessage(
+  previous: RoundResult,
+  current: RoundResult,
+  regressed: string[],
+): string {
+  const lines = [
+    `  previous round ${previous.round}: PASS=${previous.passCount} FAIL=${previous.failCount}`,
+    `  current  round ${current.round}: PASS=${current.passCount} FAIL=${current.failCount}`,
+    '  regressed checks:',
+    ...regressed.map((c) => `    - ${c}`),
+  ];
+  return lines.join('\n');
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -209,7 +582,10 @@ function formatList(items: string[] | undefined, empty = 'none'): string {
   return items.map((item) => `- ${item}`).join('\n');
 }
 
-function formatGenerationResult(result: AcceptanceOutput['generationResult'], error: string | undefined): string {
+function formatGenerationResult(
+  result: GenerationOutcome | null,
+  error: string | undefined,
+): string {
   if (!result && !error) return '- N/A';
   const rows = [
     `- toolCount: ${result?.toolCount ?? 'N/A'}`,
@@ -223,9 +599,36 @@ function formatGenerationResult(result: AcceptanceOutput['generationResult'], er
   return rows.join('\n');
 }
 
-async function writeMarkdownReport(reportPath: string, output: AcceptanceOutput): Promise<void> {
+async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutput): Promise<void> {
   await fs.mkdir(path.dirname(reportPath), { recursive: true });
   const validation = output.validation;
+  const loopRows: string[] = [];
+  if (output.loop) {
+    loopRows.push('## Acceptance Loop', '');
+    loopRows.push(
+      `- bonN: ${output.bonN}`,
+      `- repairCap: ${output.repairCap}`,
+      `- monotonicMode: ${output.monotonicMode}`,
+      `- escalated: ${output.loop.escalated}`,
+      `- passedRound: ${output.loop.passedRound ?? 'N/A'}`,
+    );
+    if (output.loop.escalationReason) {
+      loopRows.push(`- escalationReason: ${output.loop.escalationReason}`);
+    }
+    loopRows.push('');
+    loopRows.push('| round | candidates | selected | PASS | FAIL | fullPass | regressed |');
+    loopRows.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const round of output.loop.rounds) {
+      loopRows.push(
+        `| ${round.round} | ${round.candidates.length} | ${round.selected.candidateId} | ${round.passCount} | ${round.failCount} | ${round.fullyPassed} | ${round.regressionAgainstPrevious?.regressedChecks.length ?? 0} |`,
+      );
+    }
+    loopRows.push('');
+  }
+
+  const generationSummary = output.loop?.finalResult.selected.generation ?? null;
+  const generationError = output.loop?.finalResult.selected.generationError;
+
   const body = [
     '# Platformer Gameplay Acceptance Report',
     '',
@@ -241,9 +644,10 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceOutput)
     `- runtimePassed: ${validation.runtimePassed ?? 'N/A'}`,
     `- browserPassed: ${validation.browserPassed ?? 'N/A'}`,
     '',
-    '## Generation',
+    ...loopRows,
+    '## Generation (selected candidate)',
     '',
-    formatGenerationResult(output.generationResult, output.generationError),
+    formatGenerationResult(generationSummary, generationError),
     '',
     '## Validation Failures',
     '',
@@ -277,6 +681,24 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceOutput)
   await fs.writeFile(reportPath, body, 'utf-8');
 }
 
+function resolveBonN(args: ReturnType<typeof parseArgs>): number {
+  const cli = getNumberOption(args, 'bon-n');
+  if (cli !== undefined) return Math.max(1, Math.floor(cli));
+  const env = Number(envValue('ACCEPTANCE_BON_N') || 0);
+  if (Number.isFinite(env) && env > 0) return Math.max(1, Math.floor(env));
+  return ACCEPTANCE_DEFAULTS.BON_N;
+}
+
+function resolveRepairCap(args: ReturnType<typeof parseArgs>): number {
+  const cli = getNumberOption(args, 'repair-cap');
+  if (cli !== undefined) return Math.max(0, Math.floor(cli));
+  const env = Number(envValue('ACCEPTANCE_REPAIR_CAP') ?? '');
+  if (Number.isFinite(env) && env >= 0 && envValue('ACCEPTANCE_REPAIR_CAP')) {
+    return Math.max(0, Math.floor(env));
+  }
+  return ACCEPTANCE_DEFAULTS.REPAIR_CAP;
+}
+
 async function main(): Promise<void> {
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -292,57 +714,88 @@ async function main(): Promise<void> {
     : null;
   const validateOnly = hasFlag(args, 'validate-only');
   const jsonOnly = hasFlag(args, 'json');
-  const provider = getStringOption(args, 'provider') || envValue('PLATFORMER_GAMEPLAY_PROVIDER') || 'openrouter';
-  const model = getStringOption(args, 'model') || envValue('PLATFORMER_GAMEPLAY_MODEL') || envValue('OPENROUTER_CHAT_MODEL') || 'google/gemini-3-flash-preview';
-  const generation = getStringOption(args, 'generation') || envValue('PLATFORMER_GAMEPLAY_GENERATION') || 'gen8';
-  const timeoutMs = getNumberOption(args, 'timeout') || 10000;
-  const generationTimeoutMs = getNumberOption(args, 'generation-timeout')
-    || Number(envValue('PLATFORMER_GAMEPLAY_GENERATION_TIMEOUT_MS') || 0)
-    || 120000;
+  const provider =
+    getStringOption(args, 'provider') || envValue('PLATFORMER_GAMEPLAY_PROVIDER') || 'openrouter';
+  const model =
+    getStringOption(args, 'model') ||
+    envValue('PLATFORMER_GAMEPLAY_MODEL') ||
+    envValue('OPENROUTER_CHAT_MODEL') ||
+    'google/gemini-3-flash-preview';
+  const generation =
+    getStringOption(args, 'generation') || envValue('PLATFORMER_GAMEPLAY_GENERATION') || 'gen8';
+  const timeoutMs = getNumberOption(args, 'timeout') || ACCEPTANCE_DEFAULTS.CANDIDATE_RUNTIME_TIMEOUT_MS;
+  const generationTimeoutMs =
+    getNumberOption(args, 'generation-timeout') ||
+    Number(envValue('PLATFORMER_GAMEPLAY_GENERATION_TIMEOUT_MS') || 0) ||
+    ACCEPTANCE_DEFAULTS.CANDIDATE_GENERATION_TIMEOUT_MS;
 
-  let generationResult: Awaited<ReturnType<typeof runAgentGeneration>> | null = null;
-  let generationError: string | undefined;
+  const bonN = resolveBonN(args);
+  const repairCap = resolveRepairCap(args);
+  const monotonicMode: AcceptanceMonotonicMode = hasFlag(args, 'strict-monotonic') ? 'strict' : 'warn';
 
-  if (!validateOnly) {
-    const apiKey = apiKeyForProvider(provider);
-    if (!apiKey) {
-      throw new Error(`Missing API key for provider ${provider}. Set one of ${(PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`]).join(', ')} or run with --validate-only.`);
-    }
-    try {
-      generationResult = await withTimeout(
-        runAgentGeneration({ artifactPath, provider, model, apiKey, generation }),
-        generationTimeoutMs,
-        `Agent generation timed out after ${generationTimeoutMs}ms`,
-      );
-      if (generationResult.errors.length > 0) {
-        generationError = `Agent generation reported errors: ${generationResult.errors.join('; ')}`;
-      }
-    } catch (error) {
-      generationError = error instanceof Error ? error.message : String(error);
-    }
-  }
+  let loop: AcceptanceLoopOutput | undefined;
+  let validationSummary: ValidationSummary;
 
-  const artifactAlreadyExists = await fileExists(artifactPath);
-  const summary = artifactAlreadyExists
-    ? validateArtifact(artifactPath, timeoutMs)
-    : {
+  if (validateOnly) {
+    const exists = await fileExists(artifactPath);
+    if (!exists) {
+      validationSummary = {
         artifactPath,
         passed: false,
-        failures: [
-          generationError
-            ? `Artifact was not written; generation failed: ${generationError}`
-            : 'Artifact was not written.',
-        ],
+        failures: ['Artifact does not exist (validate-only mode).'],
       };
-  const validationSummary = await summary;
+    } else {
+      validationSummary = await validateArtifact(artifactPath, timeoutMs);
+    }
+  } else {
+    const apiKey = apiKeyForProvider(provider);
+    if (!apiKey) {
+      throw new Error(
+        `Missing API key for provider ${provider}. Set one of ${(PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`]).join(', ')} or run with --validate-only.`,
+      );
+    }
+
+    const generate: GenerateCandidateFn = async () => {
+      try {
+        const result = await withTimeout(
+          runAgentGeneration({ artifactPath, provider, model, apiKey, generation }),
+          generationTimeoutMs,
+          `Agent generation timed out after ${generationTimeoutMs}ms`,
+        );
+        const generationError = result.errors.length > 0
+          ? `Agent generation reported errors: ${result.errors.join('; ')}`
+          : undefined;
+        return { generation: result, generationError, artifactPath };
+      } catch (error) {
+        return {
+          generation: null,
+          generationError: error instanceof Error ? error.message : String(error),
+          artifactPath,
+        };
+      }
+    };
+
+    loop = await runAcceptanceLoop({
+      bonN,
+      repairCap,
+      monotonicMode,
+      baseArtifactPath: artifactPath,
+      runtimeTimeoutMs: timeoutMs,
+      generate,
+    });
+    validationSummary = loop.finalResult.selected.validation;
+  }
+
   const finishedAtMs = Date.now();
-  const output: AcceptanceOutput = {
+  const output: AcceptanceCliOutput = {
     mode: validateOnly ? 'validate-only' : 'generate-and-validate',
     provider: validateOnly ? undefined : provider,
     model: validateOnly ? undefined : model,
     generation: validateOnly ? undefined : generation,
-    generationResult,
-    generationError,
+    bonN,
+    repairCap,
+    monotonicMode,
+    loop,
     validation: validationSummary,
     startedAt,
     finishedAt: new Date(finishedAtMs).toISOString(),
@@ -362,22 +815,57 @@ async function main(): Promise<void> {
       ['provider', output.provider],
       ['model', output.model],
       ['generation', output.generation],
-      ['agentToolCount', generationResult?.toolCount],
-      ['generationError', generationError],
+      ['bonN', bonN],
+      ['repairCap', repairCap],
+      ['monotonicMode', monotonicMode],
+      ['rounds', loop?.rounds.length ?? 0],
+      ['passedRound', loop?.passedRound ?? 'N/A'],
+      ['escalated', loop?.escalated ?? false],
+      ['escalationReason', loop?.escalationReason],
       ['reportPath', reportPath],
       ['passed', validationSummary.passed],
       ['runtimePassed', validationSummary.runtimePassed],
       ['browserPassed', validationSummary.browserPassed],
     ]);
+    if (loop) {
+      console.log('\n=== Acceptance Summary ===');
+      console.log(`bon_n: ${bonN}, repair_cap: ${repairCap}, monotonic: ${monotonicMode}`);
+      for (const round of loop.rounds) {
+        const tag = round.fullyPassed ? '[SELECTED, full PASS]' : '[SELECTED]';
+        const regressed = round.regressionAgainstPrevious?.regressedChecks.length ?? 0;
+        const note = regressed > 0 ? ` [REGRESSED ${regressed} checks]` : '';
+        console.log(
+          `Round ${round.round} (best of ${bonN}): PASS=${round.passCount} FAIL=${round.failCount} (candidate=${round.selected.candidateId})  ${tag}${note}`,
+        );
+      }
+      if (loop.passedRound !== undefined) {
+        console.log(`Result: PASS at round ${loop.passedRound}`);
+      } else if (loop.escalated) {
+        console.log(`Result: ESCALATED — ${loop.escalationReason}`);
+      } else {
+        console.log('Result: FAIL');
+      }
+    }
     if (!validationSummary.passed) {
       console.error('\nFailures:');
       for (const failure of validationSummary.failures) console.error(`- ${failure}`);
     }
   }
 
-  if (generationError || !validationSummary.passed) {
+  const generationFailed = loop?.finalResult.selected.generationError !== undefined;
+  if (generationFailed || !validationSummary.passed) {
     process.exit(1);
   }
 }
 
-main().catch(finishWithError);
+const isMainModule = (() => {
+  try {
+    return process.argv[1] === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+})();
+
+if (isMainModule) {
+  main().catch(finishWithError);
+}

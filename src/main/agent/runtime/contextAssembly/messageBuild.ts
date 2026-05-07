@@ -96,6 +96,7 @@ type ArtifactRepairToolMetadata = Record<string, unknown> & {
     targetFile?: unknown;
     applied?: unknown;
     attempted?: unknown;
+    keptImprovedPatch?: unknown;
   };
   artifactRepairGuard?: {
     lastBlockedTool?: unknown;
@@ -564,7 +565,9 @@ function buildArtifactRepairValidationFailureHistory(
     `Target file: ${targetFile}`,
     typeof validation?.attempts === 'number' ? `attempts: ${validation.attempts}` : null,
     typeof validation?.phase === 'string' ? `repair phase: ${validation.phase}` : null,
-    rollback?.applied === true
+    rollback?.keptImprovedPatch === true
+      ? 'The failed patch improved validation and was kept as the next repair baseline.'
+      : rollback?.applied === true
       ? 'The failed patch was rolled back; edit from the last valid pre-patch file state.'
       : rollback?.attempted === true
         ? 'Rollback was attempted but did not apply; inspect only the target artifact if needed.'

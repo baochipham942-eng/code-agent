@@ -1,7 +1,7 @@
 /**
- * Game subtype registry — Layer B 的注册中心。
+ * Game subtype registry — subtype 注册中心。
  *
- * GameVerifier 在 dispatch 时查这个 registry 拿对应 subtype 的 checker；
+ * gameArtifactValidator 在 dispatch 时查这个 registry 拿对应 subtype 的 checker；
  * 不存在时返回 undefined，调用方负责打 warn 然后跳过 subtype-specific 验证
  * （走通用 verb-only 路径）。
  *

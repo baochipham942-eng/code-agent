@@ -17,9 +17,10 @@ import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-// PR-D 起 default registry 含 imperative browser probe；mock 掉真 launch 让
-// dispatch smoke 测试不依赖 Playwright 环境。BROWSER_VISUAL_SMOKE_PROBE 自身
-// 的 transform 行为单独在 browserProbes.test.ts 里测。
+// PR-D/E 起 default registry 含 imperative browser + interaction probe；mock
+// 掉真 launch 让 dispatch smoke 测试不依赖 Playwright 环境。各 imperative
+// probe 自身的 transform 行为单独在 browserProbes.test.ts /
+// interactionProbes.test.ts 里测。
 vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
   runBrowserVisualSmoke: vi.fn().mockResolvedValue({
     attempted: true,
@@ -28,6 +29,13 @@ vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
     checks: ['mocked smoke passed'],
   }),
   DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS: 10000,
+}));
+vi.mock('../../../../../src/main/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
+  runStateChangeProbe: vi.fn().mockResolvedValue({
+    mode: 'pass',
+    selector: 'button',
+    mutations: 1,
+  }),
 }));
 
 import { DashboardVerifier } from '../../../../../src/main/agent/runtime/dashboard/DashboardVerifier';

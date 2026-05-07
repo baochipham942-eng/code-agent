@@ -12,8 +12,9 @@ import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-// PR-D 起 GeneralDashboardChecker 含 imperative browser probe；这里只关心
-// declarative html probe 的行为，mock 掉 browser 让它总 pass，避免污染 result。
+// PR-D/E 起 GeneralDashboardChecker 含 imperative browser + interaction probe；
+// 这里只关心 declarative html probe 的行为，mock 掉两个 imperative 让它们总
+// pass 不污染 result。
 vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
   runBrowserVisualSmoke: vi.fn().mockResolvedValue({
     attempted: true,
@@ -22,6 +23,13 @@ vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
     checks: ['mocked smoke passed'],
   }),
   DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS: 10000,
+}));
+vi.mock('../../../../../src/main/agent/runtime/dashboard/general/interactionProbeRunner', () => ({
+  runStateChangeProbe: vi.fn().mockResolvedValue({
+    mode: 'pass',
+    selector: 'button',
+    mutations: 1,
+  }),
 }));
 
 import {

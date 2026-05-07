@@ -9,6 +9,26 @@ import {
   findAvailablePort,
   resolveBrowserProvider,
 } from '../../services/infra/browserProvider';
+import { gameSubtypeRegistry } from './game/registry';
+// side-effect import — 各 subtype checker 自注册到 gameSubtypeRegistry
+import './game/platformer/PlatformerChecker';
+import './game/runner/RunnerChecker';
+
+/**
+ * Inline runtime probe 透传给 TS 侧的 subtype dispatch 数据。
+ * page.evaluate 不能直接调 TS 函数，所以原本写在 string literal 里的
+ * `validatePlatformerGameplayRuntimeEvidence` 改成把原料返回，TS 侧再调
+ * `GameSubtypeChecker.validateRuntimeEvidence`。
+ */
+interface SubtypeDispatchPayload {
+  subtype: string;
+  meta: Record<string, unknown> | undefined;
+  coverage: unknown;
+  observations: unknown;
+  beforeSmokeSnapshot: unknown;
+  afterSmokeSnapshot: unknown;
+  smokePassed: boolean;
+}
 
 export interface GameArtifactValidationSummary {
   shouldValidate: boolean;
@@ -261,13 +281,6 @@ const META_QUALITY_PATTERNS = [
   /__GAME_TEST__[\s\S]{0,5000}\b(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)\b/i,
   /__INTERACTIVE_TEST__[\s\S]{0,5000}\b(qualityPlan|actorReadable|mechanics|rewards|risks|levelsCovered|allAuthoredLevelsReachable)\b/i,
 ];
-
-const PLATFORMER_META_PATTERNS = [
-  /__(?:GAME|INTERACTIVE)_META__[\s\S]{0,2500}\b(?:subtype|genre|type)\s*:\s*['"`]platformer['"`]/i,
-  /(?:game|interactive)-meta[\s\S]{0,2500}"(?:subtype|genre|type)"\s*:\s*"platformer"/i,
-];
-
-const PLATFORMER_ABILITY_PATTERN = /\b(doubleJump|double-jump|dash|shield|magnet|groundPound|ground-pound|wallJump|wall-jump)\b/i;
 
 const STRONG_INTERACTIVE_PATTERNS = [
   /window\.__INTERACTIVE_TEST__/i,
@@ -563,83 +576,47 @@ function hasDirectRunSmokeStateMutation(snippet: string): boolean {
     );
 }
 
-function isPlatformerArtifact(content: string, filePath: string): boolean {
+/**
+ * Subtype-aware mechanics dispatcher — 替代原 `validatePlatformerGameplayMechanics`。
+ *
+ * 思路：先尝试从 metadata snippet 里抠 subtype 字面量；抠不到就广撒网遍历 registry，
+ * 让各 checker 自己判断要不要接（platformer checker 内部用 `isPlatformerArtifact`
+ * 兜底文件名识别）。这样 main entry 不再持有任何 platformer 关键词。
+ */
+function detectSubtype(metadataSnippet: string): string | undefined {
+  const match =
+    /\b(?:subtype|genre|type)\s*:\s*['"`]([A-Za-z0-9_-]+)['"`]/i.exec(metadataSnippet) ||
+    /"(?:subtype|genre|type)"\s*:\s*"([A-Za-z0-9_-]+)"/i.exec(metadataSnippet);
+  return match?.[1]?.toLowerCase();
+}
+
+function dispatchSubtypeMechanicsValidation(
+  content: string,
+  filePath: string,
+): { failures: string[]; checks: string[] } {
   const metadataSnippet = extractGameMetadataSnippet(content)?.text || content;
-  if (PLATFORMER_META_PATTERNS.some((pattern) => pattern.test(metadataSnippet))) {
-    return true;
-  }
-  if (/\bplatformer\b/i.test(path.basename(filePath)) && /window\.__(?:GAME|INTERACTIVE)_META__/i.test(content)) {
-    return true;
-  }
-  return false;
-}
+  const declaredSubtype = detectSubtype(metadataSnippet);
 
-function hasGameplayMechanicsArray(snippet: string, field: string): boolean {
-  return new RegExp(`["']?${field}["']?\\s*:\\s*\\[`, 'i').test(snippet);
-}
+  // 优先看声明的 subtype；失败时把 content 喂给所有 checker 让它们自检
+  // （eg. platformer 通过文件名兜底）。每个 checker 自己负责短路。
+  const candidateSubtypes = declaredSubtype
+    ? [declaredSubtype, ...gameSubtypeRegistry.list().filter((s) => s !== declaredSubtype)]
+    : gameSubtypeRegistry.list();
 
-function countComboAxes(snippet: string): number {
-  return [
-    /\b(?:stomp|stompable|enemy|enemies)\b/i,
-    /\b(?:block|blocks|bump|question)\b/i,
-    PLATFORMER_ABILITY_PATTERN,
-    /\b(?:gate|route|unlock)\b/i,
-  ].filter((pattern) => pattern.test(snippet)).length;
-}
-
-function validatePlatformerGameplayMechanics(content: string, filePath: string): { failures: string[]; checks: string[] } {
-  if (!isPlatformerArtifact(content, filePath)) {
-    return { failures: [], checks: [] };
-  }
-
-  const failures: string[] = [];
-  const checks: string[] = ['platformer gameplay mechanics contract applies'];
-  const metadataSnippet = extractGameMetadataSnippet(content)?.text || content;
-  const gameplayIndex = metadataSnippet.search(/\bgameplayMechanics\b/i);
-  const gameplaySnippet = gameplayIndex >= 0
-    ? metadataSnippet.slice(gameplayIndex, Math.min(metadataSnippet.length, gameplayIndex + 7000))
-    : '';
-
-  if (!gameplaySnippet) {
-    failures.push('platformer 缺少 gameplayMechanics 元数据；请在 __GAME_META__ 中声明并实现 enemies、blocks、abilities、gates、comboChallenge。');
-    return { failures, checks };
-  }
-
-  checks.push('platformer gameplayMechanics metadata detected');
-
-  for (const field of ['enemies', 'blocks', 'abilities', 'gates', 'comboChallenge']) {
-    if (!hasGameplayMechanicsArray(gameplaySnippet, field)) {
-      failures.push(`platformer gameplayMechanics 缺少 ${field} 数组；平台游戏必须声明并实现 enemies、blocks、abilities、gates、comboChallenge，单个机制也要写成数组，不能写成对象 map。`);
+  for (const subtype of candidateSubtypes) {
+    const checker = gameSubtypeRegistry.get(subtype);
+    if (!checker) continue;
+    const result = checker.validateMechanics(content, {
+      artifactRef: filePath,
+      strict: false,
+      metadata: { filePath },
+    });
+    // 第一个能识别（产生 checks 或 failures）的 subtype 接管，跳出。
+    if (result.failures.length > 0 || result.checks.length > 0) {
+      return { failures: [...result.failures], checks: [...result.checks] };
     }
   }
-
-  if (!/\benemies\b[\s\S]{0,1800}(?:\bstompable\s*:\s*true|["']stompable["']\s*:\s*true|\bstomp\b|stompableEnemy)/i.test(gameplaySnippet)) {
-    failures.push('platformer gameplayMechanics.enemies 缺少 stompable enemy；请添加可踩踏敌人，并让踩踏改变 enemy defeated 状态与玩家 bounce/vy。');
-  }
-
-  if (!/\bblocks\b[\s\S]{0,1800}(?:\bbumpableFromBelow\s*:\s*true|["']bumpableFromBelow["']\s*:\s*true|\bbumpable\b|\bquestion\b|questionBlock)/i.test(gameplaySnippet)) {
-    failures.push('platformer gameplayMechanics.blocks 缺少 bumpable/question block；请添加可从下方顶起的砖块，并产生 used/broken/reward 状态。');
-  }
-
-  if (!/\babilities\b[\s\S]{0,2200}/i.test(gameplaySnippet) || !PLATFORMER_ABILITY_PATTERN.test(gameplaySnippet)) {
-    failures.push('platformer gameplayMechanics.abilities 缺少改变规则的技能；至少添加 doubleJump、dash、shield、magnet、groundPound 或 wallJump 之一。');
-  }
-
-  if (!/\babilities\b[\s\S]{0,2200}\b(?:effect|unlocksRoute|acquiredFrom)\b/i.test(gameplaySnippet)) {
-    failures.push('platformer gameplayMechanics.abilities 缺少 acquiredFrom/effect/unlocksRoute；技能必须说明来源、效果以及它改变哪条路线或交互规则。');
-  }
-
-  if (!/\bgates\b[\s\S]{0,1800}\brequiresAbility\b[\s\S]{0,900}\bblocksAccessTo\b/i.test(gameplaySnippet)) {
-    failures.push('platformer gameplayMechanics.gates 缺少 requiresAbility 和 blocksAccessTo；至少有一段区域必须通过技能或奖励才能到达或通过。');
-  }
-
-  const comboMatch = /\bcomboChallenge\b[\s\S]{0,2200}/i.exec(gameplaySnippet);
-  const comboSnippet = comboMatch?.[0] || '';
-  if (!/\bjump\b/i.test(comboSnippet) || countComboAxes(comboSnippet) < 2) {
-    failures.push('platformer gameplayMechanics.comboChallenge 必须组合 jump，并至少再组合 stomp/enemy、block bump、ability 或 gate route 中的两类。');
-  }
-
-  return { failures, checks };
+  return { failures: [], checks: [] };
 }
 
 function validateTestContractIntegrity(content: string, contractSnippet?: ContractSnippet | null): { failures: string[]; checks: string[] } {
@@ -898,157 +875,10 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             ...listFrom(smoke && smoke.observations),
           ].filter((item) => !isNegativeEvidence(item)).join(' | ').toLowerCase();
         };
-        const findNumericValue = (value, keyPatterns) => {
-          let found;
-          const visit = (current, key = '') => {
-            if (typeof found === 'number') return;
-            if (typeof current === 'number' && keyPatterns.some((pattern) => pattern.test(key))) {
-              found = current;
-              return;
-            }
-            if (!current || typeof current !== 'object') return;
-            for (const [childKey, childValue] of Object.entries(current)) {
-              visit(childValue, childKey);
-            }
-          };
-          visit(value);
-          return typeof found === 'number' ? found : 0;
-        };
-        const countMatchingObjects = (value, predicate) => {
-          let count = 0;
-          const visit = (current, key = '') => {
-            if (!current || typeof current !== 'object') return;
-            if (predicate(current, key)) count += 1;
-            for (const [childKey, childValue] of Object.entries(current)) {
-              visit(childValue, childKey);
-            }
-          };
-          visit(value);
-          return count;
-        };
-        const countDefeatedEnemies = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
-          const objectText = textFrom(object);
-          const keyText = String(key).toLowerCase();
-          const enemyish = /enemy|enemies|stomp/.test(keyText + ' ' + objectText);
-          if (!enemyish) return false;
-          return object.defeated === true
-            || object.stomped === true
-            || object.alive === false
-            || /defeated|stomped|squashed/.test(String(object.state || object.status || '').toLowerCase());
-        });
-        const countUsedBlocks = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
-          const objectText = textFrom(object);
-          const keyText = String(key).toLowerCase();
-          const blockish = /block|brick|question/.test(keyText + ' ' + objectText);
-          if (!blockish) return false;
-          return object.used === true
-            || object.broken === true
-            || object.bumped === true
-            || /used|broken|bumped|empty/.test(String(object.state || object.status || '').toLowerCase());
-        });
-        const countOpenGates = (snapshot) => countMatchingObjects(snapshot, (object, key) => {
-          const objectText = textFrom(object);
-          const keyText = String(key).toLowerCase();
-          const gateish = /gate|door|route/.test(keyText + ' ' + objectText);
-          if (!gateish) return false;
-          return object.open === true
-            || object.unlocked === true
-            || object.reachable === true
-            || /open|unlocked|reachable|passed/.test(String(object.state || object.status || '').toLowerCase());
-        });
-        const snapshotAbilities = (snapshot) => {
-          const playerAbilities = readMetric(snapshot, 'player.abilities');
-          const directAbilities = readMetric(snapshot, 'abilities');
-          return typeof playerAbilities !== 'undefined' ? playerAbilities : directAbilities;
-        };
-        const validatePlatformerGameplayRuntimeEvidence = (gameplayMechanics, beforeSnapshot, afterSnapshot, smoke, coverage) => {
-          if (!isPlainObject(gameplayMechanics)) return;
-          const evidence = collectEvidenceStrings(smoke, coverage);
-          const hasEvidence = (patterns) => patterns.some((pattern) => pattern.test(evidence));
-          const enemyDelta =
-            findNumericValue(afterSnapshot, [/enemiesdefeated/i, /defeatedenemies/i, /stompedenemies/i, /^stomps?$/i])
-            > findNumericValue(beforeSnapshot, [/enemiesdefeated/i, /defeatedenemies/i, /stompedenemies/i, /^stomps?$/i])
-            || countDefeatedEnemies(afterSnapshot) > countDefeatedEnemies(beforeSnapshot)
-            || hasEvidence([/stomp/, /enemy[_ -]?defeat/, /defeated[_ -]?enemy/]);
-          const bounceEvidence =
-            JSON.stringify(readMetric(beforeSnapshot, 'player.vy')) !== JSON.stringify(readMetric(afterSnapshot, 'player.vy'))
-            || hasEvidence([/bounce/, /stomp[_ -]?bounce/, /\bvy\b/, /vertical[_ -]?velocity/]);
-          if (enemyDelta && bounceEvidence) {
-            checks.push('platformer gameplay runtime covered stompable enemy with defeated/bounce evidence');
-          } else {
-            failures.push('platformer gameplayMechanics 缺少 runtime 证据：stompable enemy 必须通过 step/runSmokeTest 让 enemy defeated 或 enemiesDefeated 增加，并证明 player bounce/vy 变化。');
-          }
-
-          const blockDelta =
-            findNumericValue(afterSnapshot, [/blocksbumped/i, /blocksused/i, /blockhits/i, /spawnedrewards/i])
-            > findNumericValue(beforeSnapshot, [/blocksbumped/i, /blocksused/i, /blockhits/i, /spawnedrewards/i])
-            || countUsedBlocks(afterSnapshot) > countUsedBlocks(beforeSnapshot)
-            || hasEvidence([/bump[_ -]?block/, /question[_ -]?block/, /block[_ -]?(used|broken|bumped)/, /spawned[_ -]?reward/]);
-          if (blockDelta) {
-            checks.push('platformer gameplay runtime covered bumpable block evidence');
-          } else {
-            failures.push('platformer gameplayMechanics 缺少 runtime 证据：bumpable/question block 必须通过 step/runSmokeTest 变成 used/broken/bumped，或产生 spawnedReward。');
-          }
-
-          const beforeAbilities = snapshotAbilities(beforeSnapshot);
-          const afterAbilities = snapshotAbilities(afterSnapshot);
-          const abilityEvidence = hasEvidence([
-            /gain[_ -]?ability/,
-            /ability[_ -]?gain/,
-            /abilities?\.?double[_ -]?jump/,
-            /double[_ -]?jump/,
-            /dash/,
-            /shield/,
-            /magnet/,
-            /ground[_ -]?pound/,
-            /wall[_ -]?jump/,
-          ]);
-          const abilityChanged =
-            JSON.stringify(beforeAbilities) !== JSON.stringify(afterAbilities)
-            || abilityEvidence;
-          if (abilityChanged && abilityEvidence) {
-            checks.push('platformer gameplay runtime covered ability acquisition evidence');
-          } else {
-            failures.push('platformer gameplayMechanics 缺少 runtime 证据：ability 必须通过真实输入获得，并让 snapshot().abilities 或 snapshot().player.abilities 发生变化。');
-          }
-
-          const gateEvidence = hasEvidence([
-            /unlock[_ -]?gate/,
-            /gate[_ -]?unlock/,
-            /gates?\./,
-            /route[_ -]?reachable/,
-            /reachable[_ -]?route/,
-            /reachable[_ -]?target/,
-            /routes?unlocked/,
-            /routeReachableAfterAbility/i,
-          ]);
-          const gateDelta =
-            findNumericValue(afterSnapshot, [/gatesunlocked/i, /routesunlocked/i, /reachabletargets/i])
-            > findNumericValue(beforeSnapshot, [/gatesunlocked/i, /routesunlocked/i, /reachabletargets/i])
-            || countOpenGates(afterSnapshot) > countOpenGates(beforeSnapshot)
-            || gateEvidence;
-          if (abilityChanged && abilityEvidence && gateDelta && gateEvidence) {
-            checks.push('platformer gameplay runtime covered ability-gated route evidence');
-          } else {
-            failures.push('platformer gameplayMechanics 缺少 runtime 证据：gate 必须在获得技能后改变 unlocked/open/reachable route 或 reachableTarget 状态。');
-          }
-
-          const comboRequires = textFrom(gameplayMechanics.comboChallenge);
-          const comboText = evidence;
-          const comboHasJump = /jump/.test(comboText);
-          const comboAxisCount = [
-            /stomp|enemy/,
-            /block|bump|question/,
-            /ability|abilities|double[_ -]?jump|doublejump|dash|shield|magnet|ground[_ -]?pound|groundpound|wall[_ -]?jump|walljump/,
-            /gate|route|unlock|reachable/,
-          ].filter((pattern) => pattern.test(comboText)).length;
-          const comboCovered = /combo|challenge|sequence/.test(comboText) && comboHasJump && comboAxisCount >= 2 && /requires|target/.test(comboRequires);
-          if (comboCovered) {
-            checks.push('platformer gameplay runtime covered comboChallenge evidence');
-          } else {
-            failures.push('platformer gameplayMechanics 缺少 runtime 证据：comboChallenge coverage 必须证明 jump 加 stomp/block/ability/gate 中至少两类的组合挑战。');
-          }
-        };
+        // platformer 等 subtype-specific 的 runtime evidence 检查已经迁移到
+        // src/main/agent/runtime/game/<subtype>/<Subtype>Checker.ts，由 TS 侧
+        // 根据 page.evaluate 返回的 before/after snapshot + smoke + meta + coverage
+        // 派发到对应 checker 上跑。这里的 inline JS 只负责采集运行时证据。
         const executableKeySet = new Set(keyControls);
         const collectActionStrings = (value) => {
           if (typeof value === 'string') return [value];
@@ -1370,17 +1200,9 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
               checks.push('coverage included state changes: ' + stateChangesCovered.join(', '));
             }
 
-            const subtype = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
-            if (subtype.includes('platformer') && meta.gameplayMechanics && typeof meta.gameplayMechanics === 'object') {
-              validatePlatformerGameplayRuntimeEvidence(
-                meta.gameplayMechanics,
-                beforeSmokeSnapshot,
-                afterSmokeSnapshot,
-                smoke,
-                coverage
-              );
-            }
           }
+          // subtype 透传到 TS 侧，由 GameSubtypeChecker.validateRuntimeEvidence 接管 subtype-specific 证据校验
+          const subtypeForDispatch = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
           const metricCoveredBySmoke = (metric) => {
             const normalized = String(metric || '').trim().toLowerCase();
             if (!normalized) return false;
@@ -1411,7 +1233,22 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             );
           }
           if (smoke.passed !== true) failures.push('runSmokeTest 未通过。');
-          return { passed: failures.length === 0, checks, failures };
+          return {
+            passed: failures.length === 0,
+            checks,
+            failures,
+            // 透传 subtype-specific 证据所需的原始数据。TS 侧的 GameSubtypeChecker
+            // 会在这之上做 subtype-aware 验证（platformer 的 stomp/bump/combo 等）。
+            subtypeDispatch: {
+              subtype: subtypeForDispatch,
+              meta,
+              coverage,
+              observations: Array.isArray(smoke.observations) ? smoke.observations : [],
+              beforeSmokeSnapshot,
+              afterSmokeSnapshot,
+              smokePassed: smoke.passed === true,
+            },
+          };
         } catch (error) {
           return {
             passed: false,
@@ -1423,6 +1260,45 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
     const rawResult = await page.evaluate(runtimeProbeScript);
 
     const smoke = normalizeRuntimeSmokeResult(rawResult);
+
+    // 把原 inline JS 里的 subtype-specific 证据校验改为 TS 侧 dispatch：
+    // 拿到 beforeSnap / afterSnap / meta / coverage / observations 后，
+    // 让 GameSubtypeRegistry 里注册的 checker 来跑 platformer/runner 等专属断言。
+    const dispatchPayload = (rawResult as { subtypeDispatch?: SubtypeDispatchPayload } | null)
+      ?.subtypeDispatch;
+    if (dispatchPayload?.subtype) {
+      const checker = gameSubtypeRegistry.get(dispatchPayload.subtype);
+      if (checker) {
+        const evidence = checker.validateRuntimeEvidence(
+          (dispatchPayload.beforeSmokeSnapshot ?? {}) as Record<string, unknown>,
+          (dispatchPayload.afterSmokeSnapshot ?? {}) as Record<string, unknown>,
+          {
+            attempted: true,
+            passed: dispatchPayload.smokePassed,
+            checks: smoke.checks,
+            failures: smoke.failures,
+          },
+          {
+            artifactRef: filePath,
+            strict: false,
+            metadata: {
+              meta: dispatchPayload.meta,
+              coverage: dispatchPayload.coverage,
+              observations: dispatchPayload.observations,
+            },
+          },
+        );
+        if (evidence.passed) {
+          smoke.checks.push(...evidence.checks);
+        } else {
+          smoke.failures.push(...evidence.failures);
+          if (smoke.passed) {
+            smoke.passed = false;
+          }
+        }
+      }
+    }
+
     if (smoke.passed) {
       smoke.checks.unshift('runtime smoke passed via interactive test contract');
     }
@@ -1892,9 +1768,9 @@ export async function validateGameArtifact(
     checks.push('quality/acceptance metadata detected');
   }
 
-  const platformerGameplayMechanics = validatePlatformerGameplayMechanics(content, filePath);
-  checks.push(...platformerGameplayMechanics.checks);
-  failures.push(...platformerGameplayMechanics.failures);
+  const subtypeMechanics = dispatchSubtypeMechanicsValidation(content, filePath);
+  checks.push(...subtypeMechanics.checks);
+  failures.push(...subtypeMechanics.failures);
 
   if (!INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content))) {
     failures.push('缺少通用交互测试合约 window.__INTERACTIVE_TEST__ 或 window.__GAME_TEST__，工程层无法真实启动、输入并读取状态变化。');

@@ -21,6 +21,9 @@ export const computerSchema: ToolSchema = {
 - open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. targetApp="Safari" or targetApp="Visual Studio Code"). Returns once the launch is initiated; chain observe to confirm it became frontmost.
 - write_clipboard: Set the system pasteboard to text. Use this to deliver large or formatted text instead of typing it character by character (much faster, immune to focus shifts). Pass text via the text param.
 - computer_batch: Execute a list of actions sequentially in one tool call. Pass the list via the actions param ([{action:"click", x:100, y:200}, {action:"type", text:"hello"}, ...]). Reduces RTT for multi-step interactions. Stops on first failure and returns partial result. Nested computer_batch is rejected.
+- hold_key: Press one or more modifier keys for a duration (ms), then release. Limited to modifier keys (cmd, alt, ctrl, shift, fn) — pass them via the modifiers param (or a single key via the key param). Required for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
+- triple_click: Triple-click at x,y. Selects an entire line/paragraph in most text editors. If the target app does not respond to native triple-click, fall back to doubleClick + click.
+- cursor_position: Return the current mouse cursor coordinates without moving anything. Output is "x,y" plus metadata.x / metadata.y.
 
 ## Smart actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -81,6 +84,8 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           // computer_use extended actions (atomic mouse/keyboard primitives + batch)
           'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
+          // computer_use richer interactions
+          'hold_key', 'triple_click', 'cursor_position',
           // computer_use smart actions
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements',
@@ -200,8 +205,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       modifiers: {
         type: 'array',
-        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift'] },
-        description: 'Modifier keys to hold during action',
+        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift', 'fn'] },
+        description: 'Modifier keys to hold during action. For hold_key, this is the list of modifier keys to press together.',
+      },
+      duration: {
+        type: 'number',
+        description: '[hold_key] Duration in milliseconds to hold the key(s) down before releasing. Default 1000.',
       },
       direction: {
         type: 'string',

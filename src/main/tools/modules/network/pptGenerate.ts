@@ -32,7 +32,7 @@ import {
   resetLayoutRotation,
 } from '../../media/ppt/layouts';
 import { normalizeDensity } from '../../media/ppt/densityControl';
-import { validateNarrative } from '../../media/ppt/narrativeValidator';
+import { DeckVerifier } from '../../../agent/runtime/deck/DeckVerifier';
 import { generateFromTemplate } from '../../media/ppt/templateEngine';
 import { loadDataSource } from '../../media/ppt/dataSourceAdapter';
 import { analyzeDataForPresentation } from '../../media/ppt/dataAnalyzer';
@@ -581,11 +581,28 @@ export async function executePptGenerate(
     }
 
     if (legacySlides) {
-      // TODO(deck-verifier, Phase 4 PR-3): result currently discarded — narrativeValidator
-      //   runs as a side-effect-free dead validator. PR-3 will replace this call with
-      //   DeckVerifier.validate(...) and pipe failures into ctx.logger.warn (non-blocking).
-      //   Baseline lives at scripts/acceptance/fixtures/deck/baseline.json.
-      validateNarrative(legacySlides);
+      // Phase 4 PR-3: replaces the dead validateNarrative(legacySlides) call.
+      // DeckVerifier runs schema (L1) + narrative (L3) probes; failures go to
+      // ctx.logger.warn — non-blocking by design (a verifier finding must not
+      // tank PPT generation while we're still tuning false-positive rates).
+      // Errors thrown by the verifier itself are also caught and logged so a
+      // bug in deck/runtime can never abort generation.
+      try {
+        const verifier = new DeckVerifier();
+        const verdict = verifier.validate({
+          structured: structuredSlides ?? [],
+          legacy: legacySlides,
+          metadata: { topic },
+        });
+        if (!verdict.passed) {
+          for (const failure of verdict.failures) {
+            ctx.logger.warn(`Deck verifier (${verdict.subtype}): ${failure}`);
+          }
+        }
+      } catch (verifierErr: unknown) {
+        const message = verifierErr instanceof Error ? verifierErr.message : String(verifierErr);
+        ctx.logger.warn(`Deck verifier failed to run: ${message}`);
+      }
     }
 
     const totalSlides = structuredSlides?.length ?? legacySlides?.length ?? 0;

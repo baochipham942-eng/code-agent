@@ -15,8 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { BrowserTool } from '../../vision/BrowserTool';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { browserSchema as schema } from './browser.schema';
+import { adaptVisionLegacyResult } from './resultMeta';
 
 class BrowserHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +42,7 @@ class BrowserHandler implements ToolHandler<Record<string, unknown>, string> {
     const legacyResult = await BrowserTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('Browser done', { action, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return adaptVisionLegacyResult(legacyResult, { tool: schema.name, args, ctx });
   }
 }
 

@@ -26,6 +26,7 @@ import {
   getMemoryDir,
   getMemoryIndexPath,
 } from '../../../lightMemory/indexLoader';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 
 const VALID_TYPES = ['user', 'feedback', 'project', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
@@ -89,8 +90,8 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
     try {
       const result =
         action === 'write'
-          ? await executeWrite(args, sanitized)
-          : await executeDelete(sanitized);
+          ? await executeWrite(args, sanitized, ctx)
+          : await executeDelete(sanitized, ctx);
       onProgress?.({ stage: 'completing', percent: 100 });
       if (result.ok) {
         ctx.logger.info(`MemoryWrite ${action} done`, { filename: sanitized });
@@ -112,6 +113,7 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
 async function executeWrite(
   args: Record<string, unknown>,
   filename: string,
+  ctx: ToolContext,
 ): Promise<ToolResult<string>> {
   const name = args.name as string | undefined;
   const description = args.description as string | undefined;
@@ -149,19 +151,41 @@ ${content}
 
   await fs.writeFile(filePath, fileContent, 'utf-8');
   await updateIndex(filename, description);
+  const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+    kind: 'text',
+    mimeType: 'text/markdown',
+    metadata: {
+      action: 'write',
+      filename,
+      memoryType: memType,
+      description,
+      indexPath: getMemoryIndexPath(),
+    },
+  });
 
   return {
     ok: true,
     output: `Memory saved: ${filename}\n- Type: ${memType}\n- Description: ${description}`,
+    meta: {
+      action: 'write',
+      filename,
+      path: filePath,
+      memoryType: memType,
+      description,
+      bytes: Buffer.byteLength(fileContent, 'utf8'),
+      indexPath: getMemoryIndexPath(),
+      artifact,
+    },
   };
 }
 
 // ---------------------------------------------------------------------------
 // Delete
 // ---------------------------------------------------------------------------
-async function executeDelete(filename: string): Promise<ToolResult<string>> {
+async function executeDelete(filename: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const memDir = getMemoryDir();
   const filePath = path.join(memDir, filename);
+  let existed = true;
 
   try {
     await fs.unlink(filePath);
@@ -174,10 +198,38 @@ async function executeDelete(filename: string): Promise<ToolResult<string>> {
       };
     }
     // File didn't exist — still remove from index (idempotent)
+    existed = false;
   }
 
   await removeFromIndex(filename);
-  return { ok: true, output: `Memory deleted: ${filename}` };
+  const artifact = createVirtualArtifact({
+    sourceTool: schema.name,
+    kind: 'text',
+    sessionId: ctx.sessionId,
+    name: filename,
+    mimeType: 'text/markdown',
+    contentLength: 0,
+    preview: `Memory deleted: ${filename}`,
+    metadata: {
+      action: 'delete',
+      filename,
+      path: filePath,
+      existed,
+      indexPath: getMemoryIndexPath(),
+    },
+  });
+  return {
+    ok: true,
+    output: `Memory deleted: ${filename}`,
+    meta: {
+      action: 'delete',
+      filename,
+      path: filePath,
+      existed,
+      indexPath: getMemoryIndexPath(),
+      artifact,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

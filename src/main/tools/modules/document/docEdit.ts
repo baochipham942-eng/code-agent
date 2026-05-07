@@ -28,6 +28,7 @@ import type {
 import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
 import { executeDocxEdit, type DocxEditParams } from './docxEditCore';
 import { docEditSchema as schema } from './docEdit.schema';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -37,6 +38,42 @@ const FORMAT_MAP: Record<string, DocFormat> = {
   '.pptx': 'pptx',
   '.docx': 'docx',
 };
+
+async function buildDocumentEditMeta(
+  filePath: string,
+  format: DocFormat,
+  operationCount: number,
+  dryRun: boolean | undefined,
+  metadata: Record<string, unknown> | undefined,
+  ctx: ToolContext,
+): Promise<Record<string, unknown>> {
+  const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(ctx.workingDir, filePath);
+  const artifact = dryRun
+    ? undefined
+    : await createFileArtifact(resolvedPath, schema.name, ctx, {
+      kind: format === 'xlsx' ? 'spreadsheet' : 'document',
+      metadata: {
+        action: 'edit',
+        operation: 'doc_edit',
+        format,
+        path: resolvedPath,
+        operationCount,
+      },
+    }).catch(() => undefined);
+
+  return {
+    ...(metadata ?? {}),
+    action: 'edit',
+    operation: 'doc_edit',
+    format,
+    path: resolvedPath,
+    outputPath: resolvedPath,
+    operationCount,
+    dryRun: Boolean(dryRun),
+    changedFiles: dryRun ? [] : [resolvedPath],
+    ...(artifact ? { artifact } : {}),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Local legacy ctx adapter — 仅用于 cross-cat dispatch（excelEdit / ppt_edit），
@@ -149,7 +186,7 @@ async function executeDocEdit(
         return {
           ok: true,
           output: result.output ?? 'OK',
-          meta: result.metadata,
+          meta: await buildDocumentEditMeta(filePath, format, operations.length, dryRun, result.metadata, ctx),
         };
       }
       return {
@@ -171,7 +208,7 @@ async function executeDocEdit(
         return {
           ok: true,
           output: result.output ?? 'OK',
-          meta: result.metadata,
+          meta: await buildDocumentEditMeta(filePath, format, operations.length, dryRun, result.metadata, ctx),
         };
       }
       return {
@@ -183,7 +220,7 @@ async function executeDocEdit(
 
     // pptx — dispatch via resolver to ppt_edit, one op per call
     const resolver = ctx.resolver as ToolResolver | undefined;
-    if (!resolver || !resolver.has('ppt_edit')) {
+    if (!resolver?.has('ppt_edit')) {
       return {
         ok: false,
         error: 'PPT editing requires the ppt_edit tool. Use ppt_edit directly for .pptx files.',
@@ -216,7 +253,7 @@ async function executeDocEdit(
     return {
       ok: true,
       output: `PPT edited (${operations.length} operations):\n${results.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`,
-      meta: { outputPath: filePath, operationCount: operations.length },
+      meta: await buildDocumentEditMeta(filePath, format, operations.length, dryRun, { completedOps: results }, ctx),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarUpdateEventSchema as schema } from './calendarUpdateEvent.schema';
 
 async function executeCalendarUpdateEvent(
@@ -52,11 +53,37 @@ async function executeCalendarUpdateEvent(
       location?: string;
     };
     ctx.logger.debug('calendar_update_event', { uid: event.uid, calendar: event.calendar });
+    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知'}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`;
 
     return {
       ok: true,
-      output: `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知'}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`,
-      meta: { uid: event.uid, calendar: event.calendar },
+      output,
+      meta: {
+        action: 'update_event',
+        connector: 'calendar',
+        uid: event.uid,
+        calendar: event.calendar,
+        title: event.title,
+        startAtMs: event.startAtMs,
+        endAtMs: event.endAtMs,
+        location: event.location,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `calendar-event-update-${event.uid}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'calendar',
+            action: 'update_event',
+            uid: event.uid,
+            calendar: event.calendar,
+            title: event.title,
+          },
+        }),
+      },
     };
   } catch (error) {
     return {

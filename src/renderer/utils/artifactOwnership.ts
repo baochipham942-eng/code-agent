@@ -1,5 +1,10 @@
 import type { TraceTurn } from '@shared/contract/trace';
+import {
+  collectToolArtifactsFromMetadata,
+  type NormalizedToolArtifactMeta,
+} from '@shared/contract/artifactBlob';
 import type {
+  TurnArtifactKind,
   TurnArtifactOwnershipItem,
   TurnRoutingEvidence,
 } from '@shared/contract/turnTimeline';
@@ -21,6 +26,35 @@ function collectMetadataPaths(metadata?: Record<string, unknown>): string[] {
     }
   }
   return paths;
+}
+
+function kindForToolArtifact(artifact: NormalizedToolArtifactMeta): TurnArtifactKind {
+  if (artifact.path) {
+    return 'file';
+  }
+  if (artifact.url) {
+    return 'link';
+  }
+  return 'artifact';
+}
+
+function ownerLabelForToolArtifact(
+  artifact: NormalizedToolArtifactMeta,
+  fallbackToolName: string,
+  primaryAgent?: string,
+): string {
+  const toolLabel = artifact.sourceTool || fallbackToolName;
+  return primaryAgent ? `${primaryAgent} · ${toolLabel}` : toolLabel;
+}
+
+function dedupeKeyForToolArtifact(
+  artifact: NormalizedToolArtifactMeta,
+  sourceNodeId: string,
+): string {
+  if (artifact.path) return `file:${artifact.path}`;
+  if (artifact.url) return `url:${artifact.url}`;
+  if (artifact.artifactId) return `artifact:${artifact.artifactId}`;
+  return `artifact:${sourceNodeId}:${artifact.kind}:${artifact.label}`;
 }
 
 export function buildArtifactOwnershipItems(
@@ -81,6 +115,18 @@ export function buildArtifactOwnershipItems(
         path,
         sourceNodeId: node.id,
       }, `file:${path}`);
+    }
+
+    for (const artifact of collectToolArtifactsFromMetadata(node.toolCall.metadata)) {
+      addItem({
+        kind: kindForToolArtifact(artifact),
+        label: artifact.label,
+        ownerKind: 'tool',
+        ownerLabel: ownerLabelForToolArtifact(artifact, node.toolCall.name, primaryAgent),
+        path: artifact.path,
+        url: artifact.url,
+        sourceNodeId: node.id,
+      }, dedupeKeyForToolArtifact(artifact, node.id));
     }
   }
 

@@ -43,7 +43,7 @@ let quickConfig: QuickModelConfig | null = null;
 
 /**
  * 初始化 quick model：直连智谱官方 bigmodel.cn，不经过 ModelRouter。
- * 走官方是因为 0ki 代理不支持 glm-4-flash 免费 ID。
+ * 走官方是因为 0ki 代理不稳定支持 DEFAULT_MODELS.quick 的免费 ID。
  */
 function initializeQuickModel(): QuickModelConfig | null {
   if (quickConfig) return quickConfig;

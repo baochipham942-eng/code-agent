@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
@@ -30,6 +31,33 @@ function formatEvent(event: CalendarEvent): string {
   const location = event.location ? ` | ${event.location}` : '';
   const uid = event.uid ? `\n  uid: ${event.uid}` : '';
   return `- [${event.calendar}] ${event.title}\n  ${start} -> ${end}${location}${uid}`;
+}
+
+function buildCalendarMeta(
+  ctx: ToolContext,
+  action: string,
+  output: string,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    action,
+    connector: 'calendar',
+    ...metadata,
+    artifact: createVirtualArtifact({
+      sourceTool: schema.name,
+      kind: 'text',
+      sessionId: ctx.sessionId,
+      name: `calendar-${action}`,
+      mimeType: 'text/markdown',
+      contentLength: output.length,
+      preview: output.slice(0, 500),
+      metadata: {
+        connector: 'calendar',
+        action,
+        ...metadata,
+      },
+    }),
+  };
 }
 
 async function executeCalendar(
@@ -59,6 +87,20 @@ async function executeCalendar(
 
   const connector = getConnectorRegistry().get('calendar');
   if (!connector) {
+    if (action === 'get_status') {
+      const status = {
+        connected: false,
+        detail: 'Calendar connector is not configured in this runtime.',
+        capabilities: [] as string[],
+        unavailable: true,
+      };
+      const output = `Calendar connector: unavailable\n${status.detail}\nCapabilities: none`;
+      return {
+        ok: true,
+        output,
+        meta: buildCalendarMeta(ctx, action, output, { status }),
+      };
+    }
     return { ok: false, error: 'Calendar connector is not available.', code: 'NOT_INITIALIZED' };
   }
 
@@ -68,32 +110,35 @@ async function executeCalendar(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const output = `Calendar connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
       return {
         ok: true,
-        output: `Calendar connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`,
-        meta: { status },
+        output,
+        meta: buildCalendarMeta(ctx, action, output, { status }),
       };
     }
 
     if (action === 'list_calendars') {
       const calendars = result.data as string[];
+      const output = calendars.length > 0
+        ? `可用日历 (${calendars.length})：\n- ${calendars.join('\n- ')}`
+        : '没有找到可访问的日历。';
       return {
         ok: true,
-        output: calendars.length > 0
-          ? `可用日历 (${calendars.length})：\n- ${calendars.join('\n- ')}`
-          : '没有找到可访问的日历。',
-        meta: { count: calendars.length },
+        output,
+        meta: buildCalendarMeta(ctx, action, output, { count: calendars.length, calendars }),
       };
     }
 
     // list_events
     const events = result.data as CalendarEvent[];
+    const output = events.length > 0
+      ? `日历事件 (${events.length})：\n${events.map(formatEvent).join('\n')}`
+      : '没有找到匹配的日历事件。';
     return {
       ok: true,
-      output: events.length > 0
-        ? `日历事件 (${events.length})：\n${events.map(formatEvent).join('\n')}`
-        : '没有找到匹配的日历事件。',
-      meta: { count: events.length },
+      output,
+      meta: buildCalendarMeta(ctx, action, output, { count: events.length, events }),
     };
   } catch (error) {
     return {

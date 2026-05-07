@@ -26,6 +26,7 @@ import type {
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { screenshotPageSchema as schema } from './screenshotPage.schema';
 
 const VISION_CONFIG = {
@@ -316,6 +317,20 @@ export async function executeScreenshotPage(
       ok: true,
       output,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType: `image/${format === 'jpg' ? 'jpeg' : 'png'}`,
+          sizeBytes: stats.size,
+          metadata: {
+            url: params.url,
+            width,
+            height,
+            fullPage,
+            format,
+            api: usedApi,
+            analyzed: !!analysis,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

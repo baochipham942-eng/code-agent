@@ -52,7 +52,8 @@ export function registerStatusHandlers(): void {
         deepseek: 'deepseek',
       };
       const endpointKey = providerEndpointMap[DEFAULT_PROVIDER];
-      const healthUrl = MODEL_API_ENDPOINTS[endpointKey || providerEndpointMap.deepseek || 'deepseek'];
+      const healthEndpointKey = endpointKey ?? DEFAULT_PROVIDER;
+      const healthUrl = MODEL_API_ENDPOINTS[healthEndpointKey];
       await fetch(healthUrl, {
         method: 'HEAD',
         signal: controller.signal,

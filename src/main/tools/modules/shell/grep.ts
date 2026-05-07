@@ -35,6 +35,7 @@ import type {
 } from '../../../protocol/tools';
 import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 
 const execFileAsync = promisify(execFile);
 
@@ -134,6 +135,13 @@ interface GrepMeta extends Record<string, unknown> {
   totalMatches?: number;
   shown?: number;
   truncated?: boolean;
+}
+
+interface GrepMatch {
+  file: string;
+  line: number;
+  text: string;
+  context?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -364,6 +372,54 @@ function applyDefaultLimit(stdout: string): {
   return { output, totalMatches, truncated: true };
 }
 
+function parseMatches(output: string, searchPath: string): GrepMatch[] {
+  const matches: GrepMatch[] = [];
+  const lines = output.split('\n').filter(Boolean);
+  for (const line of lines) {
+    if (line === '--' || line.startsWith('... (') || line.startsWith('(showing ')) continue;
+    const match = line.match(/^(.*?)([:-])(\d+)([:-])(.*)$/);
+    if (!match) continue;
+    const rawFile = match[1];
+    const file = path.isAbsolute(rawFile) ? rawFile : path.resolve(searchPath, rawFile);
+    matches.push({
+      file,
+      line: Number(match[3]),
+      text: match[5],
+      context: match[2] === '-' || match[4] === '-',
+    });
+    if (matches.length >= 200) break;
+  }
+  return matches;
+}
+
+function buildNoMatchesMeta(
+  engine: 'rg' | 'grep',
+  pattern: string,
+  searchPath: string,
+  ctx: ToolContext,
+): GrepMeta {
+  const output = 'No matches found';
+  return {
+    engine,
+    totalMatches: 0,
+    shown: 0,
+    truncated: false,
+    pattern,
+    searchPath,
+    matches: [],
+    artifact: createVirtualArtifact({
+      sourceTool: schema.name,
+      kind: 'search',
+      sessionId: ctx.sessionId,
+      name: `Grep: ${pattern.slice(0, 80)}`,
+      mimeType: 'text/plain',
+      contentLength: output.length,
+      preview: output,
+      metadata: { engine, pattern, searchPath, totalMatches: 0, shown: 0, truncated: false },
+    }),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Handler
 // ----------------------------------------------------------------------------
@@ -437,7 +493,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: true,
           output: 'No matches found',
-          meta: { engine: 'rg', totalMatches: 0, shown: 0, truncated: false } as GrepMeta,
+          meta: buildNoMatchesMeta('rg', pattern, searchPath, ctx),
         };
       } else {
         // 2) rg 不可用 → 系统 grep 降级
@@ -460,7 +516,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
             return {
               ok: true,
               output: 'No matches found',
-              meta: { engine: 'grep', totalMatches: 0, shown: 0, truncated: false } as GrepMeta,
+              meta: buildNoMatchesMeta('grep', pattern, searchPath, ctx),
             };
           }
           throw grepErr;
@@ -497,11 +553,41 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         engine,
         totalMatches: meta.totalMatches,
       });
+      const outputText = output || 'No matches found';
+      const matches = parseMatches(outputText, searchPath);
 
       return {
         ok: true,
-        output: output || 'No matches found',
-        meta,
+        output: outputText,
+        meta: {
+          ...meta,
+          pattern,
+          searchPath,
+          include,
+          type: fileType,
+          caseInsensitive,
+          beforeContext: ctxBefore,
+          afterContext: ctxAfter,
+          matches,
+          matchesTruncated: matches.length >= 200,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'search',
+            sessionId: ctx.sessionId,
+            name: `Grep: ${pattern.slice(0, 80)}`,
+            mimeType: 'text/plain',
+            contentLength: outputText.length,
+            preview: outputText.slice(0, 500),
+            metadata: {
+              engine,
+              pattern,
+              searchPath,
+              totalMatches: meta.totalMatches,
+              shown: meta.shown,
+              truncated: meta.truncated,
+            },
+          }),
+        },
       };
     } catch (error: unknown) {
       const errObj = (error ?? {}) as Record<string, unknown>;
@@ -529,7 +615,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: true,
           output: 'No matches found',
-          meta: { engine: 'grep', totalMatches: 0, shown: 0, truncated: false } as GrepMeta,
+          meta: buildNoMatchesMeta('grep', pattern, searchPath, ctx),
         };
       }
 

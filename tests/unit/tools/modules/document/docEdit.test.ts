@@ -136,7 +136,27 @@ describe('docEditModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toBe('Excel saved');
-        expect(result.meta).toEqual({ sheets: 1 });
+        expect(result.meta).toMatchObject({
+          sheets: 1,
+          action: 'edit',
+          operation: 'doc_edit',
+          format: 'xlsx',
+          path: '/tmp/report.xlsx',
+          outputPath: '/tmp/report.xlsx',
+          changedFiles: ['/tmp/report.xlsx'],
+          operationCount: 1,
+          dryRun: false,
+          artifact: {
+            kind: 'spreadsheet',
+            sourceTool: 'DocEdit',
+            path: '/tmp/report.xlsx',
+            metadata: {
+              action: 'edit',
+              operation: 'doc_edit',
+              format: 'xlsx',
+            },
+          },
+        });
       }
       expect(executeExcelEditMock).toHaveBeenCalledTimes(1);
     });
@@ -173,7 +193,19 @@ describe('docEditModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toBe('Word saved');
-        expect(result.meta).toEqual({ paragraphs: 5 });
+        expect(result.meta).toMatchObject({
+          paragraphs: 5,
+          action: 'edit',
+          operation: 'doc_edit',
+          format: 'docx',
+          path: '/tmp/spec.docx',
+          changedFiles: ['/tmp/spec.docx'],
+          artifact: {
+            kind: 'document',
+            sourceTool: 'DocEdit',
+            path: '/tmp/spec.docx',
+          },
+        });
       }
       expect(executeDocxEditMock).toHaveBeenCalledTimes(1);
     });

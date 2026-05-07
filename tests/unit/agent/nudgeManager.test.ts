@@ -150,6 +150,45 @@ describe('NudgeManager', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────
+  // P2: Task completion nudges
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('P2: Task completion', () => {
+    it('does not nudge on unrelated incomplete task-store items', () => {
+      manager.reset([], '验证 workflow_orchestrate 是否能返回 ok', '/tmp/test', []);
+      mockGetIncompleteTasks.mockReturnValue([{ id: '1', subject: 'stale task' }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['workflow_orchestrate'],
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(false);
+      expect(ctx.injectSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('nudges when the user explicitly asks to manage tasks', () => {
+      manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
+      mockGetIncompleteTasks.mockReturnValue([{ id: '1', subject: 'finish smoke' }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      expect(ctx.injectSystemMessage).toHaveBeenCalledTimes(1);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('task-completion-check');
+      expect(injectedMessage).toContain('finish smoke');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
   // P3: Missing files detection
   // ────────────────────────────────────────────────────────────────────────
 

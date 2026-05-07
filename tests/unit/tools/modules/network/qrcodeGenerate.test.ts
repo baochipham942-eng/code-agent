@@ -127,6 +127,18 @@ describe('qrcodeGenerateModule (native)', () => {
         expect(result.output).toContain('类型: URL');
         const meta = result.meta as Record<string, unknown>;
         expect(meta.contentType).toBe('URL');
+        expect(meta.artifact).toMatchObject({
+          kind: 'image',
+          sourceTool: 'qrcode_generate',
+          path: expect.stringMatching(/^\/tmp\/work\/qrcode-\d+\.png$/),
+          mimeType: 'image/png',
+          sizeBytes: 1024,
+          metadata: {
+            contentType: 'URL',
+            size: 300,
+            margin: 4,
+          },
+        });
       }
     });
 

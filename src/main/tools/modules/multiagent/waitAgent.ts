@@ -19,6 +19,7 @@ import type {
 } from '../../../protocol/tools';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { waitAgentSchema as schema } from './waitAgent.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -122,10 +123,42 @@ export async function executeWaitAgent(
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.debug('wait_agent done', { agentIds: idsTyped, allDone });
 
-  return {
+  const agentResults = idsTyped.map((id) => {
+    const agent = results.get(id);
+    return {
+      agentId: id,
+      role: agent?.role,
+      status: agent?.status ?? 'not_found',
+      duration: agent?.completedAt ? agent.completedAt - agent.createdAt : undefined,
+      result: agent?.result
+        ? {
+          output: agent.result.output,
+          iterations: agent.result.iterations,
+          toolsUsed: agent.result.toolsUsed,
+          cost: agent.result.cost,
+        }
+        : undefined,
+      error: agent?.error,
+    };
+  });
+
+  return withMultiagentMeta({
     ok: true,
     output: `Wait results (${allDone ? 'all done' : 'timeout — some still running'}):\n\n${lines.join('\n')}`,
-  };
+  }, ctx, schema.name, {
+    action: 'wait',
+    status: allDone ? 'completed' : 'timeout',
+    targets: idsTyped,
+    counts: {
+      agents: idsTyped.length,
+      completed: agentResults.filter((agent) => agent.status === 'completed').length,
+      running: agentResults.filter((agent) => agent.status === 'running').length,
+      failed: agentResults.filter((agent) => agent.status === 'failed').length,
+      cancelled: agentResults.filter((agent) => agent.status === 'cancelled').length,
+    },
+    duration: timeoutMs,
+    result: agentResults,
+  }, 'Wait agent results');
 }
 
 class WaitAgentHandler implements ToolHandler<Record<string, unknown>, string> {

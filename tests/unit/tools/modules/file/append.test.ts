@@ -93,6 +93,17 @@ describe('appendModule (native)', () => {
     expect(await fs.readFile(file, 'utf-8')).toBe('<html><body>hello</body></html>');
     if (second.ok) {
       expect(second.output).toContain('final chunk');
+      expect(second.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'Append',
+        path: file,
+        mimeType: 'text/html',
+        metadata: {
+          final: true,
+          appendedChars: 'hello</body></html>'.length,
+        },
+      });
+      expect(second.meta?.fileSize).toBe('<html><body>hello</body></html>'.length);
     }
   });
 });

@@ -13,6 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { TWITTER_API_ENDPOINTS } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { twitterFetchSchema as schema } from './twitterFetch.schema';
 
 const { FXTWITTER: FXTWITTER_API, VXTWITTER: VXTWITTER_API, NITTER_INSTANCES } = TWITTER_API_ENDPOINTS;
@@ -225,14 +226,34 @@ export async function executeTwitterFetch(
       ok: true,
       output,
       meta: {
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `Tweet ${tweet.handle}/${tweet.id}`,
+          url,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            tweetId: tweet.id,
+            author: tweet.author,
+            handle: tweet.handle,
+            mediaCount: tweet.media?.length ?? 0,
+          },
+        }),
         tweetId: tweet.id,
         author: tweet.author,
         handle: tweet.handle,
         text: tweet.text,
+        contentLength: output.length,
+        textLength: tweet.text.length,
+        truncated: false,
         date: tweet.date,
         likes: tweet.likes,
         retweets: tweet.retweets,
         replies: tweet.replies,
+        mediaCount: tweet.media?.length ?? 0,
         media: tweet.media,
         url,
       },

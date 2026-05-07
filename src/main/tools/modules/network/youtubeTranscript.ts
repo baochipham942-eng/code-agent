@@ -13,6 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { YOUTUBE_TRANSCRIPT_ENDPOINTS } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { youtubeTranscriptSchema as schema } from './youtubeTranscript.schema';
 
 const {
@@ -265,6 +266,24 @@ export async function executeYoutubeTranscript(
       ok: true,
       output,
       meta: {
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: videoInfo?.title ? `Transcript: ${videoInfo.title}` : `Transcript: ${videoId}`,
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            videoId,
+            language: lang,
+            segmentCount: segments.length,
+            duration: totalDuration,
+            textOnly,
+            artifactRole: 'transcript',
+          },
+        }),
         videoId,
         title: videoInfo?.title,
         author: videoInfo?.author,
@@ -272,6 +291,9 @@ export async function executeYoutubeTranscript(
         availableLanguages: availableLangs,
         segmentCount: segments.length,
         duration: totalDuration,
+        mediaKind: 'video',
+        contentLength: output.length,
+        truncated: false,
         url: `https://www.youtube.com/watch?v=${videoId}`,
       },
     };

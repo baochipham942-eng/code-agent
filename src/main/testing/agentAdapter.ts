@@ -214,11 +214,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _require('module') 拿到的 NodeJS.Module 没有 prototype.require 字段（动态 monkey-patch CommonJS loader）；应该用 NodeJS.Module & { prototype: { require: (id: string) => unknown } } 类型扩展
       const Module = _require('module') as any;
       const originalRequire = Module.prototype.require;
-      Module.prototype.require = function(id: string) {
+      Module.prototype.require = function(id: string, ...args: unknown[]) {
         if (id === 'electron' || id === '../platform') {
           return electronMock;
         }
-        return originalRequire.apply(this, arguments);
+        return originalRequire.apply(this, [id, ...args]);
       };
     } catch {
       // CJS bundled mode — electron mock should already be injected by entry point

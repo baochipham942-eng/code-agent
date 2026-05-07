@@ -483,7 +483,14 @@ export class ConfigService implements IReadConfigService {
     };
 
     const envKey = envKeyMap[provider];
-    return envKey ? process.env[envKey] : undefined;
+    const primaryEnvKey = envKey ? process.env[envKey] : undefined;
+    if (primaryEnvKey) return primaryEnvKey;
+
+    if (provider === 'moonshot') {
+      return process.env.KIMI_K25_API_KEY || undefined;
+    }
+
+    return undefined;
   }
 
   /**

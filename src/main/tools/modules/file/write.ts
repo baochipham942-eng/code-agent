@@ -31,6 +31,7 @@ import type {
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { writeSchema as schema } from './write.schema';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -312,6 +313,14 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
               `问题:\n${check.issues.map((i) => `- ${i}`).join('\n')}\n\n` +
               `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
             meta: {
+              artifact: await createFileArtifact(filePath, schema.name, ctx, {
+                metadata: {
+                  action: action.toLowerCase(),
+                  completenessIssues: check.issues,
+                  contentLength: content.length,
+                  largeSingleWriteArtifact,
+                },
+              }),
               outputPath: filePath,
               completenessIssues: check.issues,
               largeSingleWriteArtifact,
@@ -342,6 +351,13 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         ok: true,
         output,
         meta: {
+          artifact: await createFileArtifact(filePath, schema.name, ctx, {
+            metadata: {
+              action: action.toLowerCase(),
+              contentLength: content.length,
+              largeSingleWriteArtifact,
+            },
+          }),
           outputPath: filePath,
           largeSingleWriteArtifact,
           contentLength: content.length,

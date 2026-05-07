@@ -98,6 +98,28 @@ describe('openaiWrapper / parseOpenAIResponse', () => {
     expect(result.content).toBe("I can't help with that.");
   });
 
+  it('compat: treats null tool_calls as no tool call for text responses', () => {
+    const raw = {
+      id: 'xiaomi-final-text',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: '文件已创建并验证。',
+            tool_calls: null,
+          },
+          finish_reason: 'stop',
+        },
+      ],
+    };
+
+    const result = parseOpenAIResponse(raw);
+
+    expect(result.type).toBe('text');
+    expect(result.content).toBe('文件已创建并验证。');
+  });
+
   it('unknown_field_passthrough: tolerates unknown extra fields without throwing', () => {
     const raw = {
       id: 'chatcmpl-9',
@@ -260,5 +282,44 @@ describe('openaiWrapper / parseOpenAIStreamChunk', () => {
     };
     const chunk = parseOpenAIStreamChunk(raw);
     expect(chunk?.choices?.[0].delta?.content).toBe('ok');
+  });
+
+  it('compat: tolerates null fields in OpenAI-compatible stream chunks', () => {
+    const raw = {
+      choices: [
+        null,
+        {
+          index: null,
+          delta: {
+            role: null,
+            content: null,
+            reasoning_content: null,
+            reasoning: null,
+            tool_calls: [
+              {
+                index: null,
+                id: null,
+                type: null,
+                function: null,
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+        {
+          delta: null,
+          finish_reason: 'stop',
+        },
+      ],
+      usage: null,
+    };
+
+    const chunk = parseOpenAIStreamChunk(raw);
+
+    expect(chunk).not.toBeNull();
+    expect(chunk?.choices?.[0].delta?.content).toBeNull();
+    expect(chunk?.choices?.[1].delta).toBeNull();
+    expect(chunk?.choices).toHaveLength(2);
+    expect(chunk?.usage).toBeNull();
   });
 });

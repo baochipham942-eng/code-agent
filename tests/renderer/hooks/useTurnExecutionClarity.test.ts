@@ -177,6 +177,99 @@ describe('buildTurnExecutionClarityProjection', () => {
     ]);
   });
 
+  it('projects structured tool artifact metadata into artifact ownership', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-artifact',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 100,
+            endTime: 160,
+            nodes: [
+              {
+                id: 'user-1',
+                type: 'user',
+                content: '读取报告并查资料',
+                timestamp: 100,
+              },
+              {
+                id: 'tool-read',
+                type: 'tool_call',
+                content: '',
+                timestamp: 130,
+                toolCall: {
+                  id: 'call-read-1',
+                  name: 'Read',
+                  args: {
+                    path: '/repo/app/report.md',
+                  },
+                  result: '# Report',
+                  success: true,
+                  metadata: {
+                    artifact: {
+                      artifactId: 'artifact-read-report',
+                      kind: 'text',
+                      sourceTool: 'Read',
+                      createdAt: '2026-05-07T00:00:00.000Z',
+                      name: 'report.md',
+                      path: '/repo/app/report.md',
+                      mimeType: 'text/markdown',
+                      preview: '# Report',
+                    },
+                    artifacts: [
+                      {
+                        artifactId: 'artifact-search-result',
+                        kind: 'web',
+                        sourceTool: 'WebSearch',
+                        createdAt: '2026-05-07T00:00:01.000Z',
+                        name: 'Search results',
+                        url: 'https://example.com/search?q=artifact',
+                        preview: 'Search result preview',
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      capabilities: {
+        skills: [],
+        connectors: [],
+        mcpServers: [],
+      },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+    });
+
+    const artifactNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership');
+
+    expect(artifactNode?.turnTimeline?.artifactOwnership).toEqual([
+      {
+        kind: 'file',
+        label: 'report.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Read',
+        path: '/repo/app/report.md',
+        sourceNodeId: 'tool-read',
+      },
+      {
+        kind: 'link',
+        label: 'Search results',
+        ownerKind: 'tool',
+        ownerLabel: 'WebSearch',
+        url: 'https://example.com/search?q=artifact',
+        sourceNodeId: 'tool-read',
+      },
+    ]);
+  });
+
   it('projects parallel routing evidence from launch requests and swarm events', () => {
     const enriched = buildTurnExecutionClarityProjection({
       projection: {
@@ -251,6 +344,108 @@ describe('buildTurnExecutionClarityProjection', () => {
       'requested',
       'approved',
       'started',
+    ]);
+  });
+
+  it('projects unified tool artifact metadata into artifact ownership timeline nodes', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-artifacts',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-artifacts',
+            status: 'completed',
+            startTime: 180,
+            endTime: 240,
+            nodes: [
+              {
+                id: 'user-artifacts',
+                type: 'user',
+                content: '抓取并整理材料',
+                timestamp: 180,
+              },
+              {
+                id: 'tool-artifacts',
+                type: 'tool_call',
+                content: '',
+                timestamp: 220,
+                toolCall: {
+                  id: 'tool-artifacts',
+                  name: 'WebFetch',
+                  args: {},
+                  result: 'ok',
+                  success: true,
+                  metadata: {
+                    artifact: {
+                      artifactId: 'artifact-source',
+                      kind: 'web',
+                      sourceTool: 'WebFetch',
+                      name: 'Source page',
+                      url: 'https://example.com/source',
+                    },
+                    artifacts: [
+                      {
+                        artifactId: 'artifact-notes',
+                        kind: 'text',
+                        sourceTool: 'WebFetch',
+                        name: 'Fetch notes',
+                      },
+                      {
+                        artifactId: 'artifact-file',
+                        kind: 'document',
+                        sourceTool: 'WebFetch',
+                        name: 'Fetched PDF',
+                        path: '/repo/app/source.pdf',
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      capabilities: {
+        skills: [],
+        connectors: [],
+        mcpServers: [],
+      },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+    });
+
+    const artifactNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership');
+    expect(artifactNode?.turnTimeline?.artifactOwnership).toEqual([
+      {
+        kind: 'link',
+        label: 'Source page',
+        ownerKind: 'tool',
+        ownerLabel: 'WebFetch',
+        path: undefined,
+        url: 'https://example.com/source',
+        sourceNodeId: 'tool-artifacts',
+      },
+      {
+        kind: 'artifact',
+        label: 'Fetch notes',
+        ownerKind: 'tool',
+        ownerLabel: 'WebFetch',
+        path: undefined,
+        url: undefined,
+        sourceNodeId: 'tool-artifacts',
+      },
+      {
+        kind: 'file',
+        label: 'Fetched PDF',
+        ownerKind: 'tool',
+        ownerLabel: 'WebFetch',
+        path: '/repo/app/source.pdf',
+        url: undefined,
+        sourceNodeId: 'tool-artifacts',
+      },
     ]);
   });
 

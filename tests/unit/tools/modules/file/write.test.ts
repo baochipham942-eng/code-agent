@@ -127,6 +127,17 @@ describe('writeModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('Created');
         expect(result.output).toContain(file);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'Write',
+          path: file,
+          mimeType: 'text/plain',
+          metadata: {
+            action: 'created',
+            contentLength: 11,
+            largeSingleWriteArtifact: false,
+          },
+        });
       }
       const written = await fs.readFile(file, 'utf-8');
       expect(written).toBe('hello world');
@@ -218,6 +229,16 @@ describe('writeModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('代码完整性警告');
         expect(result.output).toContain('未闭合的括号');
+        expect(result.meta?.artifact).toMatchObject({
+          sourceTool: 'Write',
+          path: file,
+          metadata: {
+            action: 'created',
+            completenessIssues: expect.arrayContaining([
+              expect.stringContaining('未闭合的括号'),
+            ]),
+          },
+        });
       }
     });
 

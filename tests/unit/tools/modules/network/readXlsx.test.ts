@@ -198,6 +198,18 @@ describe('readXlsxModule (native)', () => {
         expect(result.output).toContain('| Name | Age | City |');
         expect(result.output).toContain('| Alice | 30 | NYC |');
         expect(result.output).toContain('| Bob | 25 | LA |');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'spreadsheet',
+          sourceTool: 'read_xlsx',
+          path: '/abs/data.xlsx',
+          metadata: {
+            sheetName: 'Sheet1',
+            rowCount: 2,
+            actualRowCount: 2,
+            columnCount: 3,
+            format: 'table',
+          },
+        });
       }
     });
 

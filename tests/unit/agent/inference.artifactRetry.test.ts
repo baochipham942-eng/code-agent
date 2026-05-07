@@ -139,6 +139,41 @@ describe('contextAssembly inference artifact retry', () => {
     vi.clearAllMocks();
   });
 
+  it('emits user-visible progress while waiting for artifact model output', async () => {
+    const ctx = buildCtx();
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+      'generating',
+      '正在生成 artifact 内容...',
+    );
+  });
+
+  it('emits repair-specific progress while waiting for artifact repair output', async () => {
+    const ctx = buildCtx({
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'targeted_repair',
+        targetReadCount: 1,
+        noOpPatchCount: 1,
+      },
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+      'generating',
+      '正在写入 artifact 修复补丁...',
+    );
+  });
+
   it('retries an artifact request once with non-streaming when streamed tool arguments end incomplete', async () => {
     const ctx = buildCtx();
 
@@ -161,6 +196,10 @@ describe('contextAssembly inference artifact retry', () => {
         message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
       },
     });
+    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+      'generating',
+      '模型流中断，正在用非流式方式重试 artifact 生成...',
+    );
     expect(ctx.runtime._artifactNonStreamingRetried).toBe(false);
   });
 
@@ -228,6 +267,68 @@ describe('contextAssembly inference artifact retry', () => {
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+  });
+
+  it('does not seed artifact repair guard for fresh generation requests that mention the test contract', async () => {
+    const ctx = buildCtx({
+      messages: [
+        {
+          id: 'user-create',
+          role: 'user',
+          content: 'Create a single-file browser game at corgi-platformer.html. Include window.__GAME_TEST__ with reset(), step(), getState(), and runSmokeTest().',
+          timestamp: Date.now(),
+        },
+      ],
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
+    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    const toolNames = tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task']);
+    expect(options).toMatchObject({ artifactRepairActive: false });
+    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+      'generating',
+      '正在生成 artifact 内容...',
+    );
+  });
+
+  it('does not seed artifact repair guard from stale persistent context during fresh generation', async () => {
+    const ctx = buildCtx({
+      messages: [
+        {
+          id: 'user-create-stale-context',
+          role: 'user',
+          content: [
+            'Create a complete single-file browser platformer game at /private/tmp/new-game.html.',
+            'Include machine-checkable game validation with window.__GAME_TEST__.',
+            'Do not use test-only direct state grants or existence-only coverage.',
+          ].join(' '),
+          timestamp: Date.now(),
+        },
+      ],
+      persistentSystemContext: [
+        '修复 /private/tmp/code-agent-hard-fail-game.html 这个已经存在的单文件 HTML 互动游戏。当前 validator 失败摘要：runSmokeTest 把对象存在、机制注册或覆盖声明当成通过证据。',
+      ],
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.artifactRepairGuard).toBeUndefined();
+    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task']);
+    expect(options).toMatchObject({ artifactRepairActive: false });
   });
 
   it('seeds active repair issue codes before the first inference from validator failure text', async () => {
@@ -316,6 +417,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 3,
         phase: 'targeted_repair',
+        targetReadCount: 1,
         blockedToolCount: 2,
       },
     });
@@ -326,6 +428,30 @@ describe('contextAssembly inference artifact retry', () => {
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     expect(toolNames).toEqual(['Edit', 'Append']);
+  });
+
+  it('keeps Read available after repeated blocks if the target file was never read', async () => {
+    const ctx = buildCtx({
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 3,
+        phase: 'targeted_repair',
+        targetReadCount: 0,
+        blockedToolCount: 2,
+      },
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    const toolNames = tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(options).toMatchObject({
+      artifactRepairActive: true,
+      artifactRepairWritePriority: false,
+      artifactRepairFullRewritePriority: false,
+    });
   });
 
   it('removes Read once the repair read budget is exhausted', async () => {
@@ -450,7 +576,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'targeted_repair',
-        targetReadCount: 0,
+        targetReadCount: 1,
         targetRangedReadCount: 1,
       },
     });
@@ -493,12 +619,40 @@ describe('contextAssembly inference artifact retry', () => {
     });
   });
 
+  it('exposes a targeted Read after validation failure seeds the full read budget', async () => {
+    const ctx = buildCtx({
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        targetReadCount: 1,
+        targetRangedReadCount: 0,
+        blockedToolCount: 2,
+        noOpPatchCount: 1,
+        activeIssueCodes: ['coverage_without_runtime_evidence'],
+      },
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    const toolNames = tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
+    expect(options).toMatchObject({
+      artifactRepairActive: true,
+      artifactRepairWritePriority: false,
+      artifactRepairFullRewritePriority: false,
+    });
+  });
+
   it('uses write-priority artifact repair inference after repeated repair-guard blocks', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
+        targetReadCount: 1,
         blockedToolCount: 2,
       },
     });
@@ -596,7 +750,7 @@ describe('contextAssembly inference artifact retry', () => {
     });
   });
 
-  it('keeps targeted Edit priority after ambiguous anchors without exposing more reads', async () => {
+  it('exposes a targeted Read after an Edit anchor failure so the next patch can use exact context', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {
         targetFile: '/tmp/game.html',
@@ -615,15 +769,43 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
-      artifactRepairWritePriority: true,
+      artifactRepairWritePriority: false,
       artifactRepairFullRewritePriority: false,
     });
   });
 
-  it('removes reads after a soft-blocked artifact repair read even when ranged budget remains', async () => {
+  it('exposes another targeted Read after an Edit anchor failure even when the initial ranged read was spent', async () => {
+    const ctx = buildCtx({
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 2,
+        phase: 'targeted_repair',
+        targetReadCount: 1,
+        targetRangedReadCount: 1,
+        blockedToolCount: 3,
+        editAnchorFailureCount: 1,
+        preferTargetedEdit: true,
+        activeIssueCodes: ['missing_reachability_metadata', 'run_smoke_failed'],
+      },
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    const toolNames = tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
+    expect(options).toMatchObject({
+      artifactRepairActive: true,
+      artifactRepairWritePriority: false,
+      artifactRepairFullRewritePriority: false,
+    });
+  });
+
+  it('keeps Read visible after soft-blocks when the target file has not been read successfully', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {
         targetFile: '/tmp/game.html',
@@ -643,10 +825,10 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
-      artifactRepairWritePriority: true,
+      artifactRepairWritePriority: false,
       artifactRepairFullRewritePriority: false,
     });
   });

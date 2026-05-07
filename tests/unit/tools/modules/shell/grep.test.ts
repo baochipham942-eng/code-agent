@@ -175,6 +175,15 @@ describe('grepModule (native)', () => {
         const meta = result.meta as { engine?: string; totalMatches?: number } | undefined;
         expect(meta?.engine === 'rg' || meta?.engine === 'grep').toBe(true);
         expect((meta?.totalMatches ?? 0) > 0).toBe(true);
+        expect(result.meta).toMatchObject({
+          pattern: 'hello',
+          searchPath: tempDir,
+          artifact: expect.objectContaining({
+            kind: 'search',
+            sourceTool: 'Grep',
+          }),
+        });
+        expect((result.meta?.matches as Array<{ file: string; line: number }>).length).toBeGreaterThan(0);
       }
     });
 

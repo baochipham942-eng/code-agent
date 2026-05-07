@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>月面快递员</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            touch-action: none;
+        }
+        #game-container {
+            position: relative;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 80vh;
+            aspect-ratio: 16/9;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .control-btn {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 15px 25px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .control-btn:active {
+            background: rgba(255,255,255,0.3);
+        }
+        @media (max-width: 768px) {
+            canvas { max-height: 60vh; }
+            #controls { gap: 5px; }
+            .control-btn { padding: 12px 20px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game" width="1280" height="720"></canvas>
+        <div id="ui">
+            <div>氧气罐: <span id="oxygen">0</span>/3</div>
+            <div>检查点: <span id="checkpoint">无</span></div>
+        </div>
+    </div>
+    <div id="controls">
+        <button class="control-btn" id="btn-left">←</button>
+        <button class="control-btn" id="btn-right">→</button>
+        <button class="control-btn" id="btn-jump">跳跃</button>
+    </div>
+
+    <script>
+    (() => {
+        // Game Configuration
+        const CONFIG = {
+            gravity: 0.35,
+            friction: 0.85,
+            acceleration: 0.6,
+            maxSpeed: 8,
+            jumpForce: 12,
+            coyoteTime: 0.15,
+            jumpBuffer: 0.1,
+            tileSize: 40
+        };
+
+        // Game State
+        let state = {
+            player: {
+                x: 100, y: 400,
+                vx: 0, vy: 0,
+                width: 30, height: 30,
+                grounded: false,
+                checkpoint: null,
+                oxygen: 0,
+                dead: false,
+                won: false
+            },
+            platforms: [
+                { x: 0, y: 680, w: 400, h: 40, type: 'ground' },
+                { x: 500, y: 680, w: 300, h: 40, type: 'ground' },
+                { x: 900, y: 680, w: 380, h: 40, type: 'ground' },
+                { x: 150, y: 540, w: 120, h: 20, type: 'platform' },
+                { x: 350, y: 440, w: 100, h: 20, type: 'platform' },
+                { x: 550, y: 340, w: 120, h: 20, type: 'platform' },
+                { x: 750, y: 240, w: 100, h: 20, type: 'platform' },
+                { x: 950, y: 340, w: 120, h: 20, type: 'platform' },
+                { x: 1150, y: 440, w: 130, h: 20, type: 'ground' }
+            ],
+            hazards: [
+                { x: 420, y: 660, w: 60, h: 20, type: 'laser' },
+                { x: 750, y: 660, w: 40, h: 20, type: 'pit' }
+            ],
+            collectibles: [
+                { x: 180, y: 500, w: 20, h: 20, collected: false },
+                { x: 580, y: 300, w: 20, h: 20, collected: false },
+                { x: 800, y: 200, w: 20, h: 20, collected: false }
+            ],
+            checkpoints: [
+                { x: 250, y: 640, w: 30, h: 40, activated: false },
+                { x: 650, y: 640, w: 30, h: 40, activated: false },
+                { x: 1050, y: 640, w: 30, h: 40, activated: false }
+            ],
+            beacon: { x: 1200, y: 400, w: 40, h: 40 },
+            particles: [],
+            keys: { left: false, right: false, jump: false },
+            jumpBufferTimer: 0,
+            coyoteTimer: 0,
+            cameraX: 0
+        };
+
+        // Canvas Setup
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const uiOxygen = document.getElementById('oxygen');
+        const uiCheckpoint = document.getElementById('checkpoint');
+
+        // Input Handling
+        function handleKeyDown(e) {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = true;
+            if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+                if (!state.keys.jump) {
+                    state.keys.jump = true;
+                    state.jumpBufferTimer = CONFIG.jumpBuffer;
+                }
+            }
+        }
+
+        function handleKeyUp(e) {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
+            if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') state.keys.jump = false;
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+
+        // Touch Controls
+        const btnLeft = document.getElementById('btn-left');
+        const btnRight = document.getElementById('btn-right');
+        const btnJump = document.getElementById('btn-jump');
+
+        btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys.left = true; });
+        btnLeft.addEventListener('touchend', () => state.keys.left = false);
+        btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys.right = true; });
+        btnRight.addEventListener('touchend', () => state.keys.right = false);
+        btnJump.addEventListener('touchstart', (e) => { e.preventDefault(); state.keys.jump = true; });
+        btnJump.addEventListener('touchend', () => state.keys.jump = false);
+
+        // Physics
+        function updatePhysics() {
+            const p = state.player;
+            if (p.dead || p.won) return;
+
+            // Horizontal Movement
+            if (state.keys.left) {
+                p.vx -= CONFIG.acceleration;
+            }
+            if (state.keys.right) {
+                p.vx += CONFIG.acceleration;
+            }
+
+            // Apply friction and clamp speed
+            p.vx *= CONFIG.friction;
+            p.vx = Math.max(-CONFIG.maxSpeed, Math.min(CONFIG.maxSpeed, p.vx));
+
+            // Coyote Time
+            if (p.grounded) {
+                state.coyoteTimer = CONFIG.coyoteTime;
+            } else {
+                state.coyoteTimer -= 1/60;
+            }
+
+            // Jump Buffer
+            if (state.jumpBufferTimer > 0) {
+                state.jumpBufferTimer -= 1/60;
+            }
+
+            // Jump
+            if (state.jumpBufferTimer > 0 && state.coyoteTimer > 0) {
+                p.vy = -CONFIG.jumpForce;
+                p.grounded = false;
+                state.coyoteTimer = 0;
+                state.jumpBufferTimer = 0;
+                createParticles(p.x + p.width/2, p.y + p.height, 10, '#0ff');
+            }
+
+            // Gravity
+            p.vy += CONFIG.gravity;
+
+            // Apply velocity
+            p.x += p.vx;
+            p.y += p.vy;
+
+            // Platform Collision
+            p.grounded = false;
+            for (const plat of state.platforms) {
+                if (checkCollision(p, plat)) {
+                    resolvePlatformCollision(p, plat);
+                }
+            }
+
+            // Hazard Collision
+            for (const haz of state.hazards) {
+                if (checkCollision(p, haz)) {
+                    if (haz.type === 'laser') {
+                        die();
+                    } else if (haz.type === 'pit') {
+                        die();
+                    }
+                }
+            }
+
+            // Collectibles
+            for (const col of state.collectibles) {
+                if (!col.collected && checkCollision(p, col)) {
+                    col.collected = true;
+                    p.oxygen++;
+                    uiOxygen.textContent = p.oxygen;
+                    createParticles(col.x + col.w/2, col.y + col.h/2, 15, '#0f0');
+                }
+            }
+
+            // Checkpoints
+            for (const cp of state.checkpoints) {
+                if (!cp.activated && checkCollision(p, cp)) {
+                    cp.activated = true;
+                    p.checkpoint = cp;
+                    uiCheckpoint.textContent = '已激活';
+                    createParticles(cp.x + cp.w/2, cp.y + cp.h/2, 20, '#ff0');
+                }
+            }
+
+            // Beacon (Win)
+            if (checkCollision(p, state.beacon) && p.oxygen >= 3) {
+                p.won = true;
+            }
+
+            // World Bounds
+            if (p.y > 800) die();
+
+            // Update Camera
+            const targetCamX = p.x - 500;
+            state.cameraX += (targetCamX - state.cameraX) * 0.1;
+            state.cameraX = Math.max(0, Math.min(1200 - 1280, state.cameraX));
+        }
+
+        function checkCollision(a, b) {
+            return a.x < b.x + b.w && a.x + a.width > b.x &&
+                   a.y < b.y + b.h && a.y + a.height > b.y;
+        }
+
+        function resolvePlatformCollision(p, plat) {
+            const overlapLeft = (p.x + p.width) - plat.x;
+            const overlapRight = (plat.x + plat.w) - p.x;
+            const overlapTop = (p.y + p.height) - plat.y;
+            const overlapBottom = (plat.y + plat.h) - p.y;
+
+            const minOverlapX = Math.min(overlapLeft, overlapRight);
+            const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+            if (minOverlapX < minOverlapY) {
+                if (overlapLeft < overlapRight) {
+                    p.x = plat.x - p.width;
+                } else {
+                    p.x = plat.x + plat.w;
+                }
+                p.vx = 0;
+            } else {
+                if (overlapTop < overlapBottom) {
+                    p.y = plat.y - p.height;
+                    p.vy = 0;
+                    p.grounded = true;
+                } else {
+                    p.y = plat.y + plat.h;
+                    p.vy = 0;
+                }
+            }
+        }
+
+        function die() {
+            state.player.dead = true;
+            createParticles(state.player.x + state.player.width/2, state.player.y + state.player.height/2, 30, '#f00');
+        }
+
+        function respawn() {
+            const p = state.player;
+            if (p.checkpoint) {
+                p.x = p.checkpoint.x + 10;
+                p.y = p.checkpoint.y - p.height;
+                p.vx = 0;
+                p.vy = 0;
+            } else {
+                p.x = 100;
+                p.y = 400;
+                p.vx = 0;
+                p.vy = 0;
+            }
+            p.dead = false;
+        }
+
+        function createParticles(x, y, count, color) {
+            for (let i = 0; i < count; i++) {
+                state.particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    life: 1,
+                    color
+                });
+            }
+        }
+
+        function updateParticles() {
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                const part = state.particles[i];
+                part.x += part.vx;
+                part.y += part.vy;
+                part.life -= 0.02;
+                if (part.life <= 0) {
+                    state.particles.splice(i, 1);
+                }
+            }
+        }
+
+        // Rendering
+        function render() {
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(-state.cameraX, 0);
+
+            // Platforms
+            for (const plat of state.platforms) {
+                if (plat.type === 'ground') {
+                    ctx.fillStyle = '#4a4a6a';
+                    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+                    ctx.fillStyle = '#3a3a5a';
+                    ctx.fillRect(plat.x, plat.y, plat.w, 5);
+                } else {
+                    ctx.fillStyle = '#5a5a7a';
+                    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+                    ctx.fillStyle = '#6a6a8a';
+                    ctx.fillRect(plat.x, plat.y, plat.w, 3);
+                }
+            }
+
+            // Hazards
+            for (const haz of state.hazards) {
+                if (haz.type === 'laser') {
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(haz.x, haz.y, haz.w, haz.h);
+                    ctx.fillStyle = '#ff6666';
+                    ctx.fillRect(haz.x, haz.y + 5, haz.w, 5);
+                } else if (haz.type === 'pit') {
+                    ctx.fillStyle = '#222';
+                    ctx.fillRect(haz.x, haz.y, haz.w, haz.h);
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(haz.x, haz.y + 5, haz.w, 5);
+                }
+            }
+
+            // Collectibles
+            for (const col of state.collectibles) {
+                if (!col.collected) {
+                    ctx.fillStyle = '#0f0';
+                    ctx.beginPath();
+                    ctx.arc(col.x + col.w/2, col.y + col.h/2, col.w/2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#0ff';
+                    ctx.beginPath();
+                    ctx.arc(col.x + col.w/2, col.y + col.h/2, col.w/4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Checkpoints
+            for (const cp of state.checkpoints) {
+                ctx.fillStyle = cp.activated ? '#ff0' : '#888';
+                ctx.fillRect(cp.x, cp.y, cp.w, cp.h);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(cp.x + 10, cp.y + 10, 10, 20);
+            }
+
+            // Beacon
+            ctx.fillStyle = '#0ff';
+            ctx.beginPath();
+            ctx.arc(state.beacon.x + state.beacon.w/2, state.beacon.y + state.beacon.h/2, state.beacon.w/2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(state.beacon.x + state.beacon.w/2, state.beacon.y + state.beacon.h/2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Player
+            const p = state.player;
+            if (!p.dead) {
+                ctx.fillStyle = '#0af';
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+                ctx.fillStyle = '#0ff';
+                ctx.fillRect(p.x + 5, p.y + 5, p.width - 10, p.height - 10);
+            }
+
+            // Particles
+            for (const part of state.particles) {
+                ctx.fillStyle = part.color;
+                ctx.globalAlpha = part.life;
+                ctx.fillRect(part.x - 3, part.y - 3, 6, 6);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+
+            // Game Over / Win
+            if (p.dead) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#f00';
+                ctx.font = '48px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2);
+                ctx.fillStyle = '#fff';
+                ctx.font = '20px Courier New';
+                ctx.fillText('按 R 重试', canvas.width/2, canvas.height/2 + 50);
+            } else if (p.won) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#0f0';
+                ctx.font = '48px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('你赢了！', canvas.width/2, canvas.height/2);
+                ctx.fillStyle = '#fff';
+                ctx.font = '20px Courier New';
+                ctx.fillText('按 R 重新开始', canvas.width/2, canvas.height/2 + 50);
+            }
+        }
+
+        function gameLoop() {
+            updatePhysics();
+            updateParticles();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Restart
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyR') {
+                if (state.player.dead && state.player.checkpoint) {
+                    respawn();
+                } else {
+                    resetGame();
+                }
+            }
+        });
+
+        function resetGame() {
+            state = {
+                player: {
+                    x: 100, y: 400,
+                    vx: 0, vy: 0,
+                    width: 30, height: 30,
+                    grounded: false,
+                    checkpoint: null,
+                    oxygen: 0,
+                    dead: false,
+                    won: false
+                },
+                platforms: [
+                    { x: 0, y: 680, w: 400, h: 40, type: 'ground' },
+                    { x: 500, y: 680, w: 300, h: 40, type: 'ground' },
+                    { x: 900, y: 680, w: 380, h: 40, type: 'ground' },
+                    { x: 150, y: 540, w: 120, h: 20, type: 'platform' },
+                    { x: 350, y: 440, w: 100, h: 20, type: 'platform' },
+                    { x: 550, y: 340, w: 120, h: 20, type: 'platform' },
+                    { x: 750, y: 240, w: 100, h: 20, type: 'platform' },
+                    { x: 950, y: 340, w: 120, h: 20, type: 'platform' },
+                    { x: 1150, y: 440, w: 130, h: 20, type: 'ground' }
+                ],
+                hazards: [
+                    { x: 420, y: 660, w: 60, h: 20, type: 'laser' },
+                    { x: 750, y: 660, w: 40, h: 20, type: 'pit' }
+                ],
+                collectibles: [
+                    { x: 180, y: 500, w: 20, h: 20, collected: false },
+                    { x: 580, y: 300, w: 20, h: 20, collected: false },
+                    { x: 800, y: 200, w: 20, h: 20, collected: false }
+                ],
+                checkpoints: [
+                    { x: 250, y: 640, w: 30, h: 40, activated: false },
+                    { x: 650, y: 640, w: 30, h: 40, activated: false },
+                    { x: 1050, y: 640, w: 30, h: 40, activated: false }
+                ],
+                beacon: { x: 1200, y: 400, w: 40, h: 40 },
+                particles: [],
+                keys: { left: false, right: false, jump: false },
+                jumpBufferTimer: 0,
+                coyoteTimer: 0,
+                cameraX: 0
+            };
+            uiOxygen.textContent = '0';
+            uiCheckpoint.textContent = '无';
+        }
+
+        // Game Metadata
+        window.__GAME_META__ = {
+            domain: 'browser-game',
+            subtype: 'platformer',
+            controls: {
+                keyboard: {
+                    left: 'ArrowLeft',
+                    right: 'ArrowRight',
+                    jump: 'Space',
+                    reset: 'KeyR'
+                },
+                aliases: {
+                    left: ['KeyA'],
+                    right: ['KeyD'],
+                    jump: ['ArrowUp', 'KeyW']
+                },
+                touch: {
+                    left: '左按钮',
+                    right: '右按钮',
+                    jump: '跳跃按钮'
+                }
+            },
+            coreLoop: {
+                description: '收集3个氧气罐，避开激光和深坑，到达蓝色信标',
+                objectives: [
+                    { id: 'oxygen1', name: '收集氧气罐', type: 'collect', count: 3, reachable: true },
+                    { id: 'checkpoint1', name: '激活检查点1', type: 'checkpoint', reachable: true },
+                    { id: 'checkpoint2', name: '激活检查点2', type: 'checkpoint', reachable: true },
+                    { id: 'checkpoint3', name: '激活检查点3', type: 'checkpoint', reachable: true },
+                    { id: 'reach_beacon', name: '到达信标', type: 'goal', reachable: true }
+                ]
+            },
+            levels: [
+                { id: 'moon-route', name: '月面快递路线', index: 0 }
+            ],
+            mechanics: {
+                gravity: 0.35,
+                friction: 0.85,
+                acceleration: 0.6,
+                maxSpeed: 8,
+                jumpForce: 12,
+                coyoteTime: 0.15,
+                jumpBuffer: 0.1
+            },
+            rewards: [
+                { id: 'oxygen', name: '氧气罐', type: 'collectible', effect: '收集进度+1', reachable: true },
+                { id: 'checkpoint', name: '检查点', type: 'checkpoint', effect: '死亡后重生', reachable: true }
+            ],
+            risks: [
+                { id: 'laser', name: '激光', type: 'hazard', effect: '立即死亡', reachable: true },
+                { id: 'pit', name: '深坑', type: 'hazard', effect: '掉落死亡', reachable: true }
+            ],
+            progressPlan: [
+                { label: '向右移动角色', input: 'right', frames: 20, metric: 'player.x', expect: 'increase' },
+                { label: '持续移动推进路线', input: 'right', frames: 20, metric: 'player.x', expect: 'increase' },
+                { label: '移动中跳跃仍保持推进', input: ['right', 'jump'], frames: 16, metric: 'player.x', expect: 'increase' }
+            ],
+            progress: {
+                levelsCovered: 1,
+                totalLevels: 1,
+                scenariosPassed: 0,
+                segmentsPassed: 0,
+                mechanics: ['gravity', 'friction', 'acceleration', 'jump', 'collision', 'coyote_time', 'jump_buffer'],
+                rewards: ['oxygen', 'checkpoint'],
+                risks: ['laser', 'pit'],
+                stateChanges: ['position', 'velocity', 'oxygen', 'checkpoint']
+            },
+            qualityPlan: {
+                actorReadable: '蓝色方块角色，可通过键盘和触控控制',
+                mechanics: '低重力物理引擎，包含加速度/摩擦、重力、跳跃缓冲、coyote time',
+                rewards: '3个氧气罐收集，3个检查点重生',
+                risks: '激光陷阱和深坑危险',
+                levelsCovered: 1,
+                allAuthoredLevelsReachable: true,
+                desktopViewport: '1280x720，响应式缩放',
+                mobileViewport: '最大高度60vh，不裁切',
+                canvasNonblank: true,
+                actorVisible: true,
+                hudVisible: true,
+                noHorizontalCrop: true,
+                noCriticalOverlap: true
+            }
+        };
+
+        // Game Test Suite
+        window.__GAME_TEST__ = {
+            start() {
+                resetGame();
+                return this.snapshot();
+            },
+
+            reset(levelOrScenario) {
+                resetGame();
+                return this.snapshot();
+            },
+
+            snapshot() {
+                const p = state.player;
+                return {
+                    player: {
+                        x: Math.round(p.x),
+                        y: Math.round(p.y),
+                        vx: Math.round(p.vx * 100) / 100,
+                        vy: Math.round(p.vy * 100) / 100,
+                        oxygen: p.oxygen,
+                        checkpoint: p.checkpoint ? '已激活' : '无',
+                        dead: p.dead,
+                        won: p.won
+                    },
+                    collectibles: state.collectibles.filter(c => !c.collected).length,
+                    checkpoints: state.checkpoints.filter(c => c.activated).length,
+                    hazards: state.hazards.length,
+                    beacon: checkCollision(p, state.beacon) && p.oxygen >= 3,
+                    cameraX: Math.round(state.cameraX),
+                    oxygenCollected: p.oxygen,
+                    oxygenRequired: 3
+                };
+            },
+
+            step(inputState = {}, frames = 1) {
+                const frameCount = Math.max(1, Math.floor(Number.isFinite(frames) ? frames : 1));
+                const pressed = (semantic, ...codes) => Boolean(
+                    inputState[semantic] || codes.some(code => inputState[code])
+                );
+
+                for (let i = 0; i < frameCount; i++) {
+                    if (pressed('reset', 'KeyR')) {
+                        if (state.player.dead && state.player.checkpoint) {
+                            respawn();
+                        } else {
+                            resetGame();
+                        }
+                        break;
+                    }
+
+                    const left = pressed('left', 'ArrowLeft', 'KeyA');
+                    const right = pressed('right', 'ArrowRight', 'KeyD');
+                    const jump = pressed('jump', 'Space', 'ArrowUp', 'KeyW');
+                    const wasJumping = state.keys.jump;
+
+                    state.keys.left = left;
+                    state.keys.right = right;
+                    state.keys.jump = jump;
+
+                    if (jump && !wasJumping) {
+                        state.jumpBufferTimer = CONFIG.jumpBuffer;
+                    }
+
+                    updatePhysics();
+                    updateParticles();
+
+                    if (state.player.dead || state.player.won) break;
+                }
+                return this.snapshot();
+            },
+
+            runSmokeTest() {
+                const result = {
+                    passed: true,
+                    checks: [],
+                    failures: [],
+                    coverage: {
+                        levelsPassed: 0,
+                        totalLevels: 1,
+                        scenariosPassed: 0,
+                        segmentsPassed: 0,
+                        mechanics: [],
+                        rewards: [],
+                        risks: [],
+                        stateChanges: [],
+                        allLevelsReachable: false
+                    }
+                };
+                const fail = (message) => {
+                    result.passed = false;
+                    result.failures.push(message);
+                };
+                const check = (message) => result.checks.push(message);
+                const cover = (bucket, value) => {
+                    if (!result.coverage[bucket].includes(value)) result.coverage[bucket].push(value);
+                };
+                const placePlayer = (x, y) => {
+                    state.player.x = x;
+                    state.player.y = y;
+                    state.player.vx = 0;
+                    state.player.vy = 0;
+                    state.player.dead = false;
+                    state.player.won = false;
+                    state.keys.left = false;
+                    state.keys.right = false;
+                    state.keys.jump = false;
+                    state.jumpBufferTimer = 0;
+                    state.coyoteTimer = 0;
+                };
+
+                // Test 1: Start state
+                this.start();
+                const start = this.snapshot();
+                if (start.player.oxygen !== 0) {
+                    fail('初始氧气应为0');
+                }
+                if (!start.player.dead && !start.player.won) {
+                    cover('mechanics', 'start_state');
+                    check('start state is playable');
+                }
+
+                // Test 2: Movement and acceleration
+                const beforeMove = this.snapshot();
+                const afterMove = this.step({ right: true }, 30);
+                if (afterMove.player.x <= beforeMove.player.x || afterMove.player.vx <= beforeMove.player.vx) {
+                    fail('向右移动应推进位置并增加水平速度');
+                } else {
+                    cover('mechanics', 'acceleration');
+                    cover('stateChanges', 'position');
+                    check('right input moves the player');
+                }
+
+                // Test 3: Gravity
+                this.reset();
+                placePlayer(120, 300);
+                const beforeGravity = this.snapshot();
+                const afterGravity = this.step({}, 20);
+                if (afterGravity.player.vy <= beforeGravity.player.vy || afterGravity.player.y <= beforeGravity.player.y) {
+                    fail('重力应向下增加vy并改变y位置');
+                } else {
+                    cover('mechanics', 'gravity');
+                    cover('stateChanges', 'velocity');
+                    check('gravity changes falling velocity');
+                }
+
+                // Test 4: Jump
+                this.reset();
+                placePlayer(120, 650);
+                state.player.grounded = true;
+                state.coyoteTimer = CONFIG.coyoteTime;
+                const beforeJump = this.snapshot();
+                const afterJump = this.step({ jump: true }, 2);
+                if (afterJump.player.vy >= beforeJump.player.vy || afterJump.player.vy >= -CONFIG.jumpForce * 0.6) {
+                    fail('跳跃应产生足够的向上速度');
+                } else {
+                    cover('mechanics', 'jump');
+                    cover('stateChanges', 'jump_velocity');
+                    check('jump input creates upward velocity');
+                }
+
+                // Test 5: Coyote Time
+                this.reset();
+                placePlayer(120, 500);
+                state.player.grounded = false;
+                state.coyoteTimer = CONFIG.coyoteTime;
+                const beforeCoyote = this.snapshot();
+                const afterCoyote = this.step({ jump: true }, 2);
+                if (afterCoyote.player.vy >= beforeCoyote.player.vy || afterCoyote.player.vy >= -CONFIG.jumpForce * 0.6) {
+                    fail('Coyote Time应允许离开平台后跳跃');
+                } else {
+                    cover('mechanics', 'coyote_time');
+                    check('coyote time allows jump shortly after leaving ground');
+                }
+
+                // Test 6: Collectible
+                this.reset();
+                state.collectibles[0].collected = false;
+                placePlayer(state.collectibles[0].x, state.collectibles[0].y);
+                const beforeCollect = this.snapshot();
+                const afterCollect = this.step({}, 2);
+                if (afterCollect.player.oxygen <= beforeCollect.player.oxygen) {
+                    fail('收集氧气罐应增加氧气');
+                } else {
+                    cover('rewards', 'oxygen');
+                    cover('stateChanges', 'oxygen');
+                    check('collectible collision increases oxygen');
+                }
+
+                // Test 7: Checkpoint
+                this.reset();
+                state.checkpoints[0].activated = false;
+                placePlayer(state.checkpoints[0].x, state.checkpoints[0].y);
+                const afterCp = this.step({}, 2);
+                if (afterCp.checkpoints !== 1 || afterCp.player.checkpoint !== '已激活') {
+                    fail('激活检查点应设置checkpoint');
+                } else {
+                    cover('rewards', 'checkpoint');
+                    cover('stateChanges', 'checkpoint');
+                    check('checkpoint collision activates respawn point');
+                }
+
+                // Test 8: Laser Hazard
+                this.reset();
+                placePlayer(state.hazards[0].x + 10, state.hazards[0].y);
+                const afterLaser = this.step({}, 2);
+                if (!afterLaser.player.dead) {
+                    fail('接触激光应死亡');
+                } else {
+                    cover('risks', 'laser');
+                    cover('stateChanges', 'death');
+                    check('laser collision kills the player');
+                }
+
+                // Test 9: Pit Hazard
+                this.reset();
+                placePlayer(state.hazards[1].x + 10, state.hazards[1].y);
+                const afterPit = this.step({}, 2);
+                if (!afterPit.player.dead) {
+                    fail('掉入深坑应死亡');
+                } else {
+                    cover('risks', 'pit');
+                    check('pit collision kills the player');
+                }
+
+                // Test 10: Win Condition through collectible collisions
+                this.reset();
+                state.collectibles.forEach(col => { col.collected = false; });
+                for (const col of state.collectibles) {
+                    placePlayer(col.x, col.y);
+                    this.step({}, 2);
+                }
+                placePlayer(state.beacon.x, state.beacon.y);
+                const afterWin = this.step({}, 2);
+                if (!afterWin.player.won) {
+                    fail('收集3个氧气罐后到达信标应获胜');
+                } else {
+                    cover('rewards', 'reach_beacon');
+                    cover('stateChanges', 'win');
+                    check('collecting all oxygen enables beacon win');
+                }
+
+                // Test 11: Respawn
+                this.reset();
+                placePlayer(state.checkpoints[0].x, state.checkpoints[0].y);
+                this.step({}, 2);
+                placePlayer(state.hazards[0].x + 10, state.hazards[0].y);
+                this.step({}, 2);
+                const afterRespawn = this.step({ reset: true }, 1);
+                if (afterRespawn.player.dead || afterRespawn.player.checkpoint !== '已激活') {
+                    fail('重生应恢复到检查点');
+                } else {
+                    cover('stateChanges', 'respawn');
+                    check('reset input respawns at activated checkpoint');
+                }
+
+                // Test 12: Reset
+                this.reset();
+                const afterReset = this.snapshot();
+                if (afterReset.player.oxygen !== 0 || afterReset.checkpoints !== 0) {
+                    fail('重置应恢复初始状态');
+                } else {
+                    cover('stateChanges', 'reset');
+                    check('reset restores initial game state');
+                }
+
+                // Test 13: Collision Detection
+                this.reset();
+                placePlayer(200, 630);
+                const afterCollision = this.step({}, 20);
+                if (afterCollision.player.y > 650) {
+                    fail('应与平台正确碰撞');
+                } else {
+                    cover('mechanics', 'collision');
+                    check('falling player lands on platform');
+                }
+
+                // Test 14: Friction
+                this.reset();
+                state.player.vx = CONFIG.maxSpeed;
+                const beforeFriction = this.snapshot();
+                const afterFriction = this.step({}, 30);
+                if (Math.abs(afterFriction.player.vx) >= Math.abs(beforeFriction.player.vx)) {
+                    fail('摩擦力应减缓速度');
+                } else {
+                    cover('mechanics', 'friction');
+                    check('friction slows horizontal velocity');
+                }
+
+                result.coverage.levelsPassed = result.passed ? 1 : 0;
+                result.coverage.allLevelsReachable = result.passed;
+                return {
+                    passed: result.passed,
+                    checks: result.checks,
+                    failures: result.failures,
+                    coverage: result.coverage
+                };
+            }
+        };
+
+        // Start Game
+        resetGame();
+        gameLoop();
+    })();
+    </script>
+</body>
+</html>

@@ -25,6 +25,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { globSchema as schema } from './glob.schema';
 
 const MAX_RESULTS = 200;
@@ -95,12 +96,35 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
 
       if (matches.length === 0) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        return { ok: true, output: 'No files matched the pattern' };
+        const output = 'No files matched the pattern';
+        return {
+          ok: true,
+          output,
+          meta: {
+            pattern,
+            searchPath,
+            matches: [],
+            totalMatches: 0,
+            returned: 0,
+            truncated: false,
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'search',
+              sessionId: ctx.sessionId,
+              name: `Glob: ${pattern}`,
+              mimeType: 'text/plain',
+              contentLength: output.length,
+              preview: output,
+              metadata: { pattern, searchPath, totalMatches: 0, returned: 0, truncated: false },
+            }),
+          },
+        };
       }
 
       const sliced = matches.slice(0, MAX_RESULTS);
       let result = sliced.join('\n');
-      if (matches.length > MAX_RESULTS) {
+      const truncated = matches.length > MAX_RESULTS;
+      if (truncated) {
         result += `\n\n... (${matches.length - MAX_RESULTS} more files)`;
       }
 
@@ -111,7 +135,34 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
         total: matches.length,
         returned: sliced.length,
       });
-      return { ok: true, output: result };
+      return {
+        ok: true,
+        output: result,
+        meta: {
+          pattern,
+          searchPath,
+          matches: sliced,
+          totalMatches: matches.length,
+          returned: sliced.length,
+          truncated,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'search',
+            sessionId: ctx.sessionId,
+            name: `Glob: ${pattern}`,
+            mimeType: 'text/plain',
+            contentLength: result.length,
+            preview: result.slice(0, 500),
+            metadata: {
+              pattern,
+              searchPath,
+              totalMatches: matches.length,
+              returned: sliced.length,
+              truncated,
+            },
+          }),
+        },
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {

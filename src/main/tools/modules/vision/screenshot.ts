@@ -15,8 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { screenshotTool } from '../../vision/screenshot';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { screenshotSchema as schema } from './screenshot.schema';
+import { adaptVisionLegacyResult } from './resultMeta';
 
 class ScreenshotHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +42,7 @@ class ScreenshotHandler implements ToolHandler<Record<string, unknown>, string> 
     const legacyResult = await screenshotTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('screenshot done', { target, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return adaptVisionLegacyResult(legacyResult, { tool: schema.name, args, ctx, defaultAction: 'capture', target });
   }
 }
 

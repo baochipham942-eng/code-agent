@@ -130,6 +130,21 @@ describe('youtubeTranscriptModule (native)', () => {
         expect(result.output).toContain('Hello world');
         expect(result.output).toContain('Second segment');
         expect(result.output).toMatch(/\[\d+:\d{2}\]/); // timestamp format
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'youtube_transcript',
+          url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          metadata: {
+            videoId: 'dQw4w9WgXcQ',
+            language: 'en',
+            segmentCount: 2,
+            duration: 5,
+            artifactRole: 'transcript',
+          },
+        });
+        expect(result.meta?.mediaKind).toBe('video');
+        expect(result.meta?.contentLength).toBe(result.output.length);
+        expect(result.meta?.truncated).toBe(false);
       }
     });
 

@@ -36,6 +36,47 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
 
+const CLAUDE_STAGE_MODEL_BY_TIER: Record<Exclude<FullAgentConfig['model'], 'inherit' | undefined>, string> = {
+  fast: 'claude-haiku-4-5-20251001',
+  balanced: 'claude-sonnet-4-6',
+  powerful: 'claude-opus-4-7',
+};
+
+function resolveStageModelConfig(
+  baseConfig: ModelConfig,
+  tier: FullAgentConfig['model'] | undefined,
+  stageName: string,
+): ModelConfig {
+  if (!tier || tier === 'inherit') {
+    return baseConfig;
+  }
+
+  const claudeModel = CLAUDE_STAGE_MODEL_BY_TIER[tier];
+  if (!claudeModel) {
+    return baseConfig;
+  }
+
+  if (baseConfig.provider === 'claude') {
+    logger.info('Using Claude model tier for stage', {
+      stage: stageName,
+      tier,
+      model: claudeModel,
+    });
+    return {
+      ...baseConfig,
+      model: claudeModel,
+    };
+  }
+
+  logger.info('Using inherited model for provider-incompatible stage tier', {
+    stage: stageName,
+    tier,
+    provider: baseConfig.provider,
+    model: baseConfig.model,
+  });
+  return baseConfig;
+}
+
 /**
  * 尝试从输出中提取 JSON 数据
  */
@@ -220,6 +261,10 @@ export async function executeWorkflowOrchestrate(
       // Build summary
       const successCount = results.filter(r => r.success).length;
       const totalDuration = results.reduce((sum, r) => sum + r.duration, 0);
+      const failedStages = results.filter(r => !r.success);
+      const workflowError = failedStages
+        .map(r => `${r.stage} (${r.role}): ${r.error || 'Stage failed'}`)
+        .join('; ');
 
       const stagesSummary = results.map((r) => {
         const icon = r.success ? '✅' : '❌';
@@ -241,6 +286,7 @@ ${r.success ? r.output.substring(0, 200) + (r.output.length > 200 ? '...' : '') 
 ### Stage Results:
 
 ${stagesSummary}`,
+        ...(workflowError ? { error: workflowError } : {}),
       };
     } catch (error) {
       return {
@@ -396,28 +442,11 @@ async function executeStage(
   try {
     const executor = getSubagentExecutor();
 
-    // Apply model tier if specified (uses ModelTier: 'fast' | 'balanced' | 'powerful')
-    let effectiveModelConfig = context.modelConfig as ModelConfig;
-    if (agentConfig.model && agentConfig.model !== 'inherit') {
-      // ModelTier to model name mapping
-      const tierToModel: Record<string, string> = {
-        fast: 'haiku',
-        balanced: 'sonnet',
-        powerful: 'opus',
-      };
-      const modelName = tierToModel[agentConfig.model];
-      if (modelName) {
-        effectiveModelConfig = {
-          ...effectiveModelConfig,
-          model: modelName,
-        };
-        logger.info('Using model tier for stage', {
-          stage: stage.name,
-          tier: agentConfig.model,
-          model: modelName,
-        });
-      }
-    }
+    const effectiveModelConfig = resolveStageModelConfig(
+      context.modelConfig as ModelConfig,
+      agentConfig.model,
+      stage.name,
+    );
 
     // Pass attachments to subagent for multimodal processing (e.g., images for vision models)
     const attachments = context.currentAttachments;

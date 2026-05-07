@@ -37,6 +37,7 @@ import { atomicWriteFile } from '../../utils/atomicWrite';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { multiEditSchema as schema } from './multiEdit.schema';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 
 interface EditOperation {
   old_text: string;
@@ -247,7 +248,32 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.info('Edit done', { filePath, edits: edits.length, totalReplacements });
 
-      return { ok: true, output };
+      const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+        metadata: {
+          action: 'edit',
+          operation: 'multi_edit',
+          path: filePath,
+          editCount: edits.length,
+          replacementCount: totalReplacements,
+          lineCount,
+        },
+      }).catch(() => undefined);
+
+      return {
+        ok: true,
+        output,
+        meta: {
+          action: 'edit',
+          operation: 'multi_edit',
+          path: filePath,
+          changedFiles: [filePath],
+          editCount: edits.length,
+          replacementCount: totalReplacements,
+          lineCount,
+          edits: editResults,
+          ...(artifact ? { artifact } : {}),
+        },
+      };
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {

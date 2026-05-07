@@ -20,6 +20,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { excelGenerateSchema as schema } from './excelGenerate.schema';
 
 type ExcelTheme = 'professional' | 'colorful' | 'minimal' | 'dark' | 'financial';
@@ -360,6 +361,19 @@ export async function executeExcelGenerate(
 
 点击上方文件路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'spreadsheet',
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          sizeBytes: stats.size,
+          metadata: {
+            title,
+            rowCount: tableData.length,
+            columnCount: headers.length,
+            sheetName: sheet_name,
+            theme,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

@@ -106,19 +106,47 @@ describe('workflow_orchestrate behavior', () => {
     executeWorkflowMock.mockResolvedValue({
       success: true,
       output: 'workflow done',
+      metadata: { workflowId: 'doc-flow', stageCount: 2 },
     });
     const handler = await workflowOrchestrateModule.createHandler();
     const onProgress = vi.fn();
     const result = await handler.execute(
-      { workflow: 'doc', task: 'process pdf' },
+      { workflow: 'doc', task: 'process pdf', stages: [{ name: 'extract' }, { name: 'draft' }] },
       makeCtx(),
       allowAll,
       onProgress,
     );
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.output).toBe('workflow done');
+    if (result.ok) {
+      expect(result.output).toBe('workflow done');
+      expect(result.meta).toMatchObject({
+        tool: 'workflow_orchestrate',
+        category: 'multiagent',
+        action: 'workflow',
+        status: 'completed',
+        targets: ['doc', 'extract', 'draft'],
+        counts: { stages: 2 },
+        result: { workflowId: 'doc-flow', stageCount: 2 },
+        legacyMetadata: { workflowId: 'doc-flow', stageCount: 2 },
+        request: {
+          args: {
+            workflow: 'doc',
+            task: { type: 'string', length: 11, preview: 'process pdf' },
+            stages: {
+              type: 'array',
+              length: 2,
+              preview: [{ name: 'extract' }, { name: 'draft' }],
+            },
+          },
+        },
+        bridge: { protocolContext: true, legacyContext: true },
+        artifactRole: 'multiagent-result',
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'workflow_orchestrate' }),
+        artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'workflow_orchestrate' })],
+      });
+    }
     expect(executeWorkflowMock).toHaveBeenCalledWith(
-      { workflow: 'doc', task: 'process pdf' },
+      { workflow: 'doc', task: 'process pdf', stages: [{ name: 'extract' }, { name: 'draft' }] },
       expect.objectContaining({ workingDirectory: '/tmp/test' }),
     );
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'workflow_orchestrate' });
@@ -126,7 +154,11 @@ describe('workflow_orchestrate behavior', () => {
   });
 
   it('legacy failure → ok=false', async () => {
-    executeWorkflowMock.mockResolvedValue({ success: false, error: 'unknown workflow' });
+    executeWorkflowMock.mockResolvedValue({
+      success: false,
+      error: 'unknown workflow',
+      metadata: { workflowId: 'foo-flow' },
+    });
     const handler = await workflowOrchestrateModule.createHandler();
     const result = await handler.execute(
       { workflow: 'foo', task: 't' },
@@ -134,6 +166,23 @@ describe('workflow_orchestrate behavior', () => {
       allowAll,
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe('unknown workflow');
+    if (!result.ok) {
+      expect(result.error).toBe('unknown workflow');
+      expect(result.meta).toMatchObject({
+        tool: 'workflow_orchestrate',
+        action: 'workflow',
+        status: 'failed',
+        targets: ['foo'],
+        result: { workflowId: 'foo-flow' },
+        legacyMetadata: { workflowId: 'foo-flow' },
+        request: {
+          args: {
+            workflow: 'foo',
+            task: { type: 'string', length: 1, preview: 't' },
+          },
+        },
+        bridge: { protocolContext: true, legacyContext: true },
+      });
+    }
   });
 });

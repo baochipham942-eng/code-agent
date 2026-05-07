@@ -19,6 +19,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { speechToTextSchema as schema } from './speechToText.schema';
 
 const CONFIG = {
@@ -210,9 +211,32 @@ export async function executeSpeechToText(
       ok: true,
       output: result.text,
       meta: {
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `Transcript: ${path.basename(filePath)}`,
+          mimeType: 'text/plain',
+          contentLength: result.text.length,
+          preview: result.text.slice(0, 500),
+          metadata: {
+            sourcePath: filePath,
+            sourceMimeType: mimeType,
+            sourceSizeBytes: stats.size,
+            mediaKind: 'audio',
+            model: CONFIG.MODEL,
+            artifactRole: 'transcript',
+          },
+        }),
         filePath,
+        sourcePath: filePath,
+        mediaKind: 'audio',
+        mimeType,
+        sourceSizeBytes: stats.size,
         fileSizeMB: parseFloat(fileSizeMB),
         textLength: result.text.length,
+        contentLength: result.text.length,
+        truncated: false,
         processingTimeMs: processingTime,
         model: CONFIG.MODEL,
       },

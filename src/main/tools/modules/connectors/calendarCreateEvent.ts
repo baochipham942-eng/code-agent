@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 
 async function executeCalendarCreateEvent(
@@ -56,13 +57,19 @@ async function executeCalendarCreateEvent(
     ctx.logger.debug('calendar_create_event', { calendar: event.calendar, title: event.title });
     const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
     const endText = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知';
+    const output = `已创建日历事件：\n- [${event.calendar}] ${event.title}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`;
 
     return {
       ok: true,
-      output: `已创建日历事件：\n- [${event.calendar}] ${event.title}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`,
+      output,
       meta: {
+        action: 'create_event',
+        connector: 'calendar',
         calendar: event.calendar,
         title: event.title,
+        startAtMs: event.startAtMs,
+        endAtMs: event.endAtMs,
+        location: event.location,
         previewItem: {
           kind: 'calendar_event',
           title: event.title,
@@ -83,6 +90,23 @@ async function executeCalendarCreateEvent(
           ],
           priority: 80,
         },
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `calendar-event-${event.title}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'calendar',
+            action: 'create_event',
+            calendar: event.calendar,
+            title: event.title,
+            startAtMs: event.startAtMs,
+            endAtMs: event.endAtMs,
+          },
+        }),
       },
     };
   } catch (error) {

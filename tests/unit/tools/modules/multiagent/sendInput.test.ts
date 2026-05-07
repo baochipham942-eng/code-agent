@@ -151,6 +151,15 @@ describe('send_input behavior', () => {
       expect(result.output).toBe(
         'Message queued for agent [a1] (coder). It will be delivered at the start of the next iteration.',
       );
+      expect(result.meta).toMatchObject({
+        action: 'send',
+        agentId: 'a1',
+        status: 'queued',
+        targets: ['a1'],
+        counts: { bytes: 9 },
+        result: { queued: true, route: 'spawnGuard', role: 'coder' },
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'send_input' }),
+      });
     }
     expect(guard.sendMessage).toHaveBeenCalledWith('a1', 'next step');
   });

@@ -16,6 +16,7 @@ import type {
 } from '../../../protocol/tools';
 import { MERMAID_INK_API } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { mermaidExportSchema as schema } from './mermaidExport.schema';
 
 type MermaidFormat = 'png' | 'svg';
@@ -152,6 +153,16 @@ async function executeMermaidExport(
 
 点击上方路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType: format === 'svg' ? 'image/svg+xml' : 'image/png',
+          sizeBytes: stats.size,
+          metadata: {
+            chartType,
+            format,
+            theme,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

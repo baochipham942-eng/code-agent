@@ -140,6 +140,16 @@ describe('calendarUpdateEventModule (native)', () => {
         expect(result.output).toContain('- [Work] Standup v2');
         expect(result.output).toContain('- uid: evt-1');
         expect(result.output).toContain('- 地点：Zoom');
+        expect(result.meta).toMatchObject({
+          action: 'update_event',
+          connector: 'calendar',
+          uid: 'evt-1',
+          calendar: 'Work',
+          title: 'Standup v2',
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('update_event');
       }
       expect(execMock).toHaveBeenCalledWith('update_event', validArgs);
     });

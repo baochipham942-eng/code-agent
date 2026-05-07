@@ -91,6 +91,21 @@ describe('speech_to_text — execute', () => {
       expect(result.output).toBe('hello world');
       expect(result.meta?.model).toBe('glm-asr-2512');
       expect(result.meta?.textLength).toBe(11);
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'speech_to_text',
+        mimeType: 'text/plain',
+        contentLength: 11,
+        metadata: {
+          sourcePath: '/abs/path/audio.wav',
+          sourceMimeType: 'audio/wav',
+          mediaKind: 'audio',
+          artifactRole: 'transcript',
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('audio');
+      expect(result.meta?.contentLength).toBe(11);
+      expect(result.meta?.truncated).toBe(false);
     }
   });
 

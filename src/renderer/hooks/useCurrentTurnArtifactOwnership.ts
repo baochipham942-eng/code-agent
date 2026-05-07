@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
-import type { TraceProjection } from '@shared/contract/trace';
+import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type {
   TurnArtifactOwnershipItem,
+  TurnRoutingEvidence,
   TurnTimelineTone,
 } from '@shared/contract/turnTimeline';
+import { buildArtifactOwnershipItems } from '../utils/artifactOwnership';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
 
 export interface CurrentTurnArtifactOwnershipView {
@@ -11,6 +13,20 @@ export interface CurrentTurnArtifactOwnershipView {
   turnNumber: number;
   tone: TurnTimelineTone;
   artifactOwnership: TurnArtifactOwnershipItem[];
+}
+
+function artifactOwnershipKey(item: TurnArtifactOwnershipItem): string {
+  if (item.path) return `path:${item.path}`;
+  if (item.url) return `url:${item.url}`;
+  return `${item.kind}:${item.ownerKind}:${item.ownerLabel}:${item.label}`;
+}
+
+function findTurnRoutingEvidence(turn: TraceTurn): TurnRoutingEvidence | undefined {
+  return turn.nodes.find((node) =>
+    node.type === 'turn_timeline'
+    && node.turnTimeline?.kind === 'routing_evidence'
+    && node.turnTimeline.routingEvidence,
+  )?.turnTimeline?.routingEvidence;
 }
 
 export function extractCurrentTurnArtifactOwnership(
@@ -21,21 +37,34 @@ export function extractCurrentTurnArtifactOwnership(
     return null;
   }
 
+  const routingEvidence = findTurnRoutingEvidence(currentTurn);
+  const projectedArtifacts = buildArtifactOwnershipItems(currentTurn, routingEvidence);
   const timeline = currentTurn.nodes.find((node) =>
     node.type === 'turn_timeline'
     && node.turnTimeline?.kind === 'artifact_ownership'
     && node.turnTimeline.artifactOwnership?.length,
   )?.turnTimeline;
 
-  if (!timeline?.artifactOwnership?.length) {
+  const artifactOwnership = [...(timeline?.artifactOwnership ?? [])];
+  const seen = new Set(artifactOwnership.map(artifactOwnershipKey));
+  for (const item of projectedArtifacts) {
+    const key = artifactOwnershipKey(item);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    artifactOwnership.push(item);
+  }
+
+  if (!artifactOwnership.length) {
     return null;
   }
 
   return {
     turnId: currentTurn.turnId,
     turnNumber: currentTurn.turnNumber,
-    tone: timeline.tone,
-    artifactOwnership: timeline.artifactOwnership,
+    tone: timeline?.tone ?? 'success',
+    artifactOwnership,
   };
 }
 

@@ -136,6 +136,20 @@ describe('image_annotate — execute', () => {
       expect(result.meta?.ocrMethod).toBe('baidu');
       expect((result.meta?.regions as unknown[])?.length).toBe(2);
       expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'image_annotate',
+        metadata: {
+          imagePath: '/abs/p.png',
+          query: '框出文字',
+          ocrMethod: 'baidu',
+          regionCount: 2,
+          mediaKind: 'image',
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('image');
+      expect(result.meta?.outputPath).toBe(result.meta?.annotatedPath);
+      expect(result.meta?.truncated).toBe(false);
     }
     expect(toFileMock).toHaveBeenCalled();
   });
@@ -163,6 +177,17 @@ describe('image_annotate — execute', () => {
       expect(result.meta?.ocrMethod).toBe('vision_llm');
       expect(result.output).toContain('图片内容分析');
       expect(result.output).toContain('BAIDU_OCR_API_KEY');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'image_annotate',
+        metadata: {
+          imagePath: '/abs/p.png',
+          query: '描述图片',
+          ocrMethod: 'vision_llm',
+          mediaKind: 'image',
+        },
+      });
+      expect(result.meta?.contentLength).toBe('这是一段中文截图'.length);
     }
     expect(toFileMock).not.toHaveBeenCalled();
   });

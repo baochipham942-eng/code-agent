@@ -23,6 +23,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { dataFingerprintStore } from '../../dataFingerprint';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readXlsxSchema as schema } from './readXlsx.schema';
 
 type XlsxFormat = 'table' | 'json' | 'csv';
@@ -260,6 +261,18 @@ export async function executeReadXlsx(
       ok: true,
       output,
       meta: {
+        artifact: await createFileArtifact(absPath, schema.name, ctx, {
+          kind: 'spreadsheet',
+          preview: result.slice(0, 500),
+          metadata: {
+            sheetName: worksheet.name,
+            availableSheets: sheetList,
+            rowCount: totalRows,
+            actualRowCount: actualTotalRows,
+            columnCount: totalCols,
+            format,
+          },
+        }),
         filePath: absPath,
         sheetName: worksheet.name,
         availableSheets: sheetList,
@@ -320,6 +333,16 @@ export async function executeReadXlsx(
               `${'─'.repeat(50)}\n\n${csvData}` +
               `\n\n💡 提示：此文件含图表，ExcelJS 无法解析，已通过 pandas 读取。`,
             meta: {
+              artifact: await createFileArtifact(absPath, schema.name, ctx, {
+                kind: 'spreadsheet',
+                preview: csvData.slice(0, 500),
+                metadata: {
+                  rowCount: totalRowsFallback,
+                  columnCount: columnNames.length,
+                  format: 'csv',
+                  fallback: 'pandas',
+                },
+              }),
               filePath: absPath,
               rowCount: totalRowsFallback,
               columnCount: columnNames.length,

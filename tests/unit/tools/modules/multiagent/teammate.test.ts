@@ -171,6 +171,15 @@ describe('teammate behavior', () => {
       expect(result.output).toContain('Message sent to Coder1 (a1)');
       expect(result.output).toContain('Type: send');
       expect(result.output).toContain('Message ID: msg-1');
+      expect(result.meta).toMatchObject({
+        action: 'send',
+        agentId: 'sess-1',
+        status: 'sent',
+        targets: ['a1'],
+        counts: { bytes: 11 },
+        result: { messageId: 'msg-1', type: 'coordination' },
+        artifact: expect.objectContaining({ kind: 'text', sourceTool: 'teammate' }),
+      });
     }
     expect(service.send).toHaveBeenCalled();
   });
@@ -201,6 +210,12 @@ describe('teammate behavior', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.output).toContain('Broadcast sent to 2 agents');
+      expect(result.meta).toMatchObject({
+        action: 'broadcast',
+        status: 'sent',
+        targets: ['all'],
+        counts: { agents: 2 },
+      });
     }
   });
 

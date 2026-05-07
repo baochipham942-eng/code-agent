@@ -107,9 +107,25 @@ describe('mailModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
-    it('returns NOT_INITIALIZED when connector missing', async () => {
+    it('returns unavailable status when get_status connector is missing', async () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Mail connector: unavailable');
+        expect(result.meta).toMatchObject({
+          status: {
+            connected: false,
+            unavailable: true,
+            capabilities: [],
+          },
+        });
+      }
+    });
+
+    it('returns NOT_INITIALIZED when data action connector is missing', async () => {
+      getMock.mockReturnValue(undefined);
+      const result = await run({ action: 'list_accounts' });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
@@ -133,6 +149,14 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('Mail connector: connected');
         expect(result.output).toContain('OK');
         expect(result.output).toContain('Capabilities: read, send');
+        expect(result.meta).toMatchObject({
+          action: 'get_status',
+          connector: 'mail',
+          status: { connected: true, detail: 'OK', capabilities: ['read', 'send'] },
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('get_status');
       }
     });
 
@@ -212,6 +236,14 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('#2 Unread');
         expect(result.output).toContain('未知时间');
         expect(result.output).toContain('| 未读');
+        expect(result.meta).toMatchObject({
+          action: 'list_messages',
+          connector: 'mail',
+          count: 2,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.count).toBe(2);
       }
     });
 
@@ -244,6 +276,15 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('附件：2 个');
         expect(result.output).toContain('q1.pdf, q1.xlsx');
         expect(result.output).toContain('Q1 numbers attached.');
+        expect(result.meta).toMatchObject({
+          action: 'read_message',
+          connector: 'mail',
+          id: 42,
+          attachmentCount: 2,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.id).toBe(42);
       }
     });
 

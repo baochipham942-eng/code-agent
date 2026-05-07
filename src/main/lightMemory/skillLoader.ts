@@ -20,6 +20,10 @@ import { getMemoryDir } from './indexLoader';
 
 const logger = createLogger('SkillLoader');
 
+function isAsciiOnly(text: string): boolean {
+  return Array.from(text).every((char) => char.charCodeAt(0) <= 127);
+}
+
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
@@ -94,7 +98,7 @@ function tokenize(text: string): Set<string> {
 
   for (const part of parts) {
     if (part.length < 3) continue;
-    if (/^[\x00-\x7f]+$/.test(part)) {
+    if (isAsciiOnly(part)) {
       // 纯 ASCII token — 整段保留
       tokens.add(part);
     } else {
@@ -156,7 +160,7 @@ export async function loadRelevantSkills(userQuery: string): Promise<SkillMemory
     try {
       const content = await fs.readFile(path.join(memDir, filename), 'utf-8');
       const parsed = parseMemoryFile(content);
-      if (!parsed || parsed.type !== 'skill') continue;
+      if (parsed?.type !== 'skill') continue;
 
       // 只匹配 name + description — body 是实现细节，不应贡献召回分数，
       // 否则"npm run build" 这类样板代码会被 "run" 之类的查询误命中

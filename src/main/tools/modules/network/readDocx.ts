@@ -15,6 +15,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readDocxSchema as schema } from './readDocx.schema';
 
 type DocxFormat = 'text' | 'markdown' | 'html';
@@ -108,6 +109,16 @@ export async function executeReadDocx(
       ok: true,
       output,
       meta: {
+        artifact: await createFileArtifact(absPath, schema.name, ctx, {
+          kind: 'document',
+          preview: result.slice(0, 500),
+          metadata: {
+            format,
+            charCount,
+            wordCount,
+            lineCount,
+          },
+        }),
         filePath: absPath,
         format,
         charCount,

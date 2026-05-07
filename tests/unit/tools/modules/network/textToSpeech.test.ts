@@ -95,6 +95,20 @@ describe('text_to_speech — execute', () => {
       expect(result.output).toContain('base64');
       expect(result.meta?.audioSizeBytes).toBe(4);
       expect(result.meta?.outputPath).toBeUndefined();
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'audio',
+        sourceTool: 'text_to_speech',
+        mimeType: 'audio/wav',
+        contentLength: 4,
+        metadata: {
+          embeddedBase64: true,
+          mediaKind: 'audio',
+          model: 'glm-tts',
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('audio');
+      expect(result.meta?.contentLength).toBe(4);
+      expect(result.meta?.truncated).toBe(true);
     }
   });
 
@@ -115,6 +129,16 @@ describe('text_to_speech — execute', () => {
     if (result.ok) {
       expect(result.output).toContain('已保存到');
       expect(result.meta?.outputPath).toBe('/tmp/work/out.wav');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'audio',
+        sourceTool: 'text_to_speech',
+        path: '/tmp/work/out.wav',
+        mimeType: 'audio/wav',
+        metadata: {
+          mediaKind: 'audio',
+          model: 'glm-tts',
+        },
+      });
     }
   });
 

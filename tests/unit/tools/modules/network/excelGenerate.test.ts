@@ -188,6 +188,21 @@ describe('excelGenerateModule (native)', () => {
         const meta = result.meta as Record<string, unknown>;
         expect(meta.rowCount).toBe(1);
         expect(meta.columnCount).toBe(2);
+        expect(meta.artifact).toMatchObject({
+          kind: 'spreadsheet',
+          sourceTool: 'excel_generate',
+          path: expect.stringMatching(/^\/tmp\/work\/spreadsheet-\d+\.xlsx$/),
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          sizeBytes: 8192,
+          metadata: {
+            title: 'T',
+            rowCount: 1,
+            columnCount: 2,
+            sheetName: 'Sheet1',
+            theme: 'professional',
+          },
+        });
       }
     });
 

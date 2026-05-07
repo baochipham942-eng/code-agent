@@ -38,6 +38,7 @@ import {
   type MCPSSEServerConfig,
 } from '../../../mcp/mcpClient';
 import { getMcpConfigPath, ensureConfigDir, pathExists } from '../../../config';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpAddServerSchema as schema } from './mcpAddServer.schema';
 
 // ----------------------------------------------------------------------------
@@ -87,6 +88,74 @@ function validateSSEUrl(url: string): { valid: boolean; error?: string } {
   } catch {
     return { valid: false, error: 'Invalid URL format' };
   }
+}
+
+function buildMcpAddServerErrorMeta(input: {
+  name?: string;
+  type?: unknown;
+  errorCode: string;
+}): Record<string, unknown> {
+  return {
+    server: input.name,
+    action: 'add_server',
+    resultKind: 'process-output',
+    count: 0,
+    truncated: false,
+    type: input.type,
+    errorCode: input.errorCode,
+  };
+}
+
+function buildMcpAddServerSuccessMeta(input: {
+  name: string;
+  type: 'sse' | 'stdio';
+  output: string;
+  persisted: boolean;
+  connected: boolean;
+  toolCount?: number;
+  resourceCount?: number;
+  configPath?: string;
+  sessionId?: string;
+}): Record<string, unknown> {
+  const resultKind = 'process-output';
+  const metadata = {
+    mcpServer: true,
+    server: input.name,
+    action: 'add_server',
+    resultKind,
+    count: input.toolCount ?? 0,
+    truncated: false,
+    type: input.type,
+    persisted: input.persisted,
+    connected: input.connected,
+    toolCount: input.toolCount,
+    resourceCount: input.resourceCount,
+    configPath: input.configPath,
+  };
+  return {
+    name: input.name,
+    server: input.name,
+    type: input.type,
+    action: 'add_server',
+    resultKind,
+    count: input.toolCount ?? 0,
+    truncated: false,
+    persisted: input.persisted,
+    connected: input.connected,
+    toolCount: input.toolCount,
+    resourceCount: input.resourceCount,
+    configPath: input.configPath,
+    artifact: createVirtualArtifact({
+      sourceTool: schema.name,
+      kind: resultKind,
+      sessionId: input.sessionId,
+      name: `MCP server added: ${input.name}`,
+      mimeType: 'text/plain',
+      contentLength: input.output.length,
+      preview: input.output.slice(0, 500),
+      metadata,
+    }),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -182,6 +251,7 @@ export async function executeMcpAddServer(
       ok: false,
       error: 'Server name is required and cannot be empty',
       code: 'INVALID_ARGS',
+      meta: buildMcpAddServerErrorMeta({ type: args.type, errorCode: 'INVALID_ARGS' }),
     };
   }
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
@@ -189,6 +259,7 @@ export async function executeMcpAddServer(
       ok: false,
       error: 'Server name can only contain letters, numbers, dashes, and underscores',
       code: 'INVALID_ARGS',
+      meta: buildMcpAddServerErrorMeta({ name, type: args.type, errorCode: 'INVALID_ARGS' }),
     };
   }
   const type = args.type;
@@ -197,16 +268,27 @@ export async function executeMcpAddServer(
       ok: false,
       error: `Invalid server type: ${String(type)}. Use 'sse' or 'stdio'.`,
       code: 'INVALID_ARGS',
+      meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
     };
   }
 
   // ── 权限闸门 / abort ──────────────────────────────────
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
-    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+    return {
+      ok: false,
+      error: `permission denied: ${permit.reason}`,
+      code: 'PERMISSION_DENIED',
+      meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'PERMISSION_DENIED' }),
+    };
   }
   if (ctx.abortSignal.aborted) {
-    return { ok: false, error: 'aborted', code: 'ABORTED' };
+    return {
+      ok: false,
+      error: 'aborted',
+      code: 'ABORTED',
+      meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'ABORTED' }),
+    };
   }
 
   onProgress?.({ stage: 'starting', detail: `mcp_add_server ${name} (${type})` });
@@ -229,6 +311,7 @@ export async function executeMcpAddServer(
       ok: false,
       error: `Server '${name}' is already connected. Use mcp_get_status to see connected servers.`,
       code: 'DOMAIN_ERROR',
+      meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'DOMAIN_ERROR' }),
     };
   }
 
@@ -237,11 +320,21 @@ export async function executeMcpAddServer(
 
   if (type === 'sse') {
     if (!serverUrl) {
-      return { ok: false, error: 'serverUrl is required for SSE type', code: 'INVALID_ARGS' };
+      return {
+        ok: false,
+        error: 'serverUrl is required for SSE type',
+        code: 'INVALID_ARGS',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      };
     }
     const urlValidation = validateSSEUrl(serverUrl);
     if (!urlValidation.valid) {
-      return { ok: false, error: urlValidation.error || 'Invalid URL', code: 'INVALID_ARGS' };
+      return {
+        ok: false,
+        error: urlValidation.error || 'Invalid URL',
+        code: 'INVALID_ARGS',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      };
     }
     serverConfig = {
       name,
@@ -251,12 +344,22 @@ export async function executeMcpAddServer(
     } as MCPSSEServerConfig;
   } else {
     if (!command) {
-      return { ok: false, error: 'command is required for Stdio type', code: 'INVALID_ARGS' };
+      return {
+        ok: false,
+        error: 'command is required for Stdio type',
+        code: 'INVALID_ARGS',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      };
     }
     const cmdValidation = validateStdioCommand(command);
     if (!cmdValidation.valid) {
       ctx.logger.warn('Blocked dangerous command for MCP server', { command });
-      return { ok: false, error: cmdValidation.error || 'Blocked command', code: 'INVALID_ARGS' };
+      return {
+        ok: false,
+        error: cmdValidation.error || 'Blocked command',
+        code: 'INVALID_ARGS',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      };
     }
     serverConfig = {
       name,
@@ -283,7 +386,12 @@ export async function executeMcpAddServer(
   if (autoConnect) {
     if (ctx.abortSignal.aborted) {
       // 已添加 + 已落盘，但用户取消了自动连接：当作 ABORTED 返回
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
+      return {
+        ok: false,
+        error: 'aborted',
+        code: 'ABORTED',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'ABORTED' }),
+      };
     }
     try {
       // mcpClient.connect 没有原生 abortSignal 支持；我们让它跑完，依赖
@@ -349,13 +457,16 @@ export async function executeMcpAddServer(
   return {
     ok: true,
     output: outputParts.join('\n'),
-    meta: {
+    meta: buildMcpAddServerSuccessMeta({
       name,
       type,
       persisted: persistResult.success,
       connected: autoConnect ? connectResult.success : false,
       toolCount: connectResult.toolCount,
-    },
+      output: outputParts.join('\n'),
+      configPath: persistResult.filePath,
+      sessionId: ctx.sessionId,
+    }),
   };
 }
 

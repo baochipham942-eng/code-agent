@@ -59,6 +59,17 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('Task')).toBe(true);
   });
 
+  it('does not add core tools to the deferred loaded set during keyword search', async () => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools('TaskManager', { maxResults: 3, includeMCP: false });
+
+    expect(result.tools.map((tool) => tool.name)).toContain('TaskManager');
+    expect(result.loadedTools).not.toContain('TaskManager');
+    expect(service.getLoadedDeferredTools()).not.toContain('TaskManager');
+    expect(service.isToolLoaded('TaskManager')).toBe(true);
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 
@@ -105,6 +116,21 @@ describe('ToolSearchService loadable results', () => {
     expect(result.tools[0]?.loadable).toBe(true);
     expect(result.tools[0]?.canonicalInvocation).toBe('mcp__github__search_code');
     expect(service.isToolLoaded('mcp__github__search_code')).toBe(true);
+  });
+
+  it('normalizes common multiagent aliases to registered protocol tool names', () => {
+    const service = new ToolSearchService();
+
+    const waitResult = service.selectTool('WaitAgent');
+    const workflowResult = service.selectTool('WorkflowOrchestrate');
+
+    expect(waitResult.loadedTools).toEqual(['wait_agent']);
+    expect(waitResult.tools[0]?.canonicalInvocation).toBe('wait_agent');
+    expect(service.isToolLoaded('wait_agent')).toBe(true);
+
+    expect(workflowResult.loadedTools).toEqual(['workflow_orchestrate']);
+    expect(workflowResult.tools[0]?.canonicalInvocation).toBe('workflow_orchestrate');
+    expect(service.isToolLoaded('workflow_orchestrate')).toBe(true);
   });
 
   it('exposes canonical Skill invocation without pretending the skill is a direct tool', async () => {

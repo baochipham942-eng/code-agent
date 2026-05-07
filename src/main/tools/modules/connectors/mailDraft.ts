@@ -13,6 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
@@ -75,19 +76,27 @@ async function executeMailDraft(
     const to = normalizeAddresses(draft.to);
     const cc = normalizeAddresses(draft.cc);
     const bcc = normalizeAddresses(draft.bcc);
+    const output = [
+      `已创建邮件草稿：${draft.subject}`,
+      `To: ${to.join(', ')}`,
+      cc.length > 0 ? `CC: ${cc.join(', ')}` : null,
+      bcc.length > 0 ? `BCC: ${bcc.join(', ')}` : null,
+      draft.attachments.length > 0 ? `Attachments: ${draft.attachments.join(', ')}` : null,
+      `状态：${draft.saved ? '已保存到草稿' : '未保存'}`,
+    ].filter(Boolean).join('\n');
 
     return {
       ok: true,
-      output: [
-        `已创建邮件草稿：${draft.subject}`,
-        `To: ${to.join(', ')}`,
-        cc.length > 0 ? `CC: ${cc.join(', ')}` : null,
-        bcc.length > 0 ? `BCC: ${bcc.join(', ')}` : null,
-        draft.attachments.length > 0 ? `Attachments: ${draft.attachments.join(', ')}` : null,
-        `状态：${draft.saved ? '已保存到草稿' : '未保存'}`,
-      ].filter(Boolean).join('\n'),
+      output,
       meta: {
+        action: 'draft_message',
+        connector: 'mail',
         saved: draft.saved,
+        subject: draft.subject,
+        to,
+        cc,
+        bcc,
+        attachments: draft.attachments,
         previewItem: {
           kind: 'message_draft',
           title: draft.subject,
@@ -110,6 +119,23 @@ async function executeMailDraft(
           ],
           priority: 80,
         },
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `mail-draft-${draft.subject}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'mail',
+            action: 'draft_message',
+            subject: draft.subject,
+            saved: draft.saved,
+            toCount: to.length,
+            attachmentCount: draft.attachments.length,
+          },
+        }),
       },
     };
   } catch (error) {

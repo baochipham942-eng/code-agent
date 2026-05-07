@@ -141,6 +141,18 @@ describe('twitterFetchModule (native)', () => {
         expect(result.output).toContain('Elon Musk');
         expect(result.output).toContain('@elonmusk');
         expect(result.output).toContain('https://img/1.jpg');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'twitter_fetch',
+          url: TWEET_URL,
+          metadata: {
+            tweetId: '1234567890',
+            mediaCount: 1,
+          },
+        });
+        expect(result.meta?.contentLength).toBe(result.output.length);
+        expect(result.meta?.textLength).toBe('Hello world tweet'.length);
+        expect(result.meta?.truncated).toBe(false);
       }
     });
 

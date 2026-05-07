@@ -92,6 +92,22 @@ describe('screenshot_page — execute', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.meta?.api).toBe('Thum.io');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'screenshot_page',
+        path: expect.stringMatching(/^\/tmp\/work\/screenshot_example_com_\d+\.png$/),
+        mimeType: 'image/png',
+        sizeBytes: 4096,
+        metadata: {
+          url: 'https://example.com',
+          width: 1280,
+          height: 800,
+          fullPage: false,
+          format: 'png',
+          api: 'Thum.io',
+          analyzed: false,
+        },
+      });
       expect(writeFileSyncMock).toHaveBeenCalled();
       expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
     }
@@ -206,7 +222,7 @@ describe('screenshot_page — execute', () => {
   });
 
   it('runs vision analysis when analyze=true', async () => {
-    let urls: string[] = [];
+    const urls: string[] = [];
     global.fetch = vi.fn().mockImplementation((url) => {
       urls.push(String(url));
       const u = String(url);

@@ -19,11 +19,16 @@ export type ArtifactRepairIssueCode =
   | 'run_smoke_failed'
   | 'html_incomplete'
   | 'trailing_after_html'
+  | 'canvas_not_responsive'
+  | 'missing_gameplay_mechanics'
+  | 'gameplay_mechanics_without_runtime_evidence'
+  | 'ability_gate_without_reachability'
   | 'missing_user_input'
   | 'missing_controls_metadata'
   | 'missing_coverage_metadata'
   | 'missing_reachability_metadata'
   | 'missing_quality_metadata'
+  | 'frontend_visual_smoke_failed'
   | 'generic_validation_failure';
 
 export interface ArtifactRepairIssue {
@@ -79,6 +84,36 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Move all appended scripts, metadata, and JSON blocks inside the HTML document before </html>; leave no non-whitespace content after </html>.',
     };
   }
+  if (/大型固定 canvas|固定 canvas|窄窗口.*裁切|responsive css|响应式 CSS|canvas.*(?:max-width|max-height|aspect-ratio|height:auto)/i.test(text)) {
+    return {
+      code: 'canvas_not_responsive',
+      repairInstruction: 'Keep the canvas internal resolution if needed, but add responsive CSS on the canvas or wrapper, such as max-width: 100vw, max-height: 100vh, aspect-ratio, and height:auto, so narrow browser windows do not crop the game.',
+    };
+  }
+  if (/browser visual smoke|frontend browser validation|runtime page errors|console errors|nonblank rendered content|visibly framed|visible DOM content/i.test(text)) {
+    return {
+      code: 'frontend_visual_smoke_failed',
+      repairInstruction: 'Fix the rendered frontend, not only the metadata: load the HTML in a browser, resolve console/page errors, ensure canvas or DOM content is visible and nonblank, and keep the game contract attached to the same rendered state.',
+    };
+  }
+  if (/platformer[\s\S]{0,120}缺少 gameplayMechanics|gameplayMechanics[\s\S]{0,120}缺少 (?:enemies|blocks|abilities|gates|comboChallenge|stompable enemy|bumpable\/question block)|comboChallenge 必须组合/i.test(text)) {
+    return {
+      code: 'missing_gameplay_mechanics',
+      repairInstruction: 'Add platformer gameplayMechanics to __GAME_META__ with enemies, blocks, abilities, gates, and comboChallenge, then implement those objects in live collision/update logic instead of only declaring them.',
+    };
+  }
+  if (/gate 必须在获得技能后改变|requiresAbility|blocksAccessTo|技能.*(?:路线|可达|route)|ability 必须通过真实输入获得|Gate remained locked|gate remained locked/i.test(text)) {
+    return {
+      code: 'ability_gate_without_reachability',
+      repairInstruction: 'Make one ability change movement or interaction rules and unlock a real gated route. snapshot() should expose abilities and gate/route state, and runSmokeTest() must prove ability false->true followed by gate/route unreachable->reachable.',
+    };
+  }
+  if (/gameplayMechanics 缺少 runtime 证据|stompable enemy 必须通过 step\/runSmokeTest|bumpable\/question block 必须通过 step\/runSmokeTest|comboChallenge coverage 必须证明|Failed to bump block|Failed to stomp enemy|bump block or gain ability/i.test(text)) {
+    return {
+      code: 'gameplay_mechanics_without_runtime_evidence',
+      repairInstruction: 'Repair runSmokeTest() so it drives step() through stomp enemy, bump block, gain ability, unlock gate/route, and combo challenge, recording coverage only after before/after snapshot changes prove each mechanic.',
+    };
+  }
   if (
     /缺少通用交互测试合约|没有找到 runSmokeTest/i.test(text)
     || /(?:缺少|missing|不存在|not found|没有|未找到)[\s\S]{0,80}window\.__(?:INTERACTIVE|GAME)_TEST__/i.test(text)
@@ -116,19 +151,19 @@ function classifyFailure(failure: string): FailureClassification {
   if (/metric ".*" 不在 snapshot\(\) 结果里|snapshot\(\) 结果|metric .* 不在 snapshot/i.test(text)) {
     return {
       code: 'missing_snapshot_metric',
-      repairInstruction: 'Make each reachability metric point to a real snapshot() field, or add that stable field to snapshot() and update it during play.',
+      repairInstruction: 'Make each reachability metric point to a real snapshot() field, or add that stable field to snapshot() and update it during live play. Do not use generic progress unless snapshot().progress exists and actually changes.',
     };
   }
   if (/缺少可执行输入|真实可派发的键值|可执行输入/i.test(text)) {
     return {
       code: 'non_executable_reachability_input',
-      repairInstruction: 'Rewrite reachability inputs using dispatchable controls from metadata, such as ArrowRight, Space, or an array of those keys.',
+      repairInstruction: 'Rewrite reachability inputs using dispatchable controls from metadata, such as ArrowRight, Space, or an array of those keys. Do not use prose labels, none, or abstract actions as input.',
     };
   }
   if (/snapshot 没有变化|无法证明主对象可操作|没有让 .* 满足/i.test(text)) {
     return {
       code: 'control_no_state_change',
-      repairInstruction: 'Wire declared controls to real state changes and make reachability metrics change after those inputs are dispatched.',
+      repairInstruction: 'Wire declared controls to real state changes and make reachability metrics change after those inputs are dispatched. If a score/progress metric does not change in that short input window, use player.x/player.vy or move the reward into the deterministic live collision path.',
     };
   }
   if (/authored levels|all authored levels|所有 authored levels|declared=\d+|scenarios 都可推进通关/i.test(text)) {
@@ -143,22 +178,22 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Remove test-only shortcuts from step(); step() must advance the same input, physics, collision, reward, hazard, and progression rules that the playable game uses.',
     };
   }
-  if (/把对象存在|机制注册|覆盖声明当成通过证据|直接授予能力|不能证明玩家实际触发|真实流程里获得/i.test(text)) {
+  if (/把对象存在|机制注册|覆盖声明当成通过证据|直接授予能力|直接修改.*(?:进度|分数|关卡|胜利|解锁)|不能证明玩家实际触发|不能证明玩家能用真实输入完成|真实流程里获得/i.test(text)) {
     return {
       code: 'coverage_without_runtime_evidence',
       repairInstruction: 'Change runSmokeTest() so every coverage.mechanics/rewards/risks/stateChanges entry is added only inside a branch that compares before/after snapshot values after step() dispatches real controls. Remove fallback branches that add coverage because enemies, spikes, doors, abilities, rewards, or items merely exist.',
     };
   }
-  if (/缺少 coverage|coverage 没有覆盖|coverage 没有证明|无法证明玩法|奖励|风险|核心玩法/i.test(text)) {
+  if (/缺少 coverage|coverage 没有覆盖|coverage 没有证明|coverage\.(?:mechanics|rewards|risks|stateChanges).*不能只返回数字|不能只返回数字、布尔值或 total 计数|无法证明玩法|奖励|风险|核心玩法/i.test(text)) {
     return {
       code: 'smoke_missing_coverage',
       repairInstruction: 'Return coverage from runSmokeTest() for mechanics, rewards, risks, stateChanges, and authored level reachability when declared.',
     };
   }
-  if (/runSmokeTest 未通过|runSmokeTest 抛出异常|runSmokeTest 超过|无法运行交互 smoke/i.test(text)) {
+  if (/runSmokeTest 未通过|runSmokeTest 抛出异常|runSmokeTest 超过|无法运行交互 smoke|runSmokeTest\.(?:checks|failures) 必须是字符串数组/i.test(text)) {
     return {
       code: 'run_smoke_failed',
-      repairInstruction: 'Fix runSmokeTest() so it completes without throwing or timing out, drives real controls, and reports concrete failures only when behavior is still broken.',
+      repairInstruction: 'Fix runSmokeTest() so it completes without throwing or timing out, drives real controls, returns string-array checks and failures, and reports concrete failures only when behavior is still broken.',
     };
   }
   if (/缺少明确的用户输入入口|用户输入入口|玩家能实际操作/i.test(text)) {
@@ -179,10 +214,10 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Declare authored levels, segments, scenarios, objectives, or missions so validation can compare promised scope with smoke coverage.',
     };
   }
-  if (/缺少 reachability|缺少 progressPlan|缺少 acceptance|无法验证目标/i.test(text)) {
+  if (/缺少 reachability|缺少 progressPlan|缺少 acceptance|无法验证目标|progress.*不算|coverage.*不算|does not satisfy.*(?:progressPlan|reachability)/i.test(text)) {
     return {
       code: 'missing_reachability_metadata',
-      repairInstruction: 'Declare a literal __GAME_META__.reachability, __GAME_META__.progressPlan, __GAME_META__.acceptance, or __GAME_META__.validation field. It must contain executable steps with inputs using real controls, a snapshot metric path, an expected direction or target, and authored level/scenario coverage.',
+      repairInstruction: 'Declare a literal __GAME_META__.progressPlan or __GAME_META__.reachability array; do not rename it progress or coverage. Each step must contain executable inputs using real controls, frames, a snapshot metric path, an expected direction or target, and authored level/scenario coverage.',
     };
   }
   if (/缺少 qualityPlan|玩法承诺元数据|角色可辨识|奖励\/风险/i.test(text)) {
@@ -202,7 +237,7 @@ export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRep
   if (!text.trim()) return [];
   const issueCodes = new Set<ArtifactRepairIssueCode>();
   const directCodePattern =
-    /\b(lost_interactive_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|missing_test_contract|malformed_test_contract|missing_snapshot_metric|non_executable_reachability_input|control_no_state_change|level_coverage_incomplete|smoke_missing_coverage|shortcut_state_mutation|coverage_without_runtime_evidence|run_smoke_failed|html_incomplete|trailing_after_html|missing_user_input|missing_controls_metadata|missing_coverage_metadata|missing_reachability_metadata|missing_quality_metadata|generic_validation_failure)\b/g;
+    /\b(lost_interactive_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|missing_test_contract|malformed_test_contract|missing_snapshot_metric|non_executable_reachability_input|control_no_state_change|level_coverage_incomplete|smoke_missing_coverage|shortcut_state_mutation|coverage_without_runtime_evidence|run_smoke_failed|html_incomplete|trailing_after_html|canvas_not_responsive|missing_gameplay_mechanics|gameplay_mechanics_without_runtime_evidence|ability_gate_without_reachability|missing_user_input|missing_controls_metadata|missing_coverage_metadata|missing_reachability_metadata|missing_quality_metadata|frontend_visual_smoke_failed|generic_validation_failure)\b/g;
 
   for (const match of text.matchAll(directCodePattern)) {
     issueCodes.add(match[1] as ArtifactRepairIssueCode);
@@ -213,7 +248,7 @@ export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRep
     .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
     .filter(Boolean)
     .filter((line) =>
-      /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|宽松距离|测试模式修改|真实流程里获得/i.test(line),
+      /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|platformer|stompable|comboChallenge|requiresAbility|blocksAccessTo|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i.test(line),
     );
 
   for (const line of candidateLines.length > 0 ? candidateLines : [text]) {
@@ -265,6 +300,14 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
       return 'HTML document is incomplete.';
     case 'trailing_after_html':
       return 'Content exists after the closing HTML tag.';
+    case 'canvas_not_responsive':
+      return 'Canvas layout is not responsive to the browser viewport.';
+    case 'missing_gameplay_mechanics':
+      return 'Platformer gameplay mechanics contract is missing or incomplete.';
+    case 'gameplay_mechanics_without_runtime_evidence':
+      return 'Platformer gameplay mechanics are declared without runtime evidence.';
+    case 'ability_gate_without_reachability':
+      return 'Platformer ability does not prove gated route reachability.';
     case 'missing_test_contract':
       return 'Interactive test contract is missing.';
     case 'malformed_test_contract':
@@ -301,6 +344,8 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
       return 'Reachability or progress metadata is missing.';
     case 'missing_quality_metadata':
       return 'Quality or acceptance metadata is missing.';
+    case 'frontend_visual_smoke_failed':
+      return 'Frontend browser validation failed.';
     case 'generic_validation_failure':
       return 'Validation failed with an unclassified issue.';
   }
@@ -314,9 +359,16 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   const hints: string[] = [];
   if (issues.some((issue) => issue.code === 'missing_reachability_metadata')) {
     hints.push(
-      'required metadata field: add reachability, progressPlan, acceptance, or validation as an actual property on __GAME_META__, __INTERACTIVE_META__, __GAME_TEST__, or __INTERACTIVE_TEST__. Controls/objectives/rewards alone do not satisfy this validator check.',
-      'reachability template: __GAME_META__.reachability = [{ label, level, inputs: ["ArrowRight", ["ArrowRight","Space"]], frames, metric: "playerX", expect: "increase" }]; runSmokeTest() must execute the same inputs and assert before/after snapshot changes.',
+      'required metadata field: add progressPlan or reachability as an actual array property on __GAME_META__ or __INTERACTIVE_META__. A generic progress, coverage, objectives, coreLoop, or qualityPlan object does not satisfy this validator check.',
+      'progressPlan template: __GAME_META__.progressPlan = [{ label: "move right", input: "ArrowRight", frames: 24, metric: "player.x", expect: "increase" }, { label: "jump arc", input: ["ArrowRight", "Space"], frames: 20, metric: "player.y", expect: "change" }]; runSmokeTest() must execute the same inputs and assert before/after snapshot changes.',
       'For multi-level artifacts, include at least one executable reachability step per authored level or scenario; do not count direct level loading as progression evidence unless runSmokeTest also proves that level responds to real input.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'missing_snapshot_metric' || issue.code === 'non_executable_reachability_input' || issue.code === 'control_no_state_change')) {
+    hints.push(
+      'Reachability repair template: snapshot() exposes player.x/player.vy/enemiesDefeated/blocksUsed/abilities.doubleJump/gatesUnlocked/routesUnlocked; progressPlan uses only exact snapshot paths. Do not assert score/progress/win/gate/ability changes after generic movement.',
+      'Reachability inputs must be real dispatchable controls from metadata, for example "ArrowRight", "Space", or ["ArrowRight", "Space"]; never "move", "jump", "combo", "progress", or "none".',
+      'Either change the metric to a local movement field or adjust the scenario layout so the reward/gate is reached deterministically through live collision.',
     );
   }
   if (issues.some((issue) => issue.code === 'coverage_without_runtime_evidence' || issue.code === 'shortcut_state_mutation')) {
@@ -324,6 +376,29 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
       'Runtime evidence must come from start/reset/step/snapshot using the same physics, collision, reward, hazard, and progression code that the player uses; do not grant abilities, collect rewards, move levels, or mark wins directly inside step() or runSmokeTest().',
       'Do not use fallback coverage like enemy_present, spikes_present, ability treat exists, door reachable, mechanics registered, or object exists. If the player cannot trigger it, change the level layout, collision size, spawn path, or smoke input path until a before/after snapshot proves the state change.',
       'Only add coverage after checks such as lives decreased, score increased from a stomp, ability changed from false to true, treatsCollected increased, level/mode changed through door rules, or player coordinates changed after dispatched controls.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'canvas_not_responsive')) {
+    hints.push(
+      'Keep the game resolution stable for drawing, but make the browser layout responsive: wrap the canvas, set max-width/max-height against the viewport, preserve aspect-ratio, and avoid overflow cropping the playfield.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'frontend_visual_smoke_failed')) {
+    hints.push(
+      'Frontend validation is browser evidence. Fix actual page load/render problems: remove thrown errors, keep the canvas framed in desktop and mobile viewports, draw nonblank content after start/reset/step, and expose __GAME_META__/__GAME_TEST__ on the same window used by the rendered game.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'missing_gameplay_mechanics')) {
+    hints.push(
+      'Platformer metadata template: __GAME_META__.gameplayMechanics = { enemies: [{ id: "goomba-1", stompable: true, defeatReward: "bounceCoin" }], blocks: [{ id: "q1", type: "question", bumpableFromBelow: true, reward: "doubleJump", usedState: "empty" }], abilities: [{ id: "doubleJump", type: "doubleJump", acquiredFrom: "q1", effect: "second air jump", unlocksRoute: "upper-route" }], gates: [{ id: "upper-gap", requiresAbility: "doubleJump", blocksAccessTo: "upper-route" }], comboChallenge: [{ id: "combo", requires: ["jump", "stomp", "bumpBlock", "doubleJump"], target: "upper-route" }] }; every field is an array even with one item, never an object map.',
+      'Implement collision code: stomp marks enemy defeated and bounces player.vy; bump marks block used and spawns the ability; ability changes movement; gate checks ability before route access.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'gameplay_mechanics_without_runtime_evidence' || issue.code === 'ability_gate_without_reachability')) {
+    hints.push(
+      'Platformer runSmokeTest template: snapshot before, step() to stomp an enemy and assert enemiesDefeated plus player.vy/bounce; step() to bump a question block and assert blocksUsed/spawnedReward; step() to collect ability and assert abilities.doubleJump false->true; then assert routeReachable or gates.upperRoute changes after ability.',
+      'Coverage must name the proven mechanics only after assertions pass, for example coverage.mechanics = ["stompEnemy", "bumpBlock", "gainAbility", "unlockGate", "comboChallenge"]; coverage.rewards = ["defeatReward", "blockAbility"]; coverage.stateChanges = ["enemiesDefeated", "player.vy", "blocksUsed", "spawnedReward", "abilities.doubleJump", "gates.upperRoute", "routeReachableAfterAbility"].',
+      'If the smoke path says Failed to bump/stomp or gate remained locked, move the block/enemy/gate into the deterministic smoke path or add a helper path inside real physics controls; do not mark coverage true until snapshot proves the state changed.',
     );
   }
   return hints;
@@ -372,8 +447,8 @@ export function formatArtifactRepairSpecForPrompt(spec: ArtifactRepairSpec): str
       evidence: issue.evidence.slice(0, 3),
       repairInstruction: issue.repairInstruction,
     })),
-    mustFix: spec.mustFix.slice(0, MAX_PROMPT_ISSUES),
     ...(repairHints.length > 0 ? { repairHints } : {}),
+    mustFix: spec.mustFix.slice(0, MAX_PROMPT_ISSUES),
     allowedEditScope: spec.allowedEditScope,
     nextAction: spec.nextAction,
   };

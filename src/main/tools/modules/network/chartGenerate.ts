@@ -17,6 +17,7 @@ import type {
 } from '../../../protocol/tools';
 import { QUICKCHART_API } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { chartGenerateSchema as schema } from './chartGenerate.schema';
 
 type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea' | 'scatter';
@@ -197,6 +198,17 @@ async function executeChartGenerate(
 
 点击上方路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType: 'image/png',
+          sizeBytes: stats.size,
+          metadata: {
+            chartType: type,
+            title,
+            width,
+            height,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

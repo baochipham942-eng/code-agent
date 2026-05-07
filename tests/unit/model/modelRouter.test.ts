@@ -909,6 +909,49 @@ describe('ModelRouter', () => {
       );
     });
 
+    it('should not classify fresh artifact generation as repair because of system artifact guidance', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [
+          { role: 'user', content: 'Create a single-file browser game at corgi-platformer.html. Include window.__GAME_TEST__ with runSmokeTest().' },
+          { role: 'system', content: '<artifact-task-brief>If validation fails later, repair corgi-platformer.html directly.</artifact-task-brief>' },
+        ],
+        [],
+        config,
+        onStream,
+        undefined,
+        { snapshotIntervalMs: 1000 },
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
+          forceNonStreaming: true,
+          disableProviderTransientRetry: true,
+          requestTimeoutMs: 600_000,
+          firstByteTimeoutMs: 20_000,
+          inactivityTimeoutMs: 120_000,
+        },
+      );
+    });
+
     it('should abort provider inference when requestTimeoutMs is reached', async () => {
       const provider = {
         inference: vi.fn((_messages, _tools, _config, _onStream, signal: AbortSignal) => new Promise((_resolve, reject) => {
@@ -1130,9 +1173,11 @@ describe('ModelRouter', () => {
       expect(broadcastToRendererMock).not.toHaveBeenCalled();
     });
 
-    it('should skip selected-provider artifact retry when artifact repair is active', async () => {
+    it('should retry the selected artifact provider when artifact repair hits provider_unavailable', async () => {
       const primaryProvider = {
-        inference: vi.fn().mockRejectedValue(new Error('xiaomi request timeout after 90000ms')),
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('Xiaomi API error: 502 - bad gateway'))
+          .mockResolvedValueOnce({ type: 'text', content: 'repair recovered on selected retry', finishReason: 'stop' }),
       } as any;
       const zhipuProvider = {
         inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
@@ -1147,20 +1192,126 @@ describe('ModelRouter', () => {
         maxTokens: 1000,
       };
 
-      await expect(
-        router.inference(
-          [{ role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' }],
-          [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
-          config,
-          vi.fn(),
-          undefined,
-          { artifactRepairActive: true, artifactRepairWritePriority: true },
-        ),
-      ).rejects.toThrow('xiaomi request timeout after 90000ms');
+      const result = await router.inference(
+        [
+          { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' },
+          { role: 'system', content: '<artifact-validation-failed kind="interactive_artifact">\ntarget file: /tmp/game.html\n</artifact-validation-failed>' },
+        ],
+        [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+        config,
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, artifactRepairWritePriority: true },
+      );
 
-      expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ type: 'text', content: 'repair recovered on selected retry' });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
       expect(zhipuProvider.inference).not.toHaveBeenCalled();
       expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('should fall back after artifact repair selected-provider transient retries are exhausted', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 502 - bad gateway')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback repair recovery', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [
+          { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' },
+          { role: 'system', content: '<artifact-validation-failed kind="interactive_artifact">\ntarget file: /tmp/game.html\n</artifact-validation-failed>' },
+        ],
+        [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+        config,
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, artifactRepairWritePriority: true },
+      );
+
+      expect(result).toMatchObject({
+        type: 'text',
+        content: 'fallback repair recovery',
+        fallback: {
+          category: 'provider_unavailable',
+          to: { provider: 'zhipu', model: 'glm-4.7-flash' },
+        },
+      });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(3);
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+      expect(broadcastToRendererMock).toHaveBeenCalledWith(
+        'provider:fallback',
+        expect.objectContaining({ category: 'provider_unavailable' }),
+      );
+    });
+
+    it('should not cross-provider fallback for artifact repair auth quota model or artifact-response failures', async () => {
+      const cases = [
+        {
+          name: 'auth',
+          inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 401 - unauthorized')),
+          expectedError: '401',
+        },
+        {
+          name: 'quota',
+          inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+          expectedError: 'insufficient balance',
+        },
+        {
+          name: 'model',
+          inference: vi.fn().mockRejectedValue(new Error('model_not_allowed: model is not available')),
+          expectedError: 'model_not_allowed',
+        },
+        {
+          name: 'artifact_response',
+          inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+          expectedError: 'empty artifact response',
+        },
+      ];
+
+      for (const testCase of cases) {
+        const caseRouter = new ModelRouter();
+        const primaryProvider = { inference: testCase.inference } as any;
+        const zhipuProvider = {
+          inference: vi.fn().mockResolvedValue({ type: 'text', content: `${testCase.name} fallback should not run`, finishReason: 'stop' }),
+        } as any;
+        (caseRouter as any).providers.set('xiaomi', primaryProvider);
+        (caseRouter as any).providers.set('zhipu', zhipuProvider);
+        broadcastToRendererMock.mockReset();
+
+        await expect(
+          caseRouter.inference(
+            [
+              { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' },
+              { role: 'system', content: '<artifact-validation-failed kind="interactive_artifact">\ntarget file: /tmp/game.html\n</artifact-validation-failed>' },
+            ],
+            [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+            {
+              provider: 'xiaomi',
+              model: 'mimo-v2.5-pro',
+              apiKey: 'test-key',
+              maxTokens: 1000,
+            },
+            vi.fn(),
+            undefined,
+            { artifactRepairActive: true, artifactRepairWritePriority: true },
+          ),
+        ).rejects.toThrow(testCase.expectedError);
+
+        expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+        expect(zhipuProvider.inference).not.toHaveBeenCalled();
+        expect(broadcastToRendererMock).not.toHaveBeenCalled();
+      }
     });
 
     it('should retry the selected artifact provider on transient provider_unavailable errors before giving up', async () => {

@@ -22,6 +22,7 @@ import type {
 } from '../../../protocol/tools';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { closeAgentSchema as schema } from './closeAgent.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 export async function executeCloseAgent(
   args: Record<string, unknown>,
@@ -54,10 +55,17 @@ export async function executeCloseAgent(
   if (agent.status !== 'running') {
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('close_agent done (no-op)', { agentId, status: agent.status });
-    return {
+    return withMultiagentMeta({
       ok: true,
       output: `Agent [${agentId}] is already ${agent.status}. No action needed.`,
-    };
+    }, ctx, schema.name, {
+      action: 'close',
+      agentId,
+      status: agent.status,
+      targets: [agentId],
+      counts: { running: guard.getRunningCount() },
+      result: { cancelled: false },
+    }, `Close agent: ${agentId}`);
   }
 
   const cancelled = guard.cancel(agentId);
@@ -65,10 +73,17 @@ export async function executeCloseAgent(
 
   if (cancelled) {
     ctx.logger.debug('close_agent done', { agentId, role: agent.role });
-    return {
+    return withMultiagentMeta({
       ok: true,
       output: `Agent [${agentId}] (${agent.role}) cancelled. Running agents: ${guard.getRunningCount()}`,
-    };
+    }, ctx, schema.name, {
+      action: 'close',
+      agentId,
+      status: 'cancelled',
+      targets: [agentId],
+      counts: { running: guard.getRunningCount() },
+      result: { cancelled: true, role: agent.role },
+    }, `Close agent: ${agentId}`);
   }
   return {
     ok: false,

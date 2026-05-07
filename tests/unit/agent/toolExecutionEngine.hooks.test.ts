@@ -92,9 +92,19 @@ function makeRuntimeTestableGameHtml(): string {
     <!doctype html>
     <html>
     <body>
-      <canvas id="game"></canvas>
+      <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
       <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
         const state = { x: 0, score: 0 };
+        function draw() {
+          ctx.fillStyle = '#18251f';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#75d7a9';
+          ctx.fillRect(28 + state.x, 118, 28, 34);
+          ctx.fillStyle = '#f2bd4a';
+          ctx.fillRect(0, 154, canvas.width, 10);
+        }
         window.__GAME_META__ = {
           domain: 'game',
           controls: { right: 'ArrowRight' },
@@ -113,11 +123,12 @@ function makeRuntimeTestableGameHtml(): string {
           if (event.code === 'ArrowRight' || event.key === 'ArrowRight') {
             state.x += 5;
             state.score += 1;
+            draw();
           }
         });
         window.__GAME_TEST__ = {
-          start: () => { state.x = 0; state.score = 0; },
-          reset: () => { state.x = 0; state.score = 0; },
+          start: () => { state.x = 0; state.score = 0; draw(); },
+          reset: () => { state.x = 0; state.score = 0; draw(); },
           snapshot: () => ({ ...state, progress: state.x }),
           step: (input = {}, frames = 1) => {
             for (let index = 0; index < frames; index += 1) {
@@ -126,6 +137,7 @@ function makeRuntimeTestableGameHtml(): string {
                 state.score += 1;
               }
             }
+            draw();
             return window.__GAME_TEST__.snapshot();
           },
           runSmokeTest: () => {
@@ -147,6 +159,7 @@ function makeRuntimeTestableGameHtml(): string {
             };
           }
         };
+        draw();
         function gameLoop() { requestAnimationFrame(gameLoop); }
         gameLoop();
       </script>
@@ -1166,6 +1179,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('runSmokeTest'),
     );
+    expect(fileReadTracker.hasBeenRead(filePath)).toBe(true);
   });
 
   it('escalates repeated game artifact validation failures into targeted repair mode', async () => {
@@ -1996,12 +2010,22 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game"></canvas>
+        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
         <script>
+          const canvas = document.getElementById('game');
+          const ctx = canvas.getContext('2d');
           const state = { x: 0, score: 0 };
+          function draw() {
+            ctx.fillStyle = '#18251f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#75d7a9';
+            ctx.fillRect(28 + state.x, 118, 28, 34);
+            ctx.fillStyle = '#f2bd4a';
+            ctx.fillRect(0, 154, canvas.width, 10);
+          }
           window.__GAME_META__ = {
             domain: 'game',
-            subtype: 'platformer',
+            subtype: 'arcade',
             controls: { ArrowRight: 'Move right', Space: 'Jump' },
             levels: [{ id: 0, name: 'Level 1' }],
             progressPlan: [{ input: 'ArrowRight', metric: 'playerX', expect: 'increase' }],
@@ -2022,8 +2046,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
             }
           });
           window.__GAME_TEST__ = {
-            start() { state.x = 0; state.score = 0; return { mode: 'playing' }; },
-            reset() { state.x = 0; state.score = 0; return { mode: 'playing' }; },
+            start() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
+            reset() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
             snapshot() { return { playerX: state.x, score: state.score, mode: 'playing' }; },
             step(input, frames = 1) {
               for (let i = 0; i < frames; i++) {
@@ -2032,6 +2056,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
                   state.score += 1;
                 }
               }
+              draw();
               return this.snapshot();
             },
             runSmokeTest() {
@@ -2053,6 +2078,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
               };
             }
           };
+          draw();
         </script>
       </body>
       </html>
@@ -2204,9 +2230,19 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game"></canvas>
+        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
         <script>
+          const canvas = document.getElementById('game');
+          const ctx = canvas.getContext('2d');
           const state = { x: 0, score: 0 };
+          function draw() {
+            ctx.fillStyle = '#18251f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#75d7a9';
+            ctx.fillRect(28 + state.x, 118, 28, 34);
+            ctx.fillStyle = '#f2bd4a';
+            ctx.fillRect(0, 154, canvas.width, 10);
+          }
           window.__GAME_META__ = {
             domain: 'game',
             subtype: 'runner',
@@ -2224,8 +2260,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
             }
           };
           window.__GAME_TEST__ = {
-            start() { state.x = 0; state.score = 0; return { mode: 'playing' }; },
-            reset() { state.x = 0; state.score = 0; return { mode: 'playing' }; },
+            start() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
+            reset() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
             snapshot() { return { playerX: state.x, score: state.score, mode: 'playing' }; },
             step(input, frames = 1) {
               for (let i = 0; i < frames; i++) {
@@ -2234,6 +2270,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
                   state.score += 1;
                 }
               }
+              draw();
               return this.snapshot();
             },
             runSmokeTest() {
@@ -2255,6 +2292,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
               };
             }
           };
+          draw();
         </script>
       </body>
       </html>
@@ -3671,6 +3709,89 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
+  it('allows complete artifact Write for structural platformer gameplay repair', async () => {
+    const oldChromePath = process.env.CHROME_PATH;
+    const oldSystemChromePath = process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
+    process.env.CHROME_PATH = '';
+    process.env.CODE_AGENT_SYSTEM_CHROME_PATH = '/not/a/real/chrome';
+
+    try {
+      const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-platformer-write-'));
+      const targetFile = path.join(dir, 'game.html');
+      await writeFile(targetFile, `
+        <!doctype html>
+        <html><body><canvas id="game"></canvas><script>
+        window.__GAME_META__ = {
+          domain: 'game',
+          subtype: 'platformer',
+          controls: { ArrowRight: 'Move right' }
+        };
+        window.__GAME_TEST__ = {
+          start() { return { mode: 'playing' }; },
+          snapshot() { return { playerX: 0, mode: 'playing' }; },
+          runSmokeTest() { return { passed: false, checks: [], failures: ['missing gameplay'], coverage: {} }; }
+        };
+        </script></body></html>
+      `, 'utf-8');
+
+      const toolExecutor = {
+        execute: vi.fn(async (): Promise<ToolResult> => ({
+          toolCallId: '',
+          success: true,
+          output: 'written',
+        })),
+      };
+      const ctx = makeRuntimeContext({
+        toolExecutor: toolExecutor as never,
+        workingDirectory: dir,
+        artifactRepairGuard: {
+          targetFile,
+          attempts: 1,
+          phase: 'targeted_repair',
+          targetReadCount: 1,
+          blockedToolCount: 2,
+          noOpPatchCount: 1,
+          activeIssueCodes: ['gameplay_mechanics_without_runtime_evidence'],
+        },
+        antiPatternDetector: {
+          trackToolFailure: vi.fn(),
+          clearToolFailure: vi.fn(),
+          trackDuplicateCall: vi.fn(),
+          trackFileReread: vi.fn(),
+          trackToolExecution: vi.fn().mockReturnValue(null),
+          trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
+          generateHardLimitError: vi.fn(),
+        } as never,
+      });
+      const contextAssembly = {
+        injectSystemMessage: vi.fn(),
+        pushPersistentSystemContext: vi.fn(),
+        getCurrentAttachments: vi.fn().mockReturnValue([]),
+      };
+      const runFinalizer = { emitTaskProgress: vi.fn() };
+      const conversationRuntime = {
+        setPlanMode: vi.fn(),
+        isPlanMode: vi.fn().mockReturnValue(false),
+        generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+      };
+      const engine = new ToolExecutionEngine(ctx);
+      engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+      const [result] = await engine.executeToolsWithHooks([
+        makeWriteToolCall('repair-platformer-structural-write', targetFile),
+      ]);
+
+      expect(toolExecutor.execute).toHaveBeenCalled();
+      expect(result.error || '').not.toContain('Write would replace the complete artifact during a targeted contract/metadata repair');
+      expect(ctx.artifactRepairGuard?.preferTargetedEdit).not.toBe(true);
+    } finally {
+      if (typeof oldChromePath === 'undefined') delete process.env.CHROME_PATH;
+      else process.env.CHROME_PATH = oldChromePath;
+      if (typeof oldSystemChromePath === 'undefined') delete process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
+      else process.env.CODE_AGENT_SYSTEM_CHROME_PATH = oldSystemChromePath;
+    }
+  });
+
   it('blocks diagnostic logging patches during artifact repair', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-debug-log-'));
     const targetFile = path.join(dir, 'game.html');
@@ -4006,9 +4127,19 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game"></canvas>
+        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
         <script>
+          const canvas = document.getElementById('game');
+          const ctx = canvas.getContext('2d');
           const state = { x: 0, score: 0 };
+          function draw() {
+            ctx.fillStyle = '#18251f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#75d7a9';
+            ctx.fillRect(28 + state.x, 118, 28, 34);
+            ctx.fillStyle = '#f2bd4a';
+            ctx.fillRect(0, 154, canvas.width, 10);
+          }
           window.__GAME_META__ = {
             domain: 'game',
             controls: { right: 'ArrowRight' },
@@ -4025,27 +4156,43 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
             if (event.code === 'ArrowRight' || event.key === 'ArrowRight') {
               state.x += 5;
               state.score += 1;
+              draw();
             }
           });
           window.__GAME_TEST__ = {
-            start: () => { state.x = 0; state.score = 0; },
+            start: () => { window.__GAME_TEST__.reset('1'); },
+            reset: () => { state.x = 0; state.score = 0; draw(); },
             snapshot: () => ({ ...state, progress: state.x }),
-            runSmokeTest: () => ({
-              passed: state.x > 0 && state.score > 0,
-              checks: ['actor moved', 'reward changed'],
-              failures: [],
-              coverage: {
-                levelsPassed: 1,
-                totalLevels: 1,
-                allLevelsReachable: true,
-                mechanics: ['move'],
-                rewards: ['score'],
-                risks: ['timer'],
-                stateChanges: ['position', 'score']
+            step: (inputState, frames = 1) => {
+              if (inputState && inputState.ArrowRight) {
+                state.x += frames * 5;
+                state.score += frames;
+                draw();
               }
-            })
+              return window.__GAME_TEST__.snapshot();
+            },
+            runSmokeTest: () => {
+              window.__GAME_TEST__.start();
+              const before = window.__GAME_TEST__.snapshot();
+              const after = window.__GAME_TEST__.step({ ArrowRight: true }, 3);
+              return {
+                passed: after.x > before.x && after.score > before.score,
+                checks: ['actor moved through shared step', 'reward changed through shared step'],
+                failures: [],
+                coverage: {
+                  levelsPassed: 1,
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: ['move'],
+                  rewards: ['score'],
+                  risks: ['timer'],
+                  stateChanges: ['position', 'score']
+                }
+              };
+            }
           };
-          function gameLoop() { requestAnimationFrame(gameLoop); }
+          draw();
+          function gameLoop() { draw(); requestAnimationFrame(gameLoop); }
           gameLoop();
         </script>
       </body>
@@ -4096,6 +4243,124 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('runtime smoke passed via interactive test contract'),
     );
+  });
+
+  it('injects structural platformer repair guidance when gameplay mechanics validation fails', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-runtime-platformer-structural-fail-'));
+    const filePath = path.join(dir, 'game.html');
+    await writeFile(filePath, `
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+        <script>
+          const canvas = document.getElementById('game');
+          const ctx = canvas.getContext('2d');
+          const state = { x: 0, score: 0 };
+          function draw() {
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#70d6ff';
+            ctx.fillRect(24 + state.x, 120, 24, 24);
+          }
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'platformer',
+            controls: { right: 'ArrowRight' },
+            levels: [{ id: '1' }],
+            progressPlan: [{ input: 'ArrowRight', frames: 4, metric: 'player.x', expect: 'increase' }],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['move'],
+              rewards: ['score'],
+              risks: ['enemy'],
+              levelsCovered: 1,
+              allLevelsReachable: true
+            }
+          };
+          window.__GAME_TEST__ = {
+            start() { state.x = 0; state.score = 0; draw(); },
+            reset() { state.x = 0; state.score = 0; draw(); },
+            snapshot() { return { player: { x: state.x }, score: state.score }; },
+            step(input = {}, frames = 1) {
+              for (let index = 0; index < frames; index += 1) {
+                if (input.ArrowRight) {
+                  state.x += 4;
+                  state.score += 1;
+                }
+              }
+              draw();
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.reset();
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 4);
+              return {
+                passed: after.player.x > before.player.x,
+                checks: ['move'],
+                failures: [],
+                coverage: {
+                  levelsPassed: 1,
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: ['move'],
+                  rewards: ['score'],
+                  risks: ['enemy'],
+                  stateChanges: ['player.x', 'score']
+                }
+              };
+            }
+          };
+          draw();
+        </script>
+      </body>
+      </html>
+    `, 'utf-8');
+
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: `Created file: ${filePath}`,
+      })),
+    };
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      workingDirectory: dir,
+      antiPatternDetector: {
+        trackToolFailure: vi.fn(),
+        clearToolFailure: vi.fn(),
+        trackDuplicateCall: vi.fn(),
+        trackFileReread: vi.fn(),
+        trackToolExecution: vi.fn().mockReturnValue(null),
+        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
+        generateHardLimitError: vi.fn(),
+      } as never,
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const [result] = await engine.executeToolsWithHooks([
+      makeWriteToolCall('tool-game-write-platformer-structural-fail', filePath),
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('missing_gameplay_mechanics');
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('平台玩法修复必须把布局、碰撞、奖励、能力和 gate 路线一起修到可达'),
+    );
+    expect(ctx.artifactRepairGuard?.activeIssueCodes).toContain('missing_gameplay_mechanics');
   });
 
   it('defers game artifact validation for non-final append chunks', async () => {

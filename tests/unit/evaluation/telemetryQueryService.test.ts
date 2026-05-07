@@ -269,6 +269,16 @@ describe('TelemetryQueryService transcript replay fallback', () => {
               success: true,
               output: 'export const ok = true;',
               duration: 8,
+              metadata: {
+                artifact: {
+                  artifactId: 'artifact-read-main',
+                  kind: 'text',
+                  sourceTool: 'Read',
+                  createdAt: '2026-05-07T00:00:00.000Z',
+                  name: 'main.ts',
+                  path: 'src/main.ts',
+                },
+              },
             },
           },
         ],
@@ -304,6 +314,16 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       name: 'read_file',
       args: { file_path: 'src/main.ts' },
       result: 'export const ok = true;',
+      resultMetadata: {
+        artifact: {
+          artifactId: 'artifact-read-main',
+          kind: 'text',
+          sourceTool: 'Read',
+          createdAt: '2026-05-07T00:00:00.000Z',
+          name: 'main.ts',
+          path: 'src/main.ts',
+        },
+      },
       success: true,
       successKnown: true,
     });

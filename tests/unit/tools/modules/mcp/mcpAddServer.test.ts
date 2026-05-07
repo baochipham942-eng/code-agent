@@ -133,7 +133,7 @@ describe('mcpAddServerModule (native)', () => {
       expect(mcpAddServerModule.schema.category).toBe('mcp');
       expect(mcpAddServerModule.schema.permissionLevel).toBe('write');
       expect(mcpAddServerModule.schema.inputSchema.required).toEqual(['name', 'type']);
-      const typeProp = (mcpAddServerModule.schema.inputSchema.properties as any).type;
+      const typeProp = (mcpAddServerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>).type;
       expect(typeProp.enum).toEqual(['sse', 'stdio']);
     });
   });
@@ -174,6 +174,16 @@ describe('mcpAddServerModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
+      if (!result.ok) {
+        expect(result.meta).toMatchObject({
+          server: 'foo',
+          action: 'add_server',
+          resultKind: 'process-output',
+          count: 0,
+          truncated: false,
+          errorCode: 'PERMISSION_DENIED',
+        });
+      }
     });
 
     it('returns ABORTED when signal already aborted', async () => {
@@ -319,6 +329,28 @@ describe('mcpAddServerModule (native)', () => {
         expect(result.output).toContain('Available tools: 4');
         expect(result.meta?.persisted).toBe(true);
         expect(result.meta?.connected).toBe(true);
+        expect(result.meta?.server).toBe('my-server');
+        expect(result.meta?.action).toBe('add_server');
+        expect(result.meta?.resultKind).toBe('process-output');
+        expect(result.meta?.count).toBe(4);
+        expect(result.meta?.truncated).toBe(false);
+        expect(result.meta?.configPath).toBe('/tmp/test-workspace/.code-agent/mcp.json');
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'process-output',
+          sourceTool: 'mcp_add_server',
+          mimeType: 'text/plain',
+          metadata: expect.objectContaining({
+            mcpServer: true,
+            server: 'my-server',
+            action: 'add_server',
+            resultKind: 'process-output',
+            count: 4,
+            truncated: false,
+            persisted: true,
+            connected: true,
+          }),
+        });
+        expect(result.meta?.artifact).toHaveProperty('artifactId');
       }
       expect(client.addServer).toHaveBeenCalled();
       expect(client.connect).toHaveBeenCalled();

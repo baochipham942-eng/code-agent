@@ -247,6 +247,16 @@ describe('skillModule (native)', () => {
         expect(meta.skillResult.newMessages[0].content).toContain('Loading skill: demo');
         expect(meta.skillResult.newMessages[1].isMeta).toBe(true);
         expect(meta.skillResult.newMessages[1].content).toContain('User provided arguments: foo bar');
+        expect(result.meta).toMatchObject({
+          command: 'demo',
+          skillName: 'demo',
+          source: 'user',
+          executionContext: 'inline',
+          isSkillActivation: true,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.skillName).toBe('demo');
       }
     });
 
@@ -330,6 +340,16 @@ describe('skillModule (native)', () => {
         expect(result.output).toContain('Iterations: 3');
         expect(result.output).toContain('Tools used: Read, Write');
         expect(result.output).toContain('task done');
+        expect(result.meta).toMatchObject({
+          command: 'demo',
+          skillName: 'demo',
+          executionContext: 'fork',
+          iterations: 3,
+          toolsUsed: ['Read', 'Write'],
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('process-output');
+        expect(artifact.metadata?.iterations).toBe(3);
       }
     });
 

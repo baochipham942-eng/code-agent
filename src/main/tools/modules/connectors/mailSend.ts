@@ -13,6 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSendSchema as schema } from './mailSend.schema';
 
 async function executeMailSend(
@@ -54,17 +55,45 @@ async function executeMailSend(
       sent: boolean;
     };
     ctx.logger.debug('mail_send', { subject: sent.subject, toCount: sent.to.length });
+    const output = [
+      `已发送邮件：${sent.subject}`,
+      `To: ${sent.to.join(', ')}`,
+      sent.cc.length > 0 ? `CC: ${sent.cc.join(', ')}` : null,
+      sent.bcc.length > 0 ? `BCC: ${sent.bcc.join(', ')}` : null,
+      sent.attachments.length > 0 ? `Attachments: ${sent.attachments.join(', ')}` : null,
+    ].filter(Boolean).join('\n');
 
     return {
       ok: true,
-      output: [
-        `已发送邮件：${sent.subject}`,
-        `To: ${sent.to.join(', ')}`,
-        sent.cc.length > 0 ? `CC: ${sent.cc.join(', ')}` : null,
-        sent.bcc.length > 0 ? `BCC: ${sent.bcc.join(', ')}` : null,
-        sent.attachments.length > 0 ? `Attachments: ${sent.attachments.join(', ')}` : null,
-      ].filter(Boolean).join('\n'),
-      meta: { sent: sent.sent, toCount: sent.to.length },
+      output,
+      meta: {
+        action: 'send_message',
+        connector: 'mail',
+        sent: sent.sent,
+        subject: sent.subject,
+        to: sent.to,
+        cc: sent.cc,
+        bcc: sent.bcc,
+        attachments: sent.attachments,
+        toCount: sent.to.length,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: `mail-send-${sent.subject}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            connector: 'mail',
+            action: 'send_message',
+            subject: sent.subject,
+            sent: sent.sent,
+            toCount: sent.to.length,
+            attachmentCount: sent.attachments.length,
+          },
+        }),
+      },
     };
   } catch (error) {
     return {

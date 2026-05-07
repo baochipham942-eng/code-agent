@@ -180,6 +180,43 @@ describe('convertToOpenAIMessages', () => {
     expect(toolIdx).toBeGreaterThan(assistantIdx);
     expect(userIdx).toBeGreaterThan(toolIdx);
   });
+
+  it('demotes orphaned tool results without a matching assistant tool_call', () => {
+    const messages: ModelMessage[] = [
+      makeTextMessage('user', 'Continue repair'),
+      makeToolResult('lost_call', 'Artifact validation failed after filtered history'),
+      makeTextMessage('user', 'Try again'),
+    ];
+
+    const result = convertToOpenAIMessages(messages);
+
+    expect(result.some((message: any) => message.role === 'tool')).toBe(false);
+    expect(result[1].role).toBe('user');
+    expect(result[1].content).toContain('orphaned tool result omitted from structured tool channel: lost_call');
+    expect(result[1].content).toContain('Artifact validation failed');
+  });
+
+  it('synthesizes missing expected tool responses before demoting mismatched tool results', () => {
+    const messages: ModelMessage[] = [
+      makeAssistantWithToolCalls('', [
+        { id: 'expected_call', name: 'Write', arguments: '{"file_path":"game.html"}' },
+      ]),
+      makeToolResult('filtered_out_call', 'Read result whose assistant call was filtered'),
+      makeTextMessage('user', 'Next'),
+    ];
+
+    const result = convertToOpenAIMessages(messages);
+
+    expect(result[0].role).toBe('assistant');
+    expect(result[1]).toEqual({
+      role: 'tool',
+      tool_call_id: 'expected_call',
+      content: '[context compacted]',
+    });
+    expect(result[2].role).toBe('user');
+    expect(result[2].content).toContain('filtered_out_call');
+    expect(result[3].role).toBe('user');
+  });
 });
 
 // ============================================================================

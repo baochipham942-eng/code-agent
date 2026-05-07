@@ -189,6 +189,20 @@ describe('pdfCompressModule (native)', () => {
         const meta = result.meta as Record<string, unknown>;
         expect(meta.quality).toBe('ebook');
         expect(meta.compressionRatio).toBe(50);
+        expect(meta.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'pdf_compress',
+          path: '/tmp/work/a_compressed.pdf',
+          mimeType: 'application/pdf',
+          metadata: {
+            inputPath: '/tmp/work/a.pdf',
+            quality: 'ebook',
+            compressionRatio: 50,
+          },
+        });
+        expect(meta.outputPath).toBe('/tmp/work/a_compressed.pdf');
+        expect(meta.contentLength).toBe(50 * 1024);
+        expect(meta.truncated).toBe(false);
         const att = meta.attachment as Record<string, string>;
         expect(att.mimeType).toBe('application/pdf');
         expect(att.category).toBe('document');
@@ -226,6 +240,13 @@ describe('pdfCompressModule (native)', () => {
         expect(result.output).toContain('已经是最优状态');
         const meta = result.meta as Record<string, unknown>;
         expect(meta.compressionRatio).toBe(0);
+        expect(meta.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'pdf_compress',
+          mimeType: 'application/pdf',
+          contentLength: 100 * 1024,
+          metadata: { optimized: true },
+        });
       }
       expect(unlinkSyncMock).toHaveBeenCalledTimes(1);
     });

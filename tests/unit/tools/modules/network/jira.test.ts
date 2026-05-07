@@ -165,6 +165,19 @@ describe('jiraModule (native)', () => {
         expect(result.output).toContain('PROJ-1');
         expect(result.output).toContain('PROJ-2');
         expect(result.output).toContain('First issue');
+        expect(result.meta).toMatchObject({
+          action: 'query',
+          total: 2,
+          returned: 2,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'search',
+          sourceTool: 'jira',
+          metadata: expect.objectContaining({
+            action: 'query',
+            returned: 2,
+          }),
+        });
       }
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const url = fetchMock.mock.calls[0][0] as string;
@@ -197,7 +210,19 @@ describe('jiraModule (native)', () => {
       fetchMock.mockResolvedValueOnce(jsonResponse({ total: 0, issues: [] }));
       const result = await run({ action: 'query' });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toContain('未找到');
+      if (result.ok) {
+        expect(result.output).toContain('未找到');
+        expect(result.meta).toMatchObject({
+          action: 'query',
+          total: 0,
+          returned: 0,
+          issues: [],
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'search',
+          sourceTool: 'jira',
+        });
+      }
     });
   });
 
@@ -234,6 +259,18 @@ describe('jiraModule (native)', () => {
         expect(result.output).toContain('Login bug');
         expect(result.output).toContain('Detailed description');
         expect(result.output).toContain('urgent, login');
+        expect(result.meta).toMatchObject({
+          action: 'get',
+          issueKey: 'PROJ-42',
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'jira',
+          metadata: expect.objectContaining({
+            action: 'get',
+            issueKey: 'PROJ-42',
+          }),
+        });
       }
     });
   });

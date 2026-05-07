@@ -14,6 +14,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import { JIRA_API_VERSION_PATH } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { jiraSchema as schema } from './jira.schema';
 
 interface JiraConfig {
@@ -155,7 +156,33 @@ export async function executeJira(
 
       if (issues.length === 0) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        return { ok: true, output: '未找到匹配的 Issue' };
+        const output = '未找到匹配的 Issue';
+        return {
+          ok: true,
+          output,
+          meta: {
+            action,
+            query: queryJql,
+            total: data.total ?? 0,
+            returned: 0,
+            issues: [],
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'search',
+              sessionId: ctx.sessionId,
+              name: 'jira-query',
+              mimeType: 'text/plain',
+              contentLength: output.length,
+              preview: output,
+              metadata: {
+                action,
+                query: queryJql,
+                total: data.total ?? 0,
+                returned: 0,
+              },
+            }),
+          },
+        };
       }
 
       let output = `📋 找到 ${issues.length} 个 Issue (共 ${data.total} 个)\n\n`;
@@ -167,10 +194,27 @@ export async function executeJira(
         ok: true,
         output,
         meta: {
+          action,
           total: data.total,
           returned: issues.length,
+          query: queryJql,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           issues: issues.map((i: any) => ({ key: i.key, summary: i.fields?.summary })),
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'search',
+            sessionId: ctx.sessionId,
+            name: 'jira-query',
+            mimeType: 'text/markdown',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              action,
+              query: queryJql,
+              total: data.total,
+              returned: issues.length,
+            },
+          }),
         },
       };
     }
@@ -214,7 +258,31 @@ export async function executeJira(
       }
 
       onProgress?.({ stage: 'completing', percent: 100 });
-      return { ok: true, output, meta: { issue } };
+      return {
+        ok: true,
+        output,
+        meta: {
+          issue,
+          issueKey: issue.key,
+          action,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'text',
+            sessionId: ctx.sessionId,
+            name: `jira-${issue.key}`,
+            url: `${config.baseUrl}/browse/${issue.key}`,
+            mimeType: 'text/markdown',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              action,
+              issueKey: issue.key,
+              summary: fields.summary,
+              status: fields.status?.name,
+            },
+          }),
+        },
+      };
     }
 
     // ==================== 创建 ====================

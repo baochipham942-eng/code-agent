@@ -30,6 +30,7 @@ import { renderSkillContent } from '../../../services/skills/skillRenderer';
 import { getSubagentExecutor } from '../../../agent/subagentExecutor';
 import type { ToolResolver } from '../../dispatch/toolResolver';
 import { isSkillCommandAllowedByWorkbenchScope } from '../../workbenchToolScope';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { skillSchema as schema } from './skill.schema';
 
 // ----------------------------------------------------------------------------
@@ -133,19 +134,68 @@ async function handleForkExecution(
     );
 
     if (result.success) {
+      const output =
+        `Skill "${skill.name}" completed\n` +
+        `Iterations: ${result.iterations}\n` +
+        `Tools used: ${result.toolsUsed.join(', ') || 'none'}\n\n` +
+        `Result:\n${result.output}`;
       return {
         ok: true,
-        output:
-          `Skill "${skill.name}" completed\n` +
-          `Iterations: ${result.iterations}\n` +
-          `Tools used: ${result.toolsUsed.join(', ') || 'none'}\n\n` +
-          `Result:\n${result.output}`,
+        output,
+        meta: {
+          command: skill.name,
+          skillName: skill.name,
+          source: skill.source,
+          executionContext: skill.executionContext,
+          iterations: result.iterations,
+          toolsUsed: result.toolsUsed,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'process-output',
+            sessionId: ctx.sessionId,
+            name: `skill-${skill.name}-result`,
+            mimeType: 'text/plain',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              skillName: skill.name,
+              executionContext: skill.executionContext,
+              iterations: result.iterations,
+              toolsUsed: result.toolsUsed,
+            },
+          }),
+        },
       };
     }
+    const partialOutput = result.output ?? '';
     return {
       ok: false,
       error: `Skill "${skill.name}" failed: ${result.error}`,
-      meta: { output: result.output },
+      meta: {
+        command: skill.name,
+        skillName: skill.name,
+        source: skill.source,
+        executionContext: skill.executionContext,
+        output: partialOutput,
+        iterations: result.iterations,
+        toolsUsed: result.toolsUsed,
+        artifact: partialOutput
+          ? createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'process-output',
+              sessionId: ctx.sessionId,
+              name: `skill-${skill.name}-partial-result`,
+              mimeType: 'text/plain',
+              contentLength: partialOutput.length,
+              preview: partialOutput.slice(0, 500),
+              metadata: {
+                skillName: skill.name,
+                executionContext: skill.executionContext,
+                failed: true,
+              },
+            })
+          : undefined,
+      },
     };
   } catch (error) {
     return {
@@ -255,19 +305,55 @@ export async function executeSkill(
   const skillResult = handleInlineExecution(skill, skillArgs, ctx.workingDir);
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.info('Skill done', { command, ok: skillResult.success });
+  const instructionMessage = skillResult.newMessages?.find((message) => message.isMeta)?.content ?? '';
 
   // 保真 legacy 行为：把 SkillToolResult 通过 meta 透传给 dispatch 层
   if (!skillResult.success) {
     return {
       ok: false,
       error: skillResult.error ?? 'unknown skill error',
-      meta: { skillResult, isSkillActivation: true },
+      meta: {
+        command,
+        skillName: skill.name,
+        source: skill.source,
+        executionContext: skill.executionContext,
+        isSkillActivation: true,
+        skillResult,
+      },
     };
   }
+  const output = `Skill "${skill.name}" activated. Follow the skill instructions.`;
   return {
     ok: true,
-    output: `Skill "${skill.name}" activated. Follow the skill instructions.`,
-    meta: { skillResult, isSkillActivation: true },
+    output,
+    meta: {
+      command,
+      skillName: skill.name,
+      source: skill.source,
+      executionContext: skill.executionContext,
+      allowedTools: skill.allowedTools,
+      loaded: skill.loaded,
+      basePath: skill.basePath,
+      isSkillActivation: true,
+      skillResult,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'text',
+        sessionId: ctx.sessionId,
+        name: `skill-${skill.name}-instructions`,
+        mimeType: 'text/markdown',
+        contentLength: instructionMessage.length || output.length,
+        preview: (instructionMessage || output).slice(0, 500),
+        metadata: {
+          skillName: skill.name,
+          source: skill.source,
+          executionContext: skill.executionContext,
+          allowedTools: skill.allowedTools,
+          basePath: skill.basePath,
+          isSkillActivation: true,
+        },
+      }),
+    },
   };
 }
 

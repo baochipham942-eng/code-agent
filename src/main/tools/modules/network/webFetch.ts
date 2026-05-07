@@ -16,7 +16,17 @@ import type {
 } from '../../../protocol/tools';
 import { webFetchTool } from '../../web/webFetch';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { webFetchSchema as schema } from './webFetch.schema';
+
+function safeUrlName(url: string | undefined, fallback: string): string {
+  if (!url) return fallback;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return fallback;
+  }
+}
 
 class WebFetchHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +51,29 @@ class WebFetchHandler implements ToolHandler<Record<string, unknown>, string> {
     const legacyResult = await webFetchTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('web_fetch done', { url, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    const result = adaptLegacyResult(legacyResult);
+    if (result.ok) {
+      return {
+        ...result,
+        meta: {
+          ...(result.meta ?? {}),
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'web',
+            sessionId: ctx.sessionId,
+            name: safeUrlName(url, 'web_fetch result'),
+            url,
+            mimeType: 'text/markdown',
+            contentLength: result.output.length,
+            preview: result.output.slice(0, 500),
+            metadata: {
+              prompt: typeof args.prompt === 'string' ? args.prompt : undefined,
+            },
+          }),
+        },
+      };
+    }
+    return result;
   }
 }
 

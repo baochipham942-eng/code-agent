@@ -51,6 +51,7 @@ import {
 } from '../../../agent/subagentContextBuilder';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { taskSchema as schema } from './task.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 // ----------------------------------------------------------------------------
 // 参数验证（与 legacy parseAndValidateTaskParams 对齐）
@@ -163,7 +164,22 @@ export async function executeTask(
   if (dupCheck.isDuplicate) {
     if (dupCheck.cachedResult) {
       onProgress?.({ stage: 'completing', percent: 100 });
-      return { ok: true, output: `[缓存结果] ${dupCheck.cachedResult}` };
+      return withMultiagentMeta(
+        { ok: true, output: `[缓存结果] ${dupCheck.cachedResult}` },
+        ctx,
+        schema.name,
+        {
+          action: 'task',
+          status: 'cached',
+          agentId: subagentType,
+          targets: [subagentType],
+          result: { output: dupCheck.cachedResult },
+        },
+        {
+          artifactName: `Task result: ${subagentType}`,
+          requestArgs: args,
+        },
+      );
     }
     return {
       ok: false,
@@ -271,15 +287,63 @@ Stats:
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}`;
 
       taskDeduplication.completeTask(taskHash, result.output);
-      return { ok: true, output };
+      return withMultiagentMeta(
+        { ok: true, output },
+        ctx,
+        schema.name,
+        {
+          action: 'task',
+          status: 'completed',
+          agentId: subagentType,
+          targets: [subagentType],
+          counts: {
+            iterations: result.iterations,
+            tools: result.toolsUsed.length,
+          },
+          result: {
+            agentName,
+            subagentType,
+            description,
+            output: result.output,
+            iterations: result.iterations,
+            toolsUsed: result.toolsUsed,
+            cost: result.cost,
+          },
+        },
+        {
+          artifactName: `Task result: ${subagentType}`,
+          requestArgs: args,
+        },
+      );
     }
     taskDeduplication.failTask(taskHash);
-    return {
+    return withMultiagentMeta({
       ok: false,
       error: `Agent [${agentName}] failed: ${result.error ?? 'unknown error'}`,
       code: 'DOMAIN_ERROR',
       meta: result.output ? { output: result.output } : undefined,
-    };
+    }, ctx, schema.name, {
+      action: 'task',
+      status: 'failed',
+      agentId: subagentType,
+      targets: [subagentType],
+      counts: {
+        iterations: result.iterations,
+        tools: result.toolsUsed.length,
+      },
+      result: {
+        agentName,
+        subagentType,
+        description,
+        output: result.output,
+        error: result.error,
+        iterations: result.iterations,
+        toolsUsed: result.toolsUsed,
+        cost: result.cost,
+      },
+    }, {
+      requestArgs: args,
+    });
   } catch (error) {
     taskDeduplication.failTask(taskHash);
     return {

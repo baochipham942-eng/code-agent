@@ -169,6 +169,16 @@ describe('pptEditModule (native)', () => {
         expect(result.output).toMatch(/📄 幻灯片: 3 页/);
         expect(result.meta?.slideCount).toBe(3);
         expect(Array.isArray(result.meta?.slides)).toBe(true);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'ppt_edit',
+          mimeType: 'text/markdown',
+          metadata: {
+            action: 'analyze',
+            slideCount: 3,
+          },
+        });
+        expect(result.meta?.contentLength).toBe(result.output.length);
       }
     });
   });
@@ -186,6 +196,17 @@ describe('pptEditModule (native)', () => {
         expect(result.output).toMatch(/已替换第 1 页标题为: "新标题"/);
         expect(result.output).toMatch(/Snapshot: /);
         expect(result.meta?.snapshotId).toBeDefined();
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'document',
+          sourceTool: 'ppt_edit',
+          path: pptxPath,
+          mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          metadata: {
+            action: 'replace_title',
+            slideIndex: 0,
+          },
+        });
+        expect(result.meta?.outputPath).toBe(pptxPath);
       }
     });
 

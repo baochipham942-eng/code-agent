@@ -20,6 +20,7 @@ import {
   buildDynamicPromptV2,
   buildPromptWithRules,
   ARTIFACT_TASK_BRIEF_PROMPT,
+  GAME_ARTIFACT_CONTRACT_PROMPT,
   needsArtifactTaskBrief,
 } from '../../../src/main/prompts/builder';
 import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
@@ -222,11 +223,13 @@ describe('Prompt Builder', () => {
       expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Use chunked assembly');
       expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Append ordered chunks');
     });
+  });
 
+  describe('GAME_ARTIFACT_CONTRACT_PROMPT', () => {
     it('includes deterministic game test contract guidance', () => {
-      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('reset(levelOrScenario?)');
-      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('step(inputState, frames)');
-      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('every authored level');
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('reset(levelOrScenario?)');
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('step(inputState, frames?)');
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('every authored unit');
     });
   });
 

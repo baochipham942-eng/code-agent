@@ -29,6 +29,7 @@ import type {
 import { executeWorkflowOrchestrate as executeWorkflowOrchestrateLegacy } from '../../../agent/multiagentTools/workflowOrchestrate';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { workflowOrchestrateSchema as schema } from './workflowOrchestrate.schema';
+import { withMultiagentMeta } from './resultMeta';
 
 class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -58,7 +59,28 @@ class WorkflowOrchestrateHandler implements ToolHandler<Record<string, unknown>,
     const legacyResult = await executeWorkflowOrchestrateLegacy(args, legacyCtx);
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('workflow_orchestrate done', { ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    const result = adaptLegacyResult(legacyResult);
+    return withMultiagentMeta(result, ctx, schema.name, {
+      action: 'workflow',
+      status: result.ok ? 'completed' : 'failed',
+      targets: [
+        typeof args.workflow === 'string' ? args.workflow : undefined,
+        ...(Array.isArray(args.stages)
+          ? args.stages
+            .map((stage) => (stage && typeof stage === 'object' && 'name' in stage ? (stage as { name?: unknown }).name : undefined))
+            .filter((name): name is string => typeof name === 'string')
+          : []),
+      ].filter((target): target is string => typeof target === 'string'),
+      counts: {
+        stages: Array.isArray(args.stages) ? args.stages.length : undefined,
+      },
+      result: legacyResult.metadata ?? {},
+    }, {
+      artifactName: 'Workflow result',
+      requestArgs: args,
+      legacyMetadata: legacyResult.metadata,
+      legacyContext: true,
+    });
   }
 }
 

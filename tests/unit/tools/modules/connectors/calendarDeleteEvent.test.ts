@@ -137,6 +137,17 @@ describe('calendarDeleteEventModule (native)', () => {
         expect(result.output).toContain('已删除日历事件：');
         expect(result.output).toContain('- [Work] Standup');
         expect(result.output).toContain('- uid: evt-1');
+        expect(result.meta).toMatchObject({
+          action: 'delete_event',
+          connector: 'calendar',
+          uid: 'evt-1',
+          calendar: 'Work',
+          title: 'Standup',
+          deleted: true,
+        });
+        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
+        expect(artifact.kind).toBe('text');
+        expect(artifact.metadata?.action).toBe('delete_event');
       }
       expect(execMock).toHaveBeenCalledWith('delete_event', validArgs);
     });

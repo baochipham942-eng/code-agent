@@ -17,6 +17,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
 
 /**
@@ -185,6 +186,15 @@ export async function executeReadPdf(
       ok: true,
       output,
       meta: {
+        artifact: await createFileArtifact(filePath, schema.name, ctx, {
+          kind: 'document',
+          mimeType: 'application/pdf',
+          preview: result.content.slice(0, 500),
+          metadata: {
+            processingMethod: 'vision',
+            fileSizeMB: parseFloat(fileSizeMB),
+          },
+        }),
         processingMethod: 'vision',
         fileSizeMB: parseFloat(fileSizeMB),
       },

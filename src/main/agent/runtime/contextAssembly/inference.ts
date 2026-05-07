@@ -28,6 +28,7 @@ import {
   getArtifactRepairTargetReadBudget,
   getArtifactRepairTargetRangedReadBudget,
   seedArtifactRepairGuardFromContext,
+  shouldAllowFullArtifactRewriteDuringRepair,
 } from '../artifactRepairGuard';
 
 const ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST = new Set([
@@ -91,6 +92,40 @@ const ARTIFACT_REPAIR_TARGETED_ISSUE_CODES = new Set([
   'missing_reachability_metadata',
   'missing_quality_metadata',
 ]);
+const ARTIFACT_MODEL_WAIT_HEARTBEAT_MS = 15_000;
+
+function startArtifactModelWaitProgress(
+  ctx: ContextAssemblyCtx,
+  options: {
+    artifactRequest: boolean;
+    artifactRepairActive: boolean;
+    artifactRepairWritePriority: boolean;
+  },
+): () => void {
+  if (!options.artifactRequest && !options.artifactRepairActive) {
+    return () => undefined;
+  }
+
+  const startedAt = Date.now();
+  const baseStep = options.artifactRepairActive
+    ? options.artifactRepairWritePriority
+      ? '正在写入 artifact 修复补丁...'
+      : '正在分析 artifact 修复方案...'
+    : '正在生成 artifact 内容...';
+
+  ctx.runFinalizer.emitTaskProgress('generating', baseStep);
+  const timer = setInterval(() => {
+    const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    ctx.runFinalizer.emitTaskProgress(
+      'generating',
+      `${baseStep} 已等待 ${elapsedSeconds} 秒，模型仍在处理。`,
+    );
+  }, ARTIFACT_MODEL_WAIT_HEARTBEAT_MS);
+
+  return () => {
+    clearInterval(timer);
+  };
+}
 
 function getNetworkRetryBudget(errMsg: string, errCode: string | undefined, artifactRepairActive: boolean): number {
   if (!artifactRepairActive) return 1;
@@ -134,17 +169,28 @@ function hasTargetedArtifactRepairIssue(ctx: ContextAssemblyCtx): boolean {
 function shouldExposeTargetedArtifactRepairRead(ctx: ContextAssemblyCtx): boolean {
   const guard = ctx.runtime.artifactRepairGuard;
   if (!guard || guard.patched) return false;
+  const editAnchorFailureCount = guard.editAnchorFailureCount ?? 0;
+  const targetRangedReadCount = guard.targetRangedReadCount ?? 0;
+  if (
+    editAnchorFailureCount > 0
+    && targetRangedReadCount < getArtifactRepairTargetRangedReadBudget(guard) + editAnchorFailureCount
+  ) {
+    return true;
+  }
+  const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(ctx);
+  const hasTargetedIssue = hasTargetedArtifactRepairIssue(ctx);
+  if (hasTargetedIssue && isArtifactRepairReadBudgetExhausted(ctx) && hasRangedReadLeft) {
+    return true;
+  }
   if (
     guard.preferTargetedEdit
     || (guard.noOpPatchCount ?? 0) >= 1
     || (guard.blockedToolCount ?? 0) >= 2
-    || (guard.editAnchorFailureCount ?? 0) >= 1
   ) {
     return false;
   }
-  const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(ctx);
 
-  return hasTargetedArtifactRepairIssue(ctx)
+  return hasTargetedIssue
     && isArtifactRepairReadBudgetExhausted(ctx)
     && hasRangedReadLeft;
 }
@@ -152,14 +198,23 @@ function shouldExposeTargetedArtifactRepairRead(ctx: ContextAssemblyCtx): boolea
 function shouldPreferTargetedArtifactRepair(ctx: ContextAssemblyCtx): boolean {
   const guard = ctx.runtime.artifactRepairGuard;
   if (!guard || guard.patched) return false;
+  if (shouldAllowFullArtifactRewriteDuringRepair(guard)) return false;
+  if ((guard.targetReadCount ?? 0) === 0) return false;
   return Boolean(guard.preferTargetedEdit)
     || (hasTargetedArtifactRepairIssue(ctx) && isArtifactRepairReadBudgetExhausted(ctx));
+}
+
+function hasUnreadArtifactRepairTarget(ctx: ContextAssemblyCtx): boolean {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (!guard || guard.patched) return false;
+  return (guard.targetReadCount ?? 0) === 0;
 }
 
 function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
   const guard = ctx.runtime.artifactRepairGuard;
   if (!guard) return false;
   if (shouldExposeTargetedArtifactRepairRead(ctx)) return false;
+  if (hasUnreadArtifactRepairTarget(ctx)) return false;
   return (guard.noOpPatchCount ?? 0) >= 1
     || Boolean(guard.preferTargetedEdit)
     || isArtifactRepairReadBudgetExhausted(ctx)
@@ -174,8 +229,12 @@ function isArtifactRepairFullRewritePriority(ctx: ContextAssemblyCtx): boolean {
 }
 
 function getArtifactRepairToolAllowlist(ctx: ContextAssemblyCtx): Set<string> {
-  if (ctx.runtime.artifactRepairGuard?.patched) {
+  const guard = ctx.runtime.artifactRepairGuard;
+  if (guard?.patched) {
     return ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST;
+  }
+  if (guard && shouldAllowFullArtifactRewriteDuringRepair(guard) && isArtifactRepairWritePriority(ctx)) {
+    return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
   }
   if (shouldExposeTargetedArtifactRepairRead(ctx)) {
     return ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST;
@@ -197,6 +256,31 @@ function filterToolsForArtifactRepair<T extends { name: string }>(
 ): T[] {
   const allowlist = getArtifactRepairToolAllowlist(ctx);
   return tools.filter((tool) => allowlist.has(tool.name));
+}
+
+function dedupeToolDefinitions<T extends { name: string }>(tools: T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  const duplicates: string[] = [];
+
+  for (const tool of tools) {
+    if (seen.has(tool.name)) {
+      duplicates.push(tool.name);
+      continue;
+    }
+    seen.add(tool.name);
+    deduped.push(tool);
+  }
+
+  if (duplicates.length > 0) {
+    logger.warn('[AgentLoop] Deduped duplicate tool definitions', {
+      duplicateNames: [...new Set(duplicates)],
+      before: tools.length,
+      after: deduped.length,
+    });
+  }
+
+  return deduped;
 }
 
 function capArtifactRepairMaxTokens(
@@ -246,6 +330,7 @@ function buildCompactArtifactRepairWriteRetryMessages(
 ): ModelMessage[] {
   const guard = ctx.runtime.artifactRepairGuard;
   const targetFile = guard?.targetFile || 'target artifact';
+  const fullRewriteAllowed = guard ? shouldAllowFullArtifactRewriteDuringRepair(guard) : false;
   const activeIssueCodes = guard?.activeIssueCodes?.length
     ? guard.activeIssueCodes.join(', ')
     : 'unknown';
@@ -258,7 +343,9 @@ function buildCompactArtifactRepairWriteRetryMessages(
       `Timeout: ${errorMessage.split('\n')[0]?.slice(0, 240) || 'provider timeout'}`,
       `Target file: ${targetFile}`,
       `Active issue codes: ${activeIssueCodes}`,
-      'Available action: call exactly one mutation tool, preferably Edit. Do not call Read, Bash, Write, Task, or validator tools.',
+      fullRewriteAllowed
+        ? 'Available action: call exactly one mutation tool. Prefer Edit when it is safe; Write is allowed only for one complete self-contained HTML artifact. Do not call Read, Bash, Task, or validator tools.'
+        : 'Available action: call exactly one mutation tool, preferably Edit. Do not call Read, Bash, Write, Task, or validator tools.',
       'Use the target evidence below. If replacing an interactive test contract, a short old_text anchor around `window.__GAME_TEST__ = {` or `window.__INTERACTIVE_TEST__ = {` is acceptable; the runtime can expand the anchor to the balanced contract region.',
       'For malformed_test_contract, replace the full active test-contract region in one balanced Edit and remove duplicate orphaned start/reset/snapshot/step/runSmokeTest methods after the contract closes.',
       'The patch must remove direct ability/reward grants, test-mode auto collection/progression, and coverage based only on existence/registration. Prove gameplay through before/after snapshot changes driven by step/input.',
@@ -330,6 +417,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (blockedToolCount=${blockedToolCount})`,
     );
   }
+  tools = dedupeToolDefinitions(tools);
 
   let modelMessages: ModelMessage[] = [];
   let effectiveTools = tools;
@@ -614,23 +702,33 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
     requestConfigForRetry = requestConfig;
-    const response = await ctx.runtime.modelRouter.inference(
-      modelMessages,
-      effectiveTools,
-      requestConfig,
-      streamCallback,
-      ctx.runtime.abortController.signal,
-      {
-        onSnapshot: createSnapshotHandler(
-          ctx.runtime.sessionId,
-          ctx.runtime.currentTurnId,
-          ctx.runtime.workingDirectory,
-        ),
-        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-        artifactRepairWritePriority,
-        artifactRepairFullRewritePriority,
-      },
-    );
+    const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
+      artifactRequest,
+      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+      artifactRepairWritePriority,
+    });
+    let response: ModelResponse;
+    try {
+      response = await ctx.runtime.modelRouter.inference(
+        modelMessages,
+        effectiveTools,
+        requestConfig,
+        streamCallback,
+        ctx.runtime.abortController.signal,
+        {
+          onSnapshot: createSnapshotHandler(
+            ctx.runtime.sessionId,
+            ctx.runtime.currentTurnId,
+            ctx.runtime.workingDirectory,
+          ),
+          artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+          artifactRepairWritePriority,
+          artifactRepairFullRewritePriority,
+        },
+      );
+    } finally {
+      stopArtifactProgress();
+    }
     response.runtimeDiagnostics = {
       ...response.runtimeDiagnostics,
       visibleToolNames: effectiveTools.map((tool) => tool.name),
@@ -647,7 +745,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
             editAnchorFailureCount: ctx.runtime.artifactRepairGuard.editAnchorFailureCount,
             preferTargetedEdit: ctx.runtime.artifactRepairGuard.preferTargetedEdit,
             activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
-          }
+        }
         : undefined,
     };
 
@@ -763,6 +861,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
         },
       } as AgentEvent);
+      ctx.runFinalizer.emitTaskProgress('generating', '模型流中断，正在用非流式方式重试 artifact 生成...');
       try {
         const retryResult = await ctx.runtime.modelRouter.inference(
           modelMessages,
@@ -791,6 +890,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       ctx.runtime._artifactRepairCompactWriteRetried = true;
       logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
       logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
+      ctx.runFinalizer.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
       try {
         const compactMessages = buildCompactArtifactRepairWriteRetryMessages(ctx, modelMessages, errMsg);
         const compactConfig = {

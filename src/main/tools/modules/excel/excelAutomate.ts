@@ -33,6 +33,7 @@ import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
 import { executePythonScript } from '../../utils/pythonBridge';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { excelAutomateSchema as schema } from './excelAutomate.schema';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 
 type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range' | 'validate_formulas';
 
@@ -163,7 +164,35 @@ export async function executeExcelAutomate(
       );
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
-      return adaptLegacyResult(legacyResult);
+      const result = adaptLegacyResult(legacyResult);
+      if (!result.ok) return result;
+      const filePath = args.file_path as string;
+      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(ctx.workingDir, filePath);
+      const artifact = args.dry_run
+        ? undefined
+        : await createFileArtifact(resolvedPath, schema.name, ctx, {
+          kind: 'spreadsheet',
+          metadata: {
+            action: 'edit',
+            operation: 'excel_edit',
+            path: resolvedPath,
+            operationCount: Array.isArray(args.operations) ? args.operations.length : undefined,
+          },
+        }).catch(() => undefined);
+      return {
+        ...result,
+        meta: {
+          ...(result.meta ?? {}),
+          action: 'edit',
+          operation: 'excel_edit',
+          path: resolvedPath,
+          outputPath: resolvedPath,
+          operationCount: Array.isArray(args.operations) ? args.operations.length : undefined,
+          dryRun: Boolean(args.dry_run),
+          changedFiles: args.dry_run ? [] : [resolvedPath],
+          ...(artifact ? { artifact } : {}),
+        },
+      };
     }
 
     case 'automate': {

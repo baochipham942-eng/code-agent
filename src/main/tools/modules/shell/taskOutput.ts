@@ -13,6 +13,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { taskOutputSchema as schema } from './taskOutput.schema';
 import {
   getTaskOutput,
@@ -51,7 +52,25 @@ class TaskOutputHandler implements ToolHandler<Record<string, unknown>, string> 
       const tasks = getAllBackgroundTasks();
 
       if (tasks.length === 0) {
-        return { ok: true, output: 'No background tasks found.' };
+        const output = 'No background tasks found.';
+        return {
+          ok: true,
+          output,
+          meta: {
+            tasks: [],
+            taskCount: 0,
+            artifact: createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'process-output',
+              sessionId: ctx.sessionId,
+              name: 'Background tasks',
+              mimeType: 'text/plain',
+              contentLength: output.length,
+              preview: output,
+              metadata: { taskCount: 0 },
+            }),
+          },
+        };
       }
 
       const lines = [`Found ${tasks.length} background task(s):\n`];
@@ -71,7 +90,28 @@ class TaskOutputHandler implements ToolHandler<Record<string, unknown>, string> 
         lines.push(`   Output file: ${task.outputFile}`);
         lines.push('');
       }
-      return { ok: true, output: lines.join('\n') };
+      const output = lines.join('\n');
+      return {
+        ok: true,
+        output,
+        meta: {
+          taskCount: tasks.length,
+          tasks,
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'process-output',
+            sessionId: ctx.sessionId,
+            name: 'Background tasks',
+            mimeType: 'text/plain',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: {
+              taskCount: tasks.length,
+              runningCount: tasks.filter(task => task.status === 'running').length,
+            },
+          }),
+        },
+      };
     }
 
     // Check task exists
@@ -123,10 +163,38 @@ class TaskOutputHandler implements ToolHandler<Record<string, unknown>, string> 
       ok: true,
       output: lines.join('\n'),
       meta: {
+        artifact: task?.outputFile
+          ? await createFileArtifact(task.outputFile, schema.name, ctx, {
+            kind: 'process-log',
+            mimeType: 'text/plain',
+            metadata: {
+              taskId,
+              status: result.status,
+              exitCode: result.exitCode,
+              duration: result.duration,
+              command: task.command,
+            },
+          }).catch(() => undefined)
+          : createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'process-output',
+            sessionId: ctx.sessionId,
+            name: `Task output: ${taskId}`,
+            mimeType: 'text/plain',
+            contentLength: lines.join('\n').length,
+            preview: lines.join('\n').slice(0, 500),
+            metadata: {
+              taskId,
+              status: result.status,
+              exitCode: result.exitCode,
+              duration: result.duration,
+            },
+          }),
         taskId,
         status: result.status,
         exitCode: result.exitCode,
         duration: result.duration,
+        outputFile: task?.outputFile,
       },
     };
   }

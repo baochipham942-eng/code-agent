@@ -38,6 +38,7 @@ import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
 import { getShellPath } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
+import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
 import { isCodexSandboxEnabled, runInCodexSandbox } from '../../../services/codex/codexSandbox';
@@ -258,6 +259,9 @@ Use process_kill to terminate the session.`;
         meta: {
           sessionId: result.sessionId,
           outputFile: result.outputFile,
+          artifact: result.outputFile
+            ? await createFileArtifact(result.outputFile, schema.name, ctx, { kind: 'process-log', mimeType: 'text/plain' })
+            : undefined,
           pty: true,
           cols,
           rows,
@@ -296,6 +300,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         meta: {
           taskId: result.taskId,
           outputFile: result.outputFile,
+          artifact: result.outputFile
+            ? await createFileArtifact(result.outputFile, schema.name, ctx, { kind: 'process-log', mimeType: 'text/plain' })
+            : undefined,
           background: true,
         },
       };
@@ -384,7 +391,25 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       return {
         ok: true,
         output: cwdPrefix + output,
-        meta: dynamicDesc ? { description: dynamicDesc } : undefined,
+        meta: {
+          ...(dynamicDesc ? { description: dynamicDesc } : {}),
+          process: {
+            command: normalizedCommand,
+            cwd: workingDirectory,
+            background: false,
+            pty: false,
+          },
+          artifact: createVirtualArtifact({
+            sourceTool: schema.name,
+            kind: 'process-output',
+            sessionId: ctx.sessionId,
+            name: 'Bash output',
+            mimeType: 'text/plain',
+            contentLength: output.length,
+            preview: output.slice(0, 500),
+            metadata: { cwd: workingDirectory, command: normalizedCommand.slice(0, 200) },
+          }),
+        },
       };
     } catch (error: unknown) {
       const errObj = (error ?? {}) as Record<string, unknown>;

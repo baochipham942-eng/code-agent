@@ -11,7 +11,8 @@ Use this only when you already have a specific URL. If you still need to discove
 Actions:
 - fetch: Fetch a URL and extract information using AI-powered content extraction.
   Best for reading web pages, documentation, articles. Includes caching and smart truncation.
-  (requires url, prompt; optional max_chars)
+  This is the default when action is omitted.
+  (requires url, prompt; optional action, max_chars)
 
 - request: Make raw HTTP requests to APIs with full control over method, headers, and body.
   Best for calling REST APIs, webhooks, or any HTTP endpoint where you need the raw response.
@@ -23,6 +24,7 @@ Do not retry the same failing URL with the same arguments. If fetch fails becaus
 
 Examples:
 - Fetch a webpage: { "action": "fetch", "url": "https://docs.example.com/guide", "prompt": "Extract the installation steps" }
+- Fetch a webpage with default action: { "url": "https://docs.example.com/guide", "prompt": "Extract the installation steps" }
 - GET API call: { "action": "request", "url": "https://api.example.com/data" }
 - POST with JSON: { "action": "request", "url": "https://api.example.com/create", "method": "POST", "body": "{\\"name\\": \\"test\\"}", "headers": { "Content-Type": "application/json" } }`,
   inputSchema: {
@@ -31,7 +33,7 @@ Examples:
       action: {
         type: 'string',
         enum: ['fetch', 'request'],
-        description: 'The web action to perform: fetch (AI extraction) or request (raw HTTP)',
+        description: 'The web action to perform: fetch (AI extraction, default) or request (raw HTTP)',
       },
       // --- shared ---
       url: {
@@ -66,7 +68,7 @@ Examples:
         description: '[request] Timeout in milliseconds (default: 30000, max: 300000)',
       },
     },
-    required: ['action', 'url'],
+    required: ['url'],
   },
   category: 'network',
   permissionLevel: 'network',

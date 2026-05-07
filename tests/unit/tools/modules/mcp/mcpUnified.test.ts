@@ -149,7 +149,7 @@ describe('mcpUnifiedModule (native)', () => {
       expect(mcpUnifiedModule.schema.category).toBe('mcp');
       expect(mcpUnifiedModule.schema.permissionLevel).toBe('network');
       expect(mcpUnifiedModule.schema.inputSchema.required).toEqual(['action']);
-      const enumVals = (mcpUnifiedModule.schema.inputSchema.properties as any).action.enum;
+      const enumVals = (mcpUnifiedModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>).action.enum;
       expect(enumVals).toEqual([
         'invoke',
         'list_tools',
@@ -212,6 +212,25 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('可用工具: 5');
         expect(result.output).toContain('可用资源: 2');
         expect(result.output).toContain('可用提示: 1');
+        expect(result.meta).toMatchObject({
+          action: 'status',
+          resultKind: 'text',
+          count: 2,
+          truncated: false,
+          toolCount: 5,
+          resourceCount: 2,
+          promptCount: 1,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'MCPUnified',
+          metadata: expect.objectContaining({
+            mcpStatus: true,
+            action: 'status',
+            count: 2,
+            truncated: false,
+          }),
+        });
       }
     });
 
@@ -248,6 +267,16 @@ describe('mcpUnifiedModule (native)', () => {
       const result = await run({ action: 'list_tools' });
       if (result.ok) {
         expect(result.output).toBe('当前没有已连接的 MCP 服务器。');
+        expect(result.meta).toMatchObject({
+          action: 'list_tools',
+          resultKind: 'text',
+          count: 0,
+          truncated: false,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          metadata: expect.objectContaining({ mcpToolList: true }),
+        });
       }
     });
 
@@ -283,6 +312,22 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('Read a file');
         expect(result.output).toContain('参数:');
         expect(result.output).toContain('- path: string (必需)');
+        expect(result.meta).toMatchObject({
+          action: 'list_tools',
+          resultKind: 'text',
+          count: 1,
+          totalCount: 1,
+          truncated: false,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'MCPUnified',
+          metadata: expect.objectContaining({
+            mcpToolList: true,
+            action: 'list_tools',
+            count: 1,
+          }),
+        });
       }
     });
 
@@ -316,6 +361,16 @@ describe('mcpUnifiedModule (native)', () => {
       const result = await run({ action: 'list_resources' });
       if (result.ok) {
         expect(result.output).toBe('当前没有可用的 MCP 资源。');
+        expect(result.meta).toMatchObject({
+          action: 'list_resources',
+          resultKind: 'text',
+          count: 0,
+          truncated: false,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          metadata: expect.objectContaining({ mcpResource: true }),
+        });
       }
     });
 
@@ -349,6 +404,24 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('  URI: file:///a');
         expect(result.output).toContain('  描述: a desc');
         expect(result.output).toContain('  类型: text/plain');
+        expect(result.meta).toMatchObject({
+          action: 'list_resources',
+          resultKind: 'text',
+          count: 1,
+          totalCount: 1,
+          truncated: false,
+          resourceUris: ['file:///a'],
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'MCPUnified',
+          metadata: expect.objectContaining({
+            mcpResource: true,
+            action: 'list_resources',
+            count: 1,
+            resourceUris: ['file:///a'],
+          }),
+        });
       }
     });
   });
@@ -393,6 +466,23 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toBe('hello world');
         expect(result.meta?.server).toBe('fs');
         expect(result.meta?.uri).toBe('file:///a');
+        expect(result.meta?.resourceUri).toBe('file:///a');
+        expect(result.meta?.action).toBe('read_resource');
+        expect(result.meta?.resultKind).toBe('text');
+        expect(result.meta?.count).toBe(1);
+        expect(result.meta?.truncated).toBe(false);
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'text',
+          sourceTool: 'MCPUnified',
+          url: 'file:///a',
+          metadata: expect.objectContaining({
+            mcpResource: true,
+            server: 'fs',
+            resourceUri: 'file:///a',
+            action: 'read_resource',
+            resultKind: 'text',
+          }),
+        });
       }
     });
 
@@ -426,7 +516,18 @@ describe('mcpUnifiedModule (native)', () => {
       setTimeout(() => ctrl.abort(), 5);
       const result = await promise;
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('ABORTED');
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+        expect(result.meta).toMatchObject({
+          server: 'fs',
+          resourceUri: 'file:///a',
+          action: 'read_resource',
+          resultKind: 'text',
+          count: 0,
+          truncated: false,
+          errorCode: 'ABORTED',
+        });
+      }
 
       // Sentinel: shared client must not be disconnected on abort
       expect(client.disconnect).not.toHaveBeenCalled();
@@ -449,6 +550,20 @@ describe('mcpUnifiedModule (native)', () => {
       expect(call[1]).toBe('filesystem');
       expect(call[2]).toBe('read_file');
       expect(call[3]).toEqual({ path: '/tmp/x' });
+      if (result.ok) {
+        expect(result.meta).toMatchObject({
+          server: 'filesystem',
+          toolName: 'read_file',
+          action: 'invoke',
+          resultKind: 'process-output',
+          count: 1,
+          truncated: false,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'process-output',
+          metadata: expect.objectContaining({ mcpToolCall: true }),
+        });
+      }
     });
 
     it('does not disconnect on aborted invoke', async () => {
@@ -488,6 +603,17 @@ describe('mcpUnifiedModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('# MCP Server Added: srv');
+        expect(result.meta).toMatchObject({
+          server: 'srv',
+          action: 'add_server',
+          resultKind: 'process-output',
+          count: 1,
+          truncated: false,
+        });
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'process-output',
+          metadata: expect.objectContaining({ mcpServer: true }),
+        });
       }
     });
   });

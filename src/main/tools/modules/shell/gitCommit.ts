@@ -20,6 +20,7 @@ import type {
 } from '../../../protocol/tools';
 import { gitCommitSchema as schema } from './gitCommit.schema';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 
 const execAsync = promisify(exec);
 
@@ -31,7 +32,7 @@ async function execGit(command: string, cwd: string): Promise<{ stdout: string; 
   return execAsync(command, { cwd, timeout: NETWORK_TOOL_TIMEOUTS.GIT_OPERATION });
 }
 
-async function handleStatus(cwd: string): Promise<ToolResult<string>> {
+async function handleStatus(cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const [statusResult, branchResult] = await Promise.all([
     execGit('git status --porcelain', cwd),
     execGit('git branch --show-current', cwd).catch(() => ({ stdout: '', stderr: '' })),
@@ -43,10 +44,30 @@ async function handleStatus(cwd: string): Promise<ToolResult<string>> {
   const lines = statusResult.stdout.split('\n').filter((l) => l.length > 0);
 
   if (lines.length === 0) {
+    const output = `分支: ${branch}\n工作区干净，没有未提交的更改。`;
     return {
       ok: true,
-      output: `分支: ${branch}\n工作区干净，没有未提交的更改。`,
-      meta: { branch, clean: true, staged: 0, unstaged: 0, untracked: 0 },
+      output,
+      meta: {
+        action: 'status',
+        branch,
+        status: 'clean',
+        clean: true,
+        staged: 0,
+        unstaged: 0,
+        untracked: 0,
+        changedFiles: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'process-output',
+          sessionId: ctx.sessionId,
+          name: 'git-status',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: { action: 'status', branch, status: 'clean', clean: true },
+        }),
+      },
     };
   }
 
@@ -88,16 +109,64 @@ async function handleStatus(cwd: string): Promise<ToolResult<string>> {
     output += `**未跟踪** (${untracked}):\n${untrackedFiles.map((f) => `  ${f}`).join('\n')}\n`;
   }
 
-  return { ok: true, output, meta: { branch, clean: false, staged, unstaged, untracked } };
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'status',
+      branch,
+      status: 'dirty',
+      clean: false,
+      staged,
+      unstaged,
+      untracked,
+      changedFiles: [...new Set([
+        ...stagedFiles.map((f) => f.slice(2)),
+        ...unstagedFiles.map((f) => f.slice(2)),
+        ...untrackedFiles,
+      ])],
+      stagedFiles,
+      unstagedFiles,
+      untrackedFiles,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-status',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'status', branch, status: 'dirty', clean: false, staged, unstaged, untracked },
+      }),
+    },
+  };
 }
 
-async function handleAdd(args: Record<string, unknown>, cwd: string): Promise<ToolResult<string>> {
+async function handleAdd(args: Record<string, unknown>, cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const all = Boolean(args.all);
   const files = args.files as string[] | undefined;
 
   if (all) {
     await execGit('git add -A', cwd);
-    return { ok: true, output: '已暂存所有更改。' };
+    const output = '已暂存所有更改。';
+    return {
+      ok: true,
+      output,
+      meta: {
+        action: 'add',
+        all: true,
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'process-output',
+          sessionId: ctx.sessionId,
+          name: 'git-add',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: { action: 'add', all: true },
+        }),
+      },
+    };
   }
 
   if (!files || files.length === 0) {
@@ -120,14 +189,29 @@ async function handleAdd(args: Record<string, unknown>, cwd: string): Promise<To
   const fileArgs = files.map((f) => `'${escapeShellArg(f)}'`).join(' ');
   await execGit(`git add ${fileArgs}`, cwd);
 
+  const output = `已暂存 ${files.length} 个文件:\n${files.map((f) => `  + ${f}`).join('\n')}`;
   return {
     ok: true,
-    output: `已暂存 ${files.length} 个文件:\n${files.map((f) => `  + ${f}`).join('\n')}`,
-    meta: { files },
+    output,
+    meta: {
+      action: 'add',
+      files,
+      changedFiles: files,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-add',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'add', files, changedFiles: files },
+      }),
+    },
   };
 }
 
-async function handleCommit(args: Record<string, unknown>, cwd: string): Promise<ToolResult<string>> {
+async function handleCommit(args: Record<string, unknown>, cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const message = args.message as string | undefined;
   const amend = Boolean(args.amend);
 
@@ -156,14 +240,43 @@ async function handleCommit(args: Record<string, unknown>, cwd: string): Promise
   cmd.push('-m', `'${escapeShellArg(message)}'`);
 
   const { stdout } = await execGit(cmd.join(' '), cwd);
+  const [hashResult, branchResult] = await Promise.all([
+    execGit('git rev-parse HEAD', cwd).catch(() => ({ stdout: '', stderr: '' })),
+    execGit('git branch --show-current', cwd).catch(() => ({ stdout: '', stderr: '' })),
+  ]);
+  const commitHash = hashResult.stdout.trim();
+  const branch = branchResult.stdout.trim() || '(detached)';
 
-  return { ok: true, output: `提交成功:\n${stdout.trim()}`, meta: { amend } };
+  const output = `提交成功:\n${stdout.trim()}`;
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'commit',
+      amend,
+      message,
+      commitHash,
+      branch,
+      status: 'committed',
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-commit',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'commit', amend, commitHash, branch, status: 'committed' },
+      }),
+    },
+  };
 }
 
 async function handlePush(
   args: Record<string, unknown>,
   cwd: string,
   canUseTool: CanUseToolFn,
+  ctx: ToolContext,
 ): Promise<ToolResult<string>> {
   const remote = (args.remote as string | undefined) ?? 'origin';
   const branch = args.branch as string | undefined;
@@ -183,10 +296,31 @@ async function handlePush(
   const { stdout, stderr } = await execGit(cmd.join(' '), cwd);
   const output = (stdout + '\n' + stderr).trim();
 
-  return { ok: true, output: `推送成功:\n${output}` };
+  const finalOutput = `推送成功:\n${output}`;
+  return {
+    ok: true,
+    output: finalOutput,
+    meta: {
+      action: 'push',
+      remote,
+      branch,
+      setUpstream: set_upstream,
+      status: 'pushed',
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-push',
+        mimeType: 'text/plain',
+        contentLength: finalOutput.length,
+        preview: finalOutput.slice(0, 1000),
+        metadata: { action: 'push', remote, branch, setUpstream: set_upstream, status: 'pushed' },
+      }),
+    },
+  };
 }
 
-async function handleLog(args: Record<string, unknown>, cwd: string): Promise<ToolResult<string>> {
+async function handleLog(args: Record<string, unknown>, cwd: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const limit = (args.limit as number | undefined) ?? 10;
   const oneline = Boolean(args.oneline);
 
@@ -196,7 +330,25 @@ async function handleLog(args: Record<string, unknown>, cwd: string): Promise<To
 
   const { stdout } = await execGit(format, cwd);
 
-  return { ok: true, output: stdout.trim() || '没有提交记录。', meta: { limit } };
+  const output = stdout.trim() || '没有提交记录。';
+  return {
+    ok: true,
+    output,
+    meta: {
+      action: 'log',
+      limit,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'process-output',
+        sessionId: ctx.sessionId,
+        name: 'git-log',
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output.slice(0, 1000),
+        metadata: { action: 'log', limit, oneline },
+      }),
+    },
+  };
 }
 
 class GitCommitHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -228,19 +380,19 @@ class GitCommitHandler implements ToolHandler<Record<string, unknown>, string> {
       let result: ToolResult<string>;
       switch (action) {
         case 'status':
-          result = await handleStatus(ctx.workingDir);
+          result = await handleStatus(ctx.workingDir, ctx);
           break;
         case 'add':
-          result = await handleAdd(args, ctx.workingDir);
+          result = await handleAdd(args, ctx.workingDir, ctx);
           break;
         case 'commit':
-          result = await handleCommit(args, ctx.workingDir);
+          result = await handleCommit(args, ctx.workingDir, ctx);
           break;
         case 'push':
-          result = await handlePush(args, ctx.workingDir, canUseTool);
+          result = await handlePush(args, ctx.workingDir, canUseTool, ctx);
           break;
         case 'log':
-          result = await handleLog(args, ctx.workingDir);
+          result = await handleLog(args, ctx.workingDir, ctx);
           break;
         default:
           return { ok: false, error: `未知操作: ${action}`, code: 'INVALID_ACTION' };

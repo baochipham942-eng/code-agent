@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { pdfGenerateSchema as schema } from './pdfGenerate.schema';
 
 type PdfTheme = 'default' | 'academic' | 'minimal';
@@ -346,6 +347,17 @@ export async function executePdfGenerate(
 
 点击上方路径可直接打开。`,
       meta: {
+        artifact: await createFileArtifact(finalPath, schema.name, ctx, {
+          kind: 'document',
+          mimeType: 'application/pdf',
+          sizeBytes: stats.size,
+          metadata: {
+            title,
+            pageCount,
+            theme,
+            pageSize: page_size,
+          },
+        }),
         filePath: finalPath,
         fileName: path.basename(finalPath),
         fileSize: stats.size,

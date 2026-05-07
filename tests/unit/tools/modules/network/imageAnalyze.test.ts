@@ -102,6 +102,18 @@ describe('image_analyze — execute', () => {
     if (result.ok) {
       expect(result.output).toContain('一只橘猫');
       expect(result.meta?.path).toBe('/abs/cat.png');
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'image_analyze',
+        metadata: {
+          imagePath: '/abs/cat.png',
+          prompt: '描述图片',
+          mediaKind: 'image',
+        },
+      });
+      expect(result.meta?.mediaKind).toBe('image');
+      expect(result.meta?.contentLength).toBe('一只橘猫'.length);
+      expect(result.meta?.truncated).toBe(false);
     }
   });
 
@@ -128,6 +140,17 @@ describe('image_analyze — execute', () => {
     if (result.ok) {
       expect(result.meta?.total).toBe(3);
       expect(result.meta?.matched).toBeGreaterThanOrEqual(1);
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'text',
+        sourceTool: 'image_analyze',
+        metadata: {
+          filter: '有猫的图片',
+          total: 3,
+          mediaKind: 'image',
+        },
+      });
+      expect(result.meta?.resultCount).toBe(result.meta?.matched);
+      expect(result.meta?.contentLength).toBe(result.output.length);
     }
   });
 

@@ -169,6 +169,19 @@ describe('chartGenerateModule (native)', () => {
         expect(writeFileSyncMock).toHaveBeenCalledTimes(1);
         const meta = result.meta as Record<string, unknown>;
         expect(meta.chartType).toBe('bar');
+        expect(meta.artifact).toMatchObject({
+          kind: 'image',
+          sourceTool: 'chart_generate',
+          path: expect.stringMatching(/^\/tmp\/work\/chart-\d+\.png$/),
+          mimeType: 'image/png',
+          sizeBytes: 4096,
+          metadata: {
+            chartType: 'bar',
+            title: 'Sales',
+            width: 800,
+            height: 600,
+          },
+        });
         const renderSpec = meta.renderSpec as Record<string, unknown>;
         expect(renderSpec.type).toBe('bar');
         expect(renderSpec.xKey).toBe('label');

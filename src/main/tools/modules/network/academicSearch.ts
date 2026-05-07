@@ -17,6 +17,7 @@ import {
   ACADEMIC_SEARCH_ENDPOINTS,
   ACADEMIC_SEARCH_MAX_LIMIT as MAX_LIMIT,
 } from '../../../../shared/constants';
+import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { academicSearchSchema as schema } from './academicSearch.schema';
 
 const { ARXIV: ARXIV_API, SEMANTIC_SCHOLAR: SEMANTIC_SCHOLAR_API } = ACADEMIC_SEARCH_ENDPOINTS;
@@ -269,9 +270,34 @@ export async function executeAcademicSearch(
       ok: true,
       output,
       meta: {
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'search',
+          sessionId: ctx.sessionId,
+          name: `Academic search: ${query.slice(0, 80)}`,
+          mimeType: 'text/markdown',
+          contentLength: output.length,
+          preview: output.slice(0, 500),
+          metadata: {
+            query,
+            source,
+            sortBy,
+            resultCount: allResults.length,
+            sources: [...new Set(allResults.map((r) => r.source))],
+            yearFrom,
+            yearTo,
+          },
+        }),
         query,
+        resultCount: allResults.length,
         resultsCount: allResults.length,
         sources: [...new Set(allResults.map((r) => r.source))],
+        source,
+        sortBy,
+        yearFrom,
+        yearTo,
+        contentLength: output.length,
+        truncated: false,
         papers: allResults,
       },
     };

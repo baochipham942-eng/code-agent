@@ -15,8 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { guiAgentTool } from '../../vision/guiAgent';
-import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
+import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { guiAgentSchema as schema } from './guiAgent.schema';
+import { adaptVisionLegacyResult } from './resultMeta';
 
 class GuiAgentHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -41,7 +42,7 @@ class GuiAgentHandler implements ToolHandler<Record<string, unknown>, string> {
     const legacyResult = await guiAgentTool.execute(args, buildLegacyCtxFromProtocol(ctx, canUseTool));
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('gui_agent done', { task, ok: legacyResult.success });
-    return adaptLegacyResult(legacyResult);
+    return adaptVisionLegacyResult(legacyResult, { tool: schema.name, args, ctx, defaultAction: 'run' });
   }
 }
 

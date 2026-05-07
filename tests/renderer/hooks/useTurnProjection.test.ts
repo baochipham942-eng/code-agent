@@ -241,4 +241,58 @@ describe('projectTurns', () => {
     expect(projection.turns).toHaveLength(1);
     expect(projection.turns[0].nodes.map((node) => node.type)).toEqual(['user']);
   });
+
+  it('preserves structured tool artifact metadata on tool call nodes', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '读取报告',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 130,
+        toolCalls: [
+          {
+            id: 'call-read-1',
+            name: 'Read',
+            arguments: {
+              path: '/repo/app/report.md',
+            },
+            result: {
+              toolCallId: 'call-read-1',
+              success: true,
+              output: '# Report',
+              metadata: {
+                artifact: {
+                  artifactId: 'artifact-read-report',
+                  kind: 'text',
+                  sourceTool: 'Read',
+                  createdAt: '2026-05-07T00:00:00.000Z',
+                  name: 'report.md',
+                  path: '/repo/app/report.md',
+                  mimeType: 'text/markdown',
+                  preview: '# Report',
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-artifact', false, []);
+    const toolNode = projection.turns[0]?.nodes.find((node) => node.type === 'tool_call');
+
+    expect(toolNode?.toolCall?.metadata?.artifact).toMatchObject({
+      artifactId: 'artifact-read-report',
+      kind: 'text',
+      sourceTool: 'Read',
+      name: 'report.md',
+      path: '/repo/app/report.md',
+    });
+  });
 });

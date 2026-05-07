@@ -20,6 +20,7 @@ export const computerSchema: ToolSchema = {
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use these to build custom drag rhythms (slow drag for sliders/canvas) or hold-to-select gestures. Always pair them — every mouse_down must be followed by a mouse_up, otherwise the system stays in a stuck-button state.
 - open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. targetApp="Safari" or targetApp="Visual Studio Code"). Returns once the launch is initiated; chain observe to confirm it became frontmost.
 - write_clipboard: Set the system pasteboard to text. Use this to deliver large or formatted text instead of typing it character by character (much faster, immune to focus shifts). Pass text via the text param.
+- computer_batch: Execute a list of actions sequentially in one tool call. Pass the list via the actions param ([{action:"click", x:100, y:200}, {action:"type", text:"hello"}, ...]). Reduces RTT for multi-step interactions. Stops on first failure and returns partial result. Nested computer_batch is rejected.
 
 ## Smart actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -78,8 +79,8 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
           // computer_use basic actions
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
-          // computer_use extended actions (atomic mouse/keyboard primitives)
-          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard',
+          // computer_use extended actions (atomic mouse/keyboard primitives + batch)
+          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
           // computer_use smart actions
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements',
@@ -175,6 +176,11 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       targetApp: {
         type: 'string',
         description: 'Expected target app for desktop actions. With axPath or role/name, macOS can use the background Accessibility surface. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
+      },
+      actions: {
+        type: 'array',
+        items: { type: 'object' },
+        description: '[computer_batch] Sequential list of action descriptors to execute in one call. Each item has the same shape as a normal Computer call (action + per-action params). Nested computer_batch is rejected.',
       },
       toX: {
         type: 'number',

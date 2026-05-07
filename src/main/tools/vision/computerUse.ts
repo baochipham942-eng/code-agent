@@ -28,8 +28,8 @@ const execFileAsync = promisify(execFile);
 type ActionType =
   | 'get_state' | 'observe' | 'get_ax_elements' | 'get_windows' | 'diagnose_app'
   | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
-  // Extended atomic primitives
-  | 'mouse_down' | 'mouse_up' | 'open_application' | 'write_clipboard'
+  // Extended atomic primitives + batch
+  | 'mouse_down' | 'mouse_up' | 'open_application' | 'write_clipboard' | 'computer_batch'
   // Smart location actions (Playwright-powered)
   | 'locate_element' | 'locate_text' | 'locate_role'
   | 'smart_click' | 'smart_type' | 'smart_hover'
@@ -67,6 +67,8 @@ export interface ComputerAction {
   includeScreenshot?: boolean;
   limit?: number;
   maxDepth?: number;
+  // computer_batch
+  actions?: ComputerAction[];
 }
 
 export const computerUseTool: Tool = {
@@ -88,6 +90,7 @@ export const computerUseTool: Tool = {
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
 - open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
 - write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
+- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected.
 
 ## Smart Actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -157,7 +160,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'diagnose_app',
           'get_windows',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
-          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard',
+          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
         ],
@@ -170,6 +173,11 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       targetApp: {
         type: 'string',
         description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
+      },
+      actions: {
+        type: 'array',
+        items: { type: 'object' },
+        description: '[computer_batch] Sequential list of action descriptors to execute in one call. Nested computer_batch is rejected.',
       },
       y: {
         type: 'number',
@@ -1453,6 +1461,36 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
         return { success: false, error: `Failed to write clipboard: ${formatExecutionError(error)}` };
       }
       break;
+    }
+
+    case 'computer_batch': {
+      if (!Array.isArray(action.actions)) {
+        return { success: false, error: 'actions array required for computer_batch' };
+      }
+      const results: Array<{ index: number; action: string; success: boolean; error?: string }> = [];
+      for (let i = 0; i < action.actions.length; i++) {
+        const sub = action.actions[i] as ComputerAction | undefined;
+        if (!sub || typeof sub !== 'object' || typeof sub.action !== 'string') {
+          return { success: false, error: `Invalid action at index ${i} in computer_batch`, metadata: { results } };
+        }
+        if (sub.action === 'computer_batch') {
+          return { success: false, error: `Nested computer_batch at index ${i} is not allowed`, metadata: { results } };
+        }
+        const r = await executeMacOSAction(sub);
+        results.push({ index: i, action: sub.action, success: r.success, error: r.error });
+        if (!r.success) {
+          return {
+            success: false,
+            error: `batch failed at index ${i} (${sub.action}): ${r.error}`,
+            metadata: { results },
+          };
+        }
+      }
+      return {
+        success: true,
+        output: `computer_batch completed: ${results.length} action(s)`,
+        metadata: { results },
+      };
     }
 
     default:

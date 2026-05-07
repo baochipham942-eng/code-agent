@@ -29,6 +29,7 @@ import type {
 } from '../types';
 import { HTML_PROBES } from './htmlProbes';
 import { BROWSER_PROBES } from './browserProbes';
+import { INTERACTION_PROBES } from './interactionProbes';
 
 // ---------------------------------------------------------------------------
 // Predicate evaluation
@@ -87,12 +88,16 @@ async function evaluateImperative(
 export class GeneralDashboardChecker implements DashboardSubtypeChecker {
   readonly subtype = 'general';
   /**
-   * Probe 顺序：declarative HTML 类（cheap，文本 regex）在前，imperative
-   * browser 类（贵，要 launch Playwright）在后。顺序不影响判定，但保留对
-   * 调试输出更直观。PR-E 加的 anti-Potemkin probe 会接在 BROWSER_PROBES
-   * 之后。
+   * Probe 顺序：declarative HTML 类（cheap，文本 regex）在前 → imperative
+   * browser visual smoke（贵，要 launch Playwright）→ anti-Potemkin
+   * interaction probe（最贵，要 launch + click + 等待 mutation）。顺序
+   * 不影响判定，但保留对调试输出更直观。
    */
-  readonly probes: readonly DashboardProbeDeclaration[] = [...HTML_PROBES, ...BROWSER_PROBES];
+  readonly probes: readonly DashboardProbeDeclaration[] = [
+    ...HTML_PROBES,
+    ...BROWSER_PROBES,
+    ...INTERACTION_PROBES,
+  ];
 
   async validate(input: DashboardArtifactInput): Promise<DashboardCheckResult> {
     const hasDeclarative = this.probes.some((p) => p.kind === 'declarative');

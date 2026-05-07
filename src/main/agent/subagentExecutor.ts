@@ -822,11 +822,15 @@ export class SubagentExecutor {
         }> = [];
 
         const inferenceStartedAt = Date.now();
+        // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
+        // 不传给 inference 的话，父 abort 后这一轮 LLM call 还会跑完才被循环开头 check 拦截，
+        // 期间继续烧 token + 子 agent 拖慢退出。
         const response = await this.modelRouter.inference(
           providerMessages,
           toolDefinitions,
           context.modelConfig,
-          () => {} // No streaming for subagents
+          () => {}, // No streaming for subagents
+          effectiveSignal,
         );
         const inferenceDuration = Date.now() - inferenceStartedAt;
 

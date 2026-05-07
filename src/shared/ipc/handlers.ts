@@ -119,6 +119,19 @@ import type {
   ReviewQueueItem,
   UpdateReviewQueueFailureCapabilityAssetInput,
 } from '../contract/reviewQueue';
+import type {
+  DeliveryReviewRunResult,
+  RunDeliveryReviewInput,
+  ScenarioAcceptanceSkill,
+} from '../contract/scenarioAcceptance';
+import type {
+  CreatePreviewFeedbackInput,
+  ListPreviewFeedbackInput,
+  PreviewFeedbackChatContext,
+  PreviewFeedbackItem,
+  UpdatePreviewFeedbackStatusInput,
+  SendPreviewFeedbackToChatInput,
+} from '../contract/previewFeedback';
 
 import type {
   SessionRuntimeSummary,
@@ -432,6 +445,12 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: () => Promise<ReviewQueueItem[]>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE]: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_UPDATE_FAILURE_ASSET]: (payload: UpdateReviewQueueFailureCapabilityAssetInput) => Promise<ReviewQueueItem | null>;
+  [IPC_CHANNELS.EVALUATION_SCENARIO_SKILLS_LIST]: () => Promise<ScenarioAcceptanceSkill[]>;
+  [IPC_CHANNELS.EVALUATION_DELIVERY_REVIEW_RUN]: (payload: RunDeliveryReviewInput) => Promise<DeliveryReviewRunResult>;
+  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_LIST]: (payload: ListPreviewFeedbackInput) => Promise<PreviewFeedbackItem[]>;
+  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_CREATE]: (payload: CreatePreviewFeedbackInput) => Promise<PreviewFeedbackItem>;
+  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_UPDATE_STATUS]: (payload: UpdatePreviewFeedbackStatusInput) => Promise<PreviewFeedbackItem | null>;
+  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_SEND_TO_CHAT]: (payload: SendPreviewFeedbackToChatInput) => Promise<PreviewFeedbackChatContext>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;

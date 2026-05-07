@@ -1,8 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Calendar,
   Check,
+  CheckCircle2,
   Clipboard,
+  ClipboardCheck,
   Code2,
   Copy,
   File,
@@ -11,12 +14,21 @@ import {
   Mail,
   MessageSquare,
   Presentation,
+  RefreshCw,
+  Send,
   Table2,
   Terminal,
 } from 'lucide-react';
-import type { WorkspacePreviewItem, WorkspacePreviewKind } from '@shared/contract';
+import type {
+  DeliveryReviewRunResult,
+  PreviewFeedbackItem,
+  ScenarioAcceptanceArtifact,
+  WorkspacePreviewItem,
+  WorkspacePreviewKind,
+} from '@shared/contract';
 import { formatDesignBriefLabel } from '@shared/contract/designBrief';
 import type { DesignBrief } from '@shared/contract/designBrief';
+import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
@@ -36,6 +48,7 @@ import {
   type DesignBriefSubmitDetail,
 } from './QuestionFormPreview';
 import { useSessionStore } from '../stores/sessionStore';
+import ipcService from '../services/ipcService';
 
 function kindLabel(kind: WorkspacePreviewKind): string {
   switch (kind) {
@@ -465,11 +478,58 @@ function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
   return <TextPreview item={item} />;
 }
 
+function previewItemToAcceptanceArtifact(item: WorkspacePreviewItem): ScenarioAcceptanceArtifact {
+  return {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    filePath: item.file?.path,
+    currentTurn: item.currentTurn,
+    content: {
+      text: item.content?.text,
+      html: item.content?.html,
+      json: item.content?.json,
+      diff: item.content?.diff,
+      summary: item.content?.summary,
+    },
+  };
+}
+
+function deliveryReviewStatusClass(status?: DeliveryReviewRunResult['status']): string {
+  switch (status) {
+    case 'pass':
+      return 'border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-200';
+    case 'blocked':
+      return 'border-red-500/25 bg-red-500/[0.07] text-red-200';
+    case 'needs_work':
+      return 'border-amber-500/25 bg-amber-500/[0.07] text-amber-200';
+    default:
+      return 'border-white/[0.08] bg-white/[0.03] text-zinc-300';
+  }
+}
+
+function anchorLabel(item: PreviewFeedbackItem): string {
+  const anchor = item.anchor;
+  if (anchor.kind === 'file_line' && anchor.filePath) return `${anchor.filePath}:${anchor.lineStart ?? 1}`;
+  if (anchor.kind === 'html_selector' && anchor.selector) return anchor.selector;
+  if (anchor.kind === 'text_quote' && anchor.quote) return `"${anchor.quote.slice(0, 70)}"`;
+  if (anchor.kind === 'diff_hunk' && anchor.hunk) return anchor.hunk.slice(0, 70);
+  return anchor.filePath || 'Whole item';
+}
+
 export const WorkspacePreviewPanel: React.FC = () => {
   const items = useWorkspacePreviewModel();
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
   const [copied, setCopied] = useState(false);
+  const [deliveryReview, setDeliveryReview] = useState<DeliveryReviewRunResult | null>(null);
+  const [reviewRunning, setReviewRunning] = useState(false);
+  const [feedbackItems, setFeedbackItems] = useState<PreviewFeedbackItem[]>([]);
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [sentContext, setSentContext] = useState(false);
 
   // 监听 question-form 提交事件，把 brief 锁定到当前 session 运行时 state（不进 DB）。
   // 下一轮 sendMessage 会从 sessionStore 读这条 brief，prepend 到 IPC content 注入 LLM。
@@ -488,6 +548,28 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const selected = useMemo(() => (
     items.find((item) => item.id === selectedId) || items[0] || null
   ), [items, selectedId]);
+  const currentSessionTitle = useMemo(() => {
+    if (!currentSessionId) return undefined;
+    return sessions.find((session) => session.id === currentSessionId)?.title;
+  }, [currentSessionId, sessions]);
+  const selectedFeedbackItems = useMemo(() => (
+    selected ? feedbackItems.filter((item) => item.previewItemId === selected.id) : []
+  ), [feedbackItems, selected]);
+
+  const reloadFeedback = useCallback(async () => {
+    if (!currentSessionId) {
+      setFeedbackItems([]);
+      return;
+    }
+    const items = await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_LIST, {
+      sessionId: currentSessionId,
+    });
+    setFeedbackItems(items || []);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    reloadFeedback().catch(() => setFeedbackItems([]));
+  }, [reloadFeedback]);
 
   useEffect(() => {
     if (!selected && selectedId) {
@@ -512,6 +594,71 @@ export const WorkspacePreviewPanel: React.FC = () => {
     setTimeout(() => setCopied(false), 1200);
   };
 
+  const runDeliveryReview = async () => {
+    if (!selected || !currentSessionId) return;
+    setReviewRunning(true);
+    try {
+      const result = await ipcService.invoke(EVALUATION_CHANNELS.DELIVERY_REVIEW_RUN, {
+        sessionId: currentSessionId,
+        sessionTitle: currentSessionTitle,
+        artifacts: [previewItemToAcceptanceArtifact(selected)],
+        enqueueOnNeedsWork: true,
+        createPreviewFeedback: true,
+      });
+      setDeliveryReview(result || null);
+      await reloadFeedback();
+    } finally {
+      setReviewRunning(false);
+    }
+  };
+
+  const addFeedback = async () => {
+    if (!selected || !currentSessionId || !feedbackNote.trim()) return;
+    setFeedbackBusy(true);
+    try {
+      await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_CREATE, {
+        sessionId: currentSessionId,
+        previewItemId: selected.id,
+        source: 'user',
+        note: feedbackNote.trim(),
+        anchor: {
+          kind: 'artifact',
+          filePath: selected.file?.path,
+        },
+      });
+      setFeedbackNote('');
+      await reloadFeedback();
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
+
+  const updateFeedbackStatus = async (id: string, status: PreviewFeedbackItem['status']) => {
+    await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS, { id, status });
+    await reloadFeedback();
+  };
+
+  const sendFeedbackToChat = async () => {
+    if (!currentSessionId || !selected) return;
+    const context = await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_SEND_TO_CHAT, {
+      sessionId: currentSessionId,
+      previewItemId: selected.id,
+    });
+    if (!context?.message) return;
+    window.dispatchEvent(new CustomEvent('iact:send', { detail: context.message }));
+    setSentContext(true);
+    setTimeout(() => setSentContext(false), 1200);
+    await Promise.all(
+      context.items
+        .filter((item) => item.status === 'open')
+        .map((item) => ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS, {
+          id: item.id,
+          status: 'sent',
+        })),
+    );
+    await reloadFeedback();
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-900">
       <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
@@ -530,6 +677,15 @@ export const WorkspacePreviewPanel: React.FC = () => {
           {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
+        <button
+          type="button"
+          onClick={runDeliveryReview}
+          disabled={!selected || !currentSessionId || reviewRunning}
+          className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {reviewRunning ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
+          Review
+        </button>
       </div>
 
       {items.length === 0 ? (
@@ -543,7 +699,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[190px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-[190px_minmax(0,1fr)_260px]">
           <div className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-3">
             <div className="space-y-2">
               {items.map((item) => (
@@ -583,9 +739,116 @@ export const WorkspacePreviewPanel: React.FC = () => {
                     )}
                   </div>
                 </div>
+                {deliveryReview && selected && (
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${deliveryReviewStatusClass(deliveryReview.status)}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="inline-flex items-center gap-1.5 font-medium">
+                        {deliveryReview.status === 'pass'
+                          ? <CheckCircle2 className="h-3.5 w-3.5" />
+                          : <AlertTriangle className="h-3.5 w-3.5" />}
+                        Delivery Review · {deliveryReview.score}
+                      </div>
+                      <span className="uppercase">{deliveryReview.status}</span>
+                    </div>
+                    <div className="mt-1 leading-relaxed">{deliveryReview.summary}</div>
+                    <div className="mt-1 text-[11px] opacity-80">
+                      {deliveryReview.skills.map((skill) => skill.title).join(' · ')}
+                    </div>
+                  </div>
+                )}
                 <PreviewBody item={selected} />
               </div>
             )}
+          </div>
+          <div className="min-h-0 overflow-y-auto border-l border-white/[0.06] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-zinc-100">Preview Feedback</div>
+                <div className="mt-0.5 text-[10px] text-zinc-500">
+                  {selectedFeedbackItems.length} item{selectedFeedbackItems.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={sendFeedbackToChat}
+                disabled={!selectedFeedbackItems.some((item) => item.status === 'open' || item.status === 'sent')}
+                className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Send className="h-3 w-3" />
+                {sentContext ? 'Sent' : 'Send'}
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {selectedFeedbackItems.length === 0 ? (
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-3 text-xs leading-relaxed text-zinc-500">
+                  Run review or add a note to turn preview problems into repair context.
+                </div>
+              ) : (
+                selectedFeedbackItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border p-2 text-xs ${
+                      item.status === 'resolved'
+                        ? 'border-emerald-500/15 bg-emerald-500/[0.04]'
+                        : item.source === 'delivery_review'
+                          ? 'border-amber-500/20 bg-amber-500/[0.05]'
+                          : 'border-white/[0.08] bg-white/[0.025]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[10px] uppercase text-zinc-500">
+                        {item.issueCode || item.source}
+                      </span>
+                      <span className="rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-zinc-400">
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap leading-relaxed text-zinc-300">
+                      {item.note}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-zinc-500">
+                      {anchorLabel(item)}
+                    </div>
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => updateFeedbackStatus(item.id, 'resolved')}
+                        disabled={item.status === 'resolved'}
+                        className="rounded border border-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/[0.08] disabled:opacity-40"
+                      >
+                        Resolve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateFeedbackStatus(item.id, 'dismissed')}
+                        disabled={item.status === 'dismissed'}
+                        className="rounded border border-white/[0.08] px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.05] disabled:opacity-40"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={feedbackNote}
+                onChange={(event) => setFeedbackNote(event.target.value)}
+                placeholder="Add note"
+                className="min-h-[72px] w-full resize-y rounded-md border border-white/[0.08] bg-black/20 px-2 py-1.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-cyan-500/40"
+              />
+              <button
+                type="button"
+                onClick={addFeedback}
+                disabled={!feedbackNote.trim() || feedbackBusy || !selected || !currentSessionId}
+                className="w-full rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Add feedback
+              </button>
+            </div>
           </div>
         </div>
       )}

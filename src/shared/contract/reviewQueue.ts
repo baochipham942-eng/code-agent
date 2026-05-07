@@ -2,6 +2,8 @@
 // Review Queue Types - Phase 6.1 + 6.2 plus minimal 6.3 failure follow-up sink
 // ============================================================================
 
+import type { DeliveryReviewMetadata } from './scenarioAcceptance';
+
 export type UnifiedTraceSource = 'session_replay';
 
 export interface UnifiedTraceIdentity {
@@ -15,6 +17,7 @@ export interface UnifiedTraceIdentity {
 
 export type ReviewQueueReason =
   | 'manual_review'
+  | 'delivery_review'
   | 'failure_followup'
   | 'interesting_case'
   | 'regression_candidate';
@@ -108,6 +111,7 @@ export interface ReviewQueueItem {
   source: ReviewQueueSource;
   failureCapability?: ReviewQueueFailureCapabilityMetadata;
   failureAsset?: ReviewQueueFailureCapabilityAsset;
+  deliveryReview?: DeliveryReviewMetadata;
   createdAt: number;
   updatedAt: number;
 }
@@ -120,6 +124,7 @@ export interface EnqueueReviewItemInput {
   /** @deprecated Use enqueueSource. */
   source?: ReviewQueueSource;
   failureCapability?: ReviewQueueFailureCapabilityMetadata;
+  deliveryReview?: DeliveryReviewMetadata;
 }
 
 export function buildSessionTraceIdentity(sessionId: string): UnifiedTraceIdentity {
@@ -138,6 +143,8 @@ export function buildReviewQueueItemId(trace: UnifiedTraceIdentity): string {
 
 export function getReviewQueueReasonLabel(reason: ReviewQueueReason): string {
   switch (reason) {
+    case 'delivery_review':
+      return '交付评审';
     case 'failure_followup':
       return '失败回看';
     case 'interesting_case':

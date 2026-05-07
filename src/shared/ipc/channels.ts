@@ -242,6 +242,14 @@ export const EVALUATION_CHANNELS = {
   REVIEW_QUEUE_LIST: 'evaluation:review-queue:list',
   REVIEW_QUEUE_ENQUEUE: 'evaluation:review-queue:enqueue',
   REVIEW_QUEUE_UPDATE_FAILURE_ASSET: 'evaluation:review-queue:update-failure-asset',
+
+  // Scenario acceptance / delivery review / preview feedback
+  SCENARIO_SKILLS_LIST: 'evaluation:scenario-skills:list',
+  DELIVERY_REVIEW_RUN: 'evaluation:delivery-review:run',
+  PREVIEW_FEEDBACK_LIST: 'evaluation:preview-feedback:list',
+  PREVIEW_FEEDBACK_CREATE: 'evaluation:preview-feedback:create',
+  PREVIEW_FEEDBACK_UPDATE_STATUS: 'evaluation:preview-feedback:update-status',
+  PREVIEW_FEEDBACK_SEND_TO_CHAT: 'evaluation:preview-feedback:send-to-chat',
 } as const;
 
 /**

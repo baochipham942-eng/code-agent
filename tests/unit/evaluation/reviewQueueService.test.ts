@@ -10,8 +10,8 @@ const dbState = vi.hoisted(() => ({
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { getDatabase } from '../../../../src/main/services/core/databaseService';
-import { ReviewQueueService } from '../../../../src/main/evaluation/reviewQueueService';
+import { getDatabase } from '../../../src/main/services/core/databaseService';
+import { ReviewQueueService } from '../../../src/main/evaluation/reviewQueueService';
 
 describe('ReviewQueueService', () => {
   let service: ReviewQueueService;
@@ -367,5 +367,36 @@ describe('ReviewQueueService', () => {
       status: 'dismissed',
       updatedAt: 123,
     })).toBeNull();
+  });
+
+  it('persists delivery review metadata for delivery_review items', () => {
+    dbState.getSession.mockReturnValue(null);
+
+    const item = service.enqueueSession({
+      sessionId: 'delivery-session',
+      sessionTitle: 'Delivery Session',
+      reason: 'delivery_review',
+      enqueueSource: 'current_session_bar',
+      deliveryReview: {
+        reviewId: 'delivery-review:delivery-session:1000',
+        status: 'needs_work',
+        score: 65,
+        summary: 'Delivery review found 1 error and 1 warning.',
+        skillIds: ['frontend_ui'],
+        issueCount: 2,
+        issueCodes: ['layout_overflow', 'missing_viewport'],
+      },
+    });
+
+    expect(item).toMatchObject({
+      reason: 'delivery_review',
+      deliveryReview: {
+        status: 'needs_work',
+        score: 65,
+        issueCodes: ['layout_overflow', 'missing_viewport'],
+      },
+    });
+    expect(item.failureAsset).toBeUndefined();
+    expect(service.listItems()[0].deliveryReview?.reviewId).toBe('delivery-review:delivery-session:1000');
   });
 });

@@ -23,6 +23,11 @@ const logger = createLogger('ReviewQueueService');
 
 type SQLiteRow = Record<string, unknown>;
 
+function serializeJson(value: unknown): string | null {
+  if (!value) return null;
+  return JSON.stringify(value);
+}
+
 export class ReviewQueueService {
   private static instance: ReviewQueueService | null = null;
   private schemaReady = false;
@@ -59,11 +64,13 @@ export class ReviewQueueService {
         reason TEXT NOT NULL,
         source TEXT NOT NULL,
         failure_capability TEXT,
+        delivery_review TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `);
     this.ensureColumn(db, 'review_queue_items', 'failure_capability', 'TEXT');
+    this.ensureColumn(db, 'review_queue_items', 'delivery_review', 'TEXT');
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_review_queue_items_updated_at
       ON review_queue_items(updated_at DESC)
@@ -118,6 +125,9 @@ export class ReviewQueueService {
     const failureCapability = reason === 'failure_followup'
       ? this.serializeFailureCapability(input.failureCapability)
       : null;
+    const deliveryReview = reason === 'delivery_review'
+      ? serializeJson(input.deliveryReview)
+      : null;
 
     const db = this.getDb();
     db.prepare(`
@@ -131,14 +141,16 @@ export class ReviewQueueService {
         reason,
         source,
         failure_capability,
+        delivery_review,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         session_title = excluded.session_title,
         reason = excluded.reason,
         source = excluded.source,
         failure_capability = excluded.failure_capability,
+        delivery_review = excluded.delivery_review,
         updated_at = excluded.updated_at
     `).run(
       id,
@@ -150,6 +162,7 @@ export class ReviewQueueService {
       reason,
       enqueueSource,
       failureCapability,
+      deliveryReview,
       now,
       now,
     );
@@ -252,6 +265,7 @@ export class ReviewQueueService {
       source: row.source as ReviewQueueItem['source'],
       failureCapability: this.parseFailureCapability(row.failure_capability),
       failureAsset: this.parseFailureAsset(row),
+      deliveryReview: this.parseDeliveryReview(row.delivery_review),
       createdAt: Number(row.created_at ?? 0),
       updatedAt: Number(row.updated_at ?? 0),
     };
@@ -269,6 +283,7 @@ export class ReviewQueueService {
         items.reason,
         items.source,
         items.failure_capability,
+        items.delivery_review,
         items.created_at,
         items.updated_at,
         assets.id AS failure_asset_id,
@@ -303,11 +318,7 @@ export class ReviewQueueService {
   private serializeFailureCapability(
     metadata: ReviewQueueFailureCapabilityMetadata | undefined,
   ): string | null {
-    if (!metadata) {
-      return null;
-    }
-
-    return JSON.stringify(metadata);
+    return serializeJson(metadata);
   }
 
   private upsertFailureAsset(db: Database.Database, asset: ReviewQueueFailureCapabilityAsset): void {
@@ -414,6 +425,19 @@ export class ReviewQueueService {
           ? parsed.evidence.filter((item): item is number => typeof item === 'number')
           : undefined,
       };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseDeliveryReview(value: unknown): ReviewQueueItem['deliveryReview'] {
+    if (typeof value !== 'string' || value.length === 0) {
+      return undefined;
+    }
+
+    try {
+      const parsed = JSON.parse(value) as ReviewQueueItem['deliveryReview'];
+      return parsed && typeof parsed === 'object' ? parsed : undefined;
     } catch {
       return undefined;
     }

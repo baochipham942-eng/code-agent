@@ -13,7 +13,6 @@ const projectRequire = createRequire(
 );
 globalThis.require = projectRequire;
 
-const WD = '/Users/linchen/Downloads/ai/code-agent';
 let pass = 0, fail = 0;
 
 function log(name, ok, detail = '') {
@@ -407,87 +406,10 @@ const { outlineToSlideData } = await import('../parser.ts');
 }
 
 // ============================================================================
-// Part F: Edit Tool (D5) — 编辑工具
+// Part F (Edit Tool D5) 已迁移至 vitest，参见
+//   tests/unit/tools/modules/network/pptEdit.test.ts (19 cases)
+// 该 part 依赖已删除的 src/main/tools/media/ppt/{index.ts, editTool.ts}。
 // ============================================================================
-console.log('\n═══ Part F: Edit Tool (D5) ═══');
-
-const { pptEditTool } = await import('../editTool.ts');
-
-// F.1 pptEditTool.name is 'ppt_edit'
-{
-  log('F.1 pptEditTool.name = ppt_edit', pptEditTool.name === 'ppt_edit', pptEditTool.name);
-}
-
-// F.2 inputSchema has required fields ['file_path', 'action']
-{
-  const required = pptEditTool.inputSchema.required;
-  const hasFilePath = required.includes('file_path');
-  const hasAction = required.includes('action');
-  log('F.2 inputSchema required = [file_path, action]', hasFilePath && hasAction,
-    JSON.stringify(required));
-}
-
-// F.3 inputSchema action enum has 6 values
-{
-  const actionEnum = pptEditTool.inputSchema.properties.action.enum;
-  log('F.3 action enum 有 6 个值', actionEnum.length === 6,
-    `${actionEnum.length}: ${actionEnum.join(', ')}`);
-}
-
-// F.4 execute with nonexistent file → returns { success: false }
-{
-  try {
-    const r = await pptEditTool.execute(
-      { file_path: '/nonexistent/test.pptx', action: 'extract_style' },
-      { workingDirectory: WD },
-    );
-    log('F.4 不存在文件 → success=false', r.success === false, r.error || '');
-  } catch (e) {
-    log('F.4 不存在文件 → success=false', false, `threw: ${e.message}`);
-  }
-}
-
-// F.5 extract_style action: execute with a valid generated pptx → returns style info
-{
-  const tmpPptx = path.join(os.tmpdir(), `edit-test-${Date.now()}.pptx`);
-  let generatedOk = false;
-  try {
-    const { pptGenerateTool } = await import('../index.ts');
-    const genResult = await pptGenerateTool.execute({
-      topic: 'Edit Test',
-      slides_count: 3,
-      theme: 'apple-dark',
-      output_path: tmpPptx,
-    }, { workingDirectory: WD });
-    generatedOk = genResult.success;
-
-    if (generatedOk) {
-      const r = await pptEditTool.execute(
-        { file_path: tmpPptx, action: 'extract_style' },
-        { workingDirectory: WD },
-      );
-      const hasStyle = r.success && r.metadata?.styleConfig != null;
-      log('F.5 extract_style 提取样式', hasStyle,
-        hasStyle ? `accent=#${r.metadata.styleConfig.accent}` : (r.error || 'no metadata'));
-    } else {
-      log('F.5 extract_style 提取样式', false, '生成 PPTX 失败');
-    }
-  } catch (e) {
-    log('F.5 extract_style 提取样式', false, `Error: ${e.message}`);
-  } finally {
-    try { fs.unlinkSync(tmpPptx); } catch {}
-    // Also clean up any backup files
-    try {
-      const tmpDir = os.tmpdir();
-      const files = fs.readdirSync(tmpDir);
-      for (const f of files) {
-        if (f.startsWith('edit-test-') && f.includes('.backup-')) {
-          try { fs.unlinkSync(path.join(tmpDir, f)); } catch {}
-        }
-      }
-    } catch {}
-  }
-}
 
 // ============================================================================
 // Summary

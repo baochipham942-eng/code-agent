@@ -6,9 +6,12 @@
 //       modelCallback fallback、normalizeSlideContent 容错
 // ============================================================================
 
+// History: Part 6 (端到端 StructuredSlide → PPTX) + Part 8 (python-pptx 结构验证)
+// 依赖已删除的 src/main/tools/media/ppt/index.ts (pptGenerateTool)。
+// 顶层工具 API 已被 tests/unit/tools/modules/network/pptGenerate.test.ts 用 vitest
+// 覆盖（13 cases）。此文件保留 Part 1–5 + Part 7（schema / template / decoration /
+// description / modelCallback 的纯函数测试）。
 import { createRequire } from 'module';
-import { strict as assert } from 'assert';
-import * as fs from 'fs';
 import * as path from 'path';
 
 const projectRequire = createRequire(
@@ -20,11 +23,8 @@ const { validateSlideContent, validateStructuredSlides, getLayoutSchemaDescripti
 const { getTemplateForTheme, TEMPLATE_PRESETS } = await import('../layoutTemplates.ts');
 const { getDecorations, buildDecorationObjects, DECORATIONS } = await import('../masterDecorations.ts');
 const { getThemeConfig } = await import('../themes.ts');
-const { pptGenerateTool } = await import('../index.ts');
 const { generateStructuredSlides } = await import('../slideContentAgent.ts');
 
-const WD = '/Users/linchen/Downloads/ai/code-agent';
-const generatedFiles = [];
 let passed = 0;
 let failed = 0;
 
@@ -32,12 +32,6 @@ function log(name, ok, detail = '') {
   const icon = ok ? '✅' : '❌';
   console.log(`  ${icon} ${name}${detail ? ' — ' + detail : ''}`);
   if (ok) passed++; else { failed++; process.exitCode = 1; }
-}
-
-async function generate(params) {
-  const r = await pptGenerateTool.execute(params, { workingDirectory: WD });
-  if (r.success && r.metadata?.filePath) generatedFiles.push(r.metadata.filePath);
-  return r;
 }
 
 // ============================================================================
@@ -449,84 +443,9 @@ console.log('\n═══ Part 5: Schema 描述 ═══');
 }
 
 // ============================================================================
-// Part 6: StructuredSlide 端到端 — slides JSON → PPTX
+// Part 6 (端到端 StructuredSlide → PPTX) 已迁移至 vitest，参见
+//   tests/unit/tools/modules/network/pptGenerate.test.ts
 // ============================================================================
-console.log('\n═══ Part 6: 端到端 StructuredSlide → PPTX ═══');
-
-// 6.1 基础 slides JSON 生成
-{
-  const r = await generate({
-    topic: 'Schema测试',
-    slides: [
-      { layout: 'list', title: 'Schema测试', isTitle: true, points: ['封面要点'] },
-      { layout: 'stats', title: '数据页', stats: [
-        { label: '指标A', value: '100', description: '描述A' },
-        { label: '指标B', value: '200' },
-        { label: '指标C', value: '300' },
-      ]},
-      { layout: 'list', title: '谢谢', isEnd: true, points: ['结束'] },
-    ],
-    output_path: path.join(WD, 'test-ppt-output/schema-test-basic.pptx'),
-  });
-  log('6.1 slides JSON 生成成功', r.success === true);
-  log('6.1a 结构化模式标记', r.output?.includes('结构化 JSON'));
-}
-
-// 6.2 含 timeline + cards-3 的复杂 slides
-{
-  const r = await generate({
-    topic: '复杂Schema',
-    slides: [
-      { layout: 'list', title: '复杂Schema', isTitle: true, points: ['测试'] },
-      { layout: 'timeline', title: '流程', steps: [
-        { title: '第一步', description: '开始执行' },
-        { title: '第二步', description: '继续推进' },
-        { title: '第三步', description: '完成验收' },
-      ]},
-      { layout: 'cards-3', title: '三要素', cards: [
-        { title: '卡片A', description: '描述A内容' },
-        { title: '卡片B', description: '描述B内容' },
-        { title: '卡片C', description: '描述C内容' },
-      ]},
-      { layout: 'list', title: '总结', isEnd: true, points: ['完'] },
-    ],
-    output_path: path.join(WD, 'test-ppt-output/schema-test-complex.pptx'),
-  });
-  log('6.2 复杂 slides 生成成功', r.success === true);
-  log('6.2a 页数正确', r.metadata?.slidesCount === 4, `${r.metadata?.slidesCount} slides`);
-}
-
-// 6.3 无效 slides fallback 到传统通道
-{
-  const r = await generate({
-    topic: 'Fallback测试',
-    slides: [
-      { layout: 'stats', title: '无效', content: {} }, // 无效
-    ],
-    output_path: path.join(WD, 'test-ppt-output/schema-test-fallback.pptx'),
-  });
-  log('6.3 无效 slides fallback', r.success === true);
-  log('6.3a 非结构化模式', !r.output?.includes('结构化 JSON'));
-}
-
-// 6.4 slides 与 apple-dark 主题
-{
-  const r = await generate({
-    topic: 'Apple主题',
-    theme: 'apple-dark',
-    slides: [
-      { layout: 'list', title: 'Apple主题', isTitle: true, points: ['测试'] },
-      { layout: 'stats', title: 'Apple指标', stats: [
-        { label: '速度', value: '2x' },
-        { label: '效率', value: '95%' },
-        { label: '覆盖', value: '100%' },
-      ]},
-      { layout: 'list', title: '完', isEnd: true, points: ['谢谢'] },
-    ],
-    output_path: path.join(WD, 'test-ppt-output/schema-test-apple.pptx'),
-  });
-  log('6.4 apple-dark + slides JSON', r.success === true);
-}
 
 // ============================================================================
 // Part 7: generateStructuredSlides — modelCallback
@@ -535,7 +454,7 @@ console.log('\n═══ Part 7: modelCallback ═══');
 
 // 7.1 成功的 modelCallback
 {
-  const mockCallback = async (prompt) => {
+  const mockCallback = async () => {
     return JSON.stringify([
       { layout: 'list', title: '模型封面', isTitle: true, points: ['开场'] },
       { layout: 'stats', title: '模型数据', stats: [
@@ -597,47 +516,9 @@ console.log('\n═══ Part 7: modelCallback ═══');
 }
 
 // ============================================================================
-// Part 8: python-pptx 结构验证（如可用）
+// Part 8 (python-pptx 结构验证) 已迁移至 vitest，参见
+//   tests/unit/tools/modules/network/pptGenerate.test.ts
 // ============================================================================
-console.log('\n═══ Part 8: python-pptx 结构验证 ═══');
-
-{
-  const testFile = path.join(WD, 'test-ppt-output/schema-test-complex.pptx');
-  if (fs.existsSync(testFile)) {
-    try {
-      const { execSync } = await import('child_process');
-      const pyScript = `
-from pptx import Presentation
-import json, sys
-prs = Presentation("${testFile}")
-result = {
-  "slides": len(prs.slides),
-  "masters": [s.slide_layout.name for s in prs.slides],
-}
-print(json.dumps(result))
-`;
-      const out = execSync(`python3 -c '${pyScript}'`, { encoding: 'utf-8' }).trim();
-      const data = JSON.parse(out);
-      log('8.1 slide 数量', data.slides === 4, `${data.slides} slides`);
-      log('8.2 首页 TITLE master', data.masters[0] === 'MASTER_TITLE');
-      log('8.3 末页 END master', data.masters[data.masters.length - 1] === 'MASTER_END');
-      log('8.4 布局多样性', new Set(data.masters).size >= 3, `${new Set(data.masters).size} distinct`);
-    } catch (e) {
-      log('8.x python-pptx 跳过', true, e.message?.substring(0, 60));
-    }
-  } else {
-    log('8.x 测试文件不存在', true, 'skipped');
-  }
-}
-
-// ============================================================================
-// 清理 + 汇总
-// ============================================================================
-console.log('\n═══ 清理测试文件 ═══');
-for (const f of generatedFiles) {
-  try { fs.unlinkSync(f); } catch {}
-}
-console.log(`  已清理 ${generatedFiles.length} 个测试 PPT 文件`);
 
 console.log(`\n═══ 测试完成 ═══`);
 console.log(`${passed + failed} 项: ${passed} 通过, ${failed} 失败`);

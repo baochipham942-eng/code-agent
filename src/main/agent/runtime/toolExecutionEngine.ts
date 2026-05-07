@@ -108,7 +108,8 @@ import {
   shouldAllowFullArtifactRewriteDuringRepair,
 } from './artifactRepairGuard';
 import { detectStructuredToolFailure } from './toolResultNormalization';
-import { validateGameArtifact, type BrowserVisualSmokeSummary } from './gameArtifactValidator';
+import { validateGameArtifact } from './gameArtifactValidator';
+import type { BrowserVisualSmokeSummary } from './browser/types';
 import { scopeGuardRegistry } from './repair/scopeGuards';
 import { MonotonicityTracker } from './repair/monotonicityTracker';
 

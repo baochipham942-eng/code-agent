@@ -127,11 +127,15 @@ export interface DashboardImperativeProbe {
 }
 
 /**
- * Predicate — 故意做窄。PR-B 只占位 'truthy' 让 declarative branch 编译通过。
+ * Predicate — 故意做窄。只覆盖 PR-C 实际需要的 op。
  *
- * PR-C 会扩展 op 集合（候选：html-content-includes / html-content-not-matches /
- * dom-element-exists 等）。不要预先抽象未来不一定用得上的 op。
+ * 后续 PR 真要扩（如 dom-element-exists / aria-role-present）再加；不要预先
+ * 抽象未来不一定用得上的 op。
  */
 export type DashboardPredicate =
   /** 总是 true — 调试 / 占位用 */
-  | { op: 'truthy' };
+  | { op: 'truthy' }
+  /** HTML 文本（原始字符串）用 regex 匹配；pattern 是字符串，运行时 new RegExp */
+  | { op: 'html-content-matches'; pattern: string; flags?: string }
+  /** HTML 文本不能匹配（用于 no_lorem_ipsum 等"不应出现"类规则）*/
+  | { op: 'html-content-not-matches'; pattern: string; flags?: string };

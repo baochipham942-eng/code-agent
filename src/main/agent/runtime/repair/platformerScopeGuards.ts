@@ -1,4 +1,4 @@
-import type { ScopeGuard } from './scopeGuards';
+import { type ScopeGuard, scopeGuardRegistry } from './scopeGuards';
 
 export const platformerScopeGuards: ScopeGuard[] = [
   {
@@ -20,3 +20,9 @@ export const platformerScopeGuards: ScopeGuard[] = [
     ].join(' '),
   },
 ];
+
+// Side-effect 自注册：任何 import 本模块的位置都会触发 platformer scope guards
+// 注册到全局 registry。OCP — scopeGuards.ts 不再需要 import 本文件。
+for (const guard of platformerScopeGuards) {
+  scopeGuardRegistry.register(guard);
+}

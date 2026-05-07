@@ -24,6 +24,8 @@ import type {
   VerbDeclaration,
 } from '../types';
 import { gameSubtypeRegistry } from '../registry';
+// side-effect — platformer scope guards 在被 import 时自注册到 scopeGuardRegistry
+import '../../repair/platformerScopeGuards';
 import {
   PLATFORMER_REPAIR_CODES,
   classifyPlatformerFailure,

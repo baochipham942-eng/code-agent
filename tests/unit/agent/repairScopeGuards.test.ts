@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { scopeGuardRegistry } from '../../../src/main/agent/runtime/repair/scopeGuards';
+// side-effect — 自从 OCP 重构后 scopeGuards.ts 不再 import platformer guards；
+// 测试自己显式触发 platformer 注册（生产代码里由 PlatformerChecker import 链触发）
+import '../../../src/main/agent/runtime/repair/platformerScopeGuards';
 
 describe('repair scope guards', () => {
   it('blocks patches that miss registered issue scopes', () => {

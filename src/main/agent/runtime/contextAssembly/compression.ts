@@ -78,10 +78,13 @@ async function commitCompactionBlock(
   // === 恢复上下文注入完毕 ===
 
   // 将 compaction block 作为消息保留在历史中
+  // content 只存压缩 summary 本身；user-facing 的"已压缩 N 条 / 节省 X tokens"通过
+  // context_compacted SSE event 推前端（见下方 onEvent），不要混进 content，
+  // 否则下一次压缩会把这条 toast 文案 summarize 进新 summary，造成递归污染。
   const compactionMessage: Message = {
     id: ctx.generateId(),
     role: 'system',
-    content: `[Compaction] 已压缩 ${block.compactedMessageCount} 条消息，节省 ${block.compactedTokenCount} tokens\n\n${block.content}`,
+    content: block.content,
     timestamp: block.timestamp,
     compaction: block,
   };

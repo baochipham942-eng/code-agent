@@ -859,7 +859,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         };
         const anyTextMatches = (value, patterns) => patterns.some((pattern) => pattern.test(textFrom(value)));
         const isNegativeEvidence = (value) => (
-          /(?:^|[\s:,[({=;-])(?:false|fail|failed|failure|missing|not|none|no)(?:$|[\s:,\])}.!;=-])|缺少|失败|未通过|没有|不能|无法/i
+          /(?:^|[\\s:,[({=;-])(?:false|fail|failed|failure|missing|not|none|no)(?:$|[\\s:,\\])}.!;=-])|缺少|失败|未通过|没有|不能|无法/i
             .test(String(value || '').toLowerCase())
         );
         const collectEvidenceStrings = (smoke, coverage) => {

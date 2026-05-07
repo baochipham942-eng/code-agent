@@ -45,8 +45,8 @@ export const PLATFORMER_REPAIR_CODES: readonly PlatformerRepairEntry[] = [
     repairInstruction:
       'Add platformer gameplayMechanics to __GAME_META__ with enemies, blocks, abilities, gates, and comboChallenge, then implement those objects in live collision/update logic instead of only declaring them.',
     hints: [
-      'Platformer metadata template: __GAME_META__.gameplayMechanics = { enemies: [{ id: "goomba-1", stompable: true, defeatReward: "bounceCoin" }], blocks: [{ id: "q1", type: "question", bumpableFromBelow: true, reward: "doubleJump", usedState: "empty" }], abilities: [{ id: "doubleJump", type: "doubleJump", acquiredFrom: "q1", effect: "second air jump", unlocksRoute: "upper-route" }], gates: [{ id: "upper-gap", requiresAbility: "doubleJump", blocksAccessTo: "upper-route" }], comboChallenge: [{ id: "combo", requires: ["jump", "stomp", "bumpBlock", "doubleJump"], target: "upper-route" }] }; every field is an array even with one item, never an object map.',
-      'Implement collision code: stomp marks enemy defeated and bounces player.vy; bump marks block used and spawns the ability; ability changes movement; gate checks ability before route access.',
+      'Platformer metadata template: __GAME_META__.gameplayMechanics arrays only, never an object map; include stomp enemy (stompable), bump block (bumpableFromBelow + spawnedReward), ability (acquiredFrom -> unlocksRoute), gate (requiresAbility + reachableTarget), and comboChallenge (jump + 2 of stomp/block/ability/gate).',
+      'Implement collision code: stomp -> enemiesDefeated/player.vy bounce; bump -> blocksUsed/spawnedReward; ability false->true via real input; gate exposes reachableTarget after ability.',
     ],
   },
   {

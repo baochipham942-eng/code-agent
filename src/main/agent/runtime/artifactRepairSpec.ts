@@ -617,7 +617,9 @@ export function formatArtifactRepairSpecForPrompt(spec: ArtifactRepairSpec): str
     lines.push(`  message: ${compactText(issue.message, 90)}`);
     lines.push(`  fix: ${compactText(issue.repairInstruction, 180)}`);
     if (issue.evidence.length > 0) {
-      lines.push(`  evidence: ${compactText(issue.evidence.slice(0, 1).join(' | '), 120)}`);
+      // 取前 3 条 evidence（match main 协议）— 艾克斯原本砍到 1，破坏测试且
+      // 减少 LLM 拿到的失败上下文。MAX_EVIDENCE_LENGTH 已经独立限长每条。
+      lines.push(`  evidence: ${compactText(issue.evidence.slice(0, 3).join(' | '), 240)}`);
     }
   }
 

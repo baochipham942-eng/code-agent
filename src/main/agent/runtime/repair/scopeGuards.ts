@@ -1,5 +1,3 @@
-import { platformerScopeGuards } from './platformerScopeGuards';
-
 export interface ScopeGuard {
   issueCode: string;
   scopeRegex: RegExp;
@@ -80,6 +78,9 @@ const genericScopeGuards: ScopeGuard[] = [
   },
 ];
 
-for (const guard of [...genericScopeGuards, ...platformerScopeGuards]) {
+// Generic guards 在 module load 时自注册。subtype-specific guards
+// (platformer / runner / ...) 由各自 checker 模块通过 side-effect import
+// 自注册——本文件不再 import 任何 subtype 文件，遵循 OCP。
+for (const guard of genericScopeGuards) {
   scopeGuardRegistry.register(guard);
 }

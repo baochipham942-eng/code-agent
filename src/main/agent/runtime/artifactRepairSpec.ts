@@ -1,14 +1,21 @@
 import type { GameArtifactValidationSummary } from './gameArtifactValidator';
 import { REPAIR_PROMPT_LIMITS } from '../../../shared/constants/repair';
 import { gameSubtypeRegistry } from './game/registry';
-// side-effect import — PlatformerChecker 自注册并提供 platformer-specific repair codes
+// side-effect imports — 各 subtype checker 自注册并提供 subtype-specific repair codes
 import './game/platformer/PlatformerChecker';
+import './game/runner/RunnerChecker';
 import {
   classifyPlatformerFailure,
   PLATFORMER_REPAIR_CODE_SET,
   PLATFORMER_REPAIR_CODES,
   type PlatformerRepairCode,
 } from './game/platformer/repairCodes';
+import {
+  classifyRunnerFailure,
+  RUNNER_REPAIR_CODE_SET,
+  RUNNER_REPAIR_CODES,
+  type RunnerRepairCode,
+} from './game/runner/repairCodes';
 
 export type ArtifactRepairIssueSeverity = 'error' | 'warning';
 
@@ -46,7 +53,8 @@ export type GenericArtifactRepairIssueCode =
 
 export type ArtifactRepairIssueCode =
   | GenericArtifactRepairIssueCode
-  | PlatformerRepairCode;
+  | PlatformerRepairCode
+  | RunnerRepairCode;
 
 export interface ArtifactRepairIssue {
   code: ArtifactRepairIssueCode;
@@ -94,13 +102,20 @@ function compactText(value: string, maxLength: number = MAX_EVIDENCE_LENGTH): st
 function classifyFailureViaRegistry(text: string): FailureClassification | undefined {
   const platformerEntry = classifyPlatformerFailure(text);
   if (platformerEntry) {
-    // 通过 registry.get('platformer') 拿 repair instruction —
-    // 即使 PlatformerChecker.repairGuidance 被覆盖，这里也能拿到最新版本。
     const checker = gameSubtypeRegistry.get('platformer');
     const fromChecker = checker?.repairGuidance(platformerEntry.code);
     return {
       code: platformerEntry.code,
       repairInstruction: fromChecker ?? platformerEntry.repairInstruction,
+    };
+  }
+  const runnerEntry = classifyRunnerFailure(text);
+  if (runnerEntry) {
+    const checker = gameSubtypeRegistry.get('runner');
+    const fromChecker = checker?.repairGuidance(runnerEntry.code);
+    return {
+      code: runnerEntry.code,
+      repairInstruction: fromChecker ?? runnerEntry.repairInstruction,
     };
   }
   return undefined;
@@ -326,7 +341,10 @@ function subtypeRepairCodes(): string[] {
   // checker 必须先注册到 registry，才把它的 codes 算进 directCodePattern；
   // 这样测试 / 临时 stub 可以通过 clear() 清空 registry 来隔离。
   if (gameSubtypeRegistry.list().length === 0) return [];
-  return PLATFORMER_REPAIR_CODES.map((entry) => entry.code);
+  return [
+    ...PLATFORMER_REPAIR_CODES.map((entry) => entry.code),
+    ...RUNNER_REPAIR_CODES.map((entry) => entry.code),
+  ];
 }
 
 export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRepairIssueCode[] {
@@ -391,9 +409,13 @@ function mergeIssues(failures: string[]): ArtifactRepairIssue[] {
 }
 
 function messageForCode(code: ArtifactRepairIssueCode): string {
-  // subtype-specific code 走 registry — 文案归 PlatformerChecker 持有
+  // subtype-specific code 走 registry — 文案归各 subtype checker 持有
   if (PLATFORMER_REPAIR_CODE_SET.has(code as PlatformerRepairCode)) {
     const entry = PLATFORMER_REPAIR_CODES.find((e) => e.code === code);
+    if (entry) return entry.message;
+  }
+  if (RUNNER_REPAIR_CODE_SET.has(code as RunnerRepairCode)) {
+    const entry = RUNNER_REPAIR_CODES.find((e) => e.code === code);
     if (entry) return entry.message;
   }
   switch (code as GenericArtifactRepairIssueCode) {
@@ -525,6 +547,15 @@ function collectSubtypeRepairHints(issues: readonly ArtifactRepairIssue[]): stri
     const entry = PLATFORMER_REPAIR_CODES.find((e) => e.code === 'ability_gate_without_reachability');
     if (entry) appendUnique(hints, seen, entry.hints);
   }
+
+  // runner：每个 issue 取自己的 hints（独立累加）
+  for (const issue of issues) {
+    if (RUNNER_REPAIR_CODE_SET.has(issue.code as RunnerRepairCode)) {
+      const entry = RUNNER_REPAIR_CODES.find((e) => e.code === issue.code);
+      if (entry) appendUnique(hints, seen, entry.hints);
+    }
+  }
+
   return hints;
 }
 

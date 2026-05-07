@@ -109,6 +109,7 @@ import {
 } from './artifactRepairGuard';
 import { detectStructuredToolFailure } from './toolResultNormalization';
 import { validateGameArtifact, type BrowserVisualSmokeSummary } from './gameArtifactValidator';
+import { scopeGuardRegistry } from './repair/scopeGuards';
 
 const logger = createLogger('AgentLoop');
 
@@ -764,51 +765,7 @@ function detectArtifactRepairIssueScopeMismatch(
   const patchText = getArtifactRepairPatchText(toolCall);
   if (!patchText.trim()) return null;
 
-  if (issueCodes.includes('coverage_without_runtime_evidence')) {
-    const touchesCoverageScope =
-      /runSmokeTest|coverage|mechanics|rewards|risks|stateChanges|step\s*\(|snapshot\s*\(|Auto-collect|Auto-reach|direct grants|registered|exists|present/i.test(patchText);
-    if (!touchesCoverageScope) {
-      return [
-        'Patch does not touch the active validation failure scope: coverage_without_runtime_evidence.',
-        'This repair must change runSmokeTest/coverage evidence, step/snapshot evidence flow, or remove direct grants/existence-based coverage.',
-        'Do not spend a repair attempt changing unrelated start/reset/UI code.',
-      ].join(' ');
-    }
-  }
-
-  if (issueCodes.includes('malformed_test_contract')) {
-    const touchesContractStructure =
-      /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=|duplicate|orphan(?:ed)?|runSmokeTest|start\s*\(|reset\s*\(|snapshot\s*\(|step\s*\(/i.test(patchText);
-    const targetsWholeContractRegion =
-      /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=/.test(patchText)
-      || /duplicate|orphan(?:ed)?/.test(patchText);
-    if (!touchesContractStructure || !targetsWholeContractRegion) {
-      return [
-        'Patch does not touch the active validation failure scope: malformed_test_contract.',
-        'This repair must replace the full active `window.__GAME_TEST__` / `window.__INTERACTIVE_TEST__` block or remove the duplicate orphaned contract tail after it closes.',
-        'Do not spend a repair attempt changing inner gameplay checks before the active test contract structure is repaired.',
-      ].join(' ');
-    }
-  }
-
-  if (
-    issueCodes.includes('missing_controls_metadata')
-    || issueCodes.includes('missing_coverage_metadata')
-    || issueCodes.includes('missing_reachability_metadata')
-    || issueCodes.includes('missing_quality_metadata')
-  ) {
-    const touchesMetadataScope =
-      /__GAME_META__|__INTERACTIVE_META__|controls|levels|scenarios|objectives|segments|missions|reachability|progressPlan|acceptance|validation|qualityPlan|actorReadable|allAuthoredLevelsReachable/i.test(patchText);
-    if (!touchesMetadataScope) {
-      return [
-        'Patch does not touch the active validation metadata scope.',
-        'This repair must add or update literal __GAME_META__/__INTERACTIVE_META__ metadata with controls, authored scope, reachability/progressPlan, and quality/acceptance fields.',
-        'Do not spend a repair attempt changing unrelated gameplay or UI code before metadata is fixed.',
-      ].join(' ');
-    }
-  }
-
-  return null;
+  return scopeGuardRegistry.check(issueCodes, patchText);
 }
 
 function detectArtifactRepairContractStructureRisk(

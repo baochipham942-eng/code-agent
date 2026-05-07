@@ -30,6 +30,8 @@ type ActionType =
   | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
   // Extended atomic primitives + batch
   | 'mouse_down' | 'mouse_up' | 'open_application' | 'write_clipboard' | 'computer_batch'
+  // Richer interactions
+  | 'hold_key' | 'triple_click' | 'cursor_position'
   // Smart location actions (Playwright-powered)
   | 'locate_element' | 'locate_text' | 'locate_role'
   | 'smart_click' | 'smart_type' | 'smart_hover'
@@ -69,6 +71,8 @@ export interface ComputerAction {
   maxDepth?: number;
   // computer_batch
   actions?: ComputerAction[];
+  // hold_key
+  duration?: number;
 }
 
 export const computerUseTool: Tool = {
@@ -91,6 +95,9 @@ export const computerUseTool: Tool = {
 - open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
 - write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
 - computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected.
+- hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration ms then release. Pass via modifiers (or single key). Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
+- triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if app does not respond.
+- cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y", metadata.x / metadata.y populated.
 
 ## Smart Actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -161,6 +168,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'get_windows',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
           'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
+          'hold_key', 'triple_click', 'cursor_position',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
         ],
@@ -255,8 +263,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       modifiers: {
         type: 'array',
-        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift'] },
-        description: 'Modifier keys to hold during action',
+        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift', 'fn'] },
+        description: 'Modifier keys to hold during action. For hold_key, this is the list of modifier keys to press together.',
+      },
+      duration: {
+        type: 'number',
+        description: '[hold_key] Duration in milliseconds to hold the key(s) down before releasing. Default 1000.',
       },
       direction: {
         type: 'string',
@@ -1491,6 +1503,66 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
         output: `computer_batch completed: ${results.length} action(s)`,
         metadata: { results },
       };
+    }
+
+    case 'hold_key': {
+      const keysList: string[] = [];
+      if (Array.isArray(action.modifiers) && action.modifiers.length > 0) {
+        keysList.push(...action.modifiers);
+      } else if (typeof action.key === 'string' && action.key.trim()) {
+        keysList.push(action.key);
+      }
+      if (keysList.length === 0) {
+        return { success: false, error: 'hold_key requires modifiers array or key (cmd/alt/ctrl/shift/fn)' };
+      }
+      const allowedModifiers = new Set(['cmd', 'alt', 'ctrl', 'shift', 'fn']);
+      for (const k of keysList) {
+        if (!allowedModifiers.has(k)) {
+          return { success: false, error: `hold_key only supports modifier keys (cmd/alt/ctrl/shift/fn). Got: ${k}` };
+        }
+      }
+      const keysArg = keysList.join(',');
+      const duration = isFiniteNumber(action.duration) && action.duration > 0 ? action.duration : 1000;
+      try {
+        await execFileAsync('cliclick', [`kd:${keysArg}`]);
+        await new Promise((resolve) => setTimeout(resolve, duration));
+        await execFileAsync('cliclick', [`ku:${keysArg}`]);
+      } catch (error) {
+        // best-effort release so the key does not stay stuck
+        try { await execFileAsync('cliclick', [`ku:${keysArg}`]); } catch { /* ignore */ }
+        return { success: false, error: `hold_key failed: ${formatExecutionError(error)}` };
+      }
+      break;
+    }
+
+    case 'triple_click':
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
+        return { success: false, error: 'x and y coordinates required for triple_click' };
+      }
+      try {
+        await execFileAsync('cliclick', [`tc:${Math.round(action.x)},${Math.round(action.y)}`]);
+      } catch (error) {
+        return { success: false, error: `triple_click requires cliclick: ${formatExecutionError(error)}` };
+      }
+      break;
+
+    case 'cursor_position': {
+      try {
+        const { stdout } = await execFileAsync('cliclick', ['p']);
+        const match = stdout.trim().match(/^(-?\d+),(-?\d+)$/);
+        if (!match) {
+          return { success: false, error: `Failed to parse cursor position output: ${stdout.trim()}` };
+        }
+        const cx = parseInt(match[1], 10);
+        const cy = parseInt(match[2], 10);
+        return {
+          success: true,
+          output: `${cx},${cy}`,
+          metadata: { x: cx, y: cy },
+        };
+      } catch (error) {
+        return { success: false, error: `cursor_position requires cliclick: ${formatExecutionError(error)}` };
+      }
     }
 
     default:

@@ -5,14 +5,14 @@
  * 的 verb 词汇表跟 game 完全不同（game 是 runtime 动作，deck 是 structural
  * 性质），因此**不复用 game 的 VerbId / VerbDeclaration / PredicateExpr**。
  *
- *   Layer A 顶层 verifier   — DeckVerifier（不让它 extends ArtifactKindVerifier，
- *                              先自闭；2+ kind 跑通后由 PR-4 决定是否抽顶层接口）
+ *   顶层 verifier            — DeckVerifier（独立类，不与 game 共享接口；
+ *                              详见 docs/decisions/016-no-cross-kind-verifier-interface.md）
  *
- *   Layer B subtype checker — DeckSubtypeChecker，每个 deck 子流派
+ *   subtype checker          — DeckSubtypeChecker，每个 deck 子流派
  *                              (general / executive-deck / academic-paper / ...)
  *                              通过 registry 注册自己。PR-2 只占位 'general'。
  *
- *   Layer C probe declaration — DeckProbeDeclaration，两个 mode：
+ *   probe declaration        — DeckProbeDeclaration，两个 mode：
  *     declarative: scope + predicate，覆盖简单匹配（intro / evidence / summary）
  *     imperative:  逃逸 hatch，复杂规则（连续 N 张 numeric-heavy slide）走 TS 函数
  *

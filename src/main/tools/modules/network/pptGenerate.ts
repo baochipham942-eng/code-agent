@@ -581,6 +581,10 @@ export async function executePptGenerate(
     }
 
     if (legacySlides) {
+      // TODO(deck-verifier, Phase 4 PR-3): result currently discarded — narrativeValidator
+      //   runs as a side-effect-free dead validator. PR-3 will replace this call with
+      //   DeckVerifier.validate(...) and pipe failures into ctx.logger.warn (non-blocking).
+      //   Baseline lives at scripts/acceptance/fixtures/deck/baseline.json.
       validateNarrative(legacySlides);
     }
 

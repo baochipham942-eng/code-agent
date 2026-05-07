@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-05-07T13:10:27.496Z",
+  "git_head": "6e5b9bb3",
+  "fixture": {
+    "topic": "AI Coding Tools 2026 Snapshot",
+    "slide_count": 6
+  },
+  "zip": {
+    "parsable": true,
+    "slide_xml_count": 6,
+    "presentation_xml_present": true,
+    "size_bytes": 77810
+  },
+  "schema": {
+    "total": 6,
+    "valid": 6,
+    "errors": []
+  },
+  "narrative": {
+    "total_slides": 6,
+    "issue_count": 0,
+    "issue_types": []
+  },
+  "mjs_tests": [
+    {
+      "file": "src/main/tools/media/ppt/__tests__/ppt-d3d4.test.mjs",
+      "exit_code": 0,
+      "summary_line": "═══ Summary: 65 passed, 0 failed (65 total) ═══",
+      "parsed_pass": 65,
+      "parsed_fail": 0
+    },
+    {
+      "file": "src/main/tools/media/ppt/__tests__/ppt-schema.test.mjs",
+      "exit_code": 0,
+      "summary_line": "55 项: 55 通过, 0 失败",
+      "parsed_pass": 55,
+      "parsed_fail": 0
+    },
+    {
+      "file": "src/main/tools/media/ppt/__tests__/ppt.test.mjs",
+      "exit_code": 0,
+      "summary_line": null,
+      "parsed_pass": null,
+      "parsed_fail": null
+    },
+    {
+      "file": "src/main/tools/media/ppt/__tests__/ppt-extended.test.mjs",
+      "exit_code": 0,
+      "summary_line": null,
+      "parsed_pass": null,
+      "parsed_fail": null
+    },
+    {
+      "file": "src/main/tools/media/ppt/__tests__/ppt-d1d2d5d6.test.mjs",
+      "exit_code": 0,
+      "summary_line": "═══ Summary: 42 passed, 0 failed (42 total) ═══",
+      "parsed_pass": 42,
+      "parsed_fail": 0
+    }
+  ]
+}

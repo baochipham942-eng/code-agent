@@ -1683,6 +1683,25 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         }),
       ]),
     );
+
+    // A.5 invariant: compactionMessage.content 不能混入 user-facing toast 文案，
+    // 否则下次压缩会把它 summarize 进新 summary，造成递归污染。
+    // 用户可读的"已压缩 / 节省 N tokens"必须走 context_compacted SSE event，不走 messages。
+    const compactionMsg = ctx.messages.find((m: Message) => m.compaction);
+    expect(compactionMsg, 'compaction message must exist after compaction').toBeDefined();
+    expect(compactionMsg!.content).not.toMatch(/\[Compaction\]/);
+    expect(compactionMsg!.content).not.toMatch(/已压缩.*条消息/);
+    expect(compactionMsg!.content).not.toMatch(/节省.*tokens/);
+    // 结构化字段 compaction.content 是真 source of truth — 上面已有 stringContaining('summary')。
+
+    // A.3 invariant: 压缩后 messages 数组应为 [compactionMessage, ...lastN原消息]，
+    // 且 preserveCount=2 + compaction=1 → 总长 3。
+    // 边界识别按 message ID 而非位置（避免 fork/replay 时错位）。
+    expect(ctx.messages).toHaveLength(3);
+    expect(ctx.messages[0].compaction, 'compaction message must be at index 0').toBeDefined();
+    expect(ctx.messages[0].role).toBe('system');
+    expect(ctx.messages[1].id).toBe('m4');
+    expect(ctx.messages[2].id).toBe('m5');
   });
 
   it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {

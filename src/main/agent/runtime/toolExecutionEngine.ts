@@ -110,6 +110,7 @@ import {
 import { detectStructuredToolFailure } from './toolResultNormalization';
 import { validateGameArtifact, type BrowserVisualSmokeSummary } from './gameArtifactValidator';
 import { scopeGuardRegistry } from './repair/scopeGuards';
+import { MonotonicityTracker } from './repair/monotonicityTracker';
 
 const logger = createLogger('AgentLoop');
 
@@ -1341,6 +1342,39 @@ async function refreshArtifactRepairReadStateAfterRollback(
   await fileReadTracker.recordReadWithStats(absolutePath);
 }
 
+type GameArtifactValidationResult = Awaited<ReturnType<typeof validateGameArtifact>>;
+type ArtifactRepairSpecResult = ReturnType<typeof createArtifactRepairSpec>;
+
+function countArtifactRepairProblems(
+  validation: GameArtifactValidationResult,
+  repairSpec: ArtifactRepairSpecResult | null,
+): number {
+  const issueCount = Array.isArray(repairSpec?.issues) ? repairSpec.issues.length : 0;
+  if (issueCount > 0) return issueCount;
+  return Array.isArray(validation.failures) ? validation.failures.length : 0;
+}
+
+function shouldKeepImprovedFailedArtifactPatch(options: {
+  currentValidation: GameArtifactValidationResult;
+  currentRepairSpec: ArtifactRepairSpecResult;
+  rollbackValidation: GameArtifactValidationResult | null;
+  rollbackRepairSpec: ArtifactRepairSpecResult | null;
+  repairTargetLostValidation: boolean;
+}): boolean {
+  if (options.repairTargetLostValidation) return false;
+  if (!options.rollbackValidation?.shouldValidate || options.rollbackValidation.passed) return false;
+  if (!options.currentValidation.shouldValidate || options.currentValidation.passed) return false;
+
+  const currentProblems = countArtifactRepairProblems(options.currentValidation, options.currentRepairSpec);
+  const rollbackProblems = countArtifactRepairProblems(options.rollbackValidation, options.rollbackRepairSpec);
+  if (currentProblems <= 0 || rollbackProblems <= 0) return false;
+
+  const tracker = new MonotonicityTracker();
+  tracker.recordRound(0, -rollbackProblems, options.rollbackValidation.failures);
+  const verdict = tracker.recordRound(1, -currentProblems, options.currentValidation.failures);
+  return verdict.verdict === 'improved' && verdict.keep;
+}
+
 const ARTIFACT_REPAIR_VERIFY_COMMAND_PATTERN =
   /\b(validate|validator|vitest|jest|mocha|playwright|test|check|lint|tsc|typecheck|build|compile|npm\s+(?:run\s+)?(?:test|check|lint|typecheck|build|compile)|pnpm\s+(?:run\s+)?(?:test|check|lint|typecheck|build|compile)|yarn\s+(?:run\s+)?(?:test|check|lint|typecheck|build|compile))\b/i;
 
@@ -2500,12 +2534,13 @@ export class ToolExecutionEngine {
                   ? '正在运行 artifact 可玩性验收...'
                   : 'artifact 结构验收失败，正在准备修复上下文...',
               );
-              const rawValidation = await validateGameArtifact(absolutePath, {
+              const artifactValidationOptions = {
                 runRuntimeSmoke: true,
                 runtimeSmokeTimeoutMs: 7000,
                 runBrowserVisualSmoke: true,
                 browserVisualSmokeTimeoutMs: 10000,
-              });
+              } as const;
+              const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
               const validation = repairTargetLostValidation && !rawValidation.shouldValidate
                 ? buildRepairTargetLostValidationFailure(rawValidation)
                 : rawValidation;
@@ -2515,8 +2550,33 @@ export class ToolExecutionEngine {
 
               if (validation.shouldValidate && !validation.passed) {
                 this.runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
-                const rollbackApplied = restoreArtifactRepairRollbackSnapshot(artifactRepairRollbackSnapshot, absolutePath);
-                if (rollbackApplied) {
+                const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
+                  ? readFileSync(absolutePath, 'utf-8')
+                  : null;
+                let rollbackApplied = restoreArtifactRepairRollbackSnapshot(artifactRepairRollbackSnapshot, absolutePath);
+                const rollbackValidation = rollbackApplied
+                  ? await validateGameArtifact(absolutePath, artifactValidationOptions)
+                  : null;
+                const repairSpec = createArtifactRepairSpec(validation);
+                let rollbackRepairSpec = rollbackValidation && rollbackValidation.shouldValidate && !rollbackValidation.passed
+                  ? createArtifactRepairSpec(rollbackValidation)
+                  : null;
+                const keepImprovedFailedPatch =
+                  rollbackApplied &&
+                  postPatchContent !== null &&
+                  shouldKeepImprovedFailedArtifactPatch({
+                    currentValidation: validation,
+                    currentRepairSpec: repairSpec,
+                    rollbackValidation,
+                    rollbackRepairSpec,
+                    repairTargetLostValidation: Boolean(repairTargetLostValidation),
+                  });
+                if (keepImprovedFailedPatch) {
+                  writeFileSync(absolutePath, postPatchContent, 'utf-8');
+                  rollbackApplied = false;
+                  rollbackRepairSpec = null;
+                  await fileReadTracker.recordReadWithStats(absolutePath);
+                } else if (rollbackApplied) {
                   await refreshArtifactRepairReadStateAfterRollback(artifactRepairRollbackSnapshot, absolutePath);
                 } else {
                   // Repair mode may intentionally spend the target read budget because
@@ -2524,13 +2584,6 @@ export class ToolExecutionEngine {
                   // Edit's fileReadTracker safety state in sync with that decision.
                   await fileReadTracker.recordReadWithStats(absolutePath);
                 }
-                const rollbackValidation = rollbackApplied
-                  ? await validateGameArtifact(absolutePath)
-                  : null;
-                const repairSpec = createArtifactRepairSpec(validation);
-                const rollbackRepairSpec = rollbackValidation && rollbackValidation.shouldValidate && !rollbackValidation.passed
-                  ? createArtifactRepairSpec(rollbackValidation)
-                  : null;
                 const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
                 const failureMap = getArtifactValidationFailureMap(this.ctx);
                 const previousFailure = failureMap.get(absolutePath);
@@ -2579,7 +2632,9 @@ export class ToolExecutionEngine {
                   `Artifact validation failed for ${absolutePath}.`,
                   repairSpec.summary,
                   repairSpecBlock,
-                  rollbackApplied
+                  keepImprovedFailedPatch
+                    ? 'The failed artifact repair patch improved validation and was kept as the next repair baseline.'
+                    : rollbackApplied
                     ? 'The failed artifact repair patch was rolled back; edit from the last valid pre-patch file state.'
                     : 'The failed artifact repair patch could not be rolled back automatically; inspect the target before continuing.',
                   'The file was written, but it is not accepted as complete. Edit the existing file and run validation again before final response.',
@@ -2587,7 +2642,9 @@ export class ToolExecutionEngine {
                 this.contextAssembly.injectSystemMessage(
                   [
                     ...(appendFinalHint ? [appendFinalHint] : []),
-                    rollbackApplied
+                    keepImprovedFailedPatch
+                      ? '本次修复补丁仍未完全通过 artifact validation，但失败项变少，已保留为下一轮修复基线；下一轮继续在当前目标文件上补齐剩余证据。'
+                      : rollbackApplied
                       ? '本次修复补丁没有通过 artifact validation，已自动回滚到补丁前的目标文件状态；下一轮不要基于失败补丁继续修改。'
                       : '本次修复补丁没有通过 artifact validation，且自动回滚失败；继续前必须先确认目标文件当前状态。',
                     buildArtifactRepairInstruction(
@@ -2609,6 +2666,7 @@ export class ToolExecutionEngine {
                   artifactRepairRollback: {
                     attempted: Boolean(artifactRepairRollbackSnapshot),
                     applied: rollbackApplied,
+                    keptImprovedPatch: keepImprovedFailedPatch,
                     targetFile: absolutePath,
                   },
                   artifactValidation: {

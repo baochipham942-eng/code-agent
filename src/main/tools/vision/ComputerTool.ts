@@ -13,6 +13,7 @@ import { computerUseTool } from './computerUse';
 const COMPUTER_USE_ACTIONS = [
   'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
   'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
+  'mouse_down', 'mouse_up', 'open_application', 'write_clipboard',
   'locate_element', 'locate_text', 'locate_role',
   'smart_click', 'smart_type', 'smart_hover', 'get_elements',
 ] as const;
@@ -32,6 +33,9 @@ export const ComputerTool: Tool = {
 - key: Press keyboard shortcut. Same caveat as type. Note: shortcuts (Cmd+N etc.) cannot be routed via background AX — if you just want to trigger a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
+- mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them — every mouse_down must be followed by a mouse_up.
+- open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. "Safari", "Visual Studio Code"). Chain observe to confirm it became frontmost.
+- write_clipboard: Set the system pasteboard to text (text param). Faster and focus-shift-immune compared to type for large/formatted text.
 
 ## Smart actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -92,6 +96,8 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
           // computer_use basic actions
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
+          // computer_use extended actions (atomic primitives)
+          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard',
           // computer_use smart actions
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements',
@@ -186,7 +192,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       targetApp: {
         type: 'string',
-        description: 'Expected target app for desktop actions. With axPath or role/name, macOS can use the background Accessibility surface.',
+        description: 'Expected target app for desktop actions. With axPath or role/name, macOS can use the background Accessibility surface. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
       },
       toX: {
         type: 'number',
@@ -198,7 +204,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       text: {
         type: 'string',
-        description: 'Text to type or text content to locate',
+        description: 'Text to type, text to locate, or text to write to clipboard (write_clipboard)',
       },
       key: {
         type: 'string',

@@ -28,6 +28,8 @@ const execFileAsync = promisify(execFile);
 type ActionType =
   | 'get_state' | 'observe' | 'get_ax_elements' | 'get_windows' | 'diagnose_app'
   | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
+  // Extended atomic primitives
+  | 'mouse_down' | 'mouse_up' | 'open_application' | 'write_clipboard'
   // Smart location actions (Playwright-powered)
   | 'locate_element' | 'locate_text' | 'locate_role'
   | 'smart_click' | 'smart_type' | 'smart_hover'
@@ -83,6 +85,9 @@ export const computerUseTool: Tool = {
 - key: Press keyboard key/shortcut. Same caveat as type — global keyboard event sent to the frontmost app. Cmd+N etc. cannot be routed via background AX; if you only need to invoke a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath instead of a global shortcut.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
+- mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
+- open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
+- write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
 
 ## Smart Actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -152,6 +157,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'diagnose_app',
           'get_windows',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
+          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
         ],
@@ -163,7 +169,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       targetApp: {
         type: 'string',
-        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost.',
+        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
       },
       y: {
         type: 'number',
@@ -220,7 +226,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       text: {
         type: 'string',
-        description: 'Text to type or text content to locate',
+        description: 'Text to type, text to locate, or text to write to clipboard (write_clipboard)',
       },
       role: {
         type: 'string',
@@ -1397,6 +1403,57 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
         return { success: false, error: `Drag requires cliclick: ${formatExecutionError(error)}` };
       }
       break;
+
+    case 'mouse_down':
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
+        return { success: false, error: 'x and y coordinates required for mouse_down' };
+      }
+      try {
+        await execFileAsync('cliclick', [`dd:${Math.round(action.x)},${Math.round(action.y)}`]);
+      } catch (error) {
+        return { success: false, error: `mouse_down requires cliclick: ${formatExecutionError(error)}` };
+      }
+      break;
+
+    case 'mouse_up':
+      if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
+        return { success: false, error: 'x and y coordinates required for mouse_up' };
+      }
+      try {
+        await execFileAsync('cliclick', [`du:${Math.round(action.x)},${Math.round(action.y)}`]);
+      } catch (error) {
+        return { success: false, error: `mouse_up requires cliclick: ${formatExecutionError(error)}` };
+      }
+      break;
+
+    case 'open_application': {
+      const appName = action.targetApp;
+      if (!appName || typeof appName !== 'string' || !appName.trim()) {
+        return { success: false, error: 'targetApp required for open_application (e.g. "Safari")' };
+      }
+      try {
+        await execFileAsync('open', ['-a', appName]);
+      } catch (error) {
+        return { success: false, error: `Failed to open application "${appName}": ${formatExecutionError(error)}` };
+      }
+      break;
+    }
+
+    case 'write_clipboard': {
+      if (typeof action.text !== 'string') {
+        return { success: false, error: 'text required for write_clipboard' };
+      }
+      try {
+        await runOsaScript([
+          'on run argv',
+          'set the clipboard to (item 1 of argv)',
+          'end run',
+        ], [action.text]);
+      } catch (error) {
+        return { success: false, error: `Failed to write clipboard: ${formatExecutionError(error)}` };
+      }
+      break;
+    }
 
     default:
       return { success: false, error: `Unknown action: ${action.action}` };

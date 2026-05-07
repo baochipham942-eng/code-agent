@@ -94,6 +94,18 @@ describe('artifactRepairSpec', () => {
     expect(formatted).toContain('Only add coverage after checks');
   });
 
+  it('classifies brittle input handling with a normalizeInput repair hint', () => {
+    const spec = createArtifactRepairSpec(summary([
+      'runSmokeTest 抛出异常: input.forEach is not a function。step() must accept string, string[], object map, and empty inputs; add normalizeInput(inputState).',
+    ]));
+
+    expect(spec.issues.map((issue) => issue.code)).toEqual(['input_normalizer_missing']);
+    expect(spec.issues[0].repairInstruction).toContain('normalizeInput');
+
+    const formatted = formatArtifactRepairSpecForPrompt(spec);
+    expect(formatted).toContain('Input normalizer template');
+  });
+
   it('classifies non-responsive canvas layout failures', () => {
     const spec = createArtifactRepairSpec(summary([
       '大型固定 canvas (800x480) 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 加 max-width/max-height/aspect-ratio/height:auto 等缩放约束。',
@@ -204,7 +216,7 @@ describe('artifactRepairSpec', () => {
 
     expect(formatted.startsWith('<artifact_repair_spec>')).toBe(true);
     expect(formatted.endsWith('</artifact_repair_spec>')).toBe(true);
-    expect(formatted.length).toBeLessThanOrEqual(3800);
+    expect(formatted.length).toBeLessThanOrEqual(1700);
     expect(formatted).toContain('"missing_test_contract"');
   });
 });

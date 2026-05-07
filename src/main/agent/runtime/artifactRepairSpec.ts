@@ -1,4 +1,5 @@
 import type { GameArtifactValidationSummary } from './gameArtifactValidator';
+import { REPAIR_PROMPT_LIMITS } from '../../../shared/constants/repair';
 
 export type ArtifactRepairIssueSeverity = 'error' | 'warning';
 
@@ -16,6 +17,7 @@ export type ArtifactRepairIssueCode =
   | 'smoke_missing_coverage'
   | 'shortcut_state_mutation'
   | 'coverage_without_runtime_evidence'
+  | 'input_normalizer_missing'
   | 'run_smoke_failed'
   | 'html_incomplete'
   | 'trailing_after_html'
@@ -53,11 +55,13 @@ interface FailureClassification {
   repairInstruction: string;
 }
 
-const MAX_EVIDENCE_LENGTH = 280;
-const MAX_PROMPT_ISSUES = 8;
-const MAX_PROMPT_CHARS = 3600;
+const {
+  MAX_EVIDENCE_LENGTH,
+  MAX_PROMPT_ISSUES,
+  MAX_PROMPT_CHARS,
+} = REPAIR_PROMPT_LIMITS;
 
-function compactText(value: string, maxLength = MAX_EVIDENCE_LENGTH): string {
+function compactText(value: string, maxLength: number = MAX_EVIDENCE_LENGTH): string {
   const text = value.replace(/\s+/g, ' ').trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
@@ -178,6 +182,12 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Remove test-only shortcuts from step(); step() must advance the same input, physics, collision, reward, hazard, and progression rules that the playable game uses.',
     };
   }
+  if (/input\.forEach is not a function|forEach is not a function|normalizeInput|step\(inputState, frames\?\).*string\[\]|step\(\) must accept string|string\[\].*object map|object map.*empty inputs/i.test(text)) {
+    return {
+      code: 'input_normalizer_missing',
+      repairInstruction: 'Add a small normalizeInput(inputState) helper used by step() and runSmokeTest(). It must safely convert string input, string[] input, object map input, null, and empty input into one stable pressed-key map before any forEach/key checks.',
+    };
+  }
   if (/把对象存在|机制注册|覆盖声明当成通过证据|直接授予能力|直接修改.*(?:进度|分数|关卡|胜利|解锁)|不能证明玩家实际触发|不能证明玩家能用真实输入完成|真实流程里获得/i.test(text)) {
     return {
       code: 'coverage_without_runtime_evidence',
@@ -237,7 +247,7 @@ export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRep
   if (!text.trim()) return [];
   const issueCodes = new Set<ArtifactRepairIssueCode>();
   const directCodePattern =
-    /\b(lost_interactive_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|missing_test_contract|malformed_test_contract|missing_snapshot_metric|non_executable_reachability_input|control_no_state_change|level_coverage_incomplete|smoke_missing_coverage|shortcut_state_mutation|coverage_without_runtime_evidence|run_smoke_failed|html_incomplete|trailing_after_html|canvas_not_responsive|missing_gameplay_mechanics|gameplay_mechanics_without_runtime_evidence|ability_gate_without_reachability|missing_user_input|missing_controls_metadata|missing_coverage_metadata|missing_reachability_metadata|missing_quality_metadata|frontend_visual_smoke_failed|generic_validation_failure)\b/g;
+    /\b(lost_interactive_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|missing_test_contract|malformed_test_contract|missing_snapshot_metric|non_executable_reachability_input|control_no_state_change|level_coverage_incomplete|smoke_missing_coverage|shortcut_state_mutation|coverage_without_runtime_evidence|input_normalizer_missing|run_smoke_failed|html_incomplete|trailing_after_html|canvas_not_responsive|missing_gameplay_mechanics|gameplay_mechanics_without_runtime_evidence|ability_gate_without_reachability|missing_user_input|missing_controls_metadata|missing_coverage_metadata|missing_reachability_metadata|missing_quality_metadata|frontend_visual_smoke_failed|generic_validation_failure)\b/g;
 
   for (const match of text.matchAll(directCodePattern)) {
     issueCodes.add(match[1] as ArtifactRepairIssueCode);
@@ -248,7 +258,7 @@ export function inferArtifactRepairIssueCodesFromText(text: string): ArtifactRep
     .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
     .filter(Boolean)
     .filter((line) =>
-      /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|platformer|stompable|comboChallenge|requiresAbility|blocksAccessTo|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i.test(line),
+      /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|platformer|stompable|comboChallenge|requiresAbility|blocksAccessTo|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i.test(line),
     );
 
   for (const line of candidateLines.length > 0 ? candidateLines : [text]) {
@@ -332,6 +342,8 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
       return 'Test contract mutates gameplay state through shortcuts.';
     case 'coverage_without_runtime_evidence':
       return 'Smoke coverage is claimed without runtime evidence.';
+    case 'input_normalizer_missing':
+      return 'Input normalization is missing or brittle.';
     case 'run_smoke_failed':
       return 'Runtime smoke execution failed.';
     case 'missing_user_input':
@@ -366,7 +378,7 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   }
   if (issues.some((issue) => issue.code === 'missing_snapshot_metric' || issue.code === 'non_executable_reachability_input' || issue.code === 'control_no_state_change')) {
     hints.push(
-      'Reachability repair template: snapshot() exposes player.x/player.vy/enemiesDefeated/blocksUsed/abilities.doubleJump/gatesUnlocked/routesUnlocked; progressPlan uses only exact snapshot paths. Do not assert score/progress/win/gate/ability changes after generic movement.',
+      'Reachability repair template: use exact snapshot paths; Do not assert score/progress/win/gate/ability changes after generic movement. Missing metric "progress" should become player.x/player.y/player.vy unless progress is real.',
       'Reachability inputs must be real dispatchable controls from metadata, for example "ArrowRight", "Space", or ["ArrowRight", "Space"]; never "move", "jump", "combo", "progress", or "none".',
       'Either change the metric to a local movement field or adjust the scenario layout so the reward/gate is reached deterministically through live collision.',
     );
@@ -376,6 +388,11 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
       'Runtime evidence must come from start/reset/step/snapshot using the same physics, collision, reward, hazard, and progression code that the player uses; do not grant abilities, collect rewards, move levels, or mark wins directly inside step() or runSmokeTest().',
       'Do not use fallback coverage like enemy_present, spikes_present, ability treat exists, door reachable, mechanics registered, or object exists. If the player cannot trigger it, change the level layout, collision size, spawn path, or smoke input path until a before/after snapshot proves the state change.',
       'Only add coverage after checks such as lives decreased, score increased from a stomp, ability changed from false to true, treatsCollected increased, level/mode changed through door rules, or player coordinates changed after dispatched controls.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'input_normalizer_missing')) {
+    hints.push(
+      'Input normalizer template: convert string, string[], object map, null, and empty input to one pressed-key map before step() checks keys or calls forEach.',
     );
   }
   if (issues.some((issue) => issue.code === 'canvas_not_responsive')) {
@@ -390,15 +407,14 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   }
   if (issues.some((issue) => issue.code === 'missing_gameplay_mechanics')) {
     hints.push(
-      'Platformer metadata template: __GAME_META__.gameplayMechanics = { enemies: [{ id: "goomba-1", stompable: true, defeatReward: "bounceCoin" }], blocks: [{ id: "q1", type: "question", bumpableFromBelow: true, reward: "doubleJump", usedState: "empty" }], abilities: [{ id: "doubleJump", type: "doubleJump", acquiredFrom: "q1", effect: "second air jump", unlocksRoute: "upper-route" }], gates: [{ id: "upper-gap", requiresAbility: "doubleJump", blocksAccessTo: "upper-route" }], comboChallenge: [{ id: "combo", requires: ["jump", "stomp", "bumpBlock", "doubleJump"], target: "upper-route" }] }; every field is an array even with one item, never an object map.',
-      'Implement collision code: stomp marks enemy defeated and bounces player.vy; bump marks block used and spawns the ability; ability changes movement; gate checks ability before route access.',
+      'Platformer metadata template: __GAME_META__.gameplayMechanics arrays only, never an object map; include stomp enemy, bump block, ability, reachableTarget gate, and comboChallenge.',
+      'Implement collision code: stomp enemy -> enemiesDefeated/player.vy, bump block -> spawnedReward, ability false->true, gate -> reachableTarget or routeReachable.',
     );
   }
   if (issues.some((issue) => issue.code === 'gameplay_mechanics_without_runtime_evidence' || issue.code === 'ability_gate_without_reachability')) {
     hints.push(
-      'Platformer runSmokeTest template: snapshot before, step() to stomp an enemy and assert enemiesDefeated plus player.vy/bounce; step() to bump a question block and assert blocksUsed/spawnedReward; step() to collect ability and assert abilities.doubleJump false->true; then assert routeReachable or gates.upperRoute changes after ability.',
-      'Coverage must name the proven mechanics only after assertions pass, for example coverage.mechanics = ["stompEnemy", "bumpBlock", "gainAbility", "unlockGate", "comboChallenge"]; coverage.rewards = ["defeatReward", "blockAbility"]; coverage.stateChanges = ["enemiesDefeated", "player.vy", "blocksUsed", "spawnedReward", "abilities.doubleJump", "gates.upperRoute", "routeReachableAfterAbility"].',
-      'If the smoke path says Failed to bump/stomp or gate remained locked, move the block/enemy/gate into the deterministic smoke path or add a helper path inside real physics controls; do not mark coverage true until snapshot proves the state changed.',
+      'Smoke template: snapshot before/after real step() calls, then prove stompEnemy, bumpBlock, gainAbility, unlockGate, comboChallenge only after assertions pass.',
+      'If smoke says "Failed to bump block", "Failed to stomp enemy", or gate remained locked, move block/enemy/gate into a reachable real-controls path before claiming coverage.',
     );
   }
   return hints;
@@ -437,26 +453,30 @@ export function createArtifactRepairSpec(summary: GameArtifactValidationSummary)
 
 export function formatArtifactRepairSpecForPrompt(spec: ArtifactRepairSpec): string {
   const repairHints = buildRepairHints(spec.issues);
-  const payload = {
-    kind: spec.kind,
-    summary: spec.summary,
-    issues: spec.issues.slice(0, MAX_PROMPT_ISSUES).map((issue) => ({
-      code: issue.code,
-      severity: issue.severity,
-      message: issue.message,
-      evidence: issue.evidence.slice(0, 3),
-      repairInstruction: issue.repairInstruction,
-    })),
-    ...(repairHints.length > 0 ? { repairHints } : {}),
-    mustFix: spec.mustFix.slice(0, MAX_PROMPT_ISSUES),
-    allowedEditScope: spec.allowedEditScope,
-    nextAction: spec.nextAction,
-  };
+  const lines = [
+    `kind: ${spec.kind}`,
+    `summary: ${compactText(spec.summary, 180)}`,
+  ];
+  if (repairHints.length > 0) {
+    lines.push('hints:');
+    for (const hint of repairHints.slice(0, 4)) {
+      lines.push(`- ${compactText(hint, 200)}`);
+    }
+  }
+  lines.push('issues:');
+  for (const issue of spec.issues.slice(0, MAX_PROMPT_ISSUES)) {
+    lines.push(`- code: ${JSON.stringify(issue.code)}`);
+    lines.push(`  message: ${compactText(issue.message, 90)}`);
+    lines.push(`  fix: ${compactText(issue.repairInstruction, 180)}`);
+    if (issue.evidence.length > 0) {
+      lines.push(`  evidence: ${compactText(issue.evidence.slice(0, 1).join(' | '), 120)}`);
+    }
+  }
 
-  const json = JSON.stringify(payload, null, 2);
-  const body = json.length <= MAX_PROMPT_CHARS
-    ? json
-    : `${json.slice(0, MAX_PROMPT_CHARS - 80).trimEnd()}\n  \"truncated\": true\n}`;
+  const compact = lines.join('\n');
+  const body = compact.length <= MAX_PROMPT_CHARS
+    ? compact
+    : `${compact.slice(0, MAX_PROMPT_CHARS - 32).trimEnd()}\ntruncated: true`;
 
   return `<artifact_repair_spec>\n${body}\n</artifact_repair_spec>`;
 }

@@ -16,6 +16,7 @@
 
 import { readFile } from 'fs/promises';
 
+import type { BrowserVisualSmokeSummary } from '../../browser/types';
 import type {
   DashboardArtifactInput,
   DashboardCheckResult,
@@ -27,6 +28,7 @@ import type {
   DashboardSubtypeChecker,
 } from '../types';
 import { HTML_PROBES } from './htmlProbes';
+import { BROWSER_PROBES } from './browserProbes';
 
 // ---------------------------------------------------------------------------
 // Predicate evaluation
@@ -85,11 +87,12 @@ async function evaluateImperative(
 export class GeneralDashboardChecker implements DashboardSubtypeChecker {
   readonly subtype = 'general';
   /**
-   * Probe 顺序：declarative HTML 类（cheap，文本 regex）在前，PR-D/E 加的
-   * imperative browser 类（贵，要 launch Playwright）在后。顺序不影响判定，
-   * 但保留对调试输出更直观。
+   * Probe 顺序：declarative HTML 类（cheap，文本 regex）在前，imperative
+   * browser 类（贵，要 launch Playwright）在后。顺序不影响判定，但保留对
+   * 调试输出更直观。PR-E 加的 anti-Potemkin probe 会接在 BROWSER_PROBES
+   * 之后。
    */
-  readonly probes: readonly DashboardProbeDeclaration[] = [...HTML_PROBES];
+  readonly probes: readonly DashboardProbeDeclaration[] = [...HTML_PROBES, ...BROWSER_PROBES];
 
   async validate(input: DashboardArtifactInput): Promise<DashboardCheckResult> {
     const hasDeclarative = this.probes.some((p) => p.kind === 'declarative');
@@ -125,11 +128,26 @@ export class GeneralDashboardChecker implements DashboardSubtypeChecker {
       .filter((r) => !r.passed && r.failure)
       .map((r) => r.failure as string);
 
+    // 把 browser_visual_smoke probe 的 BrowserVisualSmokeSummary 提到顶层
+    // 字段，给上游 repair prompt / 调试用。Diagnostics 里仍保留一份冗余。
+    const browserVisualSmoke = extractBrowserVisualSmoke(probeResults);
+
     return {
       passed: probeResults.every((r) => r.passed),
       probes: probeResults,
       failures,
       subtype: this.subtype,
+      ...(browserVisualSmoke ? { browserVisualSmoke } : {}),
     };
   }
+}
+
+function extractBrowserVisualSmoke(
+  results: readonly DashboardProbeResult[],
+): BrowserVisualSmokeSummary | undefined {
+  const result = results.find((r) => r.probe === 'browser_visual_smoke');
+  const summary = result?.diagnostics?.browserVisualSmoke;
+  if (!summary || typeof summary !== 'object') return undefined;
+  // 弱类型边界 — runtime 拿不到原 generic 信息，强 cast 给上游。
+  return summary as BrowserVisualSmokeSummary;
 }

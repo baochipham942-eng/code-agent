@@ -7,10 +7,22 @@
 // 用 tmpdir + writeFile 当 fixture，afterEach 清理。
 // ============================================================================
 
-import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+
+// PR-D 起 GeneralDashboardChecker 含 imperative browser probe；这里只关心
+// declarative html probe 的行为，mock 掉 browser 让它总 pass，避免污染 result。
+vi.mock('../../../../../src/main/agent/runtime/browser/visualSmoke', () => ({
+  runBrowserVisualSmoke: vi.fn().mockResolvedValue({
+    attempted: true,
+    passed: true,
+    failures: [],
+    checks: ['mocked smoke passed'],
+  }),
+  DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS: 10000,
+}));
 
 import {
   HTML_COMPLETE_PROBE,
@@ -144,7 +156,13 @@ describe('GeneralDashboardChecker handles missing file', () => {
   it('marks all declarative probes as failed when file does not exist', async () => {
     const result = await checker.validate({ filePath: '/tmp/nonexistent-dashboard-fixture-xyz.html' });
     expect(result.passed).toBe(false);
-    expect(result.probes.every((p) => !p.passed)).toBe(true);
-    expect(result.failures.every((f) => /无法读取 dashboard artifact/.test(f))).toBe(true);
+    // declarative probes 因为 file missing 全部 fail；imperative browser_visual_smoke
+    // 走 mocked path 仍 pass（probe 不读 file，自己 launch）。所以分别断言。
+    const declarativeIds = HTML_PROBES.map((p) => p.id);
+    const declarativeResults = result.probes.filter((p) => declarativeIds.includes(p.probe));
+    expect(declarativeResults.length).toBe(HTML_PROBES.length);
+    expect(declarativeResults.every((p) => !p.passed)).toBe(true);
+    // declarative probe 的 failure 都来自 read error
+    expect(declarativeResults.every((p) => /无法读取 dashboard artifact/.test(p.failure ?? ''))).toBe(true);
   });
 });

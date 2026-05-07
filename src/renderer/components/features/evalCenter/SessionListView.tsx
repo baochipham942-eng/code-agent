@@ -63,6 +63,10 @@ export function matchesReviewQueueAssetQuery(item: ReviewQueueItem, query: strin
     item.failureAsset?.title,
     item.failureAsset?.body,
     item.failureAsset ? getReviewQueueFailureAssetStatusLabel(item.failureAsset.status) : null,
+    item.deliveryReview?.summary,
+    item.deliveryReview?.status,
+    item.deliveryReview?.score,
+    item.deliveryReview?.issueCodes.join(' '),
   ], query);
 }
 
@@ -71,6 +75,15 @@ export function buildReviewQueueFollowupPrompt(item: ReviewQueueItem): string {
     ? getReviewQueueFailureCapabilityLabel(item.failureCapability)
     : null;
   const reviewComment = item.failureAsset?.body || item.failureCapability?.summary || '';
+  const deliveryReview = item.deliveryReview
+    ? [
+        `- 交付评审：${item.deliveryReview.status} · ${item.deliveryReview.score}`,
+        `- 评审摘要：${item.deliveryReview.summary}`,
+        item.deliveryReview.issueCodes.length > 0
+          ? `- 问题码：${item.deliveryReview.issueCodes.join(', ')}`
+          : null,
+      ].filter(Boolean).join('\n')
+    : '';
   const lines = [
     '继续处理 Review Queue 里的这一条：',
     `- 会话：${item.sessionTitle}`,
@@ -78,6 +91,7 @@ export function buildReviewQueueFollowupPrompt(item: ReviewQueueItem): string {
     `- 原因：${getReviewQueueReasonLabel(item.reason)}`,
     `- 来源：${getReviewQueueSourceLabel(item.enqueueSource ?? item.source)}`,
     capabilityLabel ? `- 归因：${capabilityLabel}` : null,
+    deliveryReview,
     reviewComment ? `- 评论：${reviewComment}` : null,
     '请先打开对应 replay 或会话核对证据，再做下一轮最小处理；能直接修就改必要文件并验证，不能修就写清阻塞点。',
   ];
@@ -322,7 +336,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                   </span>
                 </div>
                 <div className="mt-1 text-[10px] text-zinc-600">
-                  当前支持手动加入、Replay Failure Follow-up，也能把评论带回下一轮 prompt。
+                  当前支持手动加入、Replay Failure Follow-up 和 Delivery Review。
                 </div>
 
                 {reviewQueueLoading ? (
@@ -370,6 +384,14 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                                 <span>·</span>
                                 <span className="text-amber-500">
                                   {getReviewQueueFailureCapabilityLabel(item.failureCapability)}
+                                </span>
+                              </>
+                            )}
+                            {item.deliveryReview && (
+                              <>
+                                <span>·</span>
+                                <span className="text-cyan-500">
+                                  {item.deliveryReview.status} · {item.deliveryReview.score}
                                 </span>
                               </>
                             )}

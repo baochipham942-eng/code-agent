@@ -19,10 +19,19 @@ import type {
   EnqueueReviewItemInput,
   UpdateReviewQueueFailureCapabilityAssetInput,
 } from '../../shared/contract/reviewQueue';
+import type { RunDeliveryReviewInput } from '../../shared/contract/scenarioAcceptance';
+import type {
+  CreatePreviewFeedbackInput,
+  ListPreviewFeedbackInput,
+  SendPreviewFeedbackToChatInput,
+  UpdatePreviewFeedbackStatusInput,
+} from '../../shared/contract/previewFeedback';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 import { getReviewQueueService } from '../evaluation/reviewQueueService';
+import { getDeliveryReviewService } from '../evaluation/deliveryReviewService';
+import { getPreviewFeedbackService } from '../evaluation/previewFeedbackService';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -126,6 +135,8 @@ function updateExperimentSummaryMerged(
 export function registerEvaluationHandlers(): void {
   const service = EvaluationService.getInstance();
   const reviewQueueService = getReviewQueueService();
+  const deliveryReviewService = getDeliveryReviewService();
+  const previewFeedbackService = getPreviewFeedbackService();
 
   // 执行评测
   ipcMain.handle(
@@ -319,6 +330,49 @@ export function registerEvaluationHandlers(): void {
     async (_event, payload: UpdateReviewQueueFailureCapabilityAssetInput) => {
       logger.info(`Update review failure asset: ${payload.reviewItemId} -> ${payload.status}`);
       return reviewQueueService.updateFailureAssetStatus(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.SCENARIO_SKILLS_LIST,
+    async () => {
+      return deliveryReviewService.listScenarioSkills();
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.DELIVERY_REVIEW_RUN,
+    async (_event, payload: RunDeliveryReviewInput) => {
+      logger.info(`Run delivery review for session: ${payload.sessionId}`);
+      return deliveryReviewService.run(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.PREVIEW_FEEDBACK_LIST,
+    async (_event, payload: ListPreviewFeedbackInput) => {
+      return previewFeedbackService.list(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.PREVIEW_FEEDBACK_CREATE,
+    async (_event, payload: CreatePreviewFeedbackInput) => {
+      return previewFeedbackService.create(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS,
+    async (_event, payload: UpdatePreviewFeedbackStatusInput) => {
+      return previewFeedbackService.updateStatus(payload);
+    },
+  );
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.PREVIEW_FEEDBACK_SEND_TO_CHAT,
+    async (_event, payload: SendPreviewFeedbackToChatInput) => {
+      return previewFeedbackService.buildChatContext(payload);
     },
   );
 

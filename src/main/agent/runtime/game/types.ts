@@ -1,12 +1,7 @@
 /**
  * Game acceptance — public interfaces.
  *
- * 三层 dispatch 架构（详见 docs/audits/2026-05-07-game-acceptance-architecture.md §5.1）:
- *
- *   Layer A: ArtifactKindVerifier      — TS hard dispatch by artifact kind
- *     ├── GameVerifier (kind='game')   — 进 Layer B 的入口
- *     ├── DeckVerifier (kind='slide-deck')
- *     └── ...
+ * 两层 dispatch 架构：
  *
  *   Layer B: GameSubtypeChecker        — 每个游戏 subtype（platformer / runner / tower-defense）
  *                                        通过 GameSubtypeRegistry 注册自己
@@ -14,42 +9,21 @@
  *   Layer C: VerbDeclaration           — declarative probes（§4.4 verb taxonomy），
  *                                        validator runtime 读取并驱动
  *
- * 本文件**只**定义类型契约，不带任何实现。Phase 2 platformer 迁移在 task C。
+ * 顶层 dispatch（"Layer A: ArtifactKindVerifier"）的接口曾经声明在此文件，
+ * 但从未有任何类 implements。生产路径走的是 validateGameArtifact 自由函数
+ * （src/main/agent/runtime/gameArtifactValidator.ts），deck 那边自己一套
+ * DeckVerifier 类。两边形态分歧到无法共用同一接口。详见
+ * docs/decisions/016-no-cross-kind-verifier-interface.md。
  */
 
 import type { ARTIFACT_KINDS, VERB_CLASSES } from '@shared/constants';
 
 // ---------------------------------------------------------------------------
-// Artifact kinds & top-level dispatcher
+// Artifact kinds
 // ---------------------------------------------------------------------------
 
-/** Layer A 维度 — 顶层 artifact kind，配合 hard dispatch 使用 */
+/** ArtifactKind — 顶层 artifact 类型枚举（被 skill-loader 等消费） */
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
-
-/**
- * Layer A 的 dispatch 节点 — 每个 ArtifactKind 提供一个 verifier。
- *
- * 实现责任：
- * - canHandle: 看 artifact 的元信息（hint / extension / inferred kind），决定是否归我
- * - validate: 跑三层验证（L1 静态 / L2 运行时 / L3 行为），返回结构化结果
- */
-export interface ArtifactKindVerifier {
-  readonly kind: ArtifactKind;
-  canHandle(artifact: ArtifactInput): boolean;
-  validate(artifact: ArtifactInput, ctx: VerifyContext): Promise<VerifyResult>;
-}
-
-/**
- * Game 特化 — 在 ArtifactKindVerifier 之上挂 subtype dispatcher。
- *
- * 实现责任：
- * - getSubtypeChecker: 从 registry 查 subtype（'platformer' / 'runner' / ...）
- * - 调用方在 validate 内部按 subtype 调对应 GameSubtypeChecker
- */
-export interface GameVerifier extends ArtifactKindVerifier {
-  readonly kind: 'game';
-  getSubtypeChecker(subtype: string): GameSubtypeChecker | undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Layer B: Subtype checker — plug-in point
@@ -201,44 +175,11 @@ export interface SmokeResult {
 }
 
 // ---------------------------------------------------------------------------
-// Verifier I/O
+// Subtype checker I/O
 // ---------------------------------------------------------------------------
 
 /**
- * Validator 入口拿到的 artifact 描述 — 不强行限制成 file path，
- * 也允许内存里的字符串内容（生成阶段先验证再落盘）。
- */
-export interface ArtifactInput {
-  /** 推断或显式声明的 kind（来自触发器） */
-  kind: ArtifactKind;
-  /** game 特化字段 — subtype hint，可选 */
-  subtype?: string;
-  /** 文件路径（落盘后） */
-  filePath?: string;
-  /** 原始内容（生成阶段优先用这个，避免反复读文件） */
-  content?: string;
-  /** 额外元信息（任务 brief 解析出来的 metadata） */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Validator 上下文 — 跨层共享的执行环境：临时目录、超时、验证开关。
- */
-export interface VerifyContext {
-  /** 临时工作目录（验证产物放这里） */
-  workspaceDir: string;
-  /** 整体超时（ms） */
-  timeoutMs: number;
-  /** L2 运行时 smoke 开关 */
-  runRuntimeSmoke: boolean;
-  /** L3 浏览器 smoke 开关 */
-  runBrowserSmoke: boolean;
-  /** 当前 acceptance 轮次（用于 monotonicity gate） */
-  attempt?: number;
-}
-
-/**
- * Subtype checker 的执行上下文 — 比 VerifyContext 多一些 subtype-aware 信息。
+ * Subtype checker 的执行上下文 — artifact 标识 + 严格模式 + 自由 metadata。
  */
 export interface SubtypeContext {
   /** 用于错误提示的 artifact 标识（filePath 或 hash） */
@@ -247,24 +188,6 @@ export interface SubtypeContext {
   strict: boolean;
   /** subtype-level 元信息 — SubtypeChecker 自己塞 */
   metadata?: Record<string, unknown>;
-}
-
-/**
- * 顶层验证结果 — 三层结果折叠成一个，供 acceptance 流程做 best-of-N 排序用。
- */
-export interface VerifyResult {
-  /** 总体是否通过 */
-  passed: boolean;
-  /** 每层失败 reason 列表（L1+L2+L3 合并展示给 LLM repair） */
-  failures: readonly string[];
-  /** 通过的检查 — 用于 monotonicity gate 比对 */
-  checks: readonly string[];
-  /** 子 subtype 名（如有） */
-  subtype?: string;
-  /** L1 mechanics 结果（subtype checker 给的） */
-  mechanics?: MechanicsResult;
-  /** L2 / L3 runtime 结果 */
-  runtime?: RuntimeEvidenceResult;
 }
 
 /**

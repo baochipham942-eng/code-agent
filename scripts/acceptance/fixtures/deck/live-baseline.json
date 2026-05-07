@@ -1,0 +1,28 @@
+{
+  "recorded_at": "2026-05-07T14:01:20.016Z",
+  "git_head": "960a7f68",
+  "source": {
+    "slides_path": "scripts/acceptance/fixtures/deck/live-slides.json",
+    "pptx_path": null
+  },
+  "fixture": {
+    "slide_count": 6
+  },
+  "zip": null,
+  "schema": {
+    "total": 6,
+    "valid": 6,
+    "errors": []
+  },
+  "narrative": {
+    "total_slides": 6,
+    "issue_count": 0,
+    "issue_types": []
+  },
+  "verifier": {
+    "passed": true,
+    "subtype": "general",
+    "failed_probes": [],
+    "failures": []
+  }
+}

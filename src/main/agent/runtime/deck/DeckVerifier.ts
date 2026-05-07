@@ -1,9 +1,10 @@
 /**
  * DeckVerifier — Phase 4 PR-2 step 4.
  *
- * 顶层 L1 入口，类似 src/main/agent/runtime/game/GameVerifier 但 deck 的版本
- * **不让自己 extends ArtifactKindVerifier**：先自闭，PR-4 在 game+deck 都跑
- * 通后再决定顶层接口签名（兑现 audit doc §6 Phase 4 「2+ kind 跑通才抽顶层」）。
+ * Deck artifact 顶层入口。Game 那边走的是 validateGameArtifact 自由函数，
+ * deck 这边走类 + subtype dispatch。两边形态分歧到无法共用同一接口，
+ * 因此 DeckVerifier 不 extends 任何跨 kind 顶层接口（详见
+ * docs/decisions/016-no-cross-kind-verifier-interface.md）。
  *
  * 职责：
  * - 接受 DeckArtifactInput + 可选 subtype（默认 'general'）
@@ -11,8 +12,7 @@
  * - 找不到 → 返回 passed=false 的 result（保留 failure 信息给上游）
  * - 找到 → 委派 checker.validate(deck)
  *
- * 故意不引入 throw — verifier 应当是纯产物，error 进 result.failures。
- * 这跟 game/GameVerifier 的非破坏性约定一致。
+ * 故意不 throw — verifier 应当是纯产物，error 进 result.failures。
  */
 
 import type { DeckArtifactInput, DeckCheckResult } from './types';

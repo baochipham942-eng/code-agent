@@ -813,13 +813,15 @@ describe('validateGameArtifact', () => {
     expect(result.failures.some((failure) => failure.includes('gate 必须在获得技能后改变'))).toBe(true);
   });
 
-  it('skips browser visual smoke without failing when system Chrome is unavailable', async () => {
+  it('skips browser visual smoke without failing when system Chrome is unavailable and desktop fallback is disabled', async () => {
     const oldChromePath = process.env.CHROME_PATH;
     const oldSystemChromePath = process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
     const oldBrowserProvider = process.env.CODE_AGENT_BROWSER_PROVIDER;
+    const oldComputerFallback = process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
     process.env.CHROME_PATH = '';
     process.env.CODE_AGENT_SYSTEM_CHROME_PATH = '/not/a/real/chrome';
     process.env.CODE_AGENT_BROWSER_PROVIDER = 'system-chrome-cdp';
+    process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = '0';
 
     try {
       const filePath = await writeTempHtml(minimalCanvasGameHtml(`
@@ -850,6 +852,8 @@ describe('validateGameArtifact', () => {
       else process.env.CODE_AGENT_SYSTEM_CHROME_PATH = oldSystemChromePath;
       if (typeof oldBrowserProvider === 'undefined') delete process.env.CODE_AGENT_BROWSER_PROVIDER;
       else process.env.CODE_AGENT_BROWSER_PROVIDER = oldBrowserProvider;
+      if (typeof oldComputerFallback === 'undefined') delete process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
+      else process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = oldComputerFallback;
     }
   });
 
@@ -857,9 +861,11 @@ describe('validateGameArtifact', () => {
     const oldChromePath = process.env.CHROME_PATH;
     const oldSystemChromePath = process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
     const oldBrowserProvider = process.env.CODE_AGENT_BROWSER_PROVIDER;
+    const oldComputerFallback = process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
     process.env.CHROME_PATH = '';
     process.env.CODE_AGENT_SYSTEM_CHROME_PATH = '/not/a/real/chrome';
     process.env.CODE_AGENT_BROWSER_PROVIDER = 'system-chrome-cdp';
+    process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = '0';
 
     try {
       const filePath = await writeTempHtml(`
@@ -909,6 +915,8 @@ describe('validateGameArtifact', () => {
       else process.env.CODE_AGENT_SYSTEM_CHROME_PATH = oldSystemChromePath;
       if (typeof oldBrowserProvider === 'undefined') delete process.env.CODE_AGENT_BROWSER_PROVIDER;
       else process.env.CODE_AGENT_BROWSER_PROVIDER = oldBrowserProvider;
+      if (typeof oldComputerFallback === 'undefined') delete process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
+      else process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = oldComputerFallback;
     }
   });
 

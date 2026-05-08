@@ -10,6 +10,8 @@ import {
 } from '../../../services/infra/browserProvider';
 import type { BrowserVisualSmokeSummary, BrowserVisualSmokeDiagnostics } from './types';
 import { waitForCdpEndpoint, stopChromeProcess } from './chromeProcess';
+import { loadPlaywrightChromium } from './playwrightRuntime';
+import { runComputerUseVisualFallback } from './computerUseVisualFallback';
 
 export const DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS = 10000;
 
@@ -30,6 +32,9 @@ export function cloneBrowserVisualSmoke(summary: BrowserVisualSmokeSummary): Bro
           ...summary.diagnostics,
           consoleErrors: summary.diagnostics.consoleErrors ? [...summary.diagnostics.consoleErrors] : undefined,
           pageErrors: summary.diagnostics.pageErrors ? [...summary.diagnostics.pageErrors] : undefined,
+          computerUseFallback: summary.diagnostics.computerUseFallback
+            ? { ...summary.diagnostics.computerUseFallback }
+            : undefined,
           viewports: summary.diagnostics.viewports
             ? summary.diagnostics.viewports.map((viewport) => ({ ...viewport }))
             : undefined,
@@ -44,15 +49,10 @@ export async function runBrowserVisualSmoke(
 ): Promise<BrowserVisualSmokeSummary> {
   const resolution = resolveBrowserProvider();
   if (resolution.provider === 'system-chrome-cdp' && (resolution.missingExecutable || !resolution.systemExecutable)) {
-    return {
-      attempted: false,
-      skipped: true,
-      passed: true,
-      failures: [],
-      checks: [
-        `browser visual smoke skipped: ${resolution.recommendedAction || 'System Chrome executable is missing.'}`,
-      ],
-    };
+    return runComputerUseVisualFallback(
+      filePath,
+      resolution.recommendedAction || 'System Chrome executable is missing.',
+    );
   }
 
   const checks: string[] = [];
@@ -71,7 +71,14 @@ export async function runBrowserVisualSmoke(
   let stderr = '';
 
   try {
-    const { chromium } = await import('playwright');
+    const playwright = await loadPlaywrightChromium();
+    if (!playwright.ok || !playwright.chromium) {
+      return runComputerUseVisualFallback(
+        filePath,
+        playwright.error || 'Playwright package unavailable.',
+      );
+    }
+    const { chromium } = playwright;
     const startedAt = Date.now();
     const remaining = () => Math.max(1200, timeoutMs - (Date.now() - startedAt));
     let page: import('playwright').Page;

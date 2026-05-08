@@ -534,11 +534,18 @@ function buildArtifactRepairValidationFailureHistory(
   const browserVisualSmokeObject = browserVisualSmoke && typeof browserVisualSmoke === 'object'
     ? (browserVisualSmoke as {
         attempted?: unknown;
-        passed?: unknown;
-        skipped?: unknown;
-        checks?: unknown;
-        failures?: unknown;
-      })
+      passed?: unknown;
+      skipped?: unknown;
+      checks?: unknown;
+      failures?: unknown;
+      diagnostics?: unknown;
+    })
+    : null;
+  const browserVisualSmokeDiagnostics = browserVisualSmokeObject?.diagnostics && typeof browserVisualSmokeObject.diagnostics === 'object'
+    ? browserVisualSmokeObject.diagnostics as { computerUseFallback?: unknown }
+    : null;
+  const computerUseFallback = browserVisualSmokeDiagnostics?.computerUseFallback && typeof browserVisualSmokeDiagnostics.computerUseFallback === 'object'
+    ? browserVisualSmokeDiagnostics.computerUseFallback as { screenshotPath?: unknown; frontmostApp?: unknown }
     : null;
   const frontendEvidence: string[] = browserVisualSmokeObject
     ? [
@@ -553,7 +560,11 @@ function buildArtifactRepairValidationFailureHistory(
             ? browserVisualSmokeObject.failures.filter((failure: unknown): failure is string => typeof failure === 'string').slice(0, 2)
             : []
         ).map((failure: string) => `Frontend failure: ${failure}`),
+        computerUseFallback
+          ? `Frontend Computer Use fallback: screenshot=${typeof computerUseFallback.screenshotPath === 'string' ? computerUseFallback.screenshotPath : '(none)'}, frontmost=${typeof computerUseFallback.frontmostApp === 'string' ? computerUseFallback.frontmostApp : '(unknown)'}`
+          : null,
       ]
+        .filter((line): line is string => typeof line === 'string')
     : [];
   const targetFile = typeof rollback?.targetFile === 'string'
     ? rollback.targetFile

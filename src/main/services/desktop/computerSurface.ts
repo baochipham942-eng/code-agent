@@ -112,6 +112,10 @@ const BACKGROUND_UNAVAILABLE_SAFETY_NOTE =
   '当前平台没有可用的 Computer Surface 后台或前台执行器。';
 const BACKGROUND_AX_ACTIONS = new Set(['click', 'doubleClick', 'type']);
 const BACKGROUND_CGEVENT_ACTIONS = new Set(['click', 'doubleClick', 'rightClick']);
+// Actions whose semantic IS to launch / activate the target app — must bypass
+// the running + frontmost gates because their goal is precisely to make the
+// target app start running and become frontmost.
+const LAUNCH_ACTIONS = new Set(['open_application']);
 
 class DesktopComputerSurface {
   private readonly id = 'default-computer-surface';
@@ -656,7 +660,7 @@ class DesktopComputerSurface {
       };
     }
 
-    if (mode === 'foreground_fallback' && action.targetApp) {
+    if (mode === 'foreground_fallback' && action.targetApp && !LAUNCH_ACTIONS.has(action.action)) {
       const frontmostApp = before.appName || null;
       if (!frontmostApp || !sameAppName(frontmostApp, action.targetApp)) {
         const current = frontmostApp || 'unknown frontmost app';
@@ -851,7 +855,7 @@ class DesktopComputerSurface {
       };
     }
 
-    if (action.targetApp) {
+    if (action.targetApp && !LAUNCH_ACTIONS.has(action.action)) {
       const targetStatus = await this.getTargetAppProcessStatus(action.targetApp);
       if (targetStatus.permissionDenied) {
         return {

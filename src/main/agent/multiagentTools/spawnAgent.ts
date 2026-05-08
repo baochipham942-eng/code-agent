@@ -264,11 +264,13 @@ export async function executeSpawnAgent(
       // Create AbortController for this agent
       const abortController = new AbortController();
 
-      // Build executor context
+      // Build executor context.
+      // 注入 agentId 到 toolContext —— 让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
+      // 共享 context 不能直接 mutate（父 agent 也用同一个），clone 后注入。
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
         toolResolver: context.resolver as ToolResolver,
-        toolContext: context,
+        toolContext: { ...context, agentId },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,

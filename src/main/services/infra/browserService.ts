@@ -109,13 +109,14 @@ type ManagedBrowserSessionChangeReason =
   | 'set_viewport'
   | 'crashed';
 
-class BrowserService implements Disposable {
+export class BrowserService implements Disposable {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private browserProcess: ChildProcess | null = null;
   private tabs: Map<string, BrowserTab> = new Map();
   private activeTabId: string | null = null;
   private disposed = false;
+  private agentId: string | undefined;
   private userDataDir: string;
   private screenshotDir: string;
   private artifactRootDir: string;
@@ -144,7 +145,8 @@ class BrowserService implements Disposable {
   private providerDiagnostics: BrowserProviderDiagnostics;
   public logger: BrowserLogger = new BrowserLogger();
 
-  constructor() {
+  constructor(agentId?: string) {
+    this.agentId = agentId;
     const userData = app?.getPath('userData') || process.cwd();
     this.userDataDir = userData;
     this.screenshotDir = path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR);
@@ -154,6 +156,7 @@ class BrowserService implements Disposable {
       userDataDir: userData,
       profileMode: 'persistent',
       workspaceScope: this.workspaceScope,
+      agentId,
     });
     this.sessionId = initialProfile.sessionId;
     this.profileId = initialProfile.profileId;
@@ -1289,6 +1292,7 @@ class BrowserService implements Disposable {
       userDataDir: this.userDataDir,
       profileMode,
       workspaceScope: this.workspaceScope,
+      agentId: this.agentId,
     });
     this.sessionId = resolution.sessionId;
     this.profileId = resolution.profileId;
@@ -1650,6 +1654,10 @@ class BrowserService implements Disposable {
   }
 }
 
-const browserServiceInstance = new BrowserService();
+// Default agent BrowserService — IPC 接入层和未传 agentId 的工具实现层用这一个。
+// 多 agent 隔离请通过 `getBrowserService(agentId)` 或 `browserPool.acquire(agentId)`
+// 拿到 per-agent 实例（见 ./browserPool.ts）。
+import { browserPool } from './browserPool';
+const browserServiceInstance = browserPool.acquire();
 getServiceRegistry().register('BrowserService', browserServiceInstance);
 export const browserService = browserServiceInstance;

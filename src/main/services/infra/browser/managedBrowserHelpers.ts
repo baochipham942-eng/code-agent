@@ -185,15 +185,17 @@ export function resolveManagedBrowserProfile(args: {
   profileMode?: ManagedBrowserProfileMode;
   workspaceScope?: string | null;
   sessionId?: string | null;
+  agentId?: string | null;
   tmpDir?: string;
   makeTempDir?: (prefix: string) => string;
 }): ManagedBrowserProfileResolution {
   const profileMode = args.profileMode || 'persistent';
   const workspaceScope = sanitizeManagedBrowserId(args.workspaceScope || 'workspace');
   const sessionId = args.sessionId || createManagedBrowserSessionId();
+  const agentSuffix = args.agentId ? `-${sanitizeManagedBrowserId(args.agentId)}` : '';
 
   if (profileMode === 'persistent') {
-    const profileId = MANAGED_BROWSER_PERSISTENT_PROFILE_ID;
+    const profileId = `${MANAGED_BROWSER_PERSISTENT_PROFILE_ID}${agentSuffix}`;
     return {
       sessionId,
       profileId,
@@ -210,7 +212,7 @@ export function resolveManagedBrowserProfile(args: {
     throw new Error(`Unsupported managed browser profileMode: ${profileMode}`);
   }
 
-  const profileId = sanitizeManagedBrowserId(`isolated-${sessionId}`);
+  const profileId = sanitizeManagedBrowserId(`isolated${agentSuffix}-${sessionId}`);
   const isolatedRootDir = path.join(args.tmpDir || os.tmpdir(), MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX);
   fs.mkdirSync(isolatedRootDir, { recursive: true });
   const makeTempDir = args.makeTempDir || fs.mkdtempSync;

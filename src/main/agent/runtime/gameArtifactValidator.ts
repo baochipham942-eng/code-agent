@@ -10,6 +10,7 @@ import {
   resolveBrowserProvider,
 } from '../../services/infra/browserProvider';
 import { loadPlaywrightChromium } from './browser/playwrightRuntime';
+import { acquireLaunchSlot, type LaunchSlot } from '../../services/infra/playwrightLaunchSemaphore';
 import type { BrowserVisualSmokeSummary } from './browser/types';
 import {
   cloneBrowserVisualSmoke,
@@ -632,6 +633,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
   let browser: import('playwright').Browser | null = null;
   let chromeProcess: ChildProcess | null = null;
   let profileDir: string | null = null;
+  let launchSlot: LaunchSlot | null = null;
 
   try {
     const playwright = await loadPlaywrightChromium();
@@ -644,6 +646,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         checks: [`runtime smoke skipped: ${playwright.error || 'Playwright package unavailable.'}`],
       };
     }
+    launchSlot = await acquireLaunchSlot();
     const { chromium } = playwright;
     const resolution = resolveBrowserProvider();
     let page: import('playwright').Page | null = null;
@@ -1280,6 +1283,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
     if (profileDir) {
       await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
+    launchSlot?.release();
   }
 }
 

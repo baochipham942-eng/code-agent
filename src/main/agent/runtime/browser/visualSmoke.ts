@@ -12,6 +12,7 @@ import type { BrowserVisualSmokeSummary, BrowserVisualSmokeDiagnostics } from '.
 import { waitForCdpEndpoint, stopChromeProcess } from './chromeProcess';
 import { loadPlaywrightChromium } from './playwrightRuntime';
 import { runComputerUseVisualFallback } from './computerUseVisualFallback';
+import { acquireLaunchSlot, type LaunchSlot } from '../../../services/infra/playwrightLaunchSemaphore';
 
 export const DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS = 10000;
 
@@ -69,6 +70,7 @@ export async function runBrowserVisualSmoke(
   let chromeProcess: ChildProcess | null = null;
   let profileDir: string | null = null;
   let stderr = '';
+  let launchSlot: LaunchSlot | null = null;
 
   try {
     const playwright = await loadPlaywrightChromium();
@@ -78,6 +80,7 @@ export async function runBrowserVisualSmoke(
         playwright.error || 'Playwright package unavailable.',
       );
     }
+    launchSlot = await acquireLaunchSlot();
     const { chromium } = playwright;
     const startedAt = Date.now();
     const remaining = () => Math.max(1200, timeoutMs - (Date.now() - startedAt));
@@ -332,5 +335,6 @@ export async function runBrowserVisualSmoke(
     if (profileDir) {
       await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     }
+    launchSlot?.release();
   }
 }

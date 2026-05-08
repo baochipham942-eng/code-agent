@@ -11,6 +11,7 @@
  */
 
 import { pathToFileURL } from 'url';
+import { acquireLaunchSlot, type LaunchSlot } from '../../../../services/infra/playwrightLaunchSemaphore';
 
 const NAVIGATE_TIMEOUT_MS = 10000;
 const MUTATION_WAIT_MS = 100;
@@ -29,8 +30,10 @@ export interface StateChangeProbeResult {
 
 export async function runStateChangeProbe(filePath: string): Promise<StateChangeProbeResult> {
   let browser: import('playwright').Browser | null = null;
+  let launchSlot: LaunchSlot | null = null;
   try {
     const { chromium } = await import('playwright');
+    launchSlot = await acquireLaunchSlot();
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -148,5 +151,6 @@ export async function runStateChangeProbe(filePath: string): Promise<StateChange
     };
   } finally {
     await browser?.close().catch(() => undefined);
+    launchSlot?.release();
   }
 }

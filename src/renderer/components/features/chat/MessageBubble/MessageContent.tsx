@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
+import remend from 'remend';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine, Terminal, Eye, ClipboardCopy } from 'lucide-react';
@@ -853,11 +854,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     [handleOpenFile, handlePreviewHtml]
   );
 
-  // Filter out system tags, auto-link ticket IDs, wrap file paths before rendering
+  // Filter out system tags, auto-link ticket IDs, wrap file paths,
+  // then close incomplete markdown tokens for streaming-safe rendering
   const filteredContent = useMemo(() => {
     const cleaned = filterSystemTags(content);
     const withTickets = wrapTicketsAsLinks(cleaned);
-    return wrapFilePathsInBackticks(withTickets);
+    const wrapped = wrapFilePathsInBackticks(withTickets);
+    return remend(wrapped);
   }, [content]);
 
   return (

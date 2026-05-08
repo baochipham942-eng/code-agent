@@ -1255,6 +1255,51 @@ describe('ModelRouter', () => {
       );
     });
 
+    it('should fall back after artifact repair timeout retries are exhausted', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('xiaomi request timeout after 90000ms')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback repair recovery', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const result = await router.inference(
+        [
+          { role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，直接编辑并通过验收。' },
+          { role: 'system', content: '<artifact-validation-failed kind="interactive_artifact">\ntarget file: /tmp/game.html\n</artifact-validation-failed>' },
+        ],
+        [{ name: 'Edit', description: 'edit', inputSchema: {} } as any],
+        config,
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, artifactRepairWritePriority: true },
+      );
+
+      expect(result).toMatchObject({
+        type: 'text',
+        content: 'fallback repair recovery',
+        fallback: {
+          category: 'timeout',
+          to: { provider: 'zhipu', model: 'glm-4.7-flash' },
+        },
+      });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(3);
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+      expect(broadcastToRendererMock).toHaveBeenCalledWith(
+        'provider:fallback',
+        expect.objectContaining({ category: 'timeout' }),
+      );
+    });
+
     it('should not cross-provider fallback for artifact repair auth quota model or artifact-response failures', async () => {
       const cases = [
         {

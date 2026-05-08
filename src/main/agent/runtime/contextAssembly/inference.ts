@@ -171,11 +171,8 @@ function shouldExposeTargetedArtifactRepairRead(ctx: ContextAssemblyCtx): boolea
   if (!guard || guard.patched) return false;
   const editAnchorFailureCount = guard.editAnchorFailureCount ?? 0;
   const targetRangedReadCount = guard.targetRangedReadCount ?? 0;
-  if (
-    editAnchorFailureCount > 0
-    && targetRangedReadCount < getArtifactRepairTargetRangedReadBudget(guard) + editAnchorFailureCount
-  ) {
-    return true;
+  if (editAnchorFailureCount > 0) {
+    return targetRangedReadCount < getArtifactRepairTargetRangedReadBudget(guard);
   }
   const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(ctx);
   const hasTargetedIssue = hasTargetedArtifactRepairIssue(ctx);

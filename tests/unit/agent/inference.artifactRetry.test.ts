@@ -777,7 +777,7 @@ describe('contextAssembly inference artifact retry', () => {
     });
   });
 
-  it('exposes another targeted Read after an Edit anchor failure even when the initial ranged read was spent', async () => {
+  it('switches to mutation priority after an Edit anchor failure once the ranged read is spent', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {
         targetFile: '/tmp/game.html',
@@ -797,10 +797,10 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
+    expect(toolNames).toEqual(['Edit', 'Append']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
-      artifactRepairWritePriority: false,
+      artifactRepairWritePriority: true,
       artifactRepairFullRewritePriority: false,
     });
   });

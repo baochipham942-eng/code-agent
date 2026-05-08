@@ -531,7 +531,7 @@ export class ModelRouter {
       if (
         artifactRepairActive
         && artifactLikeRequest
-        && !this.shouldRetrySelectedArtifactProvider(fallbackCategory)
+        && !this.shouldRetrySelectedArtifactProvider(fallbackCategory, normalizedOptions)
       ) {
         logger.warn(
           `[ModelRouter] Artifact repair failed with non-transient ${fallbackCategory}; keeping selected provider/model: ${fallbackReason}`
@@ -746,10 +746,14 @@ export class ModelRouter {
       && fallbackCategory !== 'artifact_response';
   }
 
-  private shouldRetrySelectedArtifactProvider(fallbackCategory: ProviderFallbackCategory): boolean {
+  private shouldRetrySelectedArtifactProvider(
+    fallbackCategory: ProviderFallbackCategory,
+    options?: InferenceOptions,
+  ): boolean {
     return fallbackCategory === 'provider_unavailable'
       || fallbackCategory === 'network'
-      || fallbackCategory === 'rate_limit';
+      || fallbackCategory === 'rate_limit'
+      || (fallbackCategory === 'timeout' && options?.artifactRepairActive === true);
   }
 
   private shouldAllowArtifactFallbackAfterSelectedRetry(
@@ -757,7 +761,7 @@ export class ModelRouter {
     options?: InferenceOptions,
   ): boolean {
     return options?.artifactRepairActive === true
-      && this.shouldRetrySelectedArtifactProvider(fallbackCategory);
+      && this.shouldRetrySelectedArtifactProvider(fallbackCategory, options);
   }
 
   private async retrySelectedProviderForArtifactTransient(
@@ -769,7 +773,7 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse | null> {
-    if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory)) return null;
+    if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory, options)) return null;
     if (signal?.aborted) return null;
 
     for (let attempt = 0; attempt < ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length; attempt++) {
@@ -790,7 +794,7 @@ export class ModelRouter {
         logger.warn(
           `[ModelRouter] Selected artifact provider retry ${attempt + 1} failed: ${retryMsg.split('\n')[0]}`
         );
-        if (!this.shouldRetrySelectedArtifactProvider(retryCategory)) {
+        if (!this.shouldRetrySelectedArtifactProvider(retryCategory, options)) {
           throw retryErr;
         }
       }

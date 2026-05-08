@@ -9,6 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as path from 'path';
 import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
 import { browserService, redactBrowserWorkbenchTraceParams } from '../../services/infra/browserService.js';
+import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
 import {
@@ -229,6 +230,9 @@ Examples:
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
+    // Shadow module-level browserService with per-agent instance from pool.
+    // 所有下面的 browserService.xxx 调用都解析到这个局部变量（agentId-scoped）。
+    const browserService = getBrowserService(context.agentId);
     const action = params.action as BrowserActionType;
     const url = params.url as string | undefined;
     const selector = params.selector as string | undefined;
@@ -267,7 +271,7 @@ Examples:
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
     if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
-      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench());
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }
 
     const trace = browserService.beginTrace({

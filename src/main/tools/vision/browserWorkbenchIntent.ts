@@ -1,6 +1,6 @@
 import type { ConversationExecutionIntent } from '../../../shared/contract/conversationEnvelope';
 import type { ToolExecutionResult } from '../types';
-import { browserService } from '../../services/infra/browserService.js';
+import { getBrowserService } from '../../services/infra/browserPool.js';
 
 const BROWSER_OS_ACTIONS = new Set([
   'open',
@@ -150,7 +150,9 @@ export function evaluateBrowserWorkbenchPolicy(args: {
 export async function ensureManagedBrowserSessionForWorkbench(args: {
   url?: string;
   executionIntent?: ConversationExecutionIntent;
+  agentId?: string;
 } = {}): Promise<string | null> {
+  const browserService = getBrowserService(args.agentId);
   const before = browserService.getSessionState();
   if (before.running && before.activeTab) {
     return null;

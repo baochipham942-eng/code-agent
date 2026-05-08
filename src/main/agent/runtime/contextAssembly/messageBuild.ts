@@ -911,6 +911,34 @@ function removePromptBlock(prompt: string, block: string | null | undefined): st
     .replace(new RegExp(`^${escapedBlock}$`), '');
 }
 
+function trimPreambleBeforeRequiredArtifactBlock(
+  prompt: string,
+  ctx?: ContextAssemblyCtx,
+): string {
+  if (estimateTokens(prompt) <= MAX_SYSTEM_PROMPT_TOKENS) return prompt;
+
+  const markerMatch = /\n\n## Game Artifact (?:Repair )?Contract\b/.exec(prompt);
+  if (!markerMatch || typeof markerMatch.index !== 'number' || markerMatch.index <= 0) return prompt;
+
+  const suffix = prompt.slice(markerMatch.index);
+  let prefix = prompt.slice(0, markerMatch.index);
+  const trimNotice = '\n[base prompt trimmed to preserve required artifact contract]\n';
+
+  while (prefix.length > 0 && estimateTokens(`${prefix}${trimNotice}${suffix}`) > MAX_SYSTEM_PROMPT_TOKENS) {
+    const overflow = estimateTokens(`${prefix}${trimNotice}${suffix}`) - MAX_SYSTEM_PROMPT_TOKENS;
+    const removeChars = Math.max(240, overflow * 5);
+    prefix = prefix.slice(0, Math.max(0, prefix.length - removeChars)).trimEnd();
+  }
+
+  const trimmedPrompt = `${prefix}${trimNotice}${suffix}`;
+  if (estimateTokens(trimmedPrompt) <= MAX_SYSTEM_PROMPT_TOKENS) {
+    ctx?.runtime.pendingRuntimeDiagnostics.push('上下文预算压缩 base prompt：保留必需 game artifact contract');
+    return trimmedPrompt;
+  }
+
+  return prompt;
+}
+
 function appendPromptBlockWithinBudgetWithStatus(
   prompt: string,
   block: string | null | undefined,
@@ -952,6 +980,17 @@ function appendPromptBlockWithinBudgetWithStatus(
     trimmed,
   };
 }
+
+const REQUIRED_REPAIR_TRIM_CANDIDATES = [
+  'repo map',
+  'skills',
+  'recent conversations',
+  'deferred tools',
+  'generative UI',
+  'question form',
+  'active agent context',
+  'completion notifications',
+];
 
 async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<string> {
   const lastUserMessage = getLastUserMessage(ctx);
@@ -1235,27 +1274,37 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   const modelMessageSourceIds: string[] = [];
 
   let systemPrompt = await buildCachedDynamicSystemPrompt(ctx);
+  const appendedBlocks = new Map<string, string>();
 
   // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
   const activeAgentBlock = buildActiveAgentContext();
   if (activeAgentBlock) {
-    systemPrompt = appendPromptBlockWithinBudget(
+    const nextPrompt = appendPromptBlockWithinBudget(
       systemPrompt,
       activeAgentBlock,
       'active agent context',
       ctx,
     );
+    if (nextPrompt !== systemPrompt) {
+      appendedBlocks.set('active agent context', activeAgentBlock);
+      systemPrompt = nextPrompt;
+    }
   }
 
   // 注入后台 agent 完成通知（Codex-style async notifications）
   const completionNotifications = drainCompletionNotifications();
   if (completionNotifications.length > 0) {
-    systemPrompt = appendPromptBlockWithinBudget(
+    const completionBlock = completionNotifications.join('\n');
+    const nextPrompt = appendPromptBlockWithinBudget(
       systemPrompt,
-      completionNotifications.join('\n'),
+      completionBlock,
       'completion notifications',
       ctx,
     );
+    if (nextPrompt !== systemPrompt) {
+      appendedBlocks.set('completion notifications', completionBlock);
+      systemPrompt = nextPrompt;
+    }
   }
 
   // 拼接持久化系统上下文（任务指导、模式 reminder 等）
@@ -1270,9 +1319,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       systemPrompt,
       contextBlock,
       `persistent system context #${index + 1}`,
-      new Map(),
+      appendedBlocks,
       ctx,
-      repairContext ? { kind: 'required' } : { kind: 'optional' },
+      repairContext
+        ? { kind: 'required', trimCandidates: REQUIRED_REPAIR_TRIM_CANDIDATES }
+        : { kind: 'optional' },
     );
     systemPrompt = result.prompt;
   }
@@ -1283,19 +1334,20 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       systemPrompt,
       artifactRepairFocusBlock,
       'artifact repair focus',
-      new Map(),
+      appendedBlocks,
       ctx,
-      { kind: 'required' },
+      { kind: 'required', trimCandidates: REQUIRED_REPAIR_TRIM_CANDIDATES },
     );
     systemPrompt = result.prompt;
   }
 
   // Check system prompt length and warn if too long
-  const systemPromptTokens = estimateTokens(systemPrompt);
-  if (systemPromptTokens > MAX_SYSTEM_PROMPT_TOKENS) {
-    logger.warn(`[AgentLoop] System prompt too long: ${systemPromptTokens} tokens (limit: ${MAX_SYSTEM_PROMPT_TOKENS})`);
+  systemPrompt = trimPreambleBeforeRequiredArtifactBlock(systemPrompt, ctx);
+  const trimmedSystemPromptTokens = estimateTokens(systemPrompt);
+  if (trimmedSystemPromptTokens > MAX_SYSTEM_PROMPT_TOKENS) {
+    logger.warn(`[AgentLoop] System prompt too long: ${trimmedSystemPromptTokens} tokens (limit: ${MAX_SYSTEM_PROMPT_TOKENS})`);
     logCollector.agent('WARN', 'System prompt exceeds recommended limit', {
-      tokens: systemPromptTokens,
+      tokens: trimmedSystemPromptTokens,
       limit: MAX_SYSTEM_PROMPT_TOKENS,
     });
   }
@@ -1304,7 +1356,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   try {
     const hash = createHash('sha256').update(systemPrompt).digest('hex');
     ctx.runtime.currentSystemPromptHash = hash;
-    getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, 'gen8');
+    getSystemPromptCache().store(hash, systemPrompt, trimmedSystemPromptTokens, 'gen8');
   } catch {
     // Non-critical: don't break agent loop if cache fails
   }

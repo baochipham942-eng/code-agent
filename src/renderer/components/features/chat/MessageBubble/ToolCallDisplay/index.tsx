@@ -15,6 +15,14 @@ import {
   buildBrowserComputerActionPreview,
   type BrowserComputerActionPreview,
 } from '../../../../../utils/browserComputerActionPreview';
+import {
+  formatToolDuration,
+  getToolCapabilitySource,
+  getToolPermissionView,
+  getToolRecoveryHint,
+  type ToolPermissionView,
+} from '../../../../../utils/toolExecutionPresentation';
+import type { ToolCapabilitySource } from '../../../../../types/runWorkbench';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -84,7 +92,7 @@ interface ToolCallDisplayProps {
 export function ToolCallDisplay({
   toolCall,
   index,
-  total,
+  total: _total,
   compact = false,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -148,6 +156,10 @@ export function ToolCallDisplay({
         <BrowserComputerActionPreviewLine preview={actionPreview} />
       )}
 
+      {!compact && (expanded || status !== 'success') && (
+        <ToolExecutionMetaRow toolCall={toolCall} status={status} />
+      )}
+
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
         <BashOutputPreview toolCall={toolCall} status={status} />
@@ -169,6 +181,71 @@ export function ToolCallDisplay({
     </div>
   );
 }
+
+function getSourceToneClass(source: ToolCapabilitySource): string {
+  switch (source) {
+    case 'mcp':
+      return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300';
+    case 'skill':
+      return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
+    case 'connector':
+      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+    case 'computer':
+      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+    case 'memory':
+      return 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300';
+    default:
+      return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
+  }
+}
+
+function getPermissionToneClass(permission: ToolPermissionView): string {
+  switch (permission) {
+    case 'read':
+      return 'text-emerald-300';
+    case 'write':
+    case 'shell':
+    case 'desktop':
+      return 'text-amber-300';
+    case 'network':
+    case 'mcp':
+      return 'text-sky-300';
+    case 'memory':
+      return 'text-fuchsia-300';
+    default:
+      return 'text-zinc-500';
+  }
+}
+
+function getStatusLabel(status: ToolStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'running';
+    case 'success':
+      return 'completed';
+    case 'error':
+      return 'failed';
+    case 'interrupted':
+      return 'interrupted';
+  }
+}
+
+const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus }> = ({ toolCall, status }) => {
+  const source = getToolCapabilitySource(toolCall.name);
+  const permission = getToolPermissionView(toolCall.name);
+  const duration = formatToolDuration(toolCall.result?.duration);
+  const recoveryHint = getToolRecoveryHint(toolCall, status);
+
+  return (
+    <div className="ml-6 mt-0.5 mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
+      <span className={`rounded border px-1.5 py-0.5 ${getSourceToneClass(source)}`}>{source}</span>
+      <span className={getPermissionToneClass(permission)}>{permission}</span>
+      <span>{getStatusLabel(status)}</span>
+      {duration && <span>{duration}</span>}
+      <span className={status === 'error' ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
+    </div>
+  );
+};
 
 function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): string {
   switch (risk) {

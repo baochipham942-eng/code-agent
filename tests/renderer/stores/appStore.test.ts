@@ -12,6 +12,9 @@ describe('appStore', () => {
       showAgentTeamPanel: false,
       showTaskPanel: true,
       taskPanelTab: 'monitor',
+      showSettings: false,
+      settingsInitialTab: null,
+      settingsMemoryFocus: null,
     });
   });
 
@@ -28,5 +31,32 @@ describe('appStore', () => {
     useAppStore.getState().setSelectedSwarmAgentId(null);
 
     expect(useAppStore.getState().selectedSwarmAgentId).toBeNull();
+  });
+
+  it('opens memory settings with an optional detail focus', () => {
+    useAppStore.getState().openMemorySettings({
+      filename: 'project.md',
+      query: 'project.md',
+    });
+
+    const state = useAppStore.getState();
+    expect(state.showSettings).toBe(true);
+    expect(state.settingsInitialTab).toBe('memory');
+    expect(state.settingsMemoryFocus).toMatchObject({
+      filename: 'project.md',
+      query: 'project.md',
+    });
+    expect(state.settingsMemoryFocus?.nonce).toEqual(expect.any(Number));
+  });
+
+  it('clears memory detail focus when opening a regular settings tab', () => {
+    useAppStore.getState().openMemorySettings({ filename: 'project.md' });
+    useAppStore.getState().openSettingsTab('general');
+
+    expect(useAppStore.getState()).toMatchObject({
+      showSettings: true,
+      settingsInitialTab: 'general',
+      settingsMemoryFocus: null,
+    });
   });
 });

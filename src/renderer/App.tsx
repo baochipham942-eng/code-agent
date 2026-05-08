@@ -393,7 +393,7 @@ export const App: React.FC = () => {
       (event) => {
         if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
           openWorkbenchTab('task');
-          setTaskPanelTab('orchestration');
+          setTaskPanelTab('monitor');
         }
         useSwarmStore.getState().handleEvent(event);
       }

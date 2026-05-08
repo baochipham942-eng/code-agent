@@ -4,7 +4,20 @@
 
 import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import type { StreamRecoverySnapshot } from '@shared/contract/session';
+import {
+  AlertTriangle,
+  ChevronRight,
+  ChevronDown,
+  CheckCircle2,
+  CircleDot,
+  FileText,
+  LoaderCircle,
+  RotateCcw,
+  ShieldAlert,
+  Wrench,
+  XCircle,
+} from 'lucide-react';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningToolStartTime } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
@@ -13,6 +26,13 @@ import {
   groupAdjacentToolCalls,
   formatTurnDuration,
 } from '../../../utils/toolStepGrouping';
+import {
+  buildStreamingUiState,
+  hasCancelledRunMarker,
+  shouldShowStreamingState,
+  type RuntimeSessionStatus,
+  type StreamingUiState,
+} from '../../../utils/streamingStatePresentation';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -21,6 +41,12 @@ interface TurnCardProps {
   forceExpanded?: boolean;
   /** This turn contains the active search match */
   highlightActive?: boolean;
+  /** This turn is the current active renderer turn. */
+  isActiveTurn?: boolean;
+  sessionStatus?: RuntimeSessionStatus | null;
+  isSessionProcessing?: boolean;
+  streamSnapshot?: StreamRecoverySnapshot | null;
+  showSeparator?: boolean;
 }
 
 // 超过该节点数的已完成 turn 默认折叠成 "Worked for Xm Ys"
@@ -31,6 +57,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   defaultExpanded,
   forceExpanded,
   highlightActive,
+  isActiveTurn,
+  sessionStatus,
+  isSessionProcessing,
+  streamSnapshot,
+  showSeparator = true,
 }) => {
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
@@ -82,6 +113,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     () => getRunningToolStartTime(turn.nodes),
     [turn.nodes],
   );
+  const streamingState = useMemo(
+    () => buildStreamingUiState({
+      turn,
+      isActiveTurn: Boolean(isActiveTurn),
+      sessionStatus,
+      isSessionProcessing,
+      streamSnapshot,
+      runningToolStartTime,
+    }),
+    [isActiveTurn, isSessionProcessing, runningToolStartTime, sessionStatus, streamSnapshot, turn],
+  );
 
   return (
     <div
@@ -89,20 +131,26 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         highlightActive ? 'bg-amber-500/5' : ''
       }`}
     >
-      {/* Separator */}
-      <div className="flex items-center gap-2 py-1.5">
-        <div className="h-px flex-1 bg-zinc-800"></div>
-        <span className="text-[10px] text-zinc-600 shrink-0">
-          {stats.time}
-          {stats.duration !== null && stats.duration > 0
-            ? ` · ${formatTurnDuration(stats.duration)}`
-            : ''}
-        </span>
-        <div className="h-px flex-1 bg-zinc-800"></div>
-      </div>
+      {showSeparator && (
+        <div className="flex items-center gap-2 py-1.5">
+          <div className="h-px flex-1 bg-zinc-800"></div>
+          <span className="text-[10px] text-zinc-600 shrink-0">
+            {stats.time}
+            {stats.duration !== null && stats.duration > 0
+              ? ` · ${formatTurnDuration(stats.duration)}`
+              : ''}
+          </span>
+          <div className="h-px flex-1 bg-zinc-800"></div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="space-y-2">
+        <TurnRunHeader turn={turn} streamingState={streamingState} />
+        {shouldShowStreamingState(streamingState) && (
+          <StreamingStateBanner state={streamingState} />
+        )}
+
         {/* User message always at top */}
         {foldedView?.userNode && (
           <TraceNodeRenderer
@@ -140,7 +188,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   <ToolStepGroup
                     key={d.key}
                     nodes={d.tools}
-                    defaultExpanded={isStreaming}
+                    defaultExpanded={false}
                   />
                 );
               }
@@ -186,6 +234,187 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Turn-level aggregated diff card — always visible */}
         <TurnDiffSummary turn={turn} />
       </div>
+    </div>
+  );
+};
+
+function getLastToolNode(turn: TraceTurn): TraceNode | null {
+  for (let index = turn.nodes.length - 1; index >= 0; index--) {
+    const node = turn.nodes[index];
+    if (node.type === 'tool_call' && node.toolCall) return node;
+  }
+  return null;
+}
+
+function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
+  label: string;
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'error';
+  icon: React.ReactNode;
+} {
+  if (streamingState) {
+    switch (streamingState.status) {
+      case 'cancelling':
+        return { label: 'cancelling', tone: 'warning', icon: <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> };
+      case 'resumable':
+        return { label: 'resumable', tone: 'warning', icon: <RotateCcw className="h-3.5 w-3.5" /> };
+      case 'stale':
+        return { label: 'stale_stream', tone: 'neutral', icon: <CircleDot className="h-3.5 w-3.5" /> };
+      case 'waiting_tool':
+        return { label: 'waiting_tool', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+      case 'using_tools':
+        return { label: 'using_tools', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+      case 'drafting':
+        return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
+      case 'blocked':
+        return { label: 'blocked', tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
+      case 'cancelled':
+        return { label: 'cancelled', tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
+      default:
+        break;
+    }
+  }
+
+  if (hasCancelledRunMarker(turn)) {
+    return { label: 'cancelled', tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
+  }
+
+  const timelines = turn.nodes
+    .map((node) => node.turnTimeline)
+    .filter(Boolean);
+  const hasError = turn.status === 'error' || timelines.some((timeline) => timeline?.tone === 'error');
+  if (hasError) {
+    return { label: 'blocked', tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
+  }
+
+  const lastTool = getLastToolNode(turn)?.toolCall;
+  if (turn.status === 'streaming') {
+    if (lastTool && (lastTool._streaming || lastTool.result === undefined)) {
+      return { label: 'using_tools', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+    }
+    return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
+  }
+
+  return { label: 'completed', tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
+}
+
+function getTurnPhase(turn: TraceTurn): string {
+  if (hasCancelledRunMarker(turn)) return '本轮已取消';
+
+  const routing = turn.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence')?.turnTimeline?.routingEvidence;
+  if (routing) return routing.summary;
+
+  const scope = turn.nodes.find((node) => node.turnTimeline?.kind === 'capability_scope')?.turnTimeline?.capabilityScope;
+  if (scope) {
+    if (scope.blocked.length > 0) return `${scope.blocked.length} 个能力未生效`;
+    if (scope.invoked.length > 0) return `${scope.invoked.length} 个能力已调用`;
+  }
+
+  const lastTool = getLastToolNode(turn)?.toolCall;
+  if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+
+  const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
+  return assistantText ? '回复已生成' : '等待输出';
+}
+
+function getTurnCompletionSignal(turn: TraceTurn): string | null {
+  const artifacts = turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership')?.turnTimeline?.artifactOwnership;
+  if (artifacts?.length && turn.status !== 'completed') return `${artifacts.length} outputs`;
+  const toolCount = turn.nodes.filter((node) => node.type === 'tool_call').length;
+  if (toolCount > 0 && turn.status !== 'completed') return `${toolCount} tools`;
+  return null;
+}
+
+function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'): string {
+  switch (tone) {
+    case 'success':
+      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+    case 'warning':
+      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+    case 'error':
+      return 'border-red-500/20 bg-red-500/10 text-red-300';
+    case 'info':
+      return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+    default:
+      return 'border-white/[0.06] bg-white/[0.02] text-zinc-400';
+  }
+}
+
+function getStreamingBannerIcon(state: StreamingUiState): React.ReactNode {
+  switch (state.status) {
+    case 'cancelling':
+      return <LoaderCircle className="h-3.5 w-3.5 animate-spin" />;
+    case 'resumable':
+      return <RotateCcw className="h-3.5 w-3.5" />;
+    case 'blocked':
+      return <ShieldAlert className="h-3.5 w-3.5" />;
+    case 'waiting_tool':
+    case 'using_tools':
+      return <Wrench className="h-3.5 w-3.5" />;
+    case 'stale':
+      return <AlertTriangle className="h-3.5 w-3.5" />;
+    default:
+      return state.shouldAnimate
+        ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+        : <CircleDot className="h-3.5 w-3.5" />;
+  }
+}
+
+const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) => (
+  <div className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
+    <div className="shrink-0">{getStreamingBannerIcon(state)}</div>
+    <div className="min-w-0 flex-1">
+      <div className="truncate font-medium">{state.label}</div>
+      {state.detail && (
+        <div className="truncate text-[11px] opacity-80">{state.detail}</div>
+      )}
+    </div>
+    {state.showCancelCleanup && (
+      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">cleanup</span>
+    )}
+    {state.showResumeHint && (
+      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">resume</span>
+    )}
+  </div>
+);
+
+const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
+  const status = getTurnRunStatus(turn, streamingState);
+  const phase = getTurnPhase(turn);
+  const completionSignal = getTurnCompletionSignal(turn);
+  const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
+  const isCompleted = status.tone === 'success';
+
+  if (isCompleted) {
+    return (
+      <div className="flex min-h-6 items-center gap-2 rounded-md px-1 py-0.5 text-[11px] text-zinc-600">
+        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400/45" />
+        <span className="font-mono text-zinc-500">{status.label}</span>
+        <span className="min-w-0 flex-1 truncate">{phase}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-7 items-center gap-2 rounded-md border border-white/[0.035] bg-white/[0.012] px-2 py-1 text-[11px]">
+      <div className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 ${getToneClass(status.tone)}`}>
+        {status.icon}
+        <span className="font-medium">{status.label}</span>
+      </div>
+      <div className="min-w-0 flex-1 truncate text-zinc-400">
+        {phase}
+      </div>
+      {completionSignal && (
+        <div className="inline-flex items-center gap-1 rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[11px] text-zinc-500">
+          <FileText className="h-3 w-3" />
+          <span>{completionSignal}</span>
+        </div>
+      )}
+      {failedTool && (
+        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-300" title={failedTool.result}>
+          <XCircle className="h-3 w-3" />
+          <span className="max-w-[120px] truncate">{failedTool.name}</span>
+        </div>
+      )}
     </div>
   );
 };

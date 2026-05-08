@@ -260,7 +260,7 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('skill_not_mounted');
     expect(html).toContain('Mail');
     expect(html).toContain('send');
-    expect(html).toContain('本轮输出');
     expect(html).toContain('report.md');
+    expect(html).toContain('Created');
   });
 });

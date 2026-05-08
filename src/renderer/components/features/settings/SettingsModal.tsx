@@ -103,6 +103,25 @@ export function buildSettingsTabs(options: BuildSettingsTabsOptions): SettingsTa
   return buildSettingsTabGroups(options).flatMap((group) => group.tabs);
 }
 
+export async function resolveOptionalUpdateInfo(
+  checkForUpdate: () => Promise<UpdateInfo>,
+  onCheckFailed?: (error: unknown) => void,
+): Promise<UpdateInfo | null> {
+  try {
+    const info = await checkForUpdate();
+    if (info?.hasUpdate && !info?.forceUpdate) {
+      return info;
+    }
+  } catch (error) {
+    onCheckFailed?.(error);
+  }
+  return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -131,21 +150,29 @@ export const SettingsModal: React.FC = () => {
   // Check for updates on mount (for badge display)
   useEffect(() => {
     if (!isDesktopShellMode()) return;
+    let cancelled = false;
 
     const checkUpdate = async () => {
-      try {
-        const info = isTauriMode()
-          ? await tauriCheckForUpdate()
-          : await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
-        // Only handle non-force updates here
-        if (info?.hasUpdate && !info?.forceUpdate) {
-          setOptionalUpdateInfo(info);
-        }
-      } catch (error) {
-        logger.error('Failed to check update', error);
+      const info = await resolveOptionalUpdateInfo(
+        () => (
+          isTauriMode()
+            ? tauriCheckForUpdate()
+            : ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check')
+        ),
+        (error) => {
+          logger.debug('Optional update badge check skipped', {
+            errorMessage: getErrorMessage(error),
+          });
+        },
+      );
+      if (!cancelled && info) {
+        setOptionalUpdateInfo(info);
       }
     };
-    checkUpdate();
+    void checkUpdate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const showUpdateTab = isDesktopShellMode();

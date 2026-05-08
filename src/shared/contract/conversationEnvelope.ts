@@ -95,4 +95,9 @@ export interface WorkbenchMessageMetadata {
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
+  runCancellation?: {
+    status: 'cancelled';
+    cancelledAt: number;
+    reason?: string;
+  };
 }

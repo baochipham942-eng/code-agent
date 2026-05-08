@@ -429,6 +429,18 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'getMemoryStats':
           data = await handleGetMemoryStats();
           break;
+        case 'lightList':
+          data = await listMemoryFiles();
+          break;
+        case 'lightRead':
+          data = await readMemoryFile((payload as { filename?: string })?.filename || '');
+          break;
+        case 'lightDelete':
+          data = await deleteMemoryFile((payload as { filename?: string })?.filename || '');
+          break;
+        case 'lightStats':
+          data = await getLightMemoryStats();
+          break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }

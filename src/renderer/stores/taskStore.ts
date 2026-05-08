@@ -13,7 +13,7 @@ const logger = createLogger('TaskStore');
 // Types
 // ============================================================================
 
-export type SessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'error';
+export type SessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'cancelled' | 'error';
 
 export interface SessionState {
   status: SessionStatus;
@@ -88,7 +88,14 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
         'getAllStates'
       );
       if (response.success && response.data) {
-        set({ sessionStates: response.data, initialized: true });
+        const currentStates = get().sessionStates;
+        const nextStates = { ...response.data };
+        for (const [sessionId, state] of Object.entries(currentStates)) {
+          if (state.status === 'cancelled' && !nextStates[sessionId]) {
+            nextStates[sessionId] = state;
+          }
+        }
+        set({ sessionStates: nextStates, initialized: true });
       }
 
       // 同时刷新队列
@@ -275,6 +282,8 @@ export function getStatusLabel(status: SessionStatus): string {
       return '排队中';
     case 'cancelling':
       return '取消中';
+    case 'cancelled':
+      return '已取消';
     case 'error':
       return '错误';
     default:
@@ -297,6 +306,8 @@ export function getStatusColor(status: SessionStatus): string {
       return 'text-yellow-500';
     case 'cancelling':
       return 'text-orange-500';
+    case 'cancelled':
+      return 'text-zinc-500';
     case 'error':
       return 'text-red-500';
     default:

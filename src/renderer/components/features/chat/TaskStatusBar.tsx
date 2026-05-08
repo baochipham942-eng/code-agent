@@ -139,7 +139,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
   const openOrchestrationPanel = () => {
     openWorkbenchTab('task');
-    setTaskPanelTab('orchestration');
+    setTaskPanelTab('monitor');
   };
 
   const openSelectedSwarmAgent = () => {

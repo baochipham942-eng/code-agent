@@ -273,7 +273,7 @@ export const en: Translations = {
     bucketFiles: 'Files',
     bucketWeb: 'Web',
     bucketOther: 'Other',
-    tabStatus: 'Status',
+    tabStatus: 'Overview',
     tabOrchestration: 'Orchestration',
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',

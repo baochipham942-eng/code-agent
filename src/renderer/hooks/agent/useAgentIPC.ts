@@ -91,6 +91,28 @@ function isRuntimeCancellingStatus(status: TaskSessionStatus | undefined): boole
   return status === 'cancelling';
 }
 
+function markLatestUserMessageRunCancelled(cancelledAt: number): void {
+  const sessionStore = useSessionStore.getState();
+  const latestUser = [...sessionStore.messages]
+    .reverse()
+    .find((message) => message.role === 'user' && !message.isMeta);
+  if (!latestUser) return;
+
+  sessionStore.updateMessage(latestUser.id, {
+    metadata: {
+      ...latestUser.metadata,
+      workbench: {
+        ...latestUser.metadata?.workbench,
+        runCancellation: {
+          status: 'cancelled',
+          cancelledAt,
+          reason: 'user_cancelled',
+        },
+      },
+    },
+  });
+}
+
 export function getRuntimeFollowupFailureMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
   if (/already cancelling/i.test(raw)) {
@@ -469,6 +491,10 @@ export function useAgentIPC({
 
       // 按会话设置处理状态（允许多会话并发）
       setSessionProcessing(effectiveSessionId!, true);
+      useTaskStore.getState().updateSessionState(effectiveSessionId!, {
+        status: 'running',
+        startTime: Date.now(),
+      });
       currentTurnMessageIdRef.current = null; // 重置 turn tracking
 
       try {
@@ -505,16 +531,29 @@ export function useAgentIPC({
 
   // Cancel the current operation
   const cancel = useCallback(async () => {
+    const targetSessionId = currentSessionId;
     try {
-      await ipcService.invoke('agent:cancel', currentSessionId ? { sessionId: currentSessionId } : undefined);
+      if (targetSessionId) {
+        const currentState = useTaskStore.getState().sessionStates[targetSessionId];
+        useTaskStore.getState().updateSessionState(targetSessionId, {
+          ...currentState,
+          status: 'cancelling',
+        });
+        markLatestUserMessageRunCancelled(Date.now());
+      }
+      await ipcService.invoke('agent:cancel', targetSessionId ? { sessionId: targetSessionId } : undefined);
       // 按会话清除处理状态
-      if (currentSessionId) {
-        setSessionProcessing(currentSessionId, false);
+      if (targetSessionId) {
+        useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
+        setSessionProcessing(targetSessionId, false);
       } else {
         setIsProcessing(false);
       }
     } catch (error) {
       logger.error('Cancel error', error);
+      if (targetSessionId) {
+        useTaskStore.getState().updateSessionState(targetSessionId, { status: 'idle' });
+      }
     }
   }, [setIsProcessing, setSessionProcessing, currentSessionId]);
 

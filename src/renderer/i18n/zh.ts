@@ -255,7 +255,7 @@ export const zh = {
     bucketFiles: 'Files',
     bucketWeb: 'Web',
     bucketOther: 'Other',
-    tabStatus: '状态',
+    tabStatus: '概览',
     tabOrchestration: '编排',
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',

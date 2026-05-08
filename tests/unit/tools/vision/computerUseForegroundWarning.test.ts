@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import type { ComputerAction } from '../../../../src/main/tools/vision/computerUse';
 import { attachForegroundKeystrokeWarning } from '../../../../src/main/tools/vision/computerUse';
+import {
+  setMultiAgentMode,
+  resetMultiAgentModeForTests,
+} from '../../../../src/main/services/multiAgentMode';
 
 const okResult = { success: true, output: 'done' };
 
@@ -44,5 +48,26 @@ describe('attachForegroundKeystrokeWarning', () => {
     const out = attachForegroundKeystrokeWarning(result, makeAction({ action: 'type' }), null);
     expect(out.metadata?.traceId).toBe('abc');
     expect(out.metadata?.foregroundFallbackWarning).toBeTruthy();
+  });
+
+  describe('multi-agent mode escalation', () => {
+    afterEach(() => {
+      resetMultiAgentModeForTests();
+    });
+
+    it('escalates the warning text and tags metadata.multiAgentMode=true when enabled', () => {
+      setMultiAgentMode(true);
+      const out = attachForegroundKeystrokeWarning(okResult, makeAction({ action: 'type' }), null);
+      expect(out.metadata?.foregroundFallbackWarning).toMatch(/MULTI-AGENT MODE/);
+      expect(out.metadata?.foregroundFallbackWarning).toMatch(/MUST re-run with targetApp/i);
+      expect(out.metadata?.multiAgentMode).toBe(true);
+    });
+
+    it('uses the regular warning text and multiAgentMode=false when disabled', () => {
+      setMultiAgentMode(false);
+      const out = attachForegroundKeystrokeWarning(okResult, makeAction({ action: 'type' }), null);
+      expect(out.metadata?.foregroundFallbackWarning).not.toMatch(/MULTI-AGENT MODE/);
+      expect(out.metadata?.multiAgentMode).toBe(false);
+    });
   });
 });

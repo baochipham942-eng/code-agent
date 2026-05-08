@@ -11,6 +11,7 @@ import type {
   ListBackgroundCgEventWindowsOptions,
 } from './backgroundCgEventSurface';
 import { backgroundCgEventSurface } from './backgroundCgEventSurface';
+import { isMultiAgentMode } from '../multiAgentMode';
 import type {
   ComputerSurfaceAxQuality,
   ComputerSurfaceFailureKind,
@@ -148,8 +149,17 @@ class DesktopComputerSurface {
         : await this.getFrontmostContext()),
     };
 
-    if (options.includeScreenshot && process.platform === 'darwin' && !options.targetApp) {
-      snapshot.screenshotPath = await this.screenshot();
+    if (options.includeScreenshot && process.platform === 'darwin') {
+      if (options.targetApp) {
+        // Multi-agent mode 下截 targetApp 窗口区域，防止子 agent 看到对方桌面活动；
+        // 默认（单 agent）下保留原行为——有 targetApp 时不截图（避免泄露其它窗口）。
+        if (isMultiAgentMode()) {
+          const cropped = await this.screenshotApp(options.targetApp).catch(() => null);
+          if (cropped) snapshot.screenshotPath = cropped;
+        }
+      } else {
+        snapshot.screenshotPath = await this.screenshot();
+      }
     }
 
     this.lastSnapshot = snapshot;
@@ -160,6 +170,27 @@ class DesktopComputerSurface {
     const filepath = path.join(os.tmpdir(), `code-agent-computer-surface-${Date.now()}.png`);
     await execFileAsync('screencapture', ['-x', filepath]);
     return filepath;
+  }
+
+  async screenshotApp(targetApp: string): Promise<string | null> {
+    if (process.platform !== 'darwin') return null;
+    try {
+      const windows = await backgroundCgEventSurface.listWindows({ targetApp, limit: 1 });
+      const win = windows[0];
+      if (!win?.bounds) return null;
+      const { x, y, width, height } = win.bounds;
+      if (width <= 0 || height <= 0) return null;
+      const filepath = path.join(os.tmpdir(), `code-agent-computer-surface-app-${Date.now()}.png`);
+      await execFileAsync('screencapture', [
+        '-x',
+        '-R',
+        `${Math.floor(x)},${Math.floor(y)},${Math.floor(width)},${Math.floor(height)}`,
+        filepath,
+      ]);
+      return filepath;
+    } catch {
+      return null;
+    }
   }
 
   async executeBackgroundAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {

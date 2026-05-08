@@ -9,6 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { browserNavigateTool } from './browserNavigate';
 import { browserActionTool } from './browserAction';
 import { getBrowserService } from '../../services/infra/browserPool.js';
+import { setMultiAgentMode, isMultiAgentMode } from '../../services/multiAgentMode';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -204,6 +205,25 @@ browser opener actions. For full Playwright-based browser automation, use the br
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const action = params.action as string;
+
+    // Multi-agent mode 编排开关（主 agent 显式控制）。开启后：
+    // - ComputerSurface.observe(targetApp) 截屏裁剪到目标 app windowFrame
+    // - computerUse coordinate-only 动作附 warning，建议改 targetApp+axPath
+    if (action === 'set_multi_agent_mode') {
+      const enabled = params.enabled === true;
+      setMultiAgentMode(enabled);
+      return {
+        success: true,
+        output: `multi-agent mode: ${enabled ? 'enabled' : 'disabled'}`,
+      };
+    }
+    if (action === 'get_multi_agent_mode') {
+      return {
+        success: true,
+        output: `multi-agent mode: ${isMultiAgentMode() ? 'enabled' : 'disabled'}`,
+      };
+    }
+
     const workbenchPolicy = evaluateBrowserWorkbenchPolicy({
       toolName: 'Browser',
       action,

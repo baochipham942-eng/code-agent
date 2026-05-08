@@ -34,6 +34,7 @@ import {
   containsSmartChars,
 } from '../../utils/quoteNormalizer';
 import { atomicWriteFile } from '../../utils/atomicWrite';
+import { buildNearestAnchorHint } from '../../utils/anchorHint';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { multiEditSchema as schema } from './multiEdit.schema';
@@ -176,6 +177,10 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           let errorMsg = `Edit #${i + 1}/${edits.length} failed: text not found.`;
           if (containsSmartChars(oldString)) {
             errorMsg += ' Smart quotes were normalized but still no match.';
+          }
+          const anchorHint = buildNearestAnchorHint(content, oldString);
+          if (anchorHint) {
+            errorMsg += anchorHint;
           }
           if (i > 0) {
             errorMsg += ` (${i} previous edit(s) were NOT applied — all changes rolled back)`;

@@ -81,4 +81,37 @@ describe('multiEditModule evidence metadata', () => {
     }
     expect(await fs.readFile(file, 'utf-8')).toBe('alpha\ngamma\n');
   });
+
+  it('returns nearby file context when old_text is not found', async () => {
+    const file = path.join(tmpDir, 'game.html');
+    await fs.writeFile(file, [
+      'window.__GAME_META__ = {',
+      '  gameplayMechanics: {',
+      '    enemies: [{ name: "cat" }],',
+      '    abilities: [',
+      '      { name: "variableJump" }',
+      '    ]',
+      '  }',
+      '};',
+      '',
+    ].join('\n'), 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'abilities: []', new_text: "abilities: ['doubleJump']" }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_FOUND');
+      expect(result.error).toContain('Closest current file context');
+      expect(result.error).toContain('abilities: [');
+    }
+  });
 });

@@ -138,6 +138,7 @@ async function executeWrite(
 
   const memDir = await ensureMemoryDir();
   const filePath = path.join(memDir, filename);
+  const existed = await exists(filePath);
 
   // Build markdown with frontmatter
   const fileContent = `---
@@ -157,6 +158,8 @@ ${content}
     metadata: {
       action: 'write',
       filename,
+      path: filePath,
+      existed,
       memoryType: memType,
       description,
       indexPath: getMemoryIndexPath(),
@@ -170,6 +173,7 @@ ${content}
       action: 'write',
       filename,
       path: filePath,
+      existed,
       memoryType: memType,
       description,
       bytes: Buffer.byteLength(fileContent, 'utf8'),
@@ -272,6 +276,15 @@ async function removeFromIndex(filename: string): Promise<void> {
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const memoryWriteModule: ToolModule<Record<string, unknown>, string> = {

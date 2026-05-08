@@ -3,6 +3,7 @@ import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/tr
 import {
   getFocusedTurnIndex,
   shouldFollowTurnOutput,
+  shouldShowTurnTimeSeparator,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 
 function makeTurn(index: number): TraceTurn {
@@ -39,5 +40,11 @@ describe('TurnBasedTraceView focus helpers', () => {
   it('does not force bottom-follow when the viewport is away from the bottom', () => {
     expect(shouldFollowTurnOutput(false)).toBe(false);
     expect(shouldFollowTurnOutput(true)).toBe('smooth');
+  });
+
+  it('only shows turn time separators for the first turn or meaningful gaps', () => {
+    expect(shouldShowTurnTimeSeparator(null, { startTime: 1_000 })).toBe(true);
+    expect(shouldShowTurnTimeSeparator({ startTime: 1_000 }, { startTime: 60_000 })).toBe(false);
+    expect(shouldShowTurnTimeSeparator({ startTime: 1_000 }, { startTime: 301_000 })).toBe(true);
   });
 });

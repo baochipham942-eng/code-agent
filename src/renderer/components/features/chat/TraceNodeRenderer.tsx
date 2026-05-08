@@ -549,22 +549,17 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ ti
   const nonFileItems = items.filter((i) => i.kind !== 'file');
   const hasOnlyFiles = fileItems.length > 0 && nonFileItems.length === 0;
 
-  // 纯文件：FileArtifactCard 自身已带卡片样式，外层不再套 border，避免"卡中卡"。
+  // 纯文件输出保持一行入口，不再额外挂"本轮输出"标题。
   // 混合/纯非文件：保留 tone 容器，维持原来的视觉层级。
   const header = (
     <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
       <FileText className="h-3.5 w-3.5 text-emerald-300" />
-      <span>本轮输出</span>
+      <span>Outputs</span>
     </div>
   );
 
   if (hasOnlyFiles) {
-    return (
-      <div>
-        {header}
-        <FileArtifactCard items={fileItems} />
-      </div>
-    );
+    return <FileArtifactCard items={fileItems} />;
   }
 
   return (

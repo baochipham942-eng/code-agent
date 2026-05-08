@@ -15,7 +15,9 @@ export function useCurrentTurnExecutionProjection(): TraceProjection {
 
   const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
   const effectiveIsProcessing = currentSessionState
-    ? currentSessionState.status === 'running' || currentSessionState.status === 'queued'
+    ? currentSessionState.status === 'running' ||
+        currentSessionState.status === 'queued' ||
+        currentSessionState.status === 'cancelling'
     : currentSessionId
       ? processingSessionIds.has(currentSessionId)
       : false;

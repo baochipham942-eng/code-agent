@@ -62,45 +62,48 @@ export const FileArtifactCard: React.FC<Props> = ({ items }) => {
 
   return (
     <div className="space-y-1.5">
-      {previewable.map(({ item, ext, status }) => (
-        <div
-          key={`${item.sourceNodeId || ''}:${item.path || item.label}`}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/60 border border-zinc-700 hover:border-zinc-600 transition-colors"
-          title={item.path || item.label}
-        >
-          {pickIcon(ext)}
-
-          <span className="text-xs text-zinc-200 font-medium truncate flex-1 min-w-0">
-            {item.label}
-          </span>
-
-          <span
-            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
-              status === 'created'
-                ? 'bg-emerald-500/15 text-emerald-400'
-                : 'bg-amber-500/15 text-amber-400'
-            }`}
+      {previewable.map(({ item, ext, status }) => {
+        const previewPath = item.path;
+        return (
+          <div
+            key={`${item.sourceNodeId || ''}:${previewPath || item.label}`}
+            className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.018] px-2.5 py-1.5 transition-colors hover:border-white/[0.1] hover:bg-white/[0.03]"
+            title={previewPath || item.label}
           >
-            {status === 'created' ? 'Created' : 'Modified'}
-          </span>
+            {pickIcon(ext)}
 
-          {item.path && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openPreview(item.path!);
-              }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700 transition-colors flex-shrink-0"
-              title="在预览面板打开"
+            <span className="text-xs text-zinc-200 font-medium truncate flex-1 min-w-0">
+              {item.label}
+            </span>
+
+            <span
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                status === 'created'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-amber-500/15 text-amber-400'
+              }`}
             >
-              <Eye className="w-3 h-3" />
-              <span>Open preview</span>
-            </button>
-          )}
-        </div>
-      ))}
+              {status === 'created' ? 'Created' : 'Modified'}
+            </span>
+
+            {previewPath && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openPreview(previewPath);
+                }}
+                className="flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200"
+                title="在预览面板打开"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+            )}
+          </div>
+        );
+      })}
 
       {others.length > 0 && (
         <div

@@ -1,0 +1,360 @@
+import { describe, expect, it } from 'vitest';
+import type { TraceProjection } from '../../../src/shared/contract/trace';
+import {
+  buildLoopDecisionViews,
+  buildMemoryActivityEvents,
+  buildOutputArtifactViews,
+  buildRunUiState,
+  buildSessionTaskRecord,
+  buildToolCapabilityViews,
+} from '../../../src/renderer/utils/runWorkbenchProjection';
+
+const projection: TraceProjection = {
+  sessionId: 'session-1',
+  activeTurnIndex: 0,
+  turns: [
+    {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'streaming',
+      startTime: 100,
+      nodes: [
+        {
+          id: 'user-1',
+          type: 'user',
+          content: '帮我继续这个任务',
+          timestamp: 100,
+        },
+        {
+          id: 'timeline-scope',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 110,
+          turnTimeline: {
+            id: 'timeline-scope',
+            kind: 'capability_scope',
+            timestamp: 110,
+            tone: 'warning',
+            capabilityScope: {
+              selected: [{ kind: 'skill', id: 'memory-management', label: 'memory-management' }],
+              allowed: [],
+              invoked: [],
+              blocked: [{
+                kind: 'skill',
+                id: 'memory-management',
+                label: 'memory-management',
+                code: 'skill_not_mounted',
+                detail: 'Skill not mounted for this turn',
+                hint: 'Mount it from Skills',
+                severity: 'warning',
+              }],
+            },
+          },
+        },
+        {
+          id: 'tool-memory',
+          type: 'tool_call',
+          content: '',
+          timestamp: 120,
+          toolCall: {
+            id: 'tool-memory',
+            name: 'memory_search',
+            args: { query: 'Alma UI plan' },
+            result: 'found 2 memories',
+            success: true,
+          },
+        },
+        {
+          id: 'tool-write',
+          type: 'tool_call',
+          content: '',
+          timestamp: 130,
+          toolCall: {
+            id: 'tool-write',
+            name: 'Write',
+            args: { path: 'docs/plan.md' },
+            result: 'ok',
+            success: true,
+            outputPath: '/repo/docs/plan.md',
+          },
+        },
+        {
+          id: 'timeline-artifact',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 140,
+          turnTimeline: {
+            id: 'timeline-artifact',
+            kind: 'artifact_ownership',
+            timestamp: 140,
+            tone: 'success',
+            artifactOwnership: [{
+              kind: 'file',
+              label: 'plan.md',
+              ownerKind: 'tool',
+              ownerLabel: 'Write',
+              path: '/repo/docs/plan.md',
+            }],
+          },
+        },
+      ],
+    },
+  ],
+};
+
+describe('runWorkbenchProjection', () => {
+  it('derives blocked run state from current turn capability warnings', () => {
+    const run = buildRunUiState({
+      projection,
+      sessionId: 'session-1',
+      sessionStatus: 'running',
+    });
+
+    expect(run.status).toBe('running');
+    expect(run.blockedReason).toBe('Skill not mounted for this turn');
+    expect(run.completionSignal).toBe('1 个产物');
+  });
+
+  it('keeps cancelled run state after the runtime returns to idle', () => {
+    const cancelledProjection: TraceProjection = {
+      sessionId: 'session-cancel',
+      activeTurnIndex: -1,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-cancelled',
+          status: 'completed',
+          startTime: 100,
+          nodes: [
+            {
+              id: 'user-cancel',
+              type: 'user',
+              content: 'stop this run',
+              timestamp: 100,
+              metadata: {
+                workbench: {
+                  runCancellation: {
+                    status: 'cancelled',
+                    cancelledAt: 200,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildRunUiState({
+      projection: cancelledProjection,
+      sessionId: 'session-cancel',
+      sessionStatus: 'idle',
+    }).status).toBe('cancelled');
+  });
+
+  it('builds timeline, tools, memory, and outputs from the latest turn', () => {
+    expect(buildLoopDecisionViews(projection).map((item) => item.action)).toEqual([
+      '能力范围',
+      '产物归属',
+      '工具完成',
+      '工具完成',
+    ]);
+    expect(buildToolCapabilityViews(projection)).toMatchObject([
+      { id: 'memory-management', source: 'skill', callable: false },
+      { label: 'memory_search', source: 'memory', callable: true },
+      { label: 'Write', source: 'builtin', callable: true },
+    ]);
+    expect(buildMemoryActivityEvents(projection)).toMatchObject([
+      { action: 'used', title: 'Alma UI plan' },
+    ]);
+    expect(buildOutputArtifactViews(projection)).toMatchObject([
+      { title: 'plan.md', pathOrUrl: '/repo/docs/plan.md', previewState: 'available' },
+    ]);
+  });
+
+  it('classifies memory read, create, update, and delete events from tool metadata', () => {
+    const memoryProjection: TraceProjection = {
+      sessionId: 'session-2',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-memory',
+          status: 'completed',
+          startTime: 200,
+          nodes: [
+            {
+              id: 'memory-read',
+              type: 'tool_call',
+              content: '',
+              timestamp: 210,
+              toolCall: {
+                id: 'memory-read',
+                name: 'MemoryRead',
+                args: { filename: 'project.md' },
+                result: 'project context',
+                success: true,
+                metadata: { filename: 'project.md', path: '/mem/project.md' },
+              },
+            },
+            {
+              id: 'memory-create',
+              type: 'tool_call',
+              content: '',
+              timestamp: 220,
+              toolCall: {
+                id: 'memory-create',
+                name: 'MemoryWrite',
+                args: {
+                  action: 'write',
+                  filename: 'new.md',
+                  name: 'New memory',
+                  description: 'new preference',
+                },
+                result: 'saved',
+                success: true,
+                metadata: {
+                  action: 'write',
+                  filename: 'new.md',
+                  path: '/mem/new.md',
+                  existed: false,
+                },
+              },
+            },
+            {
+              id: 'memory-update',
+              type: 'tool_call',
+              content: '',
+              timestamp: 230,
+              toolCall: {
+                id: 'memory-update',
+                name: 'MemoryWrite',
+                args: {
+                  action: 'write',
+                  filename: 'existing.md',
+                  name: 'Existing memory',
+                },
+                result: 'saved',
+                success: true,
+                metadata: {
+                  action: 'write',
+                  filename: 'existing.md',
+                  path: '/mem/existing.md',
+                  existed: true,
+                },
+              },
+            },
+            {
+              id: 'memory-delete',
+              type: 'tool_call',
+              content: '',
+              timestamp: 240,
+              toolCall: {
+                id: 'memory-delete',
+                name: 'MemoryWrite',
+                args: {
+                  action: 'delete',
+                  filename: 'old.md',
+                },
+                result: 'deleted',
+                success: true,
+                metadata: {
+                  action: 'delete',
+                  filename: 'old.md',
+                  path: '/mem/old.md',
+                  existed: true,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildMemoryActivityEvents(memoryProjection)).toMatchObject([
+      {
+        action: 'used',
+        memoryId: 'project.md',
+        filename: 'project.md',
+        title: 'project.md',
+        reason: '读取记忆: project.md',
+        targetPath: '/mem/project.md',
+      },
+      {
+        action: 'created',
+        memoryId: 'new.md',
+        filename: 'new.md',
+        title: 'New memory',
+        reason: '写入记忆: new.md',
+        targetPath: '/mem/new.md',
+      },
+      {
+        action: 'updated',
+        memoryId: 'existing.md',
+        filename: 'existing.md',
+        title: 'Existing memory',
+        reason: '更新记忆: existing.md',
+        targetPath: '/mem/existing.md',
+      },
+      {
+        action: 'deleted',
+        memoryId: 'old.md',
+        filename: 'old.md',
+        title: 'old.md',
+        reason: '删除记忆: old.md',
+        targetPath: '/mem/old.md',
+      },
+    ]);
+  });
+
+  it('builds a session task record from todos', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      todos: [
+        { content: 'Read code', status: 'completed' },
+        { content: 'Patch UI', activeForm: 'Patching UI', status: 'in_progress' },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      scope: 'session',
+      title: 'Patching UI',
+      status: 'in_progress',
+      ownerRunId: 'turn-1',
+    });
+    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'in_progress']);
+  });
+
+  it('suppresses stored session todos after a completed run', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'completed',
+      todos: [
+        { content: 'Stale task', activeForm: 'Reviewing API documentation', status: 'in_progress' },
+      ],
+    });
+
+    expect(task).toBeNull();
+  });
+
+  it('keeps live task progress visible while a run is active', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'using_tools',
+      taskProgress: {
+        phase: 'tool_running',
+        tool: 'MemoryWrite',
+        step: 'Writing memory',
+      },
+    });
+
+    expect(task).toMatchObject({
+      title: 'Writing memory',
+      status: 'in_progress',
+    });
+  });
+});

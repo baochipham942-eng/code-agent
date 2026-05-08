@@ -19,9 +19,11 @@ import {
 } from 'lucide-react';
 import { Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc/domains';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
 
 // ============================================================================
 // Types
@@ -48,6 +50,17 @@ interface LightMemoryStats {
   recentConversations: string[];
 }
 
+type LightMemoryRequest =
+  | { action: 'lightList' }
+  | { action: 'lightStats' }
+  | { action: 'lightDelete'; filename: string };
+
+interface LightMemoryResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 // Memory type config
 const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
   user: { icon: '👤', label: '用户', color: 'text-blue-400' },
@@ -57,11 +70,66 @@ const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }
   unknown: { icon: '📄', label: '未分类', color: 'text-zinc-400' },
 };
 
+function basename(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
+}
+
+function resolveFocusTarget(files: LightMemoryFile[], focus: SettingsMemoryFocus): {
+  file: LightMemoryFile | null;
+  searchText: string;
+} {
+  const focusFilename = basename(focus.filename?.trim());
+  const queryFilename = basename(focus.query?.trim());
+  const targetFilename = focusFilename || (queryFilename?.toLowerCase().endsWith('.md') ? queryFilename : undefined);
+  const searchText = targetFilename || focus.query?.trim() || focus.filename?.trim() || '';
+  const lowerTarget = targetFilename?.toLowerCase();
+  const lowerSearch = searchText.toLowerCase();
+  const file = files.find((item) => {
+    const filename = item.filename.toLowerCase();
+    if (lowerTarget && filename === lowerTarget) return true;
+    if (!lowerSearch) return false;
+    return filename === lowerSearch
+      || item.name.toLowerCase() === lowerSearch
+      || item.description.toLowerCase().includes(lowerSearch);
+  }) ?? null;
+
+  return { file, searchText };
+}
+
+function isLightMemoryResponse<T>(value: unknown): value is LightMemoryResponse<T> {
+  return Boolean(value && typeof value === 'object' && 'success' in value);
+}
+
+async function invokeLightMemory<T>(request: LightMemoryRequest): Promise<LightMemoryResponse<T>> {
+  const commandResult = ipcService.isAvailable()
+    ? await ipcService.invoke(IPC_CHANNELS.MEMORY, request) as unknown
+    : undefined;
+  if (commandResult !== undefined) {
+    if (!isLightMemoryResponse<T>(commandResult)) {
+      return { success: true, data: commandResult as T };
+    }
+    if (commandResult.success || !isWebMode()) return commandResult;
+  }
+
+  try {
+    const data = await ipcService.invokeDomain<T>(IPC_DOMAINS.MEMORY, request.action, request);
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 // ============================================================================
 // Component
 // ============================================================================
 
 export const MemoryTab: React.FC = () => {
+  const settingsMemoryFocus = useAppStore((state) => state.settingsMemoryFocus);
+  const clearSettingsMemoryFocus = useAppStore((state) => state.clearSettingsMemoryFocus);
   const [files, setFiles] = useState<LightMemoryFile[]>([]);
   const [stats, setStats] = useState<LightMemoryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,8 +145,8 @@ export const MemoryTab: React.FC = () => {
     try {
       setIsLoading(true);
       const [filesResult, statsResult] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'lightList' }) as Promise<{ success: boolean; data?: LightMemoryFile[] }>,
-        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'lightStats' }) as Promise<{ success: boolean; data?: LightMemoryStats }>,
+        invokeLightMemory<LightMemoryFile[]>({ action: 'lightList' }),
+        invokeLightMemory<LightMemoryStats>({ action: 'lightStats' }),
       ]);
       if (filesResult?.success && filesResult.data) {
         setFiles(filesResult.data);
@@ -95,6 +163,24 @@ export const MemoryTab: React.FC = () => {
 
   useEffect(() => { loadData(); }, []);
 
+  useEffect(() => {
+    if (!settingsMemoryFocus || isLoading) return;
+
+    const { file, searchText } = resolveFocusTarget(files, settingsMemoryFocus);
+    if (searchText) setSearchQuery(searchText);
+
+    if (file) {
+      setSelectedFile(file);
+      setExpandedTypes(prev => new Set(prev).add(file.type || 'unknown'));
+      setMessage({ type: 'success', text: `已定位 ${file.filename}` });
+    } else if (searchText) {
+      setSelectedFile(null);
+      setMessage({ type: 'error', text: `未找到 ${searchText}` });
+    }
+
+    clearSettingsMemoryFocus();
+  }, [settingsMemoryFocus, files, isLoading, clearSettingsMemoryFocus]);
+
   // Auto-clear message
   useEffect(() => {
     if (message) {
@@ -108,6 +194,7 @@ export const MemoryTab: React.FC = () => {
     if (!searchQuery.trim()) return files;
     const q = searchQuery.toLowerCase();
     return files.filter(f =>
+      f.filename.toLowerCase().includes(q) ||
       f.name.toLowerCase().includes(q) ||
       f.description.toLowerCase().includes(q) ||
       f.content.toLowerCase().includes(q)
@@ -125,6 +212,20 @@ export const MemoryTab: React.FC = () => {
     return grouped;
   }, [filteredFiles]);
 
+  const modelUsageRows = useMemo(() => {
+    const usage = stats?.sessionStats?.modelUsage;
+    if (!usage) return [];
+    const total = Object.values(usage).reduce((a, b) => a + b, 0);
+    if (total <= 0) return [];
+    return Object.entries(usage)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([model, count]) => ({
+        model,
+        pct: Math.round((count / total) * 100),
+      }));
+  }, [stats?.sessionStats?.modelUsage]);
+
   // Toggle type expansion
   const toggleType = (type: string) => {
     setExpandedTypes(prev => {
@@ -138,10 +239,10 @@ export const MemoryTab: React.FC = () => {
   // Delete file
   const handleDelete = async (filename: string) => {
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await invokeLightMemory<boolean>({
         action: 'lightDelete',
         filename,
-      }) as { success: boolean; data?: boolean };
+      });
       if (result?.success) {
         setMessage({ type: 'success', text: `已删除 ${filename}` });
         if (selectedFile?.filename === filename) setSelectedFile(null);
@@ -176,7 +277,7 @@ export const MemoryTab: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="memory-settings-tab">
       <WebModeBanner />
 
       {/* Header */}
@@ -227,25 +328,18 @@ export const MemoryTab: React.FC = () => {
       )}
 
       {/* Model Usage */}
-      {stats?.sessionStats?.modelUsage && Object.keys(stats.sessionStats.modelUsage).length > 0 && (
+      {modelUsageRows.length > 0 && (
         <div className="bg-zinc-800 rounded-lg p-2">
           <div className="flex items-center gap-1.5 mb-1.5">
             <Activity className="w-3.5 h-3.5 text-zinc-400" />
             <span className="text-xs text-zinc-400">模型使用</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {Object.entries(stats.sessionStats.modelUsage)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 5)
-              .map(([model, count]) => {
-                const total = Object.values(stats.sessionStats!.modelUsage).reduce((a, b) => a + b, 0);
-                const pct = Math.round((count / total) * 100);
-                return (
-                  <span key={model} className="px-2 py-0.5 text-xs bg-zinc-700 rounded text-zinc-300">
-                    {model} <span className="text-zinc-500">{pct}%</span>
-                  </span>
-                );
-              })}
+            {modelUsageRows.map(({ model, pct }) => (
+              <span key={model} className="px-2 py-0.5 text-xs bg-zinc-700 rounded text-zinc-300">
+                {model} <span className="text-zinc-500">{pct}%</span>
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -258,6 +352,7 @@ export const MemoryTab: React.FC = () => {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="搜索记忆文件..."
           className="pl-9"
+          data-testid="memory-search-input"
         />
       </div>
 
@@ -300,6 +395,8 @@ export const MemoryTab: React.FC = () => {
                       {typeFiles.map(file => (
                         <div
                           key={file.filename}
+                          data-testid="memory-file-row"
+                          data-memory-filename={file.filename}
                           className={`group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
                             selectedFile?.filename === file.filename
                               ? 'bg-indigo-500/10 border border-indigo-500/30'
@@ -314,7 +411,10 @@ export const MemoryTab: React.FC = () => {
                             <div className="text-sm text-zinc-200 truncate">{file.name}</div>
                             <div className="text-xs text-zinc-500 truncate">{file.description}</div>
                             {selectedFile?.filename === file.filename && (
-                              <div className="mt-2 text-xs text-zinc-300 whitespace-pre-wrap max-h-32 overflow-y-auto bg-zinc-800 rounded p-2">
+                              <div
+                                className="mt-2 text-xs text-zinc-300 whitespace-pre-wrap max-h-32 overflow-y-auto bg-zinc-800 rounded p-2"
+                                data-testid="memory-file-detail"
+                              >
                                 {file.content || '(空)'}
                               </div>
                             )}

@@ -95,10 +95,18 @@ export const MAX_PREVIEW_TABS = 8;
 // when several activations fire in the same millisecond.
 let _previewTabTick = 0;
 const nextPreviewTabTick = () => ++_previewTabTick;
+let _settingsMemoryFocusTick = 0;
+const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
 export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | `preview:${string}`;
+
+export interface SettingsMemoryFocus {
+  filename?: string;
+  query?: string;
+  nonce: number;
+}
 
 const PREVIEW_PREFIX = 'preview:';
 const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
@@ -109,6 +117,7 @@ interface AppState {
   // UI State
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
+  settingsMemoryFocus: SettingsMemoryFocus | null;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
@@ -191,7 +200,9 @@ interface AppState {
   // Actions
   setShowSettings: (show: boolean) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
+  openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
+  clearSettingsMemoryFocus: () => void;
   setShowWorkspace: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
   setShowAgentTeamPanel: (show: boolean) => void;
@@ -271,6 +282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial UI State
   showSettings: false,
   settingsInitialTab: null,
+  settingsMemoryFocus: null,
   showWorkspace: false,
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
@@ -344,8 +356,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
-  openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab }),
+  openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab, settingsMemoryFocus: null }),
+  openMemorySettings: (focus) => set({
+    showSettings: true,
+    settingsInitialTab: 'memory',
+    settingsMemoryFocus: focus
+      ? { ...focus, nonce: nextSettingsMemoryFocusNonce() }
+      : null,
+  }),
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
+  clearSettingsMemoryFocus: () => set({ settingsMemoryFocus: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),

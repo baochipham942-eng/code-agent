@@ -390,7 +390,7 @@ describe('TaskMonitor scope inspector slice', () => {
     quickActionRunnerState.actionErrors = {};
   });
 
-  it('uses session task progress as the semantic progress when there are no todos', () => {
+  it('folds live session progress into Tasks when there are no todos', () => {
     appState.sessionTaskProgress = {
       'session-1': {
         turnId: 'turn-2',
@@ -415,14 +415,13 @@ describe('TaskMonitor scope inspector slice', () => {
     );
 
     expect(html).toContain('生成文档中');
-    expect(html).toContain('生成回复中');
     expect(html).toContain('工具：Read');
     expect(html).toContain('第 1/3 个工具');
     expect(html).not.toContain('读取文件');
     expect(html).not.toContain('文件读取活动');
   });
 
-  it('keeps progress empty when there are no todos or task progress', () => {
+  it('keeps Task as the primary rail section when there are no todos or task progress', () => {
     sessionState.messages = [
       {
         toolCalls: [
@@ -436,7 +435,10 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('暂无任务计划');
+    expect(html).toContain('Task');
+    expect(html).toContain('暂无任务');
+    expect(html).not.toContain('Activity');
+    expect(html).not.toContain('暂无任务计划');
     expect(html).not.toContain('工具活动');
     expect(html).not.toContain('文件读取活动');
     expect(html).not.toContain('2 次工具操作');
@@ -460,9 +462,9 @@ describe('TaskMonitor scope inspector slice', () => {
     );
 
     expect(html).toContain('0.1%');
-    expect(html).toContain('1.5k / 1048.6k tokens');
-    expect(html).toContain('Files 5');
-    expect(html).toContain('Other 53');
+    expect(html).not.toContain('1.5k / 1048.6k tokens');
+    expect(html).not.toContain('Files 5');
+    expect(html).not.toContain('Other 53');
   });
 
   it('keeps todos primary while preserving live task progress', () => {
@@ -501,19 +503,22 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('文件读取活动');
   });
 
-  it('renders the current turn capability scope with the same four layers used by chat trace', () => {
+  it('renders task-first rail with context and MCP split from capability sources', () => {
     const html = renderToStaticMarkup(
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('进度');
-    expect(html).toContain('来源');
-    expect(html).toContain('连接');
-    expect(html).toContain('当前 Turn Scope');
-    expect(html).toContain('当前 Turn Routing');
+    expect(html).toContain('Task');
+    expect(html).not.toContain('Activity');
+    expect(html).not.toContain('来源');
+    expect(html).not.toContain('连接');
+    expect(html).toContain('上下文');
+    expect(html).toContain('MCP');
+    expect(html).toContain('当前能力');
+    expect(html).not.toContain('当前 Turn Routing');
     expect(html).toContain('Scope Inspector Lite');
-    expect(html).toContain('Routing 证据');
-    expect(html).toContain('本轮输出');
+    expect(html).not.toContain('Routing 证据');
+    expect(html).not.toContain('本轮输出');
     expect(html).toContain('Execution Chart');
     expect(html).toContain('report.md');
     expect(html).toContain('reviewer · Write');
@@ -521,17 +526,16 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).toContain('Runtime Allowed');
     expect(html).toContain('Runtime Blocked');
     expect(html).toContain('Actually Invoked');
-    expect(html).toContain('Direct 已发送给 reviewer');
-    expect(html).toContain('用户显式指定 reviewer');
-    expect(html).toContain('已发送给 reviewer');
-    expect(html).toContain('Direct');
+    expect(html).not.toContain('Direct 已发送给 reviewer');
+    expect(html).not.toContain('用户显式指定 reviewer');
+    expect(html).not.toContain('已发送给 reviewer');
     expect(html).toContain('draft-skill');
     expect(html).toContain('Mail');
     expect(html).toContain('skill_not_mounted');
     expect(html).toContain('去 TaskPanel/Skills 把它挂到当前会话。');
     expect(html).toContain('send');
     expect(html).toContain('挂载');
-    expect(html).toContain('#2');
+    expect(html).not.toContain('#2 ·');
     expect(html).toContain('查看 draft-skill 详情');
     expect(html).toContain('查看 github 详情');
   });

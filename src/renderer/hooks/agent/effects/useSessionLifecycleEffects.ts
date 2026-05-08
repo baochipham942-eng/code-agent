@@ -1,9 +1,10 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { ResearchDetectedData } from '@shared/contract';
+import type { Message, ResearchDetectedData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 
@@ -70,7 +71,70 @@ function mergeErrorContent(existing: string | undefined, errorContent: string): 
   return `${current}\n\n${errorContent}`;
 }
 
+function clearRuntimeSessionState(sessionId: string): void {
+  const currentStatus = useTaskStore.getState().sessionStates[sessionId]?.status;
+  const shouldClear: SessionStatus[] = ['running', 'paused', 'queued', 'cancelling'];
+  if (!currentStatus || shouldClear.includes(currentStatus)) {
+    useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
+  }
+}
+
+function markRuntimeSessionCancelled(sessionId: string): void {
+  useTaskStore.getState().updateSessionState(sessionId, { status: 'cancelled' });
+}
+
+function removeUncommittedAssistantDraft(
+  messages: Message[],
+  draftMessageId: string | null | undefined,
+): Message[] {
+  if (!draftMessageId) return messages;
+  const draft = messages.find((message) => message.id === draftMessageId);
+  if (draft?.role !== 'assistant') return messages;
+  if ((draft.toolCalls?.length || 0) > 0) return messages;
+  return messages.filter((message) => message.id !== draftMessageId);
+}
+
+function markLatestUserTurnCancelled(
+  draftMessageId: string | null | undefined,
+  cancelledAt: number,
+): void {
+  const store = useSessionStore.getState();
+  const messages = store.messages;
+  let latestUserIndex = -1;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user' && !message.isMeta) {
+      latestUserIndex = index;
+      break;
+    }
+  }
+
+  if (latestUserIndex < 0) return;
+
+  const markedMessages = messages.map((message, index) => {
+    if (index !== latestUserIndex) return message;
+    return {
+      ...message,
+      metadata: {
+        ...message.metadata,
+        workbench: {
+          ...message.metadata?.workbench,
+          runCancellation: {
+            status: 'cancelled' as const,
+            cancelledAt,
+            reason: 'user_cancelled',
+          },
+        },
+      },
+    };
+  });
+
+  store.setMessages(removeUncommittedAssistantDraft(markedMessages, draftMessageId));
+}
+
 export const useSessionLifecycleEffects = ({
+  currentTurnMessageIdRef,
   flushRef,
   lastEventAtRef,
   setActiveToolProgress,
@@ -158,8 +222,19 @@ export const useSessionLifecycleEffects = ({
             flushRef.current();
             setActiveToolProgress(null);
             setToolTimeoutWarning(null);
+            if (event.type === 'agent_cancelled') {
+              markLatestUserTurnCancelled(currentTurnMessageIdRef.current, Date.now());
+              currentTurnMessageIdRef.current = null;
+            }
           }
           clearSessionProcessing();
+          if (eventSessionId) {
+            if (event.type === 'agent_cancelled') {
+              markRuntimeSessionCancelled(eventSessionId);
+            } else {
+              clearRuntimeSessionState(eventSessionId);
+            }
+          }
           if (eventSessionId) {
             setSessionTaskProgress(eventSessionId, null);
           }

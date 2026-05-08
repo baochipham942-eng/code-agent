@@ -9,6 +9,9 @@ import type { TraceProjection } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
+import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { useTaskStore } from '../../../stores/taskStore';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -34,6 +37,12 @@ export function shouldFollowTurnOutput(isAtBottom: boolean): 'smooth' | false {
   return isAtBottom ? 'smooth' : false;
 }
 
+export function shouldShowTurnTimeSeparator(previousTurn: { startTime: number } | null, currentTurn: { startTime: number }): boolean {
+  if (!previousTurn) return true;
+  const gapMs = currentTurn.startTime - previousTurn.startTime;
+  return gapMs >= 5 * 60 * 1000;
+}
+
 export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   projection,
   hasOlderMessages,
@@ -45,6 +54,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
+  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
+  const sessionStatus = useTaskStore((state) => state.sessionStates[projection.sessionId]?.status ?? null);
+  const isProjectionSessionProcessing = processingSessionIds.has(projection.sessionId)
+    || sessionStatus === 'running'
+    || sessionStatus === 'queued'
+    || sessionStatus === 'cancelling';
+  const projectionStreamSnapshot = currentSessionId === projection.sessionId
+    ? streamSnapshot
+    : null;
   const focusedTurnIndex = getFocusedTurnIndex(projection);
   const focusedTurnId =
     focusedTurnIndex >= 0 ? projection.turns[focusedTurnIndex]?.turnId : undefined;
@@ -172,6 +192,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
       const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
       const isActiveMatchTurn = activeMatch?.turnIndex === index;
+      const exposesSessionRuntime = isLast || isStreaming;
+      const previousTurn = index > 0 ? projection.turns[index - 1] : null;
 
       return (
         <div className="w-full px-4">
@@ -182,12 +204,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               defaultExpanded={isLast || isStreaming}
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
+              isActiveTurn={isStreaming}
+              sessionStatus={exposesSessionRuntime ? sessionStatus : null}
+              isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
+              streamSnapshot={projectionStreamSnapshot}
+              showSeparator={shouldShowTurnTimeSeparator(previousTurn, turn)}
             />
           </div>
         </div>
       );
     },
-    [projection.turns, projection.activeTurnIndex, searchMatches, activeMatchIndex],
+    [activeMatchIndex, isProjectionSessionProcessing, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator

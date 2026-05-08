@@ -15,6 +15,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 import {
   buildSettingsTabGroups,
   buildSettingsTabs,
+  resolveOptionalUpdateInfo,
 } from '../../../src/renderer/components/features/settings/SettingsModal';
 
 const t = {
@@ -83,5 +84,41 @@ describe('SettingsModal screen memory tab visibility', () => {
       'about',
     ]);
     expect(groups[3].tabs[0].label).toBe('数据与存储');
+  });
+});
+
+describe('resolveOptionalUpdateInfo', () => {
+  it('returns only non-force optional updates', async () => {
+    await expect(resolveOptionalUpdateInfo(async () => ({
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+    }))).resolves.toMatchObject({
+      hasUpdate: true,
+      latestVersion: '1.1.0',
+    });
+
+    await expect(resolveOptionalUpdateInfo(async () => ({
+      hasUpdate: true,
+      forceUpdate: true,
+      currentVersion: '1.0.0',
+      latestVersion: '2.0.0',
+    }))).resolves.toBeNull();
+
+    await expect(resolveOptionalUpdateInfo(async () => ({
+      hasUpdate: false,
+      currentVersion: '1.0.0',
+    }))).resolves.toBeNull();
+  });
+
+  it('swallows badge check failures so SettingsModal does not log an error', async () => {
+    const onCheckFailed = vi.fn();
+
+    await expect(resolveOptionalUpdateInfo(async () => {
+      throw new Error('network unavailable');
+    }, onCheckFailed)).resolves.toBeNull();
+
+    expect(onCheckFailed).toHaveBeenCalledOnce();
   });
 });

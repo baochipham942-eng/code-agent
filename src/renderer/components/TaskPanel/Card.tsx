@@ -2,7 +2,7 @@
 // Card - TaskPanel 内部卡片外壳（与 TaskMonitor / Connectors 共用）
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface CardProps {
@@ -27,6 +27,10 @@ export function Card({
   children,
 }: CardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded]);
 
   if (isEmpty) {
     return (

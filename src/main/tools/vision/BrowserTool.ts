@@ -8,7 +8,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { browserNavigateTool } from './browserNavigate';
 import { browserActionTool } from './browserAction';
-import { browserService } from '../../services/infra/browserService.js';
+import { getBrowserService } from '../../services/infra/browserPool.js';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -26,6 +26,7 @@ const BROWSER_ACTION_ACTIONS = [
 
 function remapBrowserToolActionForManagedSession(
   params: Record<string, unknown>,
+  agentId?: string,
 ): { params?: Record<string, unknown>; error?: string } {
   const action = params.action as string;
 
@@ -53,7 +54,7 @@ function remapBrowserToolActionForManagedSession(
         return { error: 'tabIndex or tabId required for switchTab when using Managed browser session' };
       }
 
-      const tabs = browserService.listTabs();
+      const tabs = getBrowserService(agentId).listTabs();
       const tab = tabs[tabIndex];
       if (!tab) {
         return { error: `Managed browser tab index out of range: ${tabIndex}` };
@@ -229,7 +230,7 @@ browser opener actions. For full Playwright-based browser automation, use the br
 
     if (action in navigateActionMap) {
       if (workbenchPolicy.preferManagedBrowser) {
-        const remapped = remapBrowserToolActionForManagedSession(params);
+        const remapped = remapBrowserToolActionForManagedSession(params, context.agentId);
         if (remapped.error) {
           return appendBrowserWorkbenchNote({
             success: false,

@@ -14,7 +14,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
-import { browserService } from '../../services/infra/browserService.js';
+import { getBrowserService } from '../../services/infra/browserPool.js';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -340,6 +340,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
     if (workbenchPolicy.preferManagedBrowser && isSmartAction(action.action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({
         executionIntent: context.executionIntent,
+        agentId: context.agentId,
       }));
     }
 
@@ -404,7 +405,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         if (action.action === 'locate_role' && action.targetApp) {
           result = await computerSurface.locateBackgroundElement(action);
         } else {
-          result = await executeSmartAction(action);
+          result = await executeSmartAction(action, context.agentId);
         }
       } else if (surfaceAuth?.state.mode === 'background_ax') {
         result = await computerSurface.executeBackgroundAction(action);
@@ -1017,16 +1018,17 @@ function isSmartAction(action: ActionType): boolean {
 }
 
 // Execute smart actions using Playwright browserService
-async function executeSmartAction(action: ComputerAction): Promise<ToolExecutionResult> {
+async function executeSmartAction(action: ComputerAction, agentId?: string): Promise<ToolExecutionResult> {
+  const browser = getBrowserService(agentId);
   // Verify browser is running
-  if (!browserService.isRunning()) {
+  if (!browser.isRunning()) {
     return {
       success: false,
       error: 'Browser not running. Use browser_action with action="launch" first, then "new_tab" to open a page.',
     };
   }
 
-  const activeTab = browserService.getActiveTab();
+  const activeTab = browser.getActiveTab();
   if (!activeTab) {
     return {
       success: false,

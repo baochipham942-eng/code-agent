@@ -288,7 +288,7 @@ export class AutoAgentCoordinator {
     for (const agent of agents) {
       // Checkpoint: 跳过已完成节点
       const cached = checkpoint.completedNodes[agent.id];
-      if (cached && cached.status === 'completed') {
+      if (cached?.status === 'completed') {
         logger.info(`Checkpoint hit, skipping agent: ${agent.name} (${agent.id})`);
         results.push(cached);
         if (cached.result?.output) {
@@ -360,7 +360,7 @@ export class AutoAgentCoordinator {
     for (const agent of primaryAgents) {
       // Checkpoint: 跳过已完成节点
       const cached = checkpoint.completedNodes[agent.id];
-      if (cached && cached.status === 'completed') {
+      if (cached?.status === 'completed') {
         logger.info(`Checkpoint hit, skipping primary agent: ${agent.name}`);
         results.push(cached);
         context.onProgress?.(agent.id, 'completed');
@@ -401,7 +401,7 @@ export class AutoAgentCoordinator {
       // 过滤掉已 checkpoint 的并行 agent
       const pendingParallel = parallelAgents.filter(a => {
         const cached = checkpoint.completedNodes[a.id];
-        if (cached && cached.status === 'completed') {
+        if (cached?.status === 'completed') {
           logger.info(`Checkpoint hit, skipping parallel agent: ${a.name}`);
           results.push(cached);
           context.onProgress?.(a.id, 'completed');
@@ -490,7 +490,9 @@ export class AutoAgentCoordinator {
         {
           modelConfig: context.modelConfig,
           toolResolver: context.toolResolver,
-          toolContext: context.toolContext,
+          // 注入 agent.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
+          // 共享 toolContext 不能直接 mutate（其他 agent 也用），clone 后注入。
+          toolContext: { ...context.toolContext, agentId: agent.id },
           executionAgentId: agent.id,
         }
       );

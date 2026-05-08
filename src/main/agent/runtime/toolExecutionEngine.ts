@@ -2225,6 +2225,10 @@ export class ToolExecutionEngine {
           isPlanMode: this.conversationRuntime.isPlanMode.bind(this.conversationRuntime),
           emitEvent: (event: string, data: unknown) => this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent),
           sessionId: this.ctx.sessionId,
+          // Per-agent BrowserPool / ComputerSurface 隔离的关键：把 RuntimeContext.agentId
+          // 透传到 ToolContext。子 agent 通过 subagent pipeline 派活时填入此字段，工具
+          // 实现层（BrowserTool/browserAction/computerUse）按 agentId 取自己的 BrowserContext。
+          agentId: this.ctx.agentId,
           preApprovedTools: this.ctx.preApprovedTools,
           currentAttachments,
           // 传递当前工具调用 ID（用于 subagent 追踪）

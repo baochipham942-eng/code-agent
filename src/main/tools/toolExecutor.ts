@@ -79,6 +79,9 @@ export interface ExecuteOptions {
   emitEvent?: (event: string, data: unknown) => void;
   // Session ID for cross-session isolation
   sessionId?: string;
+  // Agent ID for per-agent BrowserPool / ComputerSurface isolation。子 agent 派活
+  // 时由 subagent pipeline 灌入；主 agent 留 undefined → default agent。
+  agentId?: string;
   // Skill 系统支持：预授权工具列表（跳过权限确认）
   preApprovedTools?: Set<string>;
   // Current message attachments for multi-agent workflows
@@ -244,6 +247,8 @@ export class ToolExecutor {
       emit: options.emitEvent,
       // Session ID for cross-session isolation (fixes todo pollution)
       sessionId: options.sessionId,
+      // Per-agent BrowserPool / ComputerSurface isolation
+      agentId: options.agentId,
       // Current message attachments for multi-agent workflows
       currentAttachments: options.currentAttachments,
       // 当前工具调用 ID（用于 subagent 追踪）

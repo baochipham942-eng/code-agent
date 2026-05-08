@@ -372,7 +372,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // Checkpoint hit: 成功节点短路，不重新执行（对称 autoAgentCoordinator）
     const cached = this.completedTasks.get(task.id);
-    if (cached && cached.success) {
+    if (cached?.success) {
       logger.info(`Checkpoint hit, skipping parallel task: ${task.id}`);
       this.emit('task:start', { taskId: task.id, role: task.role });
       this.emit('task:complete', { taskId: task.id, result: cached });
@@ -408,7 +408,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
         {
           modelConfig,
           toolResolver,
-          toolContext,
+          // 注入 task.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
+          // 共享 toolContext 不能直接 mutate（其他 task 也用），clone 后注入。
+          toolContext: { ...toolContext, agentId: task.id },
           parentToolUseId: toolContext.currentToolCallId,
           executionAgentId: task.id,
           abortSignal: taskAbortController.signal,

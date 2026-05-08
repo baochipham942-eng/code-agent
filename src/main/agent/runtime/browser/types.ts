@@ -17,6 +17,13 @@ export interface BrowserVisualSmokeDiagnostics {
   bodyTextLength?: number;
   consoleErrors?: string[];
   pageErrors?: string[];
+  computerUseFallback?: {
+    screenshotPath?: string;
+    screenshotBytes?: number;
+    frontmostApp?: string | null;
+    windowTitle?: string | null;
+    reason?: string;
+  };
   viewports?: Array<{
     name: string;
     width: number;

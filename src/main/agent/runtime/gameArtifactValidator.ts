@@ -9,6 +9,7 @@ import {
   findAvailablePort,
   resolveBrowserProvider,
 } from '../../services/infra/browserProvider';
+import { loadPlaywrightChromium } from './browser/playwrightRuntime';
 import type { BrowserVisualSmokeSummary } from './browser/types';
 import {
   cloneBrowserVisualSmoke,
@@ -58,6 +59,7 @@ export interface GameArtifactValidationOptions {
 
 export interface RuntimeSmokeSummary {
   attempted: boolean;
+  skipped?: boolean;
   passed: boolean;
   failures: string[];
   checks: string[];
@@ -71,6 +73,7 @@ const validationCache = new Map<string, GameArtifactValidationSummary>();
 function cloneRuntimeSmoke(summary: RuntimeSmokeSummary): RuntimeSmokeSummary {
   return {
     attempted: summary.attempted,
+    skipped: summary.skipped,
     passed: summary.passed,
     failures: [...summary.failures],
     checks: [...summary.checks],
@@ -631,7 +634,17 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
   let profileDir: string | null = null;
 
   try {
-    const { chromium } = await import('playwright');
+    const playwright = await loadPlaywrightChromium();
+    if (!playwright.ok || !playwright.chromium) {
+      return {
+        attempted: false,
+        skipped: true,
+        passed: true,
+        failures: [],
+        checks: [`runtime smoke skipped: ${playwright.error || 'Playwright package unavailable.'}`],
+      };
+    }
+    const { chromium } = playwright;
     const resolution = resolveBrowserProvider();
     let page: import('playwright').Page | null = null;
 

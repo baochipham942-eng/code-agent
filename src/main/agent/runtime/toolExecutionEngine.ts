@@ -1237,6 +1237,11 @@ function formatBrowserVisualEvidenceForRepair(browserVisualSmoke?: BrowserVisual
       `- title=${diagnostics.title || '(empty)'}, metaPresent=${diagnostics.metaPresent === true}, testPresent=${diagnostics.testPresent === true}`,
       `- canvasCount=${diagnostics.canvasCount ?? 0}, nonblankCanvasCount=${diagnostics.nonblankCanvasCount ?? 0}, visibleElements=${diagnostics.visibleElements ?? 0}`,
     );
+    if (diagnostics.computerUseFallback) {
+      lines.push(
+        `- computerUseFallback screenshot=${diagnostics.computerUseFallback.screenshotPath || '(none)'}, frontmost=${diagnostics.computerUseFallback.frontmostApp || '(unknown)'}`,
+      );
+    }
   }
 
   return lines;

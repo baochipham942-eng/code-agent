@@ -49,6 +49,8 @@
       "../node_modules/better-sqlite3/**/*",
       "../node_modules/keytar/**/*",
       "../node_modules/node-pty/**/*",
+      "../node_modules/playwright/**/*",
+      "../node_modules/playwright-core/**/*",
       "../node_modules/onnxruntime-node/**/*",
       "../node_modules/avr-vad/dist/*.onnx",
       "../scripts/system-audio-capture"

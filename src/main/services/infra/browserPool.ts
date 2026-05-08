@@ -8,7 +8,7 @@
 // - 被动 LRU：超 max 时关最久未用 agent；profileDir 残留留待启动期清理
 // - 主 agent 不计入 LRU 容量
 
-import { BrowserService } from './browserService';
+import { BrowserService, browserService as defaultBrowserService } from './browserService';
 
 const DEFAULT_AGENT_KEY = '__default__';
 const DEFAULT_MAX_NAMED_AGENTS = 4;
@@ -22,8 +22,9 @@ export class BrowserPool {
   private entries = new Map<string, PoolEntry>();
   private maxNamedAgents: number;
 
-  constructor(maxNamedAgents: number = DEFAULT_MAX_NAMED_AGENTS) {
+  constructor(maxNamedAgents: number = DEFAULT_MAX_NAMED_AGENTS, defaultService: BrowserService = defaultBrowserService) {
     this.maxNamedAgents = Math.max(1, maxNamedAgents);
+    this.entries.set(DEFAULT_AGENT_KEY, { service: defaultService, lastUsedAt: Date.now() });
   }
 
   acquire(agentId?: string | null): BrowserService {
@@ -34,11 +35,9 @@ export class BrowserPool {
       return existing.service;
     }
 
-    if (key !== DEFAULT_AGENT_KEY) {
-      this.evictIfFull();
-    }
+    this.evictIfFull();
 
-    const service = new BrowserService(key === DEFAULT_AGENT_KEY ? undefined : key);
+    const service = new BrowserService(key);
     this.entries.set(key, { service, lastUsedAt: Date.now() });
     return service;
   }

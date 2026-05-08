@@ -1656,8 +1656,8 @@ export class BrowserService implements Disposable {
 
 // Default agent BrowserService — IPC 接入层和未传 agentId 的工具实现层用这一个。
 // 多 agent 隔离请通过 `getBrowserService(agentId)` 或 `browserPool.acquire(agentId)`
-// 拿到 per-agent 实例（见 ./browserPool.ts）。
-import { browserPool } from './browserPool';
-const browserServiceInstance = browserPool.acquire();
+// 拿到 per-agent 实例（见 ./browserPool.ts）。pool 的 default key 复用本实例，
+// 保证 IPC 路径和工具未传 agentId 路径看到同一个 BrowserContext。
+const browserServiceInstance = new BrowserService();
 getServiceRegistry().register('BrowserService', browserServiceInstance);
 export const browserService = browserServiceInstance;

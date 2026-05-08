@@ -15,6 +15,7 @@ import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
 import { getBrowserService } from '../../services/infra/browserPool.js';
+import { acquireComputerSurfaceLock } from '../../services/desktop/computerSurfaceLock';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -395,6 +396,13 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       }, workbenchNotes);
     }
 
+    // Smart actions 走 BrowserService（已经按 agentId 池化，多 agent 并发 OK），
+    // 不抢 frontmost / 全局键鼠 — 不进 ComputerSurface mutex。
+    // 真正抢桌面资源的 write 路径（background_ax / background_cgevent /
+    // macOS/linux/win32 native）必须串行。
+    const needsSurfaceLock = !isSmartAction(action.action);
+    const surfaceLockSlot = needsSurfaceLock ? await acquireComputerSurfaceLock() : null;
+
     try {
       let result: ToolExecutionResult;
 
@@ -483,6 +491,8 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         }), workbenchNotes);
       }
       return appendBrowserWorkbenchNote(result, workbenchNotes);
+    } finally {
+      surfaceLockSlot?.release();
     }
   },
 };

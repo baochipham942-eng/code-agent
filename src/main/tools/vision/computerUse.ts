@@ -16,6 +16,7 @@ import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { acquireComputerSurfaceLock } from '../../services/desktop/computerSurfaceLock';
+import { isMultiAgentMode } from '../../services/multiAgentMode';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -1010,11 +1011,16 @@ export function attachForegroundKeystrokeWarning(
   if (ranAsBackground) {
     return result;
   }
+  const multiAgent = isMultiAgentMode();
+  const warning = multiAgent
+    ? 'MULTI-AGENT MODE: Keystrokes were sent as global frontmost-app input while other agents may be operating the desktop. Subsequent input WILL collide with concurrent agents. You MUST re-run with targetApp + axPath (locate_role or get_ax_elements first) — coordinate-only / global keystrokes are unsafe in multi-agent mode.'
+    : 'Keystrokes were sent to whatever app is frontmost RIGHT NOW. If focus shifts (notification, video call, app switch) further input lands in the wrong window. To stay headless, re-run with targetApp + axPath (locate_role or get_ax_elements first).';
   return {
     ...result,
     metadata: {
       ...(result.metadata || {}),
-      foregroundFallbackWarning: 'Keystrokes were sent to whatever app is frontmost RIGHT NOW. If focus shifts (notification, video call, app switch) further input lands in the wrong window. To stay headless, re-run with targetApp + axPath (locate_role or get_ax_elements first).',
+      foregroundFallbackWarning: warning,
+      multiAgentMode: multiAgent,
     },
   };
 }

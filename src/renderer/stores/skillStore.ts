@@ -76,6 +76,13 @@ type SkillStore = SkillState & SkillActions;
 // Store
 // ----------------------------------------------------------------------------
 
+// In-flight Promise 去重：组件树里多个 hook 实例（useWorkbenchCapabilities /
+// useWorkbenchCapabilityRegistry 等）首次 mount 时会同步触发 fetchAvailable，
+// 在第一次 set 落地前所有调用者读到的 availableSkills.length 都是 0，会发出
+// N 个并行请求。这里把进行中的 Promise 暂存，让并发调用共享同一次请求。
+let availableSkillsInFlight: Promise<void> | null = null;
+let mountedSkillsInFlight: { sessionId: string; promise: Promise<void> } | null = null;
+
 export const useSkillStore = create<SkillStore>()((set, get) => ({
   // 初始状态
   mountedSkills: [],
@@ -103,35 +110,50 @@ export const useSkillStore = create<SkillStore>()((set, get) => ({
       logger.debug('No current session, skipping fetchMountedSkills');
       return;
     }
-
-    try {
-      set({ loading: true, error: null });
-      const mounted = await invokeSkillChannel<SessionSkillMount[]>(
-        SKILL_CHANNELS.SESSION_LIST,
-        currentSessionId
-      );
-      set({ mountedSkills: mounted || [] });
-      logger.debug('Fetched mounted skills', { count: (mounted || []).length });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '加载挂载列表失败';
-      logger.error('Failed to fetch mounted skills', { error: err });
-      set({ error: message });
-    } finally {
-      set({ loading: false });
+    if (mountedSkillsInFlight?.sessionId === currentSessionId) {
+      return mountedSkillsInFlight.promise;
     }
+
+    const promise = (async () => {
+      try {
+        set({ loading: true, error: null });
+        const mounted = await invokeSkillChannel<SessionSkillMount[]>(
+          SKILL_CHANNELS.SESSION_LIST,
+          currentSessionId
+        );
+        set({ mountedSkills: mounted || [] });
+        logger.debug('Fetched mounted skills', { count: (mounted || []).length });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '加载挂载列表失败';
+        logger.error('Failed to fetch mounted skills', { error: err });
+        set({ error: message });
+      } finally {
+        set({ loading: false });
+        mountedSkillsInFlight = null;
+      }
+    })();
+    mountedSkillsInFlight = { sessionId: currentSessionId, promise };
+    return promise;
   },
 
   // 获取所有可用 skills
   fetchAvailableSkills: async () => {
-    try {
-      const skills = await invokeSkillChannel<ParsedSkill[]>(SKILL_CHANNELS.SKILL_LIST);
-      set({ availableSkills: skills || [] });
-      logger.debug('Fetched available skills', { count: (skills || []).length });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '加载可用 skills 失败';
-      logger.error('Failed to fetch available skills', { error: err });
-      set({ error: message });
-    }
+    if (availableSkillsInFlight) return availableSkillsInFlight;
+
+    availableSkillsInFlight = (async () => {
+      try {
+        const skills = await invokeSkillChannel<ParsedSkill[]>(SKILL_CHANNELS.SKILL_LIST);
+        set({ availableSkills: skills || [] });
+        logger.debug('Fetched available skills', { count: (skills || []).length });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '加载可用 skills 失败';
+        logger.error('Failed to fetch available skills', { error: err });
+        set({ error: message });
+      } finally {
+        availableSkillsInFlight = null;
+      }
+    })();
+    return availableSkillsInFlight;
   },
 
   // 获取推荐 skills

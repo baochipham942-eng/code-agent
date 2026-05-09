@@ -30,8 +30,7 @@ export * from './contract/device';
 export * from './contract/settings';
 export * from './contract/update';
 
-// Cloud & GUI types
-export * from './contract/cloud';
+// GUI types
 export * from './contract/gui';
 
 // Memory types

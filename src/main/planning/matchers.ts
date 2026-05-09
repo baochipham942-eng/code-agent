@@ -33,27 +33,6 @@ export function matchCategory(
   return tools?.includes(context.toolName) ?? false;
 }
 
-/**
- * Check if a tool result indicates failure
- */
-export function matchFailed(context: HookContext): boolean {
-  return context.toolResult?.success === false;
-}
-
-/**
- * Check if a tool result indicates success
- */
-export function matchSuccess(context: HookContext): boolean {
-  return context.toolResult?.success === true;
-}
-
-/**
- * Check if there's an error in context
- */
-export function matchError(context: HookContext): boolean {
-  return context.error !== undefined;
-}
-
 // ----------------------------------------------------------------------------
 // Matcher Factory Implementation
 // ----------------------------------------------------------------------------
@@ -119,27 +98,6 @@ export const matchers: MatcherFactory = {
 // ----------------------------------------------------------------------------
 
 /**
- * Create a matcher that checks tool params against a predicate
- */
-export function matchParams(
-  predicate: (params: Record<string, unknown>) => boolean
-): HookMatcher {
-  return (context: HookContext) => {
-    if (!context.toolParams) return false;
-    return predicate(context.toolParams);
-  };
-}
-
-/**
- * Create a matcher that checks if action count exceeds threshold
- */
-export function matchActionCount(threshold: number): HookMatcher {
-  return (context: HookContext) => {
-    return (context.actionCount ?? 0) >= threshold;
-  };
-}
-
-/**
  * Create a matcher for dangerous bash commands
  */
 export function matchDangerousBash(): HookMatcher {
@@ -161,15 +119,3 @@ export function matchDangerousBash(): HookMatcher {
   };
 }
 
-/**
- * Create a matcher for file paths matching a pattern
- */
-export function matchFilePath(pattern: RegExp): HookMatcher {
-  return (context: HookContext) => {
-    const filePath =
-      (context.toolParams?.file_path as string) ||
-      (context.toolParams?.path as string);
-    if (!filePath) return false;
-    return pattern.test(filePath);
-  };
-}

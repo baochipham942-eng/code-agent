@@ -324,13 +324,3 @@ export {
   getModelConfig,
 } from './hybrid';
 
-// 导出路由和 Swarm（高级用法）
-export {
-  type RoutingDecision,
-  type RoutingContext,
-  routeTask,
-
-  type SwarmResult,
-  executeSwarm,
-  cleanupTaskAgents,
-} from './hybrid';

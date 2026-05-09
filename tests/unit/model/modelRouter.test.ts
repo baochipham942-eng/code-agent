@@ -32,18 +32,6 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 
 // Mock all provider call functions
 vi.mock('../../../src/main/model/providers', () => ({
-  callDeepSeek: vi.fn().mockResolvedValue({ type: 'text', content: 'deepseek response', finishReason: 'stop' }),
-  callClaude: vi.fn().mockResolvedValue({ type: 'text', content: 'claude response', finishReason: 'stop' }),
-  callOpenAI: vi.fn().mockResolvedValue({ type: 'text', content: 'openai response', finishReason: 'stop' }),
-  callGroq: vi.fn().mockResolvedValue({ type: 'text', content: 'groq response', finishReason: 'stop' }),
-  callLocal: vi.fn().mockResolvedValue({ type: 'text', content: 'local response', finishReason: 'stop' }),
-  callQwen: vi.fn().mockResolvedValue({ type: 'text', content: 'qwen response', finishReason: 'stop' }),
-  callMoonshot: vi.fn().mockResolvedValue({ type: 'text', content: 'moonshot response', finishReason: 'stop' }),
-  callMinimax: vi.fn().mockResolvedValue({ type: 'text', content: 'minimax response', finishReason: 'stop' }),
-  callPerplexity: vi.fn().mockResolvedValue({ type: 'text', content: 'perplexity response', finishReason: 'stop' }),
-  callGemini: vi.fn().mockResolvedValue({ type: 'text', content: 'gemini response', finishReason: 'stop' }),
-  callZhipu: vi.fn().mockResolvedValue({ type: 'text', content: 'zhipu response', finishReason: 'stop' }),
-  callOpenRouter: vi.fn().mockResolvedValue({ type: 'text', content: 'openrouter response', finishReason: 'stop' }),
   callViaCloudProxy: vi.fn().mockResolvedValue({ type: 'text', content: 'cloud proxy response', finishReason: 'stop' }),
 }));
 

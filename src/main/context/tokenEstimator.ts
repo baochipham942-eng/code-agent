@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { encode } from 'gpt-tokenizer';
+import type { Message as SharedMessage } from '@shared/contract/message';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('TokenEstimator');
@@ -185,12 +186,13 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Message structure for estimation
+ * Message structure for estimation.
+ *
+ * Narrow projection of the shared contract Message — token estimation only
+ * needs `role` + `content`. Defined as a Pick of the canonical type so that
+ * any drift in the shared contract surfaces here at the type level.
  */
-export interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
+export type Message = Pick<SharedMessage, 'role' | 'content'>;
 
 /**
  * Estimate tokens for a single message including role overhead
@@ -199,11 +201,13 @@ export interface Message {
  * @returns Token estimate including role overhead
  */
 export function estimateMessageTokens(message: Message): number {
-  // Role token overhead (role name, formatting)
-  const roleOverhead = {
+  // Role token overhead (role name, formatting). All roles use 4 tokens
+  // (matches the OpenAI cookbook overhead model).
+  const roleOverhead: Record<SharedMessage['role'], number> = {
     user: 4,
     assistant: 4,
     system: 4,
+    tool: 4,
   };
 
   const contentTokens = estimateTokens(message.content);

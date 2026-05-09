@@ -327,34 +327,6 @@ const TOPIC_TEMPLATES: TopicTemplate[] = [
 // ============================================================================
 
 /**
- * 根据主题生成大纲结构
- */
-export function generateOutlineStructure(topic: string): Outline {
-  // 匹配最合适的模板
-  const template = TOPIC_TEMPLATES.find(t => t.pattern.test(topic)) || TOPIC_TEMPLATES[TOPIC_TEMPLATES.length - 1];
-
-  // 生成章节
-  const sections: OutlineSection[] = template.sections.map((section, index) => ({
-    ...section,
-    id: `section-${index + 1}`,
-    searchQuery: section.searchQuery?.replace('{topic}', topic),
-    points: [],
-  }));
-
-  return {
-    topic,
-    title: topic,
-    subtitle: generateSubtitle(topic, template.category),
-    sections,
-    metadata: {
-      generatedAt: new Date().toISOString(),
-      framework: 'SCQA',
-      totalSlides: sections.length + 2, // +2 for title and end slides
-    },
-  };
-}
-
-/**
  * 生成副标题
  */
 function generateSubtitle(topic: string, category: string): string {
@@ -376,77 +348,6 @@ export function getSearchQueries(outline: Outline): string[] {
   return outline.sections
     .filter(s => s.searchQuery)
     .map(s => s.searchQuery!);
-}
-
-/**
- * 将搜索结果填充到大纲
- */
-export function fillOutlineWithData(
-  outline: Outline,
-  sectionId: string,
-  data: Record<string, string>
-): Outline {
-  const updatedSections = outline.sections.map(section => {
-    if (section.id !== sectionId) return section;
-
-    // 填充数据槽
-    const filledSlots = section.dataSlots.map(slot => ({
-      ...slot,
-      value: data[slot.id] || slot.value,
-    }));
-
-    // 生成 points
-    const points = filledSlots
-      .filter(slot => slot.value)
-      .map(slot => slot.value!);
-
-    return {
-      ...section,
-      dataSlots: filledSlots,
-      points,
-    };
-  });
-
-  return {
-    ...outline,
-    sections: updatedSections,
-  };
-}
-
-/**
- * 将大纲转换为 Markdown 格式（供 ppt_generate 使用）
- */
-export function outlineToMarkdown(outline: Outline): string {
-  const lines: string[] = [];
-
-  // 标题页
-  lines.push(`# ${outline.title}`);
-  if (outline.subtitle) {
-    lines.push(`## ${outline.subtitle}`);
-  }
-  lines.push('');
-
-  // 内容页
-  for (const section of outline.sections) {
-    lines.push(`# ${section.title}`);
-
-    if (section.points && section.points.length > 0) {
-      for (const point of section.points) {
-        lines.push(`- ${point}`);
-      }
-    } else {
-      // 如果没有填充内容，使用数据槽描述作为占位
-      for (const slot of section.dataSlots.filter(s => s.required)) {
-        lines.push(`- [待填充: ${slot.description}]`);
-      }
-    }
-    lines.push('');
-  }
-
-  // 结束页
-  lines.push('# 谢谢观看');
-
-  return lines.join('\n');
 }
 
 /**

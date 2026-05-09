@@ -801,15 +801,8 @@ export function scoreToGrade(score: number): EvaluationGrade {
 // Re-export from evaluationFramework.ts for backward compatibility
 // ============================================================================
 export {
-  type ScoringDimensionConfig,
-  type EvalDimensionName,
   type FailureStage,
   type FailureFunnelResult,
   type VerifierType,
   type VerifierResult,
-  type TestSetTier,
-  type TestCaseSource,
-  type DimensionScore,
-  type ExperimentSummary,
-  DEFAULT_SCORING_CONFIG,
 } from './evaluationFramework';

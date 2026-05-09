@@ -1358,7 +1358,7 @@ export async function validateGameArtifact(
     const dimensions = [largeFixedCanvas.width, largeFixedCanvas.height]
       .filter((value) => typeof value === 'number')
       .join('x');
-    failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 加 max-width/max-height/aspect-ratio/height:auto 等缩放约束。`);
+    failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 同时约束宽高，例如 max-width: calc(100vw - 16px)、max-height: calc(100dvh - 16px)、aspect-ratio、height:auto，确保 390px mobile viewport 内完整可见。`);
   } else if (largeFixedCanvas && hasResponsiveCanvasSizing(content)) {
     checks.push('responsive canvas sizing detected');
   }
@@ -1415,7 +1415,7 @@ export async function validateGameArtifact(
     INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content))
     && !interactiveContractSnippet
   ) {
-    failures.push('交互测试合约没有形成可平衡解析的对象字面量；请修复 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 的结构。');
+    failures.push('交互测试合约没有形成可平衡解析的对象字面量；请把 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 修成一个直接赋值的平衡对象字面量，形如 window.__GAME_TEST__ = { start() {...}, reset(levelOrScenario) {...}, snapshot() {...}, step(inputState = {}, frames = 1) {...}, runSmokeTest() { return { passed, checks, failures, coverage }; } }; 不要放在注释、函数/类/IIFE/Object.assign 外壳里，也不要在对象闭合后留下重复或孤立的方法尾巴。');
   } else if (interactiveContractSnippet && hasOrphanedContractTail(content, interactiveContractSnippet)) {
     failures.push('交互测试合约闭合后仍然残留游离的 start/reset/snapshot/step/runSmokeTest 方法尾巴；请删除重复或孤立的 contract tail，再保留一份真实生效的测试合约。');
   }

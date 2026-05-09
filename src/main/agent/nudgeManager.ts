@@ -27,6 +27,8 @@ export interface NudgeCheckContext {
   sessionId: string;
   iterations: number;
   workingDirectory: string;
+  /** Current file mutation tools to mention in nudges, e.g. "Edit 或 Append". */
+  mutationToolPrompt?: string;
   /** Inject a system message into the conversation */
   injectSystemMessage: (content: string) => void;
   /** Emit an agent event (notification, etc.) */
@@ -207,7 +209,10 @@ export class NudgeManager {
   runNudgeChecks(ctx: NudgeCheckContext): boolean {
     // P1 Nudge: Detect read-only stop pattern
     if (ctx.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
-      const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(ctx.toolsUsedInTurn);
+      const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(
+        ctx.toolsUsedInTurn,
+        { mutationToolPrompt: ctx.mutationToolPrompt },
+      );
       if (nudgeMessage) {
         this.readOnlyNudgeCount++;
         logger.debug(`[NudgeManager] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
@@ -461,6 +466,7 @@ export class NudgeManager {
   checkProgressState(
     toolsUsedInTurn: string[],
     injectSystemMessage: (content: string) => void,
+    options: { mutationToolPrompt?: string } = {},
   ): void {
     const currentState = this.evaluateProgressState(toolsUsedInTurn);
     if (currentState === 'exploring') {
@@ -468,7 +474,7 @@ export class NudgeManager {
       if (this.consecutiveExploringCount >= this.maxConsecutiveExploring) {
         logger.debug(`[NudgeManager] P2 Checkpoint: ${this.consecutiveExploringCount} consecutive exploring iterations, injecting nudge`);
         logCollector.agent('INFO', `P2 Checkpoint nudge: ${this.consecutiveExploringCount} exploring iterations`);
-        injectSystemMessage(this.generateExploringNudge());
+        injectSystemMessage(this.generateExploringNudge(options.mutationToolPrompt));
         this.consecutiveExploringCount = 0;
       }
     } else {
@@ -651,11 +657,12 @@ export class NudgeManager {
     return 'exploring';
   }
 
-  private generateExploringNudge(): string {
+  private generateExploringNudge(mutationToolPrompt?: string): string {
+    const mutationTools = mutationToolPrompt || 'edit_file 或 write_file';
     return (
       `<checkpoint-nudge priority="medium">\n` +
       `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
-      `如果已充分了解问题，请开始用 edit_file 或 write_file 实施修改。\n` +
+      `如果已充分了解问题，请开始用 ${mutationTools} 实施修改。\n` +
       `如果仍需调查，请在 <think> 中说明还需要了解什么，然后有针对性地读取。\n` +
       `</checkpoint-nudge>`
     );

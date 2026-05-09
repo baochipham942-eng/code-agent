@@ -460,7 +460,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
       },
     });
 
@@ -484,7 +484,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
         targetRangedReadCount: 0,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
@@ -505,7 +505,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
         targetRangedReadCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
@@ -526,8 +526,8 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 2,
+        targetReadCount: 10,
+        targetRangedReadCount: 4,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
     });
@@ -551,8 +551,8 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
+        targetReadCount: 10,
+        targetRangedReadCount: 3,
         activeIssueCodes: ['missing_quality_metadata'],
       },
     });
@@ -576,7 +576,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'targeted_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
         targetRangedReadCount: 1,
       },
     });
@@ -600,8 +600,8 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 2,
+        targetReadCount: 10,
+        targetRangedReadCount: 4,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
     });
@@ -625,7 +625,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
         targetRangedReadCount: 0,
         blockedToolCount: 2,
         noOpPatchCount: 1,
@@ -652,7 +652,7 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
+        targetReadCount: 10,
         blockedToolCount: 2,
       },
     });
@@ -783,8 +783,8 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
+        targetReadCount: 10,
+        targetRangedReadCount: 3,
         blockedToolCount: 3,
         editAnchorFailureCount: 1,
         preferTargetedEdit: true,
@@ -886,8 +886,8 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 2,
+        targetReadCount: 10,
+        targetRangedReadCount: 4,
         noOpPatchCount: 1,
         preferTargetedEdit: true,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
@@ -938,6 +938,8 @@ describe('contextAssembly inference artifact retry', () => {
     });
     const [retryMessages] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
     expect(retryMessages[0].content).toContain('<artifact-repair-compact-write-retry>');
+    expect(retryMessages[0].content).toContain('direct plain object literal');
+    expect(retryMessages[0].content).toContain('390px mobile viewport');
     expect(retryMessages.map((message: any) => message.content).join('\n')).toContain('window.__GAME_TEST__');
     expect(ctx.runtime._artifactRepairCompactWriteRetried).toBe(false);
   });

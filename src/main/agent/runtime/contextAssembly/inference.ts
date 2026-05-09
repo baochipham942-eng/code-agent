@@ -25,73 +25,15 @@ import type { StreamCallback } from '../../../model/types';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { logger } from '../contextAssembly';
 import {
-  getArtifactRepairTargetReadBudget,
-  getArtifactRepairTargetRangedReadBudget,
+  getArtifactRepairToolPolicy,
+  isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
   seedArtifactRepairGuardFromContext,
-  shouldAllowFullArtifactRewriteDuringRepair,
 } from '../artifactRepairGuard';
-
-const ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST = new Set([
-  'Read',
-  'read_file',
-  'Edit',
-  'edit_file',
-  'Write',
-  'write_file',
-  'Append',
-  'append_file',
-]);
-
-const ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST = new Set([
-  'Read',
-  'read_file',
-  'Edit',
-  'edit_file',
-  'Write',
-  'write_file',
-  'Append',
-  'append_file',
-]);
-
-const ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST = new Set([
-  'Edit',
-  'edit_file',
-  'Append',
-  'append_file',
-]);
-
-const ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST = new Set([
-  'Read',
-  'read_file',
-  'Edit',
-  'edit_file',
-  'Append',
-  'append_file',
-]);
-
-const ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST = new Set([
-  'Edit',
-  'edit_file',
-  'Write',
-  'write_file',
-  'Append',
-  'append_file',
-  'Bash',
-  'bash',
-]);
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
 const ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS = 8_192;
 const ARTIFACT_REPAIR_WRITE_MAX_TOKENS = 65_536;
-const ARTIFACT_REPAIR_TARGETED_ISSUE_CODES = new Set([
-  'coverage_without_runtime_evidence',
-  'shortcut_state_mutation',
-  'missing_controls_metadata',
-  'missing_coverage_metadata',
-  'missing_reachability_metadata',
-  'missing_quality_metadata',
-]);
 const ARTIFACT_MODEL_WAIT_HEARTBEAT_MS = 15_000;
 
 function startArtifactModelWaitProgress(
@@ -143,116 +85,25 @@ function getNetworkRetryBudget(errMsg: string, errCode: string | undefined, arti
   return 1;
 }
 
-function isArtifactRepairReadBudgetExhausted(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard) return false;
-  const targetReadCount = ctx.runtime.artifactRepairGuard?.targetReadCount ?? 0;
-  return targetReadCount >= getArtifactRepairTargetReadBudget(guard);
-}
-
-function isArtifactRepairRangedReadBudgetExhausted(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard) return false;
-  const targetRangedReadCount = ctx.runtime.artifactRepairGuard?.targetRangedReadCount ?? 0;
-  return targetRangedReadCount >= getArtifactRepairTargetRangedReadBudget(guard);
-}
-
 function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {
   return Boolean(ctx.runtime.artifactRepairGuard?.targetFile);
 }
 
-function hasTargetedArtifactRepairIssue(ctx: ContextAssemblyCtx): boolean {
-  const issueCodes = ctx.runtime.artifactRepairGuard?.activeIssueCodes || [];
-  return issueCodes.some((code) => ARTIFACT_REPAIR_TARGETED_ISSUE_CODES.has(code));
-}
-
-function shouldExposeTargetedArtifactRepairRead(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard || guard.patched) return false;
-  const editAnchorFailureCount = guard.editAnchorFailureCount ?? 0;
-  const targetRangedReadCount = guard.targetRangedReadCount ?? 0;
-  if (editAnchorFailureCount > 0) {
-    return targetRangedReadCount < getArtifactRepairTargetRangedReadBudget(guard);
-  }
-  const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(ctx);
-  const hasTargetedIssue = hasTargetedArtifactRepairIssue(ctx);
-  if (hasTargetedIssue && isArtifactRepairReadBudgetExhausted(ctx) && hasRangedReadLeft) {
-    return true;
-  }
-  if (
-    guard.preferTargetedEdit
-    || (guard.noOpPatchCount ?? 0) >= 1
-    || (guard.blockedToolCount ?? 0) >= 2
-  ) {
-    return false;
-  }
-
-  return hasTargetedIssue
-    && isArtifactRepairReadBudgetExhausted(ctx)
-    && hasRangedReadLeft;
-}
-
-function shouldPreferTargetedArtifactRepair(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard || guard.patched) return false;
-  if (shouldAllowFullArtifactRewriteDuringRepair(guard)) return false;
-  if ((guard.targetReadCount ?? 0) === 0) return false;
-  return Boolean(guard.preferTargetedEdit)
-    || (hasTargetedArtifactRepairIssue(ctx) && isArtifactRepairReadBudgetExhausted(ctx));
-}
-
-function hasUnreadArtifactRepairTarget(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard || guard.patched) return false;
-  return (guard.targetReadCount ?? 0) === 0;
-}
-
 function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (!guard) return false;
-  if (shouldExposeTargetedArtifactRepairRead(ctx)) return false;
-  if (hasUnreadArtifactRepairTarget(ctx)) return false;
-  return (guard.noOpPatchCount ?? 0) >= 1
-    || Boolean(guard.preferTargetedEdit)
-    || isArtifactRepairReadBudgetExhausted(ctx)
-    || isArtifactRepairRangedReadBudgetExhausted(ctx)
-    || (guard.blockedToolCount ?? 0) >= 2;
+  return isArtifactRepairWritePriorityForGuard(ctx.runtime.artifactRepairGuard);
 }
 
 function isArtifactRepairFullRewritePriority(ctx: ContextAssemblyCtx): boolean {
-  if (!isArtifactRepairWritePriority(ctx)) return false;
-  const toolAllowlist = getArtifactRepairToolAllowlist(ctx);
-  return toolAllowlist.has('Write') || toolAllowlist.has('write_file');
-}
-
-function getArtifactRepairToolAllowlist(ctx: ContextAssemblyCtx): Set<string> {
-  const guard = ctx.runtime.artifactRepairGuard;
-  if (guard?.patched) {
-    return ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST;
-  }
-  if (guard && shouldAllowFullArtifactRewriteDuringRepair(guard) && isArtifactRepairWritePriority(ctx)) {
-    return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
-  }
-  if (shouldExposeTargetedArtifactRepairRead(ctx)) {
-    return ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST;
-  }
-  if (shouldPreferTargetedArtifactRepair(ctx)) {
-    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
-  }
-  if (isArtifactRepairWritePriority(ctx)) {
-    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
-  }
-  const blockedToolCount = ctx.runtime.artifactRepairGuard?.blockedToolCount ?? 0;
-  if (blockedToolCount >= 1) return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
-  return ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST;
+  return getArtifactRepairToolPolicy(ctx.runtime.artifactRepairGuard)?.fullRewritePriority ?? false;
 }
 
 function filterToolsForArtifactRepair<T extends { name: string }>(
   tools: T[],
   ctx: ContextAssemblyCtx,
 ): T[] {
-  const allowlist = getArtifactRepairToolAllowlist(ctx);
-  return tools.filter((tool) => allowlist.has(tool.name));
+  const policy = getArtifactRepairToolPolicy(ctx.runtime.artifactRepairGuard);
+  if (!policy) return tools;
+  return tools.filter((tool) => policy.allowlist.has(tool.name));
 }
 
 function dedupeToolDefinitions<T extends { name: string }>(tools: T[]): T[] {
@@ -327,7 +178,7 @@ function buildCompactArtifactRepairWriteRetryMessages(
 ): ModelMessage[] {
   const guard = ctx.runtime.artifactRepairGuard;
   const targetFile = guard?.targetFile || 'target artifact';
-  const fullRewriteAllowed = guard ? shouldAllowFullArtifactRewriteDuringRepair(guard) : false;
+  const fullRewriteAllowed = getArtifactRepairToolPolicy(guard)?.writeAllowed ?? false;
   const activeIssueCodes = guard?.activeIssueCodes?.length
     ? guard.activeIssueCodes.join(', ')
     : 'unknown';
@@ -345,6 +196,9 @@ function buildCompactArtifactRepairWriteRetryMessages(
         : 'Available action: call exactly one mutation tool, preferably Edit. Do not call Read, Bash, Write, Task, or validator tools.',
       'Use the target evidence below. If replacing an interactive test contract, a short old_text anchor around `window.__GAME_TEST__ = {` or `window.__INTERACTIVE_TEST__ = {` is acceptable; the runtime can expand the anchor to the balanced contract region.',
       'For malformed_test_contract, replace the full active test-contract region in one balanced Edit and remove duplicate orphaned start/reset/snapshot/step/runSmokeTest methods after the contract closes.',
+      'Contract shape: assign exactly one direct plain object literal, `window.__GAME_TEST__ = { start() { ... }, reset(levelOrScenario) { ... }, snapshot() { return {...}; }, step(inputState = {}, frames = 1) { ...; return this.snapshot(); }, runSmokeTest() { return { passed, checks, failures, coverage }; } };`, or the same shape on `window.__INTERACTIVE_TEST__`.',
+      'Do not put the contract in comments, a wrapper function, class, IIFE/factory, Object.assign, or separate top-level function shells. Avoid comments inside the active contract block and remove orphaned method tails.',
+      'For mobile canvas failures, constrain both width and height with responsive CSS on the canvas or wrapper. A 390px mobile viewport must show the full playfield and HUD; do not rely on fixed 800px/900px widths or max-height:100vh with width:auto alone.',
       'The patch must remove direct ability/reward grants, test-mode auto collection/progression, and coverage based only on existence/registration. Prove gameplay through before/after snapshot changes driven by step/input.',
       '</artifact-repair-compact-write-retry>',
     ].join('\n'),

@@ -28,9 +28,22 @@ export interface BrowserVisualSmokeDiagnostics {
     name: string;
     width: number;
     height: number;
+    documentWidth?: number;
+    documentHeight?: number;
     canvasCount: number;
     nonblankCanvasCount: number;
     visibleElements: number;
     horizontalOverflow: boolean;
+    canvasFrames?: Array<{
+      width: number;
+      height: number;
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      visibleRatio: number;
+      internalWidth: number;
+      internalHeight: number;
+    }>;
   }>;
 }

@@ -108,6 +108,22 @@ describe('NudgeManager', () => {
       );
     });
 
+    it('uses repair mutation tools in read-only nudge when provided', () => {
+      manager.reset([], 'fix the artifact', '/tmp/test', []);
+
+      const ctx = createMockContext({
+        toolsUsedInTurn: ['read_file', 'grep'],
+        mutationToolPrompt: 'Edit 或 Append',
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('Edit 或 Append');
+      expect(injectedMessage).not.toContain('write_file');
+    });
+
     it('returns null when write tools used', () => {
       manager.reset([], 'fix the bug', '/tmp/test', []);
 
@@ -146,6 +162,21 @@ describe('NudgeManager', () => {
 
       // P1 is exhausted; P2/P3/P5 don't apply → returns false
       expect(result).toBe(false);
+    });
+  });
+
+  describe('P2 Checkpoint progress', () => {
+    it('uses repair mutation tools in checkpoint nudge when provided', () => {
+      const injectSystemMessage = vi.fn();
+
+      manager.checkProgressState(['read_file'], injectSystemMessage, { mutationToolPrompt: 'Edit 或 Append' });
+      manager.checkProgressState(['Read'], injectSystemMessage, { mutationToolPrompt: 'Edit 或 Append' });
+      manager.checkProgressState(['read_file'], injectSystemMessage, { mutationToolPrompt: 'Edit 或 Append' });
+
+      expect(injectSystemMessage).toHaveBeenCalledTimes(1);
+      const injectedMessage = injectSystemMessage.mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('Edit 或 Append');
+      expect(injectedMessage).not.toContain('write_file');
     });
   });
 

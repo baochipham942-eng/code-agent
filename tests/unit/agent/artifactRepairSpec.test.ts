@@ -119,6 +119,33 @@ describe('artifactRepairSpec', () => {
     expect(formatted).toContain('responsive');
   });
 
+  it('classifies mobile visual canvas crop failures as responsive layout repairs', () => {
+    const spec = createArtifactRepairSpec(summary([
+      'mobile visual smoke found canvas elements but none are visibly framed in the viewport.',
+      'mobile visual smoke detected horizontal canvas overflow; the game is likely cropped in this viewport.',
+    ]));
+
+    expect(spec.issues.map((issue) => issue.code)).toEqual(['canvas_not_responsive']);
+    expect(spec.issues[0].repairInstruction).toContain('390px mobile viewport');
+
+    const formatted = formatArtifactRepairSpecForPrompt(spec);
+    expect(formatted).toContain('max-width: calc(100vw - 16px)');
+    expect(formatted).toContain('fixed 800px/900px');
+  });
+
+  it('formats malformed contract failures with a concrete object-literal repair shape', () => {
+    const spec = createArtifactRepairSpec(summary([
+      '交互测试合约没有形成可平衡解析的对象字面量；请修复 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 的结构。',
+    ]));
+
+    expect(spec.issues.map((issue) => issue.code)).toEqual(['malformed_test_contract']);
+    expect(spec.issues[0].repairInstruction).toContain('one balanced object assignment');
+
+    const formatted = formatArtifactRepairSpecForPrompt(spec);
+    expect(formatted).toContain('window.__GAME_TEST__ = { start()');
+    expect(formatted).toContain('Do not use comments');
+  });
+
   it('classifies frontend browser validation failures with render repair hints', () => {
     const spec = createArtifactRepairSpec(summary([
       'browser visual smoke saw console errors: Uncaught TypeError: Cannot read properties of undefined',

@@ -8,6 +8,91 @@ const FULL_REWRITE_REPAIR_ISSUE_CODES = new Set([
   'ability_gate_without_reachability',
 ]);
 
+const TARGETED_REPAIR_ISSUE_CODES = new Set([
+  'missing_test_contract',
+  'malformed_test_contract',
+  'missing_contract_start',
+  'missing_contract_snapshot',
+  'missing_contract_smoke',
+  'coverage_without_runtime_evidence',
+  'shortcut_state_mutation',
+  'canvas_not_responsive',
+  'frontend_visual_smoke_failed',
+  'missing_controls_metadata',
+  'missing_coverage_metadata',
+  'missing_reachability_metadata',
+  'missing_quality_metadata',
+]);
+
+const ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST = new Set([
+  'Edit',
+  'edit_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST = new Set([
+  'Read',
+  'read_file',
+  'Edit',
+  'edit_file',
+  'Append',
+  'append_file',
+]);
+
+const ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST = new Set([
+  'Edit',
+  'edit_file',
+  'Write',
+  'write_file',
+  'Append',
+  'append_file',
+  'Bash',
+  'bash',
+]);
+
+const CANONICAL_TOOL_ORDER = ['Read', 'Edit', 'Write', 'Append', 'Bash'] as const;
+const CANONICAL_MUTATION_TOOL_ORDER = ['Edit', 'Write', 'Append'] as const;
+
+type ArtifactRepairGuard = NonNullable<RuntimeContext['artifactRepairGuard']>;
+
+export interface ArtifactRepairToolPolicy {
+  allowlist: ReadonlySet<string>;
+  allowedToolNames: string[];
+  allowedMutationToolNames: string[];
+  mutationToolPrompt: string;
+  mutationToolPromptZh: string;
+  readAllowed: boolean;
+  writeAllowed: boolean;
+  bashAllowed: boolean;
+  writePriority: boolean;
+  fullRewritePriority: boolean;
+  targetedReadAllowed: boolean;
+  mutationOnly: boolean;
+}
+
 const ARTIFACT_REPAIR_CUE_PATTERN =
   /artifact[-_\s]*(?:validation\s*failed|repair)|validation failed|validator\s*(?:失败|failed)|(?:校验|验证)\s*失败|当前\s*(?:validator|校验|验证).*失败|修复|\b(?:repair|fix|failed|failure|missing|malformed)\b|未通过|失败|报错|缺少|no longer exposes|丢失|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成|玩不通|不能玩|不好玩|上不去|拿不到|触发不了/i;
 
@@ -109,30 +194,32 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
 export function getArtifactRepairTargetReadBudget(
   guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
 ): number {
+  // 给模型"读 → 改 → 再读 verify"的循环空间。budget=1 时模型 Read 1 次后再想看自己写了啥
+  // 就被 block,反复请求触发 admission_stop。失败 attempts/noOpPatchCount 仍兜底死循环。
   switch (guard.phase) {
     case 'read_then_patch':
     case 'targeted_repair':
     case 'initial_repair':
     case 'baseline_repair':
-      return 1;
+      return 10;
     default:
-      return 1;
+      return 10;
   }
 }
 
 export function getArtifactRepairTargetRangedReadBudget(
   guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
 ): number {
-  if (guard.patched) return 1;
+  if (guard.patched) return 2;
   const issueCodes = guard.activeIssueCodes || [];
   if (issueCodes.includes('coverage_without_runtime_evidence') || issueCodes.includes('shortcut_state_mutation')) {
-    return 2;
+    return 4;
   }
-  return 1;
+  return 3;
 }
 
 export function shouldAllowFullArtifactRewriteDuringRepair(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
+  guard: ArtifactRepairGuard,
 ): boolean {
   if (guard.patched) return false;
   const issueCodes = guard.activeIssueCodes || [];
@@ -147,4 +234,131 @@ export function shouldAllowFullArtifactRewriteDuringRepair(
   if (attempts >= 3 && noOpPatches >= 1) return true;
   if (editAnchorFailures >= 1 && noOpPatches >= 1) return true;
   return false;
+}
+
+function hasTargetedArtifactRepairIssue(guard: ArtifactRepairGuard): boolean {
+  const issueCodes = guard.activeIssueCodes || [];
+  return issueCodes.some((code) => TARGETED_REPAIR_ISSUE_CODES.has(code));
+}
+
+function isArtifactRepairReadBudgetExhausted(guard: ArtifactRepairGuard): boolean {
+  const targetReadCount = guard.targetReadCount ?? 0;
+  return targetReadCount >= getArtifactRepairTargetReadBudget(guard);
+}
+
+function isArtifactRepairRangedReadBudgetExhausted(guard: ArtifactRepairGuard): boolean {
+  const targetRangedReadCount = guard.targetRangedReadCount ?? 0;
+  return targetRangedReadCount >= getArtifactRepairTargetRangedReadBudget(guard);
+}
+
+function hasUnreadArtifactRepairTarget(guard: ArtifactRepairGuard): boolean {
+  if (guard.patched) return false;
+  return (guard.targetReadCount ?? 0) === 0;
+}
+
+function shouldExposeTargetedArtifactRepairRead(guard: ArtifactRepairGuard): boolean {
+  if (guard.patched) return false;
+  const editAnchorFailureCount = guard.editAnchorFailureCount ?? 0;
+  const targetRangedReadCount = guard.targetRangedReadCount ?? 0;
+  if (editAnchorFailureCount > 0) {
+    return targetRangedReadCount < getArtifactRepairTargetRangedReadBudget(guard);
+  }
+  const hasRangedReadLeft = !isArtifactRepairRangedReadBudgetExhausted(guard);
+  const hasTargetedIssue = hasTargetedArtifactRepairIssue(guard);
+  if (hasTargetedIssue && isArtifactRepairReadBudgetExhausted(guard) && hasRangedReadLeft) {
+    return true;
+  }
+  if (
+    guard.preferTargetedEdit
+    || (guard.noOpPatchCount ?? 0) >= 1
+    || (guard.blockedToolCount ?? 0) >= 2
+  ) {
+    return false;
+  }
+
+  return hasTargetedIssue
+    && isArtifactRepairReadBudgetExhausted(guard)
+    && hasRangedReadLeft;
+}
+
+function shouldPreferTargetedArtifactRepair(guard: ArtifactRepairGuard): boolean {
+  if (guard.patched) return false;
+  if (shouldAllowFullArtifactRewriteDuringRepair(guard)) return false;
+  if ((guard.targetReadCount ?? 0) === 0) return false;
+  return Boolean(guard.preferTargetedEdit)
+    || (hasTargetedArtifactRepairIssue(guard) && isArtifactRepairReadBudgetExhausted(guard));
+}
+
+export function isArtifactRepairWritePriority(guard: ArtifactRepairGuard | undefined): boolean {
+  if (!guard) return false;
+  if (shouldExposeTargetedArtifactRepairRead(guard)) return false;
+  if (hasUnreadArtifactRepairTarget(guard)) return false;
+  return (guard.noOpPatchCount ?? 0) >= 1
+    || Boolean(guard.preferTargetedEdit)
+    || isArtifactRepairReadBudgetExhausted(guard)
+    || isArtifactRepairRangedReadBudgetExhausted(guard)
+    || (guard.blockedToolCount ?? 0) >= 2;
+}
+
+export function getArtifactRepairToolAllowlist(
+  guard: ArtifactRepairGuard | undefined,
+): ReadonlySet<string> {
+  if (guard?.patched) {
+    return ARTIFACT_REPAIR_POST_PATCH_TOOL_ALLOWLIST;
+  }
+  if (guard && shouldAllowFullArtifactRewriteDuringRepair(guard) && isArtifactRepairWritePriority(guard)) {
+    return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
+  }
+  if (guard && shouldExposeTargetedArtifactRepairRead(guard)) {
+    return ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST;
+  }
+  if (guard && shouldPreferTargetedArtifactRepair(guard)) {
+    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
+  }
+  if (isArtifactRepairWritePriority(guard)) {
+    return ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST;
+  }
+  const blockedToolCount = guard?.blockedToolCount ?? 0;
+  if (blockedToolCount >= 1) return ARTIFACT_REPAIR_POST_BLOCK_TOOL_ALLOWLIST;
+  return ARTIFACT_REPAIR_INITIAL_TOOL_ALLOWLIST;
+}
+
+function getCanonicalToolNames(allowlist: ReadonlySet<string>, order: readonly string[]): string[] {
+  return order.filter((name) => allowlist.has(name));
+}
+
+function joinToolNames(names: string[], conjunction: 'or' | '或'): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} ${conjunction} ${names[1]}`;
+  const head = names.slice(0, -1).join(conjunction === '或' ? '、' : ', ');
+  return `${head}${conjunction === '或' ? ' 或 ' : ', or '}${names[names.length - 1]}`;
+}
+
+export function getArtifactRepairToolPolicy(
+  guard: ArtifactRepairGuard | undefined,
+): ArtifactRepairToolPolicy | null {
+  if (!guard) return null;
+  const allowlist = getArtifactRepairToolAllowlist(guard);
+  const allowedToolNames = getCanonicalToolNames(allowlist, CANONICAL_TOOL_ORDER);
+  const allowedMutationToolNames = getCanonicalToolNames(allowlist, CANONICAL_MUTATION_TOOL_ORDER);
+  const mutationToolPrompt = joinToolNames(allowedMutationToolNames, 'or') || 'currently available file mutation tools';
+  const mutationToolPromptZh = joinToolNames(allowedMutationToolNames, '或') || '当前可用的文件修改工具';
+  const fullRewritePriority = isArtifactRepairWritePriority(guard)
+    && (allowlist.has('Write') || allowlist.has('write_file'));
+
+  return {
+    allowlist,
+    allowedToolNames,
+    allowedMutationToolNames,
+    mutationToolPrompt,
+    mutationToolPromptZh,
+    readAllowed: allowlist.has('Read') || allowlist.has('read_file'),
+    writeAllowed: allowlist.has('Write') || allowlist.has('write_file'),
+    bashAllowed: allowlist.has('Bash') || allowlist.has('bash'),
+    writePriority: isArtifactRepairWritePriority(guard),
+    fullRewritePriority,
+    targetedReadAllowed: allowlist === ARTIFACT_REPAIR_TARGETED_EDIT_TOOL_ALLOWLIST,
+    mutationOnly: allowlist === ARTIFACT_REPAIR_MUTATION_ONLY_TOOL_ALLOWLIST,
+  };
 }

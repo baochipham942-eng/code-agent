@@ -142,10 +142,10 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Move all appended scripts, metadata, and JSON blocks inside the HTML document before </html>; leave no non-whitespace content after </html>.',
     };
   }
-  if (/大型固定 canvas|固定 canvas|窄窗口.*裁切|responsive css|响应式 CSS|canvas.*(?:max-width|max-height|aspect-ratio|height:auto)/i.test(text)) {
+  if (/大型固定 canvas|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|canvas overflow|game is likely cropped|canvas elements but none are visibly framed|none are visibly framed.*viewport|mobile visual smoke.*canvas|responsive css|响应式 CSS|canvas.*(?:max-width|max-height|aspect-ratio|height:auto)/i.test(text)) {
     return {
       code: 'canvas_not_responsive',
-      repairInstruction: 'Keep the canvas internal resolution if needed, but add responsive CSS on the canvas or wrapper, such as max-width: 100vw, max-height: 100vh, aspect-ratio, and height:auto, so narrow browser windows do not crop the game.',
+      repairInstruction: 'Keep the canvas internal drawing resolution if needed, but constrain both rendered width and height on the canvas or wrapper, such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. A 390px mobile viewport must show the full playfield without horizontal overflow.',
     };
   }
   if (/browser visual smoke|frontend browser validation|runtime page errors|console errors|nonblank rendered content|visibly framed|visible DOM content/i.test(text)) {
@@ -158,6 +158,12 @@ function classifyFailure(failure: string): FailureClassification {
   // 等）从 PlatformerChecker 拿，主入口不再持有 platformer 关键词。
   const subtypeMatch = classifyFailureViaRegistry(text);
   if (subtypeMatch) return subtypeMatch;
+  if (/可平衡解析的对象字面量|游离的 start\/reset\/snapshot\/step\/runSmokeTest 方法尾巴|孤立的 contract tail|重复或孤立的 contract tail/i.test(text)) {
+    return {
+      code: 'malformed_test_contract',
+      repairInstruction: 'Replace the full active window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ region with one balanced object assignment containing start/reset/snapshot/step/runSmokeTest, and remove any duplicate orphaned method tail after it closes. Avoid comments inside the active contract block; comments with quotes or braces can break the validator scan.',
+    };
+  }
   if (
     /缺少通用交互测试合约|没有找到 runSmokeTest/i.test(text)
     || /(?:缺少|missing|不存在|not found|没有|未找到)[\s\S]{0,80}window\.__(?:INTERACTIVE|GAME)_TEST__/i.test(text)
@@ -165,13 +171,7 @@ function classifyFailure(failure: string): FailureClassification {
   ) {
     return {
       code: 'missing_test_contract',
-      repairInstruction: 'Expose window.__INTERACTIVE_TEST__ or window.__GAME_TEST__ as a plain object with start(), snapshot(), and runSmokeTest().',
-    };
-  }
-  if (/可平衡解析的对象字面量|游离的 start\/reset\/snapshot\/step\/runSmokeTest 方法尾巴|孤立的 contract tail|重复或孤立的 contract tail/i.test(text)) {
-    return {
-      code: 'malformed_test_contract',
-      repairInstruction: 'Replace the full active window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ object in one balanced edit, and remove any duplicate orphaned start/reset/snapshot/step/runSmokeTest tail after the contract closes.',
+      repairInstruction: 'Expose window.__INTERACTIVE_TEST__ or window.__GAME_TEST__ as one direct plain object literal containing start(), reset(levelOrScenario?), snapshot(), step(inputState, frames?), and runSmokeTest(). Do not put the contract in comments, a wrapper function, Object.assign, a class, or orphaned top-level methods.',
     };
   }
   if (/缺少 start\(\)|缺少 start 或 snapshot|缺少 start 和 snapshot/i.test(text)) {
@@ -317,7 +317,7 @@ const GENERIC_ISSUE_CODES: readonly GenericArtifactRepairIssueCode[] = [
  * 的 checker 通过 `classifyFailure` 自己识别。
  */
 const GENERIC_CANDIDATE_KEYWORDS =
-  /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|frontend browser validation|console errors|page errors|响应式|裁切|gameplayMechanics|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i;
+  /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|visual smoke|frontend browser validation|console errors|page errors|visibly framed|horizontal overflow|cropped|响应式|裁切|gameplayMechanics|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i;
 
 /**
  * 动态拼装 directCodePattern：generic 列表 + 所有已注册 subtype 的 codes。
@@ -478,6 +478,18 @@ function buildMustFix(issues: ArtifactRepairIssue[]): string[] {
 
 function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   const hints: string[] = [];
+  if (issues.some((issue) =>
+    issue.code === 'missing_test_contract'
+    || issue.code === 'malformed_test_contract'
+    || issue.code === 'missing_contract_start'
+    || issue.code === 'missing_contract_snapshot'
+    || issue.code === 'missing_contract_smoke'
+  )) {
+    hints.push(
+      'Contract template: assign exactly one direct object literal, `window.__GAME_TEST__ = { start() { ... }, reset(levelOrScenario) { ... }, snapshot() { return {...}; }, step(inputState = {}, frames = 1) { ...; return this.snapshot(); }, runSmokeTest() { return { passed: failures.length === 0, checks, failures, coverage }; } };`, or the same shape on `window.__INTERACTIVE_TEST__`.',
+      'Keep all five contract methods inside that one balanced object. Do not use comments, class/factory/IIFE wrappers, Object.assign, separate top-level function shells, or duplicate orphan method tails after the assignment closes.',
+    );
+  }
   if (issues.some((issue) => issue.code === 'missing_reachability_metadata')) {
     hints.push(
       'required metadata field: add progressPlan or reachability as an actual array property on __GAME_META__ or __INTERACTIVE_META__. A generic progress, coverage, objectives, coreLoop, or qualityPlan object does not satisfy this validator check.',
@@ -506,7 +518,7 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   }
   if (issues.some((issue) => issue.code === 'canvas_not_responsive')) {
     hints.push(
-      'Keep the game resolution stable for drawing, but make the browser layout responsive: wrap the canvas, set max-width/max-height against the viewport, preserve aspect-ratio, and avoid overflow cropping the playfield.',
+      'Keep the game resolution stable for drawing, but avoid fixed 800px/900px width or max-height-only scaling; wrap the canvas and set max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), preserve aspect-ratio, and use height:auto so the full playfield fits in a 390px mobile viewport.',
     );
   }
   if (issues.some((issue) => issue.code === 'frontend_visual_smoke_failed')) {

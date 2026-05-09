@@ -17,7 +17,6 @@ import { initUpdateService, getUpdateService } from '../services/cloud/updateSer
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
 import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
-import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../services/cloud/orchestratorConfig';
 import { initDesktopActivityUnderstandingService } from '../desktop/desktopActivityUnderstandingService';
 import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
@@ -250,13 +249,6 @@ function initializeSupabaseServices(configService: ConfigService, mainWindow: Br
     logger.error('Failed to initialize unified orchestrator', error);
   }
 
-  // Initialize cloud task service
-  try {
-    initCloudTaskService({});
-    logger.info('CloudTaskService initialized');
-  } catch (error: unknown) {
-    logger.error('Failed to initialize CloudTaskService', error);
-  }
 }
 
 /**

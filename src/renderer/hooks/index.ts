@@ -6,7 +6,6 @@ export { useTheme } from './useTheme';
 export type { Theme, ResolvedTheme } from './useTheme';
 export { useAgent } from './useAgent';
 export { useRequireAuth } from './useRequireAuth';
-export { useCloudTasks, useCloudTask, useCloudTaskStats } from './useCloudTasks';
 export { useVoiceInput } from './useVoiceInput';
 export type { VoiceInputStatus } from './useVoiceInput';
 export { useMultiAgentDetection, useIsParallelExecution, useIsHierarchicalOrchestration, useAgentCount } from './useMultiAgentDetection';

@@ -26,15 +26,6 @@ import type {
 } from '../contract';
 
 import type {
-  CloudTask,
-  CreateCloudTaskRequest,
-  CloudTaskFilter,
-  TaskProgressEvent,
-  TaskSyncState,
-  CloudExecutionStats,
-} from '../contract/cloud';
-
-import type {
   MemoryItem,
   MemoryCategory,
   MemoryStats as MemoryStatsNew,
@@ -358,21 +349,6 @@ export interface IpcInvokeHandlers {
   }>;
   [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (payload: { id: string; confirmed: boolean }) => Promise<void>;
 
-  // Cloud task
-  [IPC_CHANNELS.CLOUD_TASK_CREATE]: (request: CreateCloudTaskRequest) => Promise<CloudTask>;
-  [IPC_CHANNELS.CLOUD_TASK_UPDATE]: (taskId: string, updates: Partial<CloudTask>) => Promise<CloudTask | null>;
-  [IPC_CHANNELS.CLOUD_TASK_CANCEL]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_GET]: (taskId: string) => Promise<CloudTask | null>;
-  [IPC_CHANNELS.CLOUD_TASK_LIST]: (filter?: CloudTaskFilter) => Promise<CloudTask[]>;
-  [IPC_CHANNELS.CLOUD_TASK_DELETE]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_START]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_PAUSE]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_RESUME]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_RETRY]: (taskId: string) => Promise<boolean>;
-  [IPC_CHANNELS.CLOUD_TASK_SYNC]: () => Promise<void>;
-  [IPC_CHANNELS.CLOUD_TASK_SYNC_STATE]: () => Promise<TaskSyncState>;
-  [IPC_CHANNELS.CLOUD_TASK_STATS]: () => Promise<CloudExecutionStats>;
-
   // Context health
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
@@ -679,9 +655,6 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
   [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;
   [IPC_CHANNELS.CONNECTOR_EVENT]: (event: ConnectorEvent) => void;
-  [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
-  [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
-  [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
   [IPC_CHANNELS.STATUS_TOKEN_UPDATE]: (event: { inputTokens: number; outputTokens: number }) => void;

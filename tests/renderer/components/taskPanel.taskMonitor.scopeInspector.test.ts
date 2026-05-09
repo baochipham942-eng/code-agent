@@ -435,7 +435,7 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('Task');
+    expect(html).toContain('任务');
     expect(html).toContain('暂无任务');
     expect(html).not.toContain('Activity');
     expect(html).not.toContain('暂无任务计划');
@@ -497,10 +497,46 @@ describe('TaskMonitor scope inspector slice', () => {
     );
 
     expect(html).toContain('正在生成文档');
-    expect(html).toContain('0/1');
     expect(html).toContain('生成回复中');
+    expect(html).not.toContain('0/1 steps');
     expect(html).not.toContain('工具活动');
     expect(html).not.toContain('文件读取活动');
+  });
+
+  it('prioritizes active and pending plan items while folding completed items', () => {
+    statusRailTodosState.items = [
+      { status: 'completed', content: '已完成一', activeForm: '已完成一' },
+      { status: 'completed', content: '已完成二', activeForm: '已完成二' },
+      { status: 'completed', content: '已完成三', activeForm: '已完成三' },
+      { status: 'completed', content: '已完成四', activeForm: '已完成四' },
+      { status: 'in_progress', content: '改造任务卡展示', activeForm: '正在改造任务卡展示' },
+      { status: 'pending', content: '补 helper 单测', activeForm: '补 helper 单测' },
+      { status: 'pending', content: '补组件测试', activeForm: '补组件测试' },
+      { status: 'pending', content: '跑定向测试', activeForm: '跑定向测试' },
+      { status: 'pending', content: '跑 typecheck', activeForm: '跑 typecheck' },
+      { status: 'pending', content: '回读结果', activeForm: '回读结果' },
+    ];
+    statusRailTodosState.completed = 4;
+    statusRailTodosState.total = 10;
+    appState.sessionTaskProgress = {
+      'session-1': {
+        turnId: 'turn-2',
+        phase: 'generating',
+        step: '生成回复中',
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('4/10');
+    expect(html).toContain('正在改造任务卡展示');
+    expect(html).toContain('补 helper 单测');
+    expect(html).toContain('回读结果');
+    expect(html).toContain('已完成 4 项');
+    expect(html).not.toContain('已完成一');
+    expect(html).not.toContain('0/1 steps');
   });
 
   it('renders task-first rail with context and MCP split from capability sources', () => {
@@ -508,7 +544,7 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('Task');
+    expect(html).toContain('任务');
     expect(html).not.toContain('Activity');
     expect(html).not.toContain('来源');
     expect(html).not.toContain('连接');

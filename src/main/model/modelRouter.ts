@@ -46,18 +46,26 @@ import { XiaomiProvider } from './providers/xiaomiProvider';
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
 
-const ARTIFACT_PROVIDER_TIMEOUT_MS = 600_000;
-const ARTIFACT_FIRST_BYTE_TIMEOUT_MS = 20_000;
-const ARTIFACT_INACTIVITY_TIMEOUT_MS = 120_000;
-const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS = 90_000;
-const ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS = 15_000;
-const ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS = 45_000;
-const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS = 180_000;
-const ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS = 30_000;
-const ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS = 90_000;
-const ARTIFACT_REPAIR_WRITE_TIMEOUT_MS = 240_000;
-const ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS = 30_000;
-const ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS = 120_000;
+// Reasoning-model 友好的 timeout 默认值。原 120s/45s/90s 在 MiMo Max 等
+// 长 thinking 模型上会误杀。所有常量都支持同名 env 覆盖，无需重新打包。
+function envTimeoutMs(name: string, defaultMs: number): number {
+  const raw = typeof process !== 'undefined' ? process.env?.[name] : undefined;
+  if (!raw) return defaultMs;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultMs;
+}
+const ARTIFACT_PROVIDER_TIMEOUT_MS = envTimeoutMs('ARTIFACT_PROVIDER_TIMEOUT_MS', 1_200_000);
+const ARTIFACT_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_FIRST_BYTE_TIMEOUT_MS', 60_000);
+const ARTIFACT_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_INACTIVITY_TIMEOUT_MS', 480_000);
+const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS', 480_000);
+const ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS', 60_000);
+const ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS', 240_000);
+const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS', 600_000);
+const ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS', 60_000);
+const ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS', 360_000);
+const ARTIFACT_REPAIR_WRITE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_TIMEOUT_MS', 900_000);
+const ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS', 60_000);
+const ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS', 480_000);
 const ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS = process.env.NODE_ENV === 'test'
   ? [0, 0]
   : [1_000, 2_500];
@@ -880,10 +888,11 @@ export class ModelRouter {
     }
 
     if (this.shouldPreferNonStreamingArtifactFileTurn(messages, onStream, options)) {
-      logger.info('[ModelRouter] Artifact file-generation turn detected; preferring non-streaming inference for stable tool arguments');
+      // v2 streaming-first: 保持 SSE chunk 不断流，避开上游网关对长 non-streaming 响应的 ~168s 硬超时（实测 Xiaomi sgp）。
+      // tool-arg 解析失败时由 _callProviderWithArtifactFallback 接住，自动退到 forceNonStreaming 重试一次。
+      logger.info('[ModelRouter] Artifact file-generation turn detected; v2 streaming-first (non-streaming fallback on tool-arg parse error)');
       return {
         ...options,
-        forceNonStreaming: true,
         disableProviderTransientRetry: true,
         requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
         firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
@@ -908,10 +917,10 @@ export class ModelRouter {
         : options;
     }
 
-    logger.info('[ModelRouter] Artifact follow-up turn detected; preferring non-streaming inference for stable tool arguments');
+    // v2 streaming-first（同 file-generation turn）：保持 SSE 流不断，避开网关 ~168s 硬超时。
+    logger.info('[ModelRouter] Artifact follow-up turn detected; v2 streaming-first (non-streaming fallback on tool-arg parse error)');
     return {
       ...options,
-      forceNonStreaming: true,
       disableProviderTransientRetry: true,
       requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
       firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,

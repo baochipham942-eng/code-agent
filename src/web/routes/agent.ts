@@ -14,6 +14,7 @@ import {
   SESSION_CACHE_MAX,
   inMemorySessions,
   dbAvailable,
+  seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
@@ -95,11 +96,29 @@ async function ensureDbSession(
 ): Promise<any> {
   const { getDatabase } = await import('../../main/services/core/databaseService');
   const db = getDatabase();
-  if (!db.getSession(sessionId)) {
+  const existing = db.getSession(sessionId);
+  if (!existing) {
     db.createSessionWithId(sessionId, {
       title,
       modelConfig,
     });
+  } else {
+    // renderer 端常用 '新对话' 占位 title 先创建 session 行，再发 user message。
+    // 这里在 session 已存在但 title 还是默认值时，用 prompt 派生的 title 升级一次，
+    // 避免 sidebar 永远停在 '新对话'。
+    const isDefaultTitle =
+      !existing.title ||
+      existing.title === '新对话' ||
+      existing.title === 'New Chat' ||
+      existing.title === 'New Session' ||
+      (typeof existing.title === 'string' && existing.title.startsWith('Session '));
+    if (isDefaultTitle && title && title !== existing.title) {
+      try {
+        db.updateSession(sessionId, { title, updatedAt: Date.now() });
+      } catch {
+        // 升级失败不阻塞主流程，下一轮 maybeUpdateTitleForSession 还会再试
+      }
+    }
   }
   return db;
 }
@@ -123,6 +142,67 @@ async function persistMessageToDb(
       throw error;
     }
     db.updateMessage(message.id, message);
+  }
+}
+
+async function loadSessionHistoryForRun(
+  sessionId: string,
+  tryGetSessionManager: AgentRouterDeps['tryGetSessionManager'],
+  logger: AgentRouterDeps['logger'],
+): Promise<CachedMessage[]> {
+  const cached = sessionMessages.get(sessionId);
+  if (cached?.length) {
+    return cached;
+  }
+
+  try {
+    const sm = await tryGetSessionManager();
+    if (!sm?.getMessages) {
+      return [];
+    }
+
+    const persisted = await sm.getMessages(sessionId);
+    if (!Array.isArray(persisted) || persisted.length === 0) {
+      return [];
+    }
+
+    const restored = seedSessionMessagesFromPersisted(sessionId, persisted);
+    if (restored.length === 0) {
+      logger.warn('[AgentRouter] Persisted session history had no user/assistant messages for run', {
+        sessionId,
+        persistedCount: persisted.length,
+      });
+    }
+    return restored;
+  } catch (error) {
+    logger.warn(`[AgentRouter] Failed to hydrate persisted history for ${sessionId}:`, error);
+    return [];
+  }
+}
+
+async function hasPersistedLoopAssistantMessage(
+  sessionId: string,
+  messageIds: Set<string>,
+  sessionManager: Awaited<ReturnType<AgentRouterDeps['tryGetSessionManager']>> | null,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 ensureDbSession，db 是 Database 实例，应 import 类型
+  db: any,
+  logger: AgentRouterDeps['logger'],
+): Promise<boolean> {
+  if (messageIds.size === 0) {
+    return false;
+  }
+
+  try {
+    const persisted = sessionManager?.getMessages
+      ? await sessionManager.getMessages(sessionId)
+      : db.getMessages(sessionId);
+
+    return Array.isArray(persisted) && persisted.some((message) => (
+      message.role === 'assistant' && messageIds.has(message.id)
+    ));
+  } catch (error) {
+    logger.warn(`[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`, error);
+    return false;
   }
 }
 
@@ -199,8 +279,32 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const { createCLIAgent } = await import('../../cli/adapter');
       const { createAgentLoop } = await import('../../cli/bootstrap');
 
+      // workingDirectory 解析顺序：
+      // 1. body.project 显式传值（renderer 选了 workspace folder 时）
+      // 2. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
+      // 3. user home（绝不能 fallback 到 process.cwd() —— 打包态 webServer 进程 cwd
+      //    是 .app/Contents/Resources/_up_/ 的 read-only 路径，模型在这里写文件永远失败）
+      let resolvedProject: string | undefined =
+        typeof project === 'string' && project.trim().length > 0 ? project.trim() : undefined;
+      if (!resolvedProject) {
+        try {
+          const sm = await tryGetSessionManager();
+          if (sm) {
+            const persisted = await sm.getSession(sessionId, 1);
+            const fromSession = persisted?.workingDirectory?.trim();
+            if (fromSession) resolvedProject = fromSession;
+          }
+        } catch (err) {
+          logger.warn(`[AgentRouter] Failed to restore workingDirectory from session ${sessionId}:`, err);
+        }
+      }
+      if (!resolvedProject) {
+        resolvedProject = process.env.HOME || process.env.USERPROFILE || '/tmp';
+        logger.warn(`[AgentRouter] No project/sessionDir, falling back to ${resolvedProject}`);
+      }
+
       const agent = await createCLIAgent({
-        project: project || process.cwd(),
+        project: resolvedProject,
         gen: generation,
         model: effectiveModel,
         provider: effectiveProvider,
@@ -271,7 +375,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 加载历史消息 + 当前用户消息
       // 只传 role/content/timestamp 给 agentLoop，toolCalls/thinking 仅用于持久化
-      const history = (sessionMessages.get(sessionId) || []).map(({ id, role, content, timestamp }) => ({
+      const cachedHistory = await loadSessionHistoryForRun(sessionId, tryGetSessionManager, logger);
+      const history = cachedHistory.map(({ id, role, content, timestamp }) => ({
         id, role: role as 'user' | 'assistant', content, timestamp,
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
@@ -343,7 +448,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       let consecutiveToolFailures = 0;
       const assistantToolCalls: CachedToolCall[] = [];
       const toolResultMessages: CachedMessage[] = [];
-      const loopPersistedAssistantOrToolMessageIds = new Set<string>();
+      const loopEmittedAssistantMessageIds = new Set<string>();
       let runCancelled = false;
       // 追踪 text 和 tool_call 的交错顺序
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }> = [];
@@ -363,8 +468,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
         if (event.type === 'message' && event.data && typeof event.data === 'object') {
           const message = event.data as import('../../shared/contract').Message;
-          if (message.id && (message.role === 'assistant' || message.role === 'tool')) {
-            loopPersistedAssistantOrToolMessageIds.add(message.id);
+          if (message.id && message.role === 'assistant') {
+            loopEmittedAssistantMessageIds.add(message.id);
           }
         }
 
@@ -564,7 +669,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           }
 
           const sm = await tryGetSessionManager();
-          const loopPersistedAssistantOrTool = loopPersistedAssistantOrToolMessageIds.size > 0;
+          const loopPersistedAssistant = await hasPersistedLoopAssistantMessage(
+            sessionId,
+            loopEmittedAssistantMessageIds,
+            sm,
+            dbForSession,
+            logger,
+          );
           if (sm) {
             // 通过 SM 写入，同时更新 DB 和 sessionCache
             if (!userMsgPrePersistedDb) {
@@ -575,7 +686,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: userMsg.timestamp,
               } as import('../../shared/contract').Message);
             }
-            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
+            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
@@ -597,7 +708,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: userMsg.timestamp,
               } as import('../../shared/contract').Message);
             }
-            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistantOrTool) {
+            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',

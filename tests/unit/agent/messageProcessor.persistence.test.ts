@@ -10,8 +10,16 @@ const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
 }));
 
+const gameValidatorState = vi.hoisted(() => ({
+  validateGameArtifact: vi.fn(),
+}));
+
 vi.mock('../../../src/main/services', () => ({
   getSessionManager: () => sessionManagerState,
+}));
+
+vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', () => ({
+  validateGameArtifact: gameValidatorState.validateGameArtifact,
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -62,6 +70,14 @@ describe('MessageProcessor persistence', () => {
     sessionManagerState.addMessage.mockReset();
     sessionManagerState.addMessageToSession.mockReset();
     sessionManagerState.addMessageToSession.mockResolvedValue(undefined);
+    gameValidatorState.validateGameArtifact.mockReset();
+    gameValidatorState.validateGameArtifact.mockResolvedValue({
+      shouldValidate: true,
+      passed: false,
+      failures: ['still failing'],
+      checks: [],
+      artifactPath: '/tmp/game.html',
+    });
   });
 
   it('persists injected steer messages to the runtime session instead of the global current session', () => {
@@ -645,6 +661,203 @@ describe('MessageProcessor persistence', () => {
         }),
       }),
     );
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
+
+  it('clears completed artifact repair before blocking unavailable tools', async () => {
+    gameValidatorState.validateGameArtifact.mockResolvedValue({
+      shouldValidate: true,
+      passed: true,
+      failures: [],
+      checks: ['runtime smoke passed', 'browser visual smoke passed'],
+      artifactPath: '/tmp/game.html',
+    });
+
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        blockedToolCount: 2,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn(),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'ok' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: 'verify it now',
+        toolCalls: [{ id: 'tool-1', name: 'Bash', arguments: { command: 'node validate.js' } }],
+        runtimeDiagnostics: {
+          visibleToolNames: ['Edit', 'Write', 'Append'],
+        },
+      } as ModelResponse,
+      false,
+      2,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(gameValidatorState.validateGameArtifact).toHaveBeenCalledWith('/tmp/game.html', {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 7000,
+      runBrowserVisualSmoke: true,
+      browserVisualSmokeTimeoutMs: 10000,
+    });
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('artifact repair guard revalidated the target before accepting another repair-mode tool call.'),
+    );
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('The repair guard has been cleared. Retry the user requested action with the full tool set if needed.'),
+    );
+    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.messages).toHaveLength(0);
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
+
+  it('clears completed artifact repair before executing a visible mutation tool', async () => {
+    gameValidatorState.validateGameArtifact.mockResolvedValue({
+      shouldValidate: true,
+      passed: true,
+      failures: [],
+      checks: ['runtime smoke passed'],
+      artifactPath: '/tmp/game.html',
+    });
+
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        blockedToolCount: 2,
+        targetReadCount: 1,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn(),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'changed' },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '目标产物已通过交互验收，修复流程已结束。',
+        toolCalls: [{ id: 'tool-1', name: 'Edit', arguments: { file_path: '/tmp/game.html' } }],
+        runtimeDiagnostics: {
+          visibleToolNames: ['Edit', 'Write', 'Append'],
+        },
+      } as ModelResponse,
+      false,
+      2,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('requested tools: Edit'),
+    );
+    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.messages).toHaveLength(0);
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 

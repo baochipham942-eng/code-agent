@@ -130,6 +130,7 @@ export interface RuntimeContext {
     lastFailedPatchFingerprint?: string;
     activeIssueCodes?: string[];
     lastSuggestedRangedReadWindows?: string[];
+    freshArtifactFullRewrite?: boolean;
   };
 
   // --- Turn tracking ---

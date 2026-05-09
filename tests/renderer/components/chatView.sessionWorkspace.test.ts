@@ -189,5 +189,6 @@ describe('ChatView session shell', () => {
     expect(html).toContain('查一个事 / 对比一组方案');
     expect(html).toContain('改一段代码');
     expect(html).not.toContain('继续推进 Phase 5');
+    expect(html).not.toContain('/repo/other');
   });
 });

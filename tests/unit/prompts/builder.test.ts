@@ -22,6 +22,7 @@ import {
   ARTIFACT_TASK_BRIEF_PROMPT,
   GAME_ARTIFACT_CONTRACT_PROMPT,
   needsArtifactTaskBrief,
+  needsGameArtifactContract,
 } from '../../../src/main/prompts/builder';
 import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
 import {
@@ -230,6 +231,13 @@ describe('Prompt Builder', () => {
       expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('reset(levelOrScenario?)');
       expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('step(inputState, frames?)');
       expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('every authored unit');
+    });
+
+    it('includes breakout deterministic scenario guidance', () => {
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('Breakout/Arkanoid');
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('wallBounceCount');
+      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('powerup:life');
+      expect(needsGameArtifactContract('生成一个弹砖块游戏，写到 /tmp/breakout.html')).toBe(true);
     });
   });
 

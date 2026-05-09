@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Pause, Play, Plus, GitBranch } from 'lucide-react';
+import { Image, FileText, Plus, GitBranch } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
@@ -59,12 +59,6 @@ export interface ChatInputProps {
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
-  /** 是否已暂停 */
-  isPaused?: boolean;
-  /** 暂停回调 */
-  onPause?: () => void;
-  /** 恢复回调 */
-  onResume?: () => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
@@ -86,9 +80,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   isInterrupting,
   onStop,
-  isPaused,
-  onPause,
-  onResume,
   hasPlan,
   onPlanClick,
 }, ref) => {
@@ -785,22 +776,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 onTranscript={handleVoiceTranscript}
                 disabled={disabled}
               />
-            )}
-            {/* 暂停/恢复按钮 — 仅在处理中时显示 */}
-            {isProcessing && !isInterrupting && (
-              <button
-                type="button"
-                onClick={isPaused ? onResume : onPause}
-                className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 ${
-                  isPaused
-                    ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                    : 'text-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
-                }`}
-                aria-label={isPaused ? '恢复' : '暂停'}
-                title={isPaused ? '恢复执行' : '暂停（完成当前步骤后停止）'}
-              >
-                {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-              </button>
             )}
             {/* 发送/停止/补充指令按钮 */}
             <SendButton

@@ -169,19 +169,10 @@ describe('buildArtifactOwnershipItems', () => {
         url: 'https://example.com/spec',
         sourceNodeId: 'tool-2',
       },
-      {
-        kind: 'artifact',
-        label: 'Task result',
-        ownerKind: 'tool',
-        ownerLabel: 'Task',
-        path: undefined,
-        url: undefined,
-        sourceNodeId: 'tool-2',
-      },
     ]);
   });
 
-  it('caps unified tool artifact metadata before projecting ownership items', () => {
+  it('keeps process output and process logs out of the deliverable artifact list', () => {
     const items = buildArtifactOwnershipItems({
       turnNumber: 3,
       turnId: 'turn-3',
@@ -196,6 +187,68 @@ describe('buildArtifactOwnershipItems', () => {
           timestamp: 330,
           toolCall: {
             id: 'tool-3',
+            name: 'Bash',
+            args: {},
+            result: 'ok',
+            success: true,
+            metadata: {
+              artifacts: [
+                {
+                  artifactId: 'artifact-bash-output',
+                  kind: 'process-output',
+                  sourceTool: 'Bash',
+                  name: 'Bash output',
+                  preview: 'npm test output',
+                },
+                {
+                  artifactId: 'artifact-bash-log',
+                  kind: 'process-log',
+                  sourceTool: 'Bash',
+                  name: 'Bash log',
+                  path: '/tmp/code-agent/bash-output.log',
+                },
+                {
+                  artifactId: 'artifact-preview',
+                  kind: 'html',
+                  sourceTool: 'Write',
+                  name: 'Preview',
+                  path: '/repo/app/preview.html',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    } satisfies TraceTurn);
+
+    expect(items).toEqual([
+      {
+        kind: 'file',
+        label: 'Preview',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/app/preview.html',
+        url: undefined,
+        sourceNodeId: 'tool-3',
+      },
+    ]);
+  });
+
+  it('caps unified tool artifact metadata before projecting ownership items', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 4,
+      turnId: 'turn-4',
+      status: 'completed',
+      startTime: 400,
+      endTime: 460,
+      nodes: [
+        {
+          id: 'tool-4',
+          type: 'tool_call',
+          content: '',
+          timestamp: 430,
+          toolCall: {
+            id: 'tool-4',
             name: 'BulkTool',
             args: {},
             result: 'ok',
@@ -206,6 +259,7 @@ describe('buildArtifactOwnershipItems', () => {
                 kind: 'text',
                 sourceTool: 'BulkTool',
                 name: `Artifact ${index}`,
+                path: `/repo/app/artifact-${index}.md`,
               })),
             },
           },
@@ -216,5 +270,6 @@ describe('buildArtifactOwnershipItems', () => {
     expect(items).toHaveLength(12);
     expect(items[0]?.label).toBe('Artifact 0');
     expect(items[11]?.label).toBe('Artifact 11');
+    expect(items[11]?.path).toBe('/repo/app/artifact-11.md');
   });
 });

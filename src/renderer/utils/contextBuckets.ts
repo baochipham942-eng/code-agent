@@ -34,8 +34,7 @@ const TOOL_BUCKET_EXACT: Record<string, ContextBucket> = {
   Read: 'files',
   Write: 'files',
   Edit: 'files',
-  Glob: 'files',
-  Grep: 'files',
+  MultiEdit: 'files',
   NotebookRead: 'files',
   NotebookEdit: 'files',
   WebSearch: 'web',
@@ -75,6 +74,50 @@ export interface ContextItem {
   detail: string;
   bucket: ContextBucket;
   source: 'attachment' | 'tool';
+  path?: string;
+}
+
+const FILE_TOOL_NAMES = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookRead', 'NotebookEdit']);
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeContextPath(path: string): string {
+  return path.replace(/\/+$/, '').replace(/\/+/g, '/');
+}
+
+function basename(path: string): string {
+  const normalized = normalizeContextPath(path);
+  return normalized.split('/').filter(Boolean).pop() || normalized;
+}
+
+function getToolFilePath(toolName: string, args: Record<string, unknown> | undefined): string | null {
+  if (!FILE_TOOL_NAMES.has(toolName)) return null;
+  const value = asString(args?.file_path)
+    ?? asString(args?.path)
+    ?? asString(args?.notebook_path);
+  return value ? normalizeContextPath(value) : null;
+}
+
+function getWebLabel(toolName: string, args: Record<string, unknown> | undefined): string | null {
+  if (toolName === 'WebSearch') {
+    return asString(args?.query);
+  }
+  if (toolName === 'WebFetch') {
+    return asString(args?.url);
+  }
+  if (toolName.startsWith('mcp__firecrawl__')) {
+    return asString(args?.url) ?? asString(args?.query) ?? asString(args?.prompt);
+  }
+  if (toolName.startsWith('mcp__chrome-devtools__')) {
+    return asString(args?.url) ?? asString(args?.query);
+  }
+  return null;
+}
+
+function truncateLabel(label: string, maxLength: number): string {
+  return label.length > maxLength ? `${label.substring(0, maxLength)}…` : label;
 }
 
 /**
@@ -88,7 +131,8 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
   for (const msg of recent) {
     if (msg.attachments) {
       for (const att of msg.attachments) {
-        const key = `att:${att.name}`;
+        const attPath = asString((att as { path?: unknown }).path);
+        const key = attPath ? `att:file:${normalizeContextPath(attPath)}` : `att:${att.name}`;
         if (seen.has(key)) continue;
         seen.add(key);
         items.push({
@@ -97,6 +141,7 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
           detail: att.category || att.type,
           bucket: classifyAttachment(att.category || 'other'),
           source: 'attachment',
+          path: attPath ? normalizeContextPath(attPath) : undefined,
         });
       }
     }
@@ -104,42 +149,32 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
       for (const tc of msg.toolCalls) {
         const args = tc.arguments as Record<string, unknown>;
         const bucket = classifyToolCall(tc.name);
-        // 提取有意义的标签
-        let label = tc.name;
-        let detail = '';
-        if (['Read', 'Write', 'Edit'].includes(tc.name)) {
-          const fp = (args?.file_path || args?.path) as string | undefined;
-          if (fp) {
-            label = fp.split('/').pop() || fp;
-            detail = tc.name;
-          }
-        } else if (tc.name === 'Bash') {
-          const cmd = (args?.command) as string | undefined;
-          if (cmd) {
-            label = cmd.length > 40 ? cmd.substring(0, 40) + '…' : cmd;
-            detail = 'Bash';
-          }
-        } else if (tc.name === 'Grep' || tc.name === 'Glob') {
-          const pattern = (args?.pattern) as string | undefined;
-          if (pattern) {
-            label = pattern.length > 30 ? pattern.substring(0, 30) + '…' : pattern;
-            detail = tc.name;
-          }
-        } else if (tc.name === 'WebSearch' || tc.name === 'WebFetch') {
-          const query = (args?.query || args?.url) as string | undefined;
-          if (query) {
-            label = query.length > 40 ? query.substring(0, 40) + '…' : query;
-            detail = tc.name;
-          }
-        } else if (tc.name === 'Skill') {
-          const cmd = (args?.command || args?.skill) as string | undefined;
-          if (cmd) { label = cmd; detail = 'Skill'; }
+        let label: string | null = null;
+        let detail = tc.name;
+        let path: string | undefined;
+
+        if (bucket === 'files') {
+          const filePath = getToolFilePath(tc.name, args);
+          if (!filePath) continue;
+          path = filePath;
+          label = basename(filePath);
+        } else if (bucket === 'web') {
+          const webLabel = getWebLabel(tc.name, args);
+          if (!webLabel) continue;
+          label = truncateLabel(webLabel, 40);
+        } else if (bucket === 'rules' && tc.name === 'Skill') {
+          const skill = asString(args?.command) ?? asString(args?.skill);
+          if (!skill) continue;
+          label = skill;
+          detail = 'Skill';
+        } else {
+          continue;
         }
-        // 去重：同文件多次 Read 只显示一次
-        const key = `tool:${tc.name}:${label}`;
+
+        const key = path ? `tool:file:${path}:${tc.name}` : `tool:${tc.name}:${label}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({ id: key, label, detail, bucket, source: 'tool' });
+        items.push({ id: key, label, detail, bucket, source: 'tool', path });
       }
     }
   }
@@ -152,21 +187,14 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
  */
 export function computeBucketSummary(messages: Message[], recentCount = 30): BucketSummary {
   const summary: BucketSummary = { rules: 0, files: 0, web: 0, other: 0 };
-  const recent = messages.slice(-recentCount);
+  const seen = new Set<string>();
+  const items = extractContextItems(messages, recentCount);
 
-  for (const msg of recent) {
-    if (msg.attachments) {
-      for (const att of msg.attachments) {
-        const bucket = classifyAttachment(att.category || 'other');
-        summary[bucket]++;
-      }
-    }
-    if (msg.toolCalls) {
-      for (const tc of msg.toolCalls) {
-        const bucket = classifyToolCall(tc.name);
-        summary[bucket]++;
-      }
-    }
+  for (const item of items) {
+    const key = item.path ? `${item.bucket}:${item.path}` : `${item.bucket}:${item.label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    summary[item.bucket]++;
   }
 
   return summary;

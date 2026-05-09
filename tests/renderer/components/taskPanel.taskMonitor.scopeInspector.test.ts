@@ -465,6 +465,71 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('1.5k / 1048.6k tokens');
     expect(html).not.toContain('Files 5');
     expect(html).not.toContain('Other 53');
+    expect(html).not.toContain('其他 53');
+  });
+
+  it('counts context files by unique file identity and hides other sources', () => {
+    Object.assign(statusRailContextState, {
+      currentTokens: 12500,
+      maxTokens: 1048576,
+      usagePercent: 1.2,
+      warningLevel: 'warning',
+      buckets: {
+        rules: 0,
+        files: 99,
+        web: 0,
+        other: 99,
+      },
+      items: [
+        {
+          id: 'write-html',
+          label: 'breakout-cu.html',
+          detail: 'Write',
+          bucket: 'files',
+          source: 'tool',
+          path: '/tmp/raiden_test/breakout-cu.html',
+        },
+        {
+          id: 'read-html',
+          label: 'breakout-cu.html',
+          detail: 'Read',
+          bucket: 'files',
+          source: 'tool',
+          path: '/tmp/raiden_test/breakout-cu.html',
+        },
+        {
+          id: 'edit-html',
+          label: 'breakout-cu.html',
+          detail: 'Edit',
+          bucket: 'files',
+          source: 'tool',
+          path: '/tmp/raiden_test/breakout-cu.html',
+        },
+        {
+          id: 'read-validation',
+          label: 'validation-result.json',
+          detail: 'Read',
+          bucket: 'files',
+          source: 'tool',
+          path: '/tmp/raiden_test/validation-result.json',
+        },
+        {
+          id: 'bash-output',
+          label: 'Bash output',
+          detail: 'Bash',
+          bucket: 'other',
+          source: 'tool',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('文件 2');
+    expect(html).not.toContain('文件 99');
+    expect(html).not.toContain('其他');
   });
 
   it('keeps todos primary while preserving live task progress', () => {

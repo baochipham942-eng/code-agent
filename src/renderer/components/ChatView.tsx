@@ -7,7 +7,6 @@ import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useModeStore } from '../stores/modeStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
@@ -44,7 +43,6 @@ import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import {
   ArrowRight,
   Code2,
-  FolderOpen,
   Image,
   Mail,
   Search,
@@ -64,8 +62,6 @@ export const ChatView: React.FC = () => {
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
-  const isPaused = useModeStore((s) => s.isPaused);
-  const setIsPaused = useModeStore((s) => s.setIsPaused);
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
 
@@ -193,12 +189,6 @@ export const ChatView: React.FC = () => {
   // 但多任务并行后这个 fallback 反而成了 state 跨 session 泄漏的源头
   const effectiveIsProcessing = isCurrentSessionProcessing || isCurrentSessionLocallyProcessing;
 
-  // Auto-reset isPaused when processing finishes
-  useEffect(() => {
-    if (!effectiveIsProcessing && isPaused) {
-      setIsPaused(false);
-    }
-  }, [effectiveIsProcessing, isPaused, setIsPaused]);
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
   const [bridgeUpdatePrompt, setBridgeUpdatePrompt] = useState<{ currentVersion: string; requiredVersion: string } | null>(null);
@@ -468,9 +458,6 @@ export const ChatView: React.FC = () => {
           isProcessing={effectiveIsProcessing}
           isInterrupting={isInterrupting}
           onStop={cancel}
-          isPaused={isPaused}
-          onPause={() => setIsPaused(true)}
-          onResume={() => setIsPaused(false)}
           hasPlan={false}
         />
       </div>
@@ -569,8 +556,6 @@ const EmptyState: React.FC<{
   onSend,
 }) => {
   const suggestions = defaultSuggestions;
-  const workingDirectory = useAppStore((state) => state.workingDirectory);
-  const folderName = workingDirectory ? workingDirectory.split('/').filter(Boolean).pop() || workingDirectory : null;
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
@@ -582,12 +567,6 @@ const EmptyState: React.FC<{
               把需求拆成可执行任务，第一轮先做到能验证。
             </p>
           </div>
-          {folderName && (
-            <div className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-zinc-400">
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-              <span className="truncate">{folderName}</span>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

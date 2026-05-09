@@ -23,6 +23,9 @@ import type {
 import type { SessionStatus, TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type {
@@ -158,6 +161,31 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     });
   }
 
+  /**
+   * 解析本轮使用的 workingDirectory：
+   * 1. envelope 显式传了就用（例如 renderer 切了 workspace folder）
+   * 2. 否则从 session 持久化数据恢复
+   * 3. 都没有返回 undefined，让 orchestrator 保持原值（不要回退到 home dir / webServer cwd —
+   *    后者在打包态是 .app 内部 read-only 路径，会让 artifact 写入永远失败）
+   */
+  private async resolveWorkingDirectory(
+    sessionId: string,
+    override?: string | null,
+  ): Promise<string | undefined> {
+    const trimmedOverride = override?.trim();
+    if (trimmedOverride) return trimmedOverride;
+
+    try {
+      const session = await getSessionManager().getSession(sessionId, 1);
+      const persisted = session?.workingDirectory?.trim();
+      if (persisted) return persisted;
+    } catch (error) {
+      logger.warn('Failed to resolve workingDirectory from session:', error);
+    }
+
+    return undefined;
+  }
+
   private toCachedMessage(message: Message): CachedMessage {
     const metadata = message.metadata
       ? ({ ...message.metadata } as Record<string, unknown>)
@@ -197,8 +225,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
     const orchestrator = this.getOrchestrator(resolvedSessionId);
-    if (envelope.context?.workingDirectory) {
-      orchestrator?.setWorkingDirectory(envelope.context.workingDirectory);
+    const effectiveWorkingDirectory = await this.resolveWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory,
+    );
+    if (effectiveWorkingDirectory) {
+      orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
     await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
     const options = withWorkbenchTurnSystemContext(
@@ -240,8 +272,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
     const orchestrator = this.getOrchestrator(resolvedSessionId);
-    if (envelope.context?.workingDirectory) {
-      orchestrator?.setWorkingDirectory(envelope.context.workingDirectory);
+    const effectiveWorkingDirectory = await this.resolveWorkingDirectory(
+      resolvedSessionId,
+      envelope.context?.workingDirectory,
+    );
+    if (effectiveWorkingDirectory) {
+      orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
     await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
     const options = withWorkbenchTurnSystemContext(

@@ -2,11 +2,22 @@ import express from 'express';
 import http from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAgentRouter } from '../../../src/web/routes/agent';
-import { inMemorySessions, sessionMessages } from '../../../src/web/helpers/sessionCache';
+import { inMemorySessions, sessionMessages, setDbAvailable } from '../../../src/web/helpers/sessionCache';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockCreateAgentLoop = vi.fn();
+const mockDb = vi.hoisted(() => ({
+  getSession: vi.fn(() => ({
+    id: 'session-existing',
+    title: 'Existing',
+  })),
+  createSessionWithId: vi.fn(),
+  updateSession: vi.fn(),
+  addMessage: vi.fn(),
+  updateMessage: vi.fn(),
+  getMessages: vi.fn(() => []),
+}));
 
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({
@@ -32,6 +43,10 @@ vi.mock('../../../src/main/session/modelSessionState', () => ({
   }),
 }));
 
+vi.mock('../../../src/main/services/core/databaseService', () => ({
+  getDatabase: () => mockDb,
+}));
+
 vi.mock('../../../src/main/telemetry', () => ({
   getTelemetryCollector: () => ({
     endSession: vi.fn(),
@@ -48,14 +63,16 @@ const logger = {
   error: vi.fn(),
 };
 
-async function startAgentApi() {
+async function startAgentApi(deps: {
+  tryGetSessionManager?: () => Promise<unknown>;
+} = {}) {
   const app = express();
   app.use(express.json());
   app.use('/api', createAgentRouter({
     activeAgentLoops,
     pendingLocalToolCalls: new Map(),
     logger,
-    tryGetSessionManager: async () => null,
+    tryGetSessionManager: deps.tryGetSessionManager ?? (async () => null),
     getSupabaseForSession: async () => null,
   }));
 
@@ -99,6 +116,13 @@ describe('createAgentRouter', () => {
     activeAgentLoops.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
+    setDbAvailable(false);
+    Object.values(mockDb).forEach((mock) => mock.mockClear());
+    mockDb.getSession.mockReturnValue({
+      id: 'session-existing',
+      title: 'Existing',
+    });
+    mockDb.getMessages.mockReturnValue([]);
     let releaseRun: (() => void) | null = null;
     mockRun.mockImplementation(() => new Promise<void>((resolve) => {
       releaseRun = resolve;
@@ -118,6 +142,7 @@ describe('createAgentRouter', () => {
     activeAgentLoops.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
+    setDbAvailable(false);
   });
 
   it('cancels the active agent loop when the /api/run SSE client disconnects', async () => {
@@ -214,5 +239,141 @@ describe('createAgentRouter', () => {
         },
       },
     });
+  });
+
+  it('hydrates persisted session history when the SSE-backed cache is cold', async () => {
+    await closeServer();
+
+    const getMessages = vi.fn(async () => [
+      {
+        id: 'old-user-1',
+        role: 'user',
+        content: '上一轮需求',
+        timestamp: 100,
+      },
+      {
+        id: 'old-assistant-1',
+        role: 'assistant',
+        content: '上一轮回答',
+        timestamp: 200,
+      },
+      {
+        id: 'old-tool-1',
+        role: 'tool',
+        content: '工具结果只用于 UI hydrate，不直接喂给 web AgentLoop',
+        timestamp: 300,
+      },
+    ]);
+    const getSession = vi.fn(async () => ({
+      workingDirectory: '/tmp/persisted-project',
+    }));
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages,
+        getSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '继续刚才那轮',
+        sessionId: 'persisted-session-1',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(getMessages).toHaveBeenCalledWith('persisted-session-1');
+    const messagesArg = mockCreateAgentLoop.mock.calls[0][2] as Array<{ id: string; role: string; content: string }>;
+    expect(messagesArg.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+    }))).toEqual([
+      { id: 'old-user-1', role: 'user', content: '上一轮需求' },
+      { id: 'old-assistant-1', role: 'assistant', content: '上一轮回答' },
+      expect.objectContaining({ role: 'user', content: '继续刚才那轮' }),
+    ]);
+
+    expect(sessionMessages.get('persisted-session-1')?.map((message) => message.id).slice(0, 2)).toEqual([
+      'old-user-1',
+      'old-assistant-1',
+    ]);
+  });
+
+  it('persists assistant output when loop message events were not actually stored', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => []);
+    const getSession = vi.fn(async () => ({
+      workingDirectory: '/tmp/persisted-project',
+    }));
+
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message',
+          data: {
+            id: 'loop-assistant-transient',
+            role: 'assistant',
+            content: '只发给 UI，未落库',
+            timestamp: 200,
+          },
+        });
+        onEvent({
+          type: 'stream_chunk',
+          data: {
+            content: '最终回复',
+          },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '生成最终回复',
+        sessionId: 'session-assistant-fallback',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-assistant-fallback',
+      expect.objectContaining({
+        role: 'user',
+        content: '生成最终回复',
+      }),
+    );
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-assistant-fallback',
+      expect.objectContaining({
+        role: 'assistant',
+        content: '最终回复',
+      }),
+    );
   });
 });

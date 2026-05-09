@@ -30,6 +30,42 @@ describe('artifactRepairGuard', () => {
     expect(ctx.artifactRepairGuard).toBeUndefined();
   });
 
+  it('does not seed repair for fresh Chinese game generation that mentions failure state', () => {
+    const ctx = makeRuntimeContext(
+      '生成一个弹砖块游戏，包含胜利和失败状态，写到 /tmp/x.html',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+  });
+
+  it('does not include a Chinese prefix when extracting a target path', () => {
+    const ctx = makeRuntimeContext(
+      '请修复当前 validator 失败，目标文件: 失败状态写到/tmp/x.html',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toMatchObject({
+      targetFile: '/tmp/x.html',
+      phase: 'initial_repair',
+    });
+  });
+
+  it('allows target file labels to name a relative artifact explicitly', () => {
+    const ctx = makeRuntimeContext(
+      'Artifact validation failed. Please repair target file: games/game.html because runSmokeTest is missing.',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifactRepairGuard).toMatchObject({
+      targetFile: '/tmp/code-agent/games/game.html',
+      phase: 'initial_repair',
+    });
+  });
+
   it('seeds repair mode when an actual artifact validation failure names a target file', () => {
     const ctx = makeRuntimeContext(
       'Artifact validation failed for /tmp/code-agent/games/game.html. Please fix the missing runSmokeTest evidence.',
@@ -63,5 +99,20 @@ describe('artifactRepairGuard', () => {
     const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
     expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Append']);
     expect(policy?.writePriority).toBe(false);
+  });
+
+  it('allows one complete Write for a fresh generated artifact repair turn', () => {
+    const ctx = makeRuntimeContext('Artifact validation failed for /tmp/code-agent/games/game.html. Please fix runSmokeTest.');
+
+    seedArtifactRepairGuardFromContext(ctx);
+    ctx.artifactRepairGuard.freshArtifactFullRewrite = true;
+    ctx.artifactRepairGuard.targetReadCount = 10;
+    ctx.artifactRepairGuard.noOpPatchCount = 1;
+    ctx.artifactRepairGuard.blockedToolCount = 2;
+
+    const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(policy?.writeAllowed).toBe(true);
+    expect(policy?.fullRewritePriority).toBe(true);
   });
 });

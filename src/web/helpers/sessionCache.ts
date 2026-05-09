@@ -7,6 +7,8 @@
 
 // ── 类型 ──
 
+import type { Message } from '../../shared/contract';
+
 export interface CachedToolCall {
   id: string;
   name: string;
@@ -56,4 +58,39 @@ export let dbAvailable = false;
 /** 设置 dbAvailable 标志（仅由 webServer 初始化逻辑调用） */
 export function setDbAvailable(value: boolean): void {
   dbAvailable = value;
+}
+
+function enforceSessionCacheLimit(): void {
+  if (sessionMessages.size <= SESSION_CACHE_MAX) return;
+  const oldestKey = sessionMessages.keys().next().value;
+  if (oldestKey) sessionMessages.delete(oldestKey);
+}
+
+export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
+  return messages
+    .map((message): CachedMessage | null => {
+      if (message.role !== 'user' && message.role !== 'assistant') {
+        return null;
+      }
+
+      return {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        timestamp: message.timestamp,
+        toolCalls: message.toolCalls as CachedToolCall[] | undefined,
+        thinking: message.thinking || message.reasoning,
+        contentParts: message.contentParts as CachedContentPart[] | undefined,
+      };
+    })
+    .filter((message): message is CachedMessage => Boolean(message));
+}
+
+export function seedSessionMessagesFromPersisted(sessionId: string, messages: Message[]): CachedMessage[] {
+  const cached = toCachedSessionMessages(messages);
+  if (cached.length > 0) {
+    sessionMessages.set(sessionId, cached);
+    enforceSessionCacheLimit();
+  }
+  return cached;
 }

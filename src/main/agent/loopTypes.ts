@@ -127,6 +127,7 @@ export interface ModelResponse {
       noOpPatchCount?: number;
       editAnchorFailureCount?: number;
       preferTargetedEdit?: boolean;
+      freshArtifactFullRewrite?: boolean;
       activeIssueCodes?: string[];
     };
   };

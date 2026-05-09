@@ -429,15 +429,6 @@ describe('buildTurnExecutionClarityProjection', () => {
         sourceNodeId: 'tool-artifacts',
       },
       {
-        kind: 'artifact',
-        label: 'Fetch notes',
-        ownerKind: 'tool',
-        ownerLabel: 'WebFetch',
-        path: undefined,
-        url: undefined,
-        sourceNodeId: 'tool-artifacts',
-      },
-      {
         kind: 'file',
         label: 'Fetched PDF',
         ownerKind: 'tool',

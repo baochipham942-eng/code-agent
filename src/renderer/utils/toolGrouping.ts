@@ -94,27 +94,69 @@ export function groupToolCalls(toolCalls: ToolCall[]): ToolGroup[] {
   return groups;
 }
 
+export function sanitizeThinkingForDisplay(text: string | undefined): string | undefined {
+  if (!text?.trim()) return undefined;
+
+  const compactedLines: string[] = [];
+  let previousWasBlank = false;
+
+  const normalizeLine = (line: string): string => (
+    line
+      .toLowerCase()
+      .replace(/[.,;:!?，。；：！？]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (line.startsWith('[runtime]')) continue;
+
+    if (!line) {
+      previousWasBlank = true;
+      continue;
+    }
+
+    const normalized = normalizeLine(line);
+    const previousIndex = compactedLines.length - 1;
+    const previousLine = previousIndex >= 0 ? compactedLines[previousIndex] : '';
+    const previousNormalized = normalizeLine(previousLine);
+
+    if (previousNormalized && normalized === previousNormalized) {
+      previousWasBlank = false;
+      continue;
+    }
+    if (previousNormalized && normalized.startsWith(`${previousNormalized} `)) {
+      compactedLines[previousIndex] = line;
+      previousWasBlank = false;
+      continue;
+    }
+    if (previousNormalized && previousNormalized.startsWith(`${normalized} `)) {
+      previousWasBlank = false;
+      continue;
+    }
+
+    if (previousWasBlank && compactedLines.length > 0) {
+      compactedLines.push('');
+    }
+    compactedLines.push(line);
+    previousWasBlank = false;
+  }
+
+  const displayText = compactedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return displayText || undefined;
+}
+
 /**
  * Extract a thinking summary from reasoning/thinking text.
  * Looks for the first **bold** phrase or # heading.
  */
 export function extractThinkingSummary(text: string | undefined): string | null {
-  if (!text?.trim()) return null;
-
-  const runtimeLines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('[runtime]'))
-    .map((line) => line.replace(/^\[runtime\]\s*/, '').trim())
-    .filter(Boolean);
-  if (runtimeLines.length > 0) {
-    const summary = runtimeLines.slice(0, 2).join(' | ');
-    if (summary.length <= 80) return summary;
-    return summary.slice(0, 77) + '...';
-  }
+  const displayText = sanitizeThinkingForDisplay(text);
+  if (!displayText?.trim()) return null;
 
   // Try first **bold** text
-  const boldMatch = text.match(/\*\*(.+?)\*\*/);
+  const boldMatch = displayText.match(/\*\*(.+?)\*\*/);
   if (boldMatch) {
     const summary = boldMatch[1].trim();
     if (summary.length > 0 && summary.length <= 80) return summary;
@@ -122,7 +164,7 @@ export function extractThinkingSummary(text: string | undefined): string | null 
   }
 
   // Try first # heading
-  const headingMatch = text.match(/^#{1,3}\s+(.+)$/m);
+  const headingMatch = displayText.match(/^#{1,3}\s+(.+)$/m);
   if (headingMatch) {
     const summary = headingMatch[1].trim();
     if (summary.length > 0 && summary.length <= 80) return summary;
@@ -130,7 +172,7 @@ export function extractThinkingSummary(text: string | undefined): string | null 
   }
 
   // Fallback: first non-empty line, truncated
-  const firstLine = text.trim().split('\n')[0]?.trim();
+  const firstLine = displayText.trim().split('\n')[0]?.trim();
   if (firstLine && firstLine.length > 0) {
     if (firstLine.length <= 60) return firstLine;
     return firstLine.slice(0, 57) + '...';

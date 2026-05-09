@@ -219,6 +219,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     return null;
   }
 
+  // Tool messages 的 content 是 JSON.stringify(toolResults[]) 字符串(OpenAI 协议要求 string),
+  // 不能 fallthrough 到 AssistantMessage 当文本/markdown 渲染——会变成一坨 escaped JSON。
+  // 工具结果已经通过 tool_call_end event 在 ToolCallDisplay 里结构化展示,这里隐藏即可。
+  if (message.role === 'tool') {
+    return null;
+  }
+
   if (message.role === 'user') {
     return <UserMessage message={message} onEdit={handleEdit} />;
   }

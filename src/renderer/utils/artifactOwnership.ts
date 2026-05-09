@@ -28,6 +28,18 @@ function collectMetadataPaths(metadata?: Record<string, unknown>): string[] {
   return paths;
 }
 
+const NON_DELIVERABLE_TOOL_ARTIFACT_KINDS = new Set<NormalizedToolArtifactMeta['kind']>([
+  'process-output',
+  'process-log',
+]);
+
+function shouldProjectToolArtifact(artifact: NormalizedToolArtifactMeta): boolean {
+  if (NON_DELIVERABLE_TOOL_ARTIFACT_KINDS.has(artifact.kind)) {
+    return false;
+  }
+  return Boolean(artifact.path || artifact.url);
+}
+
 function kindForToolArtifact(artifact: NormalizedToolArtifactMeta): TurnArtifactKind {
   if (artifact.path) {
     return 'file';
@@ -118,6 +130,10 @@ export function buildArtifactOwnershipItems(
     }
 
     for (const artifact of collectToolArtifactsFromMetadata(node.toolCall.metadata)) {
+      if (!shouldProjectToolArtifact(artifact)) {
+        continue;
+      }
+
       addItem({
         kind: kindForToolArtifact(artifact),
         label: artifact.label,

@@ -713,6 +713,12 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
     );
   }
 
+  if (/breakout|arkanoid|wallBounceCount|paddleBounceCount|brickCount|bricksRemaining|powerup/i.test(text)) {
+    requirements.push(
+      '- breakout_gameplay_contract: for Breakout/Arkanoid artifacts, expose `paddleX`, `ball`, `wallBounceCount`, `paddleBounceCount`, `brickCount` or `bricksRemaining`, `score`, and deterministic `reset()` scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:wide/multi/slow/through/life, win, and lose; each must produce before/after `snapshot()` evidence through live `step()`.',
+    );
+  }
+
   if (/canvas_not_responsive|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|none are visibly framed|mobile visual smoke.*canvas|响应式 CSS|responsive css/i.test(text)) {
     requirements.push(
       '- canvas_not_responsive: keep the drawing resolution if useful, but constrain both rendered width and height with responsive canvas or wrapper CSS such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. The full playfield and HUD must fit inside a 390px mobile viewport; fixed 800px/900px width or max-height-only scaling is not enough.',

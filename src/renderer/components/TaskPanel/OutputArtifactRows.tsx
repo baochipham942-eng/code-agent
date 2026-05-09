@@ -35,8 +35,15 @@ function findPreviewItemForArtifact(
   return previewItems.find((item) => item.title === artifact.label) || null;
 }
 
-function getArtifactKindLabel(kind: TurnArtifactOwnershipItem['kind']): string {
-  switch (kind) {
+function isValidatorTestOutput(item: TurnArtifactOwnershipItem): boolean {
+  if (item.kind === 'artifact' || item.kind === 'link' || item.kind === 'note') return false;
+  const target = `${item.path || ''} ${item.label || ''}`;
+  return /metrics\.json\b|__GAME_TEST|__test__/i.test(target);
+}
+
+function getArtifactKindLabel(item: TurnArtifactOwnershipItem): string {
+  if (isValidatorTestOutput(item)) return 'Test';
+  switch (item.kind) {
     case 'artifact':
       return 'Artifact';
     case 'link':
@@ -48,8 +55,9 @@ function getArtifactKindLabel(kind: TurnArtifactOwnershipItem['kind']): string {
   }
 }
 
-function getArtifactPillTone(kind: TurnArtifactOwnershipItem['kind']): 'info' | 'neutral' {
-  return kind === 'artifact' ? 'info' : 'neutral';
+function getArtifactPillTone(item: TurnArtifactOwnershipItem): 'info' | 'neutral' | 'mcp' {
+  if (isValidatorTestOutput(item)) return 'mcp';
+  return item.kind === 'artifact' ? 'info' : 'neutral';
 }
 
 export const OutputFileRows = ({
@@ -147,8 +155,8 @@ const CurrentTurnArtifactOwnershipRow = ({
 }) => {
   const row = (
     <>
-      <WorkbenchPill tone={getArtifactPillTone(item.kind)}>
-        {getArtifactKindLabel(item.kind)}
+      <WorkbenchPill tone={getArtifactPillTone(item)}>
+        {getArtifactKindLabel(item)}
       </WorkbenchPill>
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs text-zinc-100">{item.label}</div>

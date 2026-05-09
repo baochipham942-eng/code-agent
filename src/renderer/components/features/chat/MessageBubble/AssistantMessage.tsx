@@ -12,7 +12,7 @@ import { ToolCallGroupList } from './ToolCallDisplay/ToolCallGroup';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
-import { groupToolCalls, extractThinkingSummary } from '../../../../utils/toolGrouping';
+import { groupToolCalls, extractThinkingSummary, sanitizeThinkingForDisplay } from '../../../../utils/toolGrouping';
 
 function formatTokenCount(count: number): string {
   if (count >= 1000) return (count / 1000).toFixed(1) + 'k';
@@ -38,6 +38,11 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
   const [hovered, setHovered] = useState(false);
+  const rawReasoningContent = message.thinking || message.reasoning;
+  const reasoningContent = useMemo(
+    () => sanitizeThinkingForDisplay(rawReasoningContent),
+    [rawReasoningContent],
+  );
 
   useEffect(() => {
     if (reasoningRef.current) {
@@ -47,7 +52,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
         }
       });
     }
-  }, [showReasoning, message.reasoning]);
+  }, [showReasoning, reasoningContent]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -90,25 +95,6 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
     setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
   }, [message.content]);
 
-  const rawReasoningContent = message.thinking || message.reasoning;
-  const reasoningContent = useMemo(() => {
-    if (!rawReasoningContent) return rawReasoningContent;
-    const runtimeLines: string[] = [];
-    const otherLines: string[] = [];
-    for (const line of rawReasoningContent.split('\n')) {
-      if (line.trim().startsWith('[runtime]')) {
-        runtimeLines.push(line);
-      } else {
-        otherLines.push(line);
-      }
-    }
-    if (runtimeLines.length === 0) return rawReasoningContent;
-    const parts = [
-      runtimeLines.join('\n'),
-      otherLines.join('\n').trim(),
-    ].filter(Boolean);
-    return parts.join('\n\n');
-  }, [rawReasoningContent]);
   const effortLabel = message.effortLevel || '';
   const thinkingSummary = useMemo(
     () => extractThinkingSummary(reasoningContent),
@@ -193,8 +179,11 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
       {reasoningContent?.trim() && (
         <div className="mb-2">
           <button
+            type="button"
             onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors min-w-0"
+            aria-expanded={showReasoning}
+            title={showReasoning ? '收起 thinking' : '展开 thinking'}
+            className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-400"
           >
             <span className="font-mono flex-shrink-0">{showReasoning ? '▼' : '▶'}</span>
             <span className="flex-shrink-0">
@@ -214,8 +203,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 pl-3">
-              <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-wrap font-mono">
+            <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
+              <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
                 {reasoningContent}
               </p>
             </div>

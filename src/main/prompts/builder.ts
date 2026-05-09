@@ -14,6 +14,7 @@ import {
   ARTIFACT_TASK_BRIEF_PROMPT,
   GAME_ARTIFACT_CONTRACT_PROMPT,
   needsArtifactTaskBrief,
+  needsGameArtifactContract,
 } from './artifactGeneration';
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
 import { applyOverlays, type OverlayConfig } from './overlayEngine';
@@ -174,7 +175,7 @@ export function needsGenerativeUI(message: string): boolean {
 
 export { GENERATIVE_UI_PROMPT };
 export { QUESTION_FORM_PROMPT };
-export { ARTIFACT_TASK_BRIEF_PROMPT, GAME_ARTIFACT_CONTRACT_PROMPT, needsArtifactTaskBrief };
+export { ARTIFACT_TASK_BRIEF_PROMPT, GAME_ARTIFACT_CONTRACT_PROMPT, needsArtifactTaskBrief, needsGameArtifactContract };
 
 export const SYSTEM_PROMPT: string = buildPrompt();
 

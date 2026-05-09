@@ -93,11 +93,14 @@ export interface ArtifactRepairToolPolicy {
   mutationOnly: boolean;
 }
 
-const ARTIFACT_REPAIR_CUE_PATTERN =
-  /artifact[-_\s]*(?:validation\s*failed|repair)|validation failed|validator\s*(?:失败|failed)|(?:校验|验证)\s*失败|当前\s*(?:validator|校验|验证).*失败|修复|\b(?:repair|fix|failed|failure|missing|malformed)\b|未通过|失败|报错|缺少|no longer exposes|丢失|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成|玩不通|不能玩|不好玩|上不去|拿不到|触发不了/i;
+const EXPLICIT_ARTIFACT_REPAIR_INTENT_PATTERN =
+  /artifact[-_\s]*(?:validation\s*failed|repair)|<artifact[-_\s]*(?:repair|validation)|\b(?:repair|fix|patch|correct|restore)\b|修复|修正|改好|补丁|继续修/i;
+
+const ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN =
+  /artifact validation failed|game artifact validation failed|validator\s*(?:失败|failed)|validation\s*(?:failed|failure)|(?:校验|验证|验收)\s*(?:失败|未通过|不通过)|runSmokeTest|__GAME_TEST__|__INTERACTIVE_TEST__|\b(?:missing|malformed)\b|报错|错误|缺少|no longer exposes|丢失|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成|玩不通|不能玩|不好玩|上不去|拿不到|触发不了/i;
 
 const ARTIFACT_TARGET_FILE_PATTERN =
-  /(?:(?:target file|目标文件)\s*:\s*)?((?:\/|~\/|\.{1,2}\/)?[^\s"'`<>]+?\.html?)(?=$|[\s"'`<>),;.，。])/gi;
+  /(?:(?:target file|目标文件)\s*:\s*((?:(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?|[A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*)\.html?)|((?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?\.html?))(?=$|[\s"'`<>),;.，。])/gi;
 
 const RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN =
   /<artifact[-_\s]*(?:repair|validation)|artifact validation failed|game artifact validation failed|artifact repair mode is active/i;
@@ -117,16 +120,18 @@ export function isSameArtifactRepairPath(ctx: RuntimeContext, candidate: string,
 }
 
 function extractArtifactRepairTargetFromText(ctx: RuntimeContext, text: string): string | null {
-  const hasRepairCue =
-    ARTIFACT_REPAIR_CUE_PATTERN.test(text)
-    || inferArtifactRepairIssueCodesFromText(text).length > 0;
-  if (!hasRepairCue) {
+  const issueCodes = inferArtifactRepairIssueCodesFromText(text);
+  const hasRepairIntent = EXPLICIT_ARTIFACT_REPAIR_INTENT_PATTERN.test(text);
+  const hasValidationContext =
+    ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN.test(text)
+    || issueCodes.length > 0;
+  if (!hasRepairIntent || !hasValidationContext) {
     return null;
   }
 
   ARTIFACT_TARGET_FILE_PATTERN.lastIndex = 0;
   const matches = [...text.matchAll(ARTIFACT_TARGET_FILE_PATTERN)]
-    .map((match) => normalizeCandidatePath(match[1] || ''))
+    .map((match) => normalizeCandidatePath(match[1] || match[2] || ''))
     .filter(Boolean);
 
   if (matches.length === 0) {
@@ -222,6 +227,7 @@ export function shouldAllowFullArtifactRewriteDuringRepair(
   guard: ArtifactRepairGuard,
 ): boolean {
   if (guard.patched) return false;
+  if (guard.freshArtifactFullRewrite === true) return true;
   const issueCodes = guard.activeIssueCodes || [];
   if (issueCodes.some((code) => FULL_REWRITE_REPAIR_ISSUE_CODES.has(code))) {
     return true;

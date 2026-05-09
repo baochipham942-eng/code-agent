@@ -79,7 +79,8 @@
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
     "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
     "tauri:dev": "npm run rebuild-native:system && npm run build:web && cargo tauri dev",
-    "tauri:build": "npm run rebuild-native:system && npm run build && cargo tauri build && bash scripts/tauri-install.sh",
+    "tauri:prebuild-cleanup": "bash scripts/tauri-prebuild-cleanup.sh",
+    "tauri:build": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && cargo tauri build && bash scripts/tauri-install.sh",
     "prepare": "husky"
   },
   "lint-staged": {

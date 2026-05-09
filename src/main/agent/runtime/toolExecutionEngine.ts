@@ -2601,6 +2601,10 @@ export class ToolExecutionEngine {
                   ? this.ctx.artifactRepairGuard
                   : undefined;
                 const attempts = (previousFailure?.attempts || 0) + 1;
+                const freshArtifactFirstFailure =
+                  !previousGuard &&
+                  attempts === 1 &&
+                  (isWriteTool(toolCall.name) || isAppendTool(toolCall.name));
                 const phase: ArtifactRepairPhase = attempts >= 3
                   ? 'read_then_patch'
                   : attempts >= 2
@@ -2618,6 +2622,7 @@ export class ToolExecutionEngine {
                   lastBlockedTool: previousGuard?.lastBlockedTool,
                   noOpPatchCount: Math.max(previousGuard?.noOpPatchCount ?? 0, 1),
                   lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? previousGuard?.lastFailedPatchFingerprint,
+                  freshArtifactFullRewrite: freshArtifactFirstFailure,
                   activeIssueCodes: [
                     ...new Set([
                       ...(

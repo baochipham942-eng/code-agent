@@ -16,6 +16,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
+import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
@@ -177,7 +178,7 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
   const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
   const [hovered, setHovered] = useState(false);
 
-  const reasoningContent = node.thinking || node.reasoning;
+  const reasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
 
   useEffect(() => {
     if (reasoningRef.current) {
@@ -223,8 +224,11 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
       {reasoningContent?.trim() && (
         <div className="mb-2">
           <button
+            type="button"
             onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
+            aria-expanded={showReasoning}
+            title={showReasoning ? '收起 thinking' : '展开 thinking'}
+            className="flex w-full cursor-pointer items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-400"
           >
             <span className="font-mono">{showReasoning ? '▼' : '▶'}</span>
             <span>thinking</span>
@@ -237,8 +241,8 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 pl-3">
-              <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-wrap font-mono">
+            <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
+              <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
                 {reasoningContent}
               </p>
             </div>

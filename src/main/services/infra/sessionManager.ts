@@ -626,6 +626,11 @@ export class SessionManager implements Disposable {
       }
       this.updateCachedWorkbenchState(cached);
     }
+
+    // 第一条用户消息时自动生成会话标题（webServer 多会话路径走这里）
+    if (inserted && message.role === 'user' && typeof message.content === 'string' && message.content.trim()) {
+      void this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => { /* 静默降级 */ });
+    }
   }
 
   /**
@@ -800,11 +805,17 @@ export class SessionManager implements Disposable {
    */
   private async maybeUpdateTitle(firstMessage: string): Promise<void> {
     if (!this.currentSessionId) return;
+    await this.maybeUpdateTitleForSession(this.currentSessionId, firstMessage);
+  }
 
-    const session = await this.getSession(this.currentSessionId);
+  /**
+   * 多会话版本：根据指定 sessionId 的第一条用户消息生成标题。
+   * webServer 走 addMessageToSession 时由该函数兜底（addMessage 单会话路径已经在上面挂过）。
+   */
+  private async maybeUpdateTitleForSession(sessionId: string, firstMessage: string): Promise<void> {
+    const session = await this.getSession(sessionId);
     if (!session) return;
 
-    // 只在标题是默认标题时更新
     const isDefaultTitle =
       session.title === 'New Chat' ||
       session.title === 'New Session' ||
@@ -813,17 +824,15 @@ export class SessionManager implements Disposable {
 
     if (!(isDefaultTitle && session.messageCount <= 1)) return;
 
-    // 1. 尝试用小模型生成标题
     let title = await this.generateSmartTitle(firstMessage);
 
-    // 2. 降级：截取前 50 字符
     if (!title) {
       const firstLine = firstMessage.trim().split('\n')[0];
       title = firstLine.slice(0, 50);
       if (firstLine.length > 50) title += '...';
     }
 
-    await this.updateSession(this.currentSessionId, { title });
+    await this.updateSession(sessionId, { title });
   }
 
   /**

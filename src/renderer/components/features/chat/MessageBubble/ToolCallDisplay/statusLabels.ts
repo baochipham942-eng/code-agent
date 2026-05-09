@@ -92,10 +92,22 @@ export function getToolStatusLabel(
     case 'success':
       return enrichCompletedLabel(toolCall, labels.completed);
     case 'error':
+      if (isArtifactValidationFailureAfterWrite(toolCall)) {
+        return '已写入，验收失败';
+      }
       return labels.error;
     case 'interrupted':
       return '已中断';
   }
+}
+
+function isArtifactValidationFailureAfterWrite(toolCall: ToolCall): boolean {
+  if (toolCall.name !== 'Write' && toolCall.name !== 'write_file') return false;
+  const metadata = toolCall.result?.metadata;
+  if (!metadata || typeof metadata !== 'object') return false;
+  const artifactValidation = (metadata as { artifactValidation?: unknown }).artifactValidation;
+  if (!artifactValidation || typeof artifactValidation !== 'object') return false;
+  return (artifactValidation as { failed?: unknown }).failed === true;
 }
 
 /**

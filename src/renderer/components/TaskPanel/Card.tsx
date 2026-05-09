@@ -13,7 +13,31 @@ interface CardProps {
   isEmpty?: boolean;
   emptyLabel?: string;
   defaultExpanded?: boolean;
+  storageKey?: string;
   children: React.ReactNode;
+}
+
+const CARD_EXPAND_STORAGE_PREFIX = 'taskpanel.card.expanded.';
+
+function readStoredExpanded(storageKey: string | undefined, fallback: boolean): boolean {
+  if (!storageKey || typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(`${CARD_EXPAND_STORAGE_PREFIX}${storageKey}`);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+  } catch {
+    // 本地存储不可用（无痕 / 配额）时直接回退到 default
+  }
+  return fallback;
+}
+
+function writeStoredExpanded(storageKey: string | undefined, value: boolean): void {
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`${CARD_EXPAND_STORAGE_PREFIX}${storageKey}`, value ? '1' : '0');
+  } catch {
+    // 写入失败静默忽略
+  }
 }
 
 export function Card({
@@ -24,13 +48,24 @@ export function Card({
   isEmpty,
   emptyLabel,
   defaultExpanded = true,
+  storageKey,
   children,
 }: CardProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expanded, setExpanded] = useState(() => readStoredExpanded(storageKey, defaultExpanded));
 
+  // 没有 storageKey 时跟随 caller 控制（旧行为）；有 storageKey 时一旦用户主动操作就以 localStorage 为准
   useEffect(() => {
+    if (storageKey) return;
     setExpanded(defaultExpanded);
-  }, [defaultExpanded]);
+  }, [defaultExpanded, storageKey]);
+
+  const toggle = () => {
+    setExpanded((prev) => {
+      const next = !prev;
+      writeStoredExpanded(storageKey, next);
+      return next;
+    });
+  };
 
   if (isEmpty) {
     return (
@@ -47,7 +82,7 @@ export function Card({
     }`}>
       <div className="flex items-center w-full px-3 py-2 gap-1">
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={toggle}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
           type="button"
         >
@@ -60,7 +95,7 @@ export function Card({
         </button>
         {rightElement}
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={toggle}
           className="flex items-center flex-shrink-0"
           type="button"
           aria-label={expanded ? '折叠' : '展开'}

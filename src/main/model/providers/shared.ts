@@ -408,7 +408,7 @@ export function convertToOpenAIMessages(
   options?: { thinkingMode?: boolean }
 ): OpenAIMessage[] {
   const normalizeToolCallId = createToolCallIdNormalizer(messages);
-  const raw = messages.map((m) => {
+  const raw = messages.flatMap((m): OpenAIMessage[] => {
     // 结构化工具调用（assistant + toolCalls）
     if (m.role === 'assistant' && m.toolCalls?.length) {
       const msg: OpenAIMessage = {
@@ -430,22 +430,32 @@ export function convertToOpenAIMessages(
       } else if (m.thinking) {
         msg.reasoning_content = m.thinking;
       }
-      return msg;
+      return [msg];
     }
-    // 结构化工具结果（role='tool' + toolCallId）
+    // 结构化工具结果(role='tool' + toolResults[])：ConversationRuntime 把多个 tool results 合并到
+    // 单条 Message,但 OpenAI 协议要求每个 tool_call_id 一条独立 tool message,这里展开。
+    const aggregatedResults = (m as { toolResults?: Array<{ toolCallId: string; output?: string; error?: string }> }).toolResults;
+    if (m.role === 'tool' && Array.isArray(aggregatedResults) && aggregatedResults.length > 0) {
+      return aggregatedResults.map((r) => ({
+        role: 'tool' as const,
+        tool_call_id: normalizeToolCallId(r.toolCallId),
+        content: r.output ?? r.error ?? '',
+      }));
+    }
+    // 结构化工具结果（role='tool' + toolCallId 顶层单数）
     if (m.role === 'tool' && m.toolCallId) {
-      return {
+      return [{
         role: 'tool' as const,
         tool_call_id: normalizeToolCallId(m.toolCallId),
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-      };
+      }];
     }
     // 回退：无结构化数据的 tool 消息 → user
     if (m.role === 'tool') {
-      return {
+      return [{
         role: 'user' as const,
         content: typeof m.content === 'string' ? m.content : '',
-      };
+      }];
     }
     // 其他消息（system, user, 无 toolCalls 的 assistant）
     if (typeof m.content === 'string') {
@@ -459,9 +469,9 @@ export function convertToOpenAIMessages(
           msg.reasoning_content = m.thinking;
         }
       }
-      return msg;
+      return [msg];
     }
-    return {
+    return [{
       role: m.role as OpenAIMessage['role'],
       content: m.content.map((c) => {
         if (c.type === 'text') {
@@ -477,7 +487,7 @@ export function convertToOpenAIMessages(
         }
         return c;
       }),
-    };
+    }];
   });
 
   return sanitizeToolCallOrder(raw);

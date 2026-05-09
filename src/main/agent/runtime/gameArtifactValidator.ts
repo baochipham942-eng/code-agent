@@ -20,6 +20,7 @@ import {
 import { waitForCdpEndpoint, stopChromeProcess } from './browser/chromeProcess';
 import { gameSubtypeRegistry } from './game/registry';
 // side-effect import — 各 subtype checker 自注册到 gameSubtypeRegistry
+import './game/breakout/BreakoutChecker';
 import './game/platformer/PlatformerChecker';
 import './game/runner/RunnerChecker';
 
@@ -1170,6 +1171,50 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
           }
           // subtype 透传到 TS 侧，由 GameSubtypeChecker.validateRuntimeEvidence 接管 subtype-specific 证据校验
           const subtypeForDispatch = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
+          const breakoutScenarios = [];
+          const runSubtypeScenarioProbe = async (name, options = {}) => {
+            const frames = actionFrameCount(options, 12);
+            const inputState = options.inputState && typeof options.inputState === 'object' ? options.inputState : {};
+            const keys = Array.isArray(options.keys) ? options.keys.filter((key) => typeof key === 'string' && key.trim()) : [];
+            try {
+              if (hasReset) {
+                await Promise.resolve(contract.reset(name));
+              } else {
+                await Promise.resolve(contract.start());
+              }
+              const before = await Promise.resolve(contract.snapshot());
+              if (keys.length > 0) {
+                await driveKeys(keys, frames);
+              } else if (hasStep) {
+                await Promise.resolve(contract.step(inputState, frames));
+              } else {
+                await sleep(Math.min(800, Math.max(35, frames * 16)));
+              }
+              const after = await Promise.resolve(contract.snapshot());
+              return { name, before, after };
+            } catch (error) {
+              return { name, error: error instanceof Error ? error.message : String(error) };
+            }
+          };
+          if (/^(breakout|arkanoid)$/.test(subtypeForDispatch)) {
+            const breakoutScenarioSpecs = [
+              { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
+              { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, frames: 12 },
+              { name: 'wallBounce', frames: 20 },
+              { name: 'paddleBounce', frames: 20 },
+              { name: 'brickHit', frames: 30 },
+              { name: 'powerup:wide', frames: 20 },
+              { name: 'powerup:multi', frames: 20 },
+              { name: 'powerup:slow', frames: 20 },
+              { name: 'powerup:through', frames: 20 },
+              { name: 'powerup:life', frames: 20 },
+              { name: 'win', frames: 6 },
+              { name: 'lose', frames: 6 },
+            ];
+            for (const scenario of breakoutScenarioSpecs) {
+              breakoutScenarios.push(await runSubtypeScenarioProbe(scenario.name, scenario));
+            }
+          }
           const metricCoveredBySmoke = (metric) => {
             const normalized = String(metric || '').trim().toLowerCase();
             if (!normalized) return false;
@@ -1210,7 +1255,10 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
               subtype: subtypeForDispatch,
               meta,
               coverage,
-              observations: Array.isArray(smoke.observations) ? smoke.observations : [],
+              observations: {
+                smoke: Array.isArray(smoke.observations) ? smoke.observations : [],
+                breakoutScenarios,
+              },
               beforeSmokeSnapshot,
               afterSmokeSnapshot,
               smokePassed: smoke.passed === true,

@@ -218,6 +218,7 @@ export type AgentEvent =
           targetRangedReadCount?: number;
           patched?: boolean;
           noOpPatchCount?: number;
+          freshArtifactFullRewrite?: boolean;
         };
       };
     } }

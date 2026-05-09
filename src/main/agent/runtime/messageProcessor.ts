@@ -46,6 +46,7 @@ import {
   getArtifactRepairToolPolicy,
   type ArtifactRepairToolPolicy,
 } from './artifactRepairGuard';
+import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 
@@ -488,12 +489,23 @@ export class MessageProcessor {
     langfuse: any,
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls!;
+    const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
+    const activeRepairGuard = this.ctx.artifactRepairGuard;
+    if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(
+      this.ctx,
+      this.contextAssembly,
+      activeRepairGuard,
+      requestedToolNames,
+    )) {
+      return 'continue';
+    }
+
     const visibleToolNames = new Set(response.runtimeDiagnostics?.visibleToolNames || []);
     const unavailableToolCalls = visibleToolNames.size > 0
       ? toolCalls.filter((toolCall) => !visibleToolNames.has(toolCall.name))
       : [];
 
-  if (unavailableToolCalls.length > 0) {
+    if (unavailableToolCalls.length > 0) {
       const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
       const allowedNames = [...visibleToolNames].join(', ') || 'none';
       const guard = this.ctx.artifactRepairGuard;

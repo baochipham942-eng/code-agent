@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type React from 'react';
 import { AlertTriangle, ArrowUpRight, Brain, Radio } from 'lucide-react';
 import { CardEmptyState as EmptyState } from './Card';
@@ -6,10 +7,15 @@ import type {
   LoopDecisionView,
   MemoryActivityEvent,
   RunWorkbenchModel,
+  RunUiState,
   RunUiStatus,
   TaskRecord,
   ToolCapabilityView,
 } from '../../types/runWorkbench';
+import {
+  deriveTaskRailView,
+  type TaskRailStepView,
+} from '../../utils/taskRailPresentation';
 
 function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -95,13 +101,39 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
   }
 }
 
+function getTaskStatusLabel(status: TaskRecord['status']): string {
+  switch (status) {
+    case 'in_progress':
+      return '进行中';
+    case 'done':
+      return '完成';
+    case 'blocked':
+      return '阻塞';
+    default:
+      return '待开始';
+  }
+}
+
+function getStepDotClass(status: TaskRailStepView['status']): string {
+  switch (status) {
+    case 'done':
+      return 'border-emerald-400/30 bg-emerald-400/20 text-emerald-300';
+    case 'blocked':
+      return 'border-red-400/30 bg-red-400/15 text-red-300';
+    case 'in_progress':
+      return 'border-sky-400/40 bg-sky-400/15 text-sky-300';
+    default:
+      return 'border-white/[0.08] bg-white/[0.02] text-zinc-500';
+  }
+}
+
 const TASK_SCOPE_LABEL: Record<TaskRecord['scope'], string> = {
-  session: 'Session',
-  global: 'Global',
-  scheduled: 'Scheduled',
+  session: '会话',
+  global: '全局',
+  scheduled: '定时',
 };
 
-export const TaskDashboardSummary = ({ tasks }: { tasks: TaskRecord[] }) => {
+export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?: RunUiState | null }) => {
   if (tasks.length === 0) return <EmptyState text="暂无任务" />;
 
   const sessionTask = tasks.find((task) => task.scope === 'session') || null;
@@ -110,7 +142,7 @@ export const TaskDashboardSummary = ({ tasks }: { tasks: TaskRecord[] }) => {
   return (
     <div className="space-y-2">
       {sessionTask ? (
-        <TaskRecordRow task={sessionTask} primary />
+        <TaskRecordRow task={sessionTask} run={run} primary />
       ) : (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
           当前会话暂无任务
@@ -134,28 +166,65 @@ export const TaskDashboardSummary = ({ tasks }: { tasks: TaskRecord[] }) => {
   );
 };
 
-const TaskRecordRow = ({ task, primary = false }: { task: TaskRecord; primary?: boolean }) => {
-  const doneSteps = task.steps.filter((step) => step.status === 'done').length;
-  const activeStep = task.steps.find((step) => step.status === 'in_progress')
-    || task.steps.find((step) => step.status === 'pending')
-    || task.steps[0];
+const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?: RunUiState | null; primary?: boolean }) => {
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+  const rail = deriveTaskRailView(task, run);
 
   return (
     <div className={`min-w-0 rounded-md bg-black/10 px-2 py-1.5 ${primary ? 'border border-sky-500/10' : ''}`}>
       <div className="flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-wide text-zinc-500">{TASK_SCOPE_LABEL[task.scope]}</span>
-        <span className={`text-[10px] ${getTaskStatusClass(task.status)}`}>{task.status}</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{task.title}</span>
+        <span className={`text-[10px] ${getTaskStatusClass(rail.status)}`}>{getTaskStatusLabel(rail.status)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
+        {rail.mode === 'checklist' && rail.total > 0 && (
+          <span className="text-[10px] tabular-nums text-zinc-600">{rail.completed}/{rail.total}</span>
+        )}
       </div>
-      <div className="mt-0.5 truncate text-[11px] text-zinc-500">
-        {task.steps.length > 0 ? `${doneSteps}/${task.steps.length} steps${activeStep ? ` · ${activeStep.title}` : ''}` : '无步骤'}
-      </div>
-      {task.resumeHint && (
-        <div className="mt-0.5 truncate text-[11px] text-amber-300">{task.resumeHint}</div>
+
+      {rail.mode === 'checklist' && (
+        <div className="mt-2 space-y-1">
+          {rail.visibleSteps.map((step) => (
+            <TaskRailStepRow key={`${step.originalIndex}:${step.title}`} step={step} />
+          ))}
+          {rail.hiddenPendingCount > 0 && (
+            <div className="pl-5 text-[11px] text-zinc-600">还有 {rail.hiddenPendingCount} 项未显示</div>
+          )}
+          {rail.hiddenCompletedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setCompletedExpanded((prev) => !prev)}
+              className="pl-5 text-left text-[11px] text-zinc-600 hover:text-zinc-400"
+            >
+              已完成 {rail.hiddenCompletedCount} 项
+            </button>
+          )}
+          {completedExpanded && rail.completedSteps.length > 0 && (
+            <div className="space-y-1">
+              {rail.completedSteps.map((step) => (
+                <TaskRailStepRow key={`${step.originalIndex}:${step.title}:done`} step={step} muted />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {rail.currentAction && (
+        <div className="mt-1 truncate text-[11px] text-zinc-500">当前动作：{rail.currentAction}</div>
       )}
     </div>
   );
 };
+
+const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => (
+  <div className={`flex min-w-0 items-center gap-2 ${muted ? 'opacity-60' : ''}`}>
+    <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full border text-[9px] ${getStepDotClass(step.status)}`}>
+      {step.status === 'done' ? '✓' : step.status === 'blocked' ? '!' : ''}
+    </span>
+    <span className={`truncate text-[11px] ${step.status === 'done' ? 'text-zinc-500' : 'text-zinc-300'}`}>
+      {step.title}
+    </span>
+  </div>
+);
 
 export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) => {
   if (decisions.length === 0) return <EmptyState text="暂无运行事件" />;

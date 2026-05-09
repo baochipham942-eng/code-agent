@@ -161,11 +161,11 @@ export const TaskMonitor: React.FC = () => {
       )}
 
       <Card
-        title="Task"
+        title="任务"
         count={runWorkbench.tasks.length > 0 ? String(runWorkbench.tasks.length) : undefined}
         highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
       >
-        <TaskDashboardSummary tasks={runWorkbench.tasks} />
+        <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
       </Card>
 
       {approvalCount > 0 && (

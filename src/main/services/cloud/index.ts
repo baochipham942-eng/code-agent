@@ -13,7 +13,6 @@ export {
 
 export {
   getFeatureFlagService,
-  isCloudAgentEnabled,
   isMemoryEnabled,
   isComputerUseEnabled,
   getMaxIterations,

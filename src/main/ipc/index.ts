@@ -15,7 +15,6 @@ import { registerAgentHandlers } from './agent.ipc';
 import { registerSessionHandlers } from './session.ipc';
 import { registerAuthHandlers } from './auth.ipc';
 import { registerSyncHandlers } from './sync.ipc';
-import { registerCloudHandlers } from './cloud.ipc';
 import { registerWorkspaceHandlers } from './workspace.ipc';
 import { registerSettingsHandlers } from './settings.ipc';
 import { registerUpdateHandlers } from './update.ipc';
@@ -92,9 +91,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Sync handlers
   registerSyncHandlers(ipcMain);
-
-  // Cloud handlers
-  registerCloudHandlers(ipcMain);
 
   // Workspace handlers
   registerWorkspaceHandlers(ipcMain, getMainWindow, getAppService);

@@ -200,24 +200,6 @@ export const IPC_CHANNELS = {
   SESSION_STATUS_GET: 'session:status:get',
   SESSION_STATUS_GET_ALL: 'session:status:get-all',
 
-  // Cloud task channels
-  CLOUD_TASK_CREATE: 'cloud:task:create',
-  CLOUD_TASK_UPDATE: 'cloud:task:update',
-  CLOUD_TASK_CANCEL: 'cloud:task:cancel',
-  CLOUD_TASK_GET: 'cloud:task:get',
-  CLOUD_TASK_LIST: 'cloud:task:list',
-  CLOUD_TASK_DELETE: 'cloud:task:delete',
-  CLOUD_TASK_START: 'cloud:task:start',
-  CLOUD_TASK_PAUSE: 'cloud:task:pause',
-  CLOUD_TASK_RESUME: 'cloud:task:resume',
-  CLOUD_TASK_RETRY: 'cloud:task:retry',
-  CLOUD_TASK_SYNC: 'cloud:task:sync',
-  CLOUD_TASK_SYNC_STATE: 'cloud:task:syncState',
-  CLOUD_TASK_PROGRESS: 'cloud:task:progress',
-  CLOUD_TASK_COMPLETED: 'cloud:task:completed',
-  CLOUD_TASK_FAILED: 'cloud:task:failed',
-  CLOUD_TASK_STATS: 'cloud:task:stats',
-
   // Lab channels (实验室)
   LAB_DOWNLOAD_PROJECT: LAB_CHANNELS.DOWNLOAD_PROJECT,
   LAB_UPLOAD_DATA: LAB_CHANNELS.UPLOAD_DATA,

@@ -20,15 +20,6 @@ export { XiaomiProvider } from './xiaomiProvider';
 // Cloud Proxy (special case, called before provider dispatch)
 export { callViaCloudProxy } from './cloud-proxy';
 
-// Legacy functions (kept for backward compatibility, will be removed after validation)
-export { callDeepSeek } from './deepseek';
-export { callClaude } from './anthropic';
-export { callOpenAI, callGroq, callLocal, callQwen, callMinimax, callPerplexity } from './openai-compatible';
-export { callMoonshot } from './moonshot';
-export { callGemini } from './gemini';
-export { callZhipu } from './zhipu';
-export { callOpenRouter } from './openrouter';
-
 // Shared utilities
 export {
   logger,

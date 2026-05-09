@@ -109,7 +109,6 @@ export function getFeatureFlagService(): FeatureFlagService {
 }
 
 // 便捷函数导出
-export const isCloudAgentEnabled = () => getFeatureFlagService().isCloudAgentEnabled();
 export const isMemoryEnabled = () => getFeatureFlagService().isMemoryEnabled();
 export const isComputerUseEnabled = () => getFeatureFlagService().isComputerUseEnabled();
 export const getMaxIterations = () => getFeatureFlagService().getMaxIterations();

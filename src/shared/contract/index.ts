@@ -30,8 +30,7 @@ export * from './settings';
 // （barrel + isolatedModules 下 type-only re-export 偶尔解析失败）
 export * from './update';
 
-// Cloud & GUI types
-export * from './cloud';
+// GUI types
 export * from './gui';
 
 // Memory types

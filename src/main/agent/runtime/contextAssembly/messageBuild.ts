@@ -186,7 +186,10 @@ function getArtifactRepairHistoryToolAllowlist(ctx: ContextAssemblyCtx): Set<str
   if (guard.patched) {
     return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file', 'Bash', 'bash']);
   }
-  if ((guard.noOpPatchCount ?? 0) >= 1) {
+  // noOpPatchCount 阈值放宽到 3:让模型一次"无效修改"后还能 Read verify 实际状态再下手,
+  // 避免"Edit noOp -> 立刻禁 Read -> 模型盲改 -> 又 noOp -> admission_stop"死循环。
+  // 真死循环兜底仍由 attempts >= 3 + noOpPatchCount >= 1 触发的 full rewrite 路径(line 147)接管。
+  if ((guard.noOpPatchCount ?? 0) >= 3) {
     return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
   }
   const targetReadCount = guard.targetReadCount ?? 0;
@@ -674,6 +677,12 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
   const text = failuresAndCodes.join('\n');
   const requirements: string[] = [];
 
+  if (/missing_test_contract|malformed_test_contract|missing_contract_start|missing_contract_snapshot|missing_contract_smoke|可平衡解析的对象字面量|交互测试合约.*缺少|没有找到 runSmokeTest/i.test(text)) {
+    requirements.push(
+      '- test_contract_shape: replace the active `window.__GAME_TEST__` / `window.__INTERACTIVE_TEST__` region with one direct balanced object assignment containing `start()`, `reset(levelOrScenario?)`, `snapshot()`, `step(inputState = {}, frames = 1)`, and `runSmokeTest()`. Do not use comments, class/factory/IIFE wrappers, `Object.assign`, separate top-level function shells, or duplicate method tails after the object closes.',
+    );
+  }
+
   if (/missing_contract_start|缺少 start\(\)|缺少 start/i.test(text)) {
     requirements.push(
       '- missing_contract_start: add a real `start()` method to the active `window.__GAME_TEST__` / `window.__INTERACTIVE_TEST__` object; it must initialize clean playable state and use the same state as `snapshot()`, `step()`, and `runSmokeTest()`.',
@@ -704,9 +713,9 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
     );
   }
 
-  if (/canvas_not_responsive|固定 canvas|窄窗口.*裁切|响应式 CSS|responsive css/i.test(text)) {
+  if (/canvas_not_responsive|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|none are visibly framed|mobile visual smoke.*canvas|响应式 CSS|responsive css/i.test(text)) {
     requirements.push(
-      '- canvas_not_responsive: keep the drawing resolution if useful, but add responsive canvas or wrapper CSS using max-width/max-height/aspect-ratio/height:auto so the full playfield fits narrow browser viewports.',
+      '- canvas_not_responsive: keep the drawing resolution if useful, but constrain both rendered width and height with responsive canvas or wrapper CSS such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. The full playfield and HUD must fit inside a 390px mobile viewport; fixed 800px/900px width or max-height-only scaling is not enough.',
     );
   }
 
@@ -1467,11 +1476,41 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     ctx.runtime.compressionState = new CompressionState();
   }
 
+  // Allowlist 在循环内不变（只取决于 artifactRepairGuard），提到外面避免重复计算
+  const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
+  const repairHistoryAllowlist = getArtifactRepairHistoryToolAllowlist(ctx);
+
+  // 预扫:identify toolCallIds whose source assistant entry will drop them via allowlist filter.
+  // 必须把对应的 tool message 也跳过,否则成 orphan tool — sanitizeToolCallOrder 会 demote 成 user,
+  // 模型看到一堆"无主"的工具结果当成新指令,重复调用同一工具死循环。
+  const filteredOutToolCallIds = new Set<string>();
+  for (const entry of contextApiView) {
+    if (entry.role !== 'assistant') continue;
+    const tcEntry = entry as { toolCalls?: Array<{ id: string; name: string }>; content?: string };
+    if (!tcEntry.toolCalls?.length) continue;
+    const surviving = tcEntry.toolCalls.filter((tc) => {
+      if (REMOVED_TOOLS.has(tc.name)) return false;
+      if (!repairHistoryAllowlist) return true;
+      return repairHistoryAllowlist.has(tc.name);
+    });
+    const survivingIds = new Set(surviving.map((tc) => tc.id));
+    const willDropAssistant = surviving.length === 0 && !tcEntry.content;
+    for (const tc of tcEntry.toolCalls) {
+      if (willDropAssistant || !survivingIds.has(tc.id)) {
+        filteredOutToolCallIds.add(tc.id);
+      }
+    }
+  }
+
   logger.debug('[AgentLoop] Building model messages, total messages:', contextApiView.length);
   for (const entry of contextApiView) {
     logger.debug(` Message role=${entry.role}, hasAttachments=${!!entry.attachments?.length}, attachmentCount=${entry.attachments?.length || 0}`);
 
     if (entry.role === 'tool') {
+      // 跳过 source assistant 已被 allowlist 过滤掉的 tool — 防止 orphan
+      if (entry.toolCallId && filteredOutToolCallIds.has(entry.toolCallId)) {
+        continue;
+      }
       modelMessages.push({
         role: 'tool',
         content: entry.content,
@@ -1481,8 +1520,6 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       modelMessageSourceIds.push(entry.originMessageId);
     } else if (entry.role === 'assistant' && entry.toolCalls?.length) {
       // 过滤掉已废弃工具的历史调用，避免模型从上下文中误判这些工具仍可用
-      const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
-      const repairHistoryAllowlist = getArtifactRepairHistoryToolAllowlist(ctx);
       const tcs = entry.toolCalls.filter((tc) => {
         if (REMOVED_TOOLS.has(tc.name)) return false;
         if (!repairHistoryAllowlist) return true;

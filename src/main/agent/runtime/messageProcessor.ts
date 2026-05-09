@@ -42,6 +42,10 @@ import {
   buildStagnationHint,
   buildStagnationStopMessage,
 } from './stagnationDetector';
+import {
+  getArtifactRepairToolPolicy,
+  type ArtifactRepairToolPolicy,
+} from './artifactRepairGuard';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 
@@ -85,7 +89,9 @@ function buildArtifactRepairAdmissionRecoveryPrompt(
   requestedNames: string,
   allowedNames: string,
   blockedToolCount: number,
+  policy: ArtifactRepairToolPolicy | null = null,
 ): string {
+  const mutationTools = policy?.mutationToolPrompt || 'currently available file mutation tools';
   return [
     '<artifact-repair-admission-blocked>',
     `You are already inside artifact repair mode for ${targetFile}.`,
@@ -93,7 +99,7 @@ function buildArtifactRepairAdmissionRecoveryPrompt(
     `Only these tools are currently available: ${allowedNames}.`,
     'Do not repeat the unavailable tool call.',
     blockedToolCount >= 2
-      ? 'The read/source-exploration budget is exhausted. Your next action must use Edit or Append on the target artifact.'
+      ? `The read/source-exploration budget is exhausted. Your next action must use ${mutationTools} on the target artifact.`
       : 'Your next action must patch the target artifact using the currently available file mutation tools.',
     'Use the target HTML file and validator failure summary already in context. Do not inspect validator/runtime sources.',
     '</artifact-repair-admission-blocked>',
@@ -114,6 +120,9 @@ function activateArtifactRepairAdmissionStop(
     'Report that the target artifact still needs a mutation patch and that no target file change was applied.',
     '</force-final-response>',
   ].join('\n');
+  // 注:UI 端的 error event emit 在 forceFinalResponse 处理路径里(messageProcessor.ts forceFinalResponse 分支),
+  // 必须在 final assistant message push 之后 emit,这样 useSessionLifecycleEffects 的 lastMessage 检查
+  // 能命中 assistant 把 errorContent 合并进去显示。如果在这里 emit, lastMessage 还是上一轮的 tool 消息,UI 不显示。
 }
 
 function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: ToolResult): boolean {
@@ -369,12 +378,14 @@ export class MessageProcessor {
     this.ctx._consecutiveTruncations = 0;
 
     // P1-P5 Nudge checks (delegated to NudgeManager)
+    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
     const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
       toolsUsedInTurn: this.ctx.toolsUsedInTurn,
       isSimpleTaskMode: this.ctx.isSimpleTaskMode,
       sessionId: this.ctx.sessionId,
       iterations,
       workingDirectory: this.ctx.workingDirectory,
+      mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
       injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): NudgeManager 的 onEvent 形参 { type: string; data: unknown } 是宽口，外层 ctx.onEvent 期望 AgentEvent 严格联合；应让 NudgeManager 直接接受 AgentEvent，或在外层定义 AnyEvent 类型
       onEvent: (event: { type: string; data: unknown }) => this.ctx.onEvent(event as any),
@@ -494,12 +505,18 @@ export class MessageProcessor {
           guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
         }
       }
+      const repairPolicy = getArtifactRepairToolPolicy(guard);
+      // 死循环逃生门：连续 3 次拦截同一类不可用工具调用，强制收尾，避免无限重试
+      if (guard?.targetFile && blockedToolCount >= 3) {
+        activateArtifactRepairAdmissionStop(this.ctx, guard.targetFile, requestedNames);
+      }
       const recoveryPrompt = guard?.targetFile
         ? buildArtifactRepairAdmissionRecoveryPrompt(
             guard.targetFile,
             requestedNames,
             allowedNames,
             blockedToolCount,
+            repairPolicy,
           )
         : null;
       this.contextAssembly.injectSystemMessage(
@@ -577,6 +594,42 @@ export class MessageProcessor {
           ),
         });
       });
+
+      // admission_stop 触发分支:不能 'continue' 让模型再试一轮,否则模型继续请求 unavailable tool
+      // 永远绕过 forceFinalResponse handler(在正常 tool 路径之后),turn 永远不结束。
+      // 这里 inline 走完 forceFinal 流程: push final assistant message + emit error + turn_end + 'break'。
+      if (this.ctx.forceFinalResponseReason) {
+        const finalMessage: Message = {
+          id: this.contextAssembly.generateId(),
+          role: 'assistant',
+          content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
+          timestamp: Date.now(),
+          effortLevel: this.ctx.effortLevel,
+        };
+        await this.contextAssembly.addAndPersistMessage(finalMessage);
+        this.ctx.onEvent({ type: 'message', data: finalMessage });
+
+        const ADMISSION_PREFIX = 'artifact repair unavailable tool repeated:';
+        if (this.ctx.forceFinalResponseReason.startsWith(ADMISSION_PREFIX)) {
+          const reqNames = this.ctx.forceFinalResponseReason.slice(ADMISSION_PREFIX.length).trim();
+          const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
+          this.ctx.onEvent({
+            type: 'error',
+            data: {
+              message: `产物修复终止:模型反复请求不可用工具 ${reqNames},已停止本轮尝试`,
+              code: 'artifact_repair_admission_stop',
+              suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
+              details: { targetFile, blockedTool: reqNames },
+            },
+          });
+        }
+
+        this.ctx.forceFinalResponseReason = undefined;
+        this.ctx.forceFinalResponsePrompt = undefined;
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', undefined, this.ctx.currentSystemPromptHash);
+        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.currentTurnId } });
+        return 'break';
+      }
       return 'continue';
     }
 
@@ -844,6 +897,24 @@ export class MessageProcessor {
       await this.contextAssembly.addAndPersistMessage(finalMessage);
       this.ctx.onEvent({ type: 'message', data: finalMessage });
 
+      // admission_stop:在 final assistant message push 后 emit error,
+      // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
+      const stopReason = this.ctx.forceFinalResponseReason;
+      const ADMISSION_PREFIX = 'artifact repair unavailable tool repeated:';
+      if (stopReason.startsWith(ADMISSION_PREFIX)) {
+        const requestedNames = stopReason.slice(ADMISSION_PREFIX.length).trim();
+        const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
+        this.ctx.onEvent({
+          type: 'error',
+          data: {
+            message: `产物修复终止:模型反复请求不可用工具 ${requestedNames},已停止本轮尝试`,
+            code: 'artifact_repair_admission_stop',
+            suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
+            details: { targetFile, blockedTool: requestedNames },
+          },
+        });
+      }
+
       this.ctx.forceFinalResponseReason = undefined;
       this.ctx.forceFinalResponsePrompt = undefined;
       this.contextAssembly.flushHookMessageBuffer();
@@ -950,9 +1021,11 @@ export class MessageProcessor {
     await this.contextAssembly.maybeInjectThinking(toolCalls, toolResults);
 
     // P2 Checkpoint
+    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
     this.ctx.nudgeManager.checkProgressState(
       this.ctx.toolsUsedInTurn,
       (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+      { mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh },
     );
 
     // P5 after force-execute

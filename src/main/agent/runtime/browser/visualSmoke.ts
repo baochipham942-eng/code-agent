@@ -21,6 +21,35 @@ const BROWSER_VISUAL_SMOKE_VIEWPORTS = [
   { name: 'mobile', width: 390, height: 780 },
 ] as const;
 
+function roundMetric(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function formatCanvasFrames(
+  canvases: Array<{
+    width: number;
+    height: number;
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    visibleRatio: number;
+    internalWidth: number;
+    internalHeight: number;
+  }>,
+): string {
+  return canvases
+    .slice(0, 2)
+    .map((canvas) =>
+      `${roundMetric(canvas.width)}x${roundMetric(canvas.height)} at left=${roundMetric(canvas.left)}, right=${roundMetric(canvas.right)}, visibleRatio=${roundMetric(canvas.visibleRatio)}, internal=${canvas.internalWidth}x${canvas.internalHeight}`
+    )
+    .join('; ') || 'none';
+}
+
+function mobileCanvasRepairHint(viewportWidth: number): string {
+  return `Repair hint: constrain the canvas or wrapper to the viewport on both axes, e.g. max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, height:auto. The full playfield must fit a ${viewportWidth}px mobile viewport; fixed canvas width or max-height-only scaling can still overflow.`;
+}
+
 export function cloneBrowserVisualSmoke(summary: BrowserVisualSmokeSummary): BrowserVisualSmokeSummary {
   return {
     attempted: summary.attempted,
@@ -256,14 +285,29 @@ export async function runBrowserVisualSmoke(
         name: viewport.name,
         width: probe.viewport.width,
         height: probe.viewport.height,
+        documentWidth: probe.documentWidth,
+        documentHeight: probe.documentHeight,
         canvasCount,
         nonblankCanvasCount: coloredCanvases.length,
         visibleElements: probe.visibleElements,
         horizontalOverflow: probe.horizontalOverflow,
+        canvasFrames: probe.canvases.map((canvas) => ({
+          width: roundMetric(canvas.width),
+          height: roundMetric(canvas.height),
+          left: roundMetric(canvas.left),
+          top: roundMetric(canvas.top),
+          right: roundMetric(canvas.right),
+          bottom: roundMetric(canvas.bottom),
+          visibleRatio: roundMetric(canvas.visibleRatio),
+          internalWidth: canvas.internalWidth,
+          internalHeight: canvas.internalHeight,
+        })),
       });
 
       if (canvasCount > 0 && visibleCanvasCount === 0) {
-        failures.push(`${viewport.name} visual smoke found canvas elements but none are visibly framed in the viewport.`);
+        failures.push(
+          `${viewport.name} visual smoke found canvas elements but none are visibly framed in the viewport (viewport=${probe.viewport.width}x${probe.viewport.height}, document=${probe.documentWidth}x${probe.documentHeight}, canvas=${formatCanvasFrames(probe.canvases)}). ${mobileCanvasRepairHint(probe.viewport.width)}`,
+        );
       } else if (canvasCount > 0) {
         checks.push(`${viewport.name} visual smoke framed ${visibleCanvasCount}/${canvasCount} canvas element(s)`);
       }
@@ -281,7 +325,9 @@ export async function runBrowserVisualSmoke(
       }
 
       if (probe.horizontalOverflow && horizontallyClippedCanvas) {
-        failures.push(`${viewport.name} visual smoke detected horizontal canvas overflow; the game is likely cropped in this viewport.`);
+        failures.push(
+          `${viewport.name} visual smoke detected horizontal canvas overflow (viewportWidth=${probe.viewport.width}, documentWidth=${probe.documentWidth}, canvas=${formatCanvasFrames(probe.canvases)}); the game is likely cropped in this viewport. ${mobileCanvasRepairHint(probe.viewport.width)}`,
+        );
       } else {
         checks.push(`${viewport.name} visual smoke detected no horizontal canvas cropping`);
       }

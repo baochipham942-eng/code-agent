@@ -15,6 +15,10 @@ const logger = createLogger('AntiPatternDetector');
 const SHELL_FILE_READ_PATTERN =
   /\b(cat|less|more|head|tail|sed|awk|nl|bat)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i;
 
+interface ReadOnlyStopNudgeOptions {
+  mutationToolPrompt?: string;
+}
+
 // ----------------------------------------------------------------------------
 // Configuration
 // ----------------------------------------------------------------------------
@@ -846,7 +850,10 @@ export class AntiPatternDetector {
    * @param toolsUsedInTurn - List of tools used in the current turn
    * @returns Nudge message if pattern detected, null otherwise
    */
-  detectReadOnlyStopPattern(toolsUsedInTurn: string[]): string | null {
+  detectReadOnlyStopPattern(
+    toolsUsedInTurn: string[],
+    options: ReadOnlyStopNudgeOptions = {},
+  ): string | null {
     // Check if any read tools were used
     const hasReadTools = toolsUsedInTurn.some(tool => READ_ONLY_TOOLS.includes(tool));
 
@@ -858,7 +865,7 @@ export class AntiPatternDetector {
       const readCount = toolsUsedInTurn.filter(tool => READ_ONLY_TOOLS.includes(tool)).length;
       logger.debug(`[ReadOnlyStop] Detected read-only pattern: ${readCount} reads, no writes`);
 
-      return this.generateReadOnlyStopNudge(readCount);
+      return this.generateReadOnlyStopNudge(readCount, options);
     }
 
     return null;
@@ -868,13 +875,17 @@ export class AntiPatternDetector {
    * Generate nudge message for read-only stop pattern
    * Uses increasingly urgent tone based on read count
    */
-  private generateReadOnlyStopNudge(readCount: number): string {
+  private generateReadOnlyStopNudge(
+    readCount: number,
+    options: ReadOnlyStopNudgeOptions = {},
+  ): string {
+    const mutationTools = options.mutationToolPrompt || 'edit_file 或 write_file';
     // More urgent message for higher read counts
     if (readCount >= 3) {
       return (
         `<execution-nudge priority="critical">\n` +
         `🚨 **立即执行修改** - 你已读取 ${readCount} 个文件但没有任何修改！\n\n` +
-        `**你必须现在使用 edit_file 或 write_file 工具。**\n\n` +
+        `**你必须现在使用 ${mutationTools} 工具。**\n\n` +
         `不要再读取文件。不要解释。不要计划。\n` +
         `直接调用工具执行修改。这是强制要求。\n` +
         `</execution-nudge>`
@@ -884,7 +895,7 @@ export class AntiPatternDetector {
     return (
       `<execution-nudge>\n` +
       `⚠️ 检测到只读模式：你执行了 ${readCount} 次文件读取操作，但没有进行任何修改。\n\n` +
-      `**下一步必须是 edit_file 或 write_file 工具调用。**\n\n` +
+      `**下一步必须是 ${mutationTools} 工具调用。**\n\n` +
       `- 你已经读取了足够的信息\n` +
       `- 现在立即执行修改，不要继续读取\n` +
       `- 任务完成 = 产出文件变更，不是理解代码\n` +

@@ -17,7 +17,7 @@ const logger = createLogger('ScriptExecutor');
 // ----------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT = HOOK_TIMEOUTS.SCRIPT_DEFAULT;
-const MAX_OUTPUT_LENGTH = 10000; // 10KB
+const MAX_OUTPUT_LENGTH = 100000; // 100KB; SessionStart memory injection 等场景需要 >10KB
 
 // ----------------------------------------------------------------------------
 // Script Executor

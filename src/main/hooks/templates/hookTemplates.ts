@@ -70,31 +70,6 @@ export interface HookTemplateOption {
 export const BUILT_IN_TEMPLATES: HookTemplate[] = [
   // Memory Hooks
   {
-    id: 'session-start-memory-inject',
-    name: '会话开始记忆注入',
-    description: '会话开始时自动注入相关记忆，帮助 Agent 快速理解上下文',
-    event: 'SessionStart',
-    enabled: true,
-    category: 'memory',
-    dependencies: ['MemoryService'],
-    options: [
-      {
-        id: 'maxMemories',
-        name: '最大注入数量',
-        description: '每次注入的最大记忆条数',
-        type: 'number',
-        defaultValue: 5,
-      },
-      {
-        id: 'minConfidence',
-        name: '最低置信度',
-        description: '只注入置信度高于此值的记忆',
-        type: 'number',
-        defaultValue: 0.7,
-      },
-    ],
-  },
-  {
     id: 'session-end-memory-persist',
     name: '会话结束记忆持久化',
     description: '会话结束时自动提取并保存学习成果',

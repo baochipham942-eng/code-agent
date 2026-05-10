@@ -39,9 +39,6 @@ export {
 // Agent Markdown Loader
 export { parseAgentMd, loadAgentMdFiles } from './agentMdLoader';
 
-// Agent Markdown Watcher
-export { watchAgentsMdDir } from './agentMdWatcher';
-
 // Dynamic Factory (Layer 2)
 export {
   type DynamicAgentSpec,
@@ -85,25 +82,11 @@ export {
   extractIdentifiers,
 } from './crossVerify';
 
-// Agent Swarm
-export {
-  type AgentStatus,
-  type ReportType,
-  type AgentReport,
-  type AgentRuntime,
-  type SwarmResult,
-  type AgentExecutor,
-  type ExtendedSwarmConfig,
-  AgentSwarm,
-  getAgentSwarm,
-} from './agentSwarm';
-
 // ============================================================================
 // Convenience Functions
 // ============================================================================
 
 import { getTaskRouter, type RoutingContext, type RoutingDecision } from './taskRouter';
-import { getAgentSwarm, type AgentExecutor, type SwarmResult } from './agentSwarm';
 import { getDynamicAgentFactory } from './dynamicFactory';
 
 /**
@@ -118,21 +101,6 @@ import { getDynamicAgentFactory } from './dynamicFactory';
 export async function routeTask(context: RoutingContext): Promise<RoutingDecision> {
   const router = getTaskRouter();
   return router.route(context);
-}
-
-/**
- * 执行 Agent Swarm
- *
- * @example
- * const result = await executeSwarm(agents, config, executor);
- * console.log(result.aggregatedOutput);
- */
-export async function executeSwarm(
-  decision: { agents: import('./dynamicFactory').DynamicAgentConfig[]; config: import('./taskRouter').SwarmConfig },
-  executor: AgentExecutor
-): Promise<SwarmResult> {
-  const swarm = getAgentSwarm();
-  return swarm.execute(decision.agents, decision.config, executor);
 }
 
 /**
@@ -166,12 +134,6 @@ switch (decision.type) {
     for (const agent of decision.agents) {
       await executeAgent(agent);
     }
-    break;
-
-  case 'swarm':
-    // 使用 Agent Swarm（复杂并行）
-    const result = await executeSwarm(decision, myExecutor);
-    console.log(result.aggregatedOutput);
     break;
 }
 

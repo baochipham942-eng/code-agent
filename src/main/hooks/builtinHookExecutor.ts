@@ -12,7 +12,6 @@ import type {
 import type { HookTemplate } from './templates/hookTemplates';
 import { BUILT_IN_TEMPLATES, getTemplateById } from './templates/hookTemplates';
 import {
-  sessionStartMemoryHook,
   sessionEndMemoryHook,
   type MemoryServiceInterface,
 } from './builtins/memoryHooks';
@@ -190,9 +189,6 @@ export class BuiltinHookExecutor {
     const startTime = Date.now();
 
     switch (config.templateId) {
-      case 'session-start-memory-inject':
-        return this.executeSessionStartMemoryInject(config, context, startTime);
-
       case 'session-start-agents-inject':
         return this.executeSessionStartAgentsInject(config, context, startTime);
 
@@ -268,34 +264,6 @@ export class BuiltinHookExecutor {
       maxDepth,
       includeParents
     );
-
-    return {
-      action: hookResult.action === 'continue' ? 'continue' : 'allow',
-      message: hookResult.message,
-      injectedContext: hookResult.message,
-      duration: Date.now() - startTime,
-    };
-  }
-
-  /**
-   * 执行会话开始记忆注入
-   */
-  private async executeSessionStartMemoryInject(
-    config: BuiltinHookConfig,
-    context: BuiltinHookContext,
-    startTime: number
-  ): Promise<BuiltinHookResult> {
-    // 获取 Memory 服务适配器（如果可用）
-    const memoryService = await this.getMemoryServiceAdapter();
-
-    const sessionContext: SessionContext = {
-      event: 'SessionStart',
-      sessionId: context.sessionId,
-      workingDirectory: context.workingDirectory,
-      timestamp: Date.now(),
-    };
-
-    const hookResult = await sessionStartMemoryHook(sessionContext, memoryService);
 
     return {
       action: hookResult.action === 'continue' ? 'continue' : 'allow',

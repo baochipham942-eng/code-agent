@@ -201,5 +201,7 @@ export function buildStreamingUiState({
 }
 
 export function shouldShowStreamingState(state: StreamingUiState): boolean {
-  return state.status !== 'idle' && state.status !== 'completed';
+  return state.status !== 'idle'
+    && state.status !== 'completed'
+    && state.status !== 'drafting';
 }

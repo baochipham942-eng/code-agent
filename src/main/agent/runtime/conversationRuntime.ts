@@ -976,11 +976,14 @@ export class ConversationRuntime {
     // Record session start for usage tracking (Light Memory)
     recordSessionStart(this.ctx.sessionId).catch(() => { /* non-critical */ });
 
-    // Session start hooks
-    if (this.ctx.hookManager && !isSimpleTask) {
+    // Session start hooks (always run, including simple tasks —内置 memory/agents 注入对快速回答也有价值)
+    if (this.ctx.hookManager) {
       const sessionResult = await this.ctx.hookManager.triggerSessionStart(this.ctx.sessionId);
       if (sessionResult.message) {
         this.contextAssembly.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
+      }
+      if (sessionResult.injectedContext) {
+        this.contextAssembly.injectSystemMessage(`<session-start-hook>\n${sessionResult.injectedContext}\n</session-start-hook>`);
       }
     }
 

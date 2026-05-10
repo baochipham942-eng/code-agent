@@ -16,7 +16,6 @@ const DIFF_OWNED_TOOLS = new Set([
   'Edit',
   'Write',
   'MultiEdit',
-  'WritePoc',
   'edit_file',
   'write_file',
   'NotebookEdit',
@@ -25,9 +24,7 @@ const DIFF_OWNED_TOOLS = new Set([
 // 工具名 → (verb, noun) 分类
 const TOOL_VERB_MAP: Record<string, VerbNoun> = {
   Read: { verb: 'Explored', noun: 'file' },
-  ReadPoc: { verb: 'Explored', noun: 'file' },
   Glob: { verb: 'Explored', noun: 'search' },
-  GlobPoc: { verb: 'Explored', noun: 'search' },
   Grep: { verb: 'Explored', noun: 'search' },
   LS: { verb: 'Explored', noun: 'list' },
   list_directory: { verb: 'Explored', noun: 'list' },
@@ -149,10 +146,8 @@ const SINGLE_TOOL_VERB: Record<string, string> = {
   Bash: 'Ran',
   bash: 'Ran',
   Read: 'Read',
-  ReadPoc: 'Read',
   Grep: 'Searched',
   Glob: 'Globbed',
-  GlobPoc: 'Globbed',
   LS: 'Listed',
   list_directory: 'Listed',
   WebSearch: 'Searched web for',
@@ -217,14 +212,12 @@ export function buildSingleToolLabel(
       preview = takePreview(a.command);
       break;
     case 'Read':
-    case 'ReadPoc':
       preview = shortenPath(takePreview(a.file_path ?? a.path));
       break;
     case 'Grep':
       preview = takePreview(a.pattern);
       break;
     case 'Glob':
-    case 'GlobPoc':
       preview = takePreview(a.pattern);
       break;
     case 'LS':

@@ -47,6 +47,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'agent_cancelled',
   'turn_start',
   'turn_end',
+  'hook_trigger',
   'tool_call_start',
   'tool_call_end',
   'budget_exceeded',

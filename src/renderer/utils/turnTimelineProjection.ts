@@ -2,6 +2,7 @@ import type { TraceNode, TraceProjection, TraceTurn } from '@shared/contract/tra
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { ToolCall } from '@shared/contract/tool';
 import type {
+  TurnHookActivity,
   TurnTimelineNode,
   TurnRoutingEvidence,
 } from '@shared/contract/turnTimeline';
@@ -9,7 +10,7 @@ import {
   snapshotFromWorkbenchMetadata,
 } from '@shared/contract/turnTimeline';
 import type { WorkbenchCapabilities } from '../hooks/useWorkbenchCapabilities';
-import type { RoutingEvidenceEvent } from '../stores/turnExecutionStore';
+import type { HookActivityEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import type { SwarmTimelineEvent } from '../stores/swarmStore';
 import { buildArtifactOwnershipItems } from './artifactOwnership';
 import { buildWorkbenchCapabilityScope } from './workbenchScopeInspector';
@@ -20,6 +21,7 @@ interface ProjectionArgs {
   launchRequests: SwarmLaunchRequest[];
   swarmEvents: SwarmTimelineEvent[];
   routingEvents: RoutingEvidenceEvent[];
+  hookEvents?: HookActivityEvent[];
 }
 
 interface TurnWindow {
@@ -40,6 +42,64 @@ function isWithinWindow(timestamp: number | undefined, window: TurnWindow): bool
   }
 
   return timestamp >= window.start && timestamp < window.end;
+}
+
+function getTurnEventWindow(turn: TraceTurn, window: TurnWindow): TurnWindow {
+  const userTimestamp = turn.nodes.find((node) => node.type === 'user')?.timestamp;
+  return {
+    start: Math.min(window.start, userTimestamp ?? window.start),
+    end: window.end,
+  };
+}
+
+function truncateHookMessage(message: string | undefined): string | undefined {
+  const trimmed = message?.replace(/\s+/g, ' ').trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.length > 180 ? `${trimmed.slice(0, 177)}...` : trimmed;
+}
+
+function buildHookActivity(
+  turn: TraceTurn,
+  window: TurnWindow,
+  hookEvents: HookActivityEvent[] = [],
+): TurnHookActivity | undefined {
+  const eventWindow = getTurnEventWindow(turn, window);
+  const relevantEvents = hookEvents
+    .filter((event) => event.hookCount > 0 && isWithinWindow(event.timestamp, eventWindow))
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  if (relevantEvents.length === 0) {
+    return undefined;
+  }
+
+  const totalHooks = relevantEvents.reduce((sum, event) => sum + event.hookCount, 0);
+  const blockedCount = relevantEvents.filter((event) => event.action === 'block').length;
+  const modifiedCount = relevantEvents.filter((event) => event.modified).length;
+  const errorCount = relevantEvents.reduce((sum, event) => sum + (event.errorCount || 0), 0);
+  const durationMs = relevantEvents.reduce((sum, event) => sum + event.durationMs, 0);
+  const statusLabel = blockedCount > 0
+    ? `${blockedCount} 次阻止`
+    : errorCount > 0
+      ? `${errorCount} 个错误`
+      : '已放行';
+
+  return {
+    summary: `命中 ${totalHooks} 个 hook · ${statusLabel} · ${durationMs}ms${modifiedCount > 0 ? ` · ${modifiedCount} 次修改输入` : ''}`,
+    items: relevantEvents.map((event) => ({
+      timestamp: event.timestamp,
+      event: event.event,
+      action: event.action,
+      hookCount: event.hookCount,
+      durationMs: event.durationMs,
+      ...(event.modified ? { modified: true } : {}),
+      ...(event.errorCount ? { errorCount: event.errorCount } : {}),
+      ...(truncateHookMessage(event.message) ? { message: truncateHookMessage(event.message) } : {}),
+      ...(event.toolName ? { toolName: event.toolName } : {}),
+    })),
+  };
 }
 
 function buildTurnTimelineTraceNode(turnTimeline: TurnTimelineNode): TraceNode {
@@ -73,7 +133,7 @@ function buildDirectRoutingEvidence(
 ): TurnRoutingEvidence | undefined {
   const userNode = turn.nodes.find((node) => node.type === 'user');
   const metadata = userNode?.metadata?.workbench;
-  if (!metadata || metadata.routingMode !== 'direct') {
+  if (metadata?.routingMode !== 'direct') {
     return undefined;
   }
 
@@ -145,7 +205,7 @@ function buildAutoRoutingEvidence(
   routingEvents: RoutingEvidenceEvent[],
 ): TurnRoutingEvidence | undefined {
   const metadata = turn.nodes.find((node) => node.type === 'user')?.metadata?.workbench;
-  if (!metadata || metadata.routingMode !== 'auto') {
+  if (metadata?.routingMode !== 'auto') {
     return undefined;
   }
 
@@ -153,7 +213,7 @@ function buildAutoRoutingEvidence(
     .filter((entry) => entry.kind === 'auto' && isWithinWindow(entry.timestamp, window))
     .slice(-1)[0];
 
-  if (!event || event.kind !== 'auto') {
+  if (event?.kind !== 'auto') {
     return undefined;
   }
 
@@ -187,7 +247,7 @@ function buildParallelRoutingEvidence(
   swarmEvents: SwarmTimelineEvent[],
 ): TurnRoutingEvidence | undefined {
   const metadata = turn.nodes.find((node) => node.type === 'user')?.metadata?.workbench;
-  if (!metadata || metadata.routingMode !== 'parallel') {
+  if (metadata?.routingMode !== 'parallel') {
     return undefined;
   }
 
@@ -341,9 +401,10 @@ function enrichTurn(
     args.swarmEvents,
     args.routingEvents,
   );
+  const hookActivity = buildHookActivity(turn, window, args.hookEvents);
   const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence);
 
-  if (!snapshot && !capabilityScope && !routingEvidence && artifactOwnership.length === 0) {
+  if (!snapshot && !capabilityScope && !routingEvidence && !hookActivity && artifactOwnership.length === 0) {
     return turn;
   }
 
@@ -379,6 +440,20 @@ function enrichTurn(
               ? 'success'
               : 'info',
         capabilityScope,
+      }));
+    }
+
+    if (hookActivity) {
+      nextNodes.push(buildTurnTimelineTraceNode({
+        id: `${turn.turnId}-hook-activity`,
+        kind: 'hook_activity',
+        timestamp: hookActivity.items[0]?.timestamp || node.timestamp,
+        tone: hookActivity.items.some((item) => item.action === 'block' || (item.errorCount || 0) > 0)
+          ? 'warning'
+          : hookActivity.items.some((item) => item.modified)
+            ? 'info'
+            : 'success',
+        hookActivity,
       }));
     }
   });
@@ -431,6 +506,7 @@ export function buildTurnExecutionClarityProjection(args: ProjectionArgs): Trace
       launchRequests,
       swarmEvents,
       routingEvents: args.routingEvents,
+      hookEvents: args.hookEvents || [],
     })),
   };
 }

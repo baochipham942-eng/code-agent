@@ -42,4 +42,26 @@ describe('turnExecutionStore', () => {
       }),
     ]);
   });
+
+  it('stores hook activity per session', () => {
+    const store = useTurnExecutionStore.getState();
+
+    store.recordHookActivity('session-1', {
+      timestamp: 140,
+      event: 'PreToolUse',
+      action: 'allow',
+      durationMs: 6,
+      hookCount: 1,
+      modified: true,
+      toolName: 'Bash',
+    });
+
+    expect(useTurnExecutionStore.getState().hookEventsBySession['session-1']).toEqual([
+      expect.objectContaining({
+        event: 'PreToolUse',
+        toolName: 'Bash',
+        modified: true,
+      }),
+    ]);
+  });
 });

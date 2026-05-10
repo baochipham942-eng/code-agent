@@ -172,6 +172,63 @@ describe('runWorkbenchProjection', () => {
     ]);
   });
 
+  it('does not count read-only tool metadata as output artifacts', () => {
+    const readProjection: TraceProjection = {
+      sessionId: 'session-read',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-read',
+          status: 'completed',
+          startTime: 100,
+          nodes: [
+            {
+              id: 'timeline-read',
+              type: 'turn_timeline',
+              content: '',
+              timestamp: 110,
+              turnTimeline: {
+                id: 'timeline-read',
+                kind: 'artifact_ownership',
+                timestamp: 110,
+                tone: 'success',
+                artifactOwnership: [
+                  {
+                    kind: 'file',
+                    label: 'configParser.ts',
+                    ownerKind: 'tool',
+                    ownerLabel: 'Read',
+                    path: '/repo/src/configParser.ts',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'tool-read',
+              type: 'tool_call',
+              content: '',
+              timestamp: 120,
+              toolCall: {
+                id: 'tool-read',
+                name: 'Read file',
+                args: { path: '/repo/src/configParser.ts' },
+                result: 'file content',
+                success: true,
+                outputPath: '/repo/src/configParser.ts',
+                metadata: {
+                  filePath: '/repo/src/configParser.ts',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(buildOutputArtifactViews(readProjection)).toEqual([]);
+  });
+
   it('classifies memory read, create, update, and delete events from tool metadata', () => {
     const memoryProjection: TraceProjection = {
       sessionId: 'session-2',

@@ -5,7 +5,10 @@ import type {
   TurnRoutingEvidence,
   TurnTimelineTone,
 } from '@shared/contract/turnTimeline';
-import { buildArtifactOwnershipItems } from '../utils/artifactOwnership';
+import {
+  buildArtifactOwnershipItems,
+  isReadOnlyArtifactOwnershipItem,
+} from '../utils/artifactOwnership';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
 
 export interface CurrentTurnArtifactOwnershipView {
@@ -45,7 +48,8 @@ export function extractCurrentTurnArtifactOwnership(
     && node.turnTimeline.artifactOwnership?.length,
   )?.turnTimeline;
 
-  const artifactOwnership = [...(timeline?.artifactOwnership ?? [])];
+  const artifactOwnership = (timeline?.artifactOwnership ?? [])
+    .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   const seen = new Set(artifactOwnership.map(artifactOwnershipKey));
   for (const item of projectedArtifacts) {
     const key = artifactOwnershipKey(item);

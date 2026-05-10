@@ -1,7 +1,7 @@
-// useAgentConversationStreamEffects - turn_start, stream_chunk, stream_reasoning, turn_end, message, routing_resolved
+// useAgentConversationStreamEffects - turn_start, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, ToolCall } from '@shared/contract';
+import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
@@ -13,6 +13,37 @@ const logger = createLogger('useAgent');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentEvent 在 5 个 hook 文件里各自重复定义且都用 any，应抽成 shared 类型，data 形态由 type 决定（stream_chunk/tool_call/error 等），按 type narrow
 type AgentEvent = { type: string; data: any; sessionId?: string };
 
+function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const raw = data as Partial<HookTriggerEventData>;
+  if (
+    typeof raw.timestamp !== 'number'
+    || typeof raw.event !== 'string'
+    || (raw.action !== 'allow' && raw.action !== 'block')
+    || typeof raw.durationMs !== 'number'
+    || typeof raw.hookCount !== 'number'
+  ) {
+    return null;
+  }
+
+  return {
+    timestamp: raw.timestamp,
+    event: raw.event,
+    action: raw.action,
+    durationMs: raw.durationMs,
+    hookCount: raw.hookCount,
+    modified: Boolean(raw.modified),
+    ...(typeof raw.errorCount === 'number' ? { errorCount: raw.errorCount } : {}),
+    ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
+    ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
+    ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
+    ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),
+  };
+}
+
 export function removeUncommittedAssistantDraft(
   messages: Message[],
   draftMessageId: string | null | undefined,
@@ -20,7 +51,7 @@ export function removeUncommittedAssistantDraft(
   if (!draftMessageId) return messages;
 
   const draft = messages.find((message) => message.id === draftMessageId);
-  if (!draft || draft.role !== 'assistant') return messages;
+  if (draft?.role !== 'assistant') return messages;
 
   const hasToolCalls = (draft.toolCalls?.length || 0) > 0;
   if (hasToolCalls) return messages;
@@ -341,6 +372,17 @@ export const useConversationStreamEffects = ({
               score: event.data.score,
               fallbackToDefault: event.data.fallbackToDefault,
             });
+          }
+          break;
+
+        case 'hook_trigger':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          {
+            const hookData = normalizeHookTriggerData(event.data);
+            if (eventSessionId && hookData) {
+              useTurnExecutionStore.getState().recordHookActivity(eventSessionId, hookData);
+            }
           }
           break;
 

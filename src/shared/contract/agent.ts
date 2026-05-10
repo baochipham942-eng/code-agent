@@ -166,11 +166,26 @@ export interface TaskStatsData {
   contextWindow: number;
 }
 
+export interface HookTriggerEventData {
+  timestamp: number;
+  event: string;
+  action: 'allow' | 'block';
+  durationMs: number;
+  hookCount: number;
+  modified: boolean;
+  errorCount?: number;
+  message?: string;
+  sessionId?: string;
+  turnId?: string;
+  toolName?: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
   | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
   | { type: 'permission_request'; data: PermissionRequest }
+  | { type: 'hook_trigger'; data: HookTriggerEventData }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }

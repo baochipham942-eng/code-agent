@@ -23,17 +23,19 @@ function statusToTaskStatus(status: string): TaskRecord['status'] {
   return 'pending';
 }
 
-function buildGlobalTaskRecords(args: {
+export function buildGlobalTaskRecords(args: {
   currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
-  runId: string | null;
 }): TaskRecord[] {
   return Object.entries(args.sessionStates)
-    .filter(([, state]) => state.status === 'running' || state.status === 'queued' || state.status === 'paused' || state.status === 'error')
+    .filter(([sessionId, state]) => (
+      sessionId !== args.currentSessionId
+      && (state.status === 'running' || state.status === 'queued' || state.status === 'paused' || state.status === 'error')
+    ))
     .map(([sessionId, state]) => ({
       id: `global:${sessionId}`,
       scope: 'global' as const,
-      title: sessionId === args.currentSessionId ? '当前会话运行' : `会话 ${sessionId.slice(0, 8)}`,
+      title: `会话 ${sessionId.slice(0, 8)}`,
       status: statusToTaskStatus(state.status),
       steps: [{
         title: state.status === 'queued' && state.queuePosition !== undefined
@@ -41,7 +43,7 @@ function buildGlobalTaskRecords(args: {
           : state.status,
         status: statusToTaskStatus(state.status),
       }],
-      ownerRunId: sessionId === args.currentSessionId ? args.runId : null,
+      ownerRunId: null,
       sourceThreadId: sessionId,
       resumeHint: state.error,
     }));
@@ -150,7 +152,6 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     const globalTasks = buildGlobalTaskRecords({
       currentSessionId,
       sessionStates,
-      runId: run.identity.runId,
     });
     const scheduledTasks = buildScheduledTaskRecords({
       jobs: cronJobs,

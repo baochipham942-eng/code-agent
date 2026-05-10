@@ -133,7 +133,7 @@ export async function parseHooksConfig(
 ): Promise<ParsedHookConfig[]> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
 
     let hooksConfig: HooksConfig | undefined;
 
@@ -151,7 +151,7 @@ export async function parseHooksConfig(
     }
 
     return parseHooksObject(hooksConfig, source);
-  } catch (error) {
+  } catch {
     // File doesn't exist or is invalid - return empty config
     return [];
   }
@@ -176,6 +176,26 @@ const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
   'PostCompact',
   'StopFailure',
 ]);
+
+function compileHookMatcher(
+  matcher: string | undefined,
+  event: HookEvent,
+  source: 'global' | 'project',
+): RegExp | null | undefined {
+  const trimmed = matcher?.trim();
+  if (!trimmed) return null;
+  if (trimmed === '*') return /.*/;
+
+  try {
+    return new RegExp(trimmed);
+  } catch (error) {
+    console.warn(
+      `[Hooks] Warning: invalid matcher "${trimmed}" for event "${event}" ` +
+        `in ${source} config. Skipping matcher. ${error instanceof Error ? error.message : String(error)}`
+    );
+    return undefined;
+  }
+}
 
 /**
  * Parse hooks object into array of parsed configs
@@ -219,6 +239,11 @@ function parseHooksObject(
         continue;
       }
 
+      const matcher = compileHookMatcher(matcherConfig.matcher, event, source);
+      if (matcher === undefined) {
+        continue;
+      }
+
       // Resolve hookType: observer-only events force observer mode
       let hookType: 'decision' | 'observer' = matcherConfig.hookType ?? 'decision';
       if (hookType === 'decision' && OBSERVER_ONLY_EVENTS.has(event)) {
@@ -234,7 +259,7 @@ function parseHooksObject(
 
       result.push({
         event,
-        matcher: matcherConfig.matcher ? new RegExp(matcherConfig.matcher) : null,
+        matcher,
         hooks: validatedHooks,
         source,
         parallel: matcherConfig.parallel ?? false,  // Phase 2: 并行执行支持
@@ -319,10 +344,8 @@ interface ConfigPath {
  * Get hooks configuration file paths (supports both new and legacy formats)
  *
  * Priority order (highest first):
- * 1. Project: .code-agent/hooks/hooks.json (new format)
- * 2. Project: .claude/settings.json (legacy)
- * 3. Global: ~/.code-agent/hooks/hooks.json (new format)
- * 4. Global: ~/.claude/settings.json (legacy)
+ * 1. .code-agent/hooks/hooks.json (native)
+ * 2. .claude/settings.json (legacy settings shape)
  */
 export function getHooksConfigPaths(workingDirectory: string): {
   global: ConfigPath[];

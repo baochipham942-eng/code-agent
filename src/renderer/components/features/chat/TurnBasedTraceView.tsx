@@ -43,6 +43,38 @@ export function shouldShowTurnTimeSeparator(previousTurn: { startTime: number } 
   return gapMs >= 5 * 60 * 1000;
 }
 
+function escapeAttributeSelector(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
+  return `[data-trace-node-id="${escapeAttributeSelector(nodeId)}"][data-trace-node-type="${escapeAttributeSelector(nodeType)}"]`;
+}
+
+export function getActiveAssistantTextAnchor(projection: TraceProjection): {
+  turnIndex: number;
+  nodeId: string;
+  nodeType: 'assistant_text';
+} | null {
+  const turnIndex = getFocusedTurnIndex(projection);
+  if (turnIndex < 0) return null;
+
+  const turn = projection.turns[turnIndex];
+  if (!turn) return null;
+
+  const node = turn.nodes.find((candidate) => (
+    candidate.type === 'assistant_text'
+    && Boolean(candidate.content?.trim())
+  ));
+  if (!node) return null;
+
+  return {
+    turnIndex,
+    nodeId: node.id,
+    nodeType: 'assistant_text',
+  };
+}
+
 export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   projection,
   hasOlderMessages,
@@ -52,8 +84,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
 }) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollerElementRef = useRef<HTMLElement | null>(null);
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
+  const prevAssistantAnchorRef = useRef<string | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -74,6 +108,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // ChatInput 区偏左 3px，跟 ChatInput 卡片左缘对不齐
   const handleScrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (el instanceof HTMLElement) {
+      scrollerElementRef.current = el;
       el.style.scrollbarGutter = 'stable both-edges';
     }
   }, []);
@@ -116,6 +151,42 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     const timer = setTimeout(scroll, 0);
     return () => clearTimeout(timer);
   }, [projection.sessionId, focusedTurnId, focusedTurnIndex]);
+
+  const activeAssistantAnchor = useMemo(() => (
+    getActiveAssistantTextAnchor(projection)
+  ), [projection]);
+
+  useEffect(() => {
+    if (!activeAssistantAnchor || !focusedTurnId) return;
+
+    const focusKey = `${projection.sessionId}:${focusedTurnId}:${activeAssistantAnchor.nodeId}`;
+    if (prevAssistantAnchorRef.current === focusKey) return;
+    prevAssistantAnchorRef.current = focusKey;
+
+    const scroll = () => {
+      virtuosoRef.current?.scrollToIndex({
+        index: activeAssistantAnchor.turnIndex,
+        align: 'start',
+        behavior: 'auto',
+      });
+
+      setTimeout(() => {
+        const scroller = scrollerElementRef.current;
+        const target = scroller?.querySelector<HTMLElement>(
+          getTraceNodeSelector(activeAssistantAnchor.nodeId, activeAssistantAnchor.nodeType),
+        );
+        target?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      }, 0);
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(scroll);
+      return () => cancelAnimationFrame(frame);
+    }
+
+    const timer = setTimeout(scroll, 0);
+    return () => clearTimeout(timer);
+  }, [activeAssistantAnchor, focusedTurnId, projection.sessionId]);
 
   // 用户发新消息时，把这条 user msg 顶到视图上方（让下面的 streaming 内容有空间展开）
   // 现有 L76 effect 只 react to turnId 变化，supplement 模式（in-flight 追加 user msg

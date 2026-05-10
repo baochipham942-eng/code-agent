@@ -310,4 +310,88 @@ describe('extractCurrentTurnArtifactOwnership', () => {
       },
     ]);
   });
+
+  it('does not treat Read metadata as current-turn artifacts', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnId: 'turn-1',
+          turnNumber: 1,
+          status: 'completed',
+          startTime: 100,
+          endTime: 140,
+          nodes: [
+            {
+              id: 'tool-read',
+              type: 'tool_call',
+              content: '',
+              timestamp: 120,
+              toolCall: {
+                id: 'tool-read',
+                name: 'Read file',
+                args: { path: '/repo/src/promptHook.ts' },
+                result: 'file content',
+                success: true,
+                metadata: {
+                  filePath: '/repo/src/promptHook.ts',
+                  artifact: {
+                    artifactId: 'artifact-read',
+                    kind: 'text',
+                    sourceTool: 'Read',
+                    name: 'promptHook.ts',
+                    path: '/repo/src/promptHook.ts',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(extractCurrentTurnArtifactOwnership(projection)).toBeNull();
+  });
+
+  it('filters read-only items already stored in artifact ownership timelines', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnId: 'turn-1',
+          turnNumber: 1,
+          status: 'completed',
+          startTime: 100,
+          endTime: 140,
+          nodes: [
+            {
+              id: 'artifact-turn-1',
+              type: 'turn_timeline',
+              content: '',
+              timestamp: 130,
+              turnTimeline: {
+                id: 'artifact-turn-1',
+                kind: 'artifact_ownership',
+                timestamp: 130,
+                tone: 'success',
+                artifactOwnership: [
+                  {
+                    kind: 'file',
+                    label: 'jsonc.ts',
+                    ownerKind: 'tool',
+                    ownerLabel: 'Read',
+                    path: '/repo/src/jsonc.ts',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(extractCurrentTurnArtifactOwnership(projection)).toBeNull();
+  });
 });

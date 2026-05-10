@@ -9,6 +9,7 @@ import type {
 import { normalizeDesignBrief } from '@shared/contract/designBrief';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
+import { isReadOnlyArtifactTool } from './artifactOwnership';
 
 const FILE_METADATA_KEYS = [
   'filePath',
@@ -369,6 +370,7 @@ function collectToolOutputs(
     for (const toolCall of message.toolCalls) {
       const result = toolCall.result;
       if (!result) continue;
+      if (isReadOnlyArtifactTool(toolCall.name)) continue;
       const source = {
         kind: 'tool' as const,
         label: toolCall.name,

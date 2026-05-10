@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { deriveStatusRailTodoModel } from '../../../src/renderer/hooks/useStatusRailModel';
+import {
+  deriveStatusRailTodoModel,
+  isGenericAutoPlanTodoList,
+} from '../../../src/renderer/hooks/useStatusRailModel';
 import type { TaskPlan, TodoItem } from '../../../src/shared/contract';
 
 const plan: TaskPlan = {
@@ -76,5 +79,74 @@ describe('deriveStatusRailTodoModel', () => {
       status: 'pending',
       activeForm: 'Verify the UI no longer shows tools as todos',
     });
+  });
+
+  it('hides generic auto-plan placeholder todos from session state', () => {
+    const sessionTodos: TodoItem[] = [
+      { content: 'Understand the feature requirements', status: 'in_progress', activeForm: 'Understanding the feature requirements' },
+      { content: 'Identify affected files and components', status: 'pending', activeForm: 'Identifying affected files and components' },
+      { content: 'Check for existing patterns to follow', status: 'pending', activeForm: 'Checking for existing patterns to follow' },
+      { content: 'Create/modify necessary files', status: 'pending', activeForm: 'Create/modifying necessary files' },
+    ];
+
+    expect(isGenericAutoPlanTodoList(sessionTodos)).toBe(true);
+    expect(deriveStatusRailTodoModel(sessionTodos, null)).toEqual({
+      items: [],
+      completed: 0,
+      total: 0,
+    });
+  });
+
+  it('hides generic auto-plan placeholder todos from task plans', () => {
+    const genericPlan: TaskPlan = {
+      id: 'plan-generic',
+      title: 'Generic plan',
+      objective: 'Generic plan',
+      createdAt: 1,
+      updatedAt: 1,
+      metadata: {
+        totalSteps: 2,
+        completedSteps: 0,
+        blockedSteps: 0,
+      },
+      phases: [
+        {
+          id: 'phase-generic',
+          title: 'Implementation',
+          status: 'in_progress',
+          steps: [
+            {
+              id: 'step-1',
+              content: 'Implement the requested change',
+              status: 'in_progress',
+              activeForm: 'Implementing the change',
+            },
+            {
+              id: 'step-2',
+              content: 'Verify the result',
+              status: 'pending',
+              activeForm: 'Verifying the result',
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(deriveStatusRailTodoModel([], genericPlan).items).toEqual([]);
+  });
+
+  it('keeps a mixed real todo list visible', () => {
+    const sessionTodos: TodoItem[] = [
+      { content: 'Understand the feature requirements', status: 'completed', activeForm: 'Understanding the feature requirements' },
+      { content: 'Fix hook config search paths', status: 'in_progress', activeForm: 'Fixing hook config search paths' },
+    ];
+
+    const model = deriveStatusRailTodoModel(sessionTodos, null);
+
+    expect(model.total).toBe(2);
+    expect(model.items.map((item) => item.content)).toEqual([
+      'Understand the feature requirements',
+      'Fix hook config search paths',
+    ]);
   });
 });

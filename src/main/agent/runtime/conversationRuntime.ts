@@ -42,7 +42,7 @@ import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
-import { HookManager, createHookManager } from '../../hooks';
+import { createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
@@ -111,7 +111,6 @@ import type { RunFinalizer, RunTerminalInfo } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
-import { AutoPlanner } from '../../planning/autoPlanner';
 
 
 const logger = createLogger('AgentLoop');
@@ -136,11 +135,6 @@ function todosFromPlan(plan: TaskPlan): TodoItem[] {
       activeForm: step.activeForm || step.content,
     })),
   );
-}
-
-function shouldSkipAutoPlanBootstrap(userMessage: string, isPureContentGenerationTask: boolean): boolean {
-  if (isPureContentGenerationTask) return true;
-  return /(?:不要|不需要|别|无需|禁止).{0,12}(?:调用)?(?:工具|tool|计划|待办|todo|plan)|(?:no tools?|without tools?|do not use tools?|don't use tools?)/i.test(userMessage);
 }
 
 // Re-export types for backward compatibility
@@ -211,6 +205,16 @@ export class ConversationRuntime {
       const hookWorkingDirectory = this.ctx.workingDirectory?.trim() || process.cwd();
       this.ctx.hookManager = createHookManager({
         workingDirectory: hookWorkingDirectory,
+        onTrigger: (entry) => {
+          this.ctx.onEvent({
+            type: 'hook_trigger',
+            data: {
+              ...entry,
+              sessionId: this.ctx.sessionId,
+              ...(this.ctx.currentTurnId ? { turnId: this.ctx.currentTurnId } : {}),
+            },
+          });
+        },
       });
     }
 
@@ -833,49 +837,13 @@ export class ConversationRuntime {
             }
           }
 
-          if (
-            !hasActiveSessionTodos(this.ctx.sessionId) &&
-            !shouldSkipAutoPlanBootstrap(userMessage, isPureContentGenerationTask)
-          ) {
-            const autoPlanner = new AutoPlanner({ persistPlans: false });
-            const autoPlanResult = await autoPlanner.generatePlan(userMessage, {
-              workingDirectory: this.ctx.workingDirectory || process.cwd(),
-              sessionId: this.ctx.sessionId,
-              autoCreatePlan: true,
-              syncToTodoWrite: true,
-            });
-
-            if (autoPlanResult?.plan) {
-              const { todos: seededTodos } = advanceTodoStatus(todosFromPlan(autoPlanResult.plan));
-              setSessionTodos(this.ctx.sessionId, seededTodos);
-              this.ctx.onEvent({ type: 'todo_update', data: seededTodos });
-
-              if (sessionScopedPlanningService) {
-                await sessionScopedPlanningService.plan.create({
-                  title: autoPlanResult.plan.title,
-                  objective: autoPlanResult.plan.objective,
-                  phases: autoPlanResult.plan.phases,
-                });
-                await publishPlanningStateToRenderer(sessionScopedPlanningService);
-              }
-
-              queueRuntimeDiagnostic(
-                this.ctx,
-                `已根据本轮目标生成 ${autoPlanResult.plan.metadata.totalSteps} 条真实待办${sessionScopedPlanningService ? '，并写入持久化计划' : ''}`,
-              );
-            } else {
-              queueRuntimeDiagnostic(this.ctx, '本轮没有自动生成计划，右侧待办暂时只能等待显式任务清单或后续 plan 更新');
-            }
-          } else if (!hasActiveSessionTodos(this.ctx.sessionId)) {
-            queueRuntimeDiagnostic(this.ctx, '自动计划已跳过：当前请求更像纯内容输出或明确要求不调用工具/不生成计划');
-          }
         } catch (planBootstrapError) {
-          logger.warn('[AgentLoop] Auto-plan bootstrap failed', {
+          logger.warn('[AgentLoop] Plan bootstrap failed', {
             error: planBootstrapError instanceof Error ? planBootstrapError.message : String(planBootstrapError),
           });
           queueRuntimeDiagnostic(
             this.ctx,
-            `自动计划生成失败：${planBootstrapError instanceof Error ? planBootstrapError.message : 'unknown error'}`,
+            `任务计划同步失败：${planBootstrapError instanceof Error ? planBootstrapError.message : 'unknown error'}`,
           );
         }
       }

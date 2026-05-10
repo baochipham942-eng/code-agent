@@ -51,6 +51,8 @@ export interface HookManagerConfig {
   mergeStrategy?: MergeStrategy;
   /** AI completion function for prompt hooks */
   aiCompletion?: AICompletionFn;
+  /** Notify UI/runtime observers when configured hooks actually run */
+  onTrigger?: (entry: TriggerHistoryEntry) => void;
   /** Whether to enable hooks (default: true) */
   enabled?: boolean;
 }
@@ -65,6 +67,9 @@ export interface TriggerHistoryEntry {
   durationMs: number;
   hookCount: number;
   modified: boolean;
+  errorCount?: number;
+  message?: string;
+  toolName?: string;
 }
 
 const MAX_TRIGGER_HISTORY = 50;
@@ -576,8 +581,10 @@ export class HookManager {
    */
   private recordTrigger(
     event: HookEvent,
-    result: HookTriggerResult
+    result: HookTriggerResult,
+    metadata?: { toolName?: string },
   ): void {
+    const errorCount = result.results.filter((entry) => entry.action === 'error' || entry.error).length;
     const entry: TriggerHistoryEntry = {
       timestamp: Date.now(),
       event,
@@ -585,11 +592,22 @@ export class HookManager {
       durationMs: result.totalDuration,
       hookCount: result.results.length,
       modified: !!result.modifiedInput,
+      ...(errorCount > 0 ? { errorCount } : {}),
+      ...(result.message ? { message: result.message } : {}),
+      ...(metadata?.toolName ? { toolName: metadata.toolName } : {}),
     };
 
     this.triggerHistory.push(entry);
     if (this.triggerHistory.length > MAX_TRIGGER_HISTORY) {
       this.triggerHistory.shift();
+    }
+
+    if (entry.hookCount > 0 || entry.action === 'block' || entry.modified || entry.message || entry.errorCount) {
+      try {
+        this.config.onTrigger?.(entry);
+      } catch (error) {
+        logger.warn('Hook trigger observer failed', { error: (error as Error).message });
+      }
     }
   }
 
@@ -611,7 +629,7 @@ export class HookManager {
 
     const matchingHooks = getHooksForTool(this.hooks, event, toolName);
     const result = await runHooks(matchingHooks, context, this.engineEnv());
-    this.recordTrigger(event, result);
+    this.recordTrigger(event, result, { toolName });
     return result;
   }
 

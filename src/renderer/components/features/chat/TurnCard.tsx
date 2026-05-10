@@ -33,6 +33,7 @@ import {
   type RuntimeSessionStatus,
   type StreamingUiState,
 } from '../../../utils/streamingStatePresentation';
+import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -318,7 +319,8 @@ function getTurnPhase(turn: TraceTurn): string {
 
 function getTurnCompletionSignal(turn: TraceTurn): string | null {
   const artifacts = turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership')?.turnTimeline?.artifactOwnership;
-  if (artifacts?.length && turn.status !== 'completed') return `${artifacts.length} outputs`;
+  const deliverableArtifacts = artifacts?.filter((item) => !isReadOnlyArtifactOwnershipItem(item)) ?? [];
+  if (deliverableArtifacts.length && turn.status !== 'completed') return `${deliverableArtifacts.length} outputs`;
   const toolCount = turn.nodes.filter((node) => node.type === 'tool_call').length;
   if (toolCount > 0 && turn.status !== 'completed') return `${toolCount} tools`;
   return null;

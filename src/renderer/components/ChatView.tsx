@@ -146,11 +146,19 @@ export const ChatView: React.FC = () => {
     const fetchPlan = async () => {
       if (!currentSessionId) {
         setPlan(null);
+        setTaskPlan(null);
         return;
       }
 
+      setPlan(null);
+      setTaskPlan(null);
+
       try {
-        const response = await window.domainAPI?.invoke<TaskPlan | null>(IPC_DOMAINS.PLANNING, 'getPlan');
+        const response = await window.domainAPI?.invoke<TaskPlan | null>(
+          IPC_DOMAINS.PLANNING,
+          'getPlan',
+          { sessionId: currentSessionId },
+        );
         if (!response?.success) {
           throw new Error(response?.error?.message || 'Failed to fetch plan');
         }

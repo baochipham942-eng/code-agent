@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { HookTriggerEventData } from '@shared/contract';
 
 export interface DirectRoutingEvidenceEvent {
   kind: 'direct';
@@ -26,17 +27,23 @@ export type RoutingEvidenceEvent =
   | DirectRoutingEvidenceEvent
   | AutoRoutingEvidenceEvent;
 
+export type HookActivityEvent = HookTriggerEventData;
+
 interface TurnExecutionStoreState {
   routingEventsBySession: Record<string, RoutingEvidenceEvent[]>;
+  hookEventsBySession: Record<string, HookActivityEvent[]>;
   recordRoutingEvidence: (sessionId: string, event: RoutingEvidenceEvent) => void;
+  recordHookActivity: (sessionId: string, event: HookActivityEvent) => void;
   clearSession: (sessionId: string) => void;
   reset: () => void;
 }
 
 const MAX_ROUTING_EVENTS_PER_SESSION = 24;
+const MAX_HOOK_EVENTS_PER_SESSION = 80;
 
 export const useTurnExecutionStore = create<TurnExecutionStoreState>((set) => ({
   routingEventsBySession: {},
+  hookEventsBySession: {},
 
   recordRoutingEvidence: (sessionId, event) =>
     set((state) => ({
@@ -65,16 +72,39 @@ export const useTurnExecutionStore = create<TurnExecutionStoreState>((set) => ({
       },
     })),
 
+  recordHookActivity: (sessionId, event) =>
+    set((state) => ({
+      hookEventsBySession: {
+        ...state.hookEventsBySession,
+        [sessionId]: [
+          ...(state.hookEventsBySession[sessionId] || []).filter((existing) => !(
+            existing.timestamp === event.timestamp
+            && existing.event === event.event
+            && existing.toolName === event.toolName
+            && existing.action === event.action
+          )),
+          event,
+        ]
+          .sort((left, right) => left.timestamp - right.timestamp)
+          .slice(-MAX_HOOK_EVENTS_PER_SESSION),
+      },
+    })),
+
   clearSession: (sessionId) =>
     set((state) => {
-      if (!(sessionId in state.routingEventsBySession)) {
+      if (!(sessionId in state.routingEventsBySession) && !(sessionId in state.hookEventsBySession)) {
         return state;
       }
 
-      const next = { ...state.routingEventsBySession };
-      delete next[sessionId];
-      return { routingEventsBySession: next };
+      const nextRouting = { ...state.routingEventsBySession };
+      const nextHooks = { ...state.hookEventsBySession };
+      delete nextRouting[sessionId];
+      delete nextHooks[sessionId];
+      return {
+        routingEventsBySession: nextRouting,
+        hookEventsBySession: nextHooks,
+      };
     }),
 
-  reset: () => set({ routingEventsBySession: {} }),
+  reset: () => set({ routingEventsBySession: {}, hookEventsBySession: {} }),
 }));

@@ -33,8 +33,39 @@ const NON_DELIVERABLE_TOOL_ARTIFACT_KINDS = new Set<NormalizedToolArtifactMeta['
   'process-log',
 ]);
 
-function shouldProjectToolArtifact(artifact: NormalizedToolArtifactMeta): boolean {
+const READ_ONLY_ARTIFACT_TOOL_NAMES = new Set([
+  'read',
+  'read_file',
+  'file_read',
+  'glob',
+  'grep',
+  'listdirectory',
+  'directory_list',
+  'ls',
+  'readclipboard',
+  'clipboard_read',
+]);
+
+export function isReadOnlyArtifactTool(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  const normalized = toolName.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return READ_ONLY_ARTIFACT_TOOL_NAMES.has(normalized);
+}
+
+export function isReadOnlyArtifactOwnershipItem(item: TurnArtifactOwnershipItem): boolean {
+  if (item.ownerKind !== 'tool') return false;
+  const ownerTool = item.ownerLabel.split('·').pop()?.trim();
+  return isReadOnlyArtifactTool(ownerTool);
+}
+
+function shouldProjectToolArtifact(
+  artifact: NormalizedToolArtifactMeta,
+  fallbackToolName: string,
+): boolean {
   if (NON_DELIVERABLE_TOOL_ARTIFACT_KINDS.has(artifact.kind)) {
+    return false;
+  }
+  if (isReadOnlyArtifactTool(artifact.sourceTool || fallbackToolName)) {
     return false;
   }
   return Boolean(artifact.path || artifact.url);
@@ -105,8 +136,9 @@ export function buildArtifactOwnershipItems(
     const toolOwnerLabel = primaryAgent
       ? `${primaryAgent} · ${node.toolCall.name}`
       : node.toolCall.name;
+    const isReadOnlyTool = isReadOnlyArtifactTool(node.toolCall.name);
 
-    if (node.toolCall.outputPath) {
+    if (!isReadOnlyTool && node.toolCall.outputPath) {
       const outputPath = node.toolCall.outputPath;
       addItem({
         kind: 'file',
@@ -118,19 +150,21 @@ export function buildArtifactOwnershipItems(
       }, `file:${outputPath}`);
     }
 
-    for (const path of collectMetadataPaths(node.toolCall.metadata)) {
-      addItem({
-        kind: 'file',
-        label: basename(path),
-        ownerKind: 'tool',
-        ownerLabel: toolOwnerLabel,
-        path,
-        sourceNodeId: node.id,
-      }, `file:${path}`);
+    if (!isReadOnlyTool) {
+      for (const path of collectMetadataPaths(node.toolCall.metadata)) {
+        addItem({
+          kind: 'file',
+          label: basename(path),
+          ownerKind: 'tool',
+          ownerLabel: toolOwnerLabel,
+          path,
+          sourceNodeId: node.id,
+        }, `file:${path}`);
+      }
     }
 
     for (const artifact of collectToolArtifactsFromMetadata(node.toolCall.metadata)) {
-      if (!shouldProjectToolArtifact(artifact)) {
+      if (!shouldProjectToolArtifact(artifact, node.toolCall.name)) {
         continue;
       }
 

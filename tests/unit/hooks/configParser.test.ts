@@ -197,6 +197,43 @@ describe('Hook Config Parser', () => {
       expect(result[0].matcher).toBeNull();
     });
 
+    it('should treat wildcard matcher as match all', async () => {
+      const configFile = path.join(tempDir, 'settings.json');
+      const config = {
+        hooks: {
+          PreToolUse: [
+            { matcher: '*', hooks: [{ type: 'command', command: 'all-tools.sh' }] },
+          ],
+        },
+      };
+      fs.writeFileSync(configFile, JSON.stringify(config));
+
+      const result = await parseHooksConfig(configFile, 'project');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].matcher?.test('Read')).toBe(true);
+      expect(result[0].matcher?.test('Bash')).toBe(true);
+    });
+
+    it('should skip invalid matchers without dropping the whole config file', async () => {
+      const configFile = path.join(tempDir, 'settings.json');
+      const config = {
+        hooks: {
+          PreToolUse: [
+            { matcher: '*invalid(', hooks: [{ type: 'command', command: 'bad.sh' }] },
+            { matcher: 'Read', hooks: [{ type: 'command', command: 'read.sh' }] },
+          ],
+        },
+      };
+      fs.writeFileSync(configFile, JSON.stringify(config));
+
+      const result = await parseHooksConfig(configFile, 'project');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].matcher?.source).toBe('Read');
+      expect(result[0].hooks[0].command).toBe('read.sh');
+    });
+
     it('should preserve hook timeout configuration', async () => {
       const configFile = path.join(tempDir, 'settings.json');
       const config = {
@@ -290,10 +327,10 @@ describe('Hook Config Parser', () => {
       expect(globalHooksJson?.priority).toBe(0);
 
       // Legacy format (lower priority)
-      const globalSettingsJson = paths.global.find(p => p.type === 'settings-json');
-      expect(globalSettingsJson).toBeDefined();
-      expect(globalSettingsJson?.path).toContain('.claude/settings.json');
-      expect(globalSettingsJson?.priority).toBe(1);
+      const globalClaudeSettingsJson = paths.global.find(p => p.path.endsWith('.claude/settings.json'));
+      expect(globalClaudeSettingsJson).toBeDefined();
+      expect(globalClaudeSettingsJson?.type).toBe('settings-json');
+      expect(globalClaudeSettingsJson?.priority).toBe(1);
 
       // Project paths should also be an array
       expect(Array.isArray(paths.project)).toBe(true);
@@ -302,7 +339,7 @@ describe('Hook Config Parser', () => {
       const projectHooksJson = paths.project.find(p => p.type === 'hooks-json');
       expect(projectHooksJson?.path).toBe('/test/project/.code-agent/hooks/hooks.json');
 
-      const projectSettingsJson = paths.project.find(p => p.type === 'settings-json');
+      const projectSettingsJson = paths.project.find(p => p.path.endsWith('.claude/settings.json'));
       expect(projectSettingsJson?.path).toBe('/test/project/.claude/settings.json');
     });
 
@@ -311,8 +348,8 @@ describe('Hook Config Parser', () => {
       const paths2 = getHooksConfigPaths('/project2');
 
       // Project paths should differ
-      const project1Legacy = paths1.project.find(p => p.type === 'settings-json');
-      const project2Legacy = paths2.project.find(p => p.type === 'settings-json');
+      const project1Legacy = paths1.project.find(p => p.path.endsWith('.claude/settings.json'));
+      const project2Legacy = paths2.project.find(p => p.path.endsWith('.claude/settings.json'));
       expect(project1Legacy?.path).toBe('/project1/.claude/settings.json');
       expect(project2Legacy?.path).toBe('/project2/.claude/settings.json');
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
 import {
+  getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
+  getTraceNodeSelector,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
@@ -46,5 +48,36 @@ describe('TurnBasedTraceView focus helpers', () => {
     expect(shouldShowTurnTimeSeparator(null, { startTime: 1_000 })).toBe(true);
     expect(shouldShowTurnTimeSeparator({ startTime: 1_000 }, { startTime: 60_000 })).toBe(false);
     expect(shouldShowTurnTimeSeparator({ startTime: 1_000 }, { startTime: 301_000 })).toBe(true);
+  });
+
+  it('finds the first assistant text node in the active turn', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-1',
+          status: 'streaming',
+          startTime: 100,
+          nodes: [
+            { id: 'user-1', type: 'user', content: 'question', timestamp: 100 },
+            { id: 'assistant-1', type: 'assistant_text', content: 'answer', timestamp: 120 },
+          ],
+        },
+      ],
+    };
+
+    expect(getActiveAssistantTextAnchor(projection)).toEqual({
+      turnIndex: 0,
+      nodeId: 'assistant-1',
+      nodeType: 'assistant_text',
+    });
+  });
+
+  it('builds a selector for trace node anchors', () => {
+    expect(getTraceNodeSelector('assistant-1', 'assistant_text')).toBe(
+      '[data-trace-node-id="assistant-1"][data-trace-node-type="assistant_text"]',
+    );
   });
 });

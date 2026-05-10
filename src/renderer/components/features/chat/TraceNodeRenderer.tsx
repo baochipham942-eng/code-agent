@@ -17,6 +17,7 @@ import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
+import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
@@ -29,22 +30,36 @@ interface TraceNodeRendererProps {
 }
 
 export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments, isStreaming }) => {
+  let content: React.ReactNode = null;
+
   switch (node.type) {
     case 'user':
-      return <UserNode content={node.content} attachments={attachments} metadata={node.metadata?.workbench} />;
+      content = <UserNode content={node.content} attachments={attachments} metadata={node.metadata?.workbench} />;
+      break;
     case 'assistant_text':
-      return <AssistantTextNode node={node} isStreaming={isStreaming} />;
+      content = <AssistantTextNode node={node} isStreaming={isStreaming} />;
+      break;
     case 'tool_call':
-      return <ToolCallNode node={node} />;
+      content = <ToolCallNode node={node} />;
+      break;
     case 'system':
-      return <SystemNode node={node} />;
+      content = <SystemNode node={node} />;
+      break;
     case 'swarm_launch_request':
-      return <LaunchRequestNode node={node} />;
+      content = <LaunchRequestNode node={node} />;
+      break;
     case 'turn_timeline':
-      return <TurnTimelineNodeRenderer node={node} />;
+      content = <TurnTimelineNodeRenderer node={node} />;
+      break;
     default:
       return null;
   }
+
+  return (
+    <div data-trace-node-id={node.id} data-trace-node-type={node.type}>
+      {content}
+    </div>
+  );
 };
 
 // ---- User Node ----
@@ -322,6 +337,8 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
       return <RoutingEvidenceNode timeline={node.turnTimeline} />;
+    case 'hook_activity':
+      return <HookActivityNode timeline={node.turnTimeline} />;
     case 'artifact_ownership':
       return <ArtifactOwnershipNode timeline={node.turnTimeline} />;
     default:
@@ -545,8 +562,71 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
   );
 };
 
+const HOOK_EVENT_LABELS: Record<string, string> = {
+  PreToolUse: 'PreToolUse',
+  PostToolUse: 'PostToolUse',
+  PostToolUseFailure: 'PostToolUseFailure',
+  UserPromptSubmit: 'UserPromptSubmit',
+  SessionStart: 'SessionStart',
+  SessionEnd: 'SessionEnd',
+  PermissionRequest: 'PermissionRequest',
+  PreCompact: 'PreCompact',
+  PostCompact: 'PostCompact',
+  Stop: 'Stop',
+  StopFailure: 'StopFailure',
+};
+
+const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const activity = timeline.hookActivity;
+  if (!activity || activity.items.length === 0) return null;
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
+      <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
+        <Wrench className="h-3.5 w-3.5 text-sky-300" />
+        <span>Hooks</span>
+        <span className="text-zinc-500">{activity.items.length} 次触发</span>
+      </div>
+      <div className="text-xs text-zinc-100">{activity.summary}</div>
+      <div className="mt-2 space-y-1.5">
+        {activity.items.map((item, index) => {
+          const hasError = (item.errorCount || 0) > 0;
+          const toneClass = item.action === 'block'
+            ? 'bg-red-400'
+            : hasError
+              ? 'bg-amber-400'
+              : item.modified
+                ? 'bg-sky-400'
+                : 'bg-emerald-400';
+          return (
+            <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+              <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${toneClass}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
+                  {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
+                  <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
+                    {item.action === 'block' ? 'blocked' : 'allow'}
+                  </WorkbenchPill>
+                  {item.modified && <WorkbenchPill tone="info">modified</WorkbenchPill>}
+                  {hasError && <WorkbenchPill tone="info">error {item.errorCount}</WorkbenchPill>}
+                  <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
+                </div>
+                {item.message && (
+                  <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.message}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const items = timeline.artifactOwnership || [];
+  const items = (timeline.artifactOwnership || [])
+    .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   if (items.length === 0) return null;
 
   const fileItems = items.filter((i) => i.kind === 'file');

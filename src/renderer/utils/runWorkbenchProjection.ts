@@ -13,6 +13,10 @@ import type {
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
 import { hasCancelledRunMarker } from './streamingStatePresentation';
+import {
+  isReadOnlyArtifactOwnershipItem,
+  isReadOnlyArtifactTool,
+} from './artifactOwnership';
 
 export interface BuildRunWorkbenchModelInput {
   projection: TraceProjection;
@@ -101,7 +105,7 @@ function firstBlockedReason(turn: TraceTurn | null): string | undefined {
 function completionSignal(turn: TraceTurn | null): string | undefined {
   const artifactCount = getTimelineNodes(turn)
     .find((timeline) => timeline.kind === 'artifact_ownership')
-    ?.artifactOwnership?.length ?? 0;
+    ?.artifactOwnership?.filter((item) => !isReadOnlyArtifactOwnershipItem(item)).length ?? 0;
   if (artifactCount > 0) return `${artifactCount} 个产物`;
   if (turn?.status === 'completed') return '最终回复已生成';
   return undefined;
@@ -377,8 +381,9 @@ export function buildMemoryActivityEvents(projection: TraceProjection): MemoryAc
   return events.slice(-8);
 }
 
-function outputPathFromResult(result?: ToolResult): string | undefined {
+function outputPathFromResult(result?: ToolResult, toolName?: string): string | undefined {
   if (!result) return undefined;
+  if (isReadOnlyArtifactTool(toolName)) return undefined;
   if (result.outputPath) return result.outputPath;
   const meta = result.metadata;
   if (!meta) return undefined;
@@ -401,6 +406,7 @@ export function buildOutputArtifactViews(projection: TraceProjection): OutputArt
   for (const timeline of getTimelineNodes(turn)) {
     if (timeline.kind !== 'artifact_ownership') continue;
     for (const item of timeline.artifactOwnership || []) {
+      if (isReadOnlyArtifactOwnershipItem(item)) continue;
       const pathOrUrl = item.path || item.url;
       const id = pathOrUrl || `${item.kind}:${item.label}:${item.ownerLabel}`;
       outputs.set(id, {
@@ -424,7 +430,7 @@ export function buildOutputArtifactViews(projection: TraceProjection): OutputArt
       outputPath: node.toolCall.outputPath,
       duration: node.toolCall.duration,
       metadata: node.toolCall.metadata,
-    });
+    }, node.toolCall.name);
     if (!pathOrUrl) continue;
     outputs.set(pathOrUrl, {
       id: pathOrUrl,

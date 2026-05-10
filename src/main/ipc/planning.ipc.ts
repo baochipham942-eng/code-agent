@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
+import path from 'path';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PlanningState } from '../../shared/contract';
 import type { PlanningService } from '../planning';
@@ -14,8 +15,38 @@ const logger = createLogger('PlanningIPC');
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
-async function handleGetState(getPlanningService: () => PlanningService | null): Promise<PlanningState> {
+type PlanningRequestPayload = {
+  sessionId?: string | null;
+};
+
+function getRequestedSessionId(request: IPCRequest): string | null {
+  const payload = request.payload as PlanningRequestPayload | undefined;
+  const sessionId = payload?.sessionId;
+  return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
+}
+
+export function isPlanningServiceScopedToSession(
+  planningService: Pick<PlanningService, 'getPlanDirectory'>,
+  sessionId: string | null,
+): boolean {
+  if (!sessionId) return true;
+  return path.basename(planningService.getPlanDirectory()) === sessionId;
+}
+
+function getScopedPlanningService(
+  getPlanningService: () => PlanningService | null,
+  sessionId: string | null,
+): PlanningService | null {
   const planningService = getPlanningService();
+  if (!planningService) return null;
+  return isPlanningServiceScopedToSession(planningService, sessionId) ? planningService : null;
+}
+
+async function handleGetState(
+  getPlanningService: () => PlanningService | null,
+  sessionId: string | null,
+): Promise<PlanningState> {
+  const planningService = getScopedPlanningService(getPlanningService, sessionId);
   if (!planningService) {
     return { plan: null, findings: [], errors: [] };
   }
@@ -32,8 +63,11 @@ async function handleGetState(getPlanningService: () => PlanningService | null):
   }
 }
 
-async function handleGetPlan(getPlanningService: () => PlanningService | null): Promise<unknown> {
-  const planningService = getPlanningService();
+async function handleGetPlan(
+  getPlanningService: () => PlanningService | null,
+  sessionId: string | null,
+): Promise<unknown> {
+  const planningService = getScopedPlanningService(getPlanningService, sessionId);
   if (!planningService) return null;
   try {
     return await planningService.plan.read();
@@ -43,8 +77,11 @@ async function handleGetPlan(getPlanningService: () => PlanningService | null): 
   }
 }
 
-async function handleGetFindings(getPlanningService: () => PlanningService | null): Promise<unknown[]> {
-  const planningService = getPlanningService();
+async function handleGetFindings(
+  getPlanningService: () => PlanningService | null,
+  sessionId: string | null,
+): Promise<unknown[]> {
+  const planningService = getScopedPlanningService(getPlanningService, sessionId);
   if (!planningService) return [];
   try {
     return await planningService.findings.getAll();
@@ -54,8 +91,11 @@ async function handleGetFindings(getPlanningService: () => PlanningService | nul
   }
 }
 
-async function handleGetErrors(getPlanningService: () => PlanningService | null): Promise<unknown[]> {
-  const planningService = getPlanningService();
+async function handleGetErrors(
+  getPlanningService: () => PlanningService | null,
+  sessionId: string | null,
+): Promise<unknown[]> {
+  const planningService = getScopedPlanningService(getPlanningService, sessionId);
   if (!planningService) return [];
   return await planningService.errors.getAll();
 }
@@ -74,22 +114,23 @@ export function registerPlanningHandlers(
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.PLANNING, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action } = request;
+    const sessionId = getRequestedSessionId(request);
 
     try {
       let data: unknown;
 
       switch (action) {
         case 'getState':
-          data = await handleGetState(getPlanningService);
+          data = await handleGetState(getPlanningService, sessionId);
           break;
         case 'getPlan':
-          data = await handleGetPlan(getPlanningService);
+          data = await handleGetPlan(getPlanningService, sessionId);
           break;
         case 'getFindings':
-          data = await handleGetFindings(getPlanningService);
+          data = await handleGetFindings(getPlanningService, sessionId);
           break;
         case 'getErrors':
-          data = await handleGetErrors(getPlanningService);
+          data = await handleGetErrors(getPlanningService, sessionId);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

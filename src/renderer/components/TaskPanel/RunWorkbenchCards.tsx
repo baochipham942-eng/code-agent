@@ -129,7 +129,7 @@ function getStepDotClass(status: TaskRailStepView['status']): string {
 
 const TASK_SCOPE_LABEL: Record<TaskRecord['scope'], string> = {
   session: '会话',
-  global: '全局',
+  global: '后台',
   scheduled: '定时',
 };
 
@@ -152,7 +152,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
       {backgroundTasks.length > 0 && (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Background</span>
+            <span className="text-[10px] tracking-wide text-zinc-500">其他运行</span>
             <span className="text-[10px] text-zinc-600">{backgroundTasks.length}</span>
           </div>
           <div className="space-y-1.5">

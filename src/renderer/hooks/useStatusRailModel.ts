@@ -8,10 +8,11 @@ import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import type { TaskPlan, TodoItem } from '@shared/contract';
+import type { TaskPlan, TodoItem, TodoStatus } from '@shared/contract';
 import type { ContextHealthWarningLevel, CompressionStats } from '@shared/contract/contextHealth';
 import { getContextWindow } from '@shared/constants';
 import { computeBucketSummary, extractContextItems, type BucketSummary, type ContextItem } from '../utils/contextBuckets';
+import { isReadOnlyArtifactTool } from '../utils/artifactOwnership';
 
 // ── 产物提取（复用 TaskMonitor 的逻辑，提取为独立函数）──
 
@@ -52,6 +53,7 @@ function extractArtifacts(
     if (!message.toolCalls) continue;
     for (const tc of message.toolCalls) {
       const args = tc.arguments as Record<string, unknown>;
+      if (isReadOnlyArtifactTool(tc.name)) continue;
       if (tc.result?.outputPath) addPath(tc.result.outputPath);
       if (['Write', 'Edit'].includes(tc.name)) {
         const fp = (args?.path || args?.file_path) as string | undefined;
@@ -128,22 +130,135 @@ export interface StatusRailModel {
 function todosFromTaskPlan(plan: TaskPlan | null): TodoItem[] {
   if (!plan) return [];
 
-  return plan.phases.flatMap((phase) =>
+  const items: TodoItem[] = plan.phases.flatMap((phase) =>
     phase.steps.map((step) => ({
       content: step.content,
       status: step.status === 'completed' || step.status === 'skipped'
         ? 'completed'
-        : step.status,
+        : step.status as TodoStatus,
       activeForm: step.activeForm || step.content,
     })),
   );
+
+  return hideGenericAutoPlanTodos(items);
+}
+
+const GENERIC_AUTO_PLAN_STEP_CONTENT = new Set([
+  'Implement the requested change',
+  'Verify the result',
+  'Understand requirements',
+  'Identify affected areas',
+  'Make necessary changes',
+  'Handle edge cases',
+  'Test the changes',
+  'Analyze requirements thoroughly',
+  'Map affected components',
+  'Design approach',
+  'Set up necessary structure',
+  'Prepare dependencies',
+  'Implement main functionality',
+  'Add supporting code',
+  'Handle errors and edge cases',
+  'Integrate with existing code',
+  'Run tests',
+  'Fix any issues',
+  'Clean up code',
+  'Final verification',
+  'Understand the feature requirements',
+  'Identify affected files and components',
+  'Check for existing patterns to follow',
+  'Create/modify necessary files',
+  'Implement core logic',
+  'Add error handling',
+  'Test the implementation',
+  'Check for edge cases',
+  'Reproduce the bug',
+  'Identify root cause',
+  'Apply the fix',
+  'Verify fix resolves the issue',
+  'Map current code structure',
+  'Identify code smells and issues',
+  'Design target structure',
+  'Create backup/branch',
+  'Ensure tests exist',
+  'Apply refactoring changes incrementally',
+  'Update imports and references',
+  'Fix any breaking changes',
+  'Check for regressions',
+  'Review changes',
+  'Review API documentation',
+  'Identify required endpoints',
+  'Plan authentication approach',
+]);
+
+const GENERIC_AUTO_PLAN_ACTIVE_FORM_CONTENT = new Set([
+  'Implementing the change',
+  'Verifying the result',
+  'Understanding requirements',
+  'Identifying affected areas',
+  'Making changes',
+  'Handling edge cases',
+  'Testing changes',
+  'Analyzing requirements',
+  'Mapping components',
+  'Designing approach',
+  'Setting up structure',
+  'Preparing dependencies',
+  'Implementing main functionality',
+  'Adding supporting code',
+  'Integrating code',
+  'Running tests',
+  'Fixing issues',
+  'Cleaning up',
+  'Final verification',
+  'Understanding the feature requirements',
+  'Identifying affected files and components',
+  'Checking for existing patterns to follow',
+  'Create/modifying necessary files',
+  'Implementing core logic',
+  'Adding error handling',
+  'Testing the implementation',
+  'Checking for edge cases',
+  'Reproducing the bug',
+  'Identifying root cause',
+  'Applying the fix',
+  'Verifying fix resolves the issue',
+  'Mapping current code structure',
+  'Identifying code smells and issues',
+  'Designing target structure',
+  'Creating backup/branch',
+  'Ensuring tests exist',
+  'Applying refactoring changes incrementally',
+  'Updating imports and references',
+  'Fixing any breaking changes',
+  'Checking for regressions',
+  'Reviewing changes',
+  'Reviewing API documentation',
+  'Identifying required endpoints',
+  'Planning authentication approach',
+]);
+
+function isGenericAutoPlanTodo(item: TodoItem): boolean {
+  const content = item.content.trim();
+  const activeForm = item.activeForm?.trim() || '';
+  return GENERIC_AUTO_PLAN_STEP_CONTENT.has(content)
+    || GENERIC_AUTO_PLAN_ACTIVE_FORM_CONTENT.has(activeForm);
+}
+
+export function isGenericAutoPlanTodoList(items: TodoItem[]): boolean {
+  return items.length >= 2 && items.every(isGenericAutoPlanTodo);
+}
+
+function hideGenericAutoPlanTodos(items: TodoItem[]): TodoItem[] {
+  return isGenericAutoPlanTodoList(items) ? [] : items;
 }
 
 export function deriveStatusRailTodoModel(
   sessionTodos: TodoItem[],
   taskPlan: TaskPlan | null,
 ): StatusRailTodoModel {
-  const items = sessionTodos.length > 0 ? sessionTodos : todosFromTaskPlan(taskPlan);
+  const filteredSessionTodos = hideGenericAutoPlanTodos(sessionTodos);
+  const items = filteredSessionTodos.length > 0 ? filteredSessionTodos : todosFromTaskPlan(taskPlan);
   const completed = items.filter((t) => t.status === 'completed').length;
   return { items, completed, total: items.length };
 }

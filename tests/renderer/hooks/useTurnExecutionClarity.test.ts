@@ -252,18 +252,11 @@ describe('buildTurnExecutionClarityProjection', () => {
 
     expect(artifactNode?.turnTimeline?.artifactOwnership).toEqual([
       {
-        kind: 'file',
-        label: 'report.md',
-        ownerKind: 'tool',
-        ownerLabel: 'Read',
-        path: '/repo/app/report.md',
-        sourceNodeId: 'tool-read',
-      },
-      {
         kind: 'link',
         label: 'Search results',
         ownerKind: 'tool',
         ownerLabel: 'WebSearch',
+        path: undefined,
         url: 'https://example.com/search?q=artifact',
         sourceNodeId: 'tool-read',
       },
@@ -635,6 +628,79 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(routingNode?.turnTimeline?.routingEvidence?.summary).toBe('Parallel 意图已记录，但当前轮次没有出现 launch 证据');
     expect(routingNode?.turnTimeline?.routingEvidence?.steps.map((step) => step.status)).toEqual([
       'requested',
+    ]);
+  });
+
+  it('injects hook activity into the conversation turn timeline', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-hooks',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 120,
+            endTime: 180,
+            nodes: [
+              {
+                id: 'user-hooks',
+                type: 'user',
+                content: '运行一下 hook',
+                timestamp: 100,
+              },
+              {
+                id: 'assistant-hooks',
+                type: 'assistant_text',
+                content: 'done',
+                timestamp: 160,
+              },
+            ],
+          },
+        ],
+      },
+      capabilities: {
+        skills: [],
+        connectors: [],
+        mcpServers: [],
+      },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+      hookEvents: [
+        {
+          timestamp: 110,
+          event: 'UserPromptSubmit',
+          action: 'allow',
+          durationMs: 4,
+          hookCount: 1,
+          modified: false,
+          message: 'prompt hook passed',
+        },
+        {
+          timestamp: 150,
+          event: 'PreToolUse',
+          action: 'allow',
+          durationMs: 7,
+          hookCount: 2,
+          modified: true,
+          toolName: 'Bash',
+        },
+      ],
+    });
+
+    expect(enriched.turns[0]?.nodes.map((node) => node.type)).toEqual([
+      'user',
+      'turn_timeline',
+      'assistant_text',
+    ]);
+    const hookNode = enriched.turns[0]?.nodes[1];
+    expect(hookNode?.turnTimeline?.kind).toBe('hook_activity');
+    expect(hookNode?.turnTimeline?.hookActivity?.summary).toContain('命中 3 个 hook');
+    expect(hookNode?.turnTimeline?.hookActivity?.items.map((item) => item.event)).toEqual([
+      'UserPromptSubmit',
+      'PreToolUse',
     ]);
   });
 });

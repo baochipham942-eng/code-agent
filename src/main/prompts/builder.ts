@@ -177,7 +177,13 @@ export { GENERATIVE_UI_PROMPT };
 export { QUESTION_FORM_PROMPT };
 export { ARTIFACT_TASK_BRIEF_PROMPT, GAME_ARTIFACT_CONTRACT_PROMPT, needsArtifactTaskBrief, needsGameArtifactContract };
 
-export const SYSTEM_PROMPT: string = buildPrompt();
+/**
+ * SYSTEM_PROMPT 用 registry.dynamic 包成"实时" Proxy：consumer 每次拼接都会
+ * 重新调用 buildPrompt()，让 override 立即生效。buildPrompt 内部读的 TOOLS_PROMPT
+ * 等本身就是 applyOverride 的 Proxy，每次 build 都会吃到最新 override。
+ */
+import { dynamic as dynamicPromptString } from './registry';
+export const SYSTEM_PROMPT: string = dynamicPromptString(buildPrompt);
 
 // ----------------------------------------------------------------------------
 // Simple Task Mode Prompt (Phase 3)

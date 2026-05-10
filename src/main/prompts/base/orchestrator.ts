@@ -5,7 +5,11 @@
 // 定义 Orchestrator 的核心身份和工作方式
 // ============================================================================
 
-export const ORCHESTRATOR_IDENTITY = `
+import { applyOverride } from '../registry';
+
+export const ORCHESTRATOR_IDENTITY = applyOverride(
+  { id: 'orchestrator.identity', category: '协调者', name: '协调者身份', description: '协调者核心身份与四条原则' },
+  `
 ## 🎭 你的身份：Orchestrator（协调者）
 
 你是 **Orchestrator** —— 一个管理多个 Agent 协同工作的指挥者。
@@ -24,9 +28,12 @@ export const ORCHESTRATOR_IDENTITY = `
 2. **并行一切** - 能并行就不串行
 3. **不暴露机制** - 不说"启动子代理"，只说"正在处理"
 4. **庆祝进展** - 每个里程碑都值得标记
-`;
+`,
+);
 
-export const ORCHESTRATOR_TOOL_OWNERSHIP = `
+export const ORCHESTRATOR_TOOL_OWNERSHIP = applyOverride(
+  { id: 'orchestrator.toolOwnership', category: '协调者', name: '工具职责分工', description: '协调者直接用 vs 委派给 Agent 的工具划分' },
+  `
 ## 🔧 工具职责分工
 
 ### Orchestrator 直接使用的工具
@@ -48,9 +55,12 @@ export const ORCHESTRATOR_TOOL_OWNERSHIP = `
 - 需要写入/编辑 3+ 文件且能拆成独立职责 → 派发 Agent
 - 需要执行命令 → 派发 Agent
 - 快速查看 1-2 个文件 → 自己读取
-`;
+`,
+);
 
-export const ORCHESTRATOR_WORKFLOW = `
+export const ORCHESTRATOR_WORKFLOW = applyOverride(
+  { id: 'orchestrator.workflow', category: '协调者', name: '协调工作流', description: '理解 → 分解 → 派发 → 整合 → 交付的工作流图' },
+  `
 ## 🚀 协调工作流
 
 \`\`\`
@@ -96,9 +106,12 @@ export const ORCHESTRATOR_WORKFLOW = `
 │   清晰、完整、令人满意          │
 └─────────────────────────────────┘
 \`\`\`
-`;
+`,
+);
 
-export const ORCHESTRATOR_AGENT_DISPATCH = `
+export const ORCHESTRATOR_AGENT_DISPATCH = applyOverride(
+  { id: 'orchestrator.agentDispatch', category: '协调者', name: 'Agent 派发指南', description: '选哪种 Agent 类型 + Task 派发示例 + Prompt 模板' },
+  `
 ## 📋 Agent 派发指南
 
 ### Agent 类型选择
@@ -141,9 +154,12 @@ Task({ subagent_type: "explore", prompt: "查找中间件", description: "查找
 约束：使用 bcrypt 加密密码，使用 JWT 生成 token，遵循现有代码风格。
 输出：确认文件创建完成，列出实现的端点。"
 \`\`\`
-`;
+`,
+);
 
-export const ORCHESTRATOR_TEAMMATE_USAGE = `
+export const ORCHESTRATOR_TEAMMATE_USAGE = applyOverride(
+  { id: 'orchestrator.teammateUsage', category: '协调者', name: 'Teammate 通信用法', description: 'Agent 间通信场景与 teammate action 用法' },
+  `
 ## 💬 Agent 间通信（teammate 工具）
 
 当多个 Agent 需要协调时，使用 \`teammate\` 工具：
@@ -181,9 +197,12 @@ teammate({ action: "agents" })
 // 查看收件箱
 teammate({ action: "inbox" })
 \`\`\`
-`;
+`,
+);
 
-export const ORCHESTRATOR_COMMUNICATION = `
+export const ORCHESTRATOR_COMMUNICATION = applyOverride(
+  { id: 'orchestrator.communication', category: '协调者', name: '协调者沟通风格', description: '进度更新表达 + 里程碑标记 + 禁止用语' },
+  `
 ## 🎨 沟通风格
 
 ### 进度更新
@@ -218,7 +237,8 @@ export const ORCHESTRATOR_COMMUNICATION = `
 | "启动子代理" | "正在处理" |
 | "执行 Task 工具" | "开始工作" |
 | "Agent 返回结果" | "分析完成" |
-`;
+`,
+);
 
 /**
  * 获取完整的 Orchestrator Prompt

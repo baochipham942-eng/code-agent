@@ -2,7 +2,11 @@
 // Artifact Generation Prompt - semantic brief + validation contract
 // ============================================================================
 
-export const ARTIFACT_TASK_BRIEF_PROMPT = `
+import { applyOverride } from './registry';
+
+export const ARTIFACT_TASK_BRIEF_PROMPT = applyOverride(
+  { id: 'artifact.taskBrief', category: '产物生成', name: '产物任务简报', description: '生成 / 修复 artifact 时的语义化 brief 模板' },
+  `
 ## Artifact Task Brief
 
 When the user asks you to create, generate, build, write, design, or implement an artifact, infer a compact private brief before choosing tools. Do not show it unless it helps the user.
@@ -24,9 +28,12 @@ Writing rules:
 - After the final chunk, verify with Read, Bash, browser, or computer tools as appropriate.
 
 For generated games, also follow the compact Game Artifact Contract block exactly.
-`.trim();
+`.trim(),
+);
 
-export const GAME_ARTIFACT_CONTRACT_PROMPT = `
+export const GAME_ARTIFACT_CONTRACT_PROMPT = applyOverride(
+  { id: 'artifact.gameContract', category: '产物生成', name: '游戏产物契约', description: '浏览器游戏元数据 + 测试契约 + 进度/可达性约定' },
+  `
 ## Game Artifact Contract
 
 For generated or repaired browser games, produce a playable file plus a machine-checkable contract.
@@ -67,9 +74,12 @@ Runtime required:
 - For Breakout/Arkanoid, \`runSmokeTest()\` must prove: ArrowRight changes \`paddleX\`; launch changes \`ball.x\` or \`ball.y\`; \`wallBounceCount\` increases; \`paddleBounceCount\` increases; \`brickCount\` decreases or \`score\` increases; each of wide/multi/slow/through/life triggers an observable snapshot delta; win reaches won/complete; lose reaches lost/gameOver/lives=0.
 - If authored levels/scenarios/segments exist, smoke coverage must reset and exercise every authored unit before claiming completion.
 - Include browserVisualSmoke expectations when visual: desktop/mobile viewport, canvasNonblank, actor/HUD visible, no crop/overlap.
-`.trim();
+`.trim(),
+);
 
-export const GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT = `
+export const GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT = applyOverride(
+  { id: 'artifact.gameRepairContract', category: '产物生成', name: '游戏修复契约', description: '修复 / 校验 已有游戏 artifact 时的最小补丁约定' },
+  `
 ## Game Artifact Repair Contract
 
 Patch only the generated HTML and the validator-relevant metadata/test contract.
@@ -92,7 +102,8 @@ Patch only the generated HTML and the validator-relevant metadata/test contract.
 - Breakout/Arkanoid coverage must prove paddleMove, launch, wallBounce, paddleBounce, brickHit, wide/multi/slow/through/life powerups, win, and lose, with stateChanges for paddleX, ball position, wallBounceCount, paddleBounceCount, brickCount/bricksRemaining, score, powerupsTriggered, lives, and status.
 - \`runSmokeTest()\` must return \`checks\` and \`failures\` as string arrays, not numeric counts, and each assertion should fail only when the observed before/after state contradicts the expected result.
 - Only record coverage after before/after \`snapshot()\` changes driven by \`step()\` or real controls. No direct score/progress/level/win/unlock grants, and no existence-only coverage.
-`.trim();
+`.trim(),
+);
 
 export function needsArtifactTaskBrief(message: string): boolean {
   if (!message) return false;

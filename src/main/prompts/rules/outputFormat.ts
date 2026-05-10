@@ -2,7 +2,11 @@
 // Output Format Rules - Markdown and emoji guidelines for responses
 // ============================================================================
 
-export const OUTPUT_FORMAT_RULES = `
+import { applyOverride } from '../registry';
+
+export const OUTPUT_FORMAT_RULES = applyOverride(
+  { id: 'rules.outputFormat', category: '规则', name: '输出格式规则', description: 'Markdown + emoji 输出规范' },
+  `
 ## Output Format Rules (输出格式规范)
 
 When responding to users (non-tool-call text), use **Markdown** with **emojis** for better readability:
@@ -60,4 +64,5 @@ Use appropriate emojis to enhance visual hierarchy:
 
 - Inside tool call arguments (use plain text)
 - When outputting raw code/data that will be parsed
-`;
+`,
+);

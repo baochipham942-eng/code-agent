@@ -2,7 +2,11 @@
 // GitHub Smart Routing Rules - 智能路由 GitHub 项目查询
 // ============================================================================
 
-export const GITHUB_ROUTING_RULES = `## GitHub 项目智能路由 (MCP + Web Search)
+import { applyOverride } from '../registry';
+
+export const GITHUB_ROUTING_RULES = applyOverride(
+  { id: 'rules.githubRouting', category: '规则', name: 'GitHub 智能路由', description: 'MCP / DeepWiki / web_search 路由策略' },
+  `## GitHub 项目智能路由 (MCP + Web Search)
 
 当用户询问关于 GitHub 项目的问题时，使用以下智能路由策略：
 
@@ -67,4 +71,5 @@ mcp(server="deepwiki", tool="ask_question", arguments={"repoName": "vercel/next.
 - "用搜索引擎查一下" → 只用 web_search
 - "用 DeepWiki 分析" → 只用 MCP（但仍需先确认仓库名）
 - "全面分析" → 并行使用 DeepWiki + web_search
-`;
+`,
+);

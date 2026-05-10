@@ -2,7 +2,11 @@
 // Code Snippet Rules - 处理用户直接粘贴代码的场景
 // ============================================================================
 
-export const CODE_SNIPPET_RULES = `
+import { applyOverride } from '../registry';
+
+export const CODE_SNIPPET_RULES = applyOverride(
+  { id: 'rules.codeSnippet', category: '规则', name: '代码片段处理', description: '用户直接粘贴代码时的识别与响应' },
+  `
 ## Code Snippet Handling (代码片段处理规范)
 
 ### 识别用户粘贴的代码
@@ -67,4 +71,5 @@ export const CODE_SNIPPET_RULES = `
 - 🎯 **代码优先**：用户给了代码，就处理代码，不要问无关问题
 - 🚀 **快速响应**：减少来回确认，直接给出结果
 - 📝 **解释清楚**：告诉用户你做了什么，文件保存在哪里
-`;
+`,
+);

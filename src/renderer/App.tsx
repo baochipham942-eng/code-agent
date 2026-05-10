@@ -27,6 +27,7 @@ import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
+import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
@@ -467,6 +468,9 @@ export const App: React.FC = () => {
 
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}
+
+      {/* Prompt Manager Modal */}
+      <PromptManagerModal />
 
       {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
       <DevServerLauncher />

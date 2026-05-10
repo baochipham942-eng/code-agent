@@ -6,7 +6,11 @@
  * Edit 工具描述（精简版）
  * 约 200 tokens
  */
-export const EDIT_TOOL_DESCRIPTION = `
+import { applyOverride } from '../registry';
+
+export const EDIT_TOOL_DESCRIPTION = applyOverride(
+  { id: 'tools.edit', category: '工具描述', name: 'Edit 工具描述', description: 'Edit tool 的 prompt 描述' },
+  `
 ## Edit 工具
 
 精确字符串替换。**必须先 Read 才能 Edit**。
@@ -27,4 +31,5 @@ export const EDIT_TOOL_DESCRIPTION = `
 - 保持原文缩进（空格/Tab）
 - 用 \`\\n\` 表示换行
 - Read 的行号前缀不是文件内容
-`;
+`,
+);

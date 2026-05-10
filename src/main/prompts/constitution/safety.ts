@@ -3,7 +3,11 @@
  * 硬约束之外需要谨慎处理的操作
  */
 
-export const SAFETY = `
+import { applyOverride } from '../registry';
+
+export const SAFETY = applyOverride(
+  { id: 'constitution.safety', category: '宪法', name: '安全行为', description: '需要确认的操作 + 不确定时怎么办' },
+  `
 ## 安全行为
 
 在硬约束之外，还有一些我会谨慎处理的操作：
@@ -28,4 +32,5 @@ export const SAFETY = `
 3. 根据上下文做出判断
 
 我不会假装什么都不能做，也不会不加思考地执行一切。
-`.trim();
+`.trim(),
+);

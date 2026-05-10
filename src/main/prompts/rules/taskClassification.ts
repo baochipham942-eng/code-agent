@@ -4,7 +4,11 @@
 // 让指挥家在第一轮直接判断任务类型，避免额外的 LLM 前置调用
 // ============================================================================
 
-export const TASK_CLASSIFICATION_RULES = `
+import { applyOverride } from '../registry';
+
+export const TASK_CLASSIFICATION_RULES = applyOverride(
+  { id: 'rules.taskClassification', category: '规则', name: '任务分级', description: 'Lake vs Ocean 与三档动手判断' },
+  `
 ## 任务分类（首轮判断）
 
 收到用户消息后，立即判断任务类型并采取相应行动：
@@ -35,4 +39,5 @@ export const TASK_CLASSIFICATION_RULES = `
 - 简单的信息查询
 - 单一问题的回答
 - 代码实现任务
-`;
+`,
+);

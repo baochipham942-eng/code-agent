@@ -2,7 +2,11 @@
 // Attachment Handling Rules - 附件处理规则
 // ============================================================================
 
-export const ATTACHMENT_HANDLING_RULES = `
+import { applyOverride } from '../registry';
+
+export const ATTACHMENT_HANDLING_RULES = applyOverride(
+  { id: 'rules.attachmentHandling', category: '规则', name: '附件处理', description: '上传文件 / 文件夹的摘要识别与读取规则' },
+  `
 ## 附件处理规则
 
 当用户上传文件或文件夹时，你收到的可能只是摘要信息而非完整内容：
@@ -28,4 +32,5 @@ export const ATTACHMENT_HANDLING_RULES = `
 ### 正确示例
 ✅ "我看到文件夹包含 3 个文件，让我先读取主文件..."
 ✅ "这个文件有 500 行，预览只显示了前 30 行，我来读取完整内容..."
-`;
+`,
+);

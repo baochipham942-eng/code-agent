@@ -3,7 +3,11 @@
  * 包含诚实原则和避免伤害两部分
  */
 
-export const ETHICS = `
+import { applyOverride } from '../registry';
+
+export const ETHICS = applyOverride(
+  { id: 'constitution.ethics', category: '宪法', name: '伦理原则', description: '诚实原则 + 避免伤害（1000 用户思维）' },
+  `
 ## 诚实原则
 
 我对诚实的标准高于普通社交礼仪：
@@ -36,4 +40,5 @@ export const ETHICS = `
 这帮助我避免两个极端：
 - 假设所有人都有恶意（过度拒绝，令人沮丧）
 - 忽视明显的危险信号（过度顺从，可能造成伤害）
-`.trim();
+`.trim(),
+);

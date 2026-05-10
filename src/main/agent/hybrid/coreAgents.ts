@@ -17,6 +17,7 @@ import type { ModelProvider } from '../../../shared/contract/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
 import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
+import { applyOverride } from '../../prompts/registry';
 
 // Re-export types from canonical source for backward compatibility
 export type { CoreAgentId, ModelTier, CoreAgentConfig } from './types';
@@ -145,7 +146,9 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
     id: 'coder',
     name: 'Coder',
     description: 'Writes, debugs, and documents code. Handles all code modifications.',
-    prompt: `You are a senior software engineer. Your responsibilities:
+    prompt: applyOverride(
+      { id: 'subagent.coder', category: 'Subagent', name: 'Coder 子代理', description: '编码 / 调试 / 文档 子代理主 prompt' },
+      `You are a senior software engineer. Your responsibilities:
 
 ## Core Capabilities
 1. **Write Code**: Clean, readable, maintainable code
@@ -179,6 +182,7 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Use task_update to claim tasks (set owner to your name) and mark completed
 - After completing a task, call task_list to find next available work
 - Create sub-tasks with task_create if you discover additional work needed`,
+    ),
     tools: [
       'bash', 'read_file', 'write_file', 'edit_file',
       'glob', 'grep', 'list_directory',
@@ -196,7 +200,9 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
     id: 'reviewer',
     name: 'Reviewer',
     description: 'Reviews code quality, writes and runs tests.',
-    prompt: `You are a code reviewer and testing specialist. Your responsibilities:
+    prompt: applyOverride(
+      { id: 'subagent.reviewer', category: 'Subagent', name: 'Reviewer 子代理', description: '代码审查 + 测试 子代理主 prompt' },
+      `You are a code reviewer and testing specialist. Your responsibilities:
 
 ## Code Review
 1. **Bug Detection**: Logic errors, null pointers, race conditions
@@ -234,6 +240,7 @@ Be constructive and specific. Focus on actionable feedback.
 - Use task_update to claim tasks (set owner to your name) and mark completed
 - After completing a task, call task_list to find next available work
 - Create sub-tasks with task_create if you discover additional work needed`,
+    ),
     tools: [
       'bash', 'read_file', 'write_file', 'edit_file',
       'glob', 'grep', 'list_directory',
@@ -251,7 +258,9 @@ Be constructive and specific. Focus on actionable feedback.
     id: 'explore',
     name: 'Explorer',
     description: 'Searches code, web, and documents. Read-only operations.',
-    prompt: `You are a research and exploration specialist. Your responsibilities:
+    prompt: applyOverride(
+      { id: 'subagent.explore', category: 'Subagent', name: 'Explorer 子代理', description: '只读搜索 / 阅读 / 调研 子代理主 prompt' },
+      `You are a research and exploration specialist. Your responsibilities:
 
 ## Core Capabilities
 1. **Code Search**: Use glob/grep to find files and patterns
@@ -297,6 +306,7 @@ Suggested actions:
 - Action 1
 - Action 2
 \`\`\``,
+    ),
     tools: [
       'glob', 'grep', 'read_file', 'list_directory',
       'web_search', 'web_fetch',
@@ -315,7 +325,9 @@ Suggested actions:
     id: 'plan',
     name: 'Planner',
     description: 'Designs architecture and creates implementation plans.',
-    prompt: `You are a software architect and planner. Your responsibilities:
+    prompt: applyOverride(
+      { id: 'subagent.plan', category: 'Subagent', name: 'Planner 子代理', description: '架构设计 / 任务拆解 子代理主 prompt' },
+      `You are a software architect and planner. Your responsibilities:
 
 ## Core Capabilities
 1. **System Design**: Scalable, maintainable architectures
@@ -366,6 +378,7 @@ Suggested actions:
 - Use task_update to claim tasks (set owner to your name) and mark completed
 - After completing a task, call task_list to find next available work
 - Create sub-tasks with task_create to break down complex plans`,
+    ),
     tools: [
       'glob', 'grep', 'read_file', 'list_directory',
       'write_file',
@@ -383,7 +396,9 @@ Suggested actions:
     id: 'awaiter',
     name: 'Awaiter',
     description: 'Monitors long-running commands (tests, builds, deploys) and reports results.',
-    prompt: `You are a command monitor specialist. Your responsibilities:
+    prompt: applyOverride(
+      { id: 'subagent.awaiter', category: 'Subagent', name: 'Awaiter 子代理', description: '长命令执行 / 监控 / 上报 子代理主 prompt' },
+      `You are a command monitor specialist. Your responsibilities:
 
 ## Core Capabilities
 1. **Execute**: Run long-running commands (tests, builds, deploys)
@@ -412,6 +427,7 @@ Duration: <time>
 Output (last 200 lines):
 <output>
 \`\`\``,
+    ),
     tools: ['bash', 'read_file'],
     model: 'fast',
     maxIterations: 30,

@@ -3,7 +3,11 @@
 // Borrowed from Claude Code v2.0
 // ============================================================================
 
-export const PARALLEL_TOOLS_RULES = `
+import { applyOverride } from '../registry';
+
+export const PARALLEL_TOOLS_RULES = applyOverride(
+  { id: 'rules.parallelTools', category: '规则', name: '并行工具调用', description: '何时并行 / 何时串行的工具调用决策' },
+  `
 ## 并行工具调用
 
 你可以在单个响应中调用多个工具。当请求多个独立的信息时，
@@ -49,4 +53,5 @@ Task(subagent_type="reviewer", prompt="安全审计")
 Task(subagent_type="explore", prompt="性能分析")
 Task(subagent_type="reviewer", prompt="代码质量检查")
 \`\`\`
-`;
+`,
+);

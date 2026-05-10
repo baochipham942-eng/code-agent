@@ -8,7 +8,11 @@
  * 精简版，强调并行派发能力
  * 约 400 tokens
  */
-export const TASK_TOOL_DESCRIPTION = `
+import { applyOverride } from '../registry';
+
+export const TASK_TOOL_DESCRIPTION = applyOverride(
+  { id: 'tools.task', category: '工具描述', name: 'Task 工具描述', description: 'Task subagent 工具的 prompt 描述' },
+  `
 ## Task 工具
 
 启动子代理处理复杂任务。工具名是 **Task**。目标文件和编辑区域已经明确时，直接用读写工具完成，不要为了单点修改再委派。
@@ -54,4 +58,5 @@ Task {
   "prompt": "审查 src/auth/ 的安全性"
 }
 \`\`\`
-`;
+`,
+);

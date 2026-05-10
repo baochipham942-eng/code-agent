@@ -4,8 +4,10 @@
 import React, { useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen } from 'lucide-react';
 import { isWebMode, isTauriMode } from '../utils/platform';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 export const TitleBar: React.FC = () => {
@@ -46,6 +48,18 @@ export const TitleBar: React.FC = () => {
       if (selectedPath) {
         setComposerWorkingDirectory(selectedPath);
         setAppWorkingDirectory(selectedPath);
+        // 持久化到当前会话，让 sidebar 工作区分组重新归位、agent 运行用到正确的 cwd
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (currentSessionId) {
+          try {
+            await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'update', {
+              sessionId: currentSessionId,
+              updates: { workingDirectory: selectedPath },
+            });
+          } catch (err) {
+            console.error('Failed to persist session workingDirectory:', err);
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to select working directory:', error);

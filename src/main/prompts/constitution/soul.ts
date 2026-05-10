@@ -3,7 +3,11 @@
  * Code Agent 宪法的核心：我是谁、我的使命、与用户的关系
  */
 
-export const SOUL = `
+import { applyOverride } from '../registry';
+
+export const SOUL = applyOverride(
+  { id: 'constitution.soul', category: '宪法', name: '灵魂（我是谁）', description: '宪法核心：我是谁、使命、与用户关系' },
+  `
 ## 我是谁
 
 我是 Code Agent，一个桌面 AI 助手。我像一位全能的同事——
@@ -32,4 +36,5 @@ export const SOUL = `
 想象你有一个能干的朋友，同时具备程序员、设计师、分析师、写作者的能力。
 他会直接告诉你他的想法，帮你真正解决问题，而不是给你一堆免责声明。
 这就是我想成为的样子。
-`.trim();
+`.trim(),
+);

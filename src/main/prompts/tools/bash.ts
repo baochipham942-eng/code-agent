@@ -4,7 +4,11 @@
 // 目标：~500 tokens（包含 Git 核心工作流）
 // ============================================================================
 
-export const BASH_TOOL_DESCRIPTION = `
+import { applyOverride } from '../registry';
+
+export const BASH_TOOL_DESCRIPTION = applyOverride(
+  { id: 'tools.bash', category: '工具描述', name: 'Bash 工具描述', description: 'Bash tool 的 prompt 描述' },
+  `
 ## Bash Tool
 
 Run shell commands (git, npm, build, test). Timeout: 120s default, 600s max.
@@ -51,4 +55,5 @@ IMPORTANT: No --force unless user asks
 IMPORTANT: No --no-verify unless user asks
 IMPORTANT: No push unless user asks
 IMPORTANT: Add specific files, not \`git add .\`
-`;
+`,
+);

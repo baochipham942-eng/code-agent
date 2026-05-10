@@ -4,7 +4,11 @@
 // 目标：~600 tokens
 // ============================================================================
 
-export const TOOLS_PROMPT = `
+import { applyOverride } from '../registry';
+
+export const TOOLS_PROMPT = applyOverride(
+  { id: 'base.gen8.tools', category: '基础', name: '工具列表（Gen8）', description: '工具列表 + 使用规则（Claude Code 极简版）' },
+  `
 ## Tools
 
 | Tool | Use |
@@ -24,7 +28,8 @@ export const TOOLS_PROMPT = `
 - \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls
 - User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
-`;
+`,
+);
 
 // Orchestrator Mode prompt (for swarm scenarios)
 export { getOrchestratorPrompt, getOrchestratorPromptCompact } from './orchestrator';

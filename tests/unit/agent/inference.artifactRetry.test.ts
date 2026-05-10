@@ -26,11 +26,6 @@ vi.mock('../../../src/main/mcp/logCollector.js', () => ({
   },
 }));
 
-vi.mock('../../../src/main/tools/protocolRegistry', () => ({
-  isProtocolExposeEnabled: vi.fn().mockReturnValue(false),
-  getPocToolDefinitions: vi.fn().mockReturnValue([]),
-}));
-
 const { mockToolDefinitions } = vi.hoisted(() => ({
   mockToolDefinitions: [
     { name: 'Read', description: 'read file', input_schema: {} },

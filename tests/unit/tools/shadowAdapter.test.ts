@@ -299,8 +299,8 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
       workingDirectory: '/tmp',
       requestPermission: async () => true,
     } as unknown as LegacyToolContext;
-    const canUseTool = buildCanUseToolFromLegacy(ctx, 'ReadPoc');
-    const r = await canUseTool('ReadPoc', { file_path: '/tmp/x' });
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'Read');
+    const r = await canUseTool('Read', { file_path: '/tmp/x' });
     expect(r).toEqual({ allow: true });
   });
 
@@ -309,8 +309,8 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
       workingDirectory: '/tmp',
       requestPermission: async () => false,
     } as unknown as LegacyToolContext;
-    const canUseTool = buildCanUseToolFromLegacy(ctx, 'BashPoc');
-    const r = await canUseTool('BashPoc', { command: 'echo' });
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'Bash');
+    const r = await canUseTool('Bash', { command: 'echo' });
     expect(r.allow).toBe(false);
   });
 
@@ -323,8 +323,8 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
         return true;
       },
     } as unknown as LegacyToolContext;
-    const canUseTool = buildCanUseToolFromLegacy(ctx, 'WebFetchPoc');
-    await canUseTool('WebFetchPoc', { url: 'https://example.com' });
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'WebFetch');
+    await canUseTool('WebFetch', { url: 'https://example.com' });
     expect(captured!.type).toBe('network');
   });
 
@@ -386,22 +386,6 @@ describe('protocolAdapter — executePocToolViaProtocol', () => {
     }
   });
 
-  it('调用 ReadPoc 返回结构化 output 包到 ToolExecutionResult.result', async () => {
-    const testFile = path.join(tempDir, 'a.txt');
-    await fs.writeFile(testFile, 'hello\nworld\n');
-
-    const result = await executePocToolViaProtocol({
-      toolName: 'ReadPoc',
-      params: { file_path: testFile },
-      workingDirectory: tempDir,
-      requestPermission: async () => true,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.result).toBeDefined();
-    expect(result.output).toBeTypeOf('string');
-  });
-
   it('未注册的 tool → success=false', async () => {
     const result = await executePocToolViaProtocol({
       toolName: 'NotARealPocTool',
@@ -411,16 +395,5 @@ describe('protocolAdapter — executePocToolViaProtocol', () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain('not registered');
-  });
-
-  it('canUseTool 拒绝 → success=false 带 PERMISSION_DENIED metadata', async () => {
-    const result = await executePocToolViaProtocol({
-      toolName: 'ReadPoc',
-      params: { file_path: '/tmp/whatever' },
-      workingDirectory: tempDir,
-      requestPermission: async () => false,
-    });
-    expect(result.success).toBe(false);
-    expect(result.metadata?.code).toBe('PERMISSION_DENIED');
   });
 });

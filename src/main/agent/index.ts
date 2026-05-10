@@ -42,19 +42,6 @@ export {
   type SessionIndexEntry,
 } from './sessionPersistence';
 
-// Session Resume
-export {
-  getSessionResume,
-  resetSessionResume,
-  resumeSession,
-  resumeLatestSession,
-  SessionResume,
-  type ResumeOptions,
-  type ResumeResult,
-  type RestoredSession,
-  type SessionListItem,
-} from './resume';
-
 // Sub-Agent Permissions
 export {
   getSubAgentPermissionManager,

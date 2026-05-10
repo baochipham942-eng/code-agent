@@ -5,7 +5,6 @@ import { getConfigService, getAuthService, getLangfuseService } from '../../../s
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
-import { isProtocolExposeEnabled, getPocToolDefinitions } from '../../../tools/protocolRegistry';
 import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
@@ -249,14 +248,6 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     // 传统模式：发送所有工具
     tools = getAllToolDefinitions();
     logger.debug('Tools:', tools.map((t) => t.name));
-  }
-
-  // P0-5 B 阶段：env 命中时把 POC schema 暴露给 LLM
-  // 注意：会改变 prompt cache 命中（tools 列表变了），仅 dev/eval 用
-  if (isProtocolExposeEnabled()) {
-    const pocDefs = getPocToolDefinitions();
-    tools = [...tools, ...pocDefs];
-    logger.debug(`Tools (POC exposed): +${pocDefs.length} = ${tools.length} total`);
   }
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);

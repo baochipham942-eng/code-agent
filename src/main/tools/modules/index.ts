@@ -2,7 +2,7 @@
 // Migrated Tools Registry
 //
 // 注册所有从 legacy 迁移到 ToolModule 形态的工具到 protocol registry。
-// 在 protocolRegistry 单例创建时与 registerPocTools 一起调用。
+// 在 protocolRegistry 单例创建时调用。
 //
 // 全量迁完后，这个文件会被替换为生产 registry 入口，删 legacy。
 // ============================================================================

@@ -41,9 +41,7 @@ const WRITE_TOOLS = new Set([
 
 const READ_TOOLS = new Set([
   'Read',
-  'ReadPoc',
   'Glob',
-  'GlobPoc',
   'Grep',
   'LS',
   'list_directory',

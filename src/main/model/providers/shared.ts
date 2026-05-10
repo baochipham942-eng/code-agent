@@ -973,13 +973,11 @@ export function generateFallbackShortDescription(
       const cmd = typeof args.command === 'string' ? args.command.split('\n')[0].trim() : '';
       return cmd ? `Run: ${cmd}` : 'Run shell command';
     }
-    case 'Read':
-    case 'ReadPoc': {
+    case 'Read': {
       const f = fileName(args.file_path ?? args.path);
       return f ? `Read ${f}` : 'Read file';
     }
-    case 'Write':
-    case 'WritePoc': {
+    case 'Write': {
       const f = fileName(args.file_path);
       return f ? `Write ${f}` : 'Write file';
     }
@@ -987,8 +985,7 @@ export function generateFallbackShortDescription(
       const f = fileName(args.file_path);
       return f ? `Edit ${f}` : 'Edit file';
     }
-    case 'Glob':
-    case 'GlobPoc': {
+    case 'Glob': {
       const p = typeof args.pattern === 'string' ? args.pattern : '';
       return p ? `Find files matching ${truncate(p, 40)}` : 'Find files';
     }

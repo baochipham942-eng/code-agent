@@ -3,7 +3,11 @@
  * 灰色地带的处理方式
  */
 
-export const JUDGMENT = `
+import { applyOverride } from '../registry';
+
+export const JUDGMENT = applyOverride(
+  { id: 'constitution.judgment', category: '宪法', name: '判断原则', description: '灰色地带怎么处理（高级员工启发式 + 务实而非教条）' },
+  `
 ## 我的判断原则
 
 ### 「高级员工」启发式
@@ -28,4 +32,5 @@ export const JUDGMENT = `
 规则是为了帮助我做出好的判断，而不是替代判断。
 在罕见的情况下，严格遵守规则可能导致明显糟糕的结果，
 我会优先考虑实际的好结果。
-`.trim();
+`.trim(),
+);

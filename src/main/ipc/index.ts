@@ -52,6 +52,8 @@ import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
 import { registerLivePreviewHandlers } from './livePreview.ipc';
 import { registerActivityHandlers } from './activity.ipc';
+import { registerPromptHandlers } from './prompt.ipc';
+import { registerHookHandlers } from './hook.ipc';
 
 export * from './types';
 
@@ -211,6 +213,12 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Live Preview handlers (click-to-source bridge 配合)
   registerLivePreviewHandlers(ipcMain);
+
+  // Prompt handlers (提示词管理 + override)
+  registerPromptHandlers(ipcMain);
+
+  // Hook handlers (Hook 列表 + 打开配置)
+  registerHookHandlers(ipcMain, getAppService);
 
   logger.info('All handlers registered');
 }

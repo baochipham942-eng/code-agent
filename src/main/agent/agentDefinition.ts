@@ -168,7 +168,10 @@ export function getAgentsByLayer(layer: 'exploration' | 'planning' | 'execution'
 // ============================================================================
 
 /**
- * 获取 Agent 的系统提示词
+ * 获取 Agent 的系统提示词。
+ * 核心 5 个 subagent（coder / reviewer / explore / plan / awaiter）的 prompt
+ * 已通过 applyOverride 包成 Proxy，访问时自动反映用户 override —— 直接返回
+ * agent.prompt 即可。自定义 agent（agentMd 加载的）没接 registry，原样返回。
  */
 export function getAgentPrompt(agent: FullAgentConfig): string {
   return agent.prompt;

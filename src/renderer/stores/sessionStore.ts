@@ -815,7 +815,7 @@ export async function initializeSessionStore(): Promise<void> {
   if (sessions.length > 0) {
     await store.switchSession(sessions[0].id);
   } else {
-    await store.createSession('新对话');
+    await store.createSession('新对话', { workingDirectory: null });
   }
 
   ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {

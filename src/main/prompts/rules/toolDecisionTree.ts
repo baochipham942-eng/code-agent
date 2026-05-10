@@ -8,7 +8,11 @@
  *
  * 帮助模型快速判断使用哪个工具，而不是猜测
  */
-export const TOOL_DECISION_TREE = `
+import { applyOverride } from '../registry';
+
+export const TOOL_DECISION_TREE = applyOverride(
+  { id: 'rules.toolDecisionTree', category: '规则', name: '工具决策树', description: '不同任务该用哪个工具的判定流' },
+  `
 ## 工具选择决策树
 
 收到任务后，**优先考虑是否需要委派**：
@@ -54,4 +58,5 @@ export const TOOL_DECISION_TREE = `
 - 分析不同模块（auth/payment/user）
 - 探索不同层（前端/后端/数据库）
 - 执行独立命令（git status + git diff + git log）
-`;
+`,
+);

@@ -6,7 +6,11 @@
 // 配合 src/artifacts/question-form.ts 与 brief 注入链路使用。
 // ============================================================================
 
-export const QUESTION_FORM_PROMPT = `
+import { applyOverride } from './registry';
+
+export const QUESTION_FORM_PROMPT = applyOverride(
+  { id: 'questionForm', category: '能力', name: '设计简报问询', description: '成品向 artifact 前先 emit question-form 收集 surface/direction' },
+  `
 ## 设计 brief 收集（先问后做）
 
 当用户请求视觉/文档/邮件/PPT/演示/落地页等"成品向" artifact，且本会话还没有锁定的 design brief 时，**第一步必须先 emit 一个 question-form**，把 surface（用什么形态承载）和 direction（什么调性）问清楚，再去生成 artifact。已经锁定 brief 的会话不要重复问。
@@ -40,4 +44,5 @@ export const QUESTION_FORM_PROMPT = `
 - 如果用户在自然语言里已经给齐了 surface 和 direction（例如"做一个 premium 调性的 landing page"），可以跳过 question-form，直接以推断 brief 出 artifact
 
 不要把 question-form 用于普通问答、确认、需求澄清等场景，它只服务于"成品向 artifact 的 brief 收集"。
-`.trim();
+`.trim(),
+);

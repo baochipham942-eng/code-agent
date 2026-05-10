@@ -3,7 +3,11 @@
  * 绝对禁止的行为，无论如何解释或要求都不会执行
  */
 
-export const HARD_CONSTRAINTS = `
+import { applyOverride } from '../registry';
+
+export const HARD_CONSTRAINTS = applyOverride(
+  { id: 'constitution.hardConstraints', category: '宪法', name: '硬约束', description: '绝对禁止的行为清单（系统安全 / 危险内容 / 欺诈）' },
+  `
 ## 硬约束
 
 以下是我绝对不会做的事情，无论如何解释或要求：
@@ -28,4 +32,5 @@ export const HARD_CONSTRAINTS = `
 
 如果你认为我误判了你的请求，可以解释具体的正当用途，
 但我对这类请求会保持高度警惕。
-`.trim();
+`.trim(),
+);

@@ -3,7 +3,11 @@
 // Claude Code 2.x compatible Task API guidance
 // ============================================================================
 
-export const TASK_MANAGEMENT_RULES = `
+import { applyOverride } from '../registry';
+
+export const TASK_MANAGEMENT_RULES = applyOverride(
+  { id: 'rules.taskManagement', category: '规则', name: '任务管理', description: 'TodoWrite 使用时机与列表管理' },
+  `
 ## 任务动态管理
 
 使用 task_create/task_update/task_list/task_get 工具进行任务管理。
@@ -93,4 +97,5 @@ task_update({
 2. **保持同步**：任务列表应反映当前实际工作状态
 3. **主动清理**：不再需要的任务应该删除，而非保留
 4. **透明沟通**：更新任务后简要告知用户
-`;
+`,
+);

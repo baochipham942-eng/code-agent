@@ -3,7 +3,11 @@
 // Borrowed from Claude Code v2.0
 // ============================================================================
 
-export const GIT_SAFETY_RULES = `
+import { applyOverride } from '../registry';
+
+export const GIT_SAFETY_RULES = applyOverride(
+  { id: 'rules.gitSafety', category: '规则', name: 'Git 安全协议', description: 'commit / push / PR 流程与禁止动作' },
+  `
 ## Git 安全协议
 
 **禁止操作（除非用户明确要求）：**
@@ -42,4 +46,5 @@ EOF
 2. 分析所有相关 commit（不仅是最新的）
 3. 起草 PR 描述，包含 Summary 和 Test Plan
 4. 使用 gh pr create 创建 PR
-`;
+`,
+);

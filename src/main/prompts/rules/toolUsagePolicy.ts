@@ -10,7 +10,11 @@
  * - 提供清晰的决策标准，让模型自己判断
  * - 用"什么时候该委派"而不是"这种任务必须委派"
  */
-export const TOOL_USAGE_POLICY = `
+import { applyOverride } from '../registry';
+
+export const TOOL_USAGE_POLICY = applyOverride(
+  { id: 'rules.toolUsagePolicy', category: '规则', name: '工具使用策略', description: '工具选择优先级与禁用情形' },
+  `
 ## 工具选择策略
 
 ### 核心原则：自主决策
@@ -130,4 +134,5 @@ Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型使用")
 - 复杂审计任务（需要多轮探索）
 - 跨多个会话的长期任务
 - 需要用户中途确认的任务
-`;
+`,
+);

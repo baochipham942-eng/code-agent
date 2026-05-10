@@ -118,6 +118,7 @@ interface AppState {
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
+  showPromptManager: boolean;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
@@ -203,6 +204,7 @@ interface AppState {
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   clearSettingsMemoryFocus: () => void;
+  setShowPromptManager: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
   setShowAgentTeamPanel: (show: boolean) => void;
@@ -283,6 +285,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showSettings: false,
   settingsInitialTab: null,
   settingsMemoryFocus: null,
+  showPromptManager: false,
   showWorkspace: false,
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
@@ -356,6 +359,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
+  setShowPromptManager: (show) => set({ showPromptManager: show }),
   openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab, settingsMemoryFocus: null }),
   openMemorySettings: (focus) => set({
     showSettings: true,

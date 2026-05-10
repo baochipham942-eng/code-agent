@@ -2,7 +2,11 @@
 // Plan Mode Rules - 规划模式指导（精简版）
 // ============================================================================
 
-export const PLAN_MODE_RULES = `
+import { applyOverride } from '../registry';
+
+export const PLAN_MODE_RULES = applyOverride(
+  { id: 'rules.planMode', category: '规则', name: 'Plan Mode 规则', description: 'plan 模式只输出方案不写代码的约束' },
+  `
 ## Plan Mode（规划模式）
 
 复杂任务（3+文件、架构变更、需求不明确）使用 \`enter_plan_mode\`。
@@ -17,4 +21,5 @@ export const PLAN_MODE_RULES = `
 **跳过规划**：单文件修改、需求明确、纯探索任务。
 
 **⚠️ Plan Mode 是只读模式，禁止写入操作**
-`;
+`,
+);

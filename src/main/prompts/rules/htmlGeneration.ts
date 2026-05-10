@@ -2,7 +2,11 @@
 // HTML Generation Rules - Guidelines for generating web applications
 // ============================================================================
 
-export const HTML_GENERATION_RULES = `
+import { applyOverride } from '../registry';
+
+export const HTML_GENERATION_RULES = applyOverride(
+  { id: 'rules.htmlGeneration', category: '规则', name: 'HTML 生成规则', description: 'HTML / 游戏 / Web App 生成约束' },
+  `
 ## HTML/Game/Web Application Generation Rules (CRITICAL)
 
 When generating HTML files, games, or web applications, you MUST follow these rules:
@@ -78,4 +82,5 @@ Example structure:
 </body>
 </html>
 \`\`\`
-`;
+`,
+);

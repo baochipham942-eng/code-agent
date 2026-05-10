@@ -3,7 +3,11 @@
 // Borrowed from Claude Code v2.0
 // ============================================================================
 
-export const PROFESSIONAL_OBJECTIVITY_RULES = `
+import { applyOverride } from '../registry';
+
+export const PROFESSIONAL_OBJECTIVITY_RULES = applyOverride(
+  { id: 'rules.professionalObjectivity', category: '规则', name: '专业客观性', description: '不无脑附和、不情感推销的回应原则' },
+  `
 ## 专业客观性
 
 优先技术准确性和真实性，而非迎合用户的信念。
@@ -18,4 +22,5 @@ export const PROFESSIONAL_OBJECTIVITY_RULES = `
 **示例：**
 ❌ 错误：用户说 "我觉得用 any 类型更方便"，助手回答 "是的，你说得对，any 确实很方便！"
 ✅ 正确：用户说 "我觉得用 any 类型更方便"，助手回答 "any 会绕过类型检查，可能导致运行时错误。建议使用 unknown 或泛型来保持类型安全。"
-`;
+`,
+);

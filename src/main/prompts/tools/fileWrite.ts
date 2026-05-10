@@ -1,4 +1,8 @@
-export const FILE_WRITE_TOOL_DESCRIPTION = `
+import { applyOverride } from '../registry';
+
+export const FILE_WRITE_TOOL_DESCRIPTION = applyOverride(
+  { id: 'tools.fileWrite', category: '工具描述', name: '文件写入工具描述', description: 'Write / Append 工具的 prompt 描述' },
+  `
 ## File Write Tools
 
 - Use \`Write\` for new files or complete rewrites when the whole content is ready.
@@ -11,4 +15,5 @@ export const FILE_WRITE_TOOL_DESCRIPTION = `
 - For platformer games, metadata must also include \`gameplayMechanics\` with enemies, blocks, abilities, gates, and comboChallenge. The runtime test must prove stomp enemy, bump block, gain ability, unlock gate/route, and comboChallenge through before/after \`snapshot()\` changes or explicit input-driven coverage.
 - Large canvas games must include responsive canvas or wrapper CSS (\`max-width\`, \`max-height\`, \`aspect-ratio\`, \`height:auto\`, or equivalent) so the whole playfield fits the browser viewport, including a 390px mobile viewport. Do not rely on fixed 800px/900px width or max-height-only scaling that can still overflow horizontally.
 - Browser games should be authored to pass visual smoke in both desktop and narrow/mobile viewports: nonblank canvas or visible DOM gameplay, actor visible, HUD framed, no horizontal canvas crop, and no obvious critical UI overlap.
-`;
+`,
+);

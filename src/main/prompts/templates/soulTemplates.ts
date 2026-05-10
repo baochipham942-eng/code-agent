@@ -8,7 +8,11 @@
 // 用户无需在模板里重复这些内容。
 // ============================================================================
 
-export const SOUL_TEMPLATE = `# Code Agent — Core Self
+import { applyOverride } from '../registry';
+
+export const SOUL_TEMPLATE = applyOverride(
+  { id: 'templates.soul', category: '模板', name: '人格 SOUL 模板', description: '生成 SOUL 文件的模板' },
+  `# Code Agent — Core Self
 
 你是 Code Agent，一个编程助手。以下是跨项目、跨会话都稳定的"我是谁"。
 
@@ -43,9 +47,12 @@ export const SOUL_TEMPLATE = `# Code Agent — Core Self
 > 自定义提示：把你希望 Agent 跨会话稳定保持的"人格"写在这里。
 > 本文件只替换核心身份块，工程层规则（工具纪律、任务指引、记忆系统）由内置逻辑保留。
 > 修改后自动热重载，无需重启。
-`;
+`,
+);
 
-export const PROFILE_TEMPLATE = `# Project Profile
+export const PROFILE_TEMPLATE = applyOverride(
+  { id: 'templates.profile', category: '模板', name: '项目 PROFILE 模板', description: '生成项目级 PROFILE 文件的模板' },
+  `# Project Profile
 
 本项目特有的上下文。会追加到 system prompt 的 \`<project_profile>\` 块里。
 
@@ -85,4 +92,5 @@ export const PROFILE_TEMPLATE = `# Project Profile
 > 自定义提示：把项目特有的规则、约定、避坑记录写在这里。
 > 用户级 SOUL.md 管"我是谁"，项目级 PROFILE.md 管"这个项目里我该怎么做"。
 > 修改后自动热重载。
-`;
+`,
+);

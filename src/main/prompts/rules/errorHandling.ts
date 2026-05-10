@@ -2,7 +2,11 @@
 // Error Handling Rules - 错误处理和权限引导规范
 // ============================================================================
 
-export const ERROR_HANDLING_RULES = `
+import { applyOverride } from '../registry';
+
+export const ERROR_HANDLING_RULES = applyOverride(
+  { id: 'rules.errorHandling', category: '规则', name: '错误处理与权限引导', description: '权限 / 超时 / API 失败的标准回复' },
+  `
 ## Error Handling Rules (错误处理规范)
 
 ### 权限错误处理
@@ -40,4 +44,5 @@ export const ERROR_HANDLING_RULES = `
 | 目录不存在 | 报告目录不存在，等待用户指示（不要自行创建） |
 | 命令执行超时 | 建议拆分任务或增加超时时间 |
 | API 调用失败 | 说明原因，建议稍后重试 |
-`;
+`,
+);

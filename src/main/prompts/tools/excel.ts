@@ -4,7 +4,11 @@
 // 描述 ExcelAutomate 三种模式：read / generate / automate
 // ============================================================================
 
-export const EXCEL_TOOL_DESCRIPTION = `
+import { applyOverride } from '../registry';
+
+export const EXCEL_TOOL_DESCRIPTION = applyOverride(
+  { id: 'tools.excel', category: '工具描述', name: 'Excel 工具描述', description: 'Excel tool 的 prompt 描述' },
+  `
 ## ExcelAutomate 工具
 
 操作 Excel 文件的专用工具，支持三种模式。
@@ -22,4 +26,5 @@ export const EXCEL_TOOL_DESCRIPTION = `
 - **禁止硬编码列名**：列名必须从 read 结果中获取，不要凭猜测写死
 - **automate 前置条件**：目标文件必须在 Excel 中已打开
 - **大数据量**：超过 10 万行优先用 bash + pandas 处理，再用 generate 输出
-`;
+`,
+);

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Cpu, Palette, Info, Database, Download, Plug, Brain, Sparkles, Eye, GitBranch, Shield, MessageSquare } from 'lucide-react';
+import { X, Cpu, Palette, Info, Database, Download, Plug, Brain, Sparkles, Eye, GitBranch, Shield, MessageSquare, Webhook } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -37,6 +37,7 @@ import { MCPSettings } from './tabs/MCPSettings';
 import { MemoryTab } from './tabs/MemoryTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
+import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
 import ipcService from '../../../services/ipcService';
@@ -76,6 +77,7 @@ export function buildSettingsTabGroups({
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
+    { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
@@ -270,6 +272,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}
+            {activeTab === 'hooks' && <HooksSettings />}
             {activeTab === 'memory' && <MemoryTab />}
             {activeTab === 'openchronicle' && <ScreenMemorySettings />}
             {showUpdateTab && activeTab === 'update' && (

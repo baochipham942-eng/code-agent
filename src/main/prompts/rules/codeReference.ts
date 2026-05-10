@@ -3,7 +3,11 @@
 // Borrowed from Claude Code v2.0
 // ============================================================================
 
-export const CODE_REFERENCE_RULES = `
+import { applyOverride } from '../registry';
+
+export const CODE_REFERENCE_RULES = applyOverride(
+  { id: 'rules.codeReference', category: '规则', name: '代码引用格式', description: 'file:line 引用规范（Claude Code v2.0）' },
+  `
 ## 代码引用格式
 
 引用具体函数或代码时，使用 \`file_path:line_number\` 格式，
@@ -33,4 +37,5 @@ export const CODE_REFERENCE_RULES = `
 - 指出代码位置
 - 引用具体实现
 - 报告错误位置
-`;
+`,
+);

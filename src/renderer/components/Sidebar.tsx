@@ -35,6 +35,7 @@ import {
   Clock3,
   Monitor,
   GitBranch,
+  ScrollText,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -130,6 +131,7 @@ export const Sidebar: React.FC = () => {
   const {
     clearPlanningState,
     setShowSettings,
+    setShowPromptManager,
     setShowEvalCenter,
     setWorkingDirectory,
     setShowLab,
@@ -285,7 +287,7 @@ export const Sidebar: React.FC = () => {
 
     setIsCreatingSession(true);
     try {
-      await createSession('新对话');
+      await createSession('新对话', { workingDirectory: null });
       clearPlanningState();
     } finally {
       setIsCreatingSession(false);
@@ -926,6 +928,13 @@ export const Sidebar: React.FC = () => {
                 >
                   <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
                   桌面采集
+                </button>
+                <button
+                  onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <ScrollText className="w-4 h-4 text-violet-400/80" />
+                  提示词
                 </button>
                 <div className="border-t border-zinc-800 my-1" />
                 <button

@@ -64,9 +64,6 @@ export function ToolHeader({ toolCall, status }: Props) {
   const writeFilePath = getWriteFilePath(toolCall);
   const params = hasShortDesc || writeFilePath ? '' : formatParams(toolCall);
   const duration = toolCall.result?.duration;
-  const isSandboxed = (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
-    typeof toolCall.result?.output === 'string' &&
-    toolCall.result.output.includes('[codex-sandbox]');
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
   const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
@@ -107,13 +104,6 @@ export function ToolHeader({ toolCall, status }: Props) {
         >
           {writeFileName}
         </button>
-      )}
-
-      {/* Sandbox badge */}
-      {isSandboxed && (
-        <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
-          sandbox
-        </span>
       )}
 
       {/* Parameters summary */}

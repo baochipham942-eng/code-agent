@@ -13,8 +13,6 @@ import {
   Power,
   PowerOff,
   Cloud,
-  Zap,
-  ExternalLink,
   Plus,
 } from 'lucide-react';
 import { useMcpStatus } from '../../../../hooks/useMcpStatus';
@@ -25,11 +23,9 @@ import { Button } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
-import ipcService from '../../../../services/ipcService';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../../../workbench/WorkbenchCapabilitySheetLite';
@@ -63,9 +59,6 @@ export const MCPSettings: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [reconnectingServer, setReconnectingServer] = useState<string | null>(null);
-  const [codexDetectedPath, setCodexDetectedPath] = useState<string | null>(null);
-  const [codexSandboxEnabled, setCodexSandboxEnabled] = useState(false);
-  const [codexCrossVerifyEnabled, setCodexCrossVerifyEnabled] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
 
@@ -88,41 +81,6 @@ export const MCPSettings: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [message]);
-
-  const loadCodexSettings = async () => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 App.tsx，SETTINGS 域 'get' 应抽 SettingsIpcMap 让 invokeDomain narrow
-      const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
-      if (settings?.codex) {
-        setCodexDetectedPath(settings.codex.detectedPath ?? null);
-        setCodexSandboxEnabled(settings.codex.sandboxEnabled ?? false);
-        setCodexCrossVerifyEnabled(settings.codex.crossVerifyEnabled ?? false);
-      }
-    } catch (error) {
-      logger.error('Failed to load Codex settings', error);
-    }
-  };
-
-  const handleCodexToggle = async (field: 'sandboxEnabled' | 'crossVerifyEnabled', value: boolean) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 loadCodexSettings，SETTINGS 域 narrow
-      const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
-      const codex = settings?.codex || { sandboxEnabled: false, crossVerifyEnabled: false };
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        codex: { ...codex, [field]: value },
-      });
-      if (field === 'sandboxEnabled') setCodexSandboxEnabled(value);
-      else setCodexCrossVerifyEnabled(value);
-      setMessage({ type: 'success', text: `Codex ${field === 'sandboxEnabled' ? '沙箱执行' : '交叉验证'}已${value ? '启用' : '关闭'}，重启后生效` });
-    } catch (error) {
-      logger.error('Failed to update Codex settings', error);
-      setMessage({ type: 'error', text: '更新 Codex 设置失败' });
-    }
-  };
-
-  useEffect(() => {
-    loadCodexSettings();
-  }, []);
 
   const handleRefreshFromCloud = async () => {
     setIsRefreshing(true);
@@ -229,83 +187,6 @@ export const MCPSettings: React.FC = () => {
       description="配置 Agent 可调用的外部工具服务器。运行状态和桥接诊断收在下方，不占主要设置流。"
     >
       <WebModeBanner />
-
-      {/* Codex CLI Integration */}
-      <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
-        <div className="flex items-center gap-2 mb-3">
-          <Zap className="w-4 h-4 text-orange-400" />
-          <h4 className="text-sm font-medium text-zinc-200">Codex CLI</h4>
-          {codexDetectedPath ? (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
-              已检测到
-            </span>
-          ) : (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">
-              未安装
-            </span>
-          )}
-        </div>
-
-        {codexDetectedPath ? (
-          <>
-            <p className="text-xs text-zinc-400 mb-3">
-              路径: <code className="text-zinc-400">{codexDetectedPath}</code>
-            </p>
-            <div className="space-y-2">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <span className="text-sm text-zinc-200">沙箱执行</span>
-                  <p className="text-xs text-zinc-500">非安全命令委托 Codex 沙箱执行</p>
-                </div>
-                <button
-                  disabled={isWebMode()}
-                  onClick={() => handleCodexToggle('sandboxEnabled', !codexSandboxEnabled)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${
-                    codexSandboxEnabled ? 'bg-orange-500' : 'bg-zinc-600'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      codexSandboxEnabled ? 'translate-x-4' : ''
-                    }`}
-                  />
-                </button>
-              </label>
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <span className="text-sm text-zinc-200">交叉验证</span>
-                  <p className="text-xs text-zinc-500">复杂代码任务双模型验证</p>
-                </div>
-                <button
-                  disabled={isWebMode()}
-                  onClick={() => handleCodexToggle('crossVerifyEnabled', !codexCrossVerifyEnabled)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${
-                    codexCrossVerifyEnabled ? 'bg-orange-500' : 'bg-zinc-600'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                      codexCrossVerifyEnabled ? 'translate-x-4' : ''
-                    }`}
-                  />
-                </button>
-              </label>
-            </div>
-          </>
-        ) : (
-          <div className="text-xs text-zinc-400">
-            <p>安装 Codex CLI 后可启用沙箱执行和交叉验证。</p>
-            <a
-              href="https://github.com/openai/codex"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 mt-2"
-            >
-              安装指南 <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        )}
-      </div>
 
       <SettingsSection
         title="服务器配置"

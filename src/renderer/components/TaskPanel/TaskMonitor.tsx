@@ -160,14 +160,16 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
-      <Card
-        title="任务"
-        storageKey="task"
-        count={runWorkbench.tasks.length > 0 ? String(runWorkbench.tasks.length) : undefined}
-        highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
-      >
-        <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
-      </Card>
+      {runWorkbench.tasks.length > 0 && (
+        <Card
+          title="任务"
+          storageKey="task"
+          count={String(runWorkbench.tasks.length)}
+          highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
+        >
+          <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
+        </Card>
+      )}
 
       {approvalCount > 0 && (
         <Card

@@ -387,13 +387,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   const isCompleted = status.tone === 'success';
 
   if (isCompleted) {
-    return (
-      <div className="flex min-h-6 items-center gap-2 rounded-md px-1 py-0.5 text-[11px] text-zinc-600">
-        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400/45" />
-        <span className="font-mono text-zinc-500">{status.label}</span>
-        <span className="min-w-0 flex-1 truncate">{phase}</span>
-      </div>
-    );
+    return null;
   }
 
   return (

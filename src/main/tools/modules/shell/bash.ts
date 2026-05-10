@@ -41,8 +41,7 @@ import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
-import { isCodexSandboxEnabled, runInCodexSandbox } from '../../../services/codex/codexSandbox';
-import { isKnownSafeCommand } from '../../../security/commandSafety';
+import { checkCommandPolicy } from './commandPolicy';
 
 const execAsync = promisify(exec);
 
@@ -332,24 +331,16 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     }
 
     // -------------------------------------------------------------------------
-    // Codex 沙箱路由（非安全命令委托 Codex）
+    // 命令策略硬阻断（BLOCK 档：永远不该执行的危险模式）
+    // CONFIRM 档由 agent/confirmationGate.ts 在工具调用层处理
     // -------------------------------------------------------------------------
-    if (isCodexSandboxEnabled() && !isKnownSafeCommand(normalizedCommand)) {
-      const codexResult = await runInCodexSandbox(normalizedCommand, {
-        cwd: workingDirectory,
-        timeout,
-      });
-      if (codexResult.success) {
-        const output = truncateOutput(codexResult.output);
-        const cwdPrefix = `[cwd: ${workingDirectory}] [codex-sandbox]\n`;
-        onProgress?.({ stage: 'completing', percent: 100 });
-        return {
-          ok: true,
-          output: cwdPrefix + output,
-          meta: codexResult.threadId ? { codexThreadId: codexResult.threadId } : undefined,
-        };
-      }
-      // Codex 失败 → fallback 到直接执行
+    const policyDecision = checkCommandPolicy(normalizedCommand);
+    if (!policyDecision.allowed) {
+      return {
+        ok: false,
+        error: `命令被策略拒绝：${policyDecision.reason}`,
+        code: 'POLICY_DENIED',
+      };
     }
 
     // -------------------------------------------------------------------------

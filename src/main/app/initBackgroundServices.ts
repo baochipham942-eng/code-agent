@@ -33,7 +33,6 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { detectCodexCLI } from '../services/codex/codexSandbox';
 import { SYNC, UPDATE, CLOUD, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../services/eventing';
@@ -121,41 +120,8 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
     logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
   }
 
-  // Codex CLI auto-discovery + MCP injection
   const settings = configService.getSettings();
   const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
-  try {
-    const codexPath = await detectCodexCLI();
-    if (codexPath) {
-      const current = configService.getSettings();
-      if (current.codex?.detectedPath !== codexPath) {
-        await configService.updateSettings({
-          codex: { ...current.codex, sandboxEnabled: current.codex?.sandboxEnabled ?? false, crossVerifyEnabled: current.codex?.crossVerifyEnabled ?? false, detectedPath: codexPath },
-        });
-      }
-      const hasCodexServer = mcpConfigs.some(s => s.name === 'codex');
-      const sandboxEnabled = settings.codex?.sandboxEnabled || settings.codex?.crossVerifyEnabled;
-      if (sandboxEnabled && !hasCodexServer) {
-        mcpConfigs.push({
-          name: 'codex',
-          command: codexPath,
-          args: ['mcp-server'],
-          enabled: true,
-          lazyLoad: false,
-        });
-        logger.info('Auto-injected Codex MCP server', { path: codexPath });
-      }
-    } else {
-      const current = configService.getSettings();
-      if (current.codex?.detectedPath) {
-        configService.updateSettings({
-          codex: { ...current.codex, detectedPath: null },
-        });
-      }
-    }
-  } catch (codexError) {
-    logger.warn('Codex CLI detection failed (non-blocking)', { error: String(codexError) });
-  }
 
   // Now initialize MCP client AFTER CloudConfig is ready
   logger.info('Initializing MCP servers...', { customCount: mcpConfigs.length });

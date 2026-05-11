@@ -6,6 +6,17 @@
 
 Code Agent 使用类型安全的 IPC 通道进行 Electron 主进程和渲染进程之间的通信。采用领域驱动的通道设计，每个业务领域对应一个独立通道。
 
+2026-05 起，热路径开始迁到 zod schema 校验：
+
+| 层 | 文件 | 说明 |
+|----|------|------|
+| schema | `src/shared/ipc/schemas/` | 定义 payload / response zod schema |
+| main handler | `src/main/platform/ipcRegistry.ts` | `defineHandler(schema, handler)` 注册时做 payload 校验 |
+| renderer | `src/renderer/services/typedInvoke.ts` | dev 模式校验 response，避免 renderer 误读 |
+| Web HTTP | `src/web/helpers/typedBody.ts` | Express body 用 `parseBody(req, schema)` 校验 |
+
+当前只有部分 domain / legacy channel 已迁移，未迁移通道仍走 `window.domainAPI.invoke` 或 legacy `ipcService.invoke`。
+
 ## 协议格式
 
 ### 请求格式 (IPCRequest)
@@ -45,23 +56,37 @@ interface IPCResponse<T = unknown> {
 
 ## 领域通道列表
 
-| 序号 | 通道名称 | 文件位置 | 主要功能 |
-|------|---------|---------|---------|
-| 1 | `domain:agent` | agent.ipc.ts | Agent 消息和控制 |
-| 2 | `domain:session` | session.ipc.ts | 会话管理 |
-| 3 | `domain:generation` | generation.ipc.ts | 代际管理 |
-| 4 | `domain:auth` | auth.ipc.ts | 身份认证 |
-| 5 | `domain:sync` | sync.ipc.ts | 数据同步 |
-| 6 | `domain:device` | sync.ipc.ts | 设备管理 |
-| 7 | `domain:cloud` | cloud.ipc.ts | 云端任务 |
-| 8 | `domain:workspace` | workspace.ipc.ts | 工作区管理 |
-| 9 | `domain:settings` | settings.ipc.ts | 应用设置 |
-| 10 | `domain:window` | settings.ipc.ts | 窗口控制 |
-| 11 | `domain:update` | update.ipc.ts | 版本更新 |
-| 12 | `domain:mcp` | mcp.ipc.ts | MCP 客户端 |
-| 13 | `domain:memory` | memory.ipc.ts | 记忆系统 |
-| 14 | `domain:planning` | planning.ipc.ts | 计划管理 |
-| 15 | `domain:data` | data.ipc.ts | 数据缓存管理 |
+| 通道名称 | 文件位置 | 主要功能 |
+|---------|---------|---------|
+| `domain:agent` | agent.ipc.ts | Agent 消息和控制 |
+| `domain:session` | session.ipc.ts | 会话管理、Prompt Rewind |
+| `domain:auth` | auth.ipc.ts | 身份认证 |
+| `domain:sync` | sync.ipc.ts | 数据同步 |
+| `domain:device` | sync.ipc.ts | 设备管理 |
+| `domain:cloud` | historical / retired | 旧 cloud task 入口已退役；当前 cloud config/update/feature flag 在 services 层 |
+| `domain:workspace` | workspace.ipc.ts | 工作区管理 |
+| `domain:settings` | settings.ipc.ts | 应用设置 |
+| `domain:window` | settings.ipc.ts | 窗口控制 |
+| `domain:update` | update.ipc.ts | 版本更新 |
+| `domain:mcp` | mcp.ipc.ts | MCP 客户端 |
+| `domain:connector` | connector.ipc.ts | Calendar/Mail/Reminders 等连接器 |
+| `domain:memory` | memory.ipc.ts | 记忆系统 |
+| `domain:planning` | planning.ipc.ts | 计划管理 |
+| `domain:data` | data.ipc.ts | 数据缓存与调试快照 |
+| `domain:task` | task.ipc.ts | 多任务并行 |
+| `domain:diff` | diff.ipc.ts | 变更追踪 |
+| `domain:error` | error.ipc.ts | 错误与诊断 |
+| `domain:cron` | cron.ipc.ts | 定时任务与心跳 |
+| `domain:capture` | capture.ipc.ts | 浏览器采集 |
+| `domain:desktop` | desktop.ipc.ts | 原生桌面活动 |
+| `domain:activity` | activity.ipc.ts | Activity Providers 聚合 |
+| `domain:soul` | soul.ipc.ts | 身份/偏好配置 |
+| `domain:provider` | provider.ipc.ts | Provider 连通性与诊断 |
+| `domain:livePreview` | livePreview.ipc.ts | Live Preview + click-to-source |
+| `domain:openchronicle` | openchronicle.ipc.ts | 外部 OpenChronicle daemon |
+| `domain:prompt` | prompt.ipc.ts | Prompt Registry 查看、override、debug system prompt |
+| `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
+| `evaluation:delivery-review:run` | evaluation.ipc.ts | Workspace Preview 触发 Delivery Review，失败可入 review queue 和 preview feedback |
 
 ---
 
@@ -84,18 +109,28 @@ interface IPCResponse<T = unknown> {
 | `load` | `{ sessionId: string }` | `Session` | 加载会话 |
 | `delete` | `{ sessionId: string }` | `null` | 删除会话 |
 | `getMessages` | `{ sessionId: string }` | `Message[]` | 获取消息 |
+| `rewindToPrompt` | `{ sessionId: string; userMessageId: string }` | `PromptRewindResult` | 回到某条用户提示词：隐藏后续 active 消息、恢复文件 checkpoint、回填输入草稿 |
 | `export` | `{ sessionId: string }` | `SessionExport` | 导出会话 |
 | `import` | `{ data: unknown }` | `string` | 导入会话 |
 
-### Generation 通道 (`domain:generation`)
+### Prompt 通道 (`domain:prompt`)
 
 | Action | Payload | 响应 | 说明 |
 |--------|---------|------|------|
-| `list` | - | `Generation[]` | 列出所有代际 |
-| `switch` | `{ id: GenerationId }` | `Generation` | 切换代际 |
-| `getPrompt` | `{ id: GenerationId }` | `string` | 获取 Prompt |
-| `compare` | `{ id1, id2 }` | `GenerationDiff` | 对比代际 |
-| `getCurrent` | - | `Generation` | 获取当前代际 |
+| `list` | - | `PromptDescriptor[]` | 列出已注册 prompt，不返回全文 |
+| `get` | `{ id: string }` | `PromptDetail \| null` | 获取默认文本、override 和状态 |
+| `set` | `{ id: string; text: string }` | `PromptDetail` | 保存 override 到 `~/.code-agent/prompts-overrides/<id>.md` |
+| `reset` | `{ id: string }` | `PromptDetail` | 删除 override，恢复默认 |
+| `preview` | `{ id: string }` | `{ id, live, length }` | 读取当前生效文本，用于实时性验证 |
+| `debugSystemPrompt` | - | `{ length, preview, text }` | 实际构建一次完整 system prompt |
+
+### Hook 通道 (`domain:hook`)
+
+| Action | Payload | 响应 | 说明 |
+|--------|---------|------|------|
+| `list` | - | `HookSummary` | 汇总 enabled hooks、unused events、global/project config paths |
+| `openConfigFile` | `{ filePath: string }` | `{ opened: string }` | 不存在时创建空模板并打开 |
+| `revealConfigFolder` | `{ filePath: string }` | `{ revealed: string }` | 在 Finder 中定位配置文件 |
 
 ### Auth 通道 (`domain:auth`)
 
@@ -157,14 +192,6 @@ await window.domainAPI.invoke('domain:agent', 'send', {
 });
 ```
 
-### 切换代际示例
-
-```typescript
-const result = await window.domainAPI.invoke('domain:generation', 'switch', {
-  id: 'gen4',
-});
-```
-
 ---
 
 ## 文件结构
@@ -174,7 +201,6 @@ src/main/ipc/
 ├── index.ts           # IPC 初始化入口
 ├── agent.ipc.ts       # Agent 通道
 ├── session.ipc.ts     # Session 通道
-├── generation.ipc.ts  # Generation 通道
 ├── auth.ipc.ts        # Auth 通道
 ├── sync.ipc.ts        # Sync + Device 通道
 ├── cloud.ipc.ts       # Cloud 通道
@@ -184,6 +210,8 @@ src/main/ipc/
 ├── mcp.ipc.ts         # MCP 通道
 ├── memory.ipc.ts      # Memory 通道
 ├── planning.ipc.ts    # Planning 通道
+├── prompt.ipc.ts      # Prompt 管理通道
+├── hook.ipc.ts        # Hook 管理通道
 └── data.ipc.ts        # Data 通道
 
 src/shared/

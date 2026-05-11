@@ -4,7 +4,16 @@
 
 ## 本地存储 (SQLite)
 
-**位置**: `~/.code-agent/data.db`
+**位置**: `app.getPath('userData')/code-agent.db`
+
+本地数据库由 `src/main/services/core/databaseService.ts` 初始化，路径来自平台层 `app.getPath('userData')`，不是旧文档里的 `~/.code-agent/data.db`。初始化已拆成四类职责：
+
+| 模块 | 职责 |
+|------|------|
+| `src/main/services/core/database/schema.ts` | 主 schema 与幂等列迁移 |
+| `src/main/services/core/database/indexes.ts` | sessions、messages、telemetry、snapshot、checkpoint 等索引 |
+| `src/main/services/core/database/migrations/*` | 专项迁移和历史兼容 |
+| `src/main/services/core/database/nativeLoader.ts` | better-sqlite3 native binding 加载 |
 
 ```sql
 -- sessions 表
@@ -26,6 +35,9 @@ CREATE TABLE messages (
   tool_calls TEXT,     -- JSON
   tool_results TEXT,   -- JSON
   timestamp INTEGER,
+  visibility TEXT NOT NULL DEFAULT 'active',
+  hidden_by_rewind_id TEXT,
+  hidden_at INTEGER,
   FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 ```
@@ -47,9 +59,40 @@ CREATE TABLE messages (
 | `pending_approvals.kind` | plan approval 与 swarm launch approval 共用表但按 kind hydrate/orphan，避免互相抢状态 | `PendingApprovalRepository` |
 | `swarm_runs / swarm_run_agents / swarm_run_events` | Agent Team run、agent rollup、timeline event | `SwarmTraceWriter` |
 | `review_queue_items / review_queue_failure_assets` | Review Queue 与 failure-to-capability asset draft | `ReviewQueueService` |
+| `review_queue_items.delivery_review` | Delivery Review 未通过时进入 review queue，保存 artifact 验收结果与修复建议 | `DeliveryReviewService` / `ReviewQueueService` |
+| `preview_feedback_items` | Workspace Preview 的反馈项：来源、状态、severity、message、artifact/preview id，可 resolve/dismiss/send back to chat | `PreviewFeedbackService` |
 | `telemetry_sessions / telemetry_turns / telemetry_model_calls / telemetry_tool_calls / telemetry_events` | structured replay 与 eval completeness gate 的事实来源 | `TelemetryCollector` / `TelemetryStorage` |
+| `turn_snapshots / compaction_snapshots` | 调试快照与压缩前后诊断，支持 CLI debug 和 settings retention | `turnSnapshotWriter` / `compactionSnapshotWriter` |
 
 当前边界：unit 级恢复链已经覆盖 todos、session_tasks、context interventions、runtime state、pending approvals、structured replay；完整 app restart / reload smoke 仍按对应计划文档里的延后风险处理。
+
+### 2026-05-11 prompt rewind durable state
+
+Prompt Rewind 使用"隐藏旧尝试，保留审计"的存储模型。普通会话读取只看到 active transcript；被回退的消息仍在本地和云端保留，供同步、审计、搜索显式 include 和 replay 查询使用。
+
+| 表 / 字段 | 用途 | 主要写入路径 |
+|-----------|------|--------------|
+| `messages.visibility` | `active` / `rewound`，所有普通消息读取、计数、session 列表默认只看 active | `SessionRepository.applyPromptRewind()` |
+| `messages.hidden_by_rewind_id` | 标记消息被哪次 rewind 隐藏，方便审计和回放归因 | `SessionRepository.applyPromptRewind()` |
+| `messages.hidden_at` | 隐藏时间戳，支持后续按时间排序和同步冲突排查 | `SessionRepository.applyPromptRewind()` |
+| `session_rewinds` | 每次 rewind 的审计记录：anchor message/prompt/timestamp、checkpoint message、hidden ids、files restored/deleted、errors | `SessionRepository.applyPromptRewind()` |
+| `file_checkpoints` | 文件恢复的事实来源；rewind 时选取 anchor timestamp 之后第一条 checkpoint，再调用 `rewindFiles()` | `FileCheckpointService.getFirstCheckpointAtOrAfter()` |
+| `session_messages_fts` | 默认搜索 join `messages` 并过滤 rewound；显式 `includeRewound` 时才查完整历史 | `SessionRepository.searchSessionMessagesFts()` |
+
+本地 SQLite schema 在 `src/main/services/core/database/schema.ts` 里幂等迁移；云端 Supabase 迁移是 `supabase/migrations/20260511000000_prompt_rewind.sql`，同步增加 `public.messages.visibility / hidden_by_rewind_id / hidden_at` 和 `public.session_rewinds`，并对 `session_rewinds` 开启 RLS。
+
+### 2026-05 delivery review / evidence durable state
+
+交付验收和评测证据分成三层存储：
+
+| 存储 | 用途 | 主要路径 |
+|------|------|----------|
+| `preview_feedback_items` | Workspace Preview 侧栏里的人工/自动反馈项，支持 `delivery_review` 来源和用户手动反馈 | `src/main/evaluation/previewFeedbackService.ts` |
+| `review_queue_items.delivery_review` | Delivery Review 失败后入 Review Queue，用同一队列处理待审 session、失败资产和交付验收 | `src/main/evaluation/deliveryReviewService.ts`、`reviewQueueService.ts` |
+| Canonical eval run | SWE-bench 等外部评测结果转换成 `CanonicalEvalRun` 后进入产品 Experiment DB | `eval/swe-bench/persistence.ts`、`src/main/evaluation/experimentAdapter.ts` |
+| Evidence graph DB | Evidence → Proposal → Rule 的实验关系图，当前独立 SQLite，默认路径仍是 `~/.claude/evidence-graph.db` | `src/main/evaluation/evidence/evidenceDb.ts`、`schema.ts` |
+
+这里的 delivery review 是产品运行时数据；audit 计划和 handoff 文档只作为过程材料，不进入普通会话 transcript。
 
 ## 云端存储 (Supabase)
 
@@ -151,7 +194,7 @@ CREATE TABLE messages (
 - 表: `tool_executions` - 工具执行结果缓存
 - 表: `sessions` - 会话列表本地副本
 - 表: `messages` - 消息内容本地副本
-- 清空缓存后可从云端重新拉取
+- 清空缓存后，已同步的 sessions/messages 可从 Supabase 重新拉取；runtime state、debug snapshots、preview feedback、local checkpoints 等本地运行态数据不能默认认为可恢复
 
 **L2 本地数据 (Keychain 恢复)**:
 ```typescript

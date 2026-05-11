@@ -244,6 +244,30 @@ Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured re
 - `packages/eval-harness/src/runner/ExperimentRunner.ts`
 - `src/shared/contract/evaluation.ts`
 
+### Delivery Review runtime
+
+5/7 之后，agent 交付不再只停在 final answer。`AcceptanceRunner` 可以按 scenario 选择验收技能；`DeliveryReviewService` 把未通过项转成 `delivery_review` review queue item；`PreviewFeedbackService` 把同一组问题挂到 Workspace Preview 侧栏，用户可以 resolve、dismiss，或 send back to chat 作为下一轮修复上下文。
+
+| 模块 | 位置 | 职责 |
+|------|------|------|
+| AcceptanceRunner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | 按 frontend / admin / doc / research / deploy / game 等 scenario 执行验收 |
+| Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 把不同交付类型映射到检查项和修复提示 |
+| DeliveryReviewService | `src/main/evaluation/deliveryReviewService.ts` | 运行交付审查，把 needs-work 结果送入 review queue |
+| PreviewFeedbackService | `src/main/evaluation/previewFeedbackService.ts` | 维护 Workspace Preview feedback items |
+| Contract | `src/shared/contract/scenarioAcceptance.ts` | 前后端共享验收结果结构 |
+
+### Artifact verifier family
+
+artifact 验收分成通用 runner 和 kind-specific verifier 两层。当前不提前抽统一 `ArtifactKindVerifier` 接口，原因见 ADR-016：deck 多为 in-memory schema / narrative 检查，dashboard 需要真实浏览器 smoke，game 有运行时行为证据，强行统一会制造假抽象。
+
+| Kind | 运行时 | 说明 |
+|------|--------|------|
+| Game | `src/main/agent/runtime/gameArtifactValidator.ts` + `runtime/game/*` | subtype registry、Platformer/Runner/Breakout checker、skill loader、verb taxonomy、repair codes |
+| Deck | `src/main/agent/runtime/deck/DeckVerifier.ts` | schemaProbe + declarative / imperative narrative probes，替代旧 `validateNarrative` |
+| Dashboard / interactive app | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes、state_change_on_click 反 Potemkin |
+| Browser visual smoke | `src/main/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow 等探针 |
+| Repair toolkit | `src/main/agent/runtime/repair/*` | scope guards、monotonicity tracker、repair cap、Best-of-N 支撑 |
+
 ---
 
 ## 子代理上下文注入（v0.16.55+）
@@ -261,11 +285,11 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 
 ---
 
-## 三层上下文压缩
+## CompactionService 上下文压缩
 
-**位置**: `src/main/context/autoCompressor.ts` + `src/main/context/tokenOptimizer.ts`
+**位置**: `src/main/context/compactionService.ts` + `src/main/context/survivorManifest.ts`
 
-当上下文使用率接近模型上限时，自动执行递进式压缩：
+上下文压缩已经从旧 `autoCompressor + tokenOptimizer` 口径升级为服务化流程：先形成 compaction plan，再构建 survivor manifest，经过 hook、summary、audit、validation，最后把 compacted block 和 survivor items 注入后续上下文。
 
 ```
 上下文使用率监控
@@ -293,22 +317,29 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 └─────────────────────────────────────────────────────┘
 ```
 
-**配置默认值**:
-```typescript
-{
-  warningThreshold: 0.6,     // L1 触发
-  criticalThreshold: 0.85,   // L2 触发
-  aiSummaryThreshold: 0.9,   // L3 触发
-  targetUsage: 0.5,          // 压缩目标
-  preserveRecentCount: 6,    // 保留最近 N 条不压缩
-  triggerTokens: 100000,     // 绝对 token 阈值
-}
-```
+### Survivor manifest
 
-**工具结果压缩** (`compressToolResult`):
-- 独立于自动压缩，针对单次工具输出
-- XLSX 结果: schema-aware 压缩（保留表头 + 采样行）
-- 通用结果: 超过 token 阈值时截断或提取代码块
+`SurvivorManifest` 保存压缩后仍必须让下一轮模型知道的事实：
+
+| 类型 | 例子 |
+|------|------|
+| files | 被读/写/修改过的文件、摘要、digest、是否只保留 path |
+| commands | 关键命令、退出码、短输出 |
+| errors | 失败原因、错误类别、后续修复提示 |
+| todos / open work | 未完成事项、待验证点、approval 状态 |
+| artifacts | 生成物、preview item、delivery review 关联 |
+| fingerprint | 防止 summary 后把旧数据当最新事实的校验锚点 |
+
+### Audit / validation / hooks
+
+| 模块 | 职责 |
+|------|------|
+| `compactionAuditRecorder.ts` | 记录压缩源、preserved/compacted 计数、survivor manifest 覆盖情况 |
+| `compactionSummaryValidator.ts` | 检查 summary 是否遗漏 survivor items，必要时生成 repair instruction |
+| `PreCompact` / `PostCompact` hooks | 允许用户 hook 在压缩前后提取或观察关键上下文 |
+| `compactionSnapshotWriter.ts` | 压缩前后快照落 `compaction_snapshots`，供 debug 命令和设置页回看 |
+
+旧的三层压缩策略仍是触发与降级思路，但当前架构事实源是 `CompactionService`，不是散落在 ContextAssembly 内的单体逻辑。
 
 ---
 
@@ -530,18 +561,19 @@ planning/
 
 **用户 Hook 系统**（`src/main/hooks/hookManager.ts`）:
 
-16 种事件类型，分为 decision（可阻止/修改）和 observer（只读）两种模式：
+19 种事件类型，分为 decision（可阻止/修改）和 observer（只读）两种模式：
 
 | 稳定性 | 事件 | 模式 |
 |--------|------|------|
-| stable | PreToolUse, PostToolUse, Stop, SessionStart, PostExecution, Notification, PermissionRequest 等 | decision |
-| experimental | SubagentStart, SubagentStop | decision |
-| planned | TaskCreated, TaskCompleted | observer |
-| observer-only | PermissionDenied, PostCompact, StopFailure | observer |
+| stable | PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit, Stop, PostExecution, PreCompact, SessionStart, SessionEnd, SubagentStop | mixed |
+| experimental | SubagentStart, PermissionRequest, TaskCreated, TaskCompleted, PermissionDenied, PostCompact, StopFailure | mixed |
+| internal legacy | Setup, Notification | observer |
+| observer-only | PostToolUse, PostToolUseFailure, PostExecution, SessionStart, SessionEnd, SubagentStop, TaskCreated, TaskCompleted, PermissionDenied, PostCompact, StopFailure | observer |
 
 - Observer hook 正常执行但 block/modify 结果被静默忽略
 - Observer-only 事件自动将 decision hook 降级为 observer
-- Trigger history buffer（最近 50 条）供 /hooks 命令查看
+- Trigger history buffer（最近 50 条）供 Hook Settings 与聊天 `hook_activity` timeline 使用
+- CLI 模式 v0.16.74 起默认启用 Hook，不再只由 planning mode 打开
 - DecisionHistory 独立记录权限决策（50 条，8 种结果类型）
 
 ---

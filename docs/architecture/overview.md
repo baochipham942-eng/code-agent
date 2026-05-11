@@ -45,7 +45,7 @@
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      Tool Layer (96+ 工具, 9 类)                       │  │
+│  │                      Tool Layer (108 native modules, 9 类)             │  │
 │  │                                                                        │  │
 │  │  Shell & 文件    规划 & 任务      文档 & 媒体      多 Agent            │  │
 │  │  ┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐         │  │
@@ -69,8 +69,8 @@
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         External Layer                                 │  │
 │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────────────┐  │  │
-│  │  │  GPT-5.5   │ │  Kimi K2.6 │ │  DeepSeek  │ │  Claude / GLM    │  │  │
-│  │  │  (primary) │ │  (router)  │ │  (router)  │ │    (fallback)    │  │  │
+│  │  │ Xiaomi MiMo│ │  GPT-5.5   │ │  DeepSeek  │ │ Claude / GLM /   │  │  │
+│  │  │ (default)  │ │  (router)  │ │  (router)  │ │ Kimi / Ollama    │  │  │
 │  │  └────────────┘ └────────────┘ └────────────┘ └───────────────────┘  │  │
 │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐                       │  │
 │  │  │   Ollama   │ │   File     │ │  Network   │                       │  │
@@ -113,7 +113,19 @@
 | **IPC 通信** | Platform Abstraction Layer (`src/main/platform/`) | 统一替代直接 Electron 导入，跨平台兼容 |
 | **本地存储** | SQLite (better-sqlite3) | 会话/配置持久化 |
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
-| **AI 模型** | GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由 |
+| **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由 |
+
+## 2026-05 当前架构增量
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Native ToolModule registry | `src/main/tools/registry.ts` 三段式 schema/loader/handler registry；`modules/index.ts` 注册 108 个 native ToolModule；旧 wrapper 只保留兼容 | [tool-system.md](./tool-system.md) |
+| Runtime / Context hardening | CompactionService + SurvivorManifest + audit/validation/hooks；partial-failure trace、Web session recovery、assistant persistence、failure-mode loop breaker | [agent-core.md](./agent-core.md) |
+| Delivery Review / Artifact verifier | AcceptanceRunner、Game/Deck/Dashboard verifier、Delivery Review、Preview Feedback 进入交付验收闭环 | [artifact-verification.md](./artifact-verification.md) |
+| Browser / Computer multi-agent isolation | BrowserService pool、ephemeral launch semaphore、ComputerSurface write lock、targetApp screenshot crop | [multiagent-system.md](./multiagent-system.md) |
+| Frontend execution rails | Chat 顶部 Run Status Rail、TaskPanel task-first rail、Workspace Preview artifact review workbench | [frontend.md](./frontend.md) |
+| Typed IPC / provider wrappers | `defineHandler` + zod schemas + renderer typedInvoke；provider response/SSE wrappers 与 provider symmetry guard | [ipc-channels.md](./ipc-channels.md) |
+| Cloud task retirement | 旧 cloud agent / orchestrator / POC cloud tools 已退役；当前保留 cloud config、update、feature flag、cloud proxy 等服务 | [cloud-architecture.md](./cloud-architecture.md) |
 
 ## 2026-04-27 当前架构增量
 
@@ -142,9 +154,9 @@
 |------|------|----------|
 | Presentation | UI 组件、状态管理、Generative UI、用户交互 | [frontend.md](./frontend.md) |
 | Application | Agent 编排、平台抽象、Light Memory、Skills 系统 | [agent-core.md](./agent-core.md) |
-| Tool | 96+ 个工具（9 类），Core/Deferred 双层、统一入口 | [tool-system.md](./tool-system.md) |
+| Tool | 108 个 native ToolModule（9 类），Core/Deferred 双层、统一入口 | [tool-system.md](./tool-system.md) |
 | Data | 本地存储、云端同步 | [data-storage.md](./data-storage.md) |
-| Cloud | 云端任务、多设备同步 | [cloud-architecture.md](./cloud-architecture.md) |
+| Cloud / Sync | cloud task 历史归档；当前保留同步、更新、feature flag、cloud proxy 服务 | [cloud-architecture.md](./cloud-architecture.md) |
 
 ## 平台抽象层
 
@@ -174,23 +186,24 @@
 | **Cron Center** | renderer `features/cron/` | 定时任务管理面板 |
 | **Activity Providers** | `src/main/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
 | **Live Preview V2** | `src/main/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
-| **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `src/main/services/desktop/` | 托管浏览器会话、TargetRef、artifact、Computer Surface 安全动作面 |
+| **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `browserPool.ts` + `src/main/services/desktop/` | 托管浏览器会话、per-agent 隔离、TargetRef、artifact、Computer Surface 安全动作面 |
+| **Delivery Review / Artifact Verifiers** | `src/main/agent/runtime/acceptance/` + `runtime/{game,deck,dashboard}/` + `src/main/evaluation/previewFeedbackService.ts` | artifact 验收、交付审查、反馈回灌聊天 |
 
-## 工具体系（96+ 个注册工具）
+## 工具体系（108 个 native ToolModule）
 
-15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。按功能分为 9 类：
+15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。当前 native registry 注册 108 个 ToolModule，按功能分为 9 类：
 
-| 分类 | 数量 | 代表工具 |
-|------|------|----------|
-| Shell & 文件 | 14 | Bash, Read, Write, Edit, Glob, Grep, GitCommit |
-| 规划 & 任务 | 12 | TaskManager, Plan, PlanMode, AskUserQuestion |
-| Web & 搜索 | 5 | WebSearch, WebFetch, ReadDocument, LSP |
-| 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart |
-| 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
-| 记忆 | 2 | MemoryWrite, MemoryRead |
-| 视觉 & 浏览器 | 5+ | Computer, Browser, GuiAgent, visual_edit, Live Preview IPC |
-| 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, Teammate |
-| 统一入口 + 元工具 | 13 | Process, MCPUnified, DocEdit, ToolSearch |
+| 分类 | 代表工具 |
+|------|----------|
+| Shell & 文件 | Bash, Read, Write, Edit, MultiEdit, Glob, Grep, GitCommit |
+| 规划 & 任务 | TaskManager, Plan, PlanMode, AskUserQuestion, confirm_action, findings_write |
+| Web & 搜索 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
+| 文档 & 媒体 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart |
+| 外部服务连接器 | Jira, GitHubPR, Calendar, Mail, Reminders |
+| 记忆 | MemoryWrite, MemoryRead |
+| 视觉 & 浏览器 | Computer, Browser, GuiAgent, visual_edit, Live Preview IPC |
+| 多 Agent | AgentSpawn, AgentMessage, WaitAgent, SendInput, CloseAgent, Teammate |
+| 统一入口 + 元工具 | Process, MCPUnified, DocEdit, ToolSearch |
 
 > **统一入口**：细粒度工具通过 action 参数合并（如 ReadDocument 合并 read_pdf/read_docx/read_xlsx）。
 >
@@ -202,5 +215,5 @@
 - [工具系统](./tool-system.md) - 工具注册、执行、分类
 - [前端架构](./frontend.md) - React 组件、状态管理
 - [数据存储](./data-storage.md) - SQLite、Supabase、向量数据库
-- [云端架构](./cloud-architecture.md) - 云端任务、多设备同步
+- [云端/同步历史架构](./cloud-architecture.md) - 旧 cloud task 归档与当前 cloud config/update/feature flag 服务边界
 - [架构决策记录](../decisions/) - ADR 文档

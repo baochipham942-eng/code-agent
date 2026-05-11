@@ -1,6 +1,8 @@
 # 云端与本地协同架构
 
 > Gen 5-8 演进的核心基础设施
+>
+> 2026-05-10 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/main/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。当前仍保留的 cloud 相关代码主要在 `src/main/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 cloud proxy 边界；不要把本文里的云端任务调度当作当前 active path。
 
 ## 架构总览
 

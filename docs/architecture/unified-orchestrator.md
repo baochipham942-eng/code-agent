@@ -1,6 +1,8 @@
 # 统一指挥家架构 (Unified Orchestrator)
 
 > 实现纯云端 / 混合 / 纯本地三种执行模式的智能调度
+>
+> 2026-05-10 状态：本文是历史设计归档。旧 cloud agent / cloud tool / unified orchestrator active path 已退役；当前执行主线是本地 / Web runtime、Agent Team、Browser / Computer Workbench 和 TaskPanel / Workspace Preview 交付闭环。文中 `cloud-agent/` 路径不要作为当前实现事实引用。
 
 ## 设计目标
 

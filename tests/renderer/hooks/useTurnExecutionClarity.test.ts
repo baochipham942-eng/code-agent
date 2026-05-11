@@ -143,6 +143,7 @@ describe('buildTurnExecutionClarityProjection', () => {
       'user',
       'turn_timeline',
       'turn_timeline',
+      'turn_timeline',
       'assistant_text',
       'tool_call',
       'turn_timeline',
@@ -169,8 +170,10 @@ describe('buildTurnExecutionClarityProjection', () => {
       invoked: [],
     });
     expect(enriched.turns[0]?.nodes[2]?.turnTimeline?.capabilityScope?.blocked).toHaveLength(3);
-    expect(enriched.turns[0]?.nodes[5]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
-    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
+    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.kind).toBe('skill_activity');
+    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.skillActivity?.summary).toBe('Skill 写入偏好 1');
+    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
+    expect(enriched.turns[0]?.nodes[7]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
       'Execution Chart',
       'report.md',
       'preview.png',
@@ -701,6 +704,116 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(hookNode?.turnTimeline?.hookActivity?.items.map((item) => item.event)).toEqual([
       'UserPromptSubmit',
       'PreToolUse',
+    ]);
+  });
+
+  it('projects skill trigger and instruction write activity into the current turn', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-skill',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 100,
+            endTime: 160,
+            nodes: [
+              {
+                id: 'user-1',
+                type: 'user',
+                content: '帮我写飞书文档',
+                timestamp: 100,
+              },
+              {
+                id: 'tool-skill',
+                type: 'tool_call',
+                content: '',
+                timestamp: 130,
+                toolCall: {
+                  id: 'call-skill-1',
+                  name: 'skill',
+                  args: {
+                    command: 'lark-doc',
+                  },
+                  result: 'Skill "lark-doc" activated. Follow the skill instructions.',
+                  success: true,
+                  metadata: {
+                    skillName: 'lark-doc',
+                    source: 'user',
+                    executionContext: 'inline',
+                    isSkillActivation: true,
+                    skillResult: {
+                      success: true,
+                      data: { commandName: 'lark-doc' },
+                      newMessages: [
+                        {
+                          role: 'user',
+                          content: '<command-message>Loading skill: lark-doc</command-message><command-name>lark-doc</command-name>',
+                          isMeta: false,
+                        },
+                        {
+                          role: 'user',
+                          content: 'Skill instructions',
+                          isMeta: true,
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+              {
+                id: 'skill-status-1',
+                type: 'system',
+                content: '<command-message>Loading skill: lark-doc</command-message><command-name>lark-doc</command-name>',
+                timestamp: 150,
+                subtype: 'skill_status',
+                metadata: {
+                  skill: {
+                    skillName: 'lark-doc',
+                    phase: 'status',
+                  },
+                },
+              },
+              {
+                id: 'assistant-1',
+                type: 'assistant_text',
+                content: '继续执行。',
+                timestamp: 160,
+              },
+            ],
+          },
+        ],
+      },
+      capabilities: {
+        skills: [
+          {
+            kind: 'skill',
+            id: 'lark-doc',
+            label: 'lark-doc',
+            selected: false,
+            mounted: true,
+            installState: 'mounted',
+            description: '飞书文档',
+            source: 'user',
+            libraryId: 'local',
+          },
+        ],
+        connectors: [],
+        mcpServers: [],
+      },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+    });
+
+    const skillNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'skill_activity');
+
+    expect(skillNode?.turnTimeline?.skillActivity?.summary).toBe('Skill 触发 1 · 写入 1');
+    expect(skillNode?.turnTimeline?.skillActivity?.items.map((item) => item.action)).toEqual([
+      'triggered',
+      'written',
     ]);
   });
 });

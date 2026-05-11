@@ -6,9 +6,11 @@
 
 import React from 'react';
 import { toast } from '../hooks/useToast';
+import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { useSkillStore } from '../stores/skillStore';
 import { ContextHealthPanel } from './ContextHealthPanel';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { SourceTag } from '@shared/contract/contextHealth';
 
 export const ContextPanel: React.FC = () => {
@@ -52,7 +54,15 @@ export const ContextPanel: React.FC = () => {
         }
         break;
       case 'mcp':
-        toast.info('MCP server 断开请到设置 → MCP 管理');
+        try {
+          await ipcService.invokeDomain(IPC_DOMAINS.MCP, 'setServerEnabled', {
+            serverName: target.server,
+            enabled: false,
+          });
+          toast.success(`已禁用 MCP server: ${target.server}`);
+        } catch (err) {
+          toast.error(`禁用失败: ${err instanceof Error ? err.message : '未知错误'}`);
+        }
         break;
       case 'subagent':
         toast.info('Subagent 执行完会自动从占用中移除');

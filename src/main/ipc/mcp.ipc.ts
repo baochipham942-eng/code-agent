@@ -5,6 +5,7 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getMCPClient, refreshMCPServersFromCloud } from '../mcp/mcpClient';
+import { getContextHealthService } from '../context/contextHealthService';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -28,6 +29,10 @@ async function handleGetServerStates(): Promise<unknown> {
 
 async function handleSetServerEnabled(serverName: string, enabled: boolean): Promise<void> {
   await getMCPClient().setServerEnabled(serverName, enabled);
+  // 被禁用后跨 session 清掉 bySource.mcp[serverName] 占用，让 ContextPanel UI 立即反映
+  if (!enabled) {
+    getContextHealthService().clearMcpServerAcrossSessions(serverName);
+  }
 }
 
 async function handleReconnectServer(serverName: string): Promise<{ success: boolean; error?: string }> {

@@ -22,96 +22,72 @@ pub async fn desktop_get_app_icon(_query: String, _size: Option<u32>) -> Result<
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn desktop_get_app_icon(query: String, size: Option<u32>) -> Result<AppIconResult, String> {
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::{NSSize, NSString};
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc2::rc::autoreleasepool;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{
+        NSBitmapImageFileType, NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSWorkspace,
+    };
+    use objc2_foundation::{NSDictionary, NSSize, NSString, NSURL};
 
     let target_size = size.unwrap_or(64).max(16).min(512) as f64;
 
     // 子线程跑（NSWorkspace 阻塞调用），避免阻塞 Tauri 主 runtime
     let query_clone = query.clone();
     tokio::task::spawn_blocking(move || -> Result<AppIconResult, String> {
-        unsafe {
-            let workspace_cls = class!(NSWorkspace);
-            let workspace: id = msg_send![workspace_cls, sharedWorkspace];
-            if workspace == nil {
-                return Err("NSWorkspace.sharedWorkspace returned nil".into());
-            }
-
-            let query_ns = NSString::alloc(nil).init_str(&query_clone);
+        autoreleasepool(|pool| {
+            let workspace = NSWorkspace::sharedWorkspace();
+            let query_ns = NSString::from_str(&query_clone);
 
             // 1) 先按 bundle identifier 查
-            let mut app_url: id = msg_send![workspace, URLForApplicationWithBundleIdentifier: query_ns];
+            let mut app_url = workspace.URLForApplicationWithBundleIdentifier(&query_ns);
 
             // 2) 失败则按显示名扫 /Applications + ~/Applications
-            if app_url == nil {
+            if app_url.is_none() {
                 if let Some(found) = find_app_by_display_name(&query_clone) {
-                    let path_ns = NSString::alloc(nil).init_str(&found);
-                    let file_url_cls = class!(NSURL);
-                    app_url = msg_send![file_url_cls, fileURLWithPath: path_ns];
+                    let path_ns = NSString::from_str(&found);
+                    app_url = Some(NSURL::fileURLWithPath(&path_ns));
                 }
             }
 
-            if app_url == nil {
-                return Err(format!("App not found for query: {}", query_clone));
-            }
+            let app_url = app_url.ok_or_else(|| format!("App not found for query: {}", query_clone))?;
 
             // 拿 NSImage
-            let path: id = msg_send![app_url, path];
-            if path == nil {
-                return Err("URL has no path".into());
-            }
-            let icon: id = msg_send![workspace, iconForFile: path];
-            if icon == nil {
-                return Err("iconForFile returned nil".into());
-            }
+            let path = app_url.path().ok_or_else(|| "URL has no path".to_string())?;
+            let icon = workspace.iconForFile(&path);
 
             // 调整 logical size，让 PNG 输出按目标 size 渲染
-            let target = NSSize::new(target_size, target_size);
-            let _: () = msg_send![icon, setSize: target];
+            let target = NSSize {
+                width: target_size,
+                height: target_size,
+            };
+            icon.setSize(target);
 
             // NSImage -> TIFF data -> NSBitmapImageRep -> PNG data
-            let tiff: id = msg_send![icon, TIFFRepresentation];
-            if tiff == nil {
-                return Err("TIFFRepresentation returned nil".into());
-            }
-            let bitmap_cls = class!(NSBitmapImageRep);
-            let bitmap: id = msg_send![bitmap_cls, imageRepWithData: tiff];
-            if bitmap == nil {
-                return Err("imageRepWithData returned nil".into());
-            }
-            // PNG = 4
-            const NS_BITMAP_IMAGE_FILE_TYPE_PNG: u64 = 4;
+            let tiff = icon
+                .TIFFRepresentation()
+                .ok_or_else(|| "TIFFRepresentation returned nil".to_string())?;
+            let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)
+                .ok_or_else(|| "imageRepWithData returned nil".to_string())?;
             // properties 用空 dict
-            let dict_cls = class!(NSDictionary);
-            let empty_props: id = msg_send![dict_cls, dictionary];
-            let png_data: id = msg_send![
-                bitmap,
-                representationUsingType: NS_BITMAP_IMAGE_FILE_TYPE_PNG
-                properties: empty_props
-            ];
-            if png_data == nil {
-                return Err("PNG representation failed".into());
+            let empty_props: objc2::rc::Retained<
+                NSDictionary<NSBitmapImageRepPropertyKey, AnyObject>,
+            > = NSDictionary::dictionary();
+            let png_data = unsafe {
+                bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty_props)
             }
+            .ok_or_else(|| "PNG representation failed".to_string())?;
 
-            let len: usize = msg_send![png_data, length];
-            let bytes: *const u8 = msg_send![png_data, bytes];
-            let slice = std::slice::from_raw_parts(bytes, len);
+            let slice = unsafe { png_data.as_bytes_unchecked() };
             let b64 = STANDARD.encode(slice);
 
             // 拿到 path string for return
-            let utf8: *const std::os::raw::c_char = msg_send![path, UTF8String];
-            let app_path = if utf8.is_null() {
-                String::new()
-            } else {
-                std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
-            };
+            let app_path = unsafe { path.to_str(pool) }.to_owned();
 
             Ok(AppIconResult {
                 data_url: format!("data:image/png;base64,{}", b64),
                 app_path,
             })
-        }
+        })
     })
     .await
     .map_err(|e| format!("spawn_blocking join failed: {}", e))?

@@ -1,16 +1,16 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import React from 'react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const inlineStripMocks = vi.hoisted(() => ({
-  model: null as any,
+  compactionState: {
+    status: 'idle',
+    result: null as any,
+    error: null as string | null,
+  },
   invoke: vi.fn(),
   refreshContextHealth: vi.fn(),
-}));
-
-vi.mock('../../../src/renderer/hooks/useStatusRailModel', () => ({
-  useStatusRailModel: () => inlineStripMocks.model,
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -28,50 +28,52 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 
+vi.mock('../../../src/renderer/stores/contextCompactionStore', () => ({
+  useContextCompactionStore: (selector: (state: typeof inlineStripMocks.compactionState) => unknown) => (
+    selector(inlineStripMocks.compactionState)
+  ),
+}));
+
 import { InlineStrip } from '../../../src/renderer/components/features/chat/InlineStrip';
-
-function makeStatusRailModel(usagePercent: number) {
-  const warningLevel = usagePercent >= 85
-    ? 'critical'
-    : usagePercent >= 70
-      ? 'warning'
-      : 'normal';
-
-  return {
-    context: {
-      currentTokens: usagePercent * 1000,
-      maxTokens: 100000,
-      usagePercent,
-      warningLevel,
-      buckets: { system: 0, user: 0, assistant: 0, tool: 0 },
-      items: [],
-    },
-    compact: {
-      canCompact: usagePercent >= 70,
-      compressionCount: 0,
-      totalSavedTokens: 0,
-    },
-    todos: { items: [], completed: 0, total: 0 },
-    outputs: { files: [], count: 0 },
-    swarm: { isRunning: false, agentCount: 0, selectedAgentId: null },
-    cache: { promptCacheHits: 0, promptCacheMisses: 0, totalCachedTokens: 0, hitRate: 0 },
-  };
-}
 
 describe('InlineStrip context usage rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    inlineStripMocks.model = makeStatusRailModel(0);
+    inlineStripMocks.compactionState = {
+      status: 'idle',
+      result: null,
+      error: null,
+    };
   });
 
-  it('renders both low-usage and high-usage states without throwing', () => {
-    inlineStripMocks.model = makeStatusRailModel(45);
+  it('only renders while compaction feedback is active', () => {
     expect(renderToStaticMarkup(React.createElement(InlineStrip))).toBe('');
 
-    inlineStripMocks.model = makeStatusRailModel(82);
+    inlineStripMocks.compactionState = {
+      status: 'active',
+      result: null,
+      error: null,
+    };
     const html = renderToStaticMarkup(React.createElement(InlineStrip));
 
-    expect(html).toContain('82%');
-    expect(html).toContain('Compact');
+    expect(html).toContain('正在压缩上下文');
+    expect(html).not.toContain('Compact');
+  });
+
+  it('renders compact success feedback without showing context usage numbers', () => {
+    inlineStripMocks.compactionState = {
+      status: 'success',
+      result: {
+        success: true,
+        compressionCount: 1,
+        totalSavedTokens: 24000,
+      },
+      error: null,
+    };
+
+    const html = renderToStaticMarkup(React.createElement(InlineStrip));
+
+    expect(html).toContain('已释放 24k');
+    expect(html).not.toContain('%');
   });
 });

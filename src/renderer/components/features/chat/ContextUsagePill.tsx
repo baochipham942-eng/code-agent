@@ -1,19 +1,13 @@
 // ============================================================================
-// ContextUsagePill — ChatInput 工具栏里的上下文使用 pill（Codex 风格）
-// ============================================================================
-//
-// 小圆环 + 百分比 pill，hover 展开 popover 显示：
-//   Context window · X% full · N/M tokens used · [Compact]
-// 颜色跟 contextHealth.warningLevel 联动。无 contextHealth 时不渲染。
-//
+// ContextUsagePill - ChatInput toolbar context budget control
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Shrink } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { CompactResult } from '@shared/contract/contextHealth';
 import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 
@@ -33,54 +27,89 @@ function toneFromPercent(pct: number): Tone {
 
 // 视觉简化：normal 走统一灰色（每条 turn 都看的高频元素，不需要装饰色抢注意）；
 // warning/critical 保留 functional color，因为这是上下文吃紧的告警信号
-const TONE_STYLES: Record<Tone, { ring: string; text: string; bg: string }> = {
-  normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', bg: 'bg-zinc-700/30' },
-  warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-  critical: { ring: 'stroke-red-500', text: 'text-red-400', bg: 'bg-red-500/10' },
+const TONE_STYLES: Record<Tone, { ring: string; text: string; hoverBg: string }> = {
+  normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', hoverBg: 'hover:bg-zinc-700/30' },
+  warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', hoverBg: 'hover:bg-yellow-500/10' },
+  critical: { ring: 'stroke-red-500', text: 'text-red-400', hoverBg: 'hover:bg-red-500/10' },
 };
 
 export const ContextUsagePill: React.FC = () => {
   const contextHealth = useAppStore((s) => s.contextHealth);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const clearTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
-  const [isCompacting, setIsCompacting] = useState(false);
-  const [compactResult, setCompactResult] = useState<CompactResult | null>(null);
-  const [compactError, setCompactError] = useState<string | null>(null);
+  const compactionStatus = useContextCompactionStore((s) => s.status);
+  const compactResult = useContextCompactionStore((s) => s.result);
+  const compactError = useContextCompactionStore((s) => s.error);
+  const startCompaction = useContextCompactionStore((s) => s.start);
+  const succeedCompaction = useContextCompactionStore((s) => s.succeed);
+  const failCompaction = useContextCompactionStore((s) => s.fail);
+  const clearCompaction = useContextCompactionStore((s) => s.clear);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
   }, [open]);
 
+  useEffect(() => () => {
+    if (clearTimerRef.current !== null) {
+      window.clearTimeout(clearTimerRef.current);
+    }
+  }, []);
+
+  const scheduleFeedbackClear = useCallback((delayMs: number) => {
+    if (clearTimerRef.current !== null) {
+      window.clearTimeout(clearTimerRef.current);
+    }
+    clearTimerRef.current = window.setTimeout(() => {
+      clearCompaction();
+      clearTimerRef.current = null;
+    }, delayMs);
+  }, [clearCompaction]);
+
   const handleCompact = useCallback(async () => {
-    if (isCompacting) return;
+    if (compactionStatus === 'active') return;
     const sessionId = useSessionStore.getState().currentSessionId;
-    setIsCompacting(true);
-    setCompactResult(null);
-    setCompactError(null);
+    startCompaction();
+    setOpen(false);
     try {
       const result = await ipcService.invoke(
         IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
         sessionId ?? undefined,
-      ) as CompactResult;
+      );
       if (result.success) {
-        setCompactResult(result);
+        succeedCompaction(result);
         if (sessionId) {
           void useSessionStore.getState().refreshContextHealth(sessionId);
         }
       } else {
-        setCompactError('压缩失败');
+        failCompaction('压缩失败');
       }
-      setTimeout(() => { setCompactResult(null); setCompactError(null); }, 5000);
+      scheduleFeedbackClear(4500);
     } catch {
-      setCompactError('压缩失败');
-      setTimeout(() => setCompactError(null), 3000);
-    } finally {
-      setIsCompacting(false);
+      failCompaction('压缩失败');
+      scheduleFeedbackClear(3500);
     }
-  }, [isCompacting]);
+  }, [
+    compactionStatus,
+    failCompaction,
+    scheduleFeedbackClear,
+    startCompaction,
+    succeedCompaction,
+  ]);
 
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const currentTokens = contextHealth?.currentTokens ?? 0;
@@ -91,6 +120,7 @@ export const ContextUsagePill: React.FC = () => {
   const styles = TONE_STYLES[tone];
   const canCompact = pct >= 70;
   const hasData = !!contextHealth && maxTokens > 0;
+  const isCompacting = compactionStatus === 'active';
 
   // SVG 圆环参数
   const size = 14;
@@ -104,12 +134,11 @@ export const ContextUsagePill: React.FC = () => {
     <div
       ref={wrapperRef}
       className="relative flex-shrink-0"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
-        className={`inline-flex items-center gap-1.5 h-8 rounded-lg px-2 text-xs tabular-nums transition-colors ${styles.text} hover:${styles.bg}`}
+        onClick={() => setOpen((prev) => !prev)}
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label="上下文使用"
         title={`${displayPct}% · ${formatTokens(currentTokens)}/${formatTokens(maxTokens)} tokens`}
       >
@@ -134,37 +163,34 @@ export const ContextUsagePill: React.FC = () => {
             className={`${styles.ring} transition-all duration-500`}
           />
         </svg>
-        <span>{displayPct}%</span>
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-3 shadow-xl backdrop-blur z-30">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Context window</div>
+        <div className="absolute bottom-full right-0 z-30 mb-2 w-60 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-3 shadow-xl backdrop-blur">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">上下文占用</div>
           <div className={`text-lg font-semibold tabular-nums ${styles.text}`}>
-            {displayPct}% full
+            {displayPct}%
           </div>
-          <div className="text-xs text-zinc-300 tabular-nums mt-1">
+          <div className="mt-1 text-xs tabular-nums text-zinc-300">
             {hasData
-              ? `${formatTokens(currentTokens)} / ${formatTokens(maxTokens)} tokens used`
+              ? `${formatTokens(currentTokens)} / ${formatTokens(maxTokens)} tokens`
               : '等待首轮对话'}
           </div>
 
-          {canCompact && (
-            <button
-              type="button"
-              onClick={handleCompact}
-              disabled={isCompacting}
-              className="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 transition-colors hover:bg-white/[0.07] disabled:opacity-50 disabled:cursor-not-allowed"
-              title="主动压缩上下文"
-            >
-              {isCompacting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Shrink className="w-3.5 h-3.5" />
-              )}
-              <span>Compact</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleCompact}
+            disabled={!canCompact || isCompacting}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 transition-colors hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
+            title={canCompact ? '主动压缩上下文' : '当前上下文占用不高'}
+          >
+            {isCompacting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Shrink className="h-3.5 w-3.5" />
+            )}
+            <span>{isCompacting ? '正在压缩' : '压缩上下文'}</span>
+          </button>
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-emerald-400">
@@ -175,6 +201,9 @@ export const ContextUsagePill: React.FC = () => {
           )}
           {compactError && (
             <div className="mt-2 text-[11px] text-red-400">{compactError}</div>
+          )}
+          {!canCompact && !compactResult && !compactError && (
+            <div className="mt-2 text-[11px] text-zinc-500">70% 后启用手动压缩。</div>
           )}
         </div>
       )}

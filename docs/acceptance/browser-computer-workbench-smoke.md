@@ -14,6 +14,10 @@ The smoke covers:
 - managed BrowserSession/Profile/AccountState/Artifact/Lease/Proxy status on local fixtures
 - stale TargetRef recovery metadata and fixture-only recipe rerun
 - `computer_use.get_state` and `computer_use.observe` returning Computer Surface state without requesting app action approval
+- per-agent BrowserService isolation for Agent Team tool calls
+- ephemeral Chromium launch semaphore behavior
+- ComputerSurface write-action serialization
+- multi-agent targetApp screenshot crop and escalated warning metadata
 
 ## Command
 
@@ -114,6 +118,15 @@ npm run acceptance:browser-computer-app-host -- --skip-build
 npm run acceptance:browser-computer-app-host -- --provider system-chrome-cdp
 npm run acceptance:browser-computer-app-host -- --json
 ```
+
+Browser pool / multi-agent isolation smoke:
+
+```bash
+npm run test -- browser-pool
+npm run test -- subagent
+```
+
+Use the branch-specific smoke scripts when present; the expected evidence is real Chromium cookie/localStorage isolation plus subagent dispatch carrying `agentId` into ToolContext.
 
 Background CGEvent smoke:
 
@@ -224,6 +237,15 @@ For the app-host Browser/Computer smoke:
 - Desktop action metadata uses `backgroundSurface`, `foregroundFallback`, `requiresForeground`, `approvalScope`, `targetApp`, and redacted params instead of exposing typed text.
 
 Additional renderer/unit tests cover replay, export, observability summaries, provider copy, background Accessibility candidate rendering, and Browser/Computer metadata redaction outside the app-host smoke.
+
+For the multi-agent isolation path:
+
+- A named subagent receives a stable `agentId` in ToolContext when it invokes Browser / BrowserAction / BrowserNavigate / Screenshot.
+- BrowserPool returns an agent-scoped BrowserService for named subagents and keeps the default shared surface for non-agent calls.
+- Real Chromium smoke proves cookie and localStorage from one agent do not appear in another agent profile.
+- Ephemeral browser launches are limited by the FIFO semaphore and release permits after close/failure.
+- ComputerSurface write actions are serialized through `computerSurfaceLock`; read/observe/launch actions do not deadlock behind the lock.
+- `computer_batch`, `hold_key`, `triple_click`, and `cursor_position` return structured metadata without leaking typed secrets.
 
 ## Safety Boundary
 

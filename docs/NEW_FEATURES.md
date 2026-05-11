@@ -2,21 +2,117 @@
 
 ## 概览
 
-截至 2026-04-27，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context 和 eval/model protocol 六条主线：
+截至 2026-05-11，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context、native tool protocol、artifact acceptance、quality gates、prompt/hook 管理和 prompt rewind 十一条主线：
 
 1. **Agent Runtime Capability Hardening** - run lifecycle、run-level abort、Tool/MCP 权限合同、durable runtime state、multiagent reliability、real-agent-run eval gate
 2. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
 3. **Live Preview V2** - Vite-only devServerManager、click-to-source、TweakPanel、bridge protocol 0.3.0、Next.js 支持延期
 4. **Browser / Computer Workbench** - in-app managed browser 的 session/profile/account/artifact/lease/proxy/TargetRef，Computer Surface background AX / CGEvent
 5. **Activity Providers** - OpenChronicle、Tauri Native Desktop、audio、screenshot-analysis 统一成 ActivityContext
-6. **评测与模型协议修复** - experiment progress SSE、fatal error 熔断、multi-turn adapter 修复、thinking-mode `reasoning_content` 协议修复
+6. **Native Tool Protocol Migration** - Web/Search、Excel、Document、MCP、Skill、LSP、Multiagent、Planning、Vision、Network/Media/Docgen/PPT 原生化，旧 wrappers 分批退场
+7. **Runtime / Web / Context Hardening** - Web REST session、telemetry classifier、context fill、assistant persistence、failure-mode loop breaker
+8. **Artifact Acceptance / Repair** - Game subtype、DeckVerifier、DashboardVerifier、Best-of-N、repair cap、anti-Potemkin probes
+9. **Quality Gates** - typed IPC、zod provider wrappers、provider symmetry、async correctness、god-file split、dead code retirement
+10. **Prompt / Hook 管理** - Prompt Manager 实时 override、Hook Settings tab、CLI hooks 默认启用、聊天 TurnCard 展示 Hook Activity
+11. **Prompt Rewind** - 回到历史用户提示词、恢复文件 checkpoint、隐藏旧 active 消息、保留 `session_rewinds` 审计
 
 早期更新增加了以下核心功能：
 
 1. **多模型 SDK 支持** - 支持 DeepSeek、Claude、OpenAI、Groq、本地模型
-2. **云端 Agent** - Vercel Serverless 部署，支持浏览器自动化
+2. **云端 Agent（历史，已退役）** - 早期 Vercel Serverless 方案，当前 active path 已迁回本地 / Web runtime
 3. **GUI Agent** - 基于 Claude Computer Use 的屏幕控制能力
 4. **macOS 签名打包** - 完整的代码签名和公证配置
+
+---
+
+## 2026-05-11 当前新增能力
+
+### Prompt / Hook / Prompt Rewind
+
+| 能力 | 说明 |
+|------|------|
+| Prompt Manager | Sidebar User Menu 进入提示词管理器，按 category 查看默认文本与当前生效文本，支持保存、复制、恢复默认 |
+| Prompt override | 保存到 `~/.code-agent/prompts-overrides/<id>.md`，`applyOverride()` + `dynamic()` 让下一轮 system prompt 构建立即读取新文本 |
+| Hook Settings | 设置 → 能力与连接 → Hook，展示 enabled / unused events、matcher、source、decision/observer、parallel，并可打开/定位配置文件 |
+| Hook Activity in Chat | Hook trigger history 汇入 turn timeline，TurnCard 展示本轮 hook 数量、allow/block、改写输入、错误和耗时 |
+| CLI hooks | CLI `enableHooks` 默认打开，不再只跟 planning mode 绑定 |
+| Chat workspace defaults | 新建会话与新 tab 默认进 Chats bucket；TitleBar 选择目录会写回当前 session |
+| Prompt Rewind | `rewindToPrompt` 恢复最近文件 checkpoint，隐藏锚点提示及之后 active 消息，把原 prompt 和附件回填输入框 |
+| Rewind audit | `messages.visibility` 与 `session_rewinds` 保留完整审计；Supabase 迁移同步云端字段和 RLS |
+
+---
+
+## 2026-05-01 ~ 2026-05-10 当前新增能力
+
+### Native Tool Protocol Migration
+
+| 能力 | 说明 |
+|------|------|
+| Wave 1 | search / skill / LSP 迁到 Level 1 native protocol；LSP 支持 100+ extension map、npm server 自动安装、失败返回 install hint |
+| Wave 2 | document / excel / MCP 迁到 native dispatcher，旧 `tools/mcp/` legacy path 删除 |
+| Wave 3 | multiagent / planning 工具迁到 native protocol，`spawn_agent / send_input / wait_agent / close_agent / plan_* / task_*` 提取 schema 并清掉 wrappers |
+| Wave 4 | vision / network / media / docgen / PPT 迁到 native protocol，Computer / Browser / screenshot / image/video/speech/pdf/ppt/excel/docx 等能力按模块进 registry |
+| WebFetch contract | WebFetch 必须显式传 URL；search/fetch loop guidance 收紧，减少无 URL 抓取和反复搜索 |
+| Edit reliability | `old_text` mismatch 时提示最近 anchor lines，帮助模型下一轮改准位置 |
+| Migration SOP | `docs/migrations/legacy-tools-removal-sop.md` 汇总 wave1-4 lessons，后续迁移按 schema → registry → legacy drop → tests 执行 |
+
+### Runtime / Web / Context Hardening
+
+| 能力 | 说明 |
+|------|------|
+| Compaction recovery | compact-current、tool-call hydrate、agent-error helper 接入 contextHealth，浏览器恢复路径也纳入同一诊断面 |
+| Partial failure trace | chat trace 能显示 partial failure，并把 active turn 自动滚入视图 |
+| Web session 修复 | local auth token mismatch 401/403 recovery、run 前持久化 user message、model session override、REST path flush 统一到 activeAgentLoops |
+| Telemetry closure | structured error classifier、intent extension、turn auto-finalize、token-trigger compaction 合流 |
+| Context fill estimate | tool schemas token 纳入上下文占用估算 |
+| Failure-mode loop | anti-scraping hint、stagnation detector、ground-truth gate、重复后断环，降低无效搜索/抓取循环 |
+| Assistant persistence | assistant messages 可靠落库，reload / replay 不再只靠 live stream |
+| 中文长度约束 | complexity analyzer 能识别中文输出长度要求 |
+
+### Browser / Computer 多 Agent 隔离
+
+| 能力 | 说明 |
+|------|------|
+| Per-agent BrowserService | Agent Team 调 Browser/BrowserAction/BrowserNavigate/Screenshot 时带 `agentId`，路由到独立 BrowserService |
+| Cookie/storage 隔离 | 真实 Chromium smoke 证明子 agent 的 cookie / localStorage 不串号 |
+| Ephemeral launch cap | 临时 Chromium 启动用 FIFO semaphore 限流 |
+| ComputerSurface mutex | type/click/key/clipboard 等写动作串行化，减少多 agent 抢输入 |
+| 新 computer 原语 | `mouse_down/up`、`open_application`、`write_clipboard`、`computer_batch`、`hold_key`、`triple_click`、`cursor_position` |
+| Agent mode switch | multi-agent 模式支持 targetApp screenshot crop 和 escalated warning |
+| Signal / context | `agentId` 从 subagent dispatch 注入 ToolContext；`effectiveSignal` 透传给 `modelRouter.inference` |
+
+### Frontend Execution Rails / Workspace Preview
+
+| 能力 | 说明 |
+|------|------|
+| Run Status Rail | Chat 顶部在后台任务、队列或 Agent Team 活跃时展示 running/queued、活跃 session、swarm chip 和进度，可跳转 session 或打开 TaskPanel/Agent Team |
+| TaskPanel task rail | TaskPanel 收敛成 task-first 状态工作面，过滤工具性步骤，只露出当前动作、检查项、产物、approval、outputs、context、MCP、memory 和待审项 |
+| Workspace Preview review | Workspace Preview 从 artifact 预览升级为 review workbench，支持 Delivery Review、Preview Feedback、resolve/dismiss、send back to chat |
+| Design PPT preview | `design_ppt` artifact 专用预览，展示 slides、theme、iterations、截图网格、prompt/code path，并提供 Open PPTX / Edit code |
+
+### Artifact Acceptance / Repair
+
+| 能力 | 说明 |
+|------|------|
+| Repair toolkit | 泛化 issue code、repair instruction、scope guard、prompt limit、monotonic baseline 等 repair loop 模式 |
+| Game subtype | platformer 逻辑迁到 subtype-dispatch architecture；runner subtype 验证扩展性；scope guard 自注册 |
+| Best-of-N | repair cap + monotonicity gate 避免无限修和越修越差 |
+| DeckVerifier | schemaProbe + declarative / imperative narrative probes + GeneralDeckChecker + baseline harness；`pptGenerate` 已接入 |
+| Deck live mode | `deck-generation.ts --live` 支持外部产品跑 acceptance |
+| DashboardVerifier | scaffold + declarative HTML probes + browser visual smoke + `state_change_on_click` anti-Potemkin probe |
+| ADR-016 | 不强行抽 cross-kind verifier interface，Game / Deck / Dashboard 保持各自输入形态 |
+
+### Quality Gates / Cleanup
+
+| 能力 | 说明 |
+|------|------|
+| Config 单源 | `IReadConfigService` 让 CLI / webServer 共享 main ConfigService |
+| Typed IPC | `shared/ipc` zod schema、`defineHandler`、renderer `typedInvoke`、web `parseBody` 开始收口 payload 类型 |
+| Provider wrappers | OpenAI / Anthropic / DeepSeek / Gemini 解析走 zod wrappers；SSE stream 切到 wrappers；51 fixtures contract tests |
+| Provider symmetry | provider symmetry script 接入 Husky + GitHub Actions，volcengine / grok 补进 supported providers |
+| Async correctness | `Promise.race` → `withTimeout`，timer graceful shutdown + `.unref()`，Promise executor 顶部 `new URL()` try/catch |
+| God-file split | HookManager、telemetryQueryService、TaskDAG 按执行引擎 / replay / graph algorithms 拆分 |
+| Dead code retirement | POC subsystem、cloud agent module、legacy provider functions、Decorated tools、orphan resume、unused exports 清理；Message 类型统一 |
 
 ---
 
@@ -116,53 +212,17 @@ GROQ_API_KEY=your-key
 
 ---
 
-## 2. 云端 Agent (Vercel)
+## 2. 云端 Agent (Vercel，历史/已退役)
 
-### 功能
+这段是早期历史能力。近两周主线已删除旧 cloud agent module 和相关 POC 路径；当前产品口径是本地 / Web runtime、Browser / Computer Workbench、Run Status Rail 和 Workspace Preview Review。保留本节只是解释历史来源，不再作为当前安装或部署说明。
+
+### 历史功能
 
 - **浏览器自动化**: 截图、抓取、表单填写、点击
 - **云端计算**: 沙箱执行 JavaScript
 - **AI 技能**: Web 搜索、代码审查、文档生成、翻译
 
-### 部署
-
-```bash
-cd cloud-agent
-npm install
-npm run deploy
-```
-
-### 配置
-
-```json
-// Settings -> Cloud
-{
-  "cloud": {
-    "enabled": true,
-    "endpoint": "https://your-app.vercel.app",
-    "apiKey": "your-cloud-api-key",
-    "warmupOnInit": true
-  }
-}
-```
-
-### 冷启动处理
-
-Vercel Serverless 有冷启动延迟（约 500ms-2s）。本地 Agent 会在执行云端任务前自动 warmup：
-
-```typescript
-// 自动 warmup
-const cloudAgent = getCloudAgent();
-await cloudAgent.warmup(); // 触发冷启动
-
-// 执行任务
-const result = await cloudAgent.screenshot('https://example.com');
-```
-
-### 费用说明
-
-- **Hobby (免费)**: 每次执行最长 10 秒
-- **Pro ($20/月)**: 每次执行最长 60 秒
+当前保留的 cloud 相关代码在 `src/main/services/cloud/`，主要是 cloud config、prompt、update、feature flag、orchestrator config 和 cloud proxy 边界，不再是独立 Vercel cloud-agent 产品入口。
 
 ---
 
@@ -262,22 +322,12 @@ npm run dist:mac:signed
 src/main/
 ├── model/
 │   └── ModelRouter.ts        # 多模型路由（已更新）
-├── cloud/
-│   └── CloudAgentClient.ts   # 云端通信客户端（新增）
+├── services/
+│   └── cloud/                # cloud config / update / feature flag（当前保留服务）
 ├── agent/
 │   └── GUIAgent.ts           # GUI Agent（新增）
-└── services/
-    └── ConfigService.ts      # 配置服务（已更新）
-
-cloud-agent/                   # Vercel 云端服务（新增）
-├── api/
-│   ├── health.ts             # 健康检查
-│   └── task.ts               # 任务执行
-├── lib/
-│   ├── browser.ts            # 浏览器自动化
-│   ├── compute.ts            # 云端计算
-│   └── skills.ts             # AI 技能
-└── package.json
+└── services/core/
+    └── databaseService.ts    # 本地 SQLite 服务
 
 build/
 ├── entitlements.mac.plist           # macOS 权限（新增）
@@ -294,4 +344,4 @@ scripts/
 1. **完善 GUI Agent 操作实现** - 集成 robotjs 或原生模块
 2. **添加 Google AI UI 支持** - 等待 Gemini 2.0 API
 3. **API Key 加密存储** - 实现安全存储
-4. **WebSocket 实时通信** - 云端任务进度推送
+4. **交付验收闭环** - Delivery Review / Preview Feedback / artifact verifier 持续补验收场景

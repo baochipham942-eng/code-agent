@@ -61,6 +61,22 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 - 本轮闭环主要是 unit 级和 IPC 级；真实多 agent 端到端 smoke 仍应单独补。
 - 生产口径里，parallel executor 才是 dependsOn / inbox / aggregation 的主要事实源，legacy/hybrid 只按兼容路径理解。
 
+## 0.0.1 2026-05 Browser / Computer 多 agent 隔离
+
+5/8 之后，Agent Team 的浏览器和桌面工具不再共享一个无差别全局 surface。父 agent 调度子 agent 时会把 `agentId` 注入 `ToolContext`，Browser/Computer 相关工具按 agent 维度隔离状态、限制资源并串行化桌面写动作。
+
+| 能力 | 当前状态 | 关键文件 / 验证 |
+|------|----------|----------------|
+| Per-agent BrowserService pool | 命名 agent 有独立 BrowserService；cookie/localStorage/sessionStorage 不串号；命名 agent 有 LRU 上限 | `src/main/services/infra/browserPool.ts`、`src/main/services/infra/browserService.ts`、`tests/smoke/*browser-pool*` |
+| Ephemeral Chromium semaphore | 临时浏览器启动通过 FIFO semaphore 限流，避免多个子 agent 同时拉起 Chromium | `src/main/services/infra/playwrightLaunchSemaphore.ts` |
+| ToolContext agentId | `spawn_agent` / subagent dispatch 将 `agentId` 传给工具执行上下文，Browser/Computer 能按 owner 取资源 | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/tools/toolExecutor.ts` |
+| ComputerSurface write lock | `type/click/key/clipboard` 等写动作串行执行；observe/launch 这类读或准备动作不阻塞 | `src/main/services/desktop/computerSurfaceLock.ts` |
+| 新 Computer 原语 | 支持 `mouse_down/up`、`open_application`、`write_clipboard`、`computer_batch`、`hold_key`、`triple_click`、`cursor_position` | `src/main/tools/vision/computerUse.ts` |
+| targetApp 截图裁剪 | 多 agent 模式下可对目标 app 截图裁剪并显示 escalated warning，减少无关桌面上下文泄漏 | `src/main/tools/vision/computerUse.ts`、browser/computer smoke |
+| effectiveSignal 透传 | 子 agent cancel / abort signal 下沉到 `modelRouter.inference`，减少取消后模型请求继续跑 | `src/main/model/modelRouter.ts` |
+
+产品口径：这是并发隔离和隐私边界，不改变单 agent 默认浏览器/桌面语义。Browser 隔离 smoke 是证据，不单独作为功能入口。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

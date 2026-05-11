@@ -108,7 +108,7 @@ ToolSearch("github search")
 
 - `src/main/mcp/mcpToolRegistry.ts`
 - `src/main/mcp/mcpClient.ts`
-- `src/main/protocol/dispatch/toolResolver.ts`
+- `src/main/tools/dispatch/toolResolver.ts`
 - `tests/unit/protocol/toolResolver.mcpDirect.test.ts`
 - `tests/unit/tools/toolExecutor.mcpDirect.test.ts`
 
@@ -138,11 +138,65 @@ lazy stdio MCP server 不会在启动时全量拉起；ToolSearch 遇到相关 q
 
 ---
 
+## 2026-05 Native ToolModule 迁移
+
+工具系统从 legacy wrapper 逐步迁到 `ToolModule` 原生协议形态。新路径不是单纯改文件名，它把 schema、handler loader、registry resolve 和权限上下文放到同一套 contract 下，减少 wrapper 转译层造成的审批、abort、参数校验漂移。
+
+### 当前入口
+
+| 层 | 文件 | 职责 |
+|----|------|------|
+| 协议类型 | `src/main/protocol/tools.ts` | `ToolSchema / ToolHandler / ToolRegistry` 的基础 contract |
+| Registry | `src/main/tools/registry.ts` | 注册 schema、懒加载 handler、合并并发 resolve、按 readOnly/category/deny 过滤 |
+| Modules index | `src/main/tools/modules/index.ts` | eager import schema，lazy import tool module 实现，统一注册迁移后的工具 |
+| Executor | `src/main/tools/toolExecutor.ts` | 顶层审批、hook、abort signal、执行结果归一 |
+| Resolver | `src/main/tools/dispatch/toolResolver.ts` | 统一解析 legacy alias、native module、MCP dynamic tool |
+
+### Wave 覆盖面
+
+| Wave | 覆盖工具域 | 文档口径 |
+|------|------------|----------|
+| Wave 1 | Search / Skill / LSP | search、skillCreate、lsp、diagnostics 进入 native module；LSP 生产化见下节 |
+| Wave 2 | Document / Excel / MCP | docEdit/docxEdit、ExcelAutomate、mcpInvoke/mcpAddServer/mcpUnified 迁移；旧 `tools/mcp/` legacy path 删除 |
+| Wave 3 | Multiagent / Planning | spawn/wait/close/send_input、workflow、plan/task/findings/confirm action 迁移；保持 IPC schema 兼容 |
+| Wave 4 | Vision / Network / Media / Docgen / PPT | Browser、Computer、screenshot、gui_agent、image/video/speech/pdf/ppt/docx/excel 等进入 native module |
+
+迁移完成的工具用 `.schema.ts` 提供单一 schema source，并在 `modules/index.ts` 中注册。旧 wrapper 只作为兼容层存在，不能再承载新的业务语义。
+
+### 用户可见的可靠性变化
+
+| 能力 | 行为 |
+|------|------|
+| WebFetch URL 强约束 | `WebFetch` / `web_fetch` 不再接受无 URL 的抓取调用；模型需要先搜索再带 URL 抓取 |
+| ToolSearch failure | 没有 callable 工具命中时返回明确失败，不伪装成已加载能力 |
+| Edit anchor hint | `old_text` 不匹配时返回最近锚点行，下一轮可以按真实上下文改准 |
+| Abort chain | native handler 通过同一 `ToolContext.signal` 感知 run-level cancel |
+| Permission chain | 顶层审批结果通过 `approvedToolCall` 贯通，不在 native path 里重复审批或绕开审批 |
+
+### LSP 生产化
+
+LSP 不再只是“有 diagnostics 工具”。当前实现把语言识别、server 安装、错误提示和 native 工具执行串在一起：
+
+| 能力 | 文件 | 说明 |
+|------|------|------|
+| 语言映射 | `src/main/lsp/languages.ts` | 后缀映射扩到 100+，覆盖常见前后端、脚本、配置和文档语言 |
+| 自动安装 | `src/main/lsp/installer.ts` | npm 类 language server 可自动安装；安装失败不吞掉，返回可执行的 `installCmd` |
+| 生命周期管理 | `src/main/lsp/manager.ts` | server 启动、复用、诊断请求和失败归因 |
+| ToolModule | `src/main/tools/modules/lsp/lsp.ts`、`diagnostics.ts` | LSP 与 diagnostics 走 native schema / handler |
+
+用户侧结果要表达“这个语言服务不可用以及怎么装”，不要只返回 generic tool error。
+
+### Shell command policy
+
+5/10 后，旧 Codex sandbox / cross-verify 路径退场，shell 统一走 `src/main/tools/modules/shell/commandPolicy.ts`。它负责把命令风险、审批范围、bash policy 和 UI 展示放到同一个决策面，避免 hybrid agent 分支里再维护第二套 shell 解释。
+
+---
+
 ## Core / Deferred 双层架构
 
 工具分为 **核心工具**（始终发送给模型）和 **延迟工具**（按需通过 ToolSearch 发现加载）。
 
-**位置**: `src/main/tools/search/deferredTools.ts`
+**位置**: `src/main/tools/registry.ts` + `src/main/tools/modules/index.ts`
 
 ### 核心工具（CORE_TOOLS）
 
@@ -165,26 +219,27 @@ lazy stdio MCP server 不会在启动时全量拉起；ToolSearch 遇到相关 q
 | `ToolSearch` | 搜索和加载延迟工具 |
 | `Skill` | 技能元工具（动态描述聚合可用 skills） |
 
-### 延迟工具（DEFERRED_TOOLS_META）
+### 延迟工具（schema-backed ToolModule）
 
-不随每次请求发送，模型需要时通过 `ToolSearch` 按名称/关键词/别名搜索加载。每个延迟工具注册了 `name`、`shortDescription`、`tags`、`aliases` 用于搜索匹配。
+不随每次请求发送，模型需要时通过 `ToolSearch` 按名称/关键词/别名搜索加载。2026-05 之后，延迟工具以 `.schema.ts` + lazy implementation 的 `ToolModule` 形态注册到 `src/main/tools/modules/index.ts`，`ToolRegistry.resolve(name)` 首次调用时才加载 handler。
 
 ---
 
-## 工具分类总览（96 个注册工具）
+## 工具分类总览（108 个 native ToolModule）
 
-| 分类 | 数量 | 代表工具 |
-|------|------|----------|
-| Shell & 文件 | 14 | Bash, Read, Write, Edit, Glob, Grep, GitCommit, NotebookEdit |
-| 规划 & 任务 | 12 | TaskManager, Plan, PlanMode, AskUserQuestion, Task |
-| Web & 搜索 | 5 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
-| 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart/QRCode, Speech |
-| 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
-| 记忆 | 2 | MemoryWrite, MemoryRead |
-| 视觉 & 浏览器 | 5 | Computer, Browser, Screenshot, GuiAgent |
-| 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, CloseAgent, SendInput, Teammate |
-| 统一入口 (Deferred) | 12 | Process, MCPUnified, DocEdit, ExcelAutomate, PdfAutomate |
-| 元工具 | 1 | ToolSearch |
+当前 registry 注册 108 个 native ToolModule，schema 文件 107 个。数量是运行时口径，文档长期只维护分类和代表能力。
+
+| 分类 | 代表工具 |
+|------|----------|
+| Shell & 文件 | Bash, Read, Write, Edit, MultiEdit, Glob, Grep, GitCommit, NotebookEdit |
+| 规划 & 任务 | TaskManager, Plan, PlanMode, AskUserQuestion, Task, confirm_action, findings_write |
+| Web & 搜索 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
+| 文档 & 媒体 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart/QRCode, Speech |
+| 外部服务连接器 | Jira, GitHubPR, Calendar, Mail, Reminders |
+| 记忆 | MemoryWrite, MemoryRead |
+| 视觉 & 浏览器 | Computer, Browser, Screenshot, GuiAgent, visual_edit |
+| 多 Agent | AgentSpawn, AgentMessage, WaitAgent, CloseAgent, SendInput, Teammate |
+| 统一入口 / 元工具 | Process, MCPUnified, DocEdit, ExcelAutomate, PdfAutomate, ToolSearch |
 
 ---
 
@@ -220,13 +275,13 @@ TOOL_ALIASES: { read_pdf: 'ReadDocument', browser_navigate: 'Browser', ... }
 ALIAS_DEFAULT_PARAMS: { read_pdf: { action: 'read', format: 'pdf' }, ... }
 ```
 
-位置: `src/main/tools/toolRegistry.ts`
+位置: `src/main/tools/registry.ts`、`src/main/tools/modules/index.ts` 与各 `.schema.ts`
 
 ---
 
 ## DocEdit 统一文档编辑
 
-**位置**: `src/main/tools/document/docEditTool.ts`
+**位置**: `src/main/tools/modules/document/docEdit.ts`
 
 DocEdit 是 Excel/PPT/Word 三种格式的统一入口，根据文件扩展名自动路由到对应的编辑器。所有编辑均为原子操作（替代全文件重写），Token 节省约 80%。
 
@@ -263,9 +318,9 @@ DocEdit({ file_path, operations })
 
 依赖: ExcelJS 库。支持 `dry_run` 模式预览变更。
 
-### Word 原子编辑（7 种操作）
+### Word 原子编辑（历史能力）
 
-**位置**: `src/main/tools/document/docxEdit.ts`
+**当前位置**: native 入口走 `src/main/tools/modules/document/docEdit.ts`。旧 `src/main/tools/document/docxEdit.ts` 路径已不再作为当前事实源。
 
 | 操作 | 说明 |
 |------|------|
@@ -281,7 +336,7 @@ DocEdit({ file_path, operations })
 
 ### PPT 编辑（8 种操作）
 
-**位置**: `src/main/tools/network/ppt/editTool.ts`
+**位置**: `src/main/tools/modules/network/pptEdit.ts`（执行入口）；`src/main/tools/media/ppt/`（生成、版式与设计引擎）
 
 | 操作 | 说明 |
 |------|------|
@@ -306,7 +361,7 @@ DocEdit({ file_path, operations })
 
 ### 核心特性
 
-- **自动快照**: 每次 DocEdit/ExcelEdit/DocxEdit/PPT Edit 执行前自动调用 `createSnapshot()`
+- **自动快照**: 每次 DocEdit/ExcelEdit/PPT Edit 执行前自动调用 `createSnapshot()`
 - **失败回滚**: catch 块中调用 `restoreLatest()` 自动恢复到编辑前状态
 - **容量控制**: 每个文件最多保留 20 个快照（`MAX_SNAPSHOTS_PER_FILE`），超出自动清理最旧的
 - **存储位置**: 文件所在目录下的 `.doc-snapshots/` 子目录
@@ -349,7 +404,7 @@ DocEdit({ file_path, operations })
 
 ### Skill 元工具（skillMetaTool）
 
-**位置**: `src/main/tools/skill/skillMetaTool.ts`
+**位置**: `src/main/tools/modules/skill/skill.ts`
 
 Skill 是核心工具（始终可见），采用 `dynamicDescription` 在运行时聚合所有可用 skills 的名称和描述到工具描述中，对标 Anthropic 的 `<available_skills>` 机制。
 
@@ -539,11 +594,23 @@ pending → ready → running → completed
 
 ```
 src/main/tools/
-├── toolRegistry.ts       # 工具注册表 + TOOL_ALIASES + ALIAS_DEFAULT_PARAMS
+├── registry.ts           # ToolRegistry：schema / loader / handler 三段式注册
 ├── types.ts              # Tool/ToolContext/ToolExecutionResult 类型
-├── search/               # ToolSearch 延迟加载系统
-│   ├── deferredTools.ts  #   CORE_TOOLS + DEFERRED_TOOLS_META
-│   └── toolSearchService.ts
+├── modules/              # native ToolModule 主体（schema eager、implementation lazy）
+│   ├── index.ts          # 108 个 ToolModule 注册入口
+│   ├── file/             # Read / Write / Edit / MultiEdit / Glob / Blob ...
+│   ├── shell/            # Bash / Process / commandPolicy
+│   ├── search/           # ToolSearch
+│   ├── skill/            # Skill / skillCreate
+│   ├── lsp/              # LSP / diagnostics
+│   ├── document/         # DocEdit
+│   ├── excel/            # ExcelAutomate
+│   ├── mcp/              # MCP invoke/add/unified
+│   ├── multiagent/       # AgentSpawn / WaitAgent / SendInput ...
+│   ├── planning/         # Plan / TaskManager / AskUserQuestion ...
+│   ├── network/          # WebFetch / WebSearch / media/docgen/PPT schema
+│   └── vision/           # Computer / Browser / gui_agent / visual_edit
+├── dispatch/             # ToolResolver，含 MCP dynamic direct execute
 ├── file/                 # 文件操作工具
 │   ├── readFile.ts
 │   ├── writeFile.ts
@@ -556,44 +623,15 @@ src/main/tools/
 │   ├── bash.ts
 │   ├── grep.ts
 │   └── ProcessTool.ts    #   统一进程管理
-├── planning/             # 规划工具
-│   ├── askUserQuestion.ts
-│   ├── confirmAction.ts
-│   ├── findingsWrite.ts
-│   ├── TaskManagerTool.ts #  统一任务 CRUD
-│   ├── PlanTool.ts        #  统一计划读写
-│   └── PlanModeTool.ts    #  统一规划模式
-├── network/              # 网络工具
-│   ├── WebFetchUnifiedTool.ts # 统一网页获取
-│   ├── ReadDocumentTool.ts    # 统一文档读取
-│   ├── webSearch.ts
-│   └── ppt/
-│       └── editTool.ts        # PPT 编辑（8 种操作）
-├── document/             # 文档编辑
-│   ├── docEditTool.ts         # DocEdit 统一入口
-│   ├── docxEdit.ts            # Word 原子编辑（7 种操作）
-│   └── snapshotManager.ts     # 文档快照管理
+├── document/             # 文档辅助能力（outline / snapshot）
+│   └── snapshotManager.ts
 ├── excel/                # Excel 工具
 │   ├── excelEdit.ts           # Excel 原子编辑（14 种操作）
 │   └── index.ts               # ExcelAutomate 统一入口
-├── mcp/                  # MCP 协议工具
-│   └── MCPUnifiedTool.ts      # 统一 MCP 操作
-├── connectors/           # macOS 原生连接器
-│   ├── calendar*.ts
-│   ├── mail*.ts
-│   └── reminders*.ts
-├── memory/               # 记忆系统工具
+├── media/ppt/            # PPT 生成、版式、设计、预览与视觉评审
 ├── vision/               # 视觉交互工具
 │   ├── BrowserTool.ts         # 统一浏览器
 │   └── ComputerTool.ts        # 统一计算机控制
-├── skill/                # Skill 元工具
-│   └── skillMetaTool.ts
-├── multiagent/           # 多代理工具
-│   ├── spawnAgent.ts     #   spawn_agent（支持并行模式 + worktree 隔离）
-│   ├── waitAgent.ts      #   wait_agent（等待子代理完成）
-│   ├── closeAgent.ts     #   close_agent（取消子代理）
-│   ├── sendInput.ts      #   send_input（向子代理发消息）
-│   └── index.ts
 ├── lsp/                  # LSP 语言服务
 ├── decorators/           # 工具装饰器
 ├── middleware/            # 工具中间件

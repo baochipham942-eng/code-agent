@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 9.6 (对应 v0.16.71)
-> 日期: 2026-04-29
+> 版本: 9.8 (对应 v0.16.74)
+> 日期: 2026-05-11
 > 作者: Lin Chen
 
 本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -19,9 +19,10 @@
 | [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、Core/Deferred、MCP dynamic tools、权限合同 |
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、session runtime state、telemetry/replay、SecureStorage |
-| [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
+| [云端/同步历史架构](./architecture/cloud-architecture.md) | 历史 cloud task / orchestrator 设计归档；当前保留配置、更新、feature flag、cloud proxy 等服务 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
-| [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline），与 TaskPanel(sidecar) 分工 |
+| [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
+| [Artifact Verification](./architecture/artifact-verification.md) | AcceptanceRunner、Game/Deck/Dashboard verifier、Delivery Review、Preview Feedback |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 
@@ -44,6 +45,7 @@
 | [013](./decisions/013-local-model-eval-support.md) | 评测中心 + 主聊天支持本地 Ollama 模型 | accepted |
 | [014](./decisions/014-debug-snapshot-system.md) | 调试快照系统 + CLI debug 命令树 | accepted |
 | [015](./decisions/015-swebench-docker-eval-harness.md) | SWE-bench docker-based eval harness | accepted |
+| [016](./decisions/016-no-cross-kind-verifier-interface.md) | 不提前抽 cross-kind verifier interface | accepted |
 
 ---
 
@@ -91,26 +93,24 @@ code-agent/
 │   │   ├── errors/             # 统一错误处理（分类、恢复引擎、自动学习）
 │   │   ├── events/             # 事件三通道（InternalEventStore 持久化 + ControlStream 实时 + Mailbox 协调）
 │   │   │                         # 注：EventBus / EventBridge 运行时已迁出 protocol/，归位到 services/eventing/
-│   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook）
+│   │   ├── hooks/              # 用户可配置钩子系统（Agent Hook + 内置 Hook + trigger history）
 │   │   ├── ipc/                # IPC handler 层（前后端通信桥梁，含 provider.ipc.ts 连通性测试+诊断+健康状态）
 │   │   ├── model/              # ModelRouter, Provider, 自适应路由, 智能 Fallback, HealthMonitor, 请求规范化中间件
 │   │   ├── permissions/        # 权限矩阵（GuardFabric 多源竞争 + PolicyEngine + 拓扑感知）
 │   │   ├── platform/           # 平台抽象层（Tauri/Electron/Web 差异封装）
-│   │   ├── prompts/            # Prompt 矩阵（4 Profile × 5 层 Overlay + 缓存稳定性）
+│   │   ├── prompts/            # Prompt 矩阵（4 Profile × 5 层 Overlay + Prompt Registry/override + 缓存稳定性）
 │   │   ├── routing/            # Agent 路由系统（意图分类 + 路由决策）
 │   │   ├── security/           # 运行时安全（命令监控、敏感信息检测、审计日志）
-│   │   ├── services/           # 核心服务（Auth, Sync, Database, SecureStorage, 引用溯源）
+│   │   ├── services/           # 核心服务（Auth, Sync, Database, SecureStorage, 引用溯源、cloud config/update/feature flag）
 │   │   ├── session/            # 会话管理（Worker Epoch 生成代围栏、快照重物化、导出、分叉、恢复）
 │   │   ├── tools/              # gen1-gen8 工具实现 + DocEdit
 │   │   │                         # 注：tool dispatch 已从 protocol/ 拆出，归位到 tools/dispatch/（M1.2）
 │   │   │
 │   │   │── ── 智能层 ──────────────────────────────
-│   │   ├── cloud/              # 云端任务服务（任务路由、混合调度、加密同步）
 │   │   ├── cron/               # 定时任务与心跳监控
 │   │   ├── evaluation/         # 评测双管道 + Session Replay
 │   │   ├── desktop/            # 桌面活动服务（从旧 memory/ 搬迁）
 │   │   ├── lightMemory/        # Light Memory 系统（File-as-Memory, ~700 行，唯一记忆系统）
-│   │   ├── orchestrator/       # 云端任务执行编排器（Orchestrator 配置与调度）
 │   │   ├── planning/           # 规划系统
 │   │   ├── research/           # 深度研究模式（多源路由、自适应搜索、报告生成）
 │   │   ├── scheduler/          # DAG 并行任务调度
@@ -139,9 +139,10 @@ code-agent/
 │   │   ├── stores/             # Zustand 状态
 │   │   └── hooks/              # 自定义 hooks
 │   │
-│   ├── shared/                 # 类型定义、常量、IPC 协议（含 contract/designBrief、contract/workspacePreview）
+│   ├── shared/                 # 类型定义、常量、IPC 协议（含 contract/designBrief、contract/workspacePreview、prompt rewind DTO）
 │   ├── design/                 # Design Brief 工作流：direction-tokens、critique judge（5 维评分 + prompt）
 │   ├── artifacts/              # Session-level artifact 定义（question-form 等结构化采集产物）
+│   ├── shared/ipc/             # zod IPC schemas、typedInvoke / defineHandler 共享契约
 │   ├── cli/                    # CLI 接口（独立构建入口；含 `debug` 命令树）
 │   └── web/                    # Web Server（SSE API + 路由）
 │
@@ -153,26 +154,68 @@ code-agent/
 └── supabase/                    # 数据库迁移
 ```
 
-### 工具体系（96+ 个注册工具）
+### 工具体系（108 个 native ToolModule）
 
-按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-04-24 之后新增 visual_edit 与 Browser/Computer 生产化子动作，文档口径用 96+ 避免把工具总数写死。
+按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-05 native migration 后，`src/main/tools/registry.ts` 当前注册 108 个 ToolModule，`src/main/tools/modules/` 下有 107 个 schema 文件；下表按能力域说明，不把每类数量写成长期不变量。
 
-| 分类 | 数量 | 代表工具 |
-|------|------|----------|
-| Shell & 文件 | 14 | Bash, Read, Write, Edit, Glob, Grep, GitCommit, NotebookEdit |
-| 规划 & 任务 | 12 | TaskManager, Plan, PlanMode, AskUserQuestion, Task |
-| Web & 搜索 | 5 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
-| 文档 & 媒体 | 23 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart/QRCode, Speech |
-| 外部服务连接器 | 13 | Jira, GitHubPR, Calendar, Mail, Reminders |
-| 记忆 | 2 | MemoryWrite, MemoryRead |
-| 视觉 & 浏览器 | 5 | Computer, Browser, Screenshot, GuiAgent |
-| 多 Agent | 9 | AgentSpawn, AgentMessage, WaitAgent, CloseAgent, SendInput, Teammate |
-| 统一入口 (Deferred) | 12 | Process, MCPUnified, DocEdit, ExcelAutomate, PdfAutomate |
-| 元工具 | 1 | ToolSearch |
+| 分类 | 代表工具 |
+|------|----------|
+| Shell & 文件 | Bash, Read, Write, Edit, MultiEdit, Glob, Grep, GitCommit, NotebookEdit |
+| 规划 & 任务 | TaskManager, Plan, PlanMode, AskUserQuestion, Task, findings_write, confirm_action |
+| Web & 搜索 | WebSearch, WebFetch, ReadDocument, LSP, Diagnostics |
+| 文档 & 媒体 | DocEdit, ExcelAutomate, PPT, Image/Video/Chart/QRCode, Speech |
+| 外部服务连接器 | Jira, GitHubPR, Calendar, Mail, Reminders |
+| 记忆 | MemoryWrite, MemoryRead |
+| 视觉 & 浏览器 | Computer, Browser, Screenshot, GuiAgent, visual_edit |
+| 多 Agent | AgentSpawn, AgentMessage, WaitAgent, CloseAgent, SendInput, Teammate |
+| 统一入口 / 元工具 | Process, MCPUnified, DocEdit, ExcelAutomate, PdfAutomate, ToolSearch |
 
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### v0.16.74 Prompt / Hook / Prompt Rewind（2026-05-11）
+
+这一轮把可配置 prompt、Hook 可观测性和会话回退收进主产品面。架构上复用既有 domain IPC、SessionRepository、FileCheckpointService 和 turn timeline，没有引入新的并行会话模型。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Prompt Registry | `applyOverride()` 将 prompt 常量包成实时字符串；`dynamic()` 让组合 prompt 每次构建都重新读取 override；`promptIndex` 负责副作用注册所有 prompt 模块 | `src/main/prompts/registry.ts`、`src/main/prompts/promptIndex.ts`、`src/main/prompts/builder.ts` |
+| Prompt Manager UI | `domain:prompt` 提供 `list/get/set/reset/preview/debugSystemPrompt`；UI 按 category 展示默认文本和当前生效文本，保存到 `~/.code-agent/prompts-overrides/<id>.md` | `src/main/ipc/prompt.ipc.ts`、`src/renderer/components/features/prompts/PromptManagerModal.tsx` |
+| Hook Settings | `domain:hook` 汇总全局/项目 hook 配置、enabled/unused events、matcher、source、decision/observer、parallel，并能创建/打开/定位配置文件 | `src/main/ipc/hook.ipc.ts`、`src/renderer/components/features/settings/tabs/HooksSettings.tsx` |
+| Hook Activity in Chat | HookManager 记录最近 50 条 trigger history，并通过 turn timeline 注入 `hook_activity`；TurnCard 在用户提示词下方展示本轮 hook 数量、状态、耗时和事件 chips | `src/main/hooks/hookManager.ts`、`src/renderer/utils/turnTimelineProjection.ts`、`src/renderer/components/features/chat/TurnCard.tsx` |
+| CLI hooks 默认启用 | CLI `buildCLIConfig()` 显式设 `enableHooks:true`，`AgentLoop` 不再只在 planning mode 下运行用户 Hook | `src/cli/bootstrap.ts`、`src/cli/types.ts` |
+| Chat workspace defaults | 新建会话、新 tab、初始 bootstrap 传 `workingDirectory:null`，避免继承上一条代码工作区；TitleBar 选择目录后通过 `session:update` 持久化 | `src/renderer/components/Sidebar.tsx`、`src/renderer/components/TitleBar.tsx`、`src/renderer/stores/sessionStore.ts` |
+| Prompt Rewind | `domain:session/rewindToPrompt` 拒绝 running session，找到锚点用户消息与最近 checkpoint，回滚文件，隐藏锚点及之后 active 消息，把原 prompt/attachments 回填输入框，并写 `session_rewinds` 审计 | `src/main/app/agentAppService.ts`、`src/main/services/core/repositories/SessionRepository.ts`、`src/main/services/checkpoint/fileCheckpointService.ts`、`src/renderer/components/ChatView.tsx` |
+| Web 模式对齐 | `src/web/webServer.ts` 增加同名 `rewindToPrompt` action，Web 端会话 API 与 Tauri IPC 保持功能一致 | `src/web/webServer.ts` |
+
+**持久化边界**：
+- `messages.visibility = active | rewound` 是 active transcript 的过滤条件；rewound 消息保留在库中用于审计、同步和回放，不再出现在普通 `getMessages()`。
+- `session_rewinds` 记录 anchor prompt、隐藏消息列表、checkpoint message、文件恢复/删除数量和错误列表。
+- Supabase 侧迁移 `20260511000000_prompt_rewind.sql` 同步增加 `messages.visibility` 与 `public.session_rewinds`，并用 RLS 限制到当前用户。
+
+### v0.16.72-73 Native Protocol + Artifact Acceptance + Isolation + Quality Gates（2026-05-01 ~ 2026-05-10）
+
+这一轮不是单点功能，而是把工具协议、artifact 验收、多 agent 浏览器/桌面隔离、类型/异步/清理门禁同时推进。文档口径按能力域记录，避免把它误读成零散 refactor。
+
+| 能力域 | 当前闭环 | 关键文件 / 文档 |
+|------|---------|----------------|
+| Level 1 native tool protocol | Web/Search、Excel、Document、MCP、Skill、LSP、Multiagent、Planning、Vision、Network/Media/Docgen/PPT 按 wave 迁到 native module；旧 wrappers/legacy path 分批删除；IPC schema 不变的工具保留前端兼容 | `src/main/tools/modules/*`、`src/main/tools/registry.ts`、`docs/migrations/legacy-tools-removal-sop.md` |
+| Tool reliability | WebFetch 强制 URL；toolSearch 无 callable 命中时明确失败；Edit old_text mismatch 返回最近 anchor lines；LSP 扩到 100+ extension map 并能返回 install hint；shell 统一走 command policy | `src/main/tools/modules/network/*`、`src/main/tools/utils/anchorHint.ts`、`src/main/lsp/*`、`src/main/tools/modules/shell/commandPolicy.ts` |
+| Runtime / Web / Context hardening | compaction/browser recovery、partial-failure trace、Web 401/403 token mismatch recovery、run 前持久化 user message、activeAgentLoops flush、telemetry classifier、token-trigger compaction、context fill 包含 tool schemas | `src/main/context/*`、`src/web/webServer.ts`、`src/main/telemetry/*`、`src/renderer/components/features/chat/*` |
+| Artifact acceptance / repair | AcceptanceRunner、Delivery Review、Preview Feedback、通用 repair toolkit、Game subtype registry、Best-of-N + repair cap + monotonicity gate、DeckVerifier + schema/narrative probes、DashboardVerifier + browser visual smoke + state_change_on_click probe | `src/main/agent/runtime/acceptance/*`、`src/main/evaluation/deliveryReviewService.ts`、`src/main/evaluation/previewFeedbackService.ts`、`src/main/agent/runtime/repair/*`、`src/main/agent/runtime/game/*`、`src/main/agent/runtime/deck/*`、`src/main/agent/runtime/dashboard/*` |
+| Browser / Computer multi-agent isolation | 子 agent 工具调用带 `agentId`，BrowserService pool 提供 per-agent cookie/storage 隔离；ephemeral Chromium FIFO semaphore；ComputerSurface 写动作 mutex；新增 mouse_down/up、open_application、write_clipboard、computer_batch、hold_key、triple_click、cursor_position | `src/main/services/infra/browserPool.ts`、`src/main/services/infra/browserService.ts`、`src/main/services/infra/playwrightLaunchSemaphore.ts`、`src/main/services/desktop/computerSurfaceLock.ts`、`src/main/tools/vision/computerUse.ts`、`tests/smoke/*` |
+| Multi-agent signal propagation | subagent dispatch 将 `agentId` 注入 `ToolContext`；`effectiveSignal` 透传 `modelRouter.inference`，避免子 agent cancel / abort 丢到模型调用外 | `src/main/agent/multiagentTools/*`、`src/main/model/modelRouter.ts` |
+| Typed IPC / Web payload | `shared/ipc` zod schemas、`defineHandler`、renderer `typedInvoke`、web `parseBody` 建成 typed IPC/HTTP payload 校验起点 | `src/shared/ipc/*`、`src/main/platform/ipcRegistry.ts`、`src/renderer/services/typedInvoke.ts`、`src/web/helpers/typedBody.ts` |
+| Provider wrappers / symmetry | OpenAI / Anthropic / DeepSeek / Gemini 解析走 zod wrappers，SSE stream 切到 wrappers；51 fixtures contract tests；provider symmetry 脚本接 Husky + GitHub Actions | `src/main/model/providers/wrappers/*`、`scripts/check-provider-symmetry.sh`、`.husky/pre-commit` |
+| Async correctness / god-file split | `Promise.race` → `withTimeout`，timer graceful shutdown + `.unref()`，`new URL()` try/catch；HookManager / telemetryQueryService / TaskDAG 按执行引擎、replay、graph algorithms 拆分 | `src/main/services/infra/timeoutController.ts`、`src/main/hooks/*`、`src/main/evaluation/*`、`src/main/agent/taskDag.ts` |
+| Cleanup / architecture retirement | cloud agent module、legacy provider functions、P0-5 POC subsystem、Decorated tools、orphan resume、unused exports 清理；Message 类型统一到 `shared/contract`；Codex sandbox/crossVerify 退场，改成 bash command policy | `src/main/agent/*`、`src/main/model/*`、`src/main/tools/*`、`src/shared/contract/*` |
+
+**架构边界澄清**：
+- Native protocol migration 是运行时入口归位，不改变用户看到的工具语义；同名工具、alias 和 IPC contract 尽量保持兼容。
+- Artifact acceptance 采用"按 artifact kind 拥有自己的 verifier"的策略；ADR-016 明确暂不抽 `ArtifactKindVerifier` 顶层接口，避免把 deck 的 in-memory 验证和 dashboard 的 browser 验证硬塞进同一形态。
+- Browser/Computer 隔离解决的是 Agent Team 并发时的状态串扰，默认单 agent 浏览器语义保持不变。
+- 5/10 的 cleanup 是架构退休：删除不再 active 的 POC/cloud/legacy path，不作为新产品入口宣传。
 
 ### v0.16.66 Agent Runtime Capability Hardening (2026-04-27)
 
@@ -184,7 +227,7 @@ code-agent/
 | Run-level abort | `abortSignal` 贯穿 `ToolExecutionEngine -> ToolExecutor -> ToolResolver -> ProtocolToolContext`，长 Bash/http 等工具可被 run cancel | `src/main/agent/runtime/toolExecutionEngine.ts`、`src/main/tools/toolExecutor.ts`、`src/main/tools/dispatch/toolResolver.ts` |
 | Chat run owner | desktop chat send/interrupt 走 TaskManager-owned path，避免 chat status 与 task state 两套 owner 漂移 | `src/main/app/agentAppService.ts`、`src/main/task/TaskManager.ts` |
 | Tool 权限与 MCP | `Bash/bash` 归一；顶层审批结果通过 `approvedToolCall` 传给 resolver；MCP dynamic tool 可 direct execute 到 `MCPClient.callTool`；ToolSearch 标记 `loadable/notCallableReason` | `toolExecutor.ts`、`toolResolver.ts`、`mcpToolRegistry.ts`、`toolSearchService.ts` |
-| Skill 安全边界 | project/user skill 的 `allowed-tools` 不再自动扩权；只有 builtin/plugin skill 可进入自动 preapproval | `src/main/agent/skillTools/skillMetaTool.ts`、`src/main/services/skills/skillParser.ts` |
+| Skill 安全边界 | project/user skill 的 `allowed-tools` 不再自动扩权；只有 builtin/plugin skill 可进入自动 preapproval | `src/main/tools/modules/skill/skill.ts`、`src/main/services/skills/skillParser.ts` |
 | Multiagent | parallel executor 有真实 inbox；`dependsOn` 按成功依赖门控；失败/blocked/cancelled 都进入 aggregation；run-level cancel 阻止 pending agent 启动 | `parallelAgentCoordinator.ts`、`sendInput.ts`、`resultAggregator.ts` |
 | 持久化恢复 | todo、Task tool task、context intervention、compression state、persistent system context、pending approval kind hydrate 都有 session-scoped durable path | `SessionRepository.ts`、`taskStore.ts`、`contextInterventionState.ts`、`runtimeStatePersistence.ts` |
 | Replay / Eval | structured replay join model/tool/event evidence；`real-agent-run` gate 校验 `sessionId + replayKey + telemetryCompleteness`，缺关键证据会 fail/degraded | `telemetryQueryService.ts`、`testRunner.ts`、`ExperimentRunner.ts` |
@@ -215,9 +258,9 @@ code-agent/
 | `max-lines: 1000` ESLint 守门 | 1000 行上限作为 God File 硬护栏，19 个 legacy God File 进白名单逐步消化 | `.eslintrc`、`docs/audits/2026-04-27-codex-2day-burst-cleanup.md` |
 | Supabase services 类型清理 | 一次性移除 18+ 处 `as any`，并修出 latent bug（B5 audit） | `src/main/services/sync/*` |
 | Design Brief 生产化 (Phase A→C.3) | `src/design/`（direction-tokens + 5-dim critique）、`src/artifacts/question-form.ts`、`src/main/prompts/selfCritique.ts`、`src/main/prompts/questionForm.ts`、`src/main/app/workbenchTurnContext.ts` 把 brief 生产路径接进 envelope 与 system prompt；C.3 路线 A 借鉴 nexu-io 模式注入 silent self-critique pre-emit gate | `src/design/*`、`src/artifacts/*`、`src/shared/contract/designBrief.ts`、`src/main/prompts/selfCritique.ts` |
-| Workspace Preview Panel | 新增右侧 workbench tab 承载 designBrief / questionForm 实时预览；`useWorkspacePreviewModel` hook 订阅 envelope 元数据；TaskMonitor 增加 scope inspector 与之联动 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/components/QuestionFormPreview.tsx`、`src/renderer/hooks/useWorkspacePreviewModel.ts`、`src/renderer/utils/workspacePreview.ts` |
+| Workspace Preview Panel | 右侧 artifact review workbench：承载 designBrief / questionForm / design_ppt / delivery review / preview feedback；反馈项可 resolve、dismiss 或 send back to chat；TaskMonitor scope inspector 与之联动 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/components/QuestionFormPreview.tsx`、`src/renderer/hooks/useWorkspacePreviewModel.ts`、`src/renderer/utils/workspacePreview.ts` |
 | Channel inbox / outbox 实时事件 | 入站 / 出站事件统一 IPC 通道，renderer 可 `list / dismiss`；`ConnectorsCard` 直接消费 channel inbox 状态 | `src/main/channels/*`、`src/renderer/components/.../ConnectorsCard.tsx` |
-| Chat-view 新会话首屏 | 新 session 首屏从"示例 prompt 卡"改为"工作 / 生活 / 学习 / 娱乐"四类任务入口卡 | `src/renderer/components/.../chat/ChatView/EmptyState*.tsx` |
+| Chat-view 新会话首屏 | 新 session 首屏从"示例 prompt 卡"改为写邮件/排日程、做方案/文档/PPT、调研/对比、代码改动四类具体任务入口 | `src/renderer/components/ChatView.tsx` |
 | Eval Center Review Queue | `SessionListView` 把待评 session 集中分桶，标注 replay 完整度与异常 case；行点击进详情；fatal inference error 熔断；DB 去重 | `src/renderer/components/features/evalCenter/SessionListView.tsx`、`src/main/evaluation/testRunner.ts` |
 | Computer Surface `locate_role+targetApp` | 走 macOS background AX 直连指定 app 控件树，避免唤起前台；`type` / `key` 没有 background target 时降级前台键盘事件，bridge 显式 warn；文档 Computer / computer_use 别名映射 + 截图可见性规则 | `src/main/tools/computerUse.ts`、`src/main/tools/desktop.ts`、`docs/guides/computer-use.md` |
 | CLI config 单源 | `CLIConfigService` 与 `ConfigService` 统一为同一份 config source，避免 CLI 模式与 Tauri 模式读到不同默认值 | `src/cli/config.ts`、`src/main/config/*`（PR #88） |
@@ -530,10 +573,10 @@ Parent Agent
 | 模块 | 位置 | 描述 |
 |------|------|------|
 | **Excel 原子编辑** | `src/main/tools/excel/excelEdit.ts` | 14 种操作（set_cell/range/formula, insert/delete rows/columns, style, sheet 管理） |
-| **Word 原子编辑** | `src/main/tools/document/docxEdit.ts` | 7 种操作（replace_text, replace/insert/delete/append paragraph, heading, text style） |
+| **Word 原子编辑** | `src/main/tools/modules/document/docEdit.ts` | 历史 7 种 Word 操作经 DocEdit native 入口承接，旧 `docxEdit.ts` 不再作为当前事实源 |
 | **SnapshotManager** | `src/main/tools/document/snapshotManager.ts` | 统一文档快照层（创建/恢复/清理，最多 20 个/文件） |
-| **DocEdit 统一入口** | `src/main/tools/document/docEditTool.ts` | 自动识别格式（.xlsx/.pptx/.docx）路由到对应引擎 |
-| **PPT 编辑加固** | `src/main/tools/network/ppt/editTool.ts` | +2 新操作（reorder_slides, update_notes），接入 SnapshotManager |
+| **DocEdit 统一入口** | `src/main/tools/modules/document/docEdit.ts` | 自动识别格式（.xlsx/.pptx/.docx）路由到对应引擎 |
+| **PPT 编辑加固** | `src/main/tools/modules/network/pptEdit.ts` | +2 新操作（reorder_slides, update_notes），接入 SnapshotManager；生成/版式能力在 `src/main/tools/media/ppt/` |
 
 **设计原则**：原子操作替代全量重写，~80% token 节省。编辑前自动快照到 `.doc-snapshots/`，失败自动回滚。对标悟空 RealDoc。
 
@@ -745,6 +788,8 @@ agentLoop.executeTool(Read)
 | **v0.16.57** | 架构对齐 | 投影式上下文管理（6 层压缩）、Prompt 矩阵（4 Profile × 5 Overlay）、GuardFabric 多源权限、事件三通道、Worker Epoch、多模型差异化路由、Operator Surface |
 | **v0.16.66** | Agent Runtime Hardening | run lifecycle 终态、run-level abort、TaskManager-owned chat、MCP direct execute、Skill trust gate、multiagent reliability、structured replay gate |
 | **v0.16.71** | Hardening + 评测扩面 + Design Brief | Tauri updater 安全 (M6.a/b)、EventBus & dispatch 归位、调试快照体系 (ADR-014)、本地 Ollama 评测 (ADR-013)、SWE-bench docker harness (ADR-015)、小米 MiMo provider + 默认模型切换、Design Brief 生产化 (Phase A→C.3)、Workspace Preview Panel、Channel inbox/outbox |
+| **v0.16.72-73** | Native protocol + acceptance + isolation + quality gates | Level 1 native tool migration wave1-4、Runtime/Web/Context hardening、Artifact repair toolkit、Game/Deck/Dashboard verifier、Browser/Computer multi-agent isolation、typed IPC、provider wrappers/symmetry、async/god-file/cleanup |
+| **v0.16.74** | Prompt / Hook / Rewind | Prompt Manager + 实时 override、Hook Settings tab、Hook Activity turn timeline、CLI hooks 默认启用、Chat workspace defaults、Prompt Rewind + session_rewinds 审计 |
 
 </details>
 

@@ -1,397 +1,172 @@
 # Hooks System API Reference
 
-> **Status**: SCAFFOLD - Will be completed when Session C finishes C9-C14
-
-This document describes the Hooks system APIs for Code Agent.
+> **Status**: active in v0.16.74. Hooks run in app, web/CLI-backed AgentLoop paths, and CLI mode now enables hooks by default.
 
 ## Overview
 
-The Hooks system allows users to configure custom actions that execute in response to agent events. Hooks can run shell commands, execute scripts, or use AI-based evaluation.
+Hooks let users run command, prompt, agent, or HTTP automation around agent lifecycle events. They support two modes:
 
-## Event Types
+| Mode | Behavior |
+|------|----------|
+| `decision` | Can block or modify the current action when the event supports it |
+| `observer` | Runs for logging/notification/analytics; block or modify results are ignored |
 
-Code Agent supports 11 hook event types:
-
-| Event | Trigger | Use Case |
-|-------|---------|----------|
-| `PreToolUse` | Before tool execution | Validate/block commands |
-| `PostToolUse` | After successful tool execution | Log, notify |
-| `PostToolUseFailure` | After failed tool execution | Error handling |
-| `UserPromptSubmit` | When user submits prompt | Input validation |
-| `Stop` | When agent stops | Cleanup tasks |
-| `SubagentStop` | When subagent stops | Subagent cleanup |
-| `PreCompact` | Before context compaction | Save state |
-| `Setup` | During initialization | Configure environment |
-| `SessionStart` | When session begins | Initialize resources |
-| `SessionEnd` | When session ends | Final cleanup |
-| `Notification` | For notifications | Alert systems |
-
----
+Trigger history is kept in memory for the latest 50 entries. Chat turn timeline consumes that history as `hook_activity`, so the user can see which hooks ran, whether any blocked, whether input was modified, and how long they took.
 
 ## Configuration
 
-### Configuration File Location
+Preferred config files:
 
-Hooks are configured in `.claude/settings.json`:
+| Scope | Path | Shape |
+|-------|------|-------|
+| Global | `~/.code-agent/hooks/hooks.json` | direct `HooksConfig` object |
+| Project | `<project>/.code-agent/hooks/hooks.json` | direct `HooksConfig` object |
 
-- **Global**: `~/.claude/settings.json`
-- **Project**: `<project>/.claude/settings.json`
-
-Project-level hooks are merged with global hooks.
-
-### Configuration Schema
+Legacy `.claude/settings.json` with `{ "hooks": ... }` is still read at lower priority. If both new and legacy files exist at the same scope, the `.code-agent/hooks/hooks.json` file wins.
 
 ```json
 {
-  "hooks": {
-    "<EventType>": [
-      {
-        "matcher": "<ToolPattern>",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "<shell command>",
-            "timeout": 5000
-          }
-        ]
-      }
-    ]
-  }
+  "PreToolUse": [
+    {
+      "matcher": "Bash",
+      "hookType": "decision",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "./scripts/validate-command.sh",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "*",
+      "hookType": "observer",
+      "parallel": true,
+      "hooks": [
+        {
+          "type": "http",
+          "url": "https://example.internal/hooks/tool",
+          "timeout": 3000
+        }
+      ]
+    }
+  ]
 }
 ```
 
-### Example Configuration
+## Hook Definition
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "./scripts/validate-command.sh",
-            "timeout": 5000
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'File operation: $TOOL_NAME on $FILE_PATH'"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "./scripts/log-tool-usage.sh"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "./scripts/cleanup.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+| Field | Type | Notes |
+|-------|------|-------|
+| `type` | `command` / `prompt` / `agent` / `http` | Required |
+| `command` | string | Required for command hooks |
+| `prompt` | string | Required for prompt hooks |
+| `agent` | string | Required for agent hooks |
+| `agentPrompt` | string | Optional agent hook prompt |
+| `url` | string | Required for HTTP hooks |
+| `headers` | object | HTTP headers; env interpolation must be allowlisted |
+| `allowedEnvVars` | string[] | Env vars available for HTTP header interpolation |
+| `timeout` | number | Defaults to 5000ms |
+| `async` | boolean | Fire-and-forget |
+| `once` | boolean | Run once per session |
+| `if` | string | Conditional tool input matcher, for example `Bash(git *)` |
 
----
+Matcher fields:
 
-## Modules
+| Field | Type | Notes |
+|-------|------|-------|
+| `matcher` | regex string or `*` | Tool matcher for tool events |
+| `mcpServer` | string | Matches tools named `mcp__<server>__*` |
+| `parallel` | boolean | Runs hooks in the same matcher group concurrently |
+| `hookType` | `decision` / `observer` | Observer-only events force observer mode |
 
-### Config Parser (`src/main/hooks/configParser.ts`)
+## Events
 
-Parses and validates hook configuration.
+Code Agent currently defines 19 hook events.
 
-```typescript
-// TODO: Document when C9 is complete
-interface HookConfigParser {
-  parse(config: unknown): HookConfig;
-  validate(config: HookConfig): ValidationResult;
-  merge(global: HookConfig, project: HookConfig): HookConfig;
-}
+| Stability | Events |
+|-----------|--------|
+| Stable | `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `Stop`, `PostExecution`, `PreCompact`, `SessionStart`, `SessionEnd`, `SubagentStop` |
+| Experimental | `SubagentStart`, `PermissionRequest`, `TaskCreated`, `TaskCompleted`, `PermissionDenied`, `PostCompact`, `StopFailure` |
+| Internal legacy | `Setup`, `Notification` |
 
-interface HookConfig {
-  hooks: Record<EventType, HookMatcher[]>;
-}
+Observer-only events: `PostToolUse`, `PostToolUseFailure`, `PostExecution`, `SessionStart`, `SessionEnd`, `SubagentStop`, `TaskCreated`, `TaskCompleted`, `PermissionDenied`, `PostCompact`, `StopFailure`. If configured as `decision`, they are downgraded to `observer`.
 
-interface HookMatcher {
-  matcher: string;  // Regex pattern
-  hooks: HookDefinition[];
-}
+## Result Contract
 
-interface HookDefinition {
-  type: 'command' | 'prompt';
-  command?: string;
-  prompt?: string;
-  timeout?: number;
-}
-```
+```ts
+type HookActionResult = 'allow' | 'block' | 'continue' | 'error';
 
----
-
-### Script Executor (`src/main/hooks/scriptExecutor.ts`)
-
-Executes external scripts with environment variables.
-
-```typescript
-// TODO: Document when C10 is complete
-interface ScriptExecutor {
-  execute(command: string, env: HookEnvironment): Promise<ExecutionResult>;
-}
-
-interface HookEnvironment {
-  TOOL_NAME: string;
-  TOOL_INPUT: string;
-  SESSION_ID: string;
-  FILE_PATH?: string;
-  COMMAND?: string;
-  // Additional context variables
-}
-
-interface ExecutionResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-}
-```
-
-#### Environment Variables
-
-Scripts receive these environment variables:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `TOOL_NAME` | Name of the tool | `Bash` |
-| `TOOL_INPUT` | JSON-encoded tool input | `{"command":"ls"}` |
-| `SESSION_ID` | Current session ID | `sess_abc123` |
-| `FILE_PATH` | File path (for file tools) | `/path/to/file.ts` |
-| `COMMAND` | Command (for Bash) | `npm test` |
-
----
-
-### Events (`src/main/hooks/events.ts`)
-
-Defines all hook event types and their payloads.
-
-```typescript
-// TODO: Document when C11 is complete
-type EventType =
-  | 'PreToolUse'
-  | 'PostToolUse'
-  | 'PostToolUseFailure'
-  | 'UserPromptSubmit'
-  | 'Stop'
-  | 'SubagentStop'
-  | 'PreCompact'
-  | 'Setup'
-  | 'SessionStart'
-  | 'SessionEnd'
-  | 'Notification';
-
-interface HookEvent {
-  type: EventType;
-  timestamp: number;
-  sessionId: string;
-  payload: EventPayload;
-}
-
-type EventPayload =
-  | ToolUsePayload
-  | PromptPayload
-  | SessionPayload
-  | NotificationPayload;
-
-interface ToolUsePayload {
-  toolName: string;
-  input: Record<string, unknown>;
-  output?: unknown;
+interface HookExecutionResult {
+  action: HookActionResult;
+  message?: string;
+  modifiedInput?: string;
+  duration: number;
   error?: string;
 }
 ```
 
----
+Aggregated trigger result:
 
-### Hook Merger (`src/main/hooks/merger.ts`)
-
-Merges hooks from multiple configuration sources.
-
-```typescript
-// TODO: Document when C12 is complete
-interface HookMerger {
-  merge(configs: HookConfig[]): HookConfig;
+```ts
+interface HookTriggerResult {
+  shouldProceed: boolean;
+  message?: string;
+  modifiedInput?: string;
+  results: HookExecutionResult[];
+  totalDuration: number;
 }
 ```
 
-#### Merge Rules
+## Environment Variables
 
-1. **Priority**: Project hooks run before global hooks
-2. **Deduplication**: Identical hooks are deduplicated
-3. **Ordering**: Hooks execute in definition order within each level
+Command hooks receive event context through `HOOK_*` variables.
 
----
+| Variable | Description |
+|----------|-------------|
+| `HOOK_SESSION_ID` | Current session id |
+| `HOOK_EVENT` | Hook event name |
+| `HOOK_TOOL_NAME` | Tool name for tool events |
+| `HOOK_TOOL_INPUT` | JSON/stringified tool input |
+| `HOOK_TOOL_OUTPUT` | Tool output for `PostToolUse` |
+| `HOOK_ERROR_MESSAGE` | Error message for failure events |
+| `HOOK_WORKING_DIR` | Working directory |
+| `HOOK_USER_PROMPT` | User prompt for `UserPromptSubmit` |
 
-### Prompt-Based Hook (`src/main/hooks/promptHook.ts`)
+## IPC Surface
 
-Uses AI evaluation for complex hook decisions.
+`domain:hook` exposes the management surface used by Settings.
 
-```typescript
-// TODO: Document when C13 is complete
-interface PromptHook {
-  evaluate(event: HookEvent, prompt: string): Promise<HookDecision>;
-}
+| Action | Payload | Response |
+|--------|---------|----------|
+| `list` | none | enabled hooks, unused events, global/project config paths |
+| `openConfigFile` | `{ filePath: string }` | creates an empty hooks template if missing, opens it |
+| `revealConfigFolder` | `{ filePath: string }` | reveals the file in Finder |
 
-type HookDecision = 'allow' | 'block' | 'continue';
-```
+The settings tab is `src/renderer/components/features/settings/tabs/HooksSettings.tsx`.
 
-#### Prompt Hook Configuration
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Evaluate if this command is safe to execute: $COMMAND. Consider security implications. Respond with ALLOW, BLOCK, or CONTINUE.",
-            "timeout": 10000
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
----
-
-### Hooks Engine (`src/main/planning/hooksEngine.ts`)
-
-Main engine that orchestrates hook execution.
-
-```typescript
-// TODO: Document when C14 is complete
-interface HooksEngine {
-  trigger(event: HookEvent): Promise<HookResult>;
-  register(eventType: EventType, hook: HookHandler): void;
-  unregister(eventType: EventType, hookId: string): void;
-}
-
-interface HookResult {
-  allowed: boolean;
-  results: IndividualHookResult[];
-}
-
-interface IndividualHookResult {
-  hookId: string;
-  success: boolean;
-  output?: string;
-  error?: string;
-  decision?: HookDecision;
-}
-```
-
----
-
-## Hook Execution Flow
+## Runtime Path
 
 ```
-┌─────────────────┐
-│  Event Occurs   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Load Config    │◄── Global + Project hooks
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Match Hooks    │◄── Filter by event type + matcher pattern
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Execute Hooks   │◄── In order, with environment
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Collect Results │◄── Aggregate decisions
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Return Decision │◄── allow / block / continue
-└─────────────────┘
+AgentLoop
+  -> HookManager.initialize()
+  -> triggerPreToolUse / triggerPostToolUse / triggerUserPromptSubmit / ...
+  -> hookExecutionEngine.executeHooks()
+  -> command / prompt / agent / http executor
+  -> HookManager.recordTrigger()
+  -> turn timeline hook_activity
+  -> TurnCard HookExecutionBanner
 ```
 
----
+Key files:
 
-## Writing Hook Scripts
-
-### Basic Script Template
-
-```bash
-#!/bin/bash
-# validate-command.sh
-
-# Environment variables are available
-echo "Tool: $TOOL_NAME"
-echo "Input: $TOOL_INPUT"
-echo "Session: $SESSION_ID"
-
-# Parse command for Bash tools
-if [ "$TOOL_NAME" = "Bash" ]; then
-  COMMAND=$(echo "$TOOL_INPUT" | jq -r '.command')
-
-  # Block dangerous commands
-  if [[ "$COMMAND" =~ "rm -rf /" ]]; then
-    echo "BLOCKED: Dangerous command" >&2
-    exit 1
-  fi
-fi
-
-# Exit 0 to allow, non-zero to block
-exit 0
-```
-
-### Script with Logging
-
-```bash
-#!/bin/bash
-# log-tool-usage.sh
-
-LOG_FILE="$HOME/.code-agent/tool-usage.log"
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-echo "$TIMESTAMP | $SESSION_ID | $TOOL_NAME | $TOOL_INPUT" >> "$LOG_FILE"
-exit 0
-```
-
----
-
-## See Also
-
-- [Hooks Test Scaffolds](../../tests/unit/hooks/) (when created)
-- [Planning Module](../../src/main/planning/)
+| File | Role |
+|------|------|
+| `src/main/hooks/configParser.ts` | Reads new and legacy config files, validates hooks, downgrades observer-only events |
+| `src/main/hooks/merger.ts` | Merges global/project hooks by append/replace/prepend strategy |
+| `src/main/hooks/hookExecutionEngine.ts` | Executes hooks, handles once/async/parallel/observer semantics |
+| `src/main/hooks/hookManager.ts` | Lifecycle API, trigger history, UI observer callback |
+| `src/main/ipc/hook.ipc.ts` | Settings-facing summary and config file actions |
+| `src/renderer/components/features/chat/TurnCard.tsx` | Chat hook activity banner |

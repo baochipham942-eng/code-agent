@@ -19,6 +19,7 @@ ca [command] [options]
   │   ├── Database（better-sqlite3, WAL 模式）
   │   ├── SessionManager（内存 + DB 混合）
   │   ├── AgentLoop + ToolRegistry（延迟导入）
+  │   ├── HookManager（默认启用，读取 .code-agent/hooks/hooks.json）
   │   ├── MemoryService（可选）
   │   └── SkillDiscoveryService（可选）
   │
@@ -31,6 +32,8 @@ ca [command] [options]
 ```
 
 **优雅降级**：Database/Memory 初始化失败不阻止运行，只影响持久化。
+
+**Hook 默认行为**：v0.16.74 起，CLI `buildCLIConfig()` 显式设置 `enableHooks:true`，`AgentLoop` 按用户/项目 Hook 配置运行，不再只有 `--plan` 或 planning mode 才启用 hooks。
 
 ---
 
@@ -167,7 +170,7 @@ SQLite (better-sqlite3)，4 张表：
 | 表 | 用途 |
 |----|------|
 | `sessions` | 会话元数据（id, title, model, working_directory, status, pr_link） |
-| `messages` | 消息存储（role, content, tool_calls, tool_results） |
+| `messages` | 消息存储（role, content, tool_calls, tool_results, visibility） |
 | `tool_executions` | 工具结果缓存（arguments_hash, expires_at） |
 | `todos` | 待办事项 |
 

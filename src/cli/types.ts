@@ -35,6 +35,8 @@ export interface CLIConfig {
   modelConfig: ModelConfig;
   outputFormat: 'text' | 'json' | 'stream-json';
   enablePlanning: boolean;
+  /** User/session hooks run independently from planning mode. */
+  enableHooks?: boolean;
   debug: boolean;
   /** 自动批准 plan mode 计划（用于 CLI/测试场景） */
   autoApprovePlan?: boolean;

@@ -78,7 +78,7 @@ function ensureInitialized(): void {
 function makeLivePrompt(id: string, defaultText: string): string {
   const live = (): string => overrides.get(id) ?? defaultText;
 
-  const handler: ProxyHandler<string> = {
+  const handler: ProxyHandler<object> = {
     get(_target, prop) {
       const text = live();
       if (prop === Symbol.toPrimitive) return (_hint: string) => text;
@@ -94,7 +94,7 @@ function makeLivePrompt(id: string, defaultText: string): string {
     },
   };
 
-  return new Proxy(new String(defaultText), handler) as unknown as string;
+  return new Proxy<object>(new String(defaultText), handler) as unknown as string;
 }
 
 /**
@@ -117,7 +117,7 @@ export function applyOverride(meta: PromptDescriptor, defaultText: string): stri
  * 让组合版本也实时跟随子项 override 变化。
  */
 export function dynamic(build: () => string): string {
-  const handler: ProxyHandler<string> = {
+  const handler: ProxyHandler<object> = {
     get(_target, prop) {
       const text = build();
       if (prop === Symbol.toPrimitive) return (_h: string) => text;
@@ -132,7 +132,7 @@ export function dynamic(build: () => string): string {
       return prop in (build() as unknown as object);
     },
   };
-  return new Proxy(new String(''), handler) as unknown as string;
+  return new Proxy<object>(new String(''), handler) as unknown as string;
 }
 
 /**

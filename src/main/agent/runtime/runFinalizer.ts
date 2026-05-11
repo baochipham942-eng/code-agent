@@ -504,6 +504,7 @@ export class RunFinalizer {
 
   processSkillActivation(skillResult: import('../../../shared/contract/agentSkill').SkillToolResult): void {
     logger.debug('[AgentLoop] Processing Skill activation result');
+    const skillName = skillResult.data?.commandName;
 
     if (skillResult.newMessages) {
       for (const msg of skillResult.newMessages) {
@@ -514,6 +515,14 @@ export class RunFinalizer {
           timestamp: Date.now(),
           isMeta: msg.isMeta,
           source: 'skill',
+          ...(skillName ? {
+            metadata: {
+              skill: {
+                skillName,
+                phase: msg.isMeta ? 'instructions' : 'status',
+              },
+            },
+          } : {}),
         };
         this.ctx.messages.push(messageToInject);
 

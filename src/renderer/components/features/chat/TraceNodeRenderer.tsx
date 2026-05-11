@@ -18,6 +18,7 @@ import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
+import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
@@ -367,6 +368,8 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
       return <RoutingEvidenceNode timeline={node.turnTimeline} />;
     case 'hook_activity':
       return <HookActivityNode timeline={node.turnTimeline} />;
+    case 'skill_activity':
+      return <SkillActivityNode timeline={node.turnTimeline} />;
     case 'artifact_ownership':
       return <ArtifactOwnershipNode timeline={node.turnTimeline} />;
     default:
@@ -652,6 +655,51 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
   );
 };
 
+function getSkillActionLabel(action: string): string {
+  switch (action) {
+    case 'selected':
+      return '写入偏好';
+    case 'triggered':
+      return '已触发';
+    case 'written':
+      return '已写入';
+    default:
+      return action;
+  }
+}
+
+const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const activity = timeline.skillActivity;
+  if (!activity || activity.items.length === 0) return null;
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
+      <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
+        <Wrench className="h-3.5 w-3.5 text-fuchsia-300" />
+        <span>Skills</span>
+        <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {activity.items.map((item, index) => (
+          <div key={`${item.skillId}-${item.action}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+            <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-fuchsia-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>
+                <span className="text-zinc-300">{getSkillActionLabel(item.action)}</span>
+                {item.source && <span className="text-zinc-600">{item.source}</span>}
+              </div>
+              {item.detail && (
+                <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.detail}</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
   const items = (timeline.artifactOwnership || [])
     .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
@@ -736,7 +784,11 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
     );
   }
 
-  // skill_status or generic system
+  if (node.subtype === 'skill_status') {
+    return <SkillStatusMessage content={node.content} />;
+  }
+
+  // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
       {node.content}

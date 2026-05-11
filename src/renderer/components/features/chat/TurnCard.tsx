@@ -5,7 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
-import type { TurnHookActivity } from '@shared/contract/turnTimeline';
+import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
 import {
   Anchor,
   AlertTriangle,
@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   RotateCcw,
   ShieldAlert,
+  Sparkles,
   Wrench,
   XCircle,
 } from 'lucide-react';
@@ -130,6 +131,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [isActiveTurn, isSessionProcessing, runningToolStartTime, sessionStatus, streamSnapshot, turn],
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
+  const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
 
   return (
     <div
@@ -168,6 +170,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         )}
 
         {hookActivity && <HookExecutionBanner activity={hookActivity} />}
+        {skillActivity && <SkillActivityBanner activity={skillActivity} />}
 
         {/* "Worked for Xm Ys" toggle — always visible when foldable */}
         {canFold && (
@@ -207,8 +210,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (node.id === foldedView.userNode?.id) {
                 return null;
               }
-              // Hook activity gets a stable, always-visible banner below the user prompt.
-              if (node.turnTimeline?.kind === 'hook_activity') {
+              // Hook/skill activity gets a stable, always-visible banner below the user prompt.
+              if (node.turnTimeline?.kind === 'hook_activity' || node.turnTimeline?.kind === 'skill_activity') {
+                return null;
+              }
+              if (node.subtype === 'skill_status') {
                 return null;
               }
               // Final text rendered below; skip here to avoid duplicate
@@ -274,6 +280,14 @@ function getTurnHookActivity(turn: TraceTurn): TurnHookActivity | null {
     && candidate.turnTimeline.hookActivity
   ));
   return node?.turnTimeline?.hookActivity ?? null;
+}
+
+function getTurnSkillActivity(turn: TraceTurn): TurnSkillActivity | null {
+  const node = turn.nodes.find((candidate) => (
+    candidate.turnTimeline?.kind === 'skill_activity'
+    && candidate.turnTimeline.skillActivity
+  ));
+  return node?.turnTimeline?.skillActivity ?? null;
 }
 
 function getHookActivityTone(activity: TurnHookActivity): 'success' | 'warning' | 'error' {
@@ -349,6 +363,64 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+function getSkillActionLabel(action: TurnSkillActivity['items'][number]['action']): string {
+  switch (action) {
+    case 'selected':
+      return '写入偏好';
+    case 'triggered':
+      return '已触发';
+    case 'written':
+      return '已写入';
+    default:
+      return action;
+  }
+}
+
+function getSkillActivityTitle(activity: TurnSkillActivity): string {
+  const labels = activity.items.map((item) => `${item.label} ${getSkillActionLabel(item.action)}`);
+  return labels.join(' · ');
+}
+
+const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activity }) => {
+  const [expanded, setExpanded] = useState(true);
+  const summary = activity.summary.replace(/^Skill\s*/, '');
+
+  return (
+    <div className="py-0.5 text-sm text-zinc-500">
+      <button
+        type="button"
+        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={getSkillActivityTitle(activity)}
+      >
+        <Sparkles className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate font-medium">Skill {summary}</span>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
+          {activity.items.map((item, index) => (
+            <div
+              key={`${item.skillId}-${item.action}-${index}`}
+              className="flex min-w-0 items-center gap-1.5"
+              title={item.detail || undefined}
+            >
+              <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
+              <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
+              {item.source && <span className="shrink-0 text-zinc-600">{item.source}</span>}
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -10,6 +10,7 @@ export type TurnTimelineNodeKind =
   | 'blocked_capabilities'
   | 'routing_evidence'
   | 'hook_activity'
+  | 'skill_activity'
   | 'artifact_ownership';
 
 export type TurnTimelineTone = 'neutral' | 'info' | 'warning' | 'success' | 'error';
@@ -117,6 +118,22 @@ export interface TurnHookActivity {
   items: TurnHookActivityItem[];
 }
 
+export type TurnSkillActivityAction = 'selected' | 'triggered' | 'written';
+
+export interface TurnSkillActivityItem {
+  timestamp: number;
+  skillId: string;
+  label: string;
+  action: TurnSkillActivityAction;
+  detail?: string;
+  source?: string;
+}
+
+export interface TurnSkillActivity {
+  summary: string;
+  items: TurnSkillActivityItem[];
+}
+
 export type TurnArtifactKind = 'file' | 'artifact' | 'link' | 'note';
 export type TurnArtifactOwnerKind = 'assistant' | 'tool' | 'agent';
 
@@ -140,6 +157,7 @@ export interface TurnTimelineNode {
   blockedCapabilities?: BlockedCapabilityReason[];
   routingEvidence?: TurnRoutingEvidence;
   hookActivity?: TurnHookActivity;
+  skillActivity?: TurnSkillActivity;
   artifactOwnership?: TurnArtifactOwnershipItem[];
 }
 

@@ -3,9 +3,12 @@ import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { ToolCall } from '@shared/contract/tool';
 import type {
   TurnHookActivity,
+  TurnSkillActivity,
+  TurnSkillActivityAction,
   TurnTimelineNode,
   TurnRoutingEvidence,
 } from '@shared/contract/turnTimeline';
+import { extractSkillIdFromToolCall } from '@shared/contract/workbenchTools';
 import {
   snapshotFromWorkbenchMetadata,
 } from '@shared/contract/turnTimeline';
@@ -99,6 +102,158 @@ function buildHookActivity(
       ...(truncateHookMessage(event.message) ? { message: truncateHookMessage(event.message) } : {}),
       ...(event.toolName ? { toolName: event.toolName } : {}),
     })),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function extractSkillNameFromStatusContent(content: string): string | undefined {
+  const nameMatch = content.match(/<command-name>(.+?)<\/command-name>/);
+  return nameMatch?.[1]?.trim() || undefined;
+}
+
+function getSkillLabel(skillId: string, capabilities: WorkbenchCapabilities): string {
+  return capabilities.skills.find((skill) => skill.id === skillId)?.label || skillId;
+}
+
+function skillActivityActionRank(action: TurnSkillActivityAction): number {
+  switch (action) {
+    case 'selected':
+      return 0;
+    case 'triggered':
+      return 1;
+    case 'written':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function addSkillActivityItem(
+  items: TurnSkillActivity['items'],
+  item: TurnSkillActivity['items'][number],
+): void {
+  const existingIndex = items.findIndex((existing) =>
+    existing.action === item.action && existing.skillId === item.skillId
+  );
+  if (existingIndex < 0) {
+    items.push(item);
+    return;
+  }
+
+  const existing = items[existingIndex];
+  items[existingIndex] = {
+    ...existing,
+    timestamp: Math.min(existing.timestamp, item.timestamp),
+    detail: existing.detail || item.detail,
+    source: existing.source || item.source,
+  };
+}
+
+function buildSkillActivity(
+  turn: TraceTurn,
+  capabilities: WorkbenchCapabilities,
+): TurnSkillActivity | undefined {
+  const userNode = turn.nodes.find((node) => node.type === 'user');
+  const selectedSkillIds = userNode?.metadata?.workbench?.selectedSkillIds || [];
+  const items: TurnSkillActivity['items'] = [];
+
+  for (const skillId of selectedSkillIds) {
+    addSkillActivityItem(items, {
+      timestamp: userNode?.timestamp || turn.startTime,
+      skillId,
+      label: getSkillLabel(skillId, capabilities),
+      action: 'selected',
+      detail: '已写入本轮 workbench 偏好',
+    });
+  }
+
+  for (const node of turn.nodes) {
+    if (node.subtype === 'skill_status') {
+      const skillId = node.metadata?.skill?.skillName || extractSkillNameFromStatusContent(node.content);
+      if (skillId) {
+        addSkillActivityItem(items, {
+          timestamp: node.timestamp,
+          skillId,
+          label: getSkillLabel(skillId, capabilities),
+          action: 'triggered',
+          detail: 'Skill 激活提示已进入会话流',
+        });
+      }
+      continue;
+    }
+
+    if (node.type !== 'tool_call' || !node.toolCall) {
+      continue;
+    }
+
+    const metadata = asRecord(node.toolCall.metadata);
+    const metadataSkillId =
+      typeof metadata?.skillName === 'string' ? metadata.skillName :
+        typeof metadata?.command === 'string' ? metadata.command :
+          undefined;
+    const skillId = metadataSkillId || extractSkillIdFromToolCall({
+      name: node.toolCall.name,
+      arguments: node.toolCall.args,
+    });
+
+    if (!skillId) {
+      continue;
+    }
+
+    const source = typeof metadata?.source === 'string' ? metadata.source : undefined;
+    const executionContext = typeof metadata?.executionContext === 'string'
+      ? metadata.executionContext
+      : undefined;
+
+    addSkillActivityItem(items, {
+      timestamp: node.timestamp,
+      skillId,
+      label: getSkillLabel(skillId, capabilities),
+      action: 'triggered',
+      detail: executionContext ? `${executionContext} skill tool` : 'skill tool',
+      source,
+    });
+
+    const skillResult = asRecord(metadata?.skillResult);
+    const newMessages = Array.isArray(skillResult?.newMessages) ? skillResult.newMessages : [];
+    const wroteInstructions = newMessages.some((message) => (
+      Boolean(asRecord(message)?.isMeta)
+    ));
+
+    if (wroteInstructions) {
+      addSkillActivityItem(items, {
+        timestamp: node.timestamp,
+        skillId,
+        label: getSkillLabel(skillId, capabilities),
+        action: 'written',
+        detail: 'Skill 指令已写入模型上下文',
+        source,
+      });
+    }
+  }
+
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const orderedItems = items.sort((left, right) =>
+    left.timestamp - right.timestamp || skillActivityActionRank(left.action) - skillActivityActionRank(right.action)
+  );
+  const selectedCount = orderedItems.filter((item) => item.action === 'selected').length;
+  const triggeredCount = orderedItems.filter((item) => item.action === 'triggered').length;
+  const writtenCount = orderedItems.filter((item) => item.action === 'written').length;
+  const summaryParts = [
+    triggeredCount > 0 ? `触发 ${triggeredCount}` : '',
+    writtenCount > 0 ? `写入 ${writtenCount}` : '',
+    selectedCount > 0 ? `写入偏好 ${selectedCount}` : '',
+  ].filter(Boolean);
+
+  return {
+    summary: `Skill ${summaryParts.join(' · ')}`,
+    items: orderedItems,
   };
 }
 
@@ -402,9 +557,10 @@ function enrichTurn(
     args.routingEvents,
   );
   const hookActivity = buildHookActivity(turn, window, args.hookEvents);
+  const skillActivity = buildSkillActivity(turn, args.capabilities);
   const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence);
 
-  if (!snapshot && !capabilityScope && !routingEvidence && !hookActivity && artifactOwnership.length === 0) {
+  if (!snapshot && !capabilityScope && !routingEvidence && !hookActivity && !skillActivity && artifactOwnership.length === 0) {
     return turn;
   }
 
@@ -454,6 +610,18 @@ function enrichTurn(
             ? 'info'
             : 'success',
         hookActivity,
+      }));
+    }
+
+    if (skillActivity) {
+      nextNodes.push(buildTurnTimelineTraceNode({
+        id: `${turn.turnId}-skill-activity`,
+        kind: 'skill_activity',
+        timestamp: skillActivity.items[0]?.timestamp || node.timestamp,
+        tone: skillActivity.items.some((item) => item.action === 'triggered' || item.action === 'written')
+          ? 'success'
+          : 'info',
+        skillActivity,
       }));
     }
   });

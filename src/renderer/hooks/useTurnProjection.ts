@@ -24,6 +24,33 @@ export function projectTurns(
   let turnCounter = 0;
 
   for (const msg of messages) {
+    if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'skill_status',
+        metadata: msg.metadata,
+      };
+
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+
+      currentTurn.nodes.push(node);
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
     // Skip isMeta messages (Skill system internal)
     if (msg.isMeta) continue;
     // Skip tool role messages (results shown in toolCalls)
@@ -91,26 +118,14 @@ export function projectTurns(
       };
       turns.push(currentTurn);
 
-      // Skill status message
-      if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
-        currentTurn.nodes.push({
-          id: msg.id,
-          type: 'system',
-          content: msg.content,
-          timestamp: msg.timestamp,
-          subtype: 'skill_status',
-          metadata: msg.metadata,
-        });
-      } else {
-        currentTurn.nodes.push({
-          id: msg.id,
-          type: 'user',
-          content: msg.content,
-          timestamp: msg.timestamp,
-          attachments: msg.attachments,
-          metadata: msg.metadata,
-        });
-      }
+      currentTurn.nodes.push({
+        id: msg.id,
+        type: 'user',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        attachments: msg.attachments,
+        metadata: msg.metadata,
+      });
       continue;
     }
 

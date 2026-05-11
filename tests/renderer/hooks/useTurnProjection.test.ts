@@ -181,6 +181,75 @@ describe('projectTurns', () => {
     ]);
   });
 
+  it('keeps skill status inside the current turn instead of creating a new user turn', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '帮我做飞书文档',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 130,
+        toolCalls: [
+          {
+            id: 'call-skill-1',
+            name: 'skill',
+            arguments: {
+              command: 'lark-doc',
+            },
+            result: {
+              toolCallId: 'call-skill-1',
+              success: true,
+              output: 'Skill "lark-doc" activated. Follow the skill instructions.',
+            },
+          },
+        ],
+      },
+      {
+        id: 'skill-status-1',
+        role: 'user',
+        content: '<command-message>Loading skill: lark-doc</command-message><command-name>lark-doc</command-name>',
+        timestamp: 150,
+        source: 'skill',
+        metadata: {
+          skill: {
+            skillName: 'lark-doc',
+            phase: 'status',
+          },
+        },
+      },
+      {
+        id: 'skill-instructions-1',
+        role: 'user',
+        content: 'Skill instructions',
+        timestamp: 151,
+        source: 'skill',
+        isMeta: true,
+        metadata: {
+          skill: {
+            skillName: 'lark-doc',
+            phase: 'instructions',
+          },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-skill', false, []);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-tc-call-skill-1',
+      'skill-status-1',
+    ]);
+    expect(projection.turns[0].nodes[2]?.type).toBe('system');
+    expect(projection.turns[0].nodes[2]?.subtype).toBe('skill_status');
+  });
+
   it('marks a newly submitted normal user turn active while waiting for the assistant response', () => {
     const messages: Message[] = [
       {

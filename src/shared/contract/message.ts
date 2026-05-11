@@ -134,8 +134,14 @@ export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; toolCallId: string };
 
+export interface SkillMessageMetadata {
+  skillName: string;
+  phase: 'status' | 'instructions';
+}
+
 export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
+  skill?: SkillMessageMetadata;
 }
 
 export interface Message {

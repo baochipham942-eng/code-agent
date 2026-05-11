@@ -12,6 +12,7 @@ import type {
   SwitchModelParams,
   ModelOverride,
   SessionMarkdownExport,
+  PromptRewindResult,
 } from '../../shared/contract/appService';
 import type {
   Message,
@@ -24,6 +25,8 @@ import type { SessionStatus, TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
+import { getFileCheckpointService } from '../services/checkpoint';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -423,6 +426,67 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async getMessages(sessionId: string): Promise<Message[]> {
     return getSessionManager().getMessages(sessionId);
+  }
+
+  async rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult> {
+    const { sessionId, userMessageId } = params;
+    const tm = this.getTaskManager();
+    const state = tm.getSessionState(sessionId);
+    if (isTaskManagerOwnedRunState(state.status)) {
+      throw new Error('Cannot rewind while the session is running');
+    }
+
+    const db = getDatabase();
+    const anchorMessage = db.getMessageById(sessionId, userMessageId);
+    if (anchorMessage?.role !== 'user') {
+      throw new Error(`Active user message not found: ${userMessageId}`);
+    }
+
+    const checkpointService = getFileCheckpointService();
+    const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
+      sessionId,
+      anchorMessage.timestamp,
+    );
+
+    let filesRestored = 0;
+    let filesDeleted = 0;
+    const errors: string[] = [];
+
+    if (checkpoint) {
+      const rewindFilesResult = await checkpointService.rewindFiles(sessionId, checkpoint.messageId);
+      filesRestored = rewindFilesResult.restoredFiles.length;
+      filesDeleted = rewindFilesResult.deletedFiles.length;
+      if (!rewindFilesResult.success) {
+        const message = rewindFilesResult.errors.map((item) => item.error).filter(Boolean).join('; ')
+          || 'File checkpoint rewind failed';
+        throw new Error(message);
+      }
+      errors.push(...rewindFilesResult.errors.map((item) => item.error).filter(Boolean));
+    }
+
+    const sessionManager = getSessionManager();
+    const rewindResult = await sessionManager.applyPromptRewind(sessionId, userMessageId, {
+      checkpointMessageId: checkpoint?.messageId ?? null,
+      filesRestored,
+      filesDeleted,
+      errors,
+    });
+
+    tm.setSessionContext(sessionId, rewindResult.activeMessages);
+
+    return {
+      success: true,
+      sessionId,
+      rewindId: rewindResult.rewindId,
+      draft: {
+        content: anchorMessage.content,
+        attachments: anchorMessage.attachments,
+      },
+      activeMessages: rewindResult.activeMessages,
+      hiddenMessageCount: rewindResult.hiddenMessageCount,
+      filesRestored,
+      filesDeleted,
+    };
   }
 
   getSerializedCompressionState(sessionId?: string): string | null {

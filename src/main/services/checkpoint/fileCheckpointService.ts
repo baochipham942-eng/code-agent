@@ -192,6 +192,32 @@ export class FileCheckpointService {
     }
   }
 
+  async getFirstCheckpointAtOrAfter(
+    sessionId: string,
+    timestamp: number,
+  ): Promise<{ messageId: string; createdAt: number } | null> {
+    const dbService = getDatabase();
+    if (!dbService.isReady) return null;
+    const db = dbService.getDb()!;
+
+    try {
+      const row = db.prepare(`
+        SELECT message_id, created_at
+        FROM file_checkpoints
+        WHERE session_id = ? AND created_at >= ?
+        ORDER BY created_at ASC
+        LIMIT 1
+      `).get(sessionId, timestamp) as { message_id: string; created_at: number } | undefined;
+
+      return row
+        ? { messageId: row.message_id, createdAt: row.created_at }
+        : null;
+    } catch (error) {
+      logger.error('Failed to find checkpoint after timestamp', { error, sessionId, timestamp });
+      return null;
+    }
+  }
+
   /**
    * 获取 session 的所有检查点
    */

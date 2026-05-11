@@ -127,18 +127,32 @@ describe('TelemetryQueryService transcript replay fallback', () => {
         idx INTEGER DEFAULT 0,
         parallel INTEGER DEFAULT 0
       );
-      CREATE TABLE telemetry_events (
-        id TEXT PRIMARY KEY,
-        turn_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
+	      CREATE TABLE telemetry_events (
+	        id TEXT PRIMARY KEY,
+	        turn_id TEXT NOT NULL,
+	        session_id TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         event_type TEXT NOT NULL,
         summary TEXT,
-        data TEXT,
-        duration_ms INTEGER
-      );
-    `);
-  }
+	        data TEXT,
+	        duration_ms INTEGER
+	      );
+	      CREATE TABLE session_rewinds (
+	        id TEXT PRIMARY KEY,
+	        session_id TEXT NOT NULL,
+	        anchor_message_id TEXT NOT NULL,
+	        anchor_prompt TEXT NOT NULL,
+	        anchor_timestamp INTEGER NOT NULL,
+	        checkpoint_message_id TEXT,
+	        hidden_message_count INTEGER NOT NULL DEFAULT 0,
+	        hidden_message_ids TEXT,
+	        files_restored INTEGER NOT NULL DEFAULT 0,
+	        files_deleted INTEGER NOT NULL DEFAULT 0,
+	        errors_json TEXT,
+	        created_at INTEGER NOT NULL
+	      );
+	    `);
+	  }
 
   it('falls back to persisted session transcript when telemetry tables are absent', async () => {
     dbState.getSession.mockReturnValue({
@@ -443,7 +457,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
     expect(replay?.summary.metricAvailability?.actualArgs).toBe('partial');
   });
 
-  it('exposes incomplete reasons when telemetry lacks model decisions or tool schemas', async () => {
+	  it('exposes incomplete reasons when telemetry lacks model decisions or tool schemas', async () => {
     createTelemetryReplayTables();
     dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-incomplete-gate');
     dbState.sqlite!.prepare(`
@@ -504,8 +518,80 @@ describe('TelemetryQueryService transcript replay fallback', () => {
         'missing_model_decisions',
         'missing_tool_schemas',
       ]),
-    });
-  });
+	    });
+	  });
+
+  it('excludes rewound telemetry turns from default structured replay', async () => {
+    createTelemetryReplayTables();
+    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-rewound-telemetry');
+    const insertTurn = dbState.sqlite!.prepare(`
+      INSERT INTO telemetry_turns (
+        id, session_id, turn_number, user_prompt, assistant_response, start_time, end_time,
+        duration_ms, total_input_tokens, total_output_tokens
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertTurn.run(
+      'turn-active',
+      'session-rewound-telemetry',
+      1,
+      'active prompt',
+      'active answer',
+      100,
+      140,
+      40,
+      10,
+      12,
+    );
+    insertTurn.run(
+      'turn-hidden',
+      'session-rewound-telemetry',
+      2,
+      'rewound prompt',
+      'rewound answer',
+      220,
+      260,
+      40,
+      10,
+      12,
+    );
+    dbState.sqlite!.prepare(`
+      INSERT INTO telemetry_events (
+        id, turn_id, session_id, timestamp, event_type, summary, data, duration_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'event-hidden',
+      'turn-hidden',
+      'session-rewound-telemetry',
+      230,
+      'agent_event',
+      'hidden event',
+      '{}',
+      null,
+    );
+    dbState.sqlite!.prepare(`
+      INSERT INTO session_rewinds (
+        id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
+        hidden_message_count, hidden_message_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'rewind-1',
+      'session-rewound-telemetry',
+      'user-hidden',
+      'rewound prompt',
+      200,
+      2,
+      '["user-hidden","assistant-hidden"]',
+      300,
+    );
+
+	    const replay = await getTelemetryQueryService().getStructuredReplay('session-rewound-telemetry');
+
+	    expect(replay?.dataSource).toBe('telemetry');
+	    expect(replay?.turns).toHaveLength(1);
+	    expect(JSON.stringify(replay)).toContain('active prompt');
+	    expect(JSON.stringify(replay)).not.toContain('rewound prompt');
+	    expect(JSON.stringify(replay)).not.toContain('hidden event');
+	  });
 
   it('joins model decisions, events, permission trace, and subagent telemetry in structured replay', async () => {
     createTelemetryReplayTables();

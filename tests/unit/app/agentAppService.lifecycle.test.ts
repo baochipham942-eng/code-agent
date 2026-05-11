@@ -1,8 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/main/app/agentAppService';
 import type { SessionStatus } from '../../../src/main/task';
 import { getSessionManager } from '../../../src/main/services';
+import { getDatabase } from '../../../src/main/services/core/databaseService';
+import { getFileCheckpointService } from '../../../src/main/services/checkpoint';
 import { loadStreamSnapshot } from '../../../src/main/session/streamSnapshot';
 
 vi.mock('../../../src/main/services', () => ({
@@ -11,6 +13,14 @@ vi.mock('../../../src/main/services', () => ({
 
 vi.mock('../../../src/main/session/streamSnapshot', () => ({
   loadStreamSnapshot: vi.fn(),
+}));
+
+vi.mock('../../../src/main/services/core/databaseService', () => ({
+  getDatabase: vi.fn(),
+}));
+
+vi.mock('../../../src/main/services/checkpoint', () => ({
+  getFileCheckpointService: vi.fn(),
 }));
 
 function createService(taskManager: unknown, currentSessionId = 'session-1'): AgentAppServiceImpl {
@@ -27,10 +37,18 @@ describe('AgentAppService lifecycle routing', () => {
     cancel: ReturnType<typeof vi.fn>;
     setWorkingDirectory: ReturnType<typeof vi.fn>;
   };
-  let sessionManager: {
-    getSession: ReturnType<typeof vi.fn>;
-    updateSession: ReturnType<typeof vi.fn>;
-    restoreSession: ReturnType<typeof vi.fn>;
+	  let sessionManager: {
+	    getSession: ReturnType<typeof vi.fn>;
+	    updateSession: ReturnType<typeof vi.fn>;
+	    restoreSession: ReturnType<typeof vi.fn>;
+	    applyPromptRewind: ReturnType<typeof vi.fn>;
+	  };
+  let database: {
+    getMessageById: ReturnType<typeof vi.fn>;
+  };
+  let checkpointService: {
+    getFirstCheckpointAtOrAfter: ReturnType<typeof vi.fn>;
+    rewindFiles: ReturnType<typeof vi.fn>;
   };
   let taskManager: {
     getSessionState: ReturnType<typeof vi.fn>;
@@ -47,10 +65,18 @@ describe('AgentAppService lifecycle routing', () => {
       cancel: vi.fn().mockResolvedValue(undefined),
       setWorkingDirectory: vi.fn(),
     };
-    sessionManager = {
-      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
-      updateSession: vi.fn().mockResolvedValue(undefined),
-      restoreSession: vi.fn(),
+	    sessionManager = {
+	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
+	      updateSession: vi.fn().mockResolvedValue(undefined),
+	      restoreSession: vi.fn(),
+	      applyPromptRewind: vi.fn(),
+	    };
+    database = {
+      getMessageById: vi.fn(),
+    };
+    checkpointService = {
+      getFirstCheckpointAtOrAfter: vi.fn(),
+      rewindFiles: vi.fn(),
     };
     taskManager = {
       getSessionState: vi.fn(),
@@ -63,8 +89,12 @@ describe('AgentAppService lifecycle routing', () => {
     };
     vi.mocked(getSessionManager).mockReset();
     vi.mocked(getSessionManager).mockReturnValue(sessionManager as any);
-    vi.mocked(loadStreamSnapshot).mockReset();
-  });
+	    vi.mocked(loadStreamSnapshot).mockReset();
+    vi.mocked(getDatabase).mockReset();
+    vi.mocked(getDatabase).mockReturnValue(database as any);
+    vi.mocked(getFileCheckpointService).mockReset();
+    vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
+	  });
 
   it('routes chat send through TaskManager with run options and workbench metadata', async () => {
     const service = createService(taskManager);
@@ -218,7 +248,7 @@ describe('AgentAppService lifecycle routing', () => {
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/tmp/project');
   });
 
-  it('ignores stream snapshots from another session', async () => {
+	  it('ignores stream snapshots from another session', async () => {
     sessionManager.restoreSession.mockResolvedValue({
         id: 'session-1',
         title: 'Streaming Session',
@@ -245,6 +275,98 @@ describe('AgentAppService lifecycle routing', () => {
     const service = createService(taskManager);
     const session = await service.loadSession('session-1');
 
-    expect(session.streamSnapshot).toBeUndefined();
+	    expect(session.streamSnapshot).toBeUndefined();
+	  });
+
+  it('rewinds files before hiding messages and returns the original prompt as draft', async () => {
+    taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+    database.getMessageById.mockReturnValue({
+      id: 'u2',
+      role: 'user',
+      content: 'rewrite this prompt',
+      timestamp: 30,
+      attachments: [{ name: 'brief.md' }],
+    });
+    checkpointService.getFirstCheckpointAtOrAfter.mockResolvedValue({
+      messageId: 'tool-message-1',
+      createdAt: 31,
+    });
+    checkpointService.rewindFiles.mockResolvedValue({
+      success: true,
+      restoredFiles: ['/tmp/a.ts'],
+      deletedFiles: ['/tmp/new.ts'],
+      errors: [],
+    });
+    sessionManager.applyPromptRewind.mockResolvedValue({
+      rewindId: 'rewind-1',
+      activeMessages: [{ id: 'u1', role: 'user', content: 'previous', timestamp: 10 }],
+      hiddenMessageCount: 2,
+    });
+
+    const service = createService(taskManager);
+    const result = await service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' });
+
+    expect(checkpointService.getFirstCheckpointAtOrAfter).toHaveBeenCalledWith('session-1', 30);
+    expect(checkpointService.rewindFiles).toHaveBeenCalledWith('session-1', 'tool-message-1');
+    expect(sessionManager.applyPromptRewind).toHaveBeenCalledWith(
+      'session-1',
+      'u2',
+      expect.objectContaining({
+        checkpointMessageId: 'tool-message-1',
+        filesRestored: 1,
+        filesDeleted: 1,
+      }),
+    );
+    expect(taskManager.setSessionContext).toHaveBeenCalledWith('session-1', [
+      { id: 'u1', role: 'user', content: 'previous', timestamp: 10 },
+    ]);
+    expect(result).toMatchObject({
+      success: true,
+      draft: { content: 'rewrite this prompt', attachments: [{ name: 'brief.md' }] },
+      hiddenMessageCount: 2,
+      filesRestored: 1,
+      filesDeleted: 1,
+    });
   });
-});
+
+  it('does not hide messages when file rewind fails', async () => {
+    taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+    database.getMessageById.mockReturnValue({
+      id: 'u2',
+      role: 'user',
+      content: 'rewrite this prompt',
+      timestamp: 30,
+    });
+    checkpointService.getFirstCheckpointAtOrAfter.mockResolvedValue({
+      messageId: 'tool-message-1',
+      createdAt: 31,
+    });
+    checkpointService.rewindFiles.mockResolvedValue({
+      success: false,
+      restoredFiles: [],
+      deletedFiles: [],
+      errors: [{ filePath: '/tmp/a.ts', error: 'permission denied' }],
+    });
+
+    const service = createService(taskManager);
+    await expect(service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' })).rejects.toThrow(
+      'permission denied',
+    );
+
+    expect(sessionManager.applyPromptRewind).not.toHaveBeenCalled();
+    expect(taskManager.setSessionContext).not.toHaveBeenCalled();
+  });
+
+  it.each(['running', 'queued', 'cancelling'] as SessionStatus[])(
+    'rejects prompt rewind while session is %s',
+    async (status) => {
+      taskManager.getSessionState.mockReturnValue({ status });
+      const service = createService(taskManager);
+
+      await expect(service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' })).rejects.toThrow(
+        'Cannot rewind while the session is running',
+      );
+      expect(database.getMessageById).not.toHaveBeenCalled();
+    },
+  );
+	});

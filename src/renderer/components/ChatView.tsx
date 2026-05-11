@@ -26,16 +26,19 @@ import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
 import { ChatSearchBar } from './features/chat/ChatSearchBar';
 import type { SearchMatch } from './features/chat/ChatSearchBar';
 import { InlineStrip } from './features/chat/InlineStrip';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { isWebMode } from '../utils/platform';
+import { toast } from '../hooks/useToast';
 
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -58,6 +61,7 @@ export const ChatView: React.FC = () => {
     hasOlderMessages,
     isLoadingOlder,
     loadOlderMessages,
+    setMessages,
     streamSnapshot,
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
@@ -104,6 +108,11 @@ export const ChatView: React.FC = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [pendingPromptRewind, setPendingPromptRewind] = useState<{
+    messageId: string;
+    content: string;
+  } | null>(null);
+  const [isPromptRewinding, setIsPromptRewinding] = useState(false);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -341,6 +350,38 @@ export const ChatView: React.FC = () => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
+  const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
+    if (!currentSessionId) return;
+    if (effectiveIsProcessing) {
+      toast.warning('会话还在运行，先停止后再回退。');
+      return;
+    }
+    setPendingPromptRewind({ messageId, content });
+  }, [currentSessionId, effectiveIsProcessing]);
+
+  const handleConfirmPromptRewind = useCallback(async () => {
+    if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
+    setIsPromptRewinding(true);
+    try {
+      const result = await ipcService.invokeDomain<PromptRewindResult>(
+        IPC_DOMAINS.SESSION,
+        'rewindToPrompt',
+        {
+          sessionId: currentSessionId,
+          userMessageId: pendingPromptRewind.messageId,
+        },
+      );
+      setMessages(result.activeMessages);
+      chatInputRef.current?.setDraft(result.draft);
+      setPendingPromptRewind(null);
+      toast.success(`已回到这条提示词，恢复 ${result.filesRestored + result.filesDeleted} 个文件。`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsPromptRewinding(false);
+    }
+  }, [currentSessionId, isPromptRewinding, pendingPromptRewind, setMessages]);
+
   return (
     <div
         className="flex-1 flex overflow-hidden relative"
@@ -402,6 +443,7 @@ export const ChatView: React.FC = () => {
               onLoadOlder={loadOlderMessages}
               searchMatches={searchMatches}
               activeMatchIndex={activeMatchIndex}
+              onRewindUserPrompt={handleRequestPromptRewind}
             />
           )}
         </div>
@@ -474,6 +516,24 @@ export const ChatView: React.FC = () => {
 
       {/* Rewind Panel (Esc+Esc) */}
       <RewindPanel isOpen={showRewindPanel} onClose={() => setShowRewindPanel(false)} />
+      <ConfirmDialog
+        isOpen={Boolean(pendingPromptRewind)}
+        title="回到这条提示词？"
+        message={
+          <div className="space-y-3 text-sm text-zinc-400 leading-relaxed">
+            <p>会恢复工作区文件到这轮之前，并隐藏这条提示词及之后的对话。</p>
+            <p>原提示词会放回输入框，下一轮只会基于回退后的 active 对话继续。</p>
+          </div>
+        }
+        variant="warning"
+        confirmText={isPromptRewinding ? '回退中...' : '确认回退'}
+        cancelText="取消"
+        confirmDisabled={isPromptRewinding}
+        onConfirm={handleConfirmPromptRewind}
+        onCancel={() => {
+          if (!isPromptRewinding) setPendingPromptRewind(null);
+        }}
+      />
     </div>
   );
 };

@@ -50,10 +50,29 @@ function createSchema(db: BetterSqlite3.Database): void {
       attachments TEXT,
       thinking TEXT,
       effort_level TEXT,
-      synced_at INTEGER,
-      content_parts TEXT,
-      metadata TEXT,
-      compaction TEXT
+	      synced_at INTEGER,
+	      content_parts TEXT,
+	      metadata TEXT,
+	      compaction TEXT,
+	      visibility TEXT NOT NULL DEFAULT 'active',
+	      hidden_by_rewind_id TEXT,
+	      hidden_at INTEGER
+	    );
+	  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_rewinds (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      anchor_prompt TEXT NOT NULL,
+      anchor_timestamp INTEGER NOT NULL,
+      checkpoint_message_id TEXT,
+      hidden_message_count INTEGER NOT NULL DEFAULT 0,
+      hidden_message_ids TEXT,
+      files_restored INTEGER NOT NULL DEFAULT 0,
+      files_deleted INTEGER NOT NULL DEFAULT 0,
+      errors_json TEXT,
+      created_at INTEGER NOT NULL
     );
   `);
   db.exec(`
@@ -96,12 +115,12 @@ function insertSession(db: BetterSqlite3.Database, id: string): void {
   ).run(id, `test-${id}`, 'moonshot', 'kimi-k2.5', '/tmp/test', now, now);
 }
 
-function makeMessage(id: string, content: string, role: 'user' | 'assistant' = 'user'): Message {
+function makeMessage(id: string, content: string, role: 'user' | 'assistant' = 'user', timestamp = Date.now()): Message {
   return {
     id,
     role,
     content,
-    timestamp: Date.now(),
+    timestamp,
   } as unknown as Message;
 }
 
@@ -241,5 +260,17 @@ describe('SessionRepository — Episodic FTS5', () => {
 
     // 2-char query below trigram threshold returns empty
     expect(repo.searchSessionMessagesFts('飞书')).toEqual([]);
+  });
+
+  it('filters rewound messages from default FTS recall while keeping all-attempts recall explicit', () => {
+    repo.addMessage('sess-A', makeMessage('m1', 'active visible deployment note', 'user', 10));
+    repo.addMessage('sess-A', makeMessage('m2', 'secret rewind-only deployment note', 'user', 20));
+    repo.addMessage('sess-A', makeMessage('m3', 'assistant answer after rewind-only note', 'assistant', 30));
+
+    repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100 });
+
+    expect(repo.searchSessionMessagesFts('secret')).toEqual([]);
+    const allAttempts = repo.searchSessionMessagesFts('secret', { includeRewound: true });
+    expect(allAttempts.map((row) => row.messageId)).toEqual(['m2']);
   });
 });

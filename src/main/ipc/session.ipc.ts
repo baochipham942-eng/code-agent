@@ -52,6 +52,11 @@ export function registerSessionHandlers(
         case 'getMessages':
           data = await requireAppService().getMessages((payload as { sessionId: string }).sessionId);
           break;
+        case 'rewindToPrompt': {
+          const p = payload as { sessionId: string; userMessageId: string };
+          data = await requireAppService().rewindToPrompt(p);
+          break;
+        }
         case 'export':
           data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
           break;

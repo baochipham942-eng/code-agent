@@ -457,10 +457,12 @@ export class DatabaseService {
   addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean; syncOrigin?: 'local' | 'remote'; syncedAt?: number | null }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
   replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.replaceMessages(sessionId, messages, updatedAt); }
   updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
-  getMessages(sessionId: string, limit?: number, offset?: number): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset); }
-  getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }
-  getRecentMessages(sessionId: string, count: number): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count); }
-  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit); }
+  getMessages(sessionId: string, limit?: number, offset?: number, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset, options); }
+  getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId, options); }
+  getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count, options); }
+  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit, options); }
+  getMessageById(sessionId: string, messageId: string, options?: { includeRewound?: boolean }): Message | null { this.ensureDb(); return this.sessionRepo.getMessageById(sessionId, messageId, options); }
+  applyPromptRewind(sessionId: string, userMessageId: string, record?: import('./repositories/SessionRepository').PromptRewindRecordInput): import('./repositories/SessionRepository').PromptRewindResult { this.ensureDb(); return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record); }
   getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.getUnsyncedSessions(limit); }
   markSessionsSynced(sessionIds: string[]): void { this.ensureDb(); this.sessionRepo.markSessionsSynced(sessionIds); }
   getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> { this.ensureDb(); return this.sessionRepo.getUnsyncedMessages(limit); }
@@ -493,7 +495,7 @@ export class DatabaseService {
   listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }
   archiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.archiveSession(sessionId); }
   unarchiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.unarchiveSession(sessionId); }
-  searchSessionMessagesFts(query: string, options?: { limit?: number; sessionId?: string }): Array<{ messageId: string; sessionId: string; role: string; content: string; timestamp: number }> { this.ensureDb(); return this.sessionRepo.searchSessionMessagesFts(query, options); }
+  searchSessionMessagesFts(query: string, options?: { limit?: number; sessionId?: string; includeRewound?: boolean }): Array<{ messageId: string; sessionId: string; role: string; content: string; timestamp: number }> { this.ensureDb(); return this.sessionRepo.searchSessionMessagesFts(query, options); }
 
   // --- MemoryRepository ---
   createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord { this.ensureDb(); return this.memoryRepo.createMemory(data); }

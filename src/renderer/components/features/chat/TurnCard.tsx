@@ -49,6 +49,7 @@ interface TurnCardProps {
   isSessionProcessing?: boolean;
   streamSnapshot?: StreamRecoverySnapshot | null;
   showSeparator?: boolean;
+  onRewindUserPrompt?: (messageId: string, content: string) => void;
 }
 
 // 超过该节点数的已完成 turn 默认折叠成 "Worked for Xm Ys"
@@ -64,6 +65,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   isSessionProcessing,
   streamSnapshot,
   showSeparator = true,
+  onRewindUserPrompt,
 }) => {
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
@@ -159,6 +161,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <TraceNodeRenderer
             node={foldedView.userNode}
             attachments={foldedView.userNode.attachments}
+            onRewindUserPrompt={onRewindUserPrompt}
+            rewindDisabled={Boolean(isSessionProcessing)}
           />
         )}
 
@@ -218,6 +222,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
+                  onRewindUserPrompt={onRewindUserPrompt}
+                  rewindDisabled={Boolean(isSessionProcessing)}
                 />
               );
             })}

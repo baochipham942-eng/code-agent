@@ -18,7 +18,7 @@ import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, Wrench } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
 interface TraceNodeRendererProps {
@@ -27,14 +27,25 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  onRewindUserPrompt?: (messageId: string, content: string) => void;
+  rewindDisabled?: boolean;
 }
 
-export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments, isStreaming }) => {
+export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments, isStreaming, onRewindUserPrompt, rewindDisabled }) => {
   let content: React.ReactNode = null;
 
   switch (node.type) {
     case 'user':
-      content = <UserNode content={node.content} attachments={attachments} metadata={node.metadata?.workbench} />;
+      content = (
+        <UserNode
+          messageId={node.id}
+          content={node.content}
+          attachments={attachments}
+          metadata={node.metadata?.workbench}
+          onRewind={onRewindUserPrompt}
+          rewindDisabled={rewindDisabled}
+        />
+      );
       break;
     case 'assistant_text':
       content = <AssistantTextNode node={node} isStreaming={isStreaming} />;
@@ -145,10 +156,13 @@ const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ m
 };
 
 const UserNode: React.FC<{
+  messageId: string;
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
   metadata?: WorkbenchMessageMetadata;
-}> = ({ content, attachments, metadata }) => (
+  onRewind?: (messageId: string, content: string) => void;
+  rewindDisabled?: boolean;
+}> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => (
   <div className="select-text">
     <WorkbenchSummary metadata={metadata} />
     {attachments && attachments.length > 0 && (
@@ -158,9 +172,23 @@ const UserNode: React.FC<{
     )}
     {content && (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
+        <div className="flex items-start gap-1.5 max-w-[86%]">
+          {onRewind && (
+            <button
+              type="button"
+              onClick={() => onRewind(messageId, content)}
+              disabled={rewindDisabled}
+              className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
+              aria-label="回到这条提示词"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
           <div className="text-zinc-200 leading-relaxed">
             <MessageContent content={content} isUser={true} />
+          </div>
           </div>
         </div>
       </div>

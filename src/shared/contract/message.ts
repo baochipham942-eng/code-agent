@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+export type MessageVisibility = 'active' | 'rewound';
 
 // 附件文件类别（用于精细化处理）
 export type AttachmentCategory =
@@ -142,6 +143,9 @@ export interface Message {
   role: MessageRole;
   content: string;
   timestamp: number;
+  visibility?: MessageVisibility;
+  hiddenByRewindId?: string;
+  hiddenAt?: number;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   // 保留 text 和 tool_call 的原始交错顺序（向后兼容：缺失时 fallback 到 content + toolCalls）

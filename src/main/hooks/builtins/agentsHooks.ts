@@ -8,6 +8,8 @@ import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('AgentsHooks');
+const MAX_AGENT_FILES_TO_INJECT = 12;
+const MAX_AGENT_INSTRUCTION_CHARS = 24_000;
 
 // ----------------------------------------------------------------------------
 // Session Start: AGENTS.md Inject
@@ -42,8 +44,11 @@ export async function sessionStartAgentsInjectHook(
       };
     }
 
-    // 使用缓存的发现服务
-    const result = await discoverAgentFilesCached(workingDirectory);
+    // 使用缓存的发现服务。把 hook 配置的 maxDepth 真正传到扫描层，避免先全量扫再过滤。
+    const result = await discoverAgentFilesCached(workingDirectory, {
+      maxDepth,
+      maxFiles: MAX_AGENT_FILES_TO_INJECT,
+    });
 
     if (result.files.length === 0) {
       logger.debug('No AGENTS.md files found', {
@@ -88,9 +93,24 @@ export async function sessionStartAgentsInjectHook(
       return true;
     });
 
-    for (const file of filteredFiles) {
+    let injectedChars = 0;
+    let truncated = result.truncated || filteredFiles.length > MAX_AGENT_FILES_TO_INJECT;
+
+    for (const file of filteredFiles.slice(0, MAX_AGENT_FILES_TO_INJECT)) {
       const header = `# ${file.relativePath}`;
-      sections.push(`${header}\n\n${file.content}`);
+      const block = `${header}\n\n${file.content}`;
+      const remainingChars = MAX_AGENT_INSTRUCTION_CHARS - injectedChars;
+      if (remainingChars <= 0) {
+        truncated = true;
+        break;
+      }
+      if (block.length > remainingChars) {
+        sections.push(`${block.slice(0, remainingChars)}\n\n[AGENTS.md instructions truncated]`);
+        truncated = true;
+        break;
+      }
+      sections.push(block);
+      injectedChars += block.length;
     }
 
     if (sections.length === 0) {
@@ -112,6 +132,7 @@ export async function sessionStartAgentsInjectHook(
       fileCount: filteredFiles.length,
       files: filteredFiles.map((f) => f.relativePath),
       contentLength: injectedContent.length,
+      truncated,
     });
 
     return {

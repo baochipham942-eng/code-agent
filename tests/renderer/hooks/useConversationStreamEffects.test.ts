@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
   applyConversationStreamEvent,
+  mergeCommittedAssistantContent,
   removeUncommittedAssistantDraft,
 } from '../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
 
@@ -133,5 +134,64 @@ describe('removeUncommittedAssistantDraft', () => {
       },
     ]);
     expect(state.currentTurnMessageId).toBe('turn-2');
+  });
+});
+
+describe('mergeCommittedAssistantContent', () => {
+  it('uses the committed message content to correct duplicated streamed text', () => {
+    expect(
+      mergeCommittedAssistantContent(
+        'Google Assistant。国行版把这 Google Assistant。国行版把这',
+        'Google Assistant。国行版把这',
+      ),
+    ).toBe('Google Assistant。国行版把这');
+  });
+
+  it('keeps streamed content when the committed event carries no content', () => {
+    expect(mergeCommittedAssistantContent('streamed text', '')).toBe('streamed text');
+  });
+
+  it('updates the active assistant message with the committed final content', () => {
+    let messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: 'Google Assistant。国行版把这 Google Assistant。国行版把这',
+        timestamp: 100,
+      },
+    ];
+    const state = {
+      currentTurnMessageId: 'turn-1',
+      committedAssistantMessageIds: new Set<string>(),
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: {
+          id: 'assistant-1',
+          turnId: 'turn-1',
+          content: 'Google Assistant。国行版把这',
+        },
+      },
+      state,
+      {
+        addMessage: () => {},
+        updateMessage: (id, updates) => {
+          messages = messages.map((message) => (
+            message.id === id ? { ...message, ...updates } : message
+          ));
+        },
+        setMessages: (nextMessages) => {
+          messages = nextMessages;
+        },
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages[0]?.content).toBe('Google Assistant。国行版把这');
+    expect(state.committedAssistantMessageIds.has('turn-1')).toBe(true);
+    expect(state.committedAssistantMessageIds.has('assistant-1')).toBe(true);
   });
 });

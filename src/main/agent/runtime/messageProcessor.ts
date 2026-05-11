@@ -7,11 +7,10 @@ import type {
   Message,
   MessageAttachment,
   MessageMetadata,
-  AgentEvent,
   ToolCall,
   ToolResult,
 } from '../../../shared/contract';
-import type { ModelResponse, AgentLoopConfig } from '../../agent/loopTypes';
+import type { ModelResponse } from '../../agent/loopTypes';
 import {
   sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistoryWithCalls,
@@ -49,6 +48,8 @@ import {
 import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
+import { isLikelyIncompleteStopText } from './incompleteStopDetector';
+import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 
 const logger = createLogger('MessageProcessor');
 
@@ -132,43 +133,6 @@ function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: ToolResult
   const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command.trim() : '';
   if (!command) return false;
   return /^mkdir\s+-p\s+/.test(command);
-}
-
-function extractArtifactFilePathFromMessages(messages: Message[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message.role !== 'user') continue;
-    const rawContent: unknown = message.content;
-    const content = typeof rawContent === 'string'
-      ? rawContent
-      : Array.isArray(rawContent)
-        ? rawContent.map((part: unknown) => {
-          if (!part || typeof part !== 'object') return '';
-          const textPart = part as { type?: unknown; text?: unknown };
-          return textPart.type === 'text' && typeof textPart.text === 'string' ? textPart.text : '';
-        }).join('\n')
-        : '';
-    const matches = extractAbsoluteFilePaths(content).filter((candidate) => /\.(html?|tsx?|jsx?|css|md)$/i.test(candidate));
-    if (matches.length > 0) return matches[0];
-  }
-  return null;
-}
-
-/**
- * Extracts absolute file paths from text (e.g. user messages).
- */
-export function extractAbsoluteFilePaths(text: string): string[] {
-  const pattern = /\/[\w.~-]+\/[^\s,，。、;；:：""""'']+\.\w{2,5}/g;
-  const files: string[] = [];
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    const p = match[0];
-    const tokenStart = text.lastIndexOf(' ', match.index) + 1;
-    const prefix = text.substring(tokenStart, match.index);
-    if (prefix.includes('://') || prefix.endsWith('/') || prefix.endsWith(':')) continue;
-    if (!files.includes(p)) files.push(p);
-  }
-  return files;
 }
 
 export class MessageProcessor {
@@ -333,12 +297,18 @@ export class MessageProcessor {
       }
     }
 
+    const stopLooksIncomplete = isLikelyIncompleteStopText(response);
     const textWasTruncated =
       response.truncated ||
       response.finishReason === 'length' ||
-      response.finishReason === 'max_tokens';
+      response.finishReason === 'max_tokens' ||
+      stopLooksIncomplete;
 
     if (textWasTruncated && response.content) {
+      if (stopLooksIncomplete) {
+        logger.warn('[AgentLoop] Provider reported stop but text ended mid-sentence; continuing generation');
+        logCollector.agent('WARN', 'Text response ended mid-sentence despite stop finish reason');
+      }
       this.ctx._consecutiveTruncations++;
 
       const strippedPartialContent = this.contextAssembly.stripInternalFormatMimicry(response.content);
@@ -349,7 +319,7 @@ export class MessageProcessor {
 
       const currentMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
       const recoveryMaxTokens = this.getTruncationRecoveryMaxTokens();
-      if (recoveryMaxTokens > currentMaxTokens) {
+      if (!stopLooksIncomplete && recoveryMaxTokens > currentMaxTokens) {
         this.ctx.modelConfig.maxTokens = recoveryMaxTokens;
         logger.info(`[AgentLoop] Text truncation recovery: maxTokens ${currentMaxTokens} → ${recoveryMaxTokens}`);
         logCollector.agent('INFO', `Text truncation recovery: maxTokens ${currentMaxTokens} → ${recoveryMaxTokens}`);
@@ -372,7 +342,10 @@ export class MessageProcessor {
         this.contextAssembly.injectSystemMessage(this.buildTextContinuationPrompt());
       }
 
-      this.runFinalizer.emitTaskProgress('generating', '输出过长，继续生成剩余内容...');
+      this.runFinalizer.emitTaskProgress(
+        'generating',
+        stopLooksIncomplete ? '回复疑似未完，继续生成剩余内容...' : '输出过长，继续生成剩余内容...',
+      );
       return 'continue';
     }
 

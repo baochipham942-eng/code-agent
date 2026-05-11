@@ -78,9 +78,9 @@ describe('TurnCard hook activity', () => {
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
     expect(html).toContain('执行了 2 个钩子');
-    expect(html).toContain('已放行');
-    expect(html).toContain('12ms');
     expect(html).toContain('用户提示提交');
     expect(html).toContain('会话开始');
+    expect(html).toContain('钩子');
+    expect(html).not.toContain('已放行');
   });
 });

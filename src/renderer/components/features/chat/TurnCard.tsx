@@ -7,6 +7,7 @@ import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity } from '@shared/contract/turnTimeline';
 import {
+  Anchor,
   AlertTriangle,
   ChevronRight,
   ChevronDown,
@@ -292,44 +293,76 @@ function getHookStatusText(activity: TurnHookActivity): string {
 }
 
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
+  const [expanded, setExpanded] = useState(true);
   const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
   const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
   const tone = getHookActivityTone(activity);
   const statusText = getHookStatusText(activity);
+  const showStatus = tone !== 'success';
 
   return (
-    <div className={`rounded-lg border px-3 py-2 text-xs ${getToneClass(tone)}`}>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className="inline-flex shrink-0 items-center gap-1.5 font-medium">
-          <Wrench className="h-3.5 w-3.5" />
-          <span>执行了 {totalHooks} 个钩子</span>
+    <div className="py-0.5 text-sm text-zinc-500">
+      <button
+        type="button"
+        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={showStatus ? `${statusText} · ${durationMs}ms` : `${durationMs}ms`}
+      >
+        <Anchor className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate font-medium">执行了 {totalHooks} 个钩子</span>
+        {showStatus && (
+          <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
+            {statusText}
+          </span>
+        )}
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
+          {activity.items.map((item, index) => {
+            const label = HOOK_EVENT_LABELS[item.event] || item.event;
+            const title = [
+              item.toolName,
+              `${item.hookCount} 个 hook`,
+              `${item.durationMs}ms`,
+              item.message,
+            ].filter(Boolean).join(' · ');
+            const itemStatus = getHookItemStatusText(item);
+            return (
+              <div
+                key={`${item.event}-${item.timestamp}-${index}`}
+                className="flex min-w-0 items-center gap-1.5"
+                title={title || undefined}
+              >
+                <span className="shrink-0">{label}</span>
+                <span className="shrink-0">钩子</span>
+                {itemStatus && (
+                  <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>
+                    {itemStatus.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <span className="shrink-0 text-[11px] opacity-80">{statusText}</span>
-        <span className="shrink-0 text-[11px] opacity-60">{durationMs}ms</span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {activity.items.map((item, index) => {
-          const label = HOOK_EVENT_LABELS[item.event] || item.event;
-          const detail = [
-            item.toolName,
-            `${item.hookCount} 个`,
-            `${item.durationMs}ms`,
-          ].filter(Boolean).join(' · ');
-          return (
-            <span
-              key={`${item.event}-${item.timestamp}-${index}`}
-              className="inline-flex max-w-full items-center gap-1 rounded-md bg-black/10 px-1.5 py-0.5 text-[11px]"
-              title={item.message || undefined}
-            >
-              <span className="shrink-0">{label}</span>
-              <span className="min-w-0 truncate opacity-70">{detail}</span>
-            </span>
-          );
-        })}
-      </div>
+      )}
     </div>
   );
 };
+
+function getHookItemStatusText(
+  item: TurnHookActivity['items'][number],
+): { label: string; tone: 'warning' | 'error' } | null {
+  if (item.action === 'block') return { label: '阻止', tone: 'error' };
+  if ((item.errorCount || 0) > 0) return { label: `${item.errorCount} 个错误`, tone: 'warning' };
+  if (item.modified) return { label: '改写输入', tone: 'warning' };
+  return null;
+}
 
 function getLastToolNode(turn: TraceTurn): TraceNode | null {
   for (let index = turn.nodes.length - 1; index >= 0; index--) {
@@ -430,6 +463,17 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
     default:
       return 'border-white/[0.06] bg-white/[0.02] text-zinc-400';
+  }
+}
+
+function getHookIssueClass(tone: 'success' | 'warning' | 'error'): string {
+  switch (tone) {
+    case 'error':
+      return 'bg-red-500/10 text-red-300';
+    case 'warning':
+      return 'bg-amber-500/10 text-amber-300';
+    default:
+      return 'bg-zinc-800 text-zinc-400';
   }
 }
 

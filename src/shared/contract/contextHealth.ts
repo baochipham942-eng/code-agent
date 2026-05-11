@@ -11,6 +11,32 @@
 export type ContextHealthWarningLevel = 'normal' | 'warning' | 'critical';
 
 /**
+ * Token 来源标签 — 按产品维度（不是消息结构维度）拆分上下文占用
+ * 用于回答"哪个 skill / MCP / subagent 在烧 token"，配合 SkillsPanel 做卸载决策
+ */
+export type SourceTag =
+  | { type: 'rule'; name: string }
+  | { type: 'skill'; name: string }
+  | { type: 'mcp'; server: string }
+  | { type: 'subagent'; name: string }
+  | { type: 'fileRead' }
+  | { type: 'conversation' };
+
+/**
+ * 按产品来源拆分的 token 占用
+ * 与 TokenBreakdown 的 systemPrompt/messages/toolResults（消息结构维度）正交
+ * conversation 字段用扣减法：messages 总数 - 其他 source 之和
+ */
+export interface SourceBreakdown {
+  rules: number;
+  skills: Record<string, number>;
+  mcp: Record<string, number>;
+  subagents: Record<string, number>;
+  fileReads: number;
+  conversation: number;
+}
+
+/**
  * Token 使用分解
  */
 export interface TokenBreakdown {
@@ -22,6 +48,25 @@ export interface TokenBreakdown {
   toolResults: number;
   /** 工具 schema 定义占用的 tokens（每轮请求都会发，之前漏算导致 UI 显示偏低） */
   toolDefinitions?: number;
+  /**
+   * 按产品来源拆分（可选，老 session 无此字段时 UI 不渲染二级展开）
+   * 与上面 4 个字段是不同维度的拆分（消息结构 vs 产品来源）
+   */
+  bySource?: SourceBreakdown;
+}
+
+/**
+ * 创建空的 SourceBreakdown
+ */
+export function createEmptySourceBreakdown(): SourceBreakdown {
+  return {
+    rules: 0,
+    skills: {},
+    mcp: {},
+    subagents: {},
+    fileReads: 0,
+    conversation: 0,
+  };
 }
 
 /**
@@ -183,6 +228,7 @@ export function createEmptyHealthState(maxTokens: number = 128000): ContextHealt
       systemPrompt: 0,
       messages: 0,
       toolResults: 0,
+      bySource: createEmptySourceBreakdown(),
     },
     warningLevel: 'normal',
     estimatedTurnsRemaining: 0,

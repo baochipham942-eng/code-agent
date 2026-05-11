@@ -278,6 +278,7 @@ export function buildCLIConfig(options: {
     modelConfig,
     outputFormat,
     enablePlanning: options.plan || false,
+    enableHooks: true,
     debug: options.debug || false,
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
     systemPrompt: options.systemPrompt,
@@ -385,7 +386,7 @@ export function createAgentLoop(
         } catch { /* event persistence failure should not block agent */ }
       }
     },
-    enableHooks: config.enablePlanning, // 规划模式启用 hooks
+    enableHooks: config.enableHooks ?? true,
     planningService,
     sessionId: effectiveSessionId,
     workingDirectory: config.workingDirectory,

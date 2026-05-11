@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
+import type { TurnHookActivity } from '@shared/contract/turnTimeline';
 import {
   AlertTriangle,
   ChevronRight,
@@ -125,6 +126,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     }),
     [isActiveTurn, isSessionProcessing, runningToolStartTime, sessionStatus, streamSnapshot, turn],
   );
+  const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
 
   return (
     <div
@@ -159,6 +161,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             attachments={foldedView.userNode.attachments}
           />
         )}
+
+        {hookActivity && <HookExecutionBanner activity={hookActivity} />}
 
         {/* "Worked for Xm Ys" toggle — always visible when foldable */}
         {canFold && (
@@ -198,6 +202,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (node.id === foldedView.userNode?.id) {
                 return null;
               }
+              // Hook activity gets a stable, always-visible banner below the user prompt.
+              if (node.turnTimeline?.kind === 'hook_activity') {
+                return null;
+              }
               // Final text rendered below; skip here to avoid duplicate
               if (canFold && node.id === foldedView?.finalTextNode?.id) {
                 return null;
@@ -234,6 +242,84 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
         {/* Turn-level aggregated diff card — always visible */}
         <TurnDiffSummary turn={turn} />
+      </div>
+    </div>
+  );
+};
+
+const HOOK_EVENT_LABELS: Record<string, string> = {
+  UserPromptSubmit: '用户提示提交',
+  SessionStart: '会话开始',
+  PreToolUse: '工具前',
+  PostToolUse: '工具后',
+  PostToolUseFailure: '工具失败',
+  PermissionRequest: '权限请求',
+  PreCompact: '压缩前',
+  PostCompact: '压缩后',
+  Stop: '停止',
+  StopFailure: '停止失败',
+  SessionEnd: '会话结束',
+};
+
+function getTurnHookActivity(turn: TraceTurn): TurnHookActivity | null {
+  const node = turn.nodes.find((candidate) => (
+    candidate.turnTimeline?.kind === 'hook_activity'
+    && candidate.turnTimeline.hookActivity
+  ));
+  return node?.turnTimeline?.hookActivity ?? null;
+}
+
+function getHookActivityTone(activity: TurnHookActivity): 'success' | 'warning' | 'error' {
+  if (activity.items.some((item) => item.action === 'block')) return 'error';
+  if (activity.items.some((item) => (item.errorCount || 0) > 0 || item.modified)) return 'warning';
+  return 'success';
+}
+
+function getHookStatusText(activity: TurnHookActivity): string {
+  const blocked = activity.items.filter((item) => item.action === 'block').length;
+  if (blocked > 0) return `${blocked} 次阻止`;
+  const errors = activity.items.reduce((sum, item) => sum + (item.errorCount || 0), 0);
+  if (errors > 0) return `${errors} 个错误`;
+  const modified = activity.items.filter((item) => item.modified).length;
+  if (modified > 0) return `${modified} 次改写输入`;
+  return '已放行';
+}
+
+const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
+  const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
+  const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
+  const tone = getHookActivityTone(activity);
+  const statusText = getHookStatusText(activity);
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs ${getToneClass(tone)}`}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="inline-flex shrink-0 items-center gap-1.5 font-medium">
+          <Wrench className="h-3.5 w-3.5" />
+          <span>执行了 {totalHooks} 个钩子</span>
+        </div>
+        <span className="shrink-0 text-[11px] opacity-80">{statusText}</span>
+        <span className="shrink-0 text-[11px] opacity-60">{durationMs}ms</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {activity.items.map((item, index) => {
+          const label = HOOK_EVENT_LABELS[item.event] || item.event;
+          const detail = [
+            item.toolName,
+            `${item.hookCount} 个`,
+            `${item.durationMs}ms`,
+          ].filter(Boolean).join(' · ');
+          return (
+            <span
+              key={`${item.event}-${item.timestamp}-${index}`}
+              className="inline-flex max-w-full items-center gap-1 rounded-md bg-black/10 px-1.5 py-0.5 text-[11px]"
+              title={item.message || undefined}
+            >
+              <span className="shrink-0">{label}</span>
+              <span className="min-w-0 truncate opacity-70">{detail}</span>
+            </span>
+          );
+        })}
       </div>
     </div>
   );

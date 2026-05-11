@@ -71,6 +71,7 @@ function devAuthTokenPlugin(): Plugin {
 export default defineConfig({
   plugins: [stubMainInRendererPlugin(), react(), devAuthTokenPlugin()],
   root: 'src/renderer',
+  publicDir: path.resolve(__dirname, 'public'),
   base: './',
   build: {
     outDir: '../../dist/renderer',

@@ -1,6 +1,10 @@
 import express from 'express';
 import http from 'http';
+import { mkdtemp, rm } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createCLIAgent } from '../../../src/cli/adapter';
 import { createAgentRouter } from '../../../src/web/routes/agent';
 import { inMemorySessions, sessionMessages, setDbAvailable } from '../../../src/web/helpers/sessionCache';
 
@@ -56,6 +60,8 @@ vi.mock('../../../src/main/telemetry', () => ({
 let server: http.Server | undefined;
 let baseUrl = '';
 const activeAgentLoops = new Map<string, { cancel(reason?: string): void | Promise<void> }>();
+const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
+let tempDataDir: string | undefined;
 
 const logger = {
   info: vi.fn(),
@@ -139,6 +145,15 @@ describe('createAgentRouter', () => {
 
   afterEach(async () => {
     await closeServer();
+    if (tempDataDir) {
+      await rm(tempDataDir, { recursive: true, force: true });
+      tempDataDir = undefined;
+    }
+    if (originalCodeAgentDataDir === undefined) {
+      delete process.env.CODE_AGENT_DATA_DIR;
+    } else {
+      process.env.CODE_AGENT_DATA_DIR = originalCodeAgentDataDir;
+    }
     activeAgentLoops.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
@@ -308,6 +323,66 @@ describe('createAgentRouter', () => {
       'old-user-1',
       'old-assistant-1',
     ]);
+  });
+
+  it('uses context.workingDirectory from the conversation envelope before fallback paths', async () => {
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '查一下这个项目',
+        sessionId: 'session-context-working-dir',
+        context: {
+          workingDirectory: '/tmp/context-project',
+        },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: '/tmp/context-project',
+    }));
+  });
+
+  it('falls back to the app work directory instead of HOME when no working directory is known', async () => {
+    await closeServer();
+    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '普通聊天',
+        sessionId: 'session-safe-fallback',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: join(tempDataDir, 'work'),
+    }));
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

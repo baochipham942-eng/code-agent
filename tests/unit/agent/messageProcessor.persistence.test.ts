@@ -257,6 +257,71 @@ describe('MessageProcessor persistence', () => {
     );
   });
 
+  it('continues when a provider reports stop on an obviously unfinished sentence', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      effortLevel: 'medium',
+      _researchModeActive: false,
+      _consecutiveTruncations: 0,
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      toolsUsedInTurn: [],
+      isSimpleTaskMode: false,
+      nudgeManager: {
+        runNudgeChecks: vi.fn(),
+        runOutputValidation: vi.fn(),
+      },
+      antiScrapingHitsInRun: 0,
+      onEvent: vi.fn(),
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '三个版本硬件完全一样，差别在这些地方：\n\nGoogle Assistant\n国行版把这',
+        truncated: false,
+        finishReason: 'stop',
+        usage: { inputTokens: 1000, outputTokens: 128 },
+      },
+      false,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'assistant',
+        content: expect.stringContaining('国行版把这'),
+      }),
+    );
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Continue from exactly where your previous response stopped'),
+    );
+    expect(ctx.modelConfig.maxTokens).toBe(4096);
+    expect(runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+      'generating',
+      '回复疑似未完，继续生成剩余内容...',
+    );
+  });
+
   it('boosts truncated tool calls to the provider output limit', async () => {
     const ctx = {
       sessionId: 'runtime-session-1',

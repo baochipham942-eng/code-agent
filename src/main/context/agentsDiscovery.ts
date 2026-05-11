@@ -54,6 +54,8 @@ export interface AgentsDiscoveryResult {
   totalFiles: number;
   /** Discovery time in ms */
   discoveryTimeMs: number;
+  /** Whether discovery stopped before traversing everything */
+  truncated?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -95,6 +97,32 @@ const SKIP_DIRS = new Set([
  * Maximum depth to search
  */
 const MAX_DEPTH = 5;
+const MAX_FILES = 32;
+const MAX_DIRECTORIES = 1500;
+
+export interface AgentsDiscoveryOptions {
+  maxDepth?: number;
+  maxFiles?: number;
+  maxDirectories?: number;
+}
+
+function normalizeDiscoveryOptions(
+  optionsOrDepth?: number | AgentsDiscoveryOptions,
+): Required<AgentsDiscoveryOptions> {
+  if (typeof optionsOrDepth === 'number') {
+    return {
+      maxDepth: optionsOrDepth,
+      maxFiles: MAX_FILES,
+      maxDirectories: MAX_DIRECTORIES,
+    };
+  }
+
+  return {
+    maxDepth: optionsOrDepth?.maxDepth ?? MAX_DEPTH,
+    maxFiles: optionsOrDepth?.maxFiles ?? MAX_FILES,
+    maxDirectories: optionsOrDepth?.maxDirectories ?? MAX_DIRECTORIES,
+  };
+}
 
 // ----------------------------------------------------------------------------
 // Discovery Service
@@ -109,13 +137,21 @@ const MAX_DEPTH = 5;
  */
 export async function discoverAgentFiles(
   workingDirectory: string,
-  maxDepth: number = MAX_DEPTH
+  optionsOrDepth?: number | AgentsDiscoveryOptions
 ): Promise<AgentsDiscoveryResult> {
   const startTime = Date.now();
   const files: AgentInstructions[] = [];
+  const { maxDepth, maxFiles, maxDirectories } = normalizeDiscoveryOptions(optionsOrDepth);
+  let visitedDirectories = 0;
+  let truncated = false;
 
   async function searchDirectory(dir: string, depth: number): Promise<void> {
     if (depth > maxDepth) return;
+    if (files.length >= maxFiles || visitedDirectories >= maxDirectories) {
+      truncated = true;
+      return;
+    }
+    visitedDirectories += 1;
 
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -145,6 +181,10 @@ export async function discoverAgentFiles(
 
       // Then recursively search subdirectories
       for (const entry of entries) {
+        if (files.length >= maxFiles || visitedDirectories >= maxDirectories) {
+          truncated = true;
+          break;
+        }
         if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
           await searchDirectory(path.join(dir, entry.name), depth + 1);
         }
@@ -168,6 +208,7 @@ export async function discoverAgentFiles(
   logger.info('AGENTS.md discovery completed', {
     totalFiles: files.length,
     discoveryTimeMs,
+    truncated,
     paths: files.map(f => f.relativePath),
   });
 
@@ -176,6 +217,7 @@ export async function discoverAgentFiles(
     combinedInstructions: combineInstructions(files),
     totalFiles: files.length,
     discoveryTimeMs,
+    truncated,
   };
 }
 
@@ -276,22 +318,34 @@ interface CacheEntry {
 const discoveryCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60000; // 1 minute
 
+function getCacheKey(workingDirectory: string, options: Required<AgentsDiscoveryOptions>): string {
+  return [
+    workingDirectory,
+    options.maxDepth,
+    options.maxFiles,
+    options.maxDirectories,
+  ].join('\0');
+}
+
 /**
  * Discover agent files with caching
  * Results are cached for 1 minute to avoid repeated filesystem scans
  */
 export async function discoverAgentFilesCached(
-  workingDirectory: string
+  workingDirectory: string,
+  optionsOrDepth?: number | AgentsDiscoveryOptions,
 ): Promise<AgentsDiscoveryResult> {
-  const cached = discoveryCache.get(workingDirectory);
+  const options = normalizeDiscoveryOptions(optionsOrDepth);
+  const cacheKey = getCacheKey(workingDirectory, options);
+  const cached = discoveryCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.result;
   }
 
-  const result = await discoverAgentFiles(workingDirectory);
+  const result = await discoverAgentFiles(workingDirectory, options);
 
-  discoveryCache.set(workingDirectory, {
+  discoveryCache.set(cacheKey, {
     result,
     timestamp: Date.now(),
   });
@@ -305,7 +359,11 @@ export async function discoverAgentFilesCached(
  */
 export function clearAgentsDiscoveryCache(workingDirectory?: string): void {
   if (workingDirectory) {
-    discoveryCache.delete(workingDirectory);
+    for (const key of discoveryCache.keys()) {
+      if (key.startsWith(`${workingDirectory}\0`)) {
+        discoveryCache.delete(key);
+      }
+    }
   } else {
     discoveryCache.clear();
   }

@@ -56,6 +56,9 @@ describe('sessionStartAgentsInjectHook', () => {
       timestamp: Date.now(),
     });
 
-    expect(discoverAgentFilesCached).toHaveBeenCalledWith('/tmp/comate-zulu-demo');
+    expect(discoverAgentFilesCached).toHaveBeenCalledWith('/tmp/comate-zulu-demo', {
+      maxDepth: 3,
+      maxFiles: 12,
+    });
   });
 });

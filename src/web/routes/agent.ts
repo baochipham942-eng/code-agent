@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import type { Message } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
@@ -37,6 +40,21 @@ interface AgentRouterDeps {
 }
 
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
+
+function extractWorkingDirectory(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const workingDirectory = (value as { workingDirectory?: unknown }).workingDirectory;
+  return typeof workingDirectory === 'string' && workingDirectory.trim().length > 0
+    ? workingDirectory.trim()
+    : undefined;
+}
+
+async function ensureDefaultWebWorkingDirectory(): Promise<string> {
+  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
+  const workDir = path.join(dataDir, 'work');
+  await fs.mkdir(workDir, { recursive: true });
+  return workDir;
+}
 
 function buildSessionTitle(prompt: string): string {
   return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
@@ -218,7 +236,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   router.post('/run', async (req: Request, res: Response) => {
-    const { prompt, project, model, provider, generation } = req.body;
+    const { prompt, project, sessionDir, model, provider, generation } = req.body;
 
     if (!prompt) {
       res.status(400).json({ error: 'Missing prompt' });
@@ -280,12 +298,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const { createAgentLoop } = await import('../../cli/bootstrap');
 
       // workingDirectory 解析顺序：
-      // 1. body.project 显式传值（renderer 选了 workspace folder 时）
-      // 2. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
-      // 3. user home（绝不能 fallback 到 process.cwd() —— 打包态 webServer 进程 cwd
-      //    是 .app/Contents/Resources/_up_/ 的 read-only 路径，模型在这里写文件永远失败）
+      // 1. body.project / body.sessionDir 显式传值
+      // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
+      // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
+      // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
       let resolvedProject: string | undefined =
-        typeof project === 'string' && project.trim().length > 0 ? project.trim() : undefined;
+        typeof project === 'string' && project.trim().length > 0
+          ? project.trim()
+          : typeof sessionDir === 'string' && sessionDir.trim().length > 0
+            ? sessionDir.trim()
+            : extractWorkingDirectory(req.body.context);
       if (!resolvedProject) {
         try {
           const sm = await tryGetSessionManager();
@@ -299,8 +321,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }
       if (!resolvedProject) {
-        resolvedProject = process.env.HOME || process.env.USERPROFILE || '/tmp';
-        logger.warn(`[AgentRouter] No project/sessionDir, falling back to ${resolvedProject}`);
+        resolvedProject = await ensureDefaultWebWorkingDirectory();
+        logger.warn(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       }
 
       const agent = await createCLIAgent({

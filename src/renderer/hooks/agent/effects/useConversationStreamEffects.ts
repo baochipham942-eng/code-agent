@@ -59,6 +59,16 @@ export function removeUncommittedAssistantDraft(
   return messages.filter((message) => message.id !== draftMessageId);
 }
 
+export function mergeCommittedAssistantContent(
+  existingContent: string,
+  committedContent: string,
+): string {
+  if (!committedContent) return existingContent;
+  if (!existingContent) return committedContent;
+  if (existingContent === committedContent) return existingContent;
+  return committedContent;
+}
+
 export interface ConversationStreamState {
   currentTurnMessageId: string | null;
   committedAssistantMessageIds: Set<string>;
@@ -204,7 +214,7 @@ export function applyConversationStreamEvent(
           }
 
           actions.updateMessage(targetMessage.id, {
-            content: existingContent.length >= newContent.length ? existingContent : newContent,
+            content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
           });
         }
@@ -327,6 +337,7 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
+          flushRef.current();
           applyConversationStreamEvent(
             event,
             {

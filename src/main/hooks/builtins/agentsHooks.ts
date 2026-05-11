@@ -6,6 +6,8 @@ import type { SessionContext, HookExecutionResult } from '../../protocol/events'
 import path from 'path';
 import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
+import { getContextHealthService } from '../../context/contextHealthService';
+import { estimateTokens } from '../../context/tokenEstimator';
 
 const logger = createLogger('AgentsHooks');
 const MAX_AGENT_FILES_TO_INJECT = 12;
@@ -134,6 +136,18 @@ export async function sessionStartAgentsInjectHook(
       contentLength: injectedContent.length,
       truncated,
     });
+
+    // 上报 rules 维度的 token 贡献（set 模式：session 内只有一次 AGENTS 注入）
+    try {
+      getContextHealthService().recordSourceContribution(
+        context.sessionId,
+        { type: 'rule', name: 'agents-instructions' },
+        estimateTokens(injectedContent),
+        'set',
+      );
+    } catch (err) {
+      logger.debug('Failed to report agents-instructions token contribution', { err });
+    }
 
     return {
       action: 'continue',

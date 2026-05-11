@@ -52,6 +52,8 @@ import {
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { taskSchema as schema } from './task.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { getContextHealthService } from '../../../context/contextHealthService';
+import { estimateTokens } from '../../../context/tokenEstimator';
 
 // ----------------------------------------------------------------------------
 // 参数验证（与 legacy parseAndValidateTaskParams 对齐）
@@ -285,6 +287,18 @@ ${result.output}
 Stats:
 - Iterations: ${result.iterations}
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}`;
+
+      // 上报 subagent 维度的 token 贡献（add 模式，按 agentName 累加）
+      try {
+        getContextHealthService().recordSourceContribution(
+          ctx.sessionId,
+          { type: 'subagent', name: agentName },
+          estimateTokens(output),
+          'add',
+        );
+      } catch (err) {
+        ctx.logger.debug('Failed to report subagent token contribution', { agentName, err });
+      }
 
       taskDeduplication.completeTask(taskHash, result.output);
       return withMultiagentMeta(

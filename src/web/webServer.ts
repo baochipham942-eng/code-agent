@@ -454,6 +454,74 @@ function registerHandlers(): void {
         case 'getMessages':
           data = await sm.getMessages(payload?.sessionId);
           break;
+        case 'rewindToPrompt': {
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          const userMessageId = typeof payload?.userMessageId === 'string' ? payload.userMessageId.trim() : '';
+          if (!sessionId || !userMessageId) {
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_PAYLOAD',
+                message: 'sessionId and userMessageId are required',
+              },
+            };
+          }
+          if (activeAgentLoops.has(sessionId)) {
+            throw new Error('Cannot rewind while the session is running');
+          }
+
+          const { getDatabase } = await import('../main/services/core/databaseService');
+          const db = getDatabase();
+          const anchorMessage = db.getMessageById(sessionId, userMessageId);
+          if (anchorMessage?.role !== 'user') {
+            throw new Error(`Active user message not found: ${userMessageId}`);
+          }
+
+          const { getFileCheckpointService } = await import('../main/services/checkpoint');
+          const checkpointService = getFileCheckpointService();
+          const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
+            sessionId,
+            anchorMessage.timestamp,
+          );
+
+          let filesRestored = 0;
+          let filesDeleted = 0;
+          const errors: string[] = [];
+
+          if (checkpoint) {
+            const rewindFilesResult = await checkpointService.rewindFiles(sessionId, checkpoint.messageId);
+            filesRestored = rewindFilesResult.restoredFiles.length;
+            filesDeleted = rewindFilesResult.deletedFiles.length;
+            if (!rewindFilesResult.success) {
+              const message = rewindFilesResult.errors.map((item) => item.error).filter(Boolean).join('; ')
+                || 'File checkpoint rewind failed';
+              throw new Error(message);
+            }
+            errors.push(...rewindFilesResult.errors.map((item) => item.error).filter(Boolean));
+          }
+
+          const rewindResult = await sm.applyPromptRewind(sessionId, userMessageId, {
+            checkpointMessageId: checkpoint?.messageId ?? null,
+            filesRestored,
+            filesDeleted,
+            errors,
+          });
+
+          data = {
+            success: true,
+            sessionId,
+            rewindId: rewindResult.rewindId,
+            draft: {
+              content: anchorMessage.content,
+              attachments: anchorMessage.attachments,
+            },
+            activeMessages: rewindResult.activeMessages,
+            hiddenMessageCount: rewindResult.hiddenMessageCount,
+            filesRestored,
+            filesDeleted,
+          };
+          break;
+        }
         case 'export':
           data = await sm.exportSession(payload?.sessionId);
           break;

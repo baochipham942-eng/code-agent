@@ -33,6 +33,8 @@ import { executeSpawnAgent as executeSpawnAgentLegacy } from '../../../agent/mul
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
+import { getContextHealthService } from '../../../context/contextHealthService';
+import { estimateTokens } from '../../../context/tokenEstimator';
 
 const ROLE_ALIASES: Record<string, string> = {
   explorer: 'explore',
@@ -96,6 +98,29 @@ async function runSpawnAgent(
   ctx.logger.debug(`${schemaName} done`, { ok: legacyResult.success });
   const result = adaptLegacyResult(legacyResult);
   const legacyAgentId = legacyResult.metadata?.agentId;
+
+  // 上报 subagent 维度 token 贡献（与 task.ts 路径对齐：仅 ok 时累加）
+  if (result.ok && typeof result.output === 'string') {
+    const subagentName =
+      (typeof normalizedArgs.agentId === 'string' && normalizedArgs.agentId) ||
+      (typeof legacyAgentId === 'string' && legacyAgentId) ||
+      (typeof normalizedArgs.role === 'string' && normalizedArgs.role) ||
+      schemaName;
+    try {
+      getContextHealthService().recordSourceContribution(
+        ctx.sessionId,
+        { type: 'subagent', name: subagentName },
+        estimateTokens(result.output),
+        'add',
+      );
+    } catch (err) {
+      ctx.logger.debug('Failed to report spawnAgent subagent token contribution', {
+        subagentName,
+        err,
+      });
+    }
+  }
+
   return withMultiagentMeta(result, ctx, schemaName, {
     action: 'spawn',
     status: result.ok ? 'completed' : 'failed',

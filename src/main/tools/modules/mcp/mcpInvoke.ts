@@ -28,6 +28,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
+import { getContextHealthService } from '../../../context/contextHealthService';
+import { estimateTokens } from '../../../context/tokenEstimator';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpInvokeSchema as schema } from './mcpInvoke.schema';
 
@@ -186,6 +188,19 @@ export async function executeMcpInvoke(
       const output = result.output || '执行成功';
       ctx.logger.debug('mcp done', { server, tool, ok: true });
       onProgress?.({ stage: 'completing', percent: 100 });
+
+      // 上报 MCP 维度的 token 贡献（add 模式，按 server 名累加）
+      try {
+        getContextHealthService().recordSourceContribution(
+          ctx.sessionId,
+          { type: 'mcp', server },
+          estimateTokens(output),
+          'add',
+        );
+      } catch (err) {
+        ctx.logger.debug('Failed to report MCP token contribution', { server, err });
+      }
+
       return {
         ok: true,
         output,

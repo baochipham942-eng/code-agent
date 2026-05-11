@@ -100,7 +100,8 @@ const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | `preview:${string}`;
+// 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | `preview:${string}`;
 
 export interface SettingsMemoryFocus {
   filename?: string;

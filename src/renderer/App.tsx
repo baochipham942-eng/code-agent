@@ -23,6 +23,7 @@ import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
+import { ContextPanel } from './components/ContextPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
@@ -415,6 +416,7 @@ export const App: React.FC = () => {
           <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
         )}
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
+        {activeWorkbenchTab === 'context' && <ContextPanel />}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>

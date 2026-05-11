@@ -11,7 +11,10 @@ import {
   CompressionStats,
   getWarningLevel,
   createEmptyHealthState,
+  createEmptySourceBreakdown,
   TokenBreakdown,
+  SourceTag,
+  SourceBreakdown,
 } from '../../shared/contract/contextHealth';
 import {
   estimateTokens,
@@ -49,6 +52,10 @@ const logger = createLogger('ContextHealthService');
  *
  * 负责跟踪和报告每个会话的上下文使用情况
  */
+// IPC 广播 debounce 间隔：recordSourceContribution 在单 turn 内可能被高频调用
+// （多次 tool result），避免风暴
+const SOURCE_CONTRIBUTION_DEBOUNCE_MS = 200;
+
 export class ContextHealthService {
   private sessionStates: Map<string, ContextHealthState> = new Map();
   private mainWindow: BrowserWindow | null = null;
@@ -57,6 +64,9 @@ export class ContextHealthService {
 
   // 工具 schema token 估算缓存：tool 数量+签名 hash 不变时复用
   private toolDefTokensCache: { signature: string; tokens: number } | null = null;
+
+  // bySource 更新的 debounce 定时器（每 session 一个）
+  private sourceDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   /**
    * 估算当前活跃工具 schema 序列化后的 token 占用。
@@ -127,11 +137,24 @@ export class ContextHealthService {
     // 优先用调用方显式传值，否则自动从工具 registry 估算（registry 不可用时回退 0）。
     const toolDefTokens = toolDefinitionsTokens ?? this.estimateActiveToolDefinitionsTokens();
 
+    // 保留上轮的 bySource 累加值（recordSourceContribution 之间的状态）
+    // 同时把 conversation 字段按扣减法重算：messages - 其他 source 之和
+    const bySource: SourceBreakdown =
+      previousHealth?.breakdown.bySource ?? createEmptySourceBreakdown();
+    const otherSourceSum =
+      bySource.rules +
+      Object.values(bySource.skills).reduce((a, b) => a + b, 0) +
+      Object.values(bySource.mcp).reduce((a, b) => a + b, 0) +
+      Object.values(bySource.subagents).reduce((a, b) => a + b, 0) +
+      bySource.fileReads;
+    bySource.conversation = Math.max(0, messagesTokens - otherSourceSum);
+
     const breakdown: TokenBreakdown = {
       systemPrompt: systemPromptTokens,
       messages: messagesTokens,
       toolResults: toolResultsTokens,
       toolDefinitions: toolDefTokens,
+      bySource,
     };
 
     const currentTokens = systemPromptTokens + messagesTokens + toolResultsTokens + toolDefTokens;
@@ -199,6 +222,11 @@ export class ContextHealthService {
    */
   cleanup(sessionId: string): void {
     this.sessionStates.delete(sessionId);
+    const timer = this.sourceDebounceTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.sourceDebounceTimers.delete(sessionId);
+    }
   }
 
   /**
@@ -206,6 +234,140 @@ export class ContextHealthService {
    */
   clear(): void {
     this.sessionStates.clear();
+    for (const timer of this.sourceDebounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.sourceDebounceTimers.clear();
+  }
+
+  // --------------------------------------------------------------------------
+  // bySource 上下文来源追踪（产品维度）
+  //
+  // 用法语义：
+  //   - mode='add'（默认）：累加。tool result/fileRead/subagent 输出每次有新内容时调用
+  //   - mode='set'：替换。skill 挂载/MCP 注册时调用，给出该来源当前总占用
+  //   - clearSourceContribution：skill 卸载/MCP 断开时调用，从 bySource 移除
+  //   - resetSourceContributions：压缩或 session reset 时整体清零
+  //
+  // 注意：conversation 字段是派生值（messages - 其他 source 之和），
+  // 不应直接 record，调用会被忽略。
+  // --------------------------------------------------------------------------
+
+  /**
+   * 记录某个产品来源的 token 贡献
+   */
+  recordSourceContribution(
+    sessionId: string,
+    source: SourceTag,
+    tokens: number,
+    mode: 'add' | 'set' = 'add',
+  ): void {
+    if (tokens < 0 || !Number.isFinite(tokens)) {
+      logger.debug('recordSourceContribution ignored invalid tokens:', { source, tokens });
+      return;
+    }
+
+    const state = this.ensureStateWithBySource(sessionId);
+    const bs = state.breakdown.bySource!;
+
+    switch (source.type) {
+      case 'rule':
+        bs.rules = mode === 'set' ? tokens : bs.rules + tokens;
+        break;
+      case 'skill':
+        bs.skills[source.name] =
+          mode === 'set' ? tokens : (bs.skills[source.name] ?? 0) + tokens;
+        break;
+      case 'mcp':
+        bs.mcp[source.server] =
+          mode === 'set' ? tokens : (bs.mcp[source.server] ?? 0) + tokens;
+        break;
+      case 'subagent':
+        bs.subagents[source.name] =
+          mode === 'set' ? tokens : (bs.subagents[source.name] ?? 0) + tokens;
+        break;
+      case 'fileRead':
+        bs.fileReads = mode === 'set' ? tokens : bs.fileReads + tokens;
+        break;
+      case 'conversation':
+        // 派生值，update() 时按扣减法计算，不接受直接写入
+        return;
+    }
+
+    this.emitSourceUpdateDebounced(sessionId);
+  }
+
+  /**
+   * 清除某个具名来源的贡献（skill 卸载 / MCP 断开 / 标量来源归 0）
+   */
+  clearSourceContribution(sessionId: string, source: SourceTag): void {
+    const state = this.sessionStates.get(sessionId);
+    if (!state?.breakdown.bySource) return;
+    const bs = state.breakdown.bySource;
+
+    switch (source.type) {
+      case 'rule':
+        bs.rules = 0;
+        break;
+      case 'skill':
+        delete bs.skills[source.name];
+        break;
+      case 'mcp':
+        delete bs.mcp[source.server];
+        break;
+      case 'subagent':
+        delete bs.subagents[source.name];
+        break;
+      case 'fileRead':
+        bs.fileReads = 0;
+        break;
+      case 'conversation':
+        bs.conversation = 0;
+        break;
+    }
+
+    this.emitSourceUpdateDebounced(sessionId);
+  }
+
+  /**
+   * 重置 session 的 bySource（压缩后或 session 重启时调用）
+   */
+  resetSourceContributions(sessionId: string): void {
+    const state = this.sessionStates.get(sessionId);
+    if (!state) return;
+    state.breakdown.bySource = createEmptySourceBreakdown();
+    this.emitSourceUpdateDebounced(sessionId);
+  }
+
+  /**
+   * 确保 session 状态存在且 bySource 已初始化
+   * 在 record 路径上需要：若没有 update() 跑过，先用空 health state 兜底
+   */
+  private ensureStateWithBySource(sessionId: string): ContextHealthState {
+    let state = this.sessionStates.get(sessionId);
+    if (!state) {
+      state = createEmptyHealthState();
+      this.sessionStates.set(sessionId, state);
+    }
+    if (!state.breakdown.bySource) {
+      state.breakdown.bySource = createEmptySourceBreakdown();
+    }
+    return state;
+  }
+
+  /**
+   * 防抖广播 source 维度更新
+   * 单 turn 内多次 record 不会触发 IPC 风暴
+   */
+  private emitSourceUpdateDebounced(sessionId: string): void {
+    const existing = this.sourceDebounceTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.sourceDebounceTimers.delete(sessionId);
+      const state = this.sessionStates.get(sessionId);
+      if (state) this.emitHealthUpdate(sessionId, state);
+    }, SOURCE_CONTRIBUTION_DEBOUNCE_MS);
+    this.sourceDebounceTimers.set(sessionId, timer);
   }
 
   /**

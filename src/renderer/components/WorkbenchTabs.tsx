@@ -5,7 +5,7 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -58,7 +58,13 @@ export const WorkbenchTabs: React.FC = () => {
   const hasSkills = workbenchTabs.includes('skills');
   const hasFiles = workbenchTabs.includes('files');
   const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
-  const canAddAny = !hasTask || (!hasSkills && isStandard) || !hasFiles || !hasWorkspacePreview;
+  const hasContext = workbenchTabs.includes('context');
+  const canAddAny =
+    !hasTask ||
+    (!hasSkills && isStandard) ||
+    !hasFiles ||
+    !hasWorkspacePreview ||
+    !hasContext;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'task') {
@@ -78,6 +84,9 @@ export const WorkbenchTabs: React.FC = () => {
         title: 'Workspace Preview',
         isDirty: false,
       };
+    }
+    if (id === 'context') {
+      return { id, label: '上下文', title: '上下文占用与来源拆分', isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -183,6 +192,16 @@ export const WorkbenchTabs: React.FC = () => {
                 >
                   <Eye className="w-3.5 h-3.5 text-cyan-400/80" />
                   Preview
+                </button>
+              )}
+              {!hasContext && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('context'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <Activity className="w-3.5 h-3.5 text-emerald-400/80" />
+                  上下文
                 </button>
               )}
             </div>

@@ -33,6 +33,7 @@ interface MountedSkillItemProps {
   skill?: ParsedSkill;
   onUnmount: () => void;
   loading?: boolean;
+  highlighted?: boolean;
 }
 
 const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
@@ -40,8 +41,16 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
   skill,
   onUnmount,
   loading,
+  highlighted,
 }) => (
-  <div className="flex items-center justify-between px-2 py-1.5 bg-zinc-800 rounded group">
+  <div
+    data-skill-name={mount.skillName}
+    className={`flex items-center justify-between px-2 py-1.5 rounded group transition-colors ${
+      highlighted
+        ? 'bg-emerald-500/30 ring-1 ring-emerald-400/60 animate-pulse'
+        : 'bg-zinc-800'
+    }`}
+  >
     <div className="flex-1 min-w-0">
       <div className="text-sm text-zinc-200 truncate">{mount.skillName}</div>
       {skill && (
@@ -96,6 +105,8 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
 export const SkillsPanel: React.FC = () => {
   const { currentSessionId } = useSessionStore();
   const { setShowSettings, closeWorkbenchTab } = useAppStore();
+  const workbenchHighlight = useAppStore((s) => s.workbenchHighlight);
+  const setWorkbenchHighlight = useAppStore((s) => s.setWorkbenchHighlight);
   const {
     mountedSkills,
     availableSkills,
@@ -111,6 +122,8 @@ export const SkillsPanel: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // 跨 panel 跳转时高亮指定 skill 1.8s，nonce 用于触发同名重复跳转
+  const [flashName, setFlashName] = useState<string | null>(null);
 
   // 初始化：设置当前会话并加载数据
   useEffect(() => {
@@ -119,6 +132,21 @@ export const SkillsPanel: React.FC = () => {
       fetchAvailableSkills();
     }
   }, [currentSessionId, setCurrentSession, fetchAvailableSkills]);
+
+  // 监听跨 panel 跳转：滚动到目标 + 闪烁高亮 1.8s
+  useEffect(() => {
+    if (!workbenchHighlight) return;
+    if (workbenchHighlight.kind !== 'skill') return;
+    const name = workbenchHighlight.name;
+    setFlashName(name);
+    const el = document.querySelector<HTMLElement>(`[data-skill-name="${CSS.escape(name)}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const timer = setTimeout(() => {
+      setFlashName(null);
+      setWorkbenchHighlight(null);
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [workbenchHighlight, setWorkbenchHighlight]);
 
   // 过滤未挂载的可用 skills
   const unmountedSkills = useMemo(() => {
@@ -226,6 +254,7 @@ export const SkillsPanel: React.FC = () => {
                   skill={availableSkills.find((s) => s.name === mount.skillName)}
                   onUnmount={() => handleUnmount(mount.skillName)}
                   loading={loading}
+                  highlighted={flashName === mount.skillName}
                 />
               ))}
             </div>

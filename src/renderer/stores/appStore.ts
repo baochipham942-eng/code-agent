@@ -103,6 +103,14 @@ const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 // 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
 export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | `preview:${string}`;
 
+// 跨 panel 跳转目标
+// kind 决定跳到哪个 tab 并 highlight；name 是被高亮的项标识
+export interface WorkbenchHighlight {
+  kind: 'skill' | 'mcp' | 'subagent';
+  name: string;
+  nonce: number;
+}
+
 export interface SettingsMemoryFocus {
   filename?: string;
   query?: string;
@@ -174,6 +182,10 @@ interface AppState {
   // Unified right workbench — tab order & active view across Task/Skills/Preview.
   workbenchTabs: WorkbenchTabId[];
   activeWorkbenchTab: WorkbenchTabId | null;
+
+  // 跨 panel 跳转高亮：ContextPanel → SkillsPanel 点击 source 时设置
+  // nonce 用于同一目标重复触发时强制 effect 重跑
+  workbenchHighlight: WorkbenchHighlight | null;
 
   // Permission Request State
   pendingPermissionRequest: PermissionRequest | null;
@@ -249,6 +261,7 @@ interface AppState {
   openWorkbenchTab: (id: WorkbenchTabId) => void;
   closeWorkbenchTab: (id: WorkbenchTabId) => void;
   setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
+  setWorkbenchHighlight: (highlight: Omit<WorkbenchHighlight, 'nonce'> | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
   updatePreviewTabMode: (id: string, mode: 'preview' | 'edit') => void;
   markPreviewTabLoaded: (id: string, savedContent: string) => void;
@@ -337,6 +350,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial workbench — Task pinned and active by default.
   workbenchTabs: ['task'],
   activeWorkbenchTab: 'task',
+  workbenchHighlight: null,
 
   // Initial Permission Request State
   pendingPermissionRequest: null,
@@ -723,6 +737,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   setActiveWorkbenchTab: (id) => set({ activeWorkbenchTab: id }),
+
+  setWorkbenchHighlight: (highlight) =>
+    set({
+      workbenchHighlight: highlight
+        ? { ...highlight, nonce: Date.now() }
+        : null,
+    }),
 
   setPendingPermissionRequest: (request, sessionId = null) =>
     set({

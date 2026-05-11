@@ -120,6 +120,9 @@ export interface Database {
           tool_calls: unknown | null;
           tool_results: unknown | null;
           is_deleted: boolean;
+          visibility: string;
+          hidden_by_rewind_id: string | null;
+          hidden_at: number | null;
           updated_at: number;
           source_device_id: string | null;
         };
@@ -132,6 +135,9 @@ export interface Database {
           timestamp: number;
           tool_calls?: unknown | null;
           tool_results?: unknown | null;
+          visibility?: string;
+          hidden_by_rewind_id?: string | null;
+          hidden_at?: number | null;
           updated_at: number;
           source_device_id?: string | null;
         };
@@ -140,6 +146,9 @@ export interface Database {
           tool_calls?: unknown | null;
           tool_results?: unknown | null;
           is_deleted?: boolean;
+          visibility?: string;
+          hidden_by_rewind_id?: string | null;
+          hidden_at?: number | null;
           updated_at?: number;
           source_device_id?: string | null;
         };

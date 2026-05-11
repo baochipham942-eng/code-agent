@@ -68,6 +68,8 @@ export interface ChatInputProps {
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
 export interface ChatInputHandle {
   addAttachments: (items: MessageAttachment[]) => void;
+  setDraft: (draft: { content: string; attachments?: MessageAttachment[] }) => void;
+  focus: () => void;
 }
 
 // ============================================================================
@@ -188,6 +190,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       if (items.length > 0) {
         setAttachments((prev) => [...prev, ...items].slice(0, UI.MAX_ATTACHMENTS_DROP));
       }
+    },
+    setDraft: (draft) => {
+      setValue(draft.content);
+      setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setRuntimeDraftStatus(null);
+      inputAreaRef.current?.focus();
+    },
+    focus: () => {
+      inputAreaRef.current?.focus();
     },
   }), []);
 

@@ -39,6 +39,9 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   // 性能优化：复合索引（首轮响应加速）
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_hidden_by_rewind ON messages(hidden_by_rewind_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_rewinds_session_created ON session_rewinds(session_id, created_at DESC)`);
 
   // Cron 相关索引
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled)`);

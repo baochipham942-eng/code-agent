@@ -179,6 +179,7 @@ export class SessionAnalyticsService {
         `SELECT id, role, content, timestamp
          FROM messages
          WHERE session_id = ?
+           AND COALESCE(visibility, 'active') = 'active'
          ORDER BY timestamp ASC`
       )
       .all(sessionId) as {

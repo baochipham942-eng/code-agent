@@ -404,7 +404,7 @@ class SyncService implements Disposable {
         const session = db.getSession(remote.session_id);
         if (!session) continue;
 
-        const localMessages = db.getMessages(remote.session_id);
+        const localMessages = db.getMessages(remote.session_id, undefined, undefined, { includeRewound: true });
         const localMsg = localMessages.find((m) => m.id === remote.id);
 
         if (!localMsg) {
@@ -415,12 +415,26 @@ class SyncService implements Disposable {
             role: remote.role as Message['role'],
             content: remote.content,
             timestamp: remote.timestamp,
+            visibility: (remote.visibility as Message['visibility']) || 'active',
+            hiddenByRewindId: remote.hidden_by_rewind_id || undefined,
+            hiddenAt: remote.hidden_at || undefined,
             toolCalls: remote.tool_calls as Message['toolCalls'],
             toolResults: remote.tool_results as Message['toolResults'],
           }, {
             skipTimestampUpdate: true,
             syncOrigin: 'remote',
           });
+          count++;
+        } else if (remote.updated_at > this.syncCursor) {
+          db.updateMessage(remote.id, {
+            content: remote.content,
+            visibility: (remote.visibility as Message['visibility']) || 'active',
+            hiddenByRewindId: remote.hidden_by_rewind_id || undefined,
+            hiddenAt: remote.hidden_at || undefined,
+            toolCalls: remote.tool_calls as Message['toolCalls'],
+            toolResults: remote.tool_results as Message['toolResults'],
+          });
+          db.markMessagesSynced([remote.id]);
           count++;
         }
       } catch (err) {
@@ -503,6 +517,9 @@ class SyncService implements Disposable {
             timestamp: m.timestamp,
             tool_calls: m.toolCalls || null,
             tool_results: m.toolResults || null,
+            visibility: m.visibility || 'active',
+            hidden_by_rewind_id: m.hiddenByRewindId || null,
+            hidden_at: m.hiddenAt || null,
             updated_at: Date.now(),
             source_device_id: this.deviceId,
           })),

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   Session,
   SessionStatus,
@@ -29,6 +30,27 @@ const logger = createLogger('SessionRepository');
 type SQLiteRow = Record<string, unknown>;
 
 type SyncOrigin = 'local' | 'remote';
+type MessageQueryOptions = { includeRewound?: boolean };
+
+export interface PromptRewindRecordInput {
+  checkpointMessageId?: string | null;
+  filesRestored?: number;
+  filesDeleted?: number;
+  errors?: string[];
+  createdAt?: number;
+}
+
+export interface PromptRewindResult {
+  rewindId: string;
+  anchorMessage: Message;
+  hiddenMessageIds: string[];
+  hiddenMessageCount: number;
+  activeMessages: Message[];
+}
+
+function activeMessageWhere(alias = 'm'): string {
+  return `COALESCE(${alias}.visibility, 'active') = 'active'`;
+}
 
 /**
  * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
@@ -191,7 +213,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
+      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
       WHERE s.id = ? AND (? = 1 OR s.is_deleted = 0)
       GROUP BY s.id
     `);
@@ -213,7 +235,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
+      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
       ${whereClause}
       GROUP BY s.id
       ORDER BY s.updated_at DESC
@@ -327,8 +349,12 @@ export class SessionRepository {
 
   addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts, metadata, compaction)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (
+        id, session_id, role, content, timestamp, tool_calls, tool_results,
+        attachments, thinking, effort_level, synced_at, content_parts, metadata,
+        compaction, visibility, hidden_by_rewind_id, hidden_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = buildAttachmentMetadata(message.attachments);
@@ -350,6 +376,9 @@ export class SessionRepository {
       message.contentParts ? JSON.stringify(message.contentParts) : null,
       message.metadata ? JSON.stringify(message.metadata) : null,
       message.compaction ? JSON.stringify(message.compaction) : null,
+      message.visibility ?? 'active',
+      message.hiddenByRewindId ?? null,
+      message.hiddenAt ?? null,
     );
 
     if (!options?.skipTimestampUpdate) {
@@ -418,6 +447,18 @@ export class SessionRepository {
       setClauses.push('compaction = ?');
       values.push(updates.compaction ? JSON.stringify(updates.compaction) : null);
     }
+    if (updates.visibility !== undefined) {
+      setClauses.push('visibility = ?');
+      values.push(updates.visibility ?? 'active');
+    }
+    if (updates.hiddenByRewindId !== undefined) {
+      setClauses.push('hidden_by_rewind_id = ?');
+      values.push(updates.hiddenByRewindId ?? null);
+    }
+    if (updates.hiddenAt !== undefined) {
+      setClauses.push('hidden_at = ?');
+      values.push(updates.hiddenAt ?? null);
+    }
 
     if (setClauses.length === 0) return;
 
@@ -429,11 +470,13 @@ export class SessionRepository {
     this.db.prepare(sql).run(...values);
   }
 
-  getMessages(sessionId: string, limit?: number, offset?: number): Message[] {
+  getMessages(sessionId: string, limit?: number, offset?: number, options: MessageQueryOptions = {}): Message[] {
+    const params: unknown[] = [sessionId];
     let sql = `
       SELECT * FROM messages
       WHERE session_id = ?
-      ORDER BY timestamp ASC
+      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+      ORDER BY timestamp ASC, rowid ASC
     `;
 
     if (limit !== undefined) {
@@ -444,22 +487,28 @@ export class SessionRepository {
     }
 
     const stmt = this.db.prepare(sql);
-    const rows = stmt.all(sessionId) as SQLiteRow[];
+    const rows = stmt.all(...params) as SQLiteRow[];
 
     return rows.map((row) => this.rowToMessage(row));
   }
 
-  getMessageCount(sessionId: string): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?');
+  getMessageCount(sessionId: string, options: MessageQueryOptions = {}): number {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count
+      FROM messages
+      WHERE session_id = ?
+      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+    `);
     const row = stmt.get(sessionId) as SQLiteRow | undefined;
     return (row?.count as number) || 0;
   }
 
-  getRecentMessages(sessionId: string, count: number): Message[] {
+  getRecentMessages(sessionId: string, count: number, options: MessageQueryOptions = {}): Message[] {
     const stmt = this.db.prepare(`
       SELECT * FROM messages
       WHERE session_id = ?
-      ORDER BY timestamp DESC
+      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+      ORDER BY timestamp DESC, rowid DESC
       LIMIT ?
     `);
 
@@ -468,11 +517,12 @@ export class SessionRepository {
     return rows.reverse().map((row) => this.rowToMessage(row));
   }
 
-  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] {
+  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30, options: MessageQueryOptions = {}): Message[] {
     const stmt = this.db.prepare(`
       SELECT * FROM messages
       WHERE session_id = ? AND timestamp < ?
-      ORDER BY timestamp DESC
+      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+      ORDER BY timestamp DESC, rowid DESC
       LIMIT ?
     `);
 
@@ -500,6 +550,7 @@ export class SessionRepository {
     options: {
       limit?: number;
       sessionId?: string;
+      includeRewound?: boolean;
     } = {},
   ): Array<{
     messageId: string;
@@ -518,22 +569,31 @@ export class SessionRepository {
     const params: unknown[] = [ftsQuery];
     let whereSession = '';
     if (options.sessionId) {
-      whereSession = 'AND session_id = ?';
+      whereSession = options.includeRewound ? 'AND f.session_id = ?' : 'AND m.session_id = ?';
       params.push(options.sessionId);
     }
     params.push(limit);
 
     try {
-      const rows = this.db
-        .prepare(
-          `
-          SELECT message_id, session_id, role, content, timestamp
-          FROM session_messages_fts
-          WHERE content MATCH ? ${whereSession}
-          ORDER BY rank, timestamp DESC
+      const sql = options.includeRewound
+        ? `
+          SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
+          FROM session_messages_fts f
+          WHERE f.content MATCH ? ${whereSession}
+          ORDER BY rank, f.timestamp DESC
           LIMIT ?
-          `,
-        )
+          `
+        : `
+          SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
+          FROM session_messages_fts f
+          JOIN messages m ON m.id = f.message_id
+          WHERE f.content MATCH ? ${whereSession}
+            AND ${activeMessageWhere('m')}
+          ORDER BY rank, f.timestamp DESC
+          LIMIT ?
+          `;
+      const rows = this.db
+        .prepare(sql)
         .all(...params) as SQLiteRow[];
 
       return rows.map((row) => ({
@@ -594,7 +654,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
+      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
       WHERE s.synced_at IS NULL
       GROUP BY s.id
       ORDER BY s.updated_at ASC
@@ -636,12 +696,111 @@ export class SessionRepository {
     this.db.prepare(`UPDATE messages SET synced_at = ? WHERE id IN (${placeholders})`).run(now, ...messageIds);
   }
 
+  getMessageById(sessionId: string, messageId: string, options: MessageQueryOptions = {}): Message | null {
+    const stmt = this.db.prepare(`
+      SELECT *
+      FROM messages
+      WHERE session_id = ? AND id = ?
+      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+      LIMIT 1
+    `);
+    const row = stmt.get(sessionId, messageId) as SQLiteRow | undefined;
+    return row ? this.rowToMessage(row) : null;
+  }
+
+  applyPromptRewind(
+    sessionId: string,
+    userMessageId: string,
+    record: PromptRewindRecordInput = {},
+  ): PromptRewindResult {
+    const now = record.createdAt ?? Date.now();
+    const rewindId = `rewind_${now}_${uuidv4().slice(0, 8)}`;
+
+    const applyFn = this.db.transaction(() => {
+      const anchorRow = this.db.prepare(`
+        SELECT rowid as __rowid, *
+        FROM messages
+        WHERE session_id = ?
+          AND id = ?
+          AND role = 'user'
+          AND ${activeMessageWhere('messages')}
+        LIMIT 1
+      `).get(sessionId, userMessageId) as SQLiteRow | undefined;
+
+      if (!anchorRow) {
+        throw new Error(`Active user message not found: ${userMessageId}`);
+      }
+
+      const anchorMessage = this.rowToMessage(anchorRow);
+      const anchorRowId = Number(anchorRow.__rowid || 0);
+      const rowsToHide = this.db.prepare(`
+        SELECT id
+        FROM messages
+        WHERE session_id = ?
+          AND rowid >= ?
+          AND ${activeMessageWhere('messages')}
+        ORDER BY timestamp ASC, rowid ASC
+      `).all(sessionId, anchorRowId) as Array<{ id: string }>;
+
+      const hiddenMessageIds = rowsToHide.map((row) => String(row.id));
+      if (hiddenMessageIds.length > 0) {
+        const placeholders = hiddenMessageIds.map(() => '?').join(',');
+        this.db.prepare(`
+          UPDATE messages
+          SET visibility = 'rewound',
+              hidden_by_rewind_id = ?,
+              hidden_at = ?,
+              synced_at = NULL
+          WHERE session_id = ?
+            AND id IN (${placeholders})
+        `).run(rewindId, now, sessionId, ...hiddenMessageIds);
+      }
+
+      this.db.prepare(`
+        INSERT INTO session_rewinds (
+          id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
+          checkpoint_message_id, hidden_message_count, hidden_message_ids,
+          files_restored, files_deleted, errors_json, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        rewindId,
+        sessionId,
+        userMessageId,
+        anchorMessage.content,
+        anchorMessage.timestamp,
+        record.checkpointMessageId ?? null,
+        hiddenMessageIds.length,
+        JSON.stringify(hiddenMessageIds),
+        record.filesRestored ?? 0,
+        record.filesDeleted ?? 0,
+        JSON.stringify(record.errors ?? []),
+        now,
+      );
+
+      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(now, sessionId);
+
+      return {
+        rewindId,
+        anchorMessage,
+        hiddenMessageIds,
+        hiddenMessageCount: hiddenMessageIds.length,
+        activeMessages: this.getMessages(sessionId),
+      };
+    });
+
+    return applyFn();
+  }
+
   private rowToMessage(row: SQLiteRow): Message {
     return {
       id: row.id as string,
       role: row.role as Message['role'],
       content: row.content as string,
       timestamp: row.timestamp as number,
+      visibility: ((row.visibility as Message['visibility']) || 'active'),
+      hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
+      hiddenAt: (row.hidden_at as number) || undefined,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
       attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
@@ -895,8 +1054,8 @@ export class SessionRepository {
   listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
     const rows = this.db.prepare(`
       SELECT s.*,
-             (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count,
-             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user') as turn_count
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND ${activeMessageWhere('messages')}) as message_count,
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user' AND ${activeMessageWhere('messages')}) as turn_count
       FROM sessions s
       WHERE s.status = 'archived' AND s.is_deleted = 0
       ORDER BY s.updated_at DESC

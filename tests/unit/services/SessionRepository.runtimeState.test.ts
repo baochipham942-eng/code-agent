@@ -46,11 +46,29 @@ function createSchema(db: BetterSqlite3.Database): void {
       attachments TEXT,
       thinking TEXT,
       effort_level TEXT,
-      synced_at INTEGER,
-      content_parts TEXT,
-      metadata TEXT,
-      compaction TEXT
-    );
+	      synced_at INTEGER,
+	      content_parts TEXT,
+	      metadata TEXT,
+	      compaction TEXT,
+	      visibility TEXT NOT NULL DEFAULT 'active',
+	      hidden_by_rewind_id TEXT,
+	      hidden_at INTEGER
+	    );
+
+	    CREATE TABLE session_rewinds (
+	      id TEXT PRIMARY KEY,
+	      session_id TEXT NOT NULL,
+	      anchor_message_id TEXT NOT NULL,
+	      anchor_prompt TEXT NOT NULL,
+	      anchor_timestamp INTEGER NOT NULL,
+	      checkpoint_message_id TEXT,
+	      hidden_message_count INTEGER NOT NULL DEFAULT 0,
+	      hidden_message_ids TEXT,
+	      files_restored INTEGER NOT NULL DEFAULT 0,
+	      files_deleted INTEGER NOT NULL DEFAULT 0,
+	      errors_json TEXT,
+	      created_at INTEGER NOT NULL
+	    );
 
     CREATE TABLE session_tasks (
       session_id TEXT NOT NULL,
@@ -187,9 +205,119 @@ describe('SessionRepository runtime recovery state', () => {
       },
     ];
 
-    repo.replaceMessages('session-1', compacted, 4);
+	    repo.replaceMessages('session-1', compacted, 4);
 
-    expect(repo.getMessages('session-1')).toEqual(compacted);
+	    expect(repo.getMessages('session-1')).toMatchObject([
+	      {
+	        id: 'compact-1',
+	        role: 'system',
+	        content: 'summary',
+	        timestamp: 3,
+	        visibility: 'active',
+	        compaction: compacted[0].compaction,
+	      },
+	    ]);
+	  });
+
+  it('soft-hides the anchor user message and later active messages on prompt rewind', () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', content: 'first prompt', timestamp: 10 },
+      { id: 'a1', role: 'assistant', content: 'first answer', timestamp: 20 },
+      { id: 'u2', role: 'user', content: 'prompt to edit', timestamp: 30 },
+      { id: 'a2', role: 'assistant', content: 'answer to hide', timestamp: 40 },
+    ];
+    for (const message of messages) {
+      repo.addMessage('session-1', message);
+    }
+
+    const result = repo.applyPromptRewind('session-1', 'u2', {
+      checkpointMessageId: 'checkpoint-message',
+      filesRestored: 2,
+      filesDeleted: 1,
+      createdAt: 100,
+    });
+
+    expect(result.hiddenMessageIds).toEqual(['u2', 'a2']);
+    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => message.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ]);
+    expect(repo.getMessageCount('session-1')).toBe(2);
+    expect(repo.getMessageCount('session-1', { includeRewound: true })).toBe(4);
+
+    const hidden = repo.getMessageById('session-1', 'u2', { includeRewound: true });
+    expect(hidden).toMatchObject({
+      id: 'u2',
+      visibility: 'rewound',
+      hiddenAt: 100,
+    });
+    expect(repo.getMessageById('session-1', 'u2')).toBeNull();
+
+    const audit = db.prepare('SELECT * FROM session_rewinds WHERE anchor_message_id = ?').get('u2') as {
+      anchor_prompt: string;
+      checkpoint_message_id: string;
+      hidden_message_count: number;
+      files_restored: number;
+      files_deleted: number;
+    };
+    expect(audit.anchor_prompt).toBe('prompt to edit');
+    expect(audit.checkpoint_message_id).toBe('checkpoint-message');
+    expect(audit.hidden_message_count).toBe(2);
+    expect(audit.files_restored).toBe(2);
+    expect(audit.files_deleted).toBe(1);
+  });
+
+  it('keeps only the remaining active line across multiple rewinds', () => {
+    for (const message of [
+      { id: 'u1', role: 'user', content: 'one', timestamp: 10 },
+      { id: 'a1', role: 'assistant', content: 'one answer', timestamp: 20 },
+      { id: 'u2', role: 'user', content: 'two', timestamp: 30 },
+      { id: 'a2', role: 'assistant', content: 'two answer', timestamp: 40 },
+      { id: 'u3', role: 'user', content: 'three', timestamp: 50 },
+    ] as Message[]) {
+      repo.addMessage('session-1', message);
+    }
+
+    repo.applyPromptRewind('session-1', 'u3', { createdAt: 100 });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 200 });
+
+    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => message.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      'u3',
+    ]);
+    expect((db.prepare('SELECT COUNT(*) as c FROM session_rewinds').get() as { c: number }).c).toBe(2);
+  });
+
+  it('uses message insertion order instead of timestamp ties as the rewind boundary', () => {
+    for (const message of [
+      { id: 'u1', role: 'user', content: 'same millisecond one', timestamp: 10 },
+      { id: 'a1', role: 'assistant', content: 'same millisecond one answer', timestamp: 10 },
+      { id: 'u2', role: 'user', content: 'same millisecond two', timestamp: 10 },
+      { id: 'a2', role: 'assistant', content: 'same millisecond two answer', timestamp: 10 },
+    ] as Message[]) {
+      repo.addMessage('session-1', message);
+    }
+
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+
+    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => ({
+      id: message.id,
+      visibility: message.visibility,
+    }))).toEqual([
+      { id: 'u1', visibility: 'active' },
+      { id: 'a1', visibility: 'active' },
+      { id: 'u2', visibility: 'rewound' },
+      { id: 'a2', visibility: 'rewound' },
+    ]);
   });
 
   it('marks crashed active sessions as interrupted or orphaned', () => {

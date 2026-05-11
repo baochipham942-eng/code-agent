@@ -53,6 +53,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       attachments TEXT,
       compaction TEXT,
       metadata TEXT,
+      visibility TEXT NOT NULL DEFAULT 'active',
+      hidden_by_rewind_id TEXT,
+      hidden_at INTEGER,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
@@ -65,6 +68,27 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE messages ADD COLUMN content_parts TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN metadata TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN compaction TEXT`, logger);
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`, logger);
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_by_rewind_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_at INTEGER`, logger);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_rewinds (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      anchor_prompt TEXT NOT NULL,
+      anchor_timestamp INTEGER NOT NULL,
+      checkpoint_message_id TEXT,
+      hidden_message_count INTEGER NOT NULL DEFAULT 0,
+      hidden_message_ids TEXT NOT NULL DEFAULT '[]',
+      files_restored INTEGER NOT NULL DEFAULT 0,
+      files_deleted INTEGER NOT NULL DEFAULT 0,
+      errors_json TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
 
   // Experiments 表迁移
   safeAlter(db, "ALTER TABLE experiments ADD COLUMN git_commit TEXT", logger);

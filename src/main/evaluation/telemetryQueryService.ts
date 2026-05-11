@@ -57,6 +57,32 @@ class TelemetryQueryService {
     return !!row;
   }
 
+  private getRewoundTelemetryRanges(sessionId: string): Array<{ start: number; end: number }> {
+    if (!this.tableExists('session_rewinds')) return [];
+    const db = this.getDb();
+    const rows = db
+      .prepare(`
+        SELECT anchor_timestamp, created_at
+        FROM session_rewinds
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+      `)
+      .all(sessionId) as Array<{ anchor_timestamp: number; created_at: number }>;
+
+    return rows
+      .map((row) => ({
+        start: Number(row.anchor_timestamp || 0),
+        end: Number(row.created_at || 0),
+      }))
+      .filter((range) => range.start > 0 && range.end >= range.start);
+  }
+
+  private isTimestampInRanges(timestamp: unknown, ranges: Array<{ start: number; end: number }>): boolean {
+    const value = Number(timestamp || 0);
+    if (!value) return false;
+    return ranges.some((range) => value >= range.start && value <= range.end);
+  }
+
   private loadTelemetryRows(sessionId: string): {
     sessionRow?: SQLiteRow;
     turnRows: SQLiteRow[];
@@ -72,22 +98,39 @@ class TelemetryQueryService {
     const sessionRow = db
       .prepare(`SELECT * FROM telemetry_sessions WHERE id = ?`)
       .get(sessionId) as SQLiteRow | undefined;
-    const turnRows = db
+    let turnRows = db
       .prepare(`SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY start_time ASC, turn_number ASC`)
       .all(sessionId) as SQLiteRow[];
-    const modelCallRows = this.tableExists('telemetry_model_calls')
+    let modelCallRows = this.tableExists('telemetry_model_calls')
       ? db
         .prepare(`SELECT * FROM telemetry_model_calls WHERE session_id = ? ORDER BY timestamp ASC`)
         .all(sessionId) as SQLiteRow[]
       : [];
-    const toolCallRows = db
+    let toolCallRows = db
       .prepare(`SELECT * FROM telemetry_tool_calls WHERE session_id = ? ORDER BY timestamp ASC, idx ASC`)
       .all(sessionId) as SQLiteRow[];
-    const eventRows = this.tableExists('telemetry_events')
+    let eventRows = this.tableExists('telemetry_events')
       ? db
         .prepare(`SELECT * FROM telemetry_events WHERE session_id = ? ORDER BY timestamp ASC`)
         .all(sessionId) as SQLiteRow[]
       : [];
+
+    const rewoundRanges = this.getRewoundTelemetryRanges(sessionId);
+    if (rewoundRanges.length > 0) {
+      const hiddenTurnIds = new Set(
+        turnRows
+          .filter((row) => this.isTimestampInRanges(row.start_time, rewoundRanges))
+          .map((row) => String(row.id)),
+      );
+      turnRows = turnRows.filter((row) => !hiddenTurnIds.has(String(row.id)));
+      modelCallRows = modelCallRows.filter((row) => !hiddenTurnIds.has(String(row.turn_id)));
+      toolCallRows = toolCallRows.filter((row) => !hiddenTurnIds.has(String(row.turn_id)));
+      eventRows = eventRows.filter((row) => {
+        const turnId = row.turn_id ? String(row.turn_id) : null;
+        if (turnId && hiddenTurnIds.has(turnId)) return false;
+        return !this.isTimestampInRanges(row.timestamp, rewoundRanges);
+      });
+    }
 
     return { sessionRow, turnRows, modelCallRows, toolCallRows, eventRows };
   }

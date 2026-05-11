@@ -7,7 +7,7 @@
 
 import type { PermissionResponse } from './permission';
 import type { Session } from './session';
-import type { Message } from './message';
+import type { Message, MessageAttachment } from './message';
 import type { ModelProvider } from './model';
 import type {
   ConversationEnvelope,
@@ -71,6 +71,22 @@ export interface SessionMarkdownExport {
   };
 }
 
+export interface PromptRewindDraft {
+  content: string;
+  attachments?: MessageAttachment[];
+}
+
+export interface PromptRewindResult {
+  success: true;
+  sessionId: string;
+  rewindId: string;
+  draft: PromptRewindDraft;
+  activeMessages: Message[];
+  hiddenMessageCount: number;
+  filesRestored: number;
+  filesDeleted: number;
+}
+
 /**
  * AgentApplicationService — IPC handler 的唯一业务依赖
  *
@@ -99,6 +115,7 @@ export interface AgentApplicationService {
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
+  rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   exportSession(sessionId: string): Promise<unknown>;

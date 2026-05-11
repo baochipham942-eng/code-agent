@@ -20,6 +20,7 @@ interface TurnBasedTraceViewProps {
   onLoadOlder?: () => void;
   searchMatches?: SearchMatch[];
   activeMatchIndex?: number;
+  onRewindUserPrompt?: (messageId: string, content: string) => void;
 }
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
@@ -82,6 +83,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   onLoadOlder,
   searchMatches = [],
   activeMatchIndex = 0,
+  onRewindUserPrompt,
 }) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
@@ -280,12 +282,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}
               showSeparator={shouldShowTurnTimeSeparator(previousTurn, turn)}
+              onRewindUserPrompt={onRewindUserPrompt}
             />
           </div>
         </div>
       );
     },
-    [activeMatchIndex, isProjectionSessionProcessing, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, searchMatches, sessionStatus],
+    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator

@@ -195,8 +195,8 @@ export class SessionManager implements Disposable {
             syncOrigin: 'remote',
           });
         }
-        // 云端拉取后也只取最近 N 条
-        messages = cloudMessages.slice(-messageLimit);
+        // 云端拉取后从本地按 active 口径读取，避免 rewound 尝试重新进入上下文
+        messages = db.getRecentMessages(sessionId, messageLimit);
       }
     }
 
@@ -250,6 +250,9 @@ export class SessionManager implements Disposable {
         timestamp: number;
         tool_calls?: string;
         tool_results?: string;
+        visibility?: string;
+        hidden_by_rewind_id?: string | null;
+        hidden_at?: number | null;
       }
 
       // 转换为本地格式
@@ -259,6 +262,9 @@ export class SessionManager implements Disposable {
         role: m.role as Message['role'],
         content: m.content,
         timestamp: m.timestamp,
+        visibility: (m.visibility as Message['visibility']) || 'active',
+        hiddenByRewindId: m.hidden_by_rewind_id || undefined,
+        hiddenAt: m.hidden_at || undefined,
         toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
         toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined,
       }));
@@ -657,9 +663,9 @@ export class SessionManager implements Disposable {
   /**
    * 获取会话消息
    */
-  async getMessages(sessionId: string, limit?: number): Promise<Message[]> {
+  async getMessages(sessionId: string, limit?: number, options?: { includeRewound?: boolean }): Promise<Message[]> {
     const db = getDatabase();
-    return db.getMessages(sessionId, limit);
+    return db.getMessages(sessionId, limit, undefined, options);
   }
 
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
@@ -684,9 +690,9 @@ export class SessionManager implements Disposable {
   /**
    * 获取最近消息
    */
-  async getRecentMessages(sessionId: string, count: number): Promise<Message[]> {
+  async getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Promise<Message[]> {
     const db = getDatabase();
-    return db.getRecentMessages(sessionId, count);
+    return db.getRecentMessages(sessionId, count, options);
   }
 
   /**
@@ -699,6 +705,38 @@ export class SessionManager implements Disposable {
       messages,
       hasMore: messages.length === limit,
     };
+  }
+
+  async applyPromptRewind(
+    sessionId: string,
+    userMessageId: string,
+    record?: Parameters<ReturnType<typeof getDatabase>['applyPromptRewind']>[2],
+  ): Promise<ReturnType<ReturnType<typeof getDatabase>['applyPromptRewind']>> {
+    const db = getDatabase();
+    const result = db.applyPromptRewind(sessionId, userMessageId, record);
+
+    this.sessionCache.delete(sessionId);
+    const restored = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
+    if (restored) {
+      restored.messages = result.activeMessages;
+      restored.messageCount = result.activeMessages.length;
+      restored.turnCount = result.activeMessages.filter((message) => message.role === 'user').length;
+      restored.updatedAt = Date.now();
+      restored.workbenchSnapshot = this.buildWorkbenchSnapshot(restored, result.activeMessages);
+      this.sessionCache.set(sessionId, restored);
+    }
+
+    this.notifySessionUpdated(sessionId, {
+      updatedAt: Date.now(),
+    });
+    db.logAuditEvent('prompt_rewound', {
+      sessionId,
+      rewindId: result.rewindId,
+      anchorMessageId: userMessageId,
+      hiddenMessageCount: result.hiddenMessageCount,
+    }, sessionId);
+
+    return result;
   }
 
   // --------------------------------------------------------------------------

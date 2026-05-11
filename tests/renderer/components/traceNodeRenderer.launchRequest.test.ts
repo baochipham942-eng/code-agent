@@ -136,6 +136,41 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('Browser Managed');
   });
 
+  it('renders a prompt rewind action beside user prompts', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-rewind-1',
+          type: 'user',
+          content: '把这轮重新改一下',
+          timestamp: 320,
+        } satisfies TraceNode,
+        onRewindUserPrompt: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('aria-label="回到这条提示词"');
+    expect(html).toContain('title="回到这条提示词"');
+  });
+
+  it('disables the prompt rewind action while the session is processing', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-rewind-disabled',
+          type: 'user',
+          content: '运行中不能回退',
+          timestamp: 321,
+        } satisfies TraceNode,
+        onRewindUserPrompt: vi.fn(),
+        rewindDisabled: true,
+      }),
+    );
+
+    expect(html).toContain('title="会话运行中，暂不能回退"');
+    expect(html).toContain('disabled=""');
+  });
+
   it('renders turn timeline cards for capability scope and outputs', () => {
     const snapshotTimeline: TurnTimelineNode = {
       id: 'timeline-snapshot',

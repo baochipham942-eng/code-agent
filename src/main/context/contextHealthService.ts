@@ -340,6 +340,20 @@ export class ContextHealthService {
   }
 
   /**
+   * 跨所有 session 清除某个 MCP server 的 bySource 占用
+   * 用于全局事件：MCP server 被 disable 时，所有 session 应同步清掉
+   */
+  clearMcpServerAcrossSessions(serverName: string): void {
+    for (const [sid, state] of this.sessionStates.entries()) {
+      if (!state.breakdown.bySource) continue;
+      if (state.breakdown.bySource.mcp[serverName] !== undefined) {
+        delete state.breakdown.bySource.mcp[serverName];
+        this.emitSourceUpdateDebounced(sid);
+      }
+    }
+  }
+
+  /**
    * 确保 session 状态存在且 bySource 已初始化
    * 在 record 路径上需要：若没有 update() 跑过，先用空 health state 兜底
    */

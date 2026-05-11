@@ -43,7 +43,6 @@ import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './Workbe
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../workbench/WorkbenchCapabilitySheetLite';
 import { formatWorkbenchHistoryActionSummary } from '../../utils/workbenchPresentation';
-import { formatContextUsagePercent } from '../../utils/contextUsageFormat';
 import {
   getWorkbenchCapabilityQuickActions,
   getWorkbenchCapabilityQuickActionFeedback,
@@ -79,10 +78,10 @@ export const TaskMonitor: React.FC = () => {
   const runWorkbench = useRunWorkbenchModel();
   const { context, outputs } = model;
   const blockedScopeCount = currentTurnCapabilityScope?.scope.blocked?.length ?? 0;
-  const contextNeedsAttention = context.warningLevel !== 'normal';
   const mcpNeedsAttention = blockedScopeCount > 0
     || currentTurnRoutingEvidence?.tone === 'warning'
     || currentTurnRoutingEvidence?.tone === 'error';
+  const loopFileItems = useMemo(() => getUniqueFileContextItems(context), [context]);
 
   const [activeSheetEntry, setActiveSheetEntry] = useState<{
     target: WorkbenchCapabilityTarget;
@@ -146,7 +145,7 @@ export const TaskMonitor: React.FC = () => {
   const shouldShowRoutingEvidence = Boolean(currentTurnRoutingEvidence)
     && (currentTurnRoutingEvidence?.tone === 'warning' || currentTurnRoutingEvidence?.tone === 'error');
   const mcpDefaultExpanded = mcpNeedsAttention || sourceHasActionFeedback;
-  const contextDefaultExpanded = contextNeedsAttention || runWorkbench.run.status !== 'completed';
+  const loopFilesDefaultExpanded = loopFileItems.length > 0 || runWorkbench.run.status !== 'completed';
 
   // ── 渲染 ──
 
@@ -160,16 +159,14 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
-      {runWorkbench.tasks.length > 0 && (
-        <Card
-          title="任务"
-          storageKey="task"
-          count={String(runWorkbench.tasks.length)}
-          highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
-        >
-          <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
-        </Card>
-      )}
+      <Card
+        title="任务"
+        storageKey="task"
+        count={runWorkbench.tasks.length > 0 ? String(runWorkbench.tasks.length) : undefined}
+        highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
+      >
+        <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
+      </Card>
 
       {approvalCount > 0 && (
         <Card
@@ -208,15 +205,16 @@ export const TaskMonitor: React.FC = () => {
         </Card>
       )}
 
-      <Card
-        title={t.taskPanel.sectionContext}
-        storageKey="context"
-        count={`${formatContextUsagePercent(context.usagePercent)}%`}
-        defaultExpanded={contextDefaultExpanded}
-        highlight={contextNeedsAttention}
-      >
-        <ContextSourceSummary context={context} />
-      </Card>
+      {loopFileItems.length > 0 && (
+        <Card
+          title="上下文"
+          storageKey="loop-files"
+          count={String(loopFileItems.length)}
+          defaultExpanded={loopFilesDefaultExpanded}
+        >
+          <LoopFilesSummary items={loopFileItems} />
+        </Card>
+      )}
 
       {shouldShowMcpCard && (
         <Card
@@ -320,115 +318,67 @@ export const TaskMonitor: React.FC = () => {
   );
 };
 
-function formatCompactNumber(value: number): string {
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return String(value);
-}
+type LoopFileItem = StatusRailContextModel['items'][number];
 
-function getContextToneClass(warningLevel: StatusRailContextModel['warningLevel']): string {
-  switch (warningLevel) {
-    case 'critical':
-      return 'text-red-400';
-    case 'warning':
-      return 'text-yellow-400';
-    default:
-      return 'text-emerald-400';
-  }
-}
-
-function ContextSourceSummary({ context }: { context: StatusRailContextModel }) {
-  const [filesExpanded, setFilesExpanded] = useState(false);
+function getUniqueFileContextItems(context: StatusRailContextModel): LoopFileItem[] {
   // counter 与 list 必须用同一来源（context.items 已去重），避免显示「文件 5」但下方只列 2 条的不一致。
   // 进一步按路径合并：同一文件被 Read+Write 多次只算 1 个，detail 合并成 "Read / Write"。
-  const items = context.items || [];
-  const dedupeByItemIdentity = (bucket: 'rules' | 'files' | 'web') => {
-    const seen = new Map<string, StatusRailContextModel['items'][number]>();
-    for (const item of items) {
-      if (item.bucket !== bucket) continue;
-      const key = item.path || item.label;
-      const existing = seen.get(key);
-      if (existing) {
-        if (item.detail) {
-          const parts = existing.detail ? existing.detail.split(' / ') : [];
-          if (!parts.includes(item.detail)) {
-            existing.detail = parts.length > 0 ? `${existing.detail} / ${item.detail}` : item.detail;
-          }
+  const seen = new Map<string, LoopFileItem>();
+  for (const item of context.items || []) {
+    if (item.bucket !== 'files') continue;
+    const key = item.path || item.label;
+    const existing = seen.get(key);
+    if (existing) {
+      if (item.detail) {
+        const parts = existing.detail ? existing.detail.split(' / ') : [];
+        if (!parts.includes(item.detail)) {
+          existing.detail = parts.length > 0 ? `${existing.detail} / ${item.detail}` : item.detail;
         }
-      } else {
-        seen.set(key, { ...item });
       }
+    } else {
+      seen.set(key, { ...item });
     }
-    return Array.from(seen.values());
-  };
-  const fileItems = dedupeByItemIdentity('files');
-  const rulesCount = dedupeByItemIdentity('rules').length;
-  const webCount = dedupeByItemIdentity('web').length;
-  const bucketEntries = [
-    { label: '规则', count: rulesCount, key: 'rules' as const, expandable: false },
-    { label: '文件', count: fileItems.length, key: 'files' as const, expandable: fileItems.length > 0 },
-    { label: '网络', count: webCount, key: 'web' as const, expandable: false },
-  ].filter((entry) => entry.count > 0);
+  }
+  return Array.from(seen.values());
+}
+
+function LoopFilesSummary({ items }: { items: LoopFileItem[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items.slice(0, 20) : items.slice(0, 6);
 
   return (
     <div className="rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[10px] uppercase tracking-wide text-zinc-500">上下文</div>
-        <div className={`text-sm font-semibold tabular-nums ${getContextToneClass(context.warningLevel)}`}>
-          {formatContextUsagePercent(context.usagePercent)}%
-        </div>
+      <div className="mb-2 text-[10px] text-zinc-500">
+        最近进入对话链路的文件
       </div>
-      <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-800">
-        <div
-          className={`h-full transition-all duration-300 ${
-            context.warningLevel === 'critical' ? 'bg-red-500'
-              : context.warningLevel === 'warning' ? 'bg-yellow-500'
-              : 'bg-emerald-500'
-          }`}
-          style={{ width: `${Math.min(100, Math.max(0, context.usagePercent))}%` }}
-        />
+      <div className="space-y-0.5">
+        {visibleItems.map((item) => (
+          <div
+            key={item.path || item.id}
+            className="flex items-center gap-2 truncate text-[10px] text-zinc-500"
+            title={item.path || item.label}
+          >
+            <span className="h-1 w-1 flex-shrink-0 rounded-full bg-zinc-600" />
+            <span className="truncate">{item.label}</span>
+            {item.detail && (
+              <span className="flex-shrink-0 text-zinc-700">{item.detail}</span>
+            )}
+          </div>
+        ))}
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-zinc-600">
-        <span>{formatCompactNumber(context.currentTokens)} / {formatCompactNumber(context.maxTokens)} tokens</span>
-        {bucketEntries.length > 0 && (
-          <span className="flex items-center gap-1 truncate">
-            {bucketEntries.map((entry, idx) => (
-              <React.Fragment key={entry.key}>
-                {idx > 0 && <span className="text-zinc-700">·</span>}
-                {entry.expandable ? (
-                  <button
-                    type="button"
-                    onClick={() => setFilesExpanded((prev) => !prev)}
-                    className="text-zinc-500 hover:text-zinc-300 transition-colors"
-                    aria-label={filesExpanded ? '收起文件列表' : '展开文件列表'}
-                  >
-                    {entry.label} {entry.count}
-                  </button>
-                ) : (
-                  <span>{entry.label} {entry.count}</span>
-                )}
-              </React.Fragment>
-            ))}
-          </span>
-        )}
-      </div>
-      {filesExpanded && fileItems.length > 0 && (
-        <div className="mt-2 space-y-0.5 border-t border-white/[0.04] pt-1.5">
-          {fileItems.slice(0, 20).map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2 text-[10px] text-zinc-500 truncate"
-              title={item.label}
-            >
-              <span className="text-zinc-600 flex-shrink-0">·</span>
-              <span className="truncate">{item.label}</span>
-              {item.detail && (
-                <span className="text-zinc-700 flex-shrink-0">{item.detail}</span>
-              )}
-            </div>
-          ))}
-          {fileItems.length > 20 && (
-            <div className="text-[10px] text-zinc-700 pl-3">… 还有 {fileItems.length - 20} 个</div>
-          )}
+      {items.length > 6 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="mt-2 text-[10px] text-zinc-500 transition-colors hover:text-zinc-300"
+        >
+          {expanded ? '收起' : `展开 ${Math.min(items.length, 20)} 个`}
+          {items.length > 20 && !expanded ? `，另有 ${items.length - 20} 个` : ''}
+        </button>
+      )}
+      {expanded && items.length > 20 && (
+        <div className="mt-1 text-[10px] text-zinc-700">
+          还有 {items.length - 20} 个文件未显示
         </div>
       )}
     </div>

@@ -444,7 +444,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('2 次工具操作');
   });
 
-  it('keeps sub-1% context usage visible in the right rail', () => {
+  it('does not repeat context budget usage in the right rail', () => {
     Object.assign(statusRailContextState, {
       currentTokens: 1536,
       maxTokens: 1048576,
@@ -461,14 +461,16 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('0.1%');
+    expect(html).not.toContain('0.1%');
+    expect(html).not.toContain('Loop Files');
+    expect(html).not.toContain('上下文');
     expect(html).not.toContain('1.5k / 1048.6k tokens');
     expect(html).not.toContain('Files 5');
     expect(html).not.toContain('Other 53');
     expect(html).not.toContain('其他 53');
   });
 
-  it('counts context files by unique file identity and hides other sources', () => {
+  it('shows recent loop files by unique file identity and hides budget sources', () => {
     Object.assign(statusRailContextState, {
       currentTokens: 12500,
       maxTokens: 1048576,
@@ -527,8 +529,14 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('文件 2');
+    expect(html).toContain('上下文');
+    expect(html).not.toContain('Loop Files');
+    expect(html).toContain('最近进入对话链路的文件');
+    expect(html).toContain('breakout-cu.html');
+    expect(html).toContain('validation-result.json');
     expect(html).not.toContain('文件 99');
+    expect(html).not.toContain('1.2%');
+    expect(html).not.toContain('Bash output');
     expect(html).not.toContain('其他');
   });
 
@@ -604,7 +612,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('0/1 steps');
   });
 
-  it('renders task-first rail with context and MCP split from capability sources', () => {
+  it('renders task-first rail with MCP split from capability sources', () => {
     const html = renderToStaticMarkup(
       React.createElement(TaskMonitor),
     );
@@ -613,7 +621,8 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('Activity');
     expect(html).not.toContain('来源');
     expect(html).not.toContain('连接');
-    expect(html).toContain('上下文');
+    expect(html).not.toContain('上下文');
+    expect(html).not.toContain('Loop Files');
     expect(html).toContain('MCP');
     expect(html).toContain('当前能力');
     expect(html).not.toContain('当前 Turn Routing');

@@ -1,16 +1,10 @@
 // ============================================================================
-// InlineStrip - 输入框上方极轻量的 context 状态条
+// InlineStrip - 输入框上方的上下文压缩反馈线
 // ============================================================================
-// 替代 ContextIndicator，增加 Compact 按钮和结构化压缩反馈
-// 数据来源：useStatusRailModel（统一数据层）
 
-import React, { useState, useCallback } from 'react';
-import { Shrink, Loader2 } from 'lucide-react';
-import { useStatusRailModel } from '../../../hooks/useStatusRailModel';
-import { useSessionStore } from '../../../stores/sessionStore';
-import { IPC_CHANNELS } from '@shared/ipc';
-import type { CompactResult } from '@shared/contract/contextHealth';
-import ipcService from '../../../services/ipcService';
+import React from 'react';
+import { Loader2 } from 'lucide-react';
+import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -19,106 +13,35 @@ function formatTokens(n: number): string {
 }
 
 export const InlineStrip: React.FC = () => {
-  const { context, compact } = useStatusRailModel();
-  const [isCompacting, setIsCompacting] = useState(false);
-  const [feedback, setFeedback] = useState<CompactResult | null>(null);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const status = useContextCompactionStore((s) => s.status);
+  const result = useContextCompactionStore((s) => s.result);
+  const error = useContextCompactionStore((s) => s.error);
 
-  const handleCompact = useCallback(async () => {
-    if (isCompacting || !compact.canCompact) return;
-    const sessionId = useSessionStore.getState().currentSessionId;
-    setIsCompacting(true);
-    setFeedback(null);
-    setFeedbackError(null);
-    try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
-        sessionId ?? undefined,
-      ) as CompactResult;
-      if (result.success) {
-        setFeedback(result);
-        if (sessionId) {
-          void useSessionStore.getState().refreshContextHealth(sessionId);
-        }
-      } else {
-        setFeedbackError('压缩失败');
-      }
-      setTimeout(() => { setFeedback(null); setFeedbackError(null); }, 4000);
-    } catch {
-      setFeedbackError('压缩失败');
-      setTimeout(() => setFeedbackError(null), 3000);
-    } finally {
-      setIsCompacting(false);
-    }
-  }, [isCompacting, compact.canCompact]);
+  if (status === 'idle') return null;
 
-  if (context.usagePercent < 50) return null;
-
-  const barColor =
-    context.warningLevel === 'critical' ? 'bg-red-500' :
-    context.warningLevel === 'warning' ? 'bg-yellow-500' :
-    'bg-emerald-500';
-
-  const textColor =
-    context.warningLevel === 'critical' ? 'text-red-400' :
-    context.warningLevel === 'warning' ? 'text-yellow-400' :
-    'text-zinc-500';
+  const isActive = status === 'active';
+  const isError = status === 'error';
+  const label = isActive
+    ? '正在压缩上下文'
+    : isError
+      ? error || '压缩失败'
+      : result?.totalSavedTokens && result.totalSavedTokens > 0
+        ? `已释放 ${formatTokens(result.totalSavedTokens)}`
+        : `已压缩 ${result?.compressionCount ?? 1} 次`;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1 max-w-3xl mx-auto animate-fade-in">
-      {/* 进度条 */}
-      <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${barColor} transition-all duration-500`}
-          style={{ width: `${Math.min(100, context.usagePercent)}%` }}
-        />
+    <div className="relative mx-auto max-w-3xl px-4 py-1.5 animate-fade-in">
+      <div className="h-px w-full bg-white/[0.08]" />
+      <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center pointer-events-none">
+        <div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs shadow-lg ${
+          isError
+            ? 'bg-red-500/10 text-red-300 ring-1 ring-red-500/20'
+            : 'bg-zinc-800 text-zinc-300 ring-1 ring-white/[0.06]'
+        }`}>
+          {isActive && <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-400" />}
+          <span>{label}</span>
+        </div>
       </div>
-
-      {/* 百分比 */}
-      <span className={`text-[10px] tabular-nums ${textColor} flex-shrink-0`}>
-        {Math.round(context.usagePercent)}%
-      </span>
-
-      {/* 压缩结果反馈 */}
-      {feedback && (
-        <span className="text-[10px] text-emerald-400 flex-shrink-0 animate-fade-in">
-          {feedback.totalSavedTokens > 0
-            ? `累计释放 ${formatTokens(feedback.totalSavedTokens)}`
-            : `已压缩 ${feedback.compressionCount} 次`
-          }
-        </span>
-      )}
-
-      {/* 错误反馈 */}
-      {feedbackError && (
-        <span className="text-[10px] text-red-400 flex-shrink-0 animate-fade-in">
-          {feedbackError}
-        </span>
-      )}
-
-      {/* 高压提示 */}
-      {context.warningLevel === 'critical' && !feedback && !feedbackError && (
-        <span className="text-[10px] text-red-400 flex-shrink-0">
-          上下文紧张
-        </span>
-      )}
-
-      {/* Compact 按钮 */}
-      {compact.canCompact && (
-        <button
-          onClick={handleCompact}
-          disabled={isCompacting}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
-          title="主动压缩上下文"
-        >
-          {isCompacting ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <Shrink className="w-3 h-3" />
-          )}
-          <span>Compact</span>
-        </button>
-      )}
     </div>
   );
 };

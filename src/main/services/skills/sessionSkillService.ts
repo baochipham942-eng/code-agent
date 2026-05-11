@@ -11,6 +11,9 @@ import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { SKILL_KEYWORDS, DEFAULT_ENABLED_SKILLS } from './skillRepositories';
 import { createLogger } from '../infra/logger';
+import { getContextHealthService } from '../../context/contextHealthService';
+import { estimateTokens } from '../../context/tokenEstimator';
+import { loadSkillContent } from './skillLoader';
 
 const logger = createLogger('SessionSkillService');
 
@@ -75,6 +78,12 @@ class SessionSkillService {
 
     this.sessionMounts.set(sessionId, mounts);
     logger.info('Skill mounted', { sessionId, skillName, source });
+
+    // 异步上报 token 贡献到 ContextHealthService（不阻塞 mount）
+    this.reportSkillTokens(sessionId, skill).catch((err) => {
+      logger.debug('Failed to report skill token contribution', { skillName, err });
+    });
+
     return true;
   }
 
@@ -90,7 +99,35 @@ class SessionSkillService {
 
     mounts.splice(index, 1);
     logger.info('Skill unmounted', { sessionId, skillName });
+
+    // 同步从 bySource 移除该 skill 占用
+    try {
+      getContextHealthService().clearSourceContribution(sessionId, {
+        type: 'skill',
+        name: skillName,
+      });
+    } catch (err) {
+      logger.debug('Failed to clear skill token contribution', { skillName, err });
+    }
+
     return true;
+  }
+
+  /**
+   * 上报 skill 的 token 贡献（按需懒加载 content 后估算）
+   * 使用 'set' 模式：替换该 skill 的累计占用，避免重复挂载时重复累加
+   */
+  private async reportSkillTokens(sessionId: string, skill: ParsedSkill): Promise<void> {
+    if (!skill.loaded) {
+      await loadSkillContent(skill);
+    }
+    const tokens = estimateTokens(skill.promptContent ?? '');
+    getContextHealthService().recordSourceContribution(
+      sessionId,
+      { type: 'skill', name: skill.name },
+      tokens,
+      'set',
+    );
   }
 
   /**

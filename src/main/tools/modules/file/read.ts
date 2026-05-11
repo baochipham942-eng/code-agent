@@ -32,6 +32,8 @@ import { fileReadTracker } from '../../fileReadTracker';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
+import { getContextHealthService } from '../../../context/contextHealthService';
+import { estimateTokens } from '../../../context/tokenEstimator';
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
@@ -204,6 +206,19 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         mimeType: 'text/plain',
         preview: result.slice(0, 500),
       });
+
+      // 上报 fileRead 维度的 token 贡献（add 模式：每次读都累加）
+      try {
+        getContextHealthService().recordSourceContribution(
+          ctx.sessionId,
+          { type: 'fileRead' },
+          estimateTokens(result),
+          'add',
+        );
+      } catch (err) {
+        ctx.logger.debug('Failed to report fileRead token contribution', { err });
+      }
+
       return { ok: true, output: result, meta: { artifact } };
     } catch (err) {
       const e = err as NodeJS.ErrnoException;

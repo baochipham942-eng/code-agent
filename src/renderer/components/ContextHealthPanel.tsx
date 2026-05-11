@@ -4,13 +4,30 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Activity, AlertTriangle, AlertCircle, Sparkles } from 'lucide-react';
-import type { ContextHealthState, ContextHealthWarningLevel } from '@shared/contract/contextHealth';
+import {
+  ChevronDown,
+  ChevronRight,
+  Activity,
+  AlertTriangle,
+  AlertCircle,
+  Sparkles,
+  ExternalLink,
+  X as XIcon,
+} from 'lucide-react';
+import type {
+  ContextHealthState,
+  ContextHealthWarningLevel,
+  SourceTag,
+} from '@shared/contract/contextHealth';
 
 interface ContextHealthPanelProps {
   health: ContextHealthState | null;
   collapsed?: boolean;
   onToggle?: () => void;
+  /** 点击某 source 的跳转图标时调（step 10 会接 SkillsPanel highlight） */
+  onNavigate?: (target: SourceTag) => void;
+  /** 点击某 source 的卸载/禁用图标时调（step 10 接 SkillsPanel.unmount / MCP.disable） */
+  onUnload?: (target: SourceTag) => void;
 }
 
 /**
@@ -56,9 +73,21 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   health,
   collapsed = true,
   onToggle,
+  onNavigate,
+  onUnload,
 }) => {
   const [isExpanded, setIsExpanded] = useState(!collapsed);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showBySource, setShowBySource] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    skills: true,
+    mcp: true,
+    subagents: false,
+  });
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // 如果没有健康数据，不渲染
   if (!health) {
@@ -142,9 +171,94 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   tokens={health.breakdown.toolResults}
                   total={health.currentTokens}
                 />
+                {health.breakdown.toolDefinitions !== undefined && (
+                  <BreakdownItem
+                    label="Tool Defs"
+                    tokens={health.breakdown.toolDefinitions}
+                    total={health.currentTokens}
+                  />
+                )}
               </div>
             )}
           </div>
+
+          {/* 按产品来源拆分（bySource）—— 与上面"消息结构"是不同维度 */}
+          {health.breakdown.bySource && (
+            <div className="border-t border-zinc-700/60 pt-3">
+              <button
+                onClick={() => setShowBySource(!showBySource)}
+                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
+              >
+                {showBySource ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+                <span>按产品来源</span>
+              </button>
+
+              {showBySource && (
+                <div className="mt-2 space-y-1.5 pl-4">
+                  {/* Rules — 标量 */}
+                  <BreakdownItem
+                    label="Rules"
+                    tokens={health.breakdown.bySource.rules}
+                    total={health.currentTokens}
+                  />
+
+                  {/* Skills — Record 嵌套折叠 */}
+                  <NestedGroup
+                    label="Skills"
+                    entries={health.breakdown.bySource.skills}
+                    total={health.currentTokens}
+                    isExpanded={expandedGroups.skills}
+                    onToggle={() => toggleGroup('skills')}
+                    sourceFactory={(name) => ({ type: 'skill', name })}
+                    onNavigate={onNavigate}
+                    onUnload={onUnload}
+                  />
+
+                  {/* MCP — Record 嵌套折叠 */}
+                  <NestedGroup
+                    label="MCP"
+                    entries={health.breakdown.bySource.mcp}
+                    total={health.currentTokens}
+                    isExpanded={expandedGroups.mcp}
+                    onToggle={() => toggleGroup('mcp')}
+                    sourceFactory={(server) => ({ type: 'mcp', server })}
+                    onNavigate={onNavigate}
+                    onUnload={onUnload}
+                  />
+
+                  {/* Subagents — Record 嵌套折叠 */}
+                  <NestedGroup
+                    label="Subagents"
+                    entries={health.breakdown.bySource.subagents}
+                    total={health.currentTokens}
+                    isExpanded={expandedGroups.subagents}
+                    onToggle={() => toggleGroup('subagents')}
+                    sourceFactory={(name) => ({ type: 'subagent', name })}
+                    onNavigate={onNavigate}
+                    onUnload={onUnload}
+                  />
+
+                  {/* File Reads — 标量 */}
+                  <BreakdownItem
+                    label="File Reads"
+                    tokens={health.breakdown.bySource.fileReads}
+                    total={health.currentTokens}
+                  />
+
+                  {/* Conversation — 派生值 */}
+                  <BreakdownItem
+                    label="Conversation"
+                    tokens={health.breakdown.bySource.conversation}
+                    total={health.currentTokens}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 预估剩余轮数 */}
           <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -195,6 +309,101 @@ const BreakdownItem: React.FC<{
       <span className="text-zinc-400 font-mono">
         {formatTokens(tokens)} ({percent}%)
       </span>
+    </div>
+  );
+};
+
+/**
+ * 嵌套分组：Skills / MCP / Subagents 共用
+ * 标题行显示总和 + 活跃数；展开后逐 entry 列出 + 跳转 / 卸载图标
+ */
+const NestedGroup: React.FC<{
+  label: string;
+  entries: Record<string, number>;
+  total: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  sourceFactory: (name: string) => SourceTag;
+  onNavigate?: (target: SourceTag) => void;
+  onUnload?: (target: SourceTag) => void;
+}> = ({ label, entries, total, isExpanded, onToggle, sourceFactory, onNavigate, onUnload }) => {
+  const names = Object.keys(entries);
+  const sum = Object.values(entries).reduce((a, b) => a + b, 0);
+  const percent = total > 0 ? ((sum / total) * 100).toFixed(1) : '0.0';
+  const hasEntries = names.length > 0;
+
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={hasEntries ? onToggle : undefined}
+        disabled={!hasEntries}
+        className={`flex w-full items-center justify-between text-xs ${
+          hasEntries ? 'cursor-pointer hover:text-zinc-300' : 'cursor-default'
+        }`}
+      >
+        <span className="flex items-center gap-1 text-zinc-500">
+          {hasEntries ? (
+            isExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )
+          ) : (
+            <span className="w-3 h-3" />
+          )}
+          {label}
+          {hasEntries && (
+            <span className="ml-1 text-zinc-600">●{names.length}</span>
+          )}
+        </span>
+        <span className="text-zinc-400 font-mono">
+          {formatTokens(sum)} ({percent}%)
+        </span>
+      </button>
+      {isExpanded && hasEntries && (
+        <div className="space-y-0.5 pl-4">
+          {names
+            .sort((a, b) => entries[b] - entries[a])
+            .map((name) => {
+              const source = sourceFactory(name);
+              return (
+                <div
+                  key={name}
+                  className="group flex items-center justify-between text-xs"
+                >
+                  <span className="truncate text-zinc-500" title={name}>
+                    {name}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-zinc-400 font-mono">
+                      {formatTokens(entries[name])}
+                    </span>
+                    {onNavigate && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(source)}
+                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity"
+                        title="跳转到对应面板"
+                      >
+                        <ExternalLink className="w-3 h-3 text-zinc-500" />
+                      </button>
+                    )}
+                    {onUnload && (
+                      <button
+                        type="button"
+                        onClick={() => onUnload(source)}
+                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity"
+                        title="卸载 / 断开"
+                      >
+                        <XIcon className="w-3 h-3 text-zinc-500 hover:text-red-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 };

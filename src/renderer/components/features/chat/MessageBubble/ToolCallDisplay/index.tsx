@@ -152,7 +152,7 @@ export function ToolCallDisplay({
         <ToolHeader toolCall={toolCall} status={status} />
       </div>
 
-      {actionPreview && !compact && (
+      {actionPreview && (
         <BrowserComputerActionPreviewLine preview={actionPreview} />
       )}
 

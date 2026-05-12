@@ -126,6 +126,36 @@ test('账号入口可打开登录或设置面板', async ({ page }) => {
   }
 });
 
+test('Workbench 可打开 Skills、上下文与 MCP 设置页', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+
+  const addPanelButton = page.getByRole('button', { name: '打开面板' });
+  await expect(addPanelButton).toBeVisible({ timeout: 15_000 });
+
+  await addPanelButton.click();
+  await page.getByRole('button', { name: 'Skills', exact: true }).click();
+  await expect(page.getByText('当前挂载')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('在设置中管理 Skill 库')).toBeVisible();
+
+  await addPanelButton.click();
+  await page.getByRole('button', { name: '上下文', exact: true }).click();
+  await expect(page.getByText('上下文健康度')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Token 分解')).toBeVisible();
+
+  await page.locator('[title="Session Skills"]').click();
+  await page.getByText('在设置中管理 Skill 库').click();
+  const settingsDialog = page.getByRole('dialog', { name: '设置' });
+  await expect(settingsDialog).toBeVisible({ timeout: 10_000 });
+
+  await settingsDialog.getByRole('button', { name: 'MCP' }).click();
+  await expect(settingsDialog.getByText('服务器配置')).toBeVisible({ timeout: 10_000 });
+  await expect(settingsDialog.getByText('运行状态与本地桥接')).toBeVisible();
+
+  await settingsDialog.getByRole('button', { name: 'Skills' }).click();
+  await expect(settingsDialog.getByRole('heading', { name: /已安装的 Skill 库/ })).toBeVisible({ timeout: 10_000 });
+});
+
 // ----------------------------------------------------------------------------
 // 6. TitleBar 按钮功能
 // ----------------------------------------------------------------------------

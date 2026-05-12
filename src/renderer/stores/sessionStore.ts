@@ -24,6 +24,10 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
 
+function invalidatePendingSessionSwitches(): void {
+  _switchCounter += 1;
+}
+
 function hydrateToolCallResults(messages: Message[]): Message[] {
   const resultsByToolCallId = new Map<string, NonNullable<Message['toolResults']>[number]>();
 
@@ -306,6 +310,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messageCount: 0,
             turnCount: 0,
           });
+          invalidatePendingSessionSwitches();
           useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
           set((state) => ({
             sessions: [newSessionWithMeta, ...state.sessions],
@@ -358,7 +363,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const session = await invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId });
 
         // 竞态检查：如果在等待期间又发起了新的切换，丢弃本次结果
-        if (switchVersion !== _switchCounter) {
+        if (switchVersion !== _switchCounter || useSessionStore.getState().currentSessionId !== sessionId) {
           logger.debug('switchSession stale response discarded', { sessionId, switchVersion, current: _switchCounter });
           return;
         }
@@ -810,9 +815,12 @@ export async function initializeSessionStore(): Promise<void> {
 
   await store.loadSessions();
 
-  const { sessions } = useSessionStore.getState();
+  const { sessions, currentSessionId } = useSessionStore.getState();
 
-  if (sessions.length > 0) {
+  if (currentSessionId) {
+    // A user action may create/select a session while the initial list request is
+    // still in flight. Keep that newer session and only finish wiring listeners.
+  } else if (sessions.length > 0) {
     await store.switchSession(sessions[0].id);
   } else {
     await store.createSession('新对话', { workingDirectory: null });

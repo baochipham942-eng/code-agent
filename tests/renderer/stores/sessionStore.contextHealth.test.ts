@@ -150,4 +150,71 @@ describe('sessionStore context health refresh', () => {
     expect(useAppStore.getState().contextHealth).toEqual(measuredHealth);
     expect(useSessionStore.getState().sessionRuntimes.get('session-1')?.contextHealth).toEqual(measuredHealth);
   });
+
+  it('keeps a newly created session when an older switch response returns later', async () => {
+    let resolveOldLoad: ((value: { success: true; data: Session & { messages: Message[]; todos: TodoItem[] } }) => void) | null = null;
+    const oldSession: Session & { messages: Message[]; todos: TodoItem[] } = {
+      id: 'old-session',
+      title: '旧会话',
+      modelConfig: {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: '',
+        maxTokens: 16384,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [
+        { id: 'old-message', role: 'user', content: '旧消息', timestamp: 1 },
+      ],
+      todos: [],
+      status: 'completed',
+    };
+    const newSession: Session = {
+      id: 'new-session',
+      title: '新建会话',
+      modelConfig: {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: '',
+        maxTokens: 16384,
+      },
+      createdAt: 3,
+      updatedAt: 3,
+      status: 'active',
+    };
+
+    useSessionStore.setState({
+      sessions: [{
+        ...oldSession,
+        messageCount: 1,
+        turnCount: 1,
+      }],
+    });
+
+    mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.SESSION && action === 'load') {
+        return new Promise((resolve) => {
+          resolveOldLoad = resolve as typeof resolveOldLoad;
+        });
+      }
+      if (domain === IPC_DOMAINS.SESSION && action === 'create') {
+        return { success: true, data: newSession };
+      }
+      return { success: false, error: { message: 'unexpected domain call' } };
+    });
+
+    const switchPromise = useSessionStore.getState().switchSession('old-session');
+    expect(useSessionStore.getState().currentSessionId).toBe('old-session');
+
+    await useSessionStore.getState().createSession('新建会话', { workingDirectory: null });
+    expect(useSessionStore.getState().currentSessionId).toBe('new-session');
+
+    resolveOldLoad?.({ success: true, data: oldSession });
+    await switchPromise;
+
+    expect(useSessionStore.getState().currentSessionId).toBe('new-session');
+    expect(useSessionStore.getState().messages).toEqual([]);
+    expect(mockInvoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CONTEXT_HEALTH_GET, 'old-session');
+  });
 });

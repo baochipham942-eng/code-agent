@@ -81,3 +81,13 @@ export {
   renderSkillContent,
   type SkillRenderOptions,
 } from './skillRenderer';
+
+export {
+  resolveSkillInvocation,
+  resolveSkillInvocationFromSkills,
+  getSkillInvocationAliases,
+  buildSkillInvocationContext,
+  type ResolvedSkillInvocation,
+  type SkillInvocationContext,
+  type SkillInvocationMatchKind,
+} from './skillInvocationResolver';

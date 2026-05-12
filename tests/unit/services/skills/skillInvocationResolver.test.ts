@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest';
+import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
+import {
+  getSkillInvocationAliases,
+  resolveSkillInvocationFromSkills,
+} from '../../../../src/main/services/skills/skillInvocationResolver';
+
+function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'description'>): ParsedSkill {
+  return {
+    promptContent: '',
+    basePath: `/tmp/${overrides.name}`,
+    allowedTools: [],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'user',
+    ...overrides,
+  };
+}
+
+describe('skillInvocationResolver', () => {
+  it('resolves a leading slash command before model intent classification', () => {
+    const lobster = skill({
+      name: 'lobster',
+      description: '龙虾(OpenClaw VPS)：当用户提到龙虾、lobster、VPS、OpenClaw 时使用。',
+      disableModelInvocation: true,
+    });
+
+    const resolved = resolveSkillInvocationFromSkills('/lobster 升级到最新版本', [lobster]);
+
+    expect(resolved).toMatchObject({
+      skill: lobster,
+      matchKind: 'slash',
+      args: '升级到最新版本',
+      confidence: 1,
+    });
+  });
+
+  it('resolves slash mentions embedded in correction text', () => {
+    const lobster = skill({
+      name: 'lobster',
+      description: '龙虾(OpenClaw VPS)：当用户提到龙虾、lobster、VPS、OpenClaw 时使用。',
+    });
+
+    const resolved = resolveSkillInvocationFromSkills('就是/lobster啊', [lobster]);
+
+    expect(resolved?.skill.name).toBe('lobster');
+    expect(resolved?.matchKind).toBe('inline-slash');
+  });
+
+  it('uses metadata and frontmatter aliases without hardcoded product names', () => {
+    const deploy = skill({
+      name: 'deploy-box',
+      description: 'Deploy helper.',
+      aliases: ['小盒子'],
+      metadata: { aliases: 'box deploy,盒子部署' },
+    });
+
+    expect(resolveSkillInvocationFromSkills('把小盒子发一下', [deploy])?.skill.name).toBe('deploy-box');
+    expect(resolveSkillInvocationFromSkills('盒子部署走一下', [deploy])?.skill.name).toBe('deploy-box');
+  });
+
+  it('extracts conservative trigger aliases from descriptions', () => {
+    const lobster = skill({
+      name: 'lobster',
+      description: '龙虾(OpenClaw VPS)：当用户提到龙虾、lobster、VPS、OpenClaw 时使用。',
+    });
+
+    const aliases = getSkillInvocationAliases(lobster).map((alias) => alias.value);
+
+    expect(aliases).toContain('龙虾');
+    expect(aliases).toContain('lobster');
+    expect(resolveSkillInvocationFromSkills('将我的龙虾升级到最新版本', [lobster])?.skill.name).toBe('lobster');
+  });
+
+  it('does not bind ambiguous aliases to an arbitrary skill', () => {
+    const first = skill({ name: 'first-tool', description: '用于共享入口。', aliases: ['共享'] });
+    const second = skill({ name: 'second-tool', description: '用于共享入口。', aliases: ['共享'] });
+
+    expect(resolveSkillInvocationFromSkills('处理共享', [first, second])).toBeNull();
+  });
+
+  it('ignores skills that are not user invocable', () => {
+    const hidden = skill({
+      name: 'hidden-tool',
+      description: 'Hidden helper.',
+      aliases: ['隐藏工具'],
+      userInvocable: false,
+    });
+
+    expect(resolveSkillInvocationFromSkills('/hidden-tool run', [hidden])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('隐藏工具 run', [hidden])).toBeNull();
+  });
+});

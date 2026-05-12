@@ -69,6 +69,24 @@ describe('skillParser allowed-tools validation', () => {
     ]);
   });
 
+  it('parses aliases from string and array frontmatter', async () => {
+    await writeSkill([
+      'aliases: "龙虾,lobster"',
+    ].join('\n'));
+
+    const stringAliases = await parseSkillMetadataOnly(tmpDir, 'project');
+    expect(stringAliases.aliases).toEqual(['龙虾', 'lobster']);
+
+    await writeSkill([
+      'aliases:',
+      '  - OpenClaw',
+      '  - VPS',
+    ].join('\n'));
+
+    const arrayAliases = await parseSkillMd(tmpDir, 'project');
+    expect(arrayAliases.aliases).toEqual(['OpenClaw', 'VPS']);
+  });
+
   it('rejects malformed or shell-like scoped prefixes', async () => {
     await writeSkill('allowed-tools: ["Bash(rm -rf /:*)"]');
 

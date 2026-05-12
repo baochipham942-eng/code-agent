@@ -245,12 +245,12 @@ export class ToolSearchService {
    * 注册 Skill 元数据
    * Skill 作为虚拟工具注册，便于通过 tool_search 发现
    */
-  registerSkill(name: string, description: string): void {
+  registerSkill(name: string, description: string, aliases: string[] = []): void {
     const meta: DeferredToolMeta = {
       name: `skill:${name}`,
       shortDescription: description,
       tags: ['planning'],
-      aliases: [name],
+      aliases: Array.from(new Set([name, ...aliases])),
       source: 'dynamic',
     };
     this.skillsMeta.set(meta.name, meta);
@@ -260,9 +260,9 @@ export class ToolSearchService {
   /**
    * 批量注册 Skills
    */
-  registerSkills(skills: Array<{ name: string; description: string }>): void {
+  registerSkills(skills: Array<{ name: string; description: string; aliases?: string[] }>): void {
     for (const skill of skills) {
-      this.registerSkill(skill.name, skill.description);
+      this.registerSkill(skill.name, skill.description, skill.aliases);
     }
     logger.info(`Registered ${skills.length} skills`);
   }

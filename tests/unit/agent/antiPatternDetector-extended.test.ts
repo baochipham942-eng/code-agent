@@ -113,6 +113,25 @@ describe('AntiPatternDetector - Extended', () => {
       const warning = customDetector.trackToolExecution('read_file', true);
       expect(warning).not.toBeNull();
     });
+
+    it('resets consecutive reads when semantic progress is marked', () => {
+      for (let i = 0; i < 8; i++) {
+        detector.trackToolExecution('read_file', true);
+      }
+
+      detector.markSemanticProgress('resolved active skill target');
+
+      expect(detector.getConsecutiveReadCount()).toBe(0);
+      for (let i = 0; i < 14; i++) {
+        detector.trackToolExecution('read_file', true);
+      }
+      expect(detector.trackToolExecution('grep', true)).toBe('HARD_LIMIT');
+    });
+
+    it('detects read-only shell commands separately from semantic shell actions', () => {
+      expect(detector.isReadOnlyShellCommand('cat ~/.code-agent/logs/app.log')).toBe(true);
+      expect(detector.isReadOnlyShellCommand('ssh lobster "node --version"')).toBe(false);
+    });
   });
 
   // --------------------------------------------------------------------------

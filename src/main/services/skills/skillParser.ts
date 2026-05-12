@@ -22,6 +22,7 @@ const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 const SKILL_NAME_REGEX = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const TOOL_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const TOOL_SCOPED_PREFIX_REGEX = /^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/;
+const ALIAS_SPLIT_REGEX = /[,，、\n]/;
 
 /**
  * 解析 SKILL.md 文件
@@ -109,6 +110,7 @@ export async function parseSkillMd(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
+    aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,
     metadata: frontmatter.metadata,
@@ -159,6 +161,32 @@ function validateSkillName(name: string): void {
       name
     );
   }
+}
+
+function parseAliases(value: SkillFrontmatter['aliases']): string[] | undefined {
+  if (value === undefined) return undefined;
+
+  const rawAliases = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(ALIAS_SPLIT_REGEX)
+      : [value as unknown];
+
+  const aliases: string[] = [];
+  for (const alias of rawAliases) {
+    if (typeof alias !== 'string') {
+      throw new SkillValidationError(
+        'aliases must be a string or an array of strings',
+        'aliases',
+        alias,
+      );
+    }
+
+    const normalized = alias.trim();
+    if (normalized) aliases.push(normalized);
+  }
+
+  return aliases.length > 0 ? Array.from(new Set(aliases)) : undefined;
 }
 
 /**
@@ -289,6 +317,7 @@ export async function parseSkillMetadataOnly(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
+    aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,
     metadata: frontmatter.metadata,

@@ -9,6 +9,7 @@
 export interface SkillFrontmatter {
   name: string;
   description: string;
+  aliases?: string | string[];
   license?: string;
   compatibility?: string;
   metadata?: Record<string, string>;
@@ -49,6 +50,7 @@ export interface ParsedSkill {
   // === Agent Skills 标准字段 ===
   name: string;
   description: string;
+  aliases?: string[];
   license?: string;
   compatibility?: string;
   metadata?: Record<string, string>;

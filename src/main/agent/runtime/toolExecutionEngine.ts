@@ -275,6 +275,49 @@ function activateForceFinalResponse(ctx: RuntimeContext, reason: string): void {
   ].join('\n');
 }
 
+function isBashToolCallName(name: string): boolean {
+  return name === 'bash' || name === 'Bash';
+}
+
+function activeSkillTargets(ctx: RuntimeContext): string[] {
+  const invocation = ctx.activeSkillInvocation;
+  if (!invocation) return [];
+  return Array.from(new Set([
+    invocation.skillName,
+    invocation.matchedText.replace(/^\//, ''),
+    ...invocation.aliases,
+  ]
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length >= 2)));
+}
+
+function commandReferencesActiveSkill(ctx: RuntimeContext, command: string): boolean {
+  const lowerCommand = command.toLowerCase();
+  return activeSkillTargets(ctx).some((target) => lowerCommand.includes(target));
+}
+
+function semanticProgressReasonForToolCall(
+  ctx: RuntimeContext,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  result: Pick<ToolResult, 'success' | 'metadata'>,
+): string | null {
+  if (!result.success) return null;
+
+  const skillName = ctx.activeSkillInvocation?.skillName;
+  if (result.metadata?.isSkillActivation === true || toolCall.name === 'skill' || toolCall.name === 'Skill') {
+    return `skill activation${skillName ? `: ${skillName}` : ''}`;
+  }
+
+  if (!skillName || !isBashToolCallName(toolCall.name)) return null;
+  const command = typeof toolCall.arguments?.command === 'string'
+    ? toolCall.arguments.command
+    : '';
+  if (!command) return null;
+  if (ctx.antiPatternDetector.isReadOnlyShellCommand(command)) return null;
+  if (!commandReferencesActiveSkill(ctx, command)) return null;
+  return `active skill target command: ${skillName}`;
+}
+
 async function maybeFinishArtifactRepairIfAlreadyValid(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
@@ -2730,6 +2773,11 @@ export class ToolExecutionEngine {
             this.contextAssembly.injectSystemMessage(rereadWarning);
           }
         }
+      }
+
+      const semanticProgressReason = semanticProgressReasonForToolCall(this.ctx, toolCall, normalizedResult);
+      if (semanticProgressReason) {
+        this.ctx.antiPatternDetector.markSemanticProgress(semanticProgressReason);
       }
 
       // Track read vs write operations

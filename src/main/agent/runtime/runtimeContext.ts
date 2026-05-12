@@ -27,6 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../../shared/contract/conversationEnvelope';
+import type { SkillInvocationMatchKind } from '../../services/skills/skillInvocationResolver';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -115,6 +116,16 @@ export interface RuntimeContext {
   pendingRuntimeDiagnostics: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;
+  activeSkillInvocation?: {
+    skillName: string;
+    source: string;
+    basePath: string;
+    matchKind: SkillInvocationMatchKind;
+    matchedText: string;
+    aliases: string[];
+    confidence: number;
+  };
+  activeSkillContextBlock?: string;
   artifactRepairGuard?: {
     targetFile: string;
     attempts: number;

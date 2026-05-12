@@ -111,6 +111,10 @@ import type { RunFinalizer, RunTerminalInfo } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
+import {
+  buildSkillInvocationContext,
+  resolveSkillInvocation,
+} from '../../services/skills/skillInvocationResolver';
 
 
 const logger = createLogger('AgentLoop');
@@ -123,6 +127,14 @@ function queueRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
 
 function hasActiveSessionTodos(sessionId?: string): boolean {
   return getSessionTodos(sessionId).some((todo) => todo.status !== 'completed');
+}
+
+function isSessionFirstUserTurn(messages: Message[]): boolean {
+  const userTurnCount = messages.filter((message) => (
+    message.role === 'user'
+    && message.metadata?.workbench?.runtimeInputMode !== 'supplement'
+  )).length;
+  return userTurnCount <= 1;
 }
 
 function todosFromPlan(plan: TaskPlan): TodoItem[] {
@@ -754,6 +766,7 @@ export class ConversationRuntime {
     // Langfuse: Start trace
     const langfuse = getLangfuseService();
     this.ctx.traceId = `trace-${this.ctx.sessionId}-${Date.now()}`;
+    this.ctx.currentTurnId = '';
     langfuse.startTrace(this.ctx.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,
@@ -764,9 +777,12 @@ export class ConversationRuntime {
 
     await this.initializeUserHooks();
 
+    this.ctx.activeSkillInvocation = undefined;
+    this.ctx.activeSkillContextBlock = undefined;
+
     // Task Complexity Analysis
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
-    const isSimpleTask = complexityAnalysis.complexity === 'simple';
+    let isSimpleTask = complexityAnalysis.complexity === 'simple';
     const startupTaskFeatures = detectTaskFeatures(userMessage);
     const isPureContentGenerationTask =
       startupTaskFeatures.isDocumentTask &&
@@ -781,6 +797,52 @@ export class ConversationRuntime {
       !startupTaskFeatures.isPlanningTask &&
       !startupTaskFeatures.isFuzzyCodeReview &&
       !startupTaskFeatures.isFuzzyTroubleshooting;
+    try {
+      const skillInvocation = await resolveSkillInvocation(userMessage, this.ctx.workingDirectory);
+      if (skillInvocation) {
+        const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
+        this.ctx.activeSkillInvocation = {
+          skillName: skillInvocation.skill.name,
+          source: skillInvocation.skill.source,
+          basePath: skillInvocation.skill.basePath,
+          matchKind: skillInvocation.matchKind,
+          matchedText: skillInvocation.matchedText,
+          aliases: skillInvocation.aliases,
+          confidence: skillInvocation.confidence,
+        };
+        this.ctx.activeSkillContextBlock = skillContext.block;
+
+        if (skillContext.contextModifier.preApprovedTools) {
+          for (const tool of skillContext.contextModifier.preApprovedTools) {
+            this.ctx.preApprovedTools.add(tool);
+          }
+        }
+        if (skillContext.contextModifier.modelOverride) {
+          this.ctx.skillModelOverride = skillContext.contextModifier.modelOverride;
+        }
+
+        isSimpleTask = false;
+        (this.ctx.antiPatternDetector as { markSemanticProgress?: (reason: string) => void })
+          .markSemanticProgress?.(`skill invocation resolved: ${skillInvocation.skill.name}`);
+
+        logger.info('[AgentLoop] Skill invocation resolved before intent classification', {
+          skillName: skillInvocation.skill.name,
+          matchKind: skillInvocation.matchKind,
+          matchedText: skillInvocation.matchedText,
+          confidence: skillInvocation.confidence,
+        });
+        logCollector.agent('INFO', `Skill invocation resolved: ${skillInvocation.skill.name}`, {
+          matchKind: skillInvocation.matchKind,
+          matchedText: skillInvocation.matchedText,
+          confidence: skillInvocation.confidence,
+        });
+      }
+    } catch (error) {
+      logger.warn('[AgentLoop] Skill invocation resolution failed, continuing without required skill context', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     this.ctx.isSimpleTaskMode = isSimpleTask;
 
 
@@ -973,11 +1035,15 @@ export class ConversationRuntime {
       }
     }
 
-    // Record session start for usage tracking (Light Memory)
-    recordSessionStart(this.ctx.sessionId).catch(() => { /* non-critical */ });
+    const isFirstUserTurn = isSessionFirstUserTurn(this.ctx.messages);
 
-    // Session start hooks (always run, including simple tasks —内置 memory/agents 注入对快速回答也有价值)
-    if (this.ctx.hookManager) {
+    // Record session start for usage tracking (Light Memory)
+    if (isFirstUserTurn) {
+      recordSessionStart(this.ctx.sessionId).catch(() => { /* non-critical */ });
+    }
+
+    // Session start hooks run once per chat session; per-turn hooks stay on UserPromptSubmit/PreToolUse/PostToolUse.
+    if (isFirstUserTurn && this.ctx.hookManager) {
       const sessionResult = await this.ctx.hookManager.triggerSessionStart(this.ctx.sessionId);
       if (sessionResult.message) {
         this.contextAssembly.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);

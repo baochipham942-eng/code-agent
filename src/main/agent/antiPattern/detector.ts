@@ -131,11 +131,24 @@ export class AntiPatternDetector {
   }
 
   trackReadOnlyShellCommand(command: string): string | null {
-    if (!SHELL_FILE_READ_PATTERN.test(command)) {
+    if (!this.isReadOnlyShellCommand(command)) {
       return null;
     }
 
     return this.trackToolExecution('read_file', true);
+  }
+
+  isReadOnlyShellCommand(command: string): boolean {
+    return SHELL_FILE_READ_PATTERN.test(command);
+  }
+
+  markSemanticProgress(reason: string): void {
+    if (this.state.consecutiveReadOps > 0) {
+      logger.info(`[ReadLoop] Resetting read counter after semantic progress: ${reason}`, {
+        previousConsecutiveReads: this.state.consecutiveReadOps,
+      });
+    }
+    this.state.consecutiveReadOps = 0;
   }
 
   // --------------------------------------------------------------------------

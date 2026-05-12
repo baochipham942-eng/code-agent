@@ -384,7 +384,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div
-        className="flex-1 flex overflow-hidden relative"
+        className="flex-1 min-h-0 flex overflow-hidden relative"
         onDragEnter={handleGlobalDragEnter}
         onDragOver={handleGlobalDragOver}
         onDragLeave={handleGlobalDragLeave}
@@ -412,7 +412,7 @@ export const ChatView: React.FC = () => {
         </div>
       )}
       {/* Main Chat */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 min-h-0 flex flex-col min-w-0">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
 
@@ -432,7 +432,7 @@ export const ChatView: React.FC = () => {
         )}
 
         {/* Messages - Turn-based trace view */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {projection.turns.length === 0 ? (
             <EmptyState onSend={handleSendMessage} />
           ) : (

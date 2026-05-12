@@ -443,13 +443,13 @@ export const App: React.FC = () => {
             <TitleBar />
 
             {/* Content Area */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 min-h-0 flex overflow-hidden">
               {showEvalCenter ? (
                 <EvalCenterPanel />
               ) : (
-                <PanelGroup orientation="horizontal" className="flex-1" id="main-layout">
+                <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   <Panel minSize="30" id="chat">
-                    <div className="flex flex-col h-full min-w-0 bg-zinc-900">
+                    <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
                       {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
                     </div>
                   </Panel>

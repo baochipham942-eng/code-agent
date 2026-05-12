@@ -18,9 +18,56 @@ vi.mock('../../../src/renderer/components/features/chat/MessageBubble/TurnDiffSu
   TurnDiffSummary: () => null,
 }));
 
+vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
+  ToolStepGroup: () => React.createElement('div', null, 'tool group'),
+}));
+
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 describe('TurnCard hook activity', () => {
+  it('hides normal tool execution status around the command list', () => {
+    const turn: TraceTurn = {
+      turnNumber: 2,
+      turnId: 'turn-2',
+      status: 'streaming',
+      startTime: 200,
+      nodes: [
+        {
+          id: 'user-2',
+          type: 'user',
+          content: '继续查一下',
+          timestamp: 200,
+        },
+        {
+          id: 'assistant-2-tc-tool-1',
+          type: 'tool_call',
+          content: '',
+          timestamp: 240,
+          toolCall: {
+            id: 'tool-1',
+            name: 'Read',
+            args: {},
+          },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(React.createElement(TurnCard, {
+      turn,
+      isActiveTurn: true,
+      sessionStatus: 'running',
+    }));
+
+    expect(html).toContain('继续查一下');
+    expect(html).toContain('tool group');
+    expect(html).not.toContain('using_tools');
+    expect(html).not.toContain('waiting_tool');
+    expect(html).not.toContain('正在使用工具');
+    expect(html).not.toContain('工具调用已开始');
+    expect(html).not.toContain('text-amber-300');
+    expect(html).not.toContain('bg-amber-500/10');
+  });
+
   it('shows hook execution summary as a visible turn banner', () => {
     const turn: TraceTurn = {
       turnNumber: 1,

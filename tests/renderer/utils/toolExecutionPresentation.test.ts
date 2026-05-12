@@ -53,7 +53,10 @@ describe('toolExecutionPresentation', () => {
     expect(summarizeToolLoopDecision([{
       name: 'Read',
       shortDescription: '读取配置',
-    }])?.action).toBe('等待工具返回');
+    }])).toMatchObject({
+      action: '等待工具返回',
+      tone: 'neutral',
+    });
 
     expect(summarizeToolLoopDecision([{
       name: 'Bash',

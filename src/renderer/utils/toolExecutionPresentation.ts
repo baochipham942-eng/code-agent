@@ -17,7 +17,7 @@ export interface ToolLoopDecisionSummary {
   action: string;
   reason: string;
   expectedNextAction: string;
-  tone: 'info' | 'success' | 'warning' | 'error';
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'error';
 }
 
 export interface ToolLikeForDecision {
@@ -113,7 +113,7 @@ export function summarizeToolLoopDecision(tools: ToolLikeForDecision[]): ToolLoo
       action: '等待工具返回',
       reason: bestToolReason(pending),
       expectedNextAction: '收到结果后继续汇总或执行下一步',
-      tone: 'warning',
+      tone: 'neutral',
     };
   }
 

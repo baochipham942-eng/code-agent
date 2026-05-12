@@ -707,6 +707,82 @@ describe('buildTurnExecutionClarityProjection', () => {
     ]);
   });
 
+  it('uses runtime turn ids before timestamp windows when projecting hook activity', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-hooks',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 100,
+            endTime: 180,
+            nodes: [
+              {
+                id: 'user-1',
+                type: 'user',
+                content: '第一轮',
+                timestamp: 100,
+              },
+              {
+                id: 'assistant-1-text',
+                type: 'assistant_text',
+                content: 'done',
+                timestamp: 180,
+              },
+            ],
+          },
+          {
+            turnNumber: 2,
+            turnId: 'turn-2',
+            status: 'streaming',
+            startTime: 200,
+            nodes: [
+              {
+                id: 'user-2',
+                type: 'user',
+                content: '第二轮',
+                timestamp: 200,
+              },
+              {
+                id: 'runtime-turn-2-text',
+                type: 'assistant_text',
+                content: 'working',
+                timestamp: 240,
+              },
+            ],
+          },
+        ],
+      },
+      capabilities: {
+        skills: [],
+        connectors: [],
+        mcpServers: [],
+      },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+      hookEvents: [
+        {
+          timestamp: 150,
+          event: 'PreToolUse',
+          action: 'allow',
+          durationMs: 5,
+          hookCount: 1,
+          modified: false,
+          turnId: 'runtime-turn-2',
+          toolName: 'Read',
+        },
+      ],
+    });
+
+    expect(enriched.turns[0]?.nodes.some((node) => node.turnTimeline?.kind === 'hook_activity')).toBe(false);
+    const secondHookNode = enriched.turns[1]?.nodes.find((node) => node.turnTimeline?.kind === 'hook_activity');
+    expect(secondHookNode?.turnTimeline?.hookActivity?.items.map((item) => item.toolName)).toEqual(['Read']);
+  });
+
   it('projects skill trigger and instruction write activity into the current turn', () => {
     const enriched = buildTurnExecutionClarityProjection({
       projection: {

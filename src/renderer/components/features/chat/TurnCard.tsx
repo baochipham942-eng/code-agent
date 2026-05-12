@@ -155,11 +155,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
       {/* Content */}
       <div className="space-y-2">
-        <TurnRunHeader turn={turn} streamingState={streamingState} />
-        {shouldShowStreamingState(streamingState) && (
-          <StreamingStateBanner state={streamingState} />
-        )}
-
         {/* User message always at top */}
         {foldedView?.userNode && (
           <TraceNodeRenderer
@@ -168,6 +163,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
           />
+        )}
+
+        <TurnRunHeader turn={turn} streamingState={streamingState} />
+        {shouldShowStreamingState(streamingState) && (
+          <StreamingStateBanner state={streamingState} />
         )}
 
         {hookActivity && <HookExecutionBanner activity={hookActivity} />}
@@ -459,9 +459,9 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
       case 'stale':
         return { label: 'stale_stream', tone: 'neutral', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'waiting_tool':
-        return { label: 'waiting_tool', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+        return { label: 'waiting_tool', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
       case 'using_tools':
-        return { label: 'using_tools', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+        return { label: 'using_tools', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
       case 'drafting':
         return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'blocked':
@@ -488,7 +488,7 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
   const lastTool = getLastToolNode(turn)?.toolCall;
   if (turn.status === 'streaming') {
     if (lastTool && (lastTool._streaming || lastTool.result === undefined)) {
-      return { label: 'using_tools', tone: 'warning', icon: <Wrench className="h-3.5 w-3.5" /> };
+      return { label: 'using_tools', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
     }
     return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
   }
@@ -594,8 +594,9 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   const completionSignal = getTurnCompletionSignal(turn);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const isCompleted = status.tone === 'success';
+  const isNormalToolActivity = status.label === 'using_tools' || status.label === 'waiting_tool';
 
-  if (isCompleted) {
+  if (isCompleted || isNormalToolActivity) {
     return null;
   }
 

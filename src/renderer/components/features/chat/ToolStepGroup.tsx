@@ -100,12 +100,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }, [nodes]);
   const resultSummary = useMemo(() => {
     if (toolCalls.length === 0) return null;
+    if (toolCalls.length > 1) {
+      return summarizeToolGroupResults(toolCalls);
+    }
     const summaries = toolCalls
       .map((toolCall) => summarizeTool(toolCall))
       .filter((summary): summary is string => Boolean(summary));
     if (summaries.length === 0) return null;
-    if (toolCalls.length === 1) return summaries[0];
-    return `${summaries.length}/${toolCalls.length} results`;
+    return summaries[0];
   }, [toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
@@ -179,8 +181,58 @@ function hasToolOutputArtifact(toolCall: ToolCall): boolean {
   if (toolCall.result?.outputPath) return true;
   const metadata = toolCall.result?.metadata;
   if (!metadata) return false;
+
+  // `Read`/search tools often attach `metadata.filePath` for evidence context.
+  // That is an input/evidence path, not a newly produced output artifact.
+  if (isReadOrSearchTool(toolCall.name)) return false;
+
   return ['filePath', 'imagePath', 'videoPath', 'outputPath', 'pptxPath', 'pdfPath']
     .some((key) => typeof metadata[key] === 'string' && metadata[key]);
+}
+
+function isReadOrSearchTool(name: string): boolean {
+  return [
+    'Read',
+    'read_file',
+    'Grep',
+    'Glob',
+    'LS',
+    'list_directory',
+  ].includes(name);
+}
+
+function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
+  let failed = 0;
+  let emptySearches = 0;
+  let completed = 0;
+
+  for (const toolCall of toolCalls) {
+    const result = toolCall.result;
+    if (!result) continue;
+    if (result.success === false) {
+      failed += 1;
+      continue;
+    }
+    if (isEmptySearchResult(toolCall)) {
+      emptySearches += 1;
+      continue;
+    }
+    completed += 1;
+  }
+
+  const parts: string[] = [];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (emptySearches > 0) parts.push(`${emptySearches} empty`);
+  if (completed > 0) parts.push(`${completed} completed`);
+
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+function isEmptySearchResult(toolCall: ToolCall): boolean {
+  if (toolCall.name !== 'Grep' && toolCall.name !== 'Glob') return false;
+  const output = toolCall.result?.output;
+  if (typeof output !== 'string') return false;
+  return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
 }
 
 function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok'): string {
@@ -199,6 +251,8 @@ function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok
 
 function getLoopDecisionToneClass(tone: ToolLoopDecisionSummary['tone']): string {
   switch (tone) {
+    case 'neutral':
+      return 'border-white/[0.06] bg-white/[0.02] text-zinc-500';
     case 'success':
       return 'border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-300';
     case 'warning':
@@ -212,7 +266,7 @@ function getLoopDecisionToneClass(tone: ToolLoopDecisionSummary['tone']): string
 
 const LoopDecisionRow: React.FC<{ decision: ToolLoopDecisionSummary | null }> = ({ decision }) => {
   if (!decision) return null;
-  if (decision.tone === 'success') return null;
+  if (decision.tone === 'success' || decision.tone === 'neutral') return null;
 
   return (
     <div className="mt-1 ml-0.5 flex min-w-0 items-center gap-2 rounded-md border border-white/[0.05] bg-white/[0.018] px-2 py-1 text-[11px]">

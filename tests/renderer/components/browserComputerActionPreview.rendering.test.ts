@@ -398,4 +398,117 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('aria-label="部分失败"');
     expect(html).not.toContain('aria-label="失败"');
   });
+
+  it('summarizes partial file lookup groups without treating read evidence as output', () => {
+    const nodes: TraceNode[] = [
+      {
+        id: 'node-read-missing',
+        type: 'tool_call',
+        content: '',
+        timestamp: 1,
+        toolCall: {
+          id: 'tool-read-missing',
+          name: 'Read',
+          args: { file_path: '/Users/linchen/.code-agent/memory/shared/openclaw.md' },
+          result: 'File not found: /Users/linchen/.code-agent/memory/shared/openclaw.md',
+          success: false,
+        },
+      },
+      {
+        id: 'node-grep-empty',
+        type: 'tool_call',
+        content: '',
+        timestamp: 2,
+        toolCall: {
+          id: 'tool-grep-empty',
+          name: 'Grep',
+          args: { pattern: 'openclaw' },
+          result: 'No matches found',
+          success: true,
+        },
+      },
+      {
+        id: 'node-glob-empty',
+        type: 'tool_call',
+        content: '',
+        timestamp: 3,
+        toolCall: {
+          id: 'tool-glob-empty',
+          name: 'Glob',
+          args: { pattern: '**/openclaw*' },
+          result: 'No files matched the pattern',
+          success: true,
+        },
+      },
+      {
+        id: 'node-read-found',
+        type: 'tool_call',
+        content: '',
+        timestamp: 4,
+        toolCall: {
+          id: 'tool-read-found',
+          name: 'Read',
+          args: { file_path: '/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md' },
+          result: '<artifact-repair-file-read-preview>\nTarget file read: /Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md\nOutput omitted from event stream (535 lines, 31230 chars).\n</artifact-repair-file-read-preview>',
+          success: true,
+          metadata: {
+            filePath: '/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md',
+            artifactRepairPreview: true,
+          },
+        },
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, {
+        nodes,
+        defaultExpanded: false,
+      }),
+    );
+
+    expect(html).toContain('1 failed, 2 empty, 1 completed');
+    expect(html).not.toContain('4/4 results');
+    expect(html).not.toContain('1 output');
+    expect(html).toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
+  });
+
+  it('labels empty grep and glob results as no matches in collapsed details', () => {
+    const grepHtml = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          id: 'tool-grep-empty',
+          name: 'Grep',
+          arguments: { pattern: 'openclaw' },
+          result: {
+            toolCallId: 'tool-grep-empty',
+            success: true,
+            output: 'No matches found',
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+    const globHtml = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          id: 'tool-glob-empty',
+          name: 'Glob',
+          arguments: { pattern: '**/openclaw*' },
+          result: {
+            toolCallId: 'tool-glob-empty',
+            success: true,
+            output: 'No files matched the pattern',
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(grepHtml).toContain('No matches');
+    expect(grepHtml).not.toContain('Found 1 result');
+    expect(globHtml).toContain('No matches');
+    expect(globHtml).not.toContain('Found 1 file');
+  });
 });

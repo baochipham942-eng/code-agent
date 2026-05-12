@@ -16,6 +16,38 @@ import type { ContextAssemblyCtx } from '../contextAssembly';
 import { cachedReaddirSync, logger } from '../contextAssembly';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 
+async function persistCompactionTranscriptMarker(
+  ctx: ContextAssemblyCtx,
+  message: Message,
+): Promise<void> {
+  let persisted = false;
+
+  if (ctx.runtime.persistMessage) {
+    try {
+      await ctx.runtime.persistMessage(message);
+      persisted = true;
+    } catch (error) {
+      logger.warn('[AgentLoop] Persisting compaction marker via callback failed; falling back to session manager', {
+        sessionId: ctx.runtime.sessionId,
+        messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (!persisted && ctx.runtime.sessionId) {
+    try {
+      await getSessionManager().addMessageToSession(ctx.runtime.sessionId, message);
+    } catch (error) {
+      logger.warn('[AgentLoop] Failed to persist compaction marker', {
+        sessionId: ctx.runtime.sessionId,
+        messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 async function commitCompactionBlock(
   ctx: ContextAssemblyCtx,
   block: NonNullable<Awaited<ReturnType<typeof compactMessagesWithSummary>>['block']>,
@@ -102,10 +134,10 @@ async function commitCompactionBlock(
     timestamp: block.timestamp,
   }]);
 
-  // Layer 2: 全量替换 — 删除被压缩的旧消息，只保留 compaction + 最近 N 条
+  // Layer 2: only compact the runtime model context. The durable transcript stays
+  // append-only below, otherwise old user prompts disappear from session replay.
   const boundary = ctx.runtime.messages.length - preserveCount;
   if (boundary > 0) {
-    // 替换 messages[0..boundary) 为单条 compaction 消息
     ctx.runtime.messages.splice(0, boundary, compactionMessage);
     logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preserveCount} recent + 1 compaction`);
   } else {
@@ -114,9 +146,9 @@ async function commitCompactionBlock(
   }
   ctx.recordContextEventsForMessage(compactionMessage);
   try {
-    await getSessionManager().replaceMessages(ctx.runtime.sessionId, ctx.runtime.messages);
+    await persistCompactionTranscriptMarker(ctx, compactionMessage);
   } catch (error) {
-    logger.warn('[AgentLoop] Auto compression updated runtime but failed to persist compacted messages', error);
+    logger.warn('[AgentLoop] Auto compression updated runtime but failed to persist compaction marker', error);
   }
 
   const nextCompressionState = new CompressionState();

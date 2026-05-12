@@ -48,6 +48,16 @@ export interface SessionListOptions {
   includeArchived?: boolean;
 }
 
+interface TelemetryUserPromptRow {
+  id: string;
+  user_prompt: string;
+  start_time: number | string;
+}
+
+interface ExistingUserMessageRow {
+  content: string;
+}
+
 // SessionRepository 持久化只存 provider+model（apiKey 不入库）；剥离后让
 // SessionManager 返回的内存 session 与 DB 读回（fromRow）语义一致，避免
 // res.json(session) 在 webServer 路径把 apiKey 透传给客户端。
@@ -76,6 +86,75 @@ export class SessionManager implements Disposable {
       workingDirectory: session.workingDirectory ?? null,
       provenance: session.workbenchProvenance,
     });
+  }
+
+  private normalizePromptForBackfill(content: string): string {
+    return content.replace(/\r\n/g, '\n').trim();
+  }
+
+  private backfillMissingTelemetryUserPrompts(sessionId: string): number {
+    const db = getDatabase();
+    const rawDb = db.getDb();
+    if (!rawDb) return 0;
+
+    try {
+      const telemetryRows = rawDb.prepare(`
+        SELECT id, user_prompt, start_time
+        FROM telemetry_turns
+        WHERE session_id = ?
+          AND COALESCE(turn_type, 'user') = 'user'
+          AND user_prompt IS NOT NULL
+          AND TRIM(user_prompt) != ''
+        ORDER BY start_time ASC, turn_number ASC, id ASC
+      `).all(sessionId) as TelemetryUserPromptRow[];
+
+      if (telemetryRows.length === 0) return 0;
+
+      const existingRows = rawDb.prepare(`
+        SELECT content
+        FROM messages
+        WHERE session_id = ?
+          AND role = 'user'
+      `).all(sessionId) as ExistingUserMessageRow[];
+
+      const remainingExistingCounts = new Map<string, number>();
+      for (const row of existingRows) {
+        const key = this.normalizePromptForBackfill(row.content);
+        remainingExistingCounts.set(key, (remainingExistingCounts.get(key) ?? 0) + 1);
+      }
+
+      let inserted = 0;
+      for (const row of telemetryRows) {
+        const content = row.user_prompt;
+        const key = this.normalizePromptForBackfill(content);
+        const existingCount = remainingExistingCounts.get(key) ?? 0;
+        if (existingCount > 0) {
+          remainingExistingCounts.set(key, existingCount - 1);
+          continue;
+        }
+
+        const timestamp = Number(row.start_time);
+        db.addMessage(sessionId, {
+          id: `telemetry-user-${row.id}`,
+          role: 'user',
+          content,
+          timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+        }, { skipTimestampUpdate: true });
+        inserted++;
+      }
+
+      if (inserted > 0) {
+        logger.info('Backfilled missing user prompts from telemetry', { sessionId, inserted });
+      }
+
+      return inserted;
+    } catch (error) {
+      logger.warn('Failed to backfill user prompts from telemetry', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
+    }
   }
 
   private updateCachedWorkbenchState(session: SessionWithMessages): void {
@@ -172,14 +251,28 @@ export class SessionManager implements Disposable {
    * @param messageLimit 加载的消息数量限制，默认 30 条（首轮响应优化）
    */
   async getSession(sessionId: string, messageLimit: number = 30): Promise<SessionWithMessages | null> {
+    const db = getDatabase();
+
     // 检查缓存
     if (this.sessionCache.has(sessionId)) {
-      return this.sessionCache.get(sessionId)!;
+      const cached = this.sessionCache.get(sessionId)!;
+      const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
+      if (backfilled > 0) {
+        const reloadLimit = Math.max(messageLimit, cached.messages.length + backfilled);
+        cached.messages = db.getRecentMessages(sessionId, reloadLimit);
+        cached.messageCount = db.getSession(sessionId)?.messageCount ?? cached.messages.length;
+        this.updateCachedWorkbenchState(cached);
+      }
+      return cached;
     }
 
-    const db = getDatabase();
-    const storedSession = db.getSession(sessionId);
+    let storedSession = db.getSession(sessionId);
     if (!storedSession) return null;
+
+    const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
+    if (backfilled > 0) {
+      storedSession = db.getSession(sessionId) ?? storedSession;
+    }
 
     // 懒加载：只加载最近 N 条消息（性能优化）
     let messages = db.getRecentMessages(sessionId, messageLimit);

@@ -13,6 +13,7 @@ import { getContextHealthService } from '../../../src/main/context/contextHealth
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
     addMessage: vi.fn(),
+    addMessageToSession: vi.fn(),
     replaceMessages: vi.fn(),
   },
 }));
@@ -408,6 +409,7 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   serviceMocks.sessionManager.addMessage.mockClear();
+  serviceMocks.sessionManager.addMessageToSession.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
   vi.mocked(getPromptForTask).mockReset();
   vi.mocked(getPromptForTask).mockReturnValue('system prompt');
@@ -1671,18 +1673,17 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.compressionState.getCommitLog()[0].layer).toBe('autocompact');
     expect(ctx.compressionState.getCommitLog()[0].targetMessageIds).toHaveLength(1);
     expect(ctx.messages.some((message: Message) => message.compaction)).toBe(true);
-    expect(serviceMocks.sessionManager.replaceMessages).toHaveBeenCalledWith(
+    expect(serviceMocks.sessionManager.addMessageToSession).toHaveBeenCalledWith(
       sessionId,
-      expect.arrayContaining([
-        expect.objectContaining({
-          role: 'system',
-          compaction: expect.objectContaining({
-            content: expect.stringContaining('summary'),
-            source: 'auto_threshold',
-          }),
+      expect.objectContaining({
+        role: 'system',
+        compaction: expect.objectContaining({
+          content: expect.stringContaining('summary'),
+          source: 'auto_threshold',
         }),
-      ]),
+      }),
     );
+    expect(serviceMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
 
     // A.5 invariant: compactionMessage.content 不能混入 user-facing toast 文案，
     // 否则下次压缩会把它 summarize 进新 summary，造成递归污染。
@@ -1778,7 +1779,17 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         }),
       }),
     );
-    expect(serviceMocks.sessionManager.replaceMessages).toHaveBeenCalledWith(sessionId, ctx.messages);
+    expect(serviceMocks.sessionManager.addMessageToSession).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({
+        role: 'system',
+        compaction: expect.objectContaining({
+          source: 'auto_threshold',
+          content: expect.stringContaining('[Context Handoff]'),
+        }),
+      }),
+    );
+    expect(serviceMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'context_compressed',

@@ -3,6 +3,7 @@ import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/tr
 import {
   getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
+  getTurnOutputRevision,
   getTraceNodeSelector,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
@@ -44,6 +45,11 @@ describe('TurnBasedTraceView focus helpers', () => {
     expect(shouldFollowTurnOutput(true)).toBe('smooth');
   });
 
+  it('keeps the active output visible after the view programmatically focused a new turn', () => {
+    expect(shouldFollowTurnOutput(false, true)).toBe('auto');
+    expect(shouldFollowTurnOutput(true, true)).toBe('auto');
+  });
+
   it('only shows turn time separators for the first turn or meaningful gaps', () => {
     expect(shouldShowTurnTimeSeparator(null, { startTime: 1_000 })).toBe(true);
     expect(shouldShowTurnTimeSeparator({ startTime: 1_000 }, { startTime: 60_000 })).toBe(false);
@@ -73,6 +79,31 @@ describe('TurnBasedTraceView focus helpers', () => {
       nodeId: 'assistant-1',
       nodeType: 'assistant_text',
     });
+  });
+
+  it('changes the active output revision when streaming text grows', () => {
+    const baseTurn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'streaming',
+      startTime: 100,
+      nodes: [
+        { id: 'user-1', type: 'user', content: 'question', timestamp: 100 },
+        { id: 'assistant-1', type: 'assistant_text', content: 'short answer', timestamp: 120 },
+      ],
+    };
+    const nextTurn: TraceTurn = {
+      ...baseTurn,
+      nodes: [
+        baseTurn.nodes[0],
+        {
+          ...baseTurn.nodes[1],
+          content: 'short answer with more streamed content',
+        },
+      ],
+    };
+
+    expect(getTurnOutputRevision(nextTurn)).not.toBe(getTurnOutputRevision(baseTurn));
   });
 
   it('builds a selector for trace node anchors', () => {

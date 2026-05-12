@@ -3,9 +3,9 @@
 // Uses react-virtuoso for virtual scrolling to handle 100+ turn sessions
 // ============================================================================
 
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import type { TraceProjection } from '@shared/contract/trace';
+import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -34,8 +34,50 @@ export function getFocusedTurnIndex(projection: TraceProjection): number {
   return projection.turns.length - 1;
 }
 
-export function shouldFollowTurnOutput(isAtBottom: boolean): 'smooth' | false {
+export function shouldFollowTurnOutput(isAtBottom: boolean, keepActiveOutputVisible = false): 'auto' | 'smooth' | false {
+  if (keepActiveOutputVisible) return 'auto';
   return isAtBottom ? 'smooth' : false;
+}
+
+export function getTurnOutputRevision(turn: TraceTurn | undefined): string | null {
+  if (!turn) return null;
+
+  const outputNodes = turn.nodes
+    .filter((node) => (
+      node.type === 'assistant_text'
+      || node.type === 'tool_call'
+      || node.type === 'turn_timeline'
+      || Boolean(node.reasoning)
+      || Boolean(node.thinking)
+    ))
+    .map((node) => [
+      node.id,
+      node.type,
+      node.content?.length ?? 0,
+      node.reasoning?.length ?? 0,
+      node.thinking?.length ?? 0,
+      node.toolCall?.result?.length ?? 0,
+      node.toolCall?._streaming ? 1 : 0,
+    ].join(':'));
+
+  return `${turn.turnId}:${turn.status}:${outputNodes.join('|')}`;
+}
+
+function scheduleAfterLayout(callback: () => void): () => void {
+  if (typeof requestAnimationFrame !== 'function') {
+    const timer = setTimeout(callback, 0);
+    return () => clearTimeout(timer);
+  }
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const frame = requestAnimationFrame(() => {
+    timer = setTimeout(callback, 0);
+  });
+
+  return () => {
+    cancelAnimationFrame(frame);
+    if (timer !== null) clearTimeout(timer);
+  };
 }
 
 export function shouldShowTurnTimeSeparator(previousTurn: { startTime: number } | null, currentTurn: { startTime: number }): boolean {
@@ -87,9 +129,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 }) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
+  const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
+  const keepActiveOutputVisibleRef = useRef(false);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -104,6 +148,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const focusedTurnIndex = getFocusedTurnIndex(projection);
   const focusedTurnId =
     focusedTurnIndex >= 0 ? projection.turns[focusedTurnIndex]?.turnId : undefined;
+  const activeTurn = projection.activeTurnIndex >= 0
+    ? projection.turns[projection.activeTurnIndex]
+    : undefined;
+  const activeTurnOutputRevision = useMemo(
+    () => getTurnOutputRevision(activeTurn),
+    [activeTurn],
+  );
+  const hasActiveTurnOutput = projection.activeTurnIndex >= 0 && Boolean(activeTurnOutputRevision);
 
   // 让滚动条在两侧各占一半空间：
   // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
@@ -111,9 +163,41 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const handleScrollerRef = useCallback((el: HTMLElement | Window | null) => {
     if (el instanceof HTMLElement) {
       scrollerElementRef.current = el;
+      setScrollerElement(el);
       el.style.scrollbarGutter = 'stable both-edges';
+    } else {
+      scrollerElementRef.current = null;
+      setScrollerElement(null);
     }
   }, []);
+
+  useEffect(() => {
+    const scroller = scrollerElement;
+    if (!scroller) return;
+
+    const stopFollowing = () => {
+      keepActiveOutputVisibleRef.current = false;
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) stopFollowing();
+    };
+    const handleTouchMove = () => stopFollowing();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'PageUp', 'Home', ' ', 'Space'].includes(event.key)) {
+        stopFollowing();
+      }
+    };
+
+    scroller.addEventListener('wheel', handleWheel, { passive: true });
+    scroller.addEventListener('touchmove', handleTouchMove, { passive: true });
+    scroller.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      scroller.removeEventListener('wheel', handleWheel);
+      scroller.removeEventListener('touchmove', handleTouchMove);
+      scroller.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [scrollerElement]);
 
   // Scroll to active search match when it changes
   useEffect(() => {
@@ -136,6 +220,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     const focusKey = `${projection.sessionId}:${focusedTurnId}`;
     if (prevFocusedTurnRef.current === focusKey) return;
     prevFocusedTurnRef.current = focusKey;
+    keepActiveOutputVisibleRef.current = projection.activeTurnIndex === focusedTurnIndex;
 
     const scroll = () => {
       virtuosoRef.current?.scrollToIndex({
@@ -164,6 +249,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     const focusKey = `${projection.sessionId}:${focusedTurnId}:${activeAssistantAnchor.nodeId}`;
     if (prevAssistantAnchorRef.current === focusKey) return;
     prevAssistantAnchorRef.current = focusKey;
+    keepActiveOutputVisibleRef.current = projection.activeTurnIndex === activeAssistantAnchor.turnIndex;
 
     const scroll = () => {
       virtuosoRef.current?.scrollToIndex({
@@ -218,6 +304,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!latestUserNodeId) return;
     if (prevLatestUserIdRef.current === latestUserNodeId) return;
     prevLatestUserIdRef.current = latestUserNodeId;
+    keepActiveOutputVisibleRef.current = true;
 
     // 找到包含这条 user msg 的 turn index
     let targetIndex = -1;
@@ -240,6 +327,20 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     return () => cancelAnimationFrame(frame);
   }, [latestUserNodeId, projection.sessionId, projection.turns]);
 
+  useEffect(() => {
+    if (!activeTurnOutputRevision) return;
+    if (projection.activeTurnIndex < 0) return;
+    if (!keepActiveOutputVisibleRef.current) return;
+
+    return scheduleAfterLayout(() => {
+      virtuosoRef.current?.scrollToIndex({
+        index: projection.activeTurnIndex,
+        align: 'end',
+        behavior: 'auto',
+      });
+    });
+  }, [activeTurnOutputRevision, projection.activeTurnIndex]);
+
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {
     if (!hasOlderMessages || isLoadingOlder || !onLoadOlder) return;
@@ -249,9 +350,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // Keep bottom-follow opt-in; active/latest turns get their own top alignment.
   const followOutput = useCallback(
     (isAtBottom: boolean) => {
-      return shouldFollowTurnOutput(isAtBottom);
+      return shouldFollowTurnOutput(
+        isAtBottom,
+        hasActiveTurnOutput && keepActiveOutputVisibleRef.current,
+      );
     },
-    [],
+    [hasActiveTurnOutput],
   );
 
   // Render individual turn card
@@ -315,6 +419,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       totalCount={projection.turns.length}
       itemContent={itemContent}
       followOutput={followOutput}
+      atBottomStateChange={(atBottom) => {
+        if (atBottom) keepActiveOutputVisibleRef.current = true;
+      }}
+      atBottomThreshold={96}
       initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}
       startReached={handleStartReached}
       overscan={300}

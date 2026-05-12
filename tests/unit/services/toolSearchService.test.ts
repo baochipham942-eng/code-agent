@@ -133,6 +133,45 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('workflow_orchestrate')).toBe(true);
   });
 
+  it('normalizes browser/computer/screenshot compatibility aliases to unified tools', () => {
+    const service = new ToolSearchService();
+
+    const browserResult = service.selectTool('browser_action');
+    const computerResult = service.selectTool('computer_use');
+    const screenshotResult = service.selectTool('screenshot');
+
+    expect(browserResult.loadedTools).toEqual(['Browser']);
+    expect(browserResult.tools[0]?.canonicalInvocation).toBe('Browser');
+    expect(service.isToolLoaded('Browser')).toBe(true);
+
+    expect(computerResult.loadedTools).toEqual(['Computer']);
+    expect(computerResult.tools[0]?.canonicalInvocation).toBe('Computer');
+    expect(service.isToolLoaded('Computer')).toBe(true);
+
+    expect(screenshotResult.loadedTools).toEqual(['Computer']);
+    expect(screenshotResult.tools[0]?.canonicalInvocation).toBe('Computer');
+  });
+
+  it('ranks Computer first for generic screenshot searches', async () => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools('screenshot', { maxResults: 3, includeMCP: false });
+
+    expect(result.tools[0]?.name).toBe('Computer');
+    expect(result.loadedTools).toContain('Computer');
+  });
+
+  it('explains desktop context metadata as workbench context instead of callable tools', () => {
+    const service = new ToolSearchService();
+
+    const result = service.selectTool('desktop_context_now');
+
+    expect(result.loadedTools).toEqual([]);
+    expect(result.tools[0]?.loadable).toBe(false);
+    expect(result.tools[0]?.notCallableReason).toContain('Desktop workbench');
+    expect(result.tools[0]?.notCallableReason).toContain('Computer');
+  });
+
   it('exposes canonical Skill invocation without pretending the skill is a direct tool', async () => {
     const service = new ToolSearchService();
     service.registerSkill('commit', 'Prepare a git commit');

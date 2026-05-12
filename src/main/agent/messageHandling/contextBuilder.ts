@@ -76,7 +76,9 @@ When built-in tools (WebFetch / Glob / Grep / Read / Edit / Write) don't fit you
  * 2. Not knowing it IS code-agent when asked to fix its own bugs
  */
 export function buildRuntimeModeBlock(): string {
-  const isCLI = process.env.CODE_AGENT_CLI_MODE === 'true';
+  const isCLIOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
+    && process.env.CODE_AGENT_WEB_MODE !== 'true';
+  const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true';
 
   // Self-awareness: app identity and source code location
   let appIdentity = '';
@@ -95,10 +97,19 @@ export function buildRuntimeModeBlock(): string {
     // electron not available (test env)
   }
 
-  if (isCLI) {
+  if (isCLIOnly) {
     return `\n\n<runtime_mode>
 You are running in CLI mode (terminal). The user interacts via command line.
 GUI features (screenshot, browser_action) are unavailable.${appIdentity}
+</runtime_mode>`;
+  }
+
+  if (isWebMode) {
+    return `\n\n<runtime_mode>
+You are running in the Code Agent app-host web runtime.
+Users interact through a visual chat interface, not a terminal.
+CODE_AGENT_CLI_MODE may be true here for Node/native-module compatibility; do not infer from it that browser, screenshot, or Computer Use tools are unavailable.
+Browser and Computer Use capabilities depend on loaded tool definitions and runtime readiness.${appIdentity}
 </runtime_mode>`;
   }
 

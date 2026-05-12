@@ -66,6 +66,70 @@ describe('compaction hook helpers', () => {
     );
   });
 
+  it('preserves hookManager this binding for PreCompact and PostCompact hooks', async () => {
+    const hookManager = {
+      config: {
+        prePrefix: 'from-config',
+        postPrefix: 'post-config',
+      },
+      postRecords: [] as string[],
+      triggerPreCompact(
+        sessionId: string,
+        hookMessages: typeof messages,
+        tokenCount: number,
+        targetTokenCount: number
+      ) {
+        return {
+          preservedContext: [
+            this.config.prePrefix,
+            sessionId,
+            hookMessages.length,
+            tokenCount,
+            targetTokenCount,
+          ].join(':'),
+        };
+      },
+      triggerPostCompact(
+        savedTokens: number,
+        strategy: string,
+        sessionId: string
+      ) {
+        this.postRecords.push(
+          [this.config.postPrefix, savedTokens, strategy, sessionId].join(':')
+        );
+      },
+    } satisfies CompactionHookManagerLike & {
+      config: {
+        prePrefix: string;
+        postPrefix: string;
+      };
+      postRecords: string[];
+    };
+
+    const preResult = await runPreCompactHooks({
+      hookManager,
+      sessionId: 'session-with-this',
+      messages,
+      tokenCount: 1200,
+      targetTokenCount: 600,
+    });
+    const postResult = await runPostCompactHooks({
+      hookManager,
+      sessionId: 'session-with-this',
+      savedTokens: 400,
+      strategy: 'summarize',
+    });
+
+    expect(preResult).toEqual({
+      preservedContext: 'from-config:session-with-this:1:1200:600',
+      warnings: [],
+    });
+    expect(postResult).toEqual({ warnings: [] });
+    expect(hookManager.postRecords).toEqual([
+      'post-config:400:summarize:session-with-this',
+    ]);
+  });
+
   it('swallows PostCompact failures and reports a warning', async () => {
     const logger = { warn: vi.fn() };
     const hookManager: CompactionHookManagerLike = {

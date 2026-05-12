@@ -52,14 +52,14 @@ export async function runPreCompactHooks(
   input: RunPreCompactHooksInput
 ): Promise<RunPreCompactHooksResult> {
   const warnings: string[] = [];
-  const triggerPreCompact = input.hookManager?.triggerPreCompact;
+  const hookManager = input.hookManager;
 
-  if (!triggerPreCompact) {
+  if (!hookManager?.triggerPreCompact) {
     return { warnings };
   }
 
   try {
-    const result = await triggerPreCompact(
+    const result = await hookManager.triggerPreCompact(
       input.sessionId,
       input.messages,
       input.tokenCount,
@@ -82,14 +82,18 @@ export async function runPostCompactHooks(
   input: RunPostCompactHooksInput
 ): Promise<RunPostCompactHooksResult> {
   const warnings: string[] = [];
-  const triggerPostCompact = input.hookManager?.triggerPostCompact;
+  const hookManager = input.hookManager;
 
-  if (!triggerPostCompact) {
+  if (!hookManager?.triggerPostCompact) {
     return { warnings };
   }
 
   try {
-    await triggerPostCompact(input.savedTokens, input.strategy, input.sessionId);
+    await hookManager.triggerPostCompact(
+      input.savedTokens,
+      input.strategy,
+      input.sessionId
+    );
   } catch (error) {
     const warning = formatHookWarning('PostCompact hook failed', error);
     warnings.push(warning);

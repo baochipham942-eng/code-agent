@@ -425,15 +425,19 @@ class DesktopComputerSurface {
     }
 
     try {
-      const windows = await backgroundCgEventSurface.listWindows(options);
+      const primaryWindows = await backgroundCgEventSurface.listWindows(options);
+      const relaxedFallback = await this.getRelaxedTargetWindowFallback(options, primaryWindows);
+      const windows = relaxedFallback?.targetMatches || primaryWindows;
+      const targetMatches = getWindowTargetMatches(windows, options);
+      const visibleWindows = relaxedFallback?.visibleWindows || windows;
       const recommendedWindow = windows.find((window) => window.recommended) || windows[0] || null;
-      const output = windows.length > 0
-        ? [
-            `Found ${windows.length} background CGEvent window candidates${formatTargetSuffix(options)}:`,
-            ...windows.map(formatBackgroundCgEventWindowLine),
-            recommendedWindow ? `Recommended window: ${formatBackgroundCgEventWindowLine(recommendedWindow)}` : null,
-          ].join('\n')
-        : `No background CGEvent window candidates found${formatTargetSuffix(options)}.`;
+      const output = formatWindowObservationOutput({
+        windows,
+        targetMatches,
+        visibleWindows,
+        options,
+        recommendedWindow,
+      });
       return {
         success: true,
         output,
@@ -444,6 +448,10 @@ class DesktopComputerSurface {
           windows,
           targetWindowCount: windows.length,
           recommendedWindow,
+          targetMatches,
+          targetMatchCount: targetMatches.length,
+          visibleAppSummary: formatVisibleAppSummary(visibleWindows),
+          usedRelaxedTargetFallback: relaxedFallback?.used === true,
         },
       };
     } catch (error) {
@@ -459,6 +467,34 @@ class DesktopComputerSurface {
         },
       };
     }
+  }
+
+  private async getRelaxedTargetWindowFallback(
+    options: ListBackgroundCgEventWindowsOptions,
+    primaryWindows: BackgroundCgEventWindow[],
+  ): Promise<{ used: true; targetMatches: BackgroundCgEventWindow[]; visibleWindows: BackgroundCgEventWindow[] } | null> {
+    if (primaryWindows.length > 0 || !hasWindowTargetIntent(options)) {
+      return null;
+    }
+    const relaxedLimit = Math.max(getWindowResultLimit(options), 80);
+    const visibleWindows = await backgroundCgEventSurface.listWindows({
+      limit: relaxedLimit,
+      timeoutMs: options.timeoutMs,
+    });
+    const targetMatches = getWindowTargetMatches(visibleWindows, options)
+      .slice(0, getWindowResultLimit(options));
+    if (targetMatches.length === 0) {
+      return {
+        used: true,
+        targetMatches: [],
+        visibleWindows,
+      };
+    }
+    return {
+      used: true,
+      targetMatches,
+      visibleWindows,
+    };
   }
 
   async executeBackgroundCgEventAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
@@ -1700,6 +1736,177 @@ function formatTargetSuffix(options: ListBackgroundCgEventWindowsOptions): strin
     options.windowId ? `windowId=${options.windowId}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? ` for ${parts.join(' · ')}` : '';
+}
+
+function formatWindowObservationOutput(args: {
+  windows: BackgroundCgEventWindow[];
+  targetMatches: BackgroundCgEventWindow[];
+  visibleWindows: BackgroundCgEventWindow[];
+  options: ListBackgroundCgEventWindowsOptions;
+  recommendedWindow: BackgroundCgEventWindow | null;
+}): string {
+  const { windows, targetMatches, visibleWindows, options, recommendedWindow } = args;
+  const header = windows.length > 0
+    ? `Found ${windows.length} background CGEvent window candidates${formatTargetSuffix(options)}.`
+    : `No background CGEvent window candidates found${formatTargetSuffix(options)}.`;
+  return [
+    header,
+    formatTargetMatchesLine(targetMatches, options),
+    recommendedWindow
+      ? `Recommended window: ${formatBackgroundCgEventWindowLine(recommendedWindow)}`
+      : 'Recommended window: none',
+    `Visible apps: ${formatVisibleAppSummary(visibleWindows)}`,
+    windows.length > 0 ? 'Window candidates:' : null,
+    ...windows.map(formatBackgroundCgEventWindowLine),
+  ].filter(Boolean).join('\n');
+}
+
+function formatTargetMatchesLine(
+  targetMatches: BackgroundCgEventWindow[],
+  options: ListBackgroundCgEventWindowsOptions,
+): string {
+  if (!hasWindowTargetIntent(options)) {
+    return 'Target matches: no target filter provided';
+  }
+  if (targetMatches.length === 0) {
+    return `Target matches: 0${formatTargetSuffix(options)}`;
+  }
+  const preview = targetMatches
+    .slice(0, 4)
+    .map(formatWindowShortRef)
+    .join('; ');
+  const remainder = targetMatches.length > 4 ? `; +${targetMatches.length - 4} more` : '';
+  return `Target matches: ${targetMatches.length}${formatTargetSuffix(options)} -> ${preview}${remainder}`;
+}
+
+function formatVisibleAppSummary(windows: BackgroundCgEventWindow[]): string {
+  if (windows.length === 0) {
+    return 'none';
+  }
+  const groups = new Map<string, {
+    appName: string;
+    bundleId: string | null;
+    count: number;
+  }>();
+  for (const window of windows) {
+    const appName = window.appName || 'unknown';
+    const bundleId = window.bundleId || null;
+    const key = `${appName}\u0000${bundleId || ''}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      groups.set(key, { appName, bundleId, count: 1 });
+    }
+  }
+  return Array.from(groups.values())
+    .sort((a, b) => b.count - a.count || a.appName.localeCompare(b.appName))
+    .slice(0, 8)
+    .map((group) => `${group.appName}${group.bundleId ? `/${group.bundleId}` : ''} x${group.count}`)
+    .join('; ');
+}
+
+function formatWindowShortRef(window: BackgroundCgEventWindow): string {
+  return [
+    `${window.appName}${window.bundleId ? `/${window.bundleId}` : ''}`,
+    window.title ? `"${window.title}"` : null,
+    `pid=${window.pid}`,
+    `windowId=${window.windowId}`,
+  ].filter(Boolean).join(' ');
+}
+
+function getWindowResultLimit(options: ListBackgroundCgEventWindowsOptions): number {
+  return typeof options.limit === 'number' && Number.isFinite(options.limit)
+    ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
+    : 80;
+}
+
+function hasWindowTargetIntent(options: ListBackgroundCgEventWindowsOptions): boolean {
+  return Boolean(
+    options.targetApp
+      || options.bundleId
+      || options.title
+      || typeof options.pid === 'number'
+      || typeof options.windowId === 'number',
+  );
+}
+
+function getWindowTargetMatches(
+  windows: BackgroundCgEventWindow[],
+  options: ListBackgroundCgEventWindowsOptions,
+): BackgroundCgEventWindow[] {
+  if (!hasWindowTargetIntent(options)) {
+    return [];
+  }
+  return windows.filter((window) => matchesWindowTargetIntent(window, options));
+}
+
+function matchesWindowTargetIntent(
+  window: BackgroundCgEventWindow,
+  options: ListBackgroundCgEventWindowsOptions,
+): boolean {
+  if (options.targetApp && !matchesWindowTextTarget(
+    [window.appName, window.bundleId, window.title],
+    options.targetApp,
+  )) {
+    return false;
+  }
+  if (options.bundleId && !matchesWindowTextTarget([window.bundleId], options.bundleId)) {
+    return false;
+  }
+  if (options.title && !matchesWindowTextTarget([window.title], options.title)) {
+    return false;
+  }
+  if (typeof options.pid === 'number' && window.pid !== Math.trunc(options.pid)) {
+    return false;
+  }
+  if (typeof options.windowId === 'number' && window.windowId !== Math.trunc(options.windowId)) {
+    return false;
+  }
+  return true;
+}
+
+function matchesWindowTextTarget(candidates: Array<string | null | undefined>, target: string): boolean {
+  const terms = expandWindowTargetTerms(target);
+  if (terms.length === 0) {
+    return false;
+  }
+  return candidates.some((candidate) => {
+    const normalized = normalizeWindowTargetText(candidate);
+    if (!normalized) {
+      return false;
+    }
+    return terms.some((term) =>
+      normalized === term
+        || (term.length >= 4 && normalized.includes(term))
+        || (normalized.length >= 4 && term.includes(normalized)),
+    );
+  });
+}
+
+function expandWindowTargetTerms(target: string): string[] {
+  const normalized = normalizeWindowTargetText(target);
+  const terms = new Set<string>();
+  if (normalized) {
+    terms.add(normalized);
+  }
+  if (
+    normalized.includes('tencentmeeting')
+    || normalized.includes('comtencentmeeting')
+    || target.includes('腾讯会议')
+  ) {
+    terms.add('tencentmeeting');
+    terms.add('comtencentmeeting');
+    terms.add('腾讯会议');
+  }
+  return Array.from(terms);
+}
+
+function normalizeWindowTargetText(value: string | null | undefined): string {
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s._-]+/g, '');
 }
 
 function formatAppDiagnosis(diagnosis: BackgroundCgEventAppDiagnosis): string {

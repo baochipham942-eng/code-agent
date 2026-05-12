@@ -21,6 +21,7 @@ function installMacOsSurfaceMocks(options: {
   frontmostApp?: string;
   missingApps?: string[];
   axElementsStdout?: string;
+  cgeventWindows?: Array<Record<string, unknown>>;
 } = {}): void {
   const frontmostApp = options.frontmostApp || 'Safari';
   const missingApps = new Set((options.missingApps || []).map((item) => item.toLowerCase()));
@@ -55,6 +56,10 @@ function installMacOsSurfaceMocks(options: {
       stdout = missingApps.has(targetApp.toLowerCase())
         ? `${targetApp}\n`
         : `${targetApp}\nTarget Window\n`;
+    } else if (command === 'xcrun') {
+      stdout = '';
+    } else if (argList[0] === 'list-windows') {
+      stdout = JSON.stringify(options.cgeventWindows || []);
     }
 
     queueMicrotask(() => done(null, stdout, ''));
@@ -285,6 +290,82 @@ describe('DesktopComputerSurface target boundaries', () => {
     });
     expect(result.metadata).not.toHaveProperty('windows');
     expect(result.metadata).not.toHaveProperty('recommendedWindow');
+  });
+
+  it('front-loads target matches, recommended window, and visible app summary for get_windows', async () => {
+    installMacOsSurfaceMocks({
+      cgeventWindows: [
+        {
+          appName: 'WeChat',
+          bundleId: 'com.tencent.xin',
+          pid: 101,
+          windowId: 11,
+          title: 'Chats',
+          bounds: { x: 0, y: 0, width: 900, height: 700 },
+          layer: 0,
+          alpha: 1,
+          isOnScreen: true,
+        },
+        {
+          appName: 'WeChat',
+          bundleId: 'com.tencent.xin',
+          pid: 101,
+          windowId: 12,
+          title: 'Files',
+          bounds: { x: 20, y: 20, width: 900, height: 700 },
+          layer: 0,
+          alpha: 1,
+          isOnScreen: true,
+        },
+        {
+          appName: '腾讯会议',
+          bundleId: 'com.tencent.meeting',
+          pid: 202,
+          windowId: 21,
+          title: 'Standup',
+          bounds: { x: 120, y: 80, width: 1200, height: 800 },
+          layer: 0,
+          alpha: 1,
+          isOnScreen: true,
+        },
+        {
+          appName: '腾讯会议',
+          bundleId: 'com.tencent.meeting',
+          pid: 202,
+          windowId: 22,
+          title: 'Share',
+          bounds: { x: 160, y: 120, width: 900, height: 640 },
+          layer: 0,
+          alpha: 1,
+          isOnScreen: true,
+        },
+      ],
+    });
+    const surface = await loadSurface();
+
+    const result = await surface.listBackgroundCgEventWindows({
+      targetApp: 'TencentMeeting',
+      limit: 10,
+    });
+
+    expect(result.success).toBe(true);
+    const firstLines = (result.output || '').split('\n').slice(0, 4).join('\n');
+    expect(firstLines).toContain('Target matches: 2');
+    expect(firstLines).toContain('腾讯会议/com.tencent.meeting');
+    expect(firstLines).toContain('Recommended window: 腾讯会议');
+    expect(firstLines).toContain('Visible apps:');
+    expect(firstLines).toContain('WeChat/com.tencent.xin x2');
+    expect(firstLines).toContain('腾讯会议/com.tencent.meeting x2');
+    expect(result.output?.indexOf('Target matches')).toBeLessThan(result.output?.indexOf('Window candidates') || 0);
+    expect(result.metadata).toMatchObject({
+      targetWindowCount: 2,
+      targetMatchCount: 2,
+      usedRelaxedTargetFallback: true,
+      recommendedWindow: expect.objectContaining({
+        appName: '腾讯会议',
+        bundleId: 'com.tencent.meeting',
+      }),
+    });
   });
 
   it('blocks denied targetApp diagnose_app without returning diagnosis or TCC details', async () => {

@@ -14,6 +14,12 @@ export interface ComplexityAnalysis {
   targetFiles: string[]; // Files mentioned in the prompt that need to be modified
 }
 
+const DESKTOP_MEETING_CONTEXT_RE =
+  /腾讯会议|tencent\s*meeting|当前会议|会议内容|正在(?:开的|进行的)?会议|meeting\s+(?:content|notes?|transcript)|current\s+meeting/i;
+
+const MEETING_NOTE_ACTION_RE =
+  /记录|记下|整理|总结|纪要|转写|录入|note|notes|record|capture|transcribe|summari[sz]e/i;
+
 // ----------------------------------------------------------------------------
 // 复杂度分析器（简化版）
 // ----------------------------------------------------------------------------
@@ -90,6 +96,8 @@ export class TaskComplexityAnalyzer {
     const requestsPartition = partitionPattern.test(userMessage);
     const requestsDetailedStyle = outputStyleKeywords.some(k => userMessage.includes(k));
     const hasOutputConstraint = requestsLongOutput || requestsPartition || requestsDetailedStyle;
+    const isDesktopMeetingCaptureTask =
+      DESKTOP_MEETING_CONTEXT_RE.test(userMessage) && MEETING_NOTE_ACTION_RE.test(userMessage);
 
     // 计算复杂度
     let complexity: TaskComplexity = 'simple';
@@ -102,6 +110,7 @@ export class TaskComplexityAnalyzer {
       confidence = 0.85;
     } else if (fileCount >= 3 || stepCount >= 2 || charCount > 200 || hasList || hasOutputConstraint) {
       complexity = 'complex';
+      if (isDesktopMeetingCaptureTask) reasons.push(`桌面会议记录任务需要读取当前会议上下文`);
       if (fileCount >= 3) reasons.push(`涉及 ${fileCount} 个文件`);
       if (stepCount >= 2) reasons.push(`包含多步骤描述`);
       if (charCount > 200) reasons.push(`详细描述 (${charCount} 字符)`);
@@ -110,8 +119,9 @@ export class TaskComplexityAnalyzer {
       if (requestsPartition) reasons.push(`要求分段/分部分产出`);
       if (requestsDetailedStyle) reasons.push(`要求详细/慢节奏写作`);
       confidence = 0.7;
-    } else if (fileCount >= 2 || stepCount >= 1 || charCount > 50) {
+    } else if (isDesktopMeetingCaptureTask || fileCount >= 2 || stepCount >= 1 || charCount > 50) {
       complexity = 'moderate';
+      if (isDesktopMeetingCaptureTask) reasons.push(`桌面会议记录任务需要读取当前会议上下文`);
       if (fileCount >= 2) reasons.push(`涉及 ${fileCount} 个文件`);
       if (charCount > 50) reasons.push(`中等描述 (${charCount} 字符)`);
       confidence = 0.6;

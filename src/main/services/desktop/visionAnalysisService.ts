@@ -7,6 +7,29 @@ const logger = createLogger('VisionAnalysisService');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+export type VisionAnalysisFailureReason =
+  | 'missing_api_key'
+  | 'http_error'
+  | 'timeout'
+  | 'exception'
+  | 'empty_response';
+
+export type VisionAnalysisResult =
+  | {
+    ok: true;
+    analysis: string;
+    model: string;
+  }
+  | {
+    ok: false;
+    analysis: null;
+    reason: VisionAnalysisFailureReason;
+    error: string;
+    model: string;
+    httpStatus?: number;
+    retryable: boolean;
+  };
+
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
@@ -25,18 +48,37 @@ async function fetchWithTimeout(
   }
 }
 
-export async function analyzeImageWithVision(args: {
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function normalizeHttpError(status: number, body: string): string {
+  const trimmedBody = body.trim();
+  if (!trimmedBody) {
+    return `Vision analysis request failed with HTTP ${status}`;
+  }
+  return `Vision analysis request failed with HTTP ${status}: ${trimmedBody}`;
+}
+
+export async function analyzeImageWithVisionDetailed(args: {
   imagePath: string;
   prompt: string;
   source: string;
   timeoutMs?: number;
-}): Promise<string | null> {
+}): Promise<VisionAnalysisResult> {
   const configService = getConfigService();
   const zhipuApiKey = configService.getApiKey('zhipu');
 
   if (!zhipuApiKey) {
     logger.info('Vision analysis skipped: zhipu API key is not configured', { source: args.source });
-    return null;
+    return {
+      ok: false,
+      analysis: null,
+      reason: 'missing_api_key',
+      error: 'Zhipu API key is not configured',
+      model: ZHIPU_VISION_MODEL,
+      retryable: false,
+    };
   }
 
   try {
@@ -80,7 +122,15 @@ export async function analyzeImageWithVision(args: {
         status: response.status,
         error: errorText,
       });
-      return null;
+      return {
+        ok: false,
+        analysis: null,
+        reason: 'http_error',
+        error: normalizeHttpError(response.status, errorText),
+        model: ZHIPU_VISION_MODEL,
+        httpStatus: response.status,
+        retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+      };
     }
 
     const result = await response.json();
@@ -92,12 +142,50 @@ export async function analyzeImageWithVision(args: {
       });
     }
 
-    return content || null;
+    if (!content) {
+      logger.warn('Vision analysis returned empty content', {
+        source: args.source,
+      });
+      return {
+        ok: false,
+        analysis: null,
+        reason: 'empty_response',
+        error: 'Vision analysis returned empty content',
+        model: ZHIPU_VISION_MODEL,
+        retryable: true,
+      };
+    }
+
+    return {
+      ok: true,
+      analysis: content,
+      model: ZHIPU_VISION_MODEL,
+    };
   } catch (error: unknown) {
-    logger.warn('Vision analysis failed', {
+    const aborted = isAbortError(error);
+    logger.warn(aborted ? 'Vision analysis timed out' : 'Vision analysis failed', {
       source: args.source,
       error: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return {
+      ok: false,
+      analysis: null,
+      reason: aborted ? 'timeout' : 'exception',
+      error: aborted
+        ? `Vision analysis timed out after ${args.timeoutMs || DEFAULT_TIMEOUT_MS}ms`
+        : `Vision analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+      model: ZHIPU_VISION_MODEL,
+      retryable: true,
+    };
   }
+}
+
+export async function analyzeImageWithVision(args: {
+  imagePath: string;
+  prompt: string;
+  source: string;
+  timeoutMs?: number;
+}): Promise<string | null> {
+  const result = await analyzeImageWithVisionDetailed(args);
+  return result.ok ? result.analysis : null;
 }

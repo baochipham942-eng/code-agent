@@ -311,6 +311,8 @@ describe('computer surface gating', () => {
       requiresForeground: true,
       approvalScope: 'session_app',
       targetApp: 'Safari',
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
     });
     expect(surfaceMocks.surface.observe).toHaveBeenCalledWith({ includeScreenshot: true });
     expect(surfaceMocks.surface.authorizeAction).not.toHaveBeenCalled();
@@ -351,6 +353,8 @@ describe('computer surface gating', () => {
       failureKind: 'permission_denied',
       blockingReasons,
       recommendedAction: 'Choose a non-protected target app.',
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
       computerSurface: expect.objectContaining({
         targetApp: null,
         failureKind: 'permission_denied',
@@ -846,6 +850,8 @@ describe('computer surface gating', () => {
       requiresForeground: false,
       targetApp: 'Finder',
       targetElementCount: 1,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
       axQuality: expect.objectContaining({
         grade: 'usable',
         score: 0.65,
@@ -902,6 +908,8 @@ describe('computer surface gating', () => {
       requiresForeground: false,
       targetApp: 'Preview',
       targetWindowCount: 1,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
       recommendedWindow: expect.objectContaining({
         windowRef: 'cgwin:1234:42:abcdef123456',
         qualityGrade: 'recommended',
@@ -1007,6 +1015,8 @@ describe('computer surface gating', () => {
       computerSurfaceMode: 'background_cgevent',
       backgroundSurface: true,
       targetApp: 'Preview',
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
       appDiagnosis: expect.objectContaining({
         permissions: {
           accessibilityTrusted: true,

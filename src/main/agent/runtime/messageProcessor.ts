@@ -48,6 +48,7 @@ import {
 import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
+import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 
@@ -69,7 +70,7 @@ function sanitizeToolResultForObservation(
 }
 
 function shouldPreserveToolObservation(result: ToolResult): boolean {
-  return result.metadata?.preserveObservation === true;
+  return result.metadata?.preserveObservation === true || result.metadata?.observationKind === 'computer_surface_read';
 }
 
 function isArtifactRepairTargetFileRead(result: ToolResult): boolean {
@@ -377,6 +378,22 @@ export class MessageProcessor {
     }
 
     const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+    const latestUserContent = [...this.ctx.messages].reverse()
+      .find((message) => message.role === 'user' && message.visibility !== 'rewound')?.content;
+    const desktopClaimGate = applyDesktopActionClaimGate({
+      latestUserMessage: typeof latestUserContent === 'string' ? latestUserContent : undefined,
+      assistantContent: strippedContent,
+      toolCallCount: this.ctx.totalToolCallCount,
+      iterations,
+    });
+    if (desktopClaimGate.action === 'retry') {
+      logger.warn('[DesktopActionClaimGate] retrying text response without desktop tool evidence', {
+        reason: desktopClaimGate.reason,
+        sessionId: this.ctx.sessionId,
+      });
+      this.contextAssembly.injectSystemMessage(desktopClaimGate.repairPrompt);
+      return 'continue';
+    }
 
     // === Ground-truth gate ===
     // 如果用户首条消息含 URL 且本 run 命中反爬阈值，给"成功输出"加 disclaimer。
@@ -385,7 +402,7 @@ export class MessageProcessor {
     const gated = applyGroundTruthGate(
       typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
       this.ctx.antiScrapingHitsInRun,
-      strippedContent,
+      desktopClaimGate.content,
     );
     if (gated.applied) {
       logger.warn(
@@ -397,6 +414,12 @@ export class MessageProcessor {
     }
 
     const finalContent = gated.content;
+    if (desktopClaimGate.action === 'warn') {
+      logger.warn('[DesktopActionClaimGate] warning prepended to text response without desktop tool evidence', {
+        reason: desktopClaimGate.reason,
+        sessionId: this.ctx.sessionId,
+      });
+    }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
 
     // Artifact extraction

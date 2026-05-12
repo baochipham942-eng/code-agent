@@ -131,6 +131,8 @@ describe('MessageProcessor persistence', () => {
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
       toolsUsedInTurn: [],
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
       nudgeManager: {
@@ -604,6 +606,95 @@ describe('MessageProcessor persistence', () => {
     expect(toolMessage.content).toContain('<artifact-repair-file-read>');
     expect(toolMessage.toolResults[0].metadata.artifactRepairPreview).toBe(true);
     expect(toolMessage.toolResults[0].output).not.toContain('x'.repeat(4000));
+  });
+
+  it('does not compress preserved Computer read observations before the next model turn', async () => {
+    const largeObservation = [
+      'Found 2 background CGEvent window candidates for targetApp=TencentMeeting.',
+      'Target matches: 2 for targetApp=TencentMeeting -> 腾讯会议/com.tencent.meeting "Standup" pid=202 windowId=21; 腾讯会议/com.tencent.meeting "Share" pid=202 windowId=22',
+      'Recommended window: 腾讯会议/com.tencent.meeting "Standup" · pid=202 · windowId=21',
+      'Visible apps: WeChat/com.tencent.xin x2; 腾讯会议/com.tencent.meeting x2',
+      'Window candidates:',
+      '腾讯会议 "Standup" · bundleId=com.tencent.meeting · pid=202 · windowId=21',
+      '腾讯会议 "Share" · bundleId=com.tencent.meeting · pid=202 · windowId=22',
+      'filler '.repeat(2000),
+    ].join('\n');
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      toolsUsedInTurn: [],
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        {
+          toolCallId: 'tool-1',
+          success: true,
+          output: largeObservation,
+          metadata: {
+            preserveObservation: true,
+            observationKind: 'computer_surface_read',
+            targetApp: 'TencentMeeting',
+          },
+        },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'computer_use', arguments: { action: 'get_windows', targetApp: 'TencentMeeting' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    const toolMessage = ctx.messages.find((message: any) => message.role === 'tool') as any;
+    expect(toolMessage.toolResults[0].output).toBe(largeObservation);
+    expect(toolMessage.toolResults[0].metadata.preserveObservation).toBe(true);
   });
 
   it('drops tool calls that are outside the currently visible tool schema and reinfers', async () => {

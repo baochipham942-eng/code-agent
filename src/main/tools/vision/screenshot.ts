@@ -9,9 +9,28 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
+import { analyzeImageWithVisionDetailed } from '../../services/desktop/visionAnalysisService';
 
 const execAsync = promisify(exec);
+
+function buildAnalysisFailureMessage(args: {
+  outputPath: string;
+  sizeBytes: number;
+  target: string;
+  windowName?: string;
+  timestampIso: string;
+  reason: string;
+}): string {
+  return [
+    'Screenshot captured, but AI vision analysis failed.',
+    'The assistant cannot observe or describe the screen content from this result.',
+    `- Path: ${args.outputPath}`,
+    `- Size: ${(args.sizeBytes / 1024).toFixed(2)} KB`,
+    `- Target: ${args.target}${args.windowName ? ` (${args.windowName})` : ''}`,
+    `- Timestamp: ${args.timestampIso}`,
+    `- Vision error: ${args.reason}`,
+  ].join('\n');
+}
 
 export const screenshotTool: Tool = {
   name: 'screenshot',
@@ -166,12 +185,13 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
       }
 
       const stats = fs.statSync(outputPath);
+      const timestampIso = new Date(timestamp).toISOString();
 
       let output = `Screenshot captured successfully:
 - Path: ${outputPath}
 - Size: ${(stats.size / 1024).toFixed(2)} KB
 - Target: ${target}${windowName ? ` (${windowName})` : ''}
-- Timestamp: ${new Date(timestamp).toISOString()}`;
+- Timestamp: ${timestampIso}`;
 
       // 如果启用分析，进行视觉分析
       let analysis: string | null = null;
@@ -181,11 +201,39 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
           message: '🔍 正在分析截图内容...',
         });
 
-        analysis = await analyzeImageWithVision({
+        const analysisResult = await analyzeImageWithVisionDetailed({
           imagePath: outputPath,
           prompt: analysisPrompt,
           source: 'screenshot',
         });
+
+        if (!analysisResult.ok) {
+          return {
+            success: false,
+            error: buildAnalysisFailureMessage({
+              outputPath,
+              sizeBytes: stats.size,
+              target,
+              windowName,
+              timestampIso,
+              reason: analysisResult.error,
+            }),
+            outputPath,
+            metadata: {
+              path: outputPath,
+              size: stats.size,
+              target,
+              windowName,
+              analyzed: false,
+              analysisRequested: true,
+              analysis: null,
+              visionAnalysis: analysisResult,
+              cannotObserveScreen: true,
+            },
+          };
+        }
+
+        analysis = analysisResult.analysis;
         if (analysis) {
           output += `\n\n📝 AI 分析结果:\n${analysis}`;
         }
@@ -194,12 +242,14 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
       return {
         success: true,
         output,
+        outputPath,
         metadata: {
           path: outputPath,
           size: stats.size,
           target,
           windowName,
           analyzed: !!analysis,
+          analysisRequested: !!analyze,
           analysis,
         },
       };

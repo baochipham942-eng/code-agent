@@ -12,6 +12,9 @@ type RuntimeForDeferredToolPreload = Pick<
 const COMPUTER_INTENT_RE =
   /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bscreenshot\b|\bscreen\s+capture\b|\bcapture\s+(?:the\s+)?(?:current\s+)?screen\b|\b(?:current\s+)?desktop\s+(?:context|browser|window|app)\b|frontmost|notepad|\bnotes\b|桌面|当前屏幕|屏幕|截屏|截图|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)/i;
 
+const MEETING_DESKTOP_CONTEXT_RE =
+  /腾讯会议|tencent\s*meeting|会议内容|当前会议|正在(?:开的|进行的)?会议|meeting\s+(?:content|notes?|transcript)|current\s+meeting/i;
+
 const BROWSER_AUTOMATION_INTENT_RE =
   /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|打开(?:网页|网站|url)|访问(?:网页|网站|url)/i;
 
@@ -36,7 +39,11 @@ export function getDeferredToolsToPreloadForTurn(
   const intent = runtime.executionIntent;
   const userText = getLatestUserText(runtime);
 
-  if (intent?.browserSessionMode === 'desktop' || COMPUTER_INTENT_RE.test(userText)) {
+  if (
+    intent?.browserSessionMode === 'desktop' ||
+    COMPUTER_INTENT_RE.test(userText) ||
+    MEETING_DESKTOP_CONTEXT_RE.test(userText)
+  ) {
     tools.add('Computer');
   }
 

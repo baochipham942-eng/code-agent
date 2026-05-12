@@ -53,6 +53,24 @@ describe('deferred tool preload', () => {
     expect(getToolSearchService().isToolLoaded('Computer')).toBe(true);
   });
 
+  it.each([
+    '帮我记录当前腾讯会议的内容',
+    '请整理会议内容',
+    '帮我记录当前会议',
+  ])('preloads Computer for desktop meeting context keywords: %s', (content) => {
+    const loaded = preloadDeferredToolsForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content,
+        timestamp: 1,
+      }],
+    }));
+
+    expect(loaded).toEqual(['Computer']);
+    expect(getToolSearchService().isToolLoaded('Computer')).toBe(true);
+  });
+
   it('preloads Computer for English screenshot requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{

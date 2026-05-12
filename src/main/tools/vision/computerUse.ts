@@ -26,6 +26,47 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+const MACOS_APP_ALIASES = new Map<string, string>([
+  ['notepad', 'Notes'],
+  ['note', 'Notes'],
+  ['notes', 'Notes'],
+  ['applenotes', 'Notes'],
+  ['记事本', 'Notes'],
+  ['备忘录', 'Notes'],
+  ['備忘錄', 'Notes'],
+  ['textedit', 'TextEdit'],
+  ['texteditor', 'TextEdit'],
+  ['文本编辑', 'TextEdit'],
+  ['文本编辑器', 'TextEdit'],
+  ['文字编辑', 'TextEdit'],
+  ['纯文本编辑器', 'TextEdit'],
+]);
+
+function normalizeAppAliasKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s._-]+/g, '');
+}
+
+export function resolveMacOSApplicationAlias(targetApp: string): string {
+  const key = normalizeAppAliasKey(targetApp);
+  return MACOS_APP_ALIASES.get(key) || targetApp;
+}
+
+function normalizeComputerActionAliases(action: ComputerAction): ComputerAction {
+  if (process.platform !== 'darwin' || action.action !== 'open_application' || typeof action.targetApp !== 'string') {
+    return action;
+  }
+  const resolvedTargetApp = resolveMacOSApplicationAlias(action.targetApp);
+  if (resolvedTargetApp === action.targetApp) {
+    return action;
+  }
+  return {
+    ...action,
+    targetApp: resolvedTargetApp,
+    requestedTargetApp: action.targetApp,
+    targetAppAliasApplied: true,
+  };
+}
+
 // Extended action types with smart location capabilities
 type ActionType =
   | 'get_state' | 'observe' | 'get_ax_elements' | 'get_windows' | 'diagnose_app'
@@ -42,6 +83,8 @@ type ActionType =
 export interface ComputerAction {
   action: ActionType;
   targetApp?: string;
+  requestedTargetApp?: string;
+  targetAppAliasApplied?: boolean;
   x?: number;
   y?: number;
   pid?: number;
@@ -325,7 +368,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       };
     }
 
-    const action = params as unknown as ComputerAction;
+    const action = normalizeComputerActionAliases(params as unknown as ComputerAction);
     const workbenchPolicy = evaluateBrowserWorkbenchPolicy({
       toolName: 'computer_use',
       action: action.action,
@@ -839,6 +882,8 @@ async function observeComputerSurface(
       failureKind,
       blockingReasons,
       recommendedAction,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
     },
   };
 }
@@ -877,6 +922,8 @@ async function listComputerSurfaceElements(
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,
       axQuality: reliability.axQuality,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
     },
   };
 }
@@ -921,6 +968,8 @@ async function listComputerSurfaceWindows(
       failureKind: reliability.failureKind,
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
     },
   };
 }
@@ -957,6 +1006,8 @@ async function diagnoseComputerSurfaceApp(
       failureKind: reliability.failureKind,
       blockingReasons: reliability.blockingReasons,
       recommendedAction: reliability.recommendedAction,
+      preserveObservation: true,
+      observationKind: 'computer_surface_read',
     },
   };
 }
@@ -1472,9 +1523,24 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       try {
         await execFileAsync('open', ['-a', appName]);
       } catch (error) {
-        return { success: false, error: `Failed to open application "${appName}": ${formatExecutionError(error)}` };
+        const requested = action.requestedTargetApp && action.requestedTargetApp !== appName
+          ? ` (requested as "${action.requestedTargetApp}")`
+          : '';
+        return { success: false, error: `Failed to open application "${appName}"${requested}: ${formatExecutionError(error)}` };
       }
-      break;
+      return {
+        success: true,
+        output: `Action completed: open_application target=${appName}${
+          action.requestedTargetApp && action.requestedTargetApp !== appName
+            ? ` (requested as ${action.requestedTargetApp})`
+            : ''
+        }`,
+        metadata: {
+          targetApp: appName,
+          requestedTargetApp: action.requestedTargetApp || appName,
+          targetAppAliasApplied: action.targetAppAliasApplied === true,
+        },
+      };
     }
 
     case 'write_clipboard': {
@@ -1499,10 +1565,11 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       }
       const results: Array<{ index: number; action: string; success: boolean; error?: string }> = [];
       for (let i = 0; i < action.actions.length; i++) {
-        const sub = action.actions[i] as ComputerAction | undefined;
-        if (!sub || typeof sub !== 'object' || typeof sub.action !== 'string') {
+        const rawSub = action.actions[i] as ComputerAction | undefined;
+        if (!rawSub || typeof rawSub !== 'object' || typeof rawSub.action !== 'string') {
           return { success: false, error: `Invalid action at index ${i} in computer_batch`, metadata: { results } };
         }
+        const sub = normalizeComputerActionAliases(rawSub);
         if (sub.action === 'computer_batch') {
           return { success: false, error: `Nested computer_batch at index ${i} is not allowed`, metadata: { results } };
         }

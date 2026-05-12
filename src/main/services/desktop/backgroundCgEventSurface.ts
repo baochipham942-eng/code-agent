@@ -775,12 +775,26 @@ class BackgroundCgEventSurface {
 
   private async runHelper(args: string[], timeoutMs = 10_000): Promise<string> {
     const helper = await ensureHelper();
-    const { stdout } = await execFileAsync(helper, args, {
+    const result = await execFileAsync(helper, args, {
       timeout: Math.max(1_000, Math.min(timeoutMs, 60_000)),
       maxBuffer: 1024 * 1024,
     });
-    return Buffer.isBuffer(stdout) ? stdout.toString('utf8') : stdout;
+    return getExecStdout(result);
   }
+}
+
+function getExecStdout(result: unknown): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (Buffer.isBuffer(result)) {
+    return result.toString('utf8');
+  }
+  if (result && typeof result === 'object' && 'stdout' in result) {
+    const stdout = (result as { stdout?: string | Buffer }).stdout;
+    return Buffer.isBuffer(stdout) ? stdout.toString('utf8') : stdout || '';
+  }
+  return '';
 }
 
 async function ensureHelper(): Promise<string> {

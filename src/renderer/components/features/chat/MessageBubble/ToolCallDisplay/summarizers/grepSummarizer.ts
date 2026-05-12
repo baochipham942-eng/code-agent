@@ -23,6 +23,7 @@ export function summarizeGrep(toolCall: ToolCall): string | null {
   // Handle text output
   const outputStr = String(output).trim();
   if (!outputStr) return 'No matches';
+  if (/^(?:No matches found|No matches|0 matches)\b/i.test(outputStr)) return 'No matches';
 
   const lines = outputStr.split('\n').filter(Boolean);
   if (lines.length === 0) return 'No matches';

@@ -20,6 +20,7 @@ export function summarizeGlob(toolCall: ToolCall): string | null {
   // Handle string output (newline separated)
   const outputStr = String(output).trim();
   if (!outputStr) return 'No matches';
+  if (/^(?:No files matched the pattern|No matches)\b/i.test(outputStr)) return 'No matches';
 
   const lines = outputStr.split('\n').filter(Boolean);
   if (lines.length === 0) return 'No matches';

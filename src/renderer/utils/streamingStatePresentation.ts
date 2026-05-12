@@ -150,7 +150,7 @@ export function buildStreamingUiState({
       status: isWaitingTool ? 'waiting_tool' : 'using_tools',
       label: isWaitingTool ? '工具等待中' : '正在使用工具',
       detail: isWaitingTool ? '工具调用仍在返回结果' : '工具调用已开始，结果会并入当前回复',
-      tone: 'warning',
+      tone: 'neutral',
       shouldAnimate: true,
       showResumeHint: false,
       showCancelCleanup: false,
@@ -203,5 +203,7 @@ export function buildStreamingUiState({
 export function shouldShowStreamingState(state: StreamingUiState): boolean {
   return state.status !== 'idle'
     && state.status !== 'completed'
-    && state.status !== 'drafting';
+    && state.status !== 'drafting'
+    && state.status !== 'using_tools'
+    && state.status !== 'waiting_tool';
 }

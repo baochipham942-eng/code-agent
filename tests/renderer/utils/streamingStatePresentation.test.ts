@@ -47,7 +47,7 @@ describe('streamingStatePresentation', () => {
 
     expect(state.status).toBe('drafting');
     expect(state.shouldAnimate).toBe(true);
-    expect(shouldShowStreamingState(state)).toBe(true);
+    expect(shouldShowStreamingState(state)).toBe(false);
   });
 
   it('separates active tool execution from long tool waiting', () => {
@@ -63,21 +63,25 @@ describe('streamingStatePresentation', () => {
       ],
     });
 
-    expect(buildStreamingUiState({
+    const usingTools = buildStreamingUiState({
       turn,
       isActiveTurn: true,
       sessionStatus: 'running',
       runningToolStartTime: 5_000,
       now: 10_000,
-    }).status).toBe('using_tools');
+    });
+    expect(usingTools.status).toBe('using_tools');
+    expect(shouldShowStreamingState(usingTools)).toBe(false);
 
-    expect(buildStreamingUiState({
+    const waitingTool = buildStreamingUiState({
       turn,
       isActiveTurn: true,
       sessionStatus: 'running',
       runningToolStartTime: 5_000,
       now: 30_000,
-    }).status).toBe('waiting_tool');
+    });
+    expect(waitingTool.status).toBe('waiting_tool');
+    expect(shouldShowStreamingState(waitingTool)).toBe(false);
   });
 
   it('prioritizes cancelling cleanup over active streaming', () => {

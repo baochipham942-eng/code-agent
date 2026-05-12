@@ -47,6 +47,13 @@ function isWithinWindow(timestamp: number | undefined, window: TurnWindow): bool
   return timestamp >= window.start && timestamp < window.end;
 }
 
+function hasRuntimeTurnId(turn: TraceTurn, runtimeTurnId: string): boolean {
+  return turn.nodes.some((node) => (
+    node.id === runtimeTurnId
+    || node.id.startsWith(`${runtimeTurnId}-`)
+  ));
+}
+
 function getTurnEventWindow(turn: TraceTurn, window: TurnWindow): TurnWindow {
   const userTimestamp = turn.nodes.find((node) => node.type === 'user')?.timestamp;
   return {
@@ -71,7 +78,11 @@ function buildHookActivity(
 ): TurnHookActivity | undefined {
   const eventWindow = getTurnEventWindow(turn, window);
   const relevantEvents = hookEvents
-    .filter((event) => event.hookCount > 0 && isWithinWindow(event.timestamp, eventWindow))
+    .filter((event) => {
+      if (event.hookCount <= 0) return false;
+      if (event.turnId) return hasRuntimeTurnId(turn, event.turnId);
+      return isWithinWindow(event.timestamp, eventWindow);
+    })
     .sort((left, right) => left.timestamp - right.timestamp);
 
   if (relevantEvents.length === 0) {

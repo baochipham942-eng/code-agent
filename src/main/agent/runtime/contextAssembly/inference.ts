@@ -28,6 +28,7 @@ import {
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
+import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -239,6 +240,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   // 根据配置决定使用全量工具还是核心+延迟工具
   let tools;
   if (ctx.runtime.enableToolDeferredLoading) {
+    preloadDeferredToolsForTurn(ctx.runtime);
     // 使用核心工具 + 已加载的延迟工具
     const coreTools = getCoreToolDefinitions();
     const loadedDeferredTools = getLoadedDeferredToolDefinitions();

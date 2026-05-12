@@ -858,6 +858,8 @@ function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string, 
     String(ctx.runtime.enableToolDeferredLoading),
     ctx.runtime.modelConfig.model || '',
     getLastUserMessage(ctx)?.id || '',
+    ctx.runtime.activeSkillInvocation?.skillName || '',
+    ctx.runtime.activeSkillContextBlock ? 'active-skill' : '',
     artifactRepairMode ? 'artifact-repair' : 'normal',
     userQuery,
   ].join('\u0000');
@@ -1058,6 +1060,25 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       if (result.trimmed?.length) {
         logger.warn(`[ContextAssembly] Trimmed prompt blocks to preserve ${artifactPromptLabel}: ${result.trimmed.join(', ')}`);
       }
+    }
+  }
+
+  if (ctx.runtime.activeSkillContextBlock) {
+    const result = appendPromptBlockWithinBudgetWithStatus(
+      systemPrompt,
+      ctx.runtime.activeSkillContextBlock,
+      `active skill ${ctx.runtime.activeSkillInvocation?.skillName || ''}`.trim(),
+      appendedBlocks,
+      ctx,
+      { kind: 'required', trimCandidates: ['repo map', 'skills', 'recent conversations', 'deferred tools', 'generative UI', 'question form'] },
+    );
+    systemPrompt = result.prompt;
+    if (result.appended) {
+      appendedBlocks.set('active skill', ctx.runtime.activeSkillContextBlock);
+      logger.debug('[ContextAssembly] Active skill invocation prompt injected', {
+        skillName: ctx.runtime.activeSkillInvocation?.skillName,
+        matchKind: ctx.runtime.activeSkillInvocation?.matchKind,
+      });
     }
   }
 

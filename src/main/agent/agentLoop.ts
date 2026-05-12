@@ -227,6 +227,8 @@ export class AgentLoop {
       pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
+      activeSkillInvocation: undefined,
+      activeSkillContextBlock: undefined,
 
       // Turn tracking
       turnStartTime: 0,

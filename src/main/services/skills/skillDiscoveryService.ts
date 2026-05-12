@@ -15,8 +15,8 @@ import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
-const SKILL_METADATA_CACHE_VERSION = 1;
-const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v1.json';
+const SKILL_METADATA_CACHE_VERSION = 2;
+const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v2.json';
 
 export interface SkillDiscoveryServiceOptions {
   includeClaudeLegacySkills?: boolean;
@@ -187,6 +187,7 @@ class SkillDiscoveryService {
       const skillsToRegister = Array.from(this.skills.values()).map(skill => ({
         name: skill.name,
         description: skill.description,
+        aliases: skill.aliases,
       }));
 
       toolSearchService.registerSkills(skillsToRegister);
@@ -444,6 +445,7 @@ class SkillDiscoveryService {
     return {
       ...skill,
       basePath: basePathOverride ?? skill.basePath,
+      aliases: skill.aliases ? [...skill.aliases] : undefined,
       allowedTools: [...skill.allowedTools],
       metadata: skill.metadata ? { ...skill.metadata } : undefined,
       bins: skill.bins ? [...skill.bins] : undefined,
@@ -513,8 +515,7 @@ class SkillDiscoveryService {
     const cached = this.metadataCache.get(cacheKey);
 
     if (
-      cached &&
-      cached.source === source &&
+      cached?.source === source &&
       cached.mtimeMs === stat.mtimeMs &&
       cached.size === stat.size
     ) {

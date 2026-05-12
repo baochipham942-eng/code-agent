@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 // ============================================================================
 // ConversationRuntime Tests
 // Tests for session initialization, message handling, state transitions,
@@ -329,12 +329,21 @@ vi.mock('../../../src/main/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 
+vi.mock('../../../src/main/services/skills/skillInvocationResolver', () => ({
+  resolveSkillInvocation: vi.fn().mockResolvedValue(null),
+  buildSkillInvocationContext: vi.fn(),
+}));
+
 // --------------------------------------------------------------------------
 // Import after mocks
 // --------------------------------------------------------------------------
 
 import { ConversationRuntime } from '../../../src/main/agent/runtime/conversationRuntime';
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import {
+  buildSkillInvocationContext,
+  resolveSkillInvocation,
+} from '../../../src/main/services/skills/skillInvocationResolver';
 
 // --------------------------------------------------------------------------
 // Helper — create a minimal RuntimeContext mock
@@ -458,6 +467,7 @@ function createMockModules() {
       inference: vi.fn().mockResolvedValue({ type: 'text', content: 'Hello!' }),
       injectSystemMessage: vi.fn(),
       injectResearchModePrompt: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
       checkAndAutoCompress: vi.fn(),
       addAndPersistMessage: vi.fn(),
     } as any,
@@ -826,6 +836,35 @@ describe('ConversationRuntime', () => {
   // ==========================================================================
 
   describe('run', () => {
+    it('runs SessionStart hooks only for the first user turn in a chat session', async () => {
+      const triggerSessionStart = vi.fn().mockResolvedValue({});
+      ctx.enableHooks = true;
+      ctx.hookManager = {
+        initialize: vi.fn(),
+        triggerUserPromptSubmit: vi.fn().mockResolvedValue({ shouldProceed: true }),
+        triggerSessionStart,
+      } as any;
+
+      ctx.currentTurnId = 'stale-turn-id';
+      ctx.messages = [
+        { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
+      ] as any;
+      await runtime.initializeRun('test message');
+
+      expect(ctx.currentTurnId).toBe('');
+      expect(triggerSessionStart).toHaveBeenCalledTimes(1);
+
+      triggerSessionStart.mockClear();
+      ctx.messages = [
+        { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
+        { id: 'assistant-1', role: 'assistant', content: 'done', timestamp: 180 },
+        { id: 'user-2', role: 'user', content: 'second', timestamp: 220 },
+      ] as any;
+      await runtime.initializeRun('test message');
+
+      expect(triggerSessionStart).not.toHaveBeenCalled();
+    });
+
     it('injects activity context through legacy screen-memory tag for simple tasks', async () => {
       await runtime.initializeRun('hello');
 
@@ -840,6 +879,46 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>'
       );
+    });
+
+    it('promotes explicit skill invocation into required runtime context', async () => {
+      const markSemanticProgress = vi.fn();
+      ctx.antiPatternDetector = { ...ctx.antiPatternDetector, markSemanticProgress } as any;
+      vi.mocked(resolveSkillInvocation).mockResolvedValueOnce({
+        skill: {
+          name: 'lobster',
+          description: '龙虾 skill',
+          promptContent: '',
+          basePath: '/tmp/lobster',
+          allowedTools: [],
+          disableModelInvocation: true,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'user',
+        },
+        matchKind: 'slash',
+        matchedText: '/lobster',
+        args: '升级',
+        confidence: 1,
+        aliases: ['lobster', '龙虾'],
+        reason: 'explicit slash command',
+      });
+      vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
+        block: '<required-skill-invocation name="lobster">...</required-skill-invocation>',
+        contextModifier: { modelOverride: 'special-model' },
+      });
+
+      const result = await runtime.initializeRun('/lobster 升级');
+
+      expect(result?.isSimpleTask).toBe(false);
+      expect(ctx.activeSkillInvocation).toMatchObject({
+        skillName: 'lobster',
+        matchKind: 'slash',
+        matchedText: '/lobster',
+      });
+      expect(ctx.activeSkillContextBlock).toContain('required-skill-invocation');
+      expect(ctx.skillModelOverride).toBe('special-model');
+      expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
     });
 
     it('can inject desktop activity through the ActivityContext legacy formatter', async () => {

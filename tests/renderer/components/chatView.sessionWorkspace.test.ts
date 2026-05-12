@@ -183,6 +183,9 @@ describe('ChatView session shell', () => {
 
     expect(html).toContain('task-status-bar');
     expect(html).toContain('chat-input');
+    expect(html).toContain('flex-1 min-h-0 flex overflow-hidden relative');
+    expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
+    expect(html).toContain('flex-1 min-h-0 overflow-hidden');
     expect(html).toContain('新会话');
     expect(html).toContain('写一封邮件或安排日程');
     expect(html).toContain('做一份方案 / 文档 / PPT');

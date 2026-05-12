@@ -24,6 +24,7 @@ export interface TraceNode {
     duration?: number;
     outputPath?: string;
     metadata?: Record<string, unknown>;
+    liveOutput?: import('./tool').ToolLiveOutput;
     _streaming?: boolean;
     // ============================================================================
     // 语义元数据（产品视角升级 — P0 内核）

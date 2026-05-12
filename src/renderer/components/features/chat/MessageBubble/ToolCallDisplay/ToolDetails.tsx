@@ -24,6 +24,7 @@ import {
   formatBrowserComputerActionArguments,
   formatBrowserComputerActionResultDetails,
 } from '../../../../../utils/browserComputerActionPreview';
+import { LiveToolOutput } from './LiveToolOutput';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
@@ -137,6 +138,8 @@ export function ToolDetails({ toolCall, compact }: Props) {
           )}
         </div>
       )}
+
+      {!result && <LiveToolOutput toolCall={toolCall} />}
 
       {/* Result section */}
       {result && (

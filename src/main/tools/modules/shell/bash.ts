@@ -13,7 +13,7 @@
 //   * PTY 模式（usePty: createPtySession + optional waitForCompletion）
 //   * 后台任务（run_in_background: startBackgroundTask，返回 task_id）
 //   * Codex 沙箱路由（启用且非安全命令则委托）
-//   * 前台 exec：execAsync + getShellPath + sanitizedEnv
+//   * 前台 spawn：spawn + getShellPath + sanitizedEnv
 //   * 输出截断（MAX_OUTPUT_LENGTH truncateMiddle + guidance 文本）
 //   * stderr 合并 + dataFingerprintStore 指纹提取
 //   * cwd 前缀 + dynamicDescription metadata
@@ -21,8 +21,7 @@
 // - meta 字段（taskId / sessionId / background / pty / codexThreadId / description 等）放 meta
 // ============================================================================
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import type {
   ToolHandler,
   ToolModule,
@@ -36,17 +35,16 @@ import { BASH } from '../../../../shared/constants';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
-import { getShellPath } from '../../../services/infra/shellEnvironment';
+import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
 import { checkCommandPolicy } from './commandPolicy';
 
-const execAsync = promisify(exec);
-
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
+const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
 
 /**
  * 解包 self-referential 工具调用：
@@ -121,6 +119,202 @@ function truncateOutput(output: string): string {
   );
 }
 
+class BashForegroundExecutionError extends Error {
+  stdout: string;
+  stderr: string;
+  killed?: boolean;
+  signal?: NodeJS.Signals;
+  code?: number | string | null;
+
+  constructor(
+    message: string,
+    details: {
+      stdout?: string;
+      stderr?: string;
+      killed?: boolean;
+      signal?: NodeJS.Signals;
+      code?: number | string | null;
+      name?: string;
+    } = {},
+  ) {
+    super(message);
+    this.name = details.name || 'BashForegroundExecutionError';
+    this.stdout = details.stdout || '';
+    this.stderr = details.stderr || '';
+    this.killed = details.killed;
+    this.signal = details.signal;
+    this.code = details.code;
+  }
+}
+
+function emitToolOutputDelta(
+  ctx: ToolContext,
+  stream: 'stdout' | 'stderr',
+  content: string,
+  startedAt: number,
+): void {
+  if (!ctx.currentToolCallId || !content) return;
+
+  const truncated = content.length > MAX_LIVE_OUTPUT_DELTA_LENGTH;
+  const liveContent = truncated ? content.slice(-MAX_LIVE_OUTPUT_DELTA_LENGTH) : content;
+  ctx.emit({
+    type: 'tool_output_delta',
+    data: {
+      toolCallId: ctx.currentToolCallId,
+      toolName: schema.name,
+      stream,
+      content: liveContent,
+      elapsedMs: Date.now() - startedAt,
+      ...(truncated ? { truncated: true } : {}),
+    },
+  });
+}
+
+function runForegroundCommand(options: {
+  command: string;
+  cwd: string;
+  timeout: number;
+  env: NodeJS.ProcessEnv;
+  abortSignal: AbortSignal;
+  ctx: ToolContext;
+  startedAt: number;
+}): Promise<{ stdout: string; stderr: string }> {
+  const {
+    command,
+    cwd,
+    timeout,
+    env,
+    abortSignal,
+    ctx,
+    startedAt,
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    if (abortSignal.aborted) {
+      reject(new BashForegroundExecutionError('aborted', { code: 'ABORT_ERR', name: 'AbortError' }));
+      return;
+    }
+
+    const child = spawn(command, {
+      cwd,
+      env,
+      shell: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    let maxBufferExceeded = false;
+    let aborted = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutTimer);
+      abortSignal.removeEventListener('abort', abortHandler);
+    };
+
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const killChild = () => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Child may have already exited.
+      }
+    };
+
+    const abortHandler = () => {
+      aborted = true;
+      killChild();
+    };
+
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      killChild();
+    }, timeout);
+
+    abortSignal.addEventListener('abort', abortHandler, { once: true });
+
+    const appendOutput = (stream: 'stdout' | 'stderr', chunk: Buffer | string) => {
+      const text = chunk.toString();
+      if (stream === 'stdout') {
+        stdout += text;
+      } else {
+        stderr += text;
+      }
+      emitToolOutputDelta(ctx, stream, text, startedAt);
+
+      if (stdout.length + stderr.length > BASH.MAX_BUFFER && !maxBufferExceeded) {
+        maxBufferExceeded = true;
+        killChild();
+      }
+    };
+
+    child.stdout?.on('data', (chunk: Buffer | string) => appendOutput('stdout', chunk));
+    child.stderr?.on('data', (chunk: Buffer | string) => appendOutput('stderr', chunk));
+
+    child.on('error', (error) => {
+      rejectOnce(error);
+    });
+
+    child.on('close', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+
+      if (aborted) {
+        reject(new BashForegroundExecutionError('aborted', {
+          stdout,
+          stderr,
+          code: 'ABORT_ERR',
+          name: 'AbortError',
+        }));
+        return;
+      }
+
+      if (timedOut) {
+        reject(new BashForegroundExecutionError(`Command timed out after ${timeout / 1000} seconds`, {
+          stdout,
+          stderr,
+          killed: true,
+          signal: 'SIGTERM',
+          code,
+        }));
+        return;
+      }
+
+      if (maxBufferExceeded) {
+        reject(new BashForegroundExecutionError(`stdout maxBuffer length exceeded (${BASH.MAX_BUFFER})`, {
+          stdout,
+          stderr,
+          killed: true,
+          signal: signal || 'SIGTERM',
+          code,
+        }));
+        return;
+      }
+
+      if (code && code !== 0) {
+        reject(new BashForegroundExecutionError(`Command failed with exit code ${code}`, {
+          stdout,
+          stderr,
+          code,
+          ...(signal ? { signal } : {}),
+        }));
+        return;
+      }
+
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 export function rewriteImplicitBackgroundCommand(command: string): { command: string; rewritten: boolean } {
   const trimmed = command.trim();
   const match = trimmed.match(BACKGROUND_TRAILING_OPERATOR);
@@ -151,6 +345,13 @@ interface BashMeta extends Record<string, unknown> {
   duration?: number;
   description?: string;
   codexThreadId?: string;
+  shellPath?: {
+    source: string;
+    pathEntryCount: number;
+    degraded: boolean;
+    fallbackApplied: boolean;
+    fallbackEntries: string[];
+  };
 }
 
 class BashHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -344,19 +545,31 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     }
 
     // -------------------------------------------------------------------------
-    // 前台 exec
+    // 前台 spawn
     // -------------------------------------------------------------------------
+    const shellPathDiagnostics = getShellPathDiagnostics();
+    const shellPathMeta = {
+      source: shellPathDiagnostics.source,
+      pathEntryCount: shellPathDiagnostics.pathEntryCount,
+      degraded: shellPathDiagnostics.degraded,
+      fallbackApplied: shellPathDiagnostics.fallbackApplied,
+      fallbackEntries: shellPathDiagnostics.fallbackEntries,
+    };
+
     try {
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
-      const { stdout, stderr } = await execAsync(normalizedCommand, {
-        timeout,
+      const startedAt = Date.now();
+      const { stdout, stderr } = await runForegroundCommand({
+        command: normalizedCommand,
         cwd: workingDirectory,
-        maxBuffer: BASH.MAX_BUFFER,
-        signal: ctx.abortSignal,
+        timeout,
+        abortSignal: ctx.abortSignal,
+        ctx,
+        startedAt,
         env: createSanitizedEnv({
-          PATH: getShellPath(),
+          PATH: shellPathDiagnostics.path,
         }),
       });
 
@@ -390,6 +603,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
             background: false,
             pty: false,
           },
+          shellPath: shellPathMeta,
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'process-output',
@@ -418,7 +632,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
           ok: false,
           error: 'aborted',
           code: 'ABORTED',
-          meta: errorOutput ? { output: errorOutput } : undefined,
+          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -427,7 +641,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
           ok: false,
           error: `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`,
           code: 'TIMEOUT',
-          meta: errorOutput ? { output: errorOutput } : undefined,
+          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -435,7 +649,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         ok: false,
         error: errMsg || 'Command execution failed',
         code: 'FS_ERROR',
-        meta: errorOutput ? { output: errorOutput } : undefined,
+        meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     }
   }

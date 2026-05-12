@@ -17,6 +17,34 @@ const healthMonitorMock = {
   recordFailure: vi.fn(),
 };
 
+const ARTIFACT_STREAMING_TIMEOUT_OPTIONS = {
+  disableProviderTransientRetry: true,
+  requestTimeoutMs: 1_200_000,
+  firstByteTimeoutMs: 60_000,
+  inactivityTimeoutMs: 480_000,
+};
+
+const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS = {
+  disableProviderTransientRetry: true,
+  requestTimeoutMs: 480_000,
+  firstByteTimeoutMs: 60_000,
+  inactivityTimeoutMs: 240_000,
+};
+
+const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_OPTIONS = {
+  disableProviderTransientRetry: true,
+  requestTimeoutMs: 600_000,
+  firstByteTimeoutMs: 60_000,
+  inactivityTimeoutMs: 360_000,
+};
+
+const ARTIFACT_REPAIR_FULL_REWRITE_TIMEOUT_OPTIONS = {
+  disableProviderTransientRetry: true,
+  requestTimeoutMs: 900_000,
+  firstByteTimeoutMs: 60_000,
+  inactivityTimeoutMs: 480_000,
+};
+
 // --------------------------------------------------------------------------
 // Mocks
 // --------------------------------------------------------------------------
@@ -355,7 +383,7 @@ describe('ModelRouter', () => {
       );
     });
 
-    it('should prefer non-streaming for explicit file artifact generation turns', async () => {
+    it('should use streaming-first for explicit file artifact generation turns', async () => {
       const provider = {
         inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
       } as any;
@@ -387,11 +415,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
-          forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -432,17 +456,16 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
 
-    it('should prefer non-streaming for artifact follow-up after incomplete streamed tool args', async () => {
+    it('should retry artifact follow-up with non-streaming after incomplete streamed tool args', async () => {
       const provider = {
-        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('refusing to execute incomplete tool arguments'))
+          .mockResolvedValueOnce({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
       } as any;
       (router as any).providers.set('xiaomi', provider);
 
@@ -468,7 +491,9 @@ describe('ModelRouter', () => {
         options,
       );
 
-      expect(provider.inference).toHaveBeenCalledWith(
+      expect(provider.inference).toHaveBeenCalledTimes(2);
+      expect(provider.inference).toHaveBeenNthCalledWith(
+        1,
         expect.any(Array),
         [],
         config,
@@ -476,16 +501,25 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
+        },
+      );
+      expect(provider.inference).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        expect.any(AbortSignal),
+        {
+          snapshotIntervalMs: 1000,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
 
-    it('should prefer non-streaming for artifact follow-up when file-write-required marker is injected', async () => {
+    it('should use streaming-first for artifact follow-up when file-write-required marker is injected', async () => {
       const provider = {
         inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),
       } as any;
@@ -522,11 +556,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
-          forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -564,10 +594,7 @@ describe('ModelRouter', () => {
           snapshotIntervalMs: 1000,
           artifactRepairActive: true,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 90_000,
-          firstByteTimeoutMs: 15_000,
-          inactivityTimeoutMs: 45_000,
+          ...ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -609,10 +636,7 @@ describe('ModelRouter', () => {
           artifactRepairWritePriority: true,
           artifactRepairFullRewritePriority: true,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 240_000,
-          firstByteTimeoutMs: 30_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_REPAIR_FULL_REWRITE_TIMEOUT_OPTIONS,
         }),
       );
     });
@@ -649,10 +673,7 @@ describe('ModelRouter', () => {
           artifactRepairActive: true,
           artifactRepairWritePriority: true,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 180_000,
-          firstByteTimeoutMs: 30_000,
-          inactivityTimeoutMs: 90_000,
+          ...ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_OPTIONS,
         }),
       );
     });
@@ -692,10 +713,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 90_000,
-          firstByteTimeoutMs: 15_000,
-          inactivityTimeoutMs: 45_000,
+          ...ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -849,10 +867,7 @@ describe('ModelRouter', () => {
         {
           snapshotIntervalMs: 1000,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 90_000,
-          firstByteTimeoutMs: 15_000,
-          inactivityTimeoutMs: 45_000,
+          ...ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -889,10 +904,7 @@ describe('ModelRouter', () => {
         {
           snapshotIntervalMs: 1000,
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 90_000,
-          firstByteTimeoutMs: 15_000,
-          inactivityTimeoutMs: 45_000,
+          ...ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -931,11 +943,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           snapshotIntervalMs: 1000,
-          forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -1007,8 +1015,7 @@ describe('ModelRouter', () => {
         expect.any(Function),
         expect.any(AbortSignal),
         expect.objectContaining({
-          forceNonStreaming: true,
-          requestTimeoutMs: 600_000,
+          requestTimeoutMs: 1_200_000,
         }),
       );
       expect(zhipuProvider.inference).not.toHaveBeenCalled();
@@ -1091,10 +1098,7 @@ describe('ModelRouter', () => {
         onStream,
         expect.any(AbortSignal),
         {
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
       expect(provider.inference).toHaveBeenNthCalledWith(
@@ -1106,10 +1110,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
     });
@@ -1151,10 +1152,7 @@ describe('ModelRouter', () => {
         expect.any(AbortSignal),
         {
           forceNonStreaming: true,
-          disableProviderTransientRetry: true,
-          requestTimeoutMs: 600_000,
-          firstByteTimeoutMs: 20_000,
-          inactivityTimeoutMs: 120_000,
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
         },
       );
       expect(zhipuProvider.inference).not.toHaveBeenCalled();

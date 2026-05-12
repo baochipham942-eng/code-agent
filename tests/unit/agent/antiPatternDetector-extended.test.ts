@@ -86,6 +86,17 @@ describe('AntiPatternDetector - Extended', () => {
       expect(result).toBe('HARD_LIMIT');
     });
 
+    it('preflights the fifteenth read-only tool as HARD_LIMIT before execution', () => {
+      for (let i = 0; i < 14; i++) {
+        detector.trackToolExecution('read_file', true);
+      }
+
+      const result = detector.preflightReadOnlyToolExecution('Read');
+
+      expect(result).toBe('HARD_LIMIT');
+      expect(detector.getConsecutiveReadCount()).toBe(15);
+    });
+
     it('should not count failed write operations as writes', () => {
       detector.trackToolExecution('write_file', false);
       expect(detector.hasWritten()).toBe(false);
@@ -130,7 +141,9 @@ describe('AntiPatternDetector - Extended', () => {
 
     it('detects read-only shell commands separately from semantic shell actions', () => {
       expect(detector.isReadOnlyShellCommand('cat ~/.code-agent/logs/app.log')).toBe(true);
+      expect(detector.isReadOnlyShellCommand('rg "forceFinalResponseReason" src/main')).toBe(true);
       expect(detector.isReadOnlyShellCommand('ssh lobster "node --version"')).toBe(false);
+      expect(detector.isReadOnlyShellCommand('sed -i "" s/foo/bar/g src/file.ts')).toBe(false);
     });
   });
 
@@ -337,6 +350,31 @@ describe('AntiPatternDetector - Extended', () => {
       const result = detector.detectReadOnlyStopPattern(['read_file']);
       expect(result).not.toBeNull();
       expect(result).not.toContain('priority="critical"');
+    });
+
+    it('uses analysis nudge without mutation demand for diagnosis tasks', () => {
+      const result = detector.detectReadOnlyStopPattern(
+        ['read_file', 'glob', 'grep'],
+        { taskIntent: 'analysis' },
+      );
+
+      expect(result).toContain('analysis-nudge');
+      expect(result).toContain('收束证据并输出分析');
+      expect(result).toContain('只读一次最关键范围');
+      expect(result).not.toContain('立即执行修改');
+      expect(result).not.toContain('edit_file');
+      expect(result).not.toContain('write_file');
+    });
+
+    it('keeps mutation nudge for implementation tasks', () => {
+      const result = detector.detectReadOnlyStopPattern(
+        ['read_file', 'glob', 'grep'],
+        { taskIntent: 'mutation', mutationToolPrompt: 'Edit 或 Append' },
+      );
+
+      expect(result).toContain('priority="critical"');
+      expect(result).toContain('立即执行修改');
+      expect(result).toContain('Edit 或 Append');
     });
   });
 

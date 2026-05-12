@@ -13,10 +13,15 @@ import { logCollector } from '../../mcp/logCollector';
 const logger = createLogger('AntiPatternDetector');
 
 const SHELL_FILE_READ_PATTERN =
-  /\b(cat|less|more|head|tail|sed|awk|nl|bat)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i;
+  /\b(cat|less|more|head|tail|sed|awk|nl|bat|grep|rg|find|ls|wc)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i;
+const SHELL_MUTATION_PATTERN =
+  /\b(rm|mv|cp|mkdir|touch|chmod|chown|tee)\b|\bsed\s+-i\b|\bfind\b[\s\S]*\s-delete\b|(?:^|[;&|]\s*)echo\b[\s\S]*(?:>|>>)|\bpython3?\b[\s\S]*\b(write_text|write_bytes|write\(|append\()/i;
+
+export type ReadOnlyTaskIntent = 'mutation' | 'analysis';
 
 interface ReadOnlyStopNudgeOptions {
   mutationToolPrompt?: string;
+  taskIntent?: ReadOnlyTaskIntent;
 }
 
 // ----------------------------------------------------------------------------
@@ -139,7 +144,23 @@ export class AntiPatternDetector {
   }
 
   isReadOnlyShellCommand(command: string): boolean {
-    return SHELL_FILE_READ_PATTERN.test(command);
+    return SHELL_FILE_READ_PATTERN.test(command) && !SHELL_MUTATION_PATTERN.test(command);
+  }
+
+  preflightReadOnlyToolExecution(toolName: string): string | null {
+    if (!READ_ONLY_TOOLS.includes(toolName)) {
+      return null;
+    }
+
+    return this.reserveReadOperation(toolName);
+  }
+
+  preflightReadOnlyShellCommand(command: string): string | null {
+    if (!this.isReadOnlyShellCommand(command)) {
+      return null;
+    }
+
+    return this.reserveReadOperation('read_file');
   }
 
   markSemanticProgress(reason: string): void {
@@ -168,24 +189,34 @@ export class AntiPatternDetector {
     }
 
     if (READ_ONLY_TOOLS.includes(toolName)) {
-      this.state.consecutiveReadOps++;
+      return this.reserveReadOperation(toolName);
+    }
 
-      // Hard limit check
-      if (this.state.consecutiveReadOps >= this.config.maxConsecutiveReadsHardLimit) {
-        logger.error(`HARD LIMIT: ${this.state.consecutiveReadOps} consecutive read ops! Force stopping.`);
-        logCollector.agent('ERROR', `Hard limit reached: ${this.state.consecutiveReadOps} consecutive reads, forcing stop`);
-        return 'HARD_LIMIT';
-      }
+    return null;
+  }
 
-      // Warning threshold
-      const warningThreshold = this.state.hasWrittenFile
-        ? this.config.maxConsecutiveReadsAfterWrite
-        : this.config.maxConsecutiveReadsBeforeWrite;
+  private reserveReadOperation(toolName: string): string | null {
+    this.state.consecutiveReadOps++;
 
-      if (this.state.consecutiveReadOps >= warningThreshold) {
-        logger.debug(`WARNING: ${this.state.consecutiveReadOps} consecutive read ops! hasWritten=${this.state.hasWrittenFile}`);
-        return this.generateReadLoopWarning();
-      }
+    // Hard limit check
+    if (this.state.consecutiveReadOps >= this.config.maxConsecutiveReadsHardLimit) {
+      logger.error(`HARD LIMIT: ${this.state.consecutiveReadOps} consecutive read ops! Force stopping.`, {
+        toolName,
+      });
+      logCollector.agent('ERROR', `Hard limit reached: ${this.state.consecutiveReadOps} consecutive reads, forcing stop`);
+      return 'HARD_LIMIT';
+    }
+
+    // Warning threshold
+    const warningThreshold = this.state.hasWrittenFile
+      ? this.config.maxConsecutiveReadsAfterWrite
+      : this.config.maxConsecutiveReadsBeforeWrite;
+
+    if (this.state.consecutiveReadOps >= warningThreshold) {
+      logger.debug(`WARNING: ${this.state.consecutiveReadOps} consecutive read ops! hasWritten=${this.state.hasWrittenFile}`, {
+        toolName,
+      });
+      return this.generateReadLoopWarning();
     }
 
     return null;
@@ -876,7 +907,9 @@ export class AntiPatternDetector {
     // Pattern: has reads but no writes
     if (hasReadTools && !hasWriteTools) {
       const readCount = toolsUsedInTurn.filter(tool => READ_ONLY_TOOLS.includes(tool)).length;
-      logger.debug(`[ReadOnlyStop] Detected read-only pattern: ${readCount} reads, no writes`);
+      logger.debug(`[ReadOnlyStop] Detected read-only pattern: ${readCount} reads, no writes`, {
+        taskIntent: options.taskIntent || 'mutation',
+      });
 
       return this.generateReadOnlyStopNudge(readCount, options);
     }
@@ -892,6 +925,10 @@ export class AntiPatternDetector {
     readCount: number,
     options: ReadOnlyStopNudgeOptions = {},
   ): string {
+    if (options.taskIntent === 'analysis') {
+      return this.generateAnalysisReadOnlyStopNudge(readCount);
+    }
+
     const mutationTools = options.mutationToolPrompt || 'edit_file 或 write_file';
     // More urgent message for higher read counts
     if (readCount >= 3) {
@@ -913,6 +950,24 @@ export class AntiPatternDetector {
       `- 现在立即执行修改，不要继续读取\n` +
       `- 任务完成 = 产出文件变更，不是理解代码\n` +
       `</execution-nudge>`
+    );
+  }
+
+  private generateAnalysisReadOnlyStopNudge(readCount: number): string {
+    if (readCount >= 3) {
+      return (
+        `<analysis-nudge priority="medium">\n` +
+        `你已读取 ${readCount} 处证据，当前任务看起来是分析/诊断而非改文件。\n\n` +
+        `请收束证据并输出分析；如果还缺关键事实，只读一次最关键范围，不要继续横向扩读。\n` +
+        `</analysis-nudge>`
+      );
+    }
+
+    return (
+      `<analysis-nudge>\n` +
+      `检测到只读分析路径：你已读取 ${readCount} 处证据。\n\n` +
+      `请基于已有证据继续收束判断；如果确实缺少关键范围，只读一次最小范围。\n` +
+      `</analysis-nudge>`
     );
   }
 }

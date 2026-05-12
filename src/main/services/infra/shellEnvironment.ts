@@ -12,13 +12,76 @@ const logger = createLogger('ShellEnvironment');
 let shellEnv: Record<string, string> | null = null;
 let shellPath: string | null = null;
 
+const SYSTEM_BASE_PATHS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin']);
+const FALLBACK_CLI_PATHS = [
+  '/opt/homebrew/bin',
+  '/opt/homebrew/sbin',
+  '/usr/local/bin',
+  '/usr/local/sbin',
+  '/Library/Apple/usr/bin',
+];
+
+export interface ShellPathDiagnostics {
+  source: 'captured' | 'process' | 'empty';
+  pathEntryCount: number;
+  degraded: boolean;
+  fallbackApplied: boolean;
+  fallbackEntries: string[];
+}
+
+interface ShellPathResolution extends ShellPathDiagnostics {
+  path: string;
+}
+
+function splitPath(value: string | undefined): string[] {
+  return (value || '').split(':').filter(Boolean);
+}
+
+function mergePathEntries(...entryGroups: string[][]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entries of entryGroups) {
+    for (const entry of entries) {
+      if (!entry || seen.has(entry)) continue;
+      seen.add(entry);
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+function isDegradedPath(entries: string[]): boolean {
+  if (entries.length === 0) return true;
+  return entries.every((entry) => SYSTEM_BASE_PATHS.has(entry));
+}
+
+function resolveShellPath(basePath: string | undefined, source: ShellPathDiagnostics['source']): ShellPathResolution {
+  const baseEntries = splitPath(basePath);
+  const degraded = isDegradedPath(baseEntries);
+  const fallbackEntries = degraded
+    ? FALLBACK_CLI_PATHS.filter((entry) => !baseEntries.includes(entry))
+    : [];
+  const mergedEntries = mergePathEntries(baseEntries, fallbackEntries);
+
+  return {
+    path: mergedEntries.join(':'),
+    source,
+    pathEntryCount: mergedEntries.length,
+    degraded,
+    fallbackApplied: fallbackEntries.length > 0,
+    fallbackEntries,
+  };
+}
+
 /**
  * Load the user's shell environment
  * Only runs on macOS/Linux in desktop mode (not CLI mode)
  */
 export function loadShellEnvironment(): void {
-  // Skip in CLI mode — CLI inherits the shell environment naturally
-  if (process.env.CODE_AGENT_CLI_MODE) {
+  // Skip in pure CLI mode — CLI inherits the shell environment naturally.
+  // Web mode sets CODE_AGENT_CLI_MODE for native-module safety, but still runs
+  // from the desktop app and needs login shell PATH capture.
+  if (process.env.CODE_AGENT_CLI_MODE && process.env.CODE_AGENT_WEB_MODE !== 'true') {
     logger.debug('CLI mode, skipping shell environment capture');
     return;
   }
@@ -52,15 +115,7 @@ export function loadShellEnvironment(): void {
     // Merge and deduplicate PATH
     const shellPathValue = shellEnv.PATH || '';
     const processPath = process.env.PATH || '';
-    const allPaths = `${shellPathValue}:${processPath}`.split(':');
-    const seen = new Set<string>();
-    const uniquePaths: string[] = [];
-    for (const p of allPaths) {
-      if (p && !seen.has(p)) {
-        seen.add(p);
-        uniquePaths.push(p);
-      }
-    }
+    const uniquePaths = mergePathEntries(splitPath(shellPathValue), splitPath(processPath));
     shellPath = uniquePaths.join(':');
 
     logger.info('Shell environment captured', {
@@ -77,8 +132,18 @@ export function loadShellEnvironment(): void {
 
 /**
  * Get the merged shell PATH (shell env + process.env, deduplicated)
- * Falls back to process.env.PATH if shell env not captured
+ * Falls back to process.env.PATH plus common macOS CLI directories if PATH
+ * degraded to only system base paths.
  */
 export function getShellPath(): string {
-  return shellPath || process.env.PATH || '';
+  return getShellPathDiagnostics().path;
+}
+
+/**
+ * Resolve shell PATH with lightweight diagnostics for tool metadata.
+ * Does not expose environment variables beyond fallback directory names.
+ */
+export function getShellPathDiagnostics(): ShellPathResolution {
+  const source: ShellPathDiagnostics['source'] = shellPath ? 'captured' : process.env.PATH ? 'process' : 'empty';
+  return resolveShellPath(shellPath || process.env.PATH || '', source);
 }

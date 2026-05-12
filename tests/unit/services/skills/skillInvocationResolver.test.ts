@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import {
+  buildSkillInvocationContext,
   getSkillInvocationAliases,
   resolveSkillInvocationFromSkills,
 } from '../../../../src/main/services/skills/skillInvocationResolver';
@@ -90,5 +91,51 @@ describe('skillInvocationResolver', () => {
 
     expect(resolveSkillInvocationFromSkills('/hidden-tool run', [hidden])).toBeNull();
     expect(resolveSkillInvocationFromSkills('隐藏工具 run', [hidden])).toBeNull();
+  });
+
+  it('renders inline skill locations without a fake SKILL.md path', async () => {
+    const inline = skill({
+      name: 'inline-tool',
+      description: 'Inline helper.',
+      promptContent: 'Inline instructions',
+      basePath: '',
+      source: 'builtin',
+      loaded: true,
+    });
+
+    const context = await buildSkillInvocationContext({
+      skill: inline,
+      matchedText: '/inline-tool',
+      matchKind: 'slash',
+      args: '',
+      confidence: 1,
+    }, '/tmp/work');
+
+    expect(context.block).toContain('Skill source: builtin inline skill');
+    expect(context.block).not.toContain('/SKILL.md');
+  });
+
+  it('does not pre-approve tools from cloud skills', async () => {
+    const cloud = skill({
+      name: 'cloud-tool',
+      description: 'Cloud helper.',
+      promptContent: 'Cloud instructions',
+      basePath: '',
+      source: 'cloud',
+      loaded: true,
+      allowedTools: ['Bash(git:*)'],
+    });
+
+    const context = await buildSkillInvocationContext({
+      skill: cloud,
+      matchedText: '/cloud-tool',
+      matchKind: 'slash',
+      args: '',
+      confidence: 1,
+    }, '/tmp/work');
+
+    expect(context.contextModifier.preApprovedTools).toBeUndefined();
+    expect(context.block).toContain('source="cloud"');
+    expect(context.block).toContain('Skill source: cloud inline skill');
   });
 });

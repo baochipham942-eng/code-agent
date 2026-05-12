@@ -89,6 +89,25 @@ function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {
   return Boolean(ctx.runtime.artifactRepairGuard?.targetFile);
 }
 
+function emitAssistantMessageDelta(
+  ctx: ContextAssemblyCtx,
+  path: 'content' | 'reasoning',
+  text: string | undefined,
+): void {
+  if (!text) return;
+  ctx.runtime.onEvent({
+    type: 'message_delta',
+    data: {
+      role: 'assistant',
+      path,
+      op: 'append',
+      text,
+      turnId: ctx.runtime.currentTurnId,
+      messageId: ctx.runtime.currentTurnId,
+    },
+  });
+}
+
 function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
   return isArtifactRepairWritePriorityForGuard(ctx.runtime.artifactRepairGuard);
 }
@@ -494,13 +513,13 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
         ctx.runtime.lastStreamedContent += chunk;
-        ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: ctx.runtime.currentTurnId } });
+        emitAssistantMessageDelta(ctx, 'content', chunk);
       } else if (chunk.type === 'text') {
         ctx.runtime.lastStreamedContent += chunk.content;
-        ctx.runtime.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
+        emitAssistantMessageDelta(ctx, 'content', chunk.content);
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
-        ctx.runtime.onEvent({ type: 'stream_reasoning', data: { content: chunk.content, turnId: ctx.runtime.currentTurnId } });
+        emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
       } else if (chunk.type === 'tool_call_start') {
         ctx.runtime.onEvent({
           type: 'stream_tool_call_start',

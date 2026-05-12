@@ -8,6 +8,7 @@ import type { ModelProvider } from '../../shared/contract/model';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
+import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
@@ -265,6 +266,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn(`[AgentRouter] Failed to write SSE event ${event} for ${sessionId}:`, error);
       }
     };
+    const agentSSEBatcher = createAgentRunSSEBatcher(emitSSE, sessionId);
     const cancelForDisconnect = () => {
       if (runSettled || clientDisconnected) return;
       clientDisconnected = true;
@@ -480,10 +482,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         // 附带 sessionId 确保前端会话隔离。
         // event.data 可能是对象或数组（如 todo_update 的 TodoItem[]），
         // 数组不能 spread 进对象，需要区分处理。
-        const eventData = Array.isArray(event.data)
-          ? { items: event.data, sessionId }
-          : event.data ? { ...event.data, sessionId } : { sessionId };
-        emitSSE(event.type, eventData);
+        agentSSEBatcher.emit(event);
         if (event.type === 'agent_cancelled') {
           runCancelled = true;
         }
@@ -495,7 +494,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           }
         }
 
-        // 收集 stream_chunk 中的文本
+        // 收集 message_delta / stream_chunk 中的文本
+        if (event.type === 'message_delta' && event.data?.text) {
+          if (event.data.path === 'content') {
+            if (lastPartType !== 'text') {
+              contentParts.push({ type: 'text', text: '' });
+              lastPartType = 'text';
+            }
+            const lastPart = contentParts[contentParts.length - 1];
+            if (lastPart?.type === 'text') lastPart.text += event.data.text;
+            assistantText += event.data.text;
+          } else if (event.data.path === 'reasoning') {
+            assistantThinking += event.data.text;
+          }
+        }
         if (event.type === 'stream_chunk' && event.data?.content) {
           if (lastPartType !== 'text') {
             contentParts.push({ type: 'text', text: '' });
@@ -811,18 +823,21 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // session:updated 和 session:list-updated 已在 agentLoop.run() 之前广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      emitSSE('agent_complete', { sessionId });
+      agentSSEBatcher.emit({ type: 'agent_complete', data: null });
     } catch (error) {
       if (!clientDisconnected) {
-        emitSSE('error', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          sessionId,
+        agentSSEBatcher.emit({
+          type: 'error',
+          data: {
+            message: error instanceof Error ? error.message : 'Unknown error',
+          },
         });
       }
     } finally {
       runSettled = true;
       res.off('close', cancelForDisconnect);
       activeAgentLoops.delete(sessionId);
+      agentSSEBatcher.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
         const { getTelemetryCollector } = await import('../../main/telemetry');

@@ -107,7 +107,7 @@ describe('SessionListView review queue', () => {
 
     expect(html).toContain('Review Queue');
     expect(html).toContain('搜索会话 / Review / Replay');
-    expect(html).toContain('当前支持手动加入、Replay Failure Follow-up，也能把评论带回下一轮 prompt。');
+    expect(html).toContain('当前支持手动加入、Replay Failure Follow-up 和 Delivery Review。');
     expect(html).toContain('Queued Session');
     expect(html).toContain('Replay');
     expect(html).toContain('带评论继续');

@@ -19,6 +19,7 @@ import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPre
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
+import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 
@@ -28,11 +29,19 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
 }
 
-export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments, isStreaming, onRewindUserPrompt, rewindDisabled }) => {
+export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
+  node,
+  attachments,
+  isStreaming,
+  onStreamingDisplayUpdate,
+  onRewindUserPrompt,
+  rewindDisabled,
+}) => {
   let content: React.ReactNode = null;
 
   switch (node.type) {
@@ -49,7 +58,13 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, atta
       );
       break;
     case 'assistant_text':
-      content = <AssistantTextNode node={node} isStreaming={isStreaming} />;
+      content = (
+        <AssistantTextNode
+          node={node}
+          isStreaming={isStreaming}
+          onStreamingDisplayUpdate={onStreamingDisplayUpdate}
+        />
+      );
       break;
     case 'tool_call':
       content = <ToolCallNode node={node} />;
@@ -215,7 +230,11 @@ function stripMarkdown(md: string): string {
 }
 
 // ---- Assistant Text Node ----
-const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = ({ node, isStreaming: turnStreaming }) => {
+const AssistantTextNode: React.FC<{
+  node: TraceNode;
+  isStreaming?: boolean;
+  onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
+}> = ({ node, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
@@ -223,12 +242,21 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
   const [hovered, setHovered] = useState(false);
 
   const reasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
+  const { displayContent, isAnimating } = useSmoothStreamingText({
+    content: node.content || '',
+    isStreaming: Boolean(turnStreaming),
+  });
 
   useEffect(() => {
     if (reasoningRef.current) {
       setReasoningHeight(reasoningRef.current.scrollHeight);
     }
   }, [showReasoning, reasoningContent]);
+
+  useEffect(() => {
+    if (!turnStreaming && !isAnimating) return;
+    onStreamingDisplayUpdate?.(node.id, displayContent.length, isAnimating);
+  }, [displayContent.length, isAnimating, node.id, onStreamingDisplayUpdate, turnStreaming]);
 
   const handleCopy = useCallback(async (mode: 'markdown' | 'plain') => {
     if (!node.content) return;
@@ -297,8 +325,12 @@ const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = 
       {/* Text content */}
       {node.content && (
         <div className="text-zinc-200 leading-relaxed select-text">
-          <MessageContent content={node.content} isUser={false} />
-          {turnStreaming && (
+          <MessageContent
+            content={displayContent}
+            isUser={false}
+            isStreaming={Boolean(turnStreaming || isAnimating)}
+          />
+          {(turnStreaming || isAnimating) && (
             <span className="sr-only">正在生成</span>
           )}
         </div>
@@ -331,6 +363,7 @@ const ToolCallNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       outputPath: node.toolCall.outputPath,
       metadata: node.toolCall.metadata,
     } : undefined,
+    liveOutput: node.toolCall.liveOutput,
   };
 
   return (

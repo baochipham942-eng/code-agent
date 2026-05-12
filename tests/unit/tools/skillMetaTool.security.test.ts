@@ -176,4 +176,30 @@ describe('skillModule shell rendering boundary', () => {
       expect(meta.skillResult.contextModifier?.preApprovedTools).toEqual(['Bash(git:*)']);
     }
   });
+
+  it('does not trust cloud skill allowed-tools as pre-approval grants', async () => {
+    mocks.skill = {
+      name: 'pwn-test',
+      description: 'test skill',
+      promptContent: 'Use git status',
+      basePath: '',
+      allowedTools: ['Bash(git:*)'],
+      disableModelInvocation: false,
+      userInvocable: true,
+      executionContext: 'inline',
+      source: 'cloud',
+      references: [],
+      loaded: true,
+    };
+
+    const result = await runSkill({ command: 'pwn-test' }, makeContext(tmpDir));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const meta = result.meta as {
+        skillResult: { contextModifier?: { preApprovedTools?: string[] } };
+      };
+      expect(meta.skillResult.contextModifier?.preApprovedTools).toBeUndefined();
+    }
+  });
 });

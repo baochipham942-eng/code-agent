@@ -1,4 +1,4 @@
-// useAgentConversationStreamEffects - turn_start, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
+// useAgentConversationStreamEffects - turn_start, message_delta, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
@@ -76,12 +76,30 @@ export interface ConversationStreamState {
 
 interface ConversationStreamEventActions {
   addMessage: (message: Message) => void;
+  appendStreamingMessageDelta?: (messageId: string, delta: { content?: string; reasoning?: string }) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setMessages: (messages: Message[]) => void;
   getMessages: () => Message[];
   queueUpdate: (update: Parameters<AgentEffectsProps['queueUpdate']>[0]) => void;
   now?: () => number;
   generateId?: () => string;
+}
+
+function appendAssistantStreamDelta(
+  actions: ConversationStreamEventActions,
+  messageId: string,
+  delta: { content?: string; reasoning?: string },
+): void {
+  if (actions.appendStreamingMessageDelta) {
+    actions.appendStreamingMessageDelta(messageId, delta);
+    return;
+  }
+
+  actions.queueUpdate({
+    type: 'append',
+    messageId,
+    ...delta,
+  });
 }
 
 export function applyConversationStreamEvent(
@@ -133,9 +151,7 @@ export function applyConversationStreamEvent(
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          actions.queueUpdate({
-            type: 'append',
-            messageId: targetMessage.id,
+          appendAssistantStreamDelta(actions, targetMessage.id, {
             content: event.data.content,
           });
         } else {
@@ -156,12 +172,33 @@ export function applyConversationStreamEvent(
               state.currentTurnMessageId = newMessage.id;
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
-              actions.queueUpdate({
-                type: 'append',
-                messageId: lastMessage.id,
+              appendAssistantStreamDelta(actions, lastMessage.id, {
                 content: event.data.content,
               });
             }
+          }
+        }
+      }
+      break;
+
+    case 'message_delta':
+      if (event.data?.text && event.data.role === 'assistant') {
+        const targetMessageId = event.data.messageId || event.data.turnId || state.currentTurnMessageId;
+        const freshMsgs = getFreshMessages();
+        const targetMessage = targetMessageId
+          ? freshMsgs.find(m => m.id === targetMessageId)
+          : freshMsgs[freshMsgs.length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          const field = event.data.path === 'reasoning' ? 'reasoning' : 'content';
+          if (event.data.op === 'replace') {
+            actions.updateMessage(targetMessage.id, field === 'reasoning'
+              ? { reasoning: event.data.text }
+              : { content: event.data.text });
+          } else {
+            appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
+              ? { reasoning: event.data.text }
+              : { content: event.data.text });
           }
         }
       }
@@ -229,9 +266,7 @@ export function applyConversationStreamEvent(
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          actions.queueUpdate({
-            type: 'append',
-            messageId: targetMessage.id,
+          appendAssistantStreamDelta(actions, targetMessage.id, {
             reasoning: event.data.content,
           });
         }
@@ -242,7 +277,9 @@ export function applyConversationStreamEvent(
 
 export const useConversationStreamEffects = ({
   addMessage,
+  appendStreamingMessageDelta,
   currentTurnMessageIdRef,
+  flushStreamingMessages,
   flushRef,
   lastEventAtRef,
   queueUpdate,
@@ -263,7 +300,7 @@ export const useConversationStreamEffects = ({
       const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
       const getFreshMessages = () => useSessionStore.getState().messages;
       const logHandledEvent = () => {
-        const silentEvents = ['stream_chunk', 'stream_reasoning'];
+        const silentEvents = ['message_delta', 'stream_chunk', 'stream_reasoning'];
         if (!silentEvents.includes(event.type)) {
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
@@ -274,6 +311,8 @@ export const useConversationStreamEffects = ({
         case 'agent_cancelled':
         case 'error':
         case 'stream_end':
+          flushRef.current();
+          flushStreamingMessages();
           return;
 
         case 'turn_start':
@@ -282,6 +321,8 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
+          flushRef.current();
+          flushStreamingMessages();
           applyConversationStreamEvent(
             event,
             {
@@ -295,6 +336,7 @@ export const useConversationStreamEffects = ({
             },
             {
               addMessage,
+              appendStreamingMessageDelta,
               updateMessage,
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
@@ -305,6 +347,7 @@ export const useConversationStreamEffects = ({
           break;
 
         case 'stream_chunk':
+        case 'message_delta':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {
@@ -323,6 +366,7 @@ export const useConversationStreamEffects = ({
             },
             {
               addMessage,
+              appendStreamingMessageDelta,
               updateMessage,
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
@@ -338,6 +382,7 @@ export const useConversationStreamEffects = ({
             break;
           }
           flushRef.current();
+          flushStreamingMessages();
           applyConversationStreamEvent(
             event,
             {
@@ -351,6 +396,7 @@ export const useConversationStreamEffects = ({
             },
             {
               addMessage,
+              appendStreamingMessageDelta,
               updateMessage,
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
@@ -366,6 +412,7 @@ export const useConversationStreamEffects = ({
             break;
           }
           flushRef.current();
+          flushStreamingMessages();
           logger.debug('turn_end', { turnId: event.data?.turnId });
           break;
 
@@ -416,6 +463,7 @@ export const useConversationStreamEffects = ({
             },
             {
               addMessage,
+              appendStreamingMessageDelta,
               updateMessage,
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
@@ -431,11 +479,18 @@ export const useConversationStreamEffects = ({
     };
   }, [
     updateMessage,
+    appendStreamingMessageDelta,
     setTodos,
     setIsProcessing,
     setPendingPermissionRequest,
     enqueuePermissionRequest,
     setSessionTaskProgress,
     setSessionTaskComplete,
+    flushRef,
+    flushStreamingMessages,
+    queueUpdate,
+    addMessage,
+    currentTurnMessageIdRef,
+    lastEventAtRef,
   ]);
 };

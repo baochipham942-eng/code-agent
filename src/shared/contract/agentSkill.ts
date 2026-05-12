@@ -82,7 +82,7 @@ export interface ParsedSkill {
   loaded?: boolean;
 }
 
-export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'library';
+export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'cloud' | 'library';
 
 /**
  * Skill 注入消息类型

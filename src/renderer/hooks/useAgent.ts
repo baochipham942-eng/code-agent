@@ -22,17 +22,37 @@
 //
 // ============================================================================
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
 import { useAgentIPC } from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
+import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
+import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 
 export { resolveDirectRouting } from './agent/useAgentIPC';
+
+const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 500;
+
+function buildStreamingDeltaChanges(
+  message: Message,
+  entry: StreamingMessageDelta,
+): Partial<Message> | null {
+  const changes: Partial<Message> = {};
+  if (entry.contentDelta) {
+    changes.content = (message.content || '') + entry.contentDelta;
+  }
+  if (entry.reasoningDelta) {
+    changes.reasoning = (message.reasoning || '') + entry.reasoningDelta;
+  }
+  return Object.keys(changes).length > 0 ? changes : null;
+}
 
 export const useAgent = () => {
   const {
@@ -71,9 +91,94 @@ export const useAgent = () => {
     setIsInterrupting,
   } = useAgentState();
 
+  const streamingFlushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const clearStreamingFlushTimer = useCallback((messageId: string) => {
+    const timer = streamingFlushTimersRef.current.get(messageId);
+    if (timer) {
+      clearTimeout(timer);
+      streamingFlushTimersRef.current.delete(messageId);
+    }
+  }, []);
+
+  const flushStreamingMessage = useCallback((messageId: string) => {
+    clearStreamingFlushTimer(messageId);
+    const entry = useStreamingMessageAccumulatorStore.getState().entries[messageId];
+    if (!entry) return;
+
+    const targetMessage = useSessionStore.getState().messages.find(m => m.id === messageId);
+    if (targetMessage?.role !== 'assistant') {
+      useStreamingMessageAccumulatorStore.getState().clear(messageId);
+      return;
+    }
+
+    const changes = buildStreamingDeltaChanges(targetMessage, entry);
+    recordStreamingPerformanceCounter('stream.accumulator.flush');
+    recordStreamingPerformanceCounter(
+      'stream.accumulator.flush_chars',
+      entry.contentDelta.length + entry.reasoningDelta.length,
+    );
+    unstable_batchedUpdates(() => {
+      useStreamingMessageAccumulatorStore.getState().clear(messageId);
+      if (changes) {
+        updateMessage(messageId, changes);
+      }
+    });
+  }, [clearStreamingFlushTimer, updateMessage]);
+
+  const flushStreamingMessages = useCallback(() => {
+    for (const timer of streamingFlushTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    streamingFlushTimersRef.current.clear();
+
+    const entries = useStreamingMessageAccumulatorStore.getState().entries;
+    if (Object.keys(entries).length === 0) return;
+
+    const updates: Array<{ messageId: string; changes: Partial<Message> }> = [];
+    let flushChars = 0;
+    for (const [messageId, entry] of Object.entries(entries)) {
+      const targetMessage = useSessionStore.getState().messages.find(m => m.id === messageId);
+      if (targetMessage?.role !== 'assistant') continue;
+
+      const changes = buildStreamingDeltaChanges(targetMessage, entry);
+      if (changes) {
+        flushChars += entry.contentDelta.length + entry.reasoningDelta.length;
+        updates.push({ messageId, changes });
+      }
+    }
+    recordStreamingPerformanceCounter('stream.accumulator.flush', updates.length);
+    recordStreamingPerformanceCounter('stream.accumulator.flush_chars', flushChars);
+
+    unstable_batchedUpdates(() => {
+      useStreamingMessageAccumulatorStore.getState().consumeAll();
+      for (const update of updates) {
+        updateMessage(update.messageId, update.changes);
+      }
+    });
+  }, [updateMessage]);
+
+  const appendStreamingMessageDelta = useCallback((messageId: string, delta: { content?: string; reasoning?: string }) => {
+    useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, delta);
+    if (streamingFlushTimersRef.current.has(messageId)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      flushStreamingMessage(messageId);
+    }, STREAMING_MESSAGE_FLUSH_INTERVAL_MS);
+    streamingFlushTimersRef.current.set(messageId, timer);
+  }, [flushStreamingMessage]);
+
+  useEffect(() => {
+    return () => {
+      flushStreamingMessages();
+    };
+  }, [flushStreamingMessages]);
+
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
-    const currentMessages = useSessionStore.getState().messages;
     for (const update of updates) {
+      const currentMessages = useSessionStore.getState().messages;
       if (update.type === 'append' && (update.content || update.reasoning)) {
         const targetMessage = currentMessages.find(m => m.id === update.messageId);
         if (targetMessage?.role === 'assistant') {
@@ -85,6 +190,13 @@ export const useAgent = () => {
             changes.reasoning = (targetMessage.reasoning || '') + update.reasoning;
           }
           updateMessage(update.messageId, changes);
+        }
+      } else if (update.type === 'tool_call_delta') {
+        const targetMessage = currentMessages.find(m => m.id === update.messageId);
+        if (targetMessage?.role === 'assistant' && targetMessage.toolCalls) {
+          updateMessage(update.messageId, {
+            toolCalls: applyToolCallArgumentDelta(targetMessage.toolCalls, update),
+          });
         }
       }
     }
@@ -108,7 +220,9 @@ export const useAgent = () => {
     addMessage,
     currentSessionId,
     currentTurnMessageIdRef,
+    appendStreamingMessageDelta,
     enqueuePermissionRequest,
+    flushStreamingMessages,
     flushRef,
     lastEventAtRef,
     pendingPermissionRequest,

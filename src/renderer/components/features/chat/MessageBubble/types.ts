@@ -23,6 +23,7 @@ export interface AssistantMessageProps {
 export interface MessageContentProps {
   content: string;
   isUser?: boolean;
+  isStreaming?: boolean;
 }
 
 export interface ToolCallDisplayProps {

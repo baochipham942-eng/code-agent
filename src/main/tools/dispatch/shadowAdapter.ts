@@ -77,7 +77,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
   const legacyEmitEvent = legacy?.emitEvent as ((event: string, data: unknown) => void) | undefined;
   const wrapEmit = (event: AgentEvent) => {
     if (legacyEmitEvent && typeof legacyEmitEvent === 'function') {
-      legacyEmitEvent((event as { type?: string }).type ?? 'unknown', event);
+      legacyEmitEvent((event as { type?: string }).type ?? 'unknown', (event as { data?: unknown }).data);
     }
   };
 

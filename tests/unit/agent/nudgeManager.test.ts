@@ -124,6 +124,45 @@ describe('NudgeManager', () => {
       expect(injectedMessage).not.toContain('write_file');
     });
 
+    it('uses analysis wording for diagnosis prompts', () => {
+      manager.reset([], '我本地的 Alma app 对流式输出怎么优化', '/tmp/test', []);
+
+      const ctx = createMockContext({
+        toolsUsedInTurn: ['read_file', 'grep', 'glob'],
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('analysis-nudge');
+      expect(injectedMessage).toContain('收束证据并输出分析');
+      expect(injectedMessage).not.toContain('立即执行修改');
+      expect(injectedMessage).not.toContain('edit_file');
+      expect(injectedMessage).not.toContain('write_file');
+      expect(ctx.onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            message: expect.stringContaining('收束证据'),
+          }),
+        }),
+      );
+    });
+
+    it('keeps mutation wording when implementation is expected', () => {
+      manager.reset([], '修复这个 bug', '/tmp/test', []);
+
+      const ctx = createMockContext({
+        toolsUsedInTurn: ['read_file', 'grep', 'glob'],
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('立即执行修改');
+    });
+
     it('returns null when write tools used', () => {
       manager.reset([], 'fix the bug', '/tmp/test', []);
 
@@ -176,6 +215,22 @@ describe('NudgeManager', () => {
       expect(injectSystemMessage).toHaveBeenCalledTimes(1);
       const injectedMessage = injectSystemMessage.mock.calls[0][0] as string;
       expect(injectedMessage).toContain('Edit 或 Append');
+      expect(injectedMessage).not.toContain('write_file');
+    });
+
+    it('uses analysis checkpoint wording for diagnosis prompts', () => {
+      const injectSystemMessage = vi.fn();
+      manager.reset([], '诊断一下启动为什么慢，只输出分析', '/tmp/test', []);
+
+      manager.checkProgressState(['read_file'], injectSystemMessage);
+      manager.checkProgressState(['Read'], injectSystemMessage);
+      manager.checkProgressState(['read_file'], injectSystemMessage);
+
+      expect(injectSystemMessage).toHaveBeenCalledTimes(1);
+      const injectedMessage = injectSystemMessage.mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('收束证据并输出分析');
+      expect(injectedMessage).not.toContain('实施修改');
+      expect(injectedMessage).not.toContain('edit_file');
       expect(injectedMessage).not.toContain('write_file');
     });
   });

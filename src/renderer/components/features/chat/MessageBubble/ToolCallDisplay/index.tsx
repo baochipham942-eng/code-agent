@@ -125,13 +125,15 @@ export function ToolCallDisplay({
     }
   }, [status, expanded, userToggled]);
 
-  // Auto-expand on error or pending
+  // Auto-expand on error, or while a pending tool is producing live output.
   useEffect(() => {
-    if (status === 'error') {
+    if (status === 'error' || (!toolCall.result && toolCall.liveOutput && !userToggled)) {
       setExpanded(true);
-      setUserToggled(false);
+      if (status === 'error') {
+        setUserToggled(false);
+      }
     }
-  }, [status]);
+  }, [status, toolCall.result, toolCall.liveOutput, userToggled]);
 
   return (
     <div

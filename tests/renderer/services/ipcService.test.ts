@@ -3,7 +3,12 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { ipcService } from '../../../src/renderer/services/ipcService';
+import {
+  getStreamingPerformanceSnapshot,
+  resetStreamingPerformanceMetrics,
+} from '../../../src/renderer/utils/streamingPerformanceMetrics';
 
 // Setup legacy window.electronAPI and window.domainAPI mocks
 const mockInvoke = vi.fn();
@@ -18,6 +23,7 @@ const mockDomainInvoke = vi.fn();
 
 beforeEach(() => {
   vi.resetAllMocks();
+  resetStreamingPerformanceMetrics();
 
   (globalThis as Record<string, unknown>).window = {
     electronAPI: {
@@ -81,6 +87,82 @@ describe('ipcService.on', () => {
     const callback = vi.fn();
     ipcService.on('session:updated' as any, callback as any);
     expect(mockOn).toHaveBeenCalledWith('session:updated', callback);
+  });
+
+  it('should subscribe to agent event batches and fan them out as single events', () => {
+    const listeners = new Map<string, (...args: any[]) => void>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, callback);
+      return () => {};
+    });
+
+    const callback = vi.fn();
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+
+    expect(mockOn).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_EVENT, expect.any(Function));
+    expect(mockOn).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_EVENT_BATCH, expect.any(Function));
+
+    listeners.get(IPC_CHANNELS.AGENT_EVENT_BATCH)?.([
+      { type: 'stream_chunk', data: { content: 'hello ' } },
+      { type: 'stream_chunk', data: { content: 'world' } },
+    ]);
+
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenNthCalledWith(1, { type: 'stream_chunk', data: { content: 'hello ' } });
+    expect(callback).toHaveBeenNthCalledWith(2, { type: 'stream_chunk', data: { content: 'world' } });
+    expect(getStreamingPerformanceSnapshot().counters).toMatchObject({
+      'stream.ipc.batch_received': 1,
+      'stream.ipc.batch_events': 2,
+    });
+  });
+
+  it('drops duplicate sequenced agent events per subscriber', () => {
+    const listeners = new Map<string, (...args: any[]) => void>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, callback);
+      return () => {};
+    });
+
+    const callback = vi.fn();
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+
+    const event = {
+      type: 'stream_chunk',
+      sessionId: 'session-1',
+      seq: 1,
+      data: { content: 'hello', turnId: 'turn-1' },
+    };
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.(event);
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.(event);
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(getStreamingPerformanceSnapshot().counters).toMatchObject({
+      'stream.ipc.duplicate_dropped': 1,
+    });
+  });
+
+  it('keeps sequenced dedupe state isolated across agent event subscribers', () => {
+    const listeners = new Map<string, Array<(...args: any[]) => void>>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, [...(listeners.get(channel) || []), callback]);
+      return () => {};
+    });
+
+    const first = vi.fn();
+    const second = vi.fn();
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, first);
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, second);
+
+    const event = {
+      type: 'stream_chunk',
+      sessionId: 'session-1',
+      seq: 1,
+      data: { content: 'hello', turnId: 'turn-1' },
+    };
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.forEach((listener) => listener(event));
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
   });
 
   it('should return unsubscribe function', () => {

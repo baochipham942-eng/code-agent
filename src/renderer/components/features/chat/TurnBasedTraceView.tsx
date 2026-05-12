@@ -12,6 +12,7 @@ import { PermissionCard } from '../../PermissionDialog/PermissionCard';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
+import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -22,6 +23,8 @@ interface TurnBasedTraceViewProps {
   activeMatchIndex?: number;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
 }
+
+export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -39,9 +42,17 @@ export function shouldFollowTurnOutput(isAtBottom: boolean, keepActiveOutputVisi
   return isAtBottom ? 'smooth' : false;
 }
 
-export function getTurnOutputRevision(turn: TraceTurn | undefined): string | null {
+export interface TurnOutputRevisionOptions {
+  includeAssistantContentLength?: boolean;
+}
+
+export function getTurnOutputRevision(
+  turn: TraceTurn | undefined,
+  options: TurnOutputRevisionOptions = {},
+): string | null {
   if (!turn) return null;
 
+  const includeAssistantContentLength = options.includeAssistantContentLength ?? true;
   const outputNodes = turn.nodes
     .filter((node) => (
       node.type === 'assistant_text'
@@ -53,7 +64,9 @@ export function getTurnOutputRevision(turn: TraceTurn | undefined): string | nul
     .map((node) => [
       node.id,
       node.type,
-      node.content?.length ?? 0,
+      node.type === 'assistant_text' && !includeAssistantContentLength
+        ? 0
+        : node.content?.length ?? 0,
       node.reasoning?.length ?? 0,
       node.thinking?.length ?? 0,
       node.toolCall?.result?.length ?? 0,
@@ -78,6 +91,31 @@ function scheduleAfterLayout(callback: () => void): () => void {
     cancelAnimationFrame(frame);
     if (timer !== null) clearTimeout(timer);
   };
+}
+
+function scheduleAfterDelayAndLayout(callback: () => void, delayMs: number): () => void {
+  if (delayMs <= 0) {
+    return scheduleAfterLayout(callback);
+  }
+
+  let cancelLayout: (() => void) | null = null;
+  const timer = setTimeout(() => {
+    cancelLayout = scheduleAfterLayout(callback);
+  }, delayMs);
+
+  return () => {
+    clearTimeout(timer);
+    cancelLayout?.();
+  };
+}
+
+export function getActiveDisplayScrollDelay(
+  lastScrollAt: number,
+  now: number,
+  intervalMs = ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
+): number {
+  if (lastScrollAt <= 0) return 0;
+  return Math.max(0, intervalMs - (now - lastScrollAt));
 }
 
 export function shouldShowTurnTimeSeparator(previousTurn: { startTime: number } | null, currentTurn: { startTime: number }): boolean {
@@ -133,6 +171,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
+  const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
+  const activeDisplayScrollLastAtRef = useRef(0);
   const keepActiveOutputVisibleRef = useRef(false);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
@@ -152,7 +192,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     ? projection.turns[projection.activeTurnIndex]
     : undefined;
   const activeTurnOutputRevision = useMemo(
-    () => getTurnOutputRevision(activeTurn),
+    () => getTurnOutputRevision(activeTurn, {
+      includeAssistantContentLength: activeTurn?.status !== 'streaming',
+    }),
     [activeTurn],
   );
   const hasActiveTurnOutput = projection.activeTurnIndex >= 0 && Boolean(activeTurnOutputRevision);
@@ -169,6 +211,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       scrollerElementRef.current = null;
       setScrollerElement(null);
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      activeDisplayScrollCancelRef.current?.();
+      activeDisplayScrollCancelRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -341,6 +390,33 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     });
   }, [activeTurnOutputRevision, projection.activeTurnIndex]);
 
+  const scheduleActiveDisplayScroll = useCallback((turnIndex: number) => {
+    if (!keepActiveOutputVisibleRef.current) return;
+    if (turnIndex !== projection.activeTurnIndex) return;
+    if (activeDisplayScrollCancelRef.current) return;
+
+    const delay = getActiveDisplayScrollDelay(
+      activeDisplayScrollLastAtRef.current,
+      Date.now(),
+    );
+
+    activeDisplayScrollCancelRef.current = scheduleAfterDelayAndLayout(
+      () => {
+        activeDisplayScrollCancelRef.current = null;
+        if (!keepActiveOutputVisibleRef.current) return;
+        if (turnIndex !== projection.activeTurnIndex) return;
+        activeDisplayScrollLastAtRef.current = Date.now();
+        recordStreamingPerformanceCounter('stream.active_display_scroll');
+        virtuosoRef.current?.scrollToIndex({
+          index: turnIndex,
+          align: 'end',
+          behavior: 'auto',
+        });
+      },
+      delay,
+    );
+  }, [projection.activeTurnIndex]);
+
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {
     if (!hasOlderMessages || isLoadingOlder || !onLoadOlder) return;
@@ -386,13 +462,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}
               showSeparator={shouldShowTurnTimeSeparator(previousTurn, turn)}
+              onStreamingDisplayUpdate={
+                isStreaming ? () => scheduleActiveDisplayScroll(index) : undefined
+              }
               onRewindUserPrompt={onRewindUserPrompt}
             />
           </div>
         </div>
       );
     },
-    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, searchMatches, sessionStatus],
+    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator

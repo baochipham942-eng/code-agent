@@ -3,7 +3,6 @@
 // ============================================================================
 
 import {
-  DAG_CHANNELS,
   LAB_CHANNELS,
   CHANNEL_CHANNELS,
   EVALUATION_CHANNELS,
@@ -22,6 +21,7 @@ export const IPC_CHANNELS = {
   AGENT_SEND_MESSAGE: 'agent:send-message',
   AGENT_CANCEL: 'agent:cancel',
   AGENT_EVENT: 'agent:event',
+  AGENT_EVENT_BATCH: 'agent:event:batch',
   AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
 
 

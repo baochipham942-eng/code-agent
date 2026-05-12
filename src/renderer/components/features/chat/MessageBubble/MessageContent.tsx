@@ -26,6 +26,8 @@ import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
+import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
+import { recordStreamingPerformanceCounter } from '../../../../utils/streamingPerformanceMetrics';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -501,10 +503,44 @@ const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ children }) =
   );
 };
 
+const MarkdownRenderer = memo(function markdownRenderer({
+  content,
+  components,
+}: {
+  content: string;
+  components: Components;
+}) {
+  useEffect(() => {
+    recordStreamingPerformanceCounter('stream.markdown.render');
+  });
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+      rehypePlugins={[rehypeKatex]}
+      components={components}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
+
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
+  const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
+
+  useEffect(() => {
+    recordStreamingPerformanceCounter('stream.message_content.render');
+    if (!isStreaming || isUser) return;
+    recordStreamingPerformanceCounter(
+      streamingNeedsMarkdown
+        ? 'stream.message_content.streaming_markdown_render'
+        : 'stream.message_content.streaming_plain_render',
+    );
+  });
 
   // Handle opening a file externally
   const handleOpenFile = useCallback(async (filePath: string, lineNumber?: number) => {
@@ -533,16 +569,6 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     }
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
-
-  // For user messages, render as plain text (no markdown processing)
-  // 使用 span 而非 div，避免复制时末尾多出换行符
-  if (isUser) {
-    return (
-      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block">
-        {content}
-      </span>
-    );
-  }
 
   // Custom components for react-markdown
   const components: Components = useMemo(
@@ -857,21 +883,35 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
   const filteredContent = useMemo(() => {
-    const cleaned = filterSystemTags(content);
+    const cleaned = filterSystemTags(markdownSource);
     const withTickets = wrapTicketsAsLinks(cleaned);
     const wrapped = wrapFilePathsInBackticks(withTickets);
     return remend(wrapped);
-  }, [content]);
+  }, [markdownSource]);
+
+  // For user messages, render as plain text (no markdown processing)
+  // 使用 span 而非 div，避免复制时末尾多出换行符
+  if (isUser) {
+    return (
+      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block">
+        {content}
+      </span>
+    );
+  }
+
+  if (isStreaming && !streamingNeedsMarkdown) {
+    return (
+      <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">
+        <span className="whitespace-pre-wrap">
+          {filterSystemTags(content)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-        rehypePlugins={[rehypeKatex]}
-        components={components}
-      >
-        {filteredContent}
-      </ReactMarkdown>
+      <MarkdownRenderer content={filteredContent} components={components} />
     </div>
   );
 });

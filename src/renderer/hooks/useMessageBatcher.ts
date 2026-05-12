@@ -5,6 +5,7 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react';
 import type { ToolCall } from '@shared/contract';
+import type { ToolCallArgumentDelta } from '../utils/toolCallStreaming';
 
 // ============================================================================
 // Types
@@ -17,13 +18,18 @@ export interface MessageBatcherConfig {
   maxBatchSize: number;
 }
 
-export type MessageUpdate = {
-  type: 'append' | 'replace' | 'complete';
-  messageId: string;
-  content?: string;
-  reasoning?: string;  // 推理模型的思考过程
-  toolCalls?: ToolCall[];
-};
+export type MessageUpdate =
+  | {
+    type: 'append' | 'replace' | 'complete';
+    messageId: string;
+    content?: string;
+    reasoning?: string;  // 推理模型的思考过程
+    toolCalls?: ToolCall[];
+  }
+  | ({
+    type: 'tool_call_delta';
+    messageId: string;
+  } & ToolCallArgumentDelta);
 
 export interface MessageBatcherReturn {
   /** 添加待处理的消息更新 */
@@ -110,7 +116,7 @@ export function useMessageBatcher(
     queueRef.current = [];
 
     // 合并相同 messageId 的 append 类型更新
-    const mergedUpdates = mergeUpdates(updates);
+    const mergedUpdates = mergeMessageUpdates(updates);
 
     // 更新待处理数量
     setPendingCount(0);
@@ -180,7 +186,7 @@ export function useMessageBatcher(
       }
       // 确保所有待处理更新被处理
       if (queueRef.current.length > 0) {
-        onBatchUpdateRef.current(mergeUpdates(queueRef.current));
+        onBatchUpdateRef.current(mergeMessageUpdates(queueRef.current));
         queueRef.current = [];
       }
     };
@@ -203,22 +209,27 @@ export function useMessageBatcher(
  * - replace 类型：保留最后一个
  * - complete 类型：保留最后一个
  */
-function mergeUpdates(updates: MessageUpdate[]): MessageUpdate[] {
+export function mergeMessageUpdates(updates: MessageUpdate[]): MessageUpdate[] {
   const updateMap = new Map<string, MessageUpdate>();
 
   for (const update of updates) {
-    const key = `${update.messageId}:${update.type}`;
+    const key = getUpdateMergeKey(update);
     const existing = updateMap.get(key);
 
     if (!existing) {
       // 首次遇到此 messageId + type 组合
       updateMap.set(key, { ...update });
-    } else if (update.type === 'append') {
+    } else if (update.type === 'append' && existing.type === 'append') {
       // 合并 append 类型的更新
       existing.content = (existing.content || '') + (update.content || '');
       existing.reasoning = (existing.reasoning || '') + (update.reasoning || '');
       if (update.toolCalls) {
         existing.toolCalls = [...(existing.toolCalls || []), ...update.toolCalls];
+      }
+    } else if (update.type === 'tool_call_delta' && existing.type === 'tool_call_delta') {
+      existing.argumentsDelta = (existing.argumentsDelta || '') + (update.argumentsDelta || '');
+      if (!existing.name && update.name) {
+        existing.name = update.name;
       }
     } else {
       // replace 和 complete 类型保留最后一个
@@ -227,6 +238,13 @@ function mergeUpdates(updates: MessageUpdate[]): MessageUpdate[] {
   }
 
   return Array.from(updateMap.values());
+}
+
+function getUpdateMergeKey(update: MessageUpdate): string {
+  if (update.type === 'tool_call_delta') {
+    return `${update.messageId}:${update.type}:${update.index}`;
+  }
+  return `${update.messageId}:${update.type}`;
 }
 
 export default useMessageBatcher;

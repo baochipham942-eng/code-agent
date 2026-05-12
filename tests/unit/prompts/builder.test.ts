@@ -30,6 +30,9 @@ import {
   EDIT_TOOL_DESCRIPTION,
   TASK_TOOL_DESCRIPTION,
 } from '../../../src/main/prompts/tools';
+import { estimateTokens } from '../../../src/main/context/tokenEstimator';
+
+const promptText = (value: string): string => String(value);
 
 describe('Prompt Builder', () => {
   // --------------------------------------------------------------------------
@@ -50,17 +53,17 @@ describe('Prompt Builder', () => {
 
     it('should include base TOOLS_PROMPT', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain(TOOLS_PROMPT);
+      expect(prompt).toContain(promptText(TOOLS_PROMPT));
     });
 
     it('should include bash tool description', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain(BASH_TOOL_DESCRIPTION);
+      expect(prompt).toContain(promptText(BASH_TOOL_DESCRIPTION));
     });
 
     it('should include edit tool description', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain(EDIT_TOOL_DESCRIPTION);
+      expect(prompt).toContain(promptText(EDIT_TOOL_DESCRIPTION));
     });
 
     it('should include append guidance for large generated artifacts', () => {
@@ -71,7 +74,7 @@ describe('Prompt Builder', () => {
 
     it('should include task tool description', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain(TASK_TOOL_DESCRIPTION);
+      expect(prompt).toContain(promptText(TASK_TOOL_DESCRIPTION));
     });
 
     it('should return consistent results across calls', () => {
@@ -82,7 +85,7 @@ describe('Prompt Builder', () => {
 
     it('should build prompt in consistent order', () => {
       const prompt = buildPrompt();
-      const toolsPromptContent = TOOLS_PROMPT.substring(0, 50);
+      const toolsPromptContent = promptText(TOOLS_PROMPT).substring(0, 50);
       const toolsPromptStart = prompt.indexOf(toolsPromptContent);
       expect(toolsPromptStart).toBeGreaterThan(-1);
     });
@@ -94,15 +97,20 @@ describe('Prompt Builder', () => {
   describe('SYSTEM_PROMPT', () => {
     it('should be pre-built and available', () => {
       expect(SYSTEM_PROMPT).toBeDefined();
-      expect(typeof SYSTEM_PROMPT).toBe('string');
+      expect(typeof promptText(SYSTEM_PROMPT)).toBe('string');
     });
 
     it('should be non-empty', () => {
-      expect(SYSTEM_PROMPT.length).toBeGreaterThan(0);
+      expect(promptText(SYSTEM_PROMPT).length).toBeGreaterThan(0);
     });
 
     it('should match buildPrompt output', () => {
-      expect(SYSTEM_PROMPT).toBe(buildPrompt());
+      expect(promptText(SYSTEM_PROMPT)).toBe(buildPrompt());
+    });
+
+    it('should be token-estimator safe', () => {
+      expect(() => estimateTokens(SYSTEM_PROMPT)).not.toThrow();
+      expect(estimateTokens(SYSTEM_PROMPT)).toBeGreaterThan(0);
     });
 
     it('should be a stable reference', () => {
@@ -118,7 +126,7 @@ describe('Prompt Builder', () => {
   describe('getPromptForTask', () => {
     it('should return the system prompt', () => {
       const prompt = getPromptForTask();
-      expect(prompt).toBe(SYSTEM_PROMPT);
+      expect(promptText(prompt)).toBe(promptText(SYSTEM_PROMPT));
     });
   });
 
@@ -158,7 +166,7 @@ describe('Prompt Builder', () => {
 
     it('should use the system prompt as base', () => {
       const result = buildDynamicPrompt('fix a bug');
-      expect(result.systemPrompt).toBe(SYSTEM_PROMPT);
+      expect(promptText(result.systemPrompt)).toBe(promptText(SYSTEM_PROMPT));
     });
 
     it('should include the task in the user message', () => {
@@ -186,7 +194,7 @@ describe('Prompt Builder', () => {
 
     it('should use the system prompt as base', () => {
       const result = buildDynamicPromptV2('fix a bug');
-      expect(result.systemPrompt).toBe(SYSTEM_PROMPT);
+      expect(promptText(result.systemPrompt)).toBe(promptText(SYSTEM_PROMPT));
     });
 
     it('should accept options', () => {
@@ -221,22 +229,22 @@ describe('Prompt Builder', () => {
 
   describe('ARTIFACT_TASK_BRIEF_PROMPT', () => {
     it('includes chunked assembly guidance for large artifacts', () => {
-      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Use chunked assembly');
-      expect(ARTIFACT_TASK_BRIEF_PROMPT).toContain('Append ordered chunks');
+      expect(promptText(ARTIFACT_TASK_BRIEF_PROMPT)).toContain('Use chunked assembly');
+      expect(promptText(ARTIFACT_TASK_BRIEF_PROMPT)).toContain('Append ordered chunks');
     });
   });
 
   describe('GAME_ARTIFACT_CONTRACT_PROMPT', () => {
     it('includes deterministic game test contract guidance', () => {
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('reset(levelOrScenario?)');
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('step(inputState, frames?)');
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('every authored unit');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('reset(levelOrScenario?)');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('step(inputState, frames?)');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('every authored unit');
     });
 
     it('includes breakout deterministic scenario guidance', () => {
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('Breakout/Arkanoid');
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('wallBounceCount');
-      expect(GAME_ARTIFACT_CONTRACT_PROMPT).toContain('powerup:life');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('Breakout/Arkanoid');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('wallBounceCount');
+      expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('powerup:life');
       expect(needsGameArtifactContract('生成一个弹砖块游戏，写到 /tmp/breakout.html')).toBe(true);
     });
   });

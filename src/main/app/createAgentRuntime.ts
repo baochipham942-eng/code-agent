@@ -7,14 +7,25 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ConfigService } from '../services';
+import type { AgentEventEnvelope } from '../../shared/contract';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { getTaskManager } from '../task';
 import { initChannelAgentBridge } from '../channels/channelAgentBridge';
 import { getChannelManager } from '../channels';
 import { getMainWindow } from './window';
-// Event channel constant (post-IPC_CHANNELS deprecation)
-const AGENT_EVENT_CHANNEL = 'agent:event';
+import { EventBatcher } from '../agent/eventBatcher';
 
 const logger = createLogger('Bootstrap:AgentRuntime');
+
+type RendererAgentEvent = AgentEventEnvelope & { sessionId: string };
+
+const rendererEventSequences = new Map<string, number>();
+
+function nextRendererEventSeq(sessionId: string): number {
+  const next = (rendererEventSequences.get(sessionId) || 0) + 1;
+  rendererEventSequences.set(sessionId, next);
+  return next;
+}
 
 /**
  * Initialize TaskManager and Channel Agent Bridge.
@@ -24,6 +35,22 @@ const logger = createLogger('Bootstrap:AgentRuntime');
  */
 export function createAgentRuntime(configService: ConfigService): void {
   const mainWindow = getMainWindow();
+  const rendererEventBatcher = new EventBatcher<RendererAgentEvent>({
+    flushInterval: 16,
+    maxBatchSize: 50,
+    onFlush: (events) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const sequencedEvents = events.map((event) => ({
+        ...event,
+        seq: nextRendererEventSeq(event.sessionId),
+      }));
+      if (sequencedEvents.length === 1) {
+        mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT, sequencedEvents[0]);
+        return;
+      }
+      mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT_BATCH, sequencedEvents);
+    },
+  });
 
   // Initialize TaskManager as the sole orchestrator owner
   const taskManager = getTaskManager();
@@ -32,9 +59,7 @@ export function createAgentRuntime(configService: ConfigService): void {
     planningService: undefined, // Will be set after planningService is initialized
     onAgentEvent: (sessionId, event) => {
       // Forward events to renderer with sessionId
-      if (mainWindow) {
-        mainWindow.webContents.send(AGENT_EVENT_CHANNEL, { ...event, sessionId });
-      }
+      rendererEventBatcher.emit({ ...event, sessionId });
     },
   });
   logger.info('TaskManager initialized (sole orchestrator owner)');

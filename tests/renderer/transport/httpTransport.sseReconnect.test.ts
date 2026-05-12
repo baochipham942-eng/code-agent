@@ -71,17 +71,16 @@ function installFakeEventSource(): {
     this.onmessage = null;
     this.onerror = null;
     this._closed = false;
-    const self = this;
     this.close = () => {
-      self._closed = true;
-      self.readyState = FAKE_EVENTSOURCE_CLOSED;
+      this._closed = true;
+      this.readyState = FAKE_EVENTSOURCE_CLOSED;
     };
     this._triggerMessage = (data: unknown, id?: string) => {
-      if (self._closed) return;
-      self.onmessage?.({ data: JSON.stringify(data), lastEventId: id });
+      if (this._closed) return;
+      this.onmessage?.({ data: JSON.stringify(data), lastEventId: id });
     };
     this._triggerError = () => {
-      self.onerror?.();
+      this.onerror?.();
     };
     instances.push(this);
   } as unknown as EventSourceCtor;
@@ -169,6 +168,23 @@ describe('httpTransport SSE reconnect chaos', () => {
     });
 
     expect(received).toHaveLength(1);
+  });
+
+  it('agent:event:batch 的数组 payload 不会被 SSE transport 展开', () => {
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+    const received: unknown[] = [];
+    api.on('agent:event:batch', (events) => { received.push(events); });
+
+    const events = [
+      { type: 'turn_start', data: { turnId: 'turn-batch' }, sessionId: 'session-batch' },
+      { type: 'stream_chunk', data: { turnId: 'turn-batch', content: 'hello' }, sessionId: 'session-batch' },
+    ];
+    fake.instances[0]._triggerMessage({
+      channel: 'agent:event:batch',
+      args: events,
+    });
+
+    expect(received).toEqual([events]);
   });
 
   it('连续两次 error 不会把重连延迟变短，始终按 5 秒窗口排队', () => {

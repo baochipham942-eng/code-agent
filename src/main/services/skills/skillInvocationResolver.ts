@@ -287,6 +287,13 @@ function canSkillAutoPreApproveTools(skill: ParsedSkill): boolean {
   return skill.source === 'builtin' || skill.source === 'plugin';
 }
 
+function formatSkillLocation(skill: ParsedSkill): string {
+  if (skill.basePath) {
+    return `Skill path: ${skill.basePath}/SKILL.md`;
+  }
+  return `Skill source: ${skill.source} inline skill`;
+}
+
 export async function buildSkillInvocationContext(
   invocation: ResolvedSkillInvocation,
   workingDirectory: string,
@@ -321,7 +328,7 @@ export async function buildSkillInvocationContext(
     `<required-skill-invocation name="${skill.name}" match="${invocation.matchKind}" source="${skill.source}">`,
     `The user explicitly invoked or clearly targeted this user-invocable skill. Treat these skill instructions as required for this turn, even if the skill has disable-model-invocation enabled.`,
     `Matched text: ${invocation.matchedText}`,
-    `Skill path: ${skill.basePath}/SKILL.md`,
+    formatSkillLocation(skill),
     invocation.args ? `User arguments: ${invocation.args}` : '',
     '<skill-instructions>',
     promptContent,

@@ -29,7 +29,8 @@ export function bridgeCloudSkill(old: SkillDefinition): ParsedSkill {
     executionContext: 'inline',
 
     // 来源
-    source: 'builtin',
+    source: 'cloud',
+    loaded: true,
   };
 }
 

@@ -223,6 +223,20 @@ async function activateRepairAction(page: Page, selector: string, label: string)
 
     if (visible && enabled) {
       try {
+        const clicked = await page.evaluate((targetSelector) => {
+          const element = document.querySelector(targetSelector) as HTMLButtonElement | null;
+          if (!element || element.disabled) return false;
+          element.click();
+          return true;
+        }, selector);
+        if (clicked) {
+          return 'dom-click';
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+
+      try {
         await button.click({ timeout: 2_000 });
         return 'playwright-click';
       } catch (error) {
@@ -230,11 +244,13 @@ async function activateRepairAction(page: Page, selector: string, label: string)
       }
 
       try {
-        const handle = await button.elementHandle({ timeout: 500 });
-        if (handle) {
-          await handle.evaluate((element) => {
-            (element as HTMLElement).click();
-          });
+        const clicked = await page.evaluate((targetSelector) => {
+          const element = document.querySelector(targetSelector);
+          if (!element) return false;
+          (element as HTMLElement).click();
+          return true;
+        }, selector);
+        if (clicked) {
           return 'dom-click';
         }
       } catch (error) {
@@ -622,7 +638,11 @@ async function exerciseChatInputComputerFailure(
         && response.request().method() === 'POST',
       { timeout: 15_000 },
     ).catch(() => null);
-    await snapshotAction.click({ timeout: 5_000 });
+    await activateRepairAction(
+      page,
+      '[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]',
+      'ChatInput snapshot recovery',
+    );
     recoveryActionClicked = true;
     const recoveryResponse = await recoveryResponsePromise;
     recoveryRequestStatus = recoveryResponse?.status() ?? null;

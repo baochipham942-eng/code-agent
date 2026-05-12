@@ -32,7 +32,14 @@ vi.mock('../../../../../src/main/security/commandSafety', () => ({
 }));
 
 vi.mock('../../../../../src/main/services/infra/shellEnvironment', () => ({
-  getShellPath: () => process.env.PATH,
+  getShellPathDiagnostics: () => ({
+    path: process.env.PATH || '',
+    source: 'process',
+    pathEntryCount: (process.env.PATH || '').split(':').filter(Boolean).length,
+    degraded: false,
+    fallbackApplied: false,
+    fallbackEntries: [],
+  }),
 }));
 
 // backgroundTasks + ptyExecutor are stubbed so we don't actually spawn children
@@ -167,6 +174,34 @@ describe('bashModule (native)', () => {
       expect(events).toContain('starting');
       expect(events).toContain('completing');
     });
+
+    it('emits live stdout and stderr deltas for a foreground command', async () => {
+      const handler = await bashModule.createHandler();
+      const emit = vi.fn();
+      const result = await handler.execute(
+        { command: 'printf "out"; printf "err" >&2' },
+        makeCtx({ currentToolCallId: 'tool-live-1', emit }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'tool_output_delta',
+        data: expect.objectContaining({
+          toolCallId: 'tool-live-1',
+          stream: 'stdout',
+          content: expect.stringContaining('out'),
+        }),
+      }));
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'tool_output_delta',
+        data: expect.objectContaining({
+          toolCallId: 'tool-live-1',
+          stream: 'stderr',
+          content: expect.stringContaining('err'),
+        }),
+      }));
+    });
   });
 
   describe('foreground execution', () => {
@@ -184,6 +219,27 @@ describe('bashModule (native)', () => {
       }
     });
 
+    it('includes shell PATH diagnostics metadata without dumping environment variables', async () => {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'echo "$PATH"' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta?.shellPath).toEqual({
+          source: 'process',
+          pathEntryCount: expect.any(Number),
+          degraded: false,
+          fallbackApplied: false,
+          fallbackEntries: [],
+        });
+        expect(JSON.stringify(result.meta?.shellPath)).not.toContain('HOME=');
+        expect(JSON.stringify(result.meta?.shellPath)).not.toContain('TOKEN=');
+      }
+    });
+
     it('returns non-zero exit as FS_ERROR with stderr/stdout merged into meta.output', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(
@@ -195,6 +251,7 @@ describe('bashModule (native)', () => {
       if (!result.ok) {
         expect(result.error).toBeDefined();
         expect(result.code).toBe('FS_ERROR');
+        expect(result.meta?.shellPath).toBeDefined();
       }
     });
 

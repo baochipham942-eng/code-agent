@@ -17,13 +17,13 @@ export const computerSchema: ToolSchema = {
 - key: Press keyboard shortcut. Same caveat as type. Note: shortcuts (Cmd+N etc.) cannot be routed via background AX — if you just want to trigger a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
-- mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use these to build custom drag rhythms (slow drag for sliders/canvas) or hold-to-select gestures. Always pair them — every mouse_down must be followed by a mouse_up, otherwise the system stays in a stuck-button state.
-- open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. targetApp="Safari" or targetApp="Visual Studio Code"). Returns once the launch is initiated; chain observe to confirm it became frontmost.
-- write_clipboard: Set the system pasteboard to text. Use this to deliver large or formatted text instead of typing it character by character (much faster, immune to focus shifts). Pass text via the text param.
-- computer_batch: Execute a list of actions sequentially in one tool call. Pass the list via the actions param ([{action:"click", x:100, y:200}, {action:"type", text:"hello"}, ...]). Reduces RTT for multi-step interactions. Stops on first failure and returns partial result. Nested computer_batch is rejected.
-- hold_key: Press one or more modifier keys for a duration (ms), then release. Limited to modifier keys (cmd, alt, ctrl, shift, fn) — pass them via the modifiers param (or a single key via the key param). Required for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
-- triple_click: Triple-click at x,y. Selects an entire line/paragraph in most text editors. If the target app does not respond to native triple-click, fall back to doubleClick + click.
-- cursor_position: Return the current mouse cursor coordinates without moving anything. Output is "x,y" plus metadata.x / metadata.y.
+- mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them — every mouse_down must be followed by a mouse_up.
+- open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. "Safari", "Visual Studio Code"). Chain observe to confirm it became frontmost.
+- write_clipboard: Set the system pasteboard to text (text param). Faster and focus-shift-immune compared to type for large/formatted text.
+- computer_batch: Execute a list of actions sequentially in one tool call (actions param, e.g. [{action:"click",x:100,y:200},{action:"type",text:"hi"}]). Stops on first failure. Nested computer_batch is rejected.
+- hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration (ms), then release. Pass via modifiers (preferred) or single key. Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy.
+- triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if target app does not respond.
+- cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y" plus metadata.x / metadata.y.
 
 ## Smart actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -82,7 +82,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'get_state', 'observe', 'get_ax_elements', 'get_windows', 'diagnose_app',
           // computer_use basic actions
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
-          // computer_use extended actions (atomic mouse/keyboard primitives + batch)
+          // computer_use extended actions (atomic primitives + batch)
           'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
           // computer_use richer interactions
           'hold_key', 'triple_click', 'cursor_position',
@@ -185,7 +185,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       actions: {
         type: 'array',
         items: { type: 'object' },
-        description: '[computer_batch] Sequential list of action descriptors to execute in one call. Each item has the same shape as a normal Computer call (action + per-action params). Nested computer_batch is rejected.',
+        description: '[computer_batch] Sequential list of action descriptors to execute in one call. Each item has the same shape as a normal Computer call. Nested computer_batch is rejected.',
       },
       toX: {
         type: 'number',
@@ -197,7 +197,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       text: {
         type: 'string',
-        description: 'Text to type, text content to locate, or text to write to clipboard (write_clipboard)',
+        description: 'Text to type, text to locate, or text to write to clipboard (write_clipboard)',
       },
       key: {
         type: 'string',

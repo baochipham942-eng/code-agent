@@ -1,10 +1,11 @@
 // useAgentToolExecutionEffects - stream_tool_call_start, stream_tool_call_delta, tool_call_start, tool_call_end, tool_call_local, tool_progress, tool_timeout
 import { useEffect } from 'react';
-import type { ToolCall, ToolProgressData, ToolResult, ToolTimeoutData } from '@shared/contract';
+import type { ToolCall, ToolOutputDeltaData, ToolProgressData, ToolResult, ToolTimeoutData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
+import { applyToolOutputDelta } from '../../../utils/toolOutputStreaming';
 
 const logger = createLogger('useAgent');
 
@@ -23,6 +24,7 @@ export const useToolExecutionEffects = ({
   enqueuePermissionRequest,
   setSessionTaskProgress,
   setSessionTaskComplete,
+  queueUpdate,
 }: AgentEffectsProps) => {
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
@@ -85,45 +87,13 @@ export const useToolExecutionEffects = ({
               : getFreshMessages()[getFreshMessages().length - 1];
 
             if (targetMessage?.role === 'assistant' && targetMessage.toolCalls) {
-              const index = event.data.index ?? 0;
-              const updatedToolCalls = targetMessage.toolCalls.map((tc: ToolCall, i: number) => {
-                if (i === index) {
-                  const newTc = { ...tc };
-                  if (event.data.name && !tc.name) {
-                    newTc.name = event.data.name;
-                  }
-                  if (event.data.argumentsDelta) {
-                    newTc._argumentsRaw = (tc._argumentsRaw || '') + event.data.argumentsDelta;
-                    try {
-                      const parsed = JSON.parse(newTc._argumentsRaw) as Record<string, unknown>;
-                      // 抽出模型在 arguments 里嵌入的 _meta envelope（产品视角语义元数据），
-                      // 写到 ToolCall 顶层并从 arguments 删除——跟 main 进程的
-                      // buildToolCallFromAccumulator 行为对齐，让 streaming 时 ToolHeader
-                      // 立即看到 shortDescription，而不是等持久化兜底。
-                      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                        const meta = (parsed as { _meta?: unknown })._meta;
-                        if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-                          const m = meta as Record<string, unknown>;
-                          if (typeof m.shortDescription === 'string') newTc.shortDescription = m.shortDescription;
-                          if (typeof m.expectedOutcome === 'string') newTc.expectedOutcome = m.expectedOutcome;
-                          if (m.targetContext && typeof m.targetContext === 'object' && !Array.isArray(m.targetContext)) {
-                            newTc.targetContext = m.targetContext as ToolCall['targetContext'];
-                          }
-                          delete (parsed as { _meta?: unknown })._meta;
-                        }
-                        newTc.arguments = parsed;
-                      } else {
-                        newTc.arguments = parsed;
-                      }
-                    } catch {
-                      // JSON is still incomplete.
-                    }
-                  }
-                  return newTc;
-                }
-                return tc;
+              queueUpdate({
+                type: 'tool_call_delta',
+                messageId: targetMessage.id,
+                index: event.data.index ?? 0,
+                name: event.data.name,
+                argumentsDelta: event.data.argumentsDelta,
               });
-              updateMessage(targetMessage.id, { toolCalls: updatedToolCalls });
             }
           }
           break;
@@ -251,6 +221,26 @@ export const useToolExecutionEffects = ({
           }
           break;
 
+        case 'tool_output_delta':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (!isCurrentSessionEvent || !event.data?.toolCallId || !event.data?.content) {
+            break;
+          }
+          {
+            const delta = event.data as ToolOutputDeltaData;
+            for (const msg of getFreshMessages()) {
+              if (msg.role !== 'assistant' || !msg.toolCalls) continue;
+              const hasMatch = msg.toolCalls.some((tc: ToolCall) => tc.id === delta.toolCallId);
+              if (!hasMatch) continue;
+              updateMessage(msg.id, {
+                toolCalls: applyToolOutputDelta(msg.toolCalls, delta),
+              });
+              break;
+            }
+          }
+          break;
+
         case 'tool_timeout':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
@@ -285,5 +275,6 @@ export const useToolExecutionEffects = ({
     enqueuePermissionRequest,
     setSessionTaskProgress,
     setSessionTaskComplete,
+    queueUpdate,
   ]);
 };

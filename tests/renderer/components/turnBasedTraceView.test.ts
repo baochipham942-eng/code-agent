@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
 import {
+  ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
+  getActiveDisplayScrollDelay,
   getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
   getTurnOutputRevision,
@@ -48,6 +50,14 @@ describe('TurnBasedTraceView focus helpers', () => {
   it('keeps the active output visible after the view programmatically focused a new turn', () => {
     expect(shouldFollowTurnOutput(false, true)).toBe('auto');
     expect(shouldFollowTurnOutput(true, true)).toBe('auto');
+  });
+
+  it('throttles active display scroll scheduling within the display interval', () => {
+    expect(getActiveDisplayScrollDelay(0, 1_000)).toBe(0);
+    expect(getActiveDisplayScrollDelay(1_000, 1_020)).toBe(
+      ACTIVE_DISPLAY_SCROLL_INTERVAL_MS - 20,
+    );
+    expect(getActiveDisplayScrollDelay(1_000, 1_200)).toBe(0);
   });
 
   it('only shows turn time separators for the first turn or meaningful gaps', () => {
@@ -104,6 +114,33 @@ describe('TurnBasedTraceView focus helpers', () => {
     };
 
     expect(getTurnOutputRevision(nextTurn)).not.toBe(getTurnOutputRevision(baseTurn));
+  });
+
+  it('can ignore streaming assistant text length so display pacing drives scroll', () => {
+    const baseTurn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'streaming',
+      startTime: 100,
+      nodes: [
+        { id: 'user-1', type: 'user', content: 'question', timestamp: 100 },
+        { id: 'assistant-1', type: 'assistant_text', content: 'short answer', timestamp: 120 },
+      ],
+    };
+    const nextTurn: TraceTurn = {
+      ...baseTurn,
+      nodes: [
+        baseTurn.nodes[0],
+        {
+          ...baseTurn.nodes[1],
+          content: 'short answer with more streamed content',
+        },
+      ],
+    };
+
+    expect(
+      getTurnOutputRevision(nextTurn, { includeAssistantContentLength: false }),
+    ).toBe(getTurnOutputRevision(baseTurn, { includeAssistantContentLength: false }));
   });
 
   it('builds a selector for trace node anchors', () => {

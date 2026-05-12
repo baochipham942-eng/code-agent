@@ -14,6 +14,7 @@ import type {
   IpcInvokeHandlers,
   IpcEventHandlers,
 } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 
@@ -26,6 +27,30 @@ type AuthTokenRecovery = {
   message: string;
   willReload: boolean;
 };
+
+function dispatchSSEPayload(
+  channel: string,
+  args: unknown,
+  callbacks: Set<EventCallback> | undefined,
+): void {
+  if (!callbacks) return;
+
+  if (channel === IPC_CHANNELS.AGENT_EVENT_BATCH) {
+    callbacks.forEach((cb) => cb(args));
+    return;
+  }
+
+  const eventArgs: unknown[] = Array.isArray(args) ? args as unknown[] : [args];
+  callbacks.forEach((cb) => cb(...eventArgs));
+}
+
+function getNumberField(data: unknown, field: string): number | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = (data as Record<string, unknown>)[field];
+  return typeof value === 'number' ? value : undefined;
+}
 
 function getInjectedAuthToken(): string | undefined {
   return (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
@@ -200,10 +225,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       try {
         const parsed = JSON.parse(event.data);
         const { channel, args } = parsed;
-        const cbs = listeners.get(channel);
-        if (cbs) {
-          cbs.forEach((cb) => cb(...(Array.isArray(args) ? args : [args])));
-        }
+        dispatchSSEPayload(channel, args, listeners.get(channel));
       } catch {
         // 忽略解析失败的事件
       }
@@ -325,7 +347,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                           if (currentSessionId) streamSessionId = currentSessionId;
                           const cbs = listeners.get('agent:event');
                           if (cbs) {
-                            cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId: currentSessionId }));
+                            cbs.forEach((cb) => cb({
+                              type: currentEvent,
+                              data,
+                              sessionId: currentSessionId,
+                              seq: getNumberField(data, 'seq'),
+                            }));
                           }
                         } catch { /* ignore */ }
                         currentEvent = '';
@@ -367,11 +394,16 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
                       // 将 SSE 事件转发到 agent:event listeners
                       const cbs = listeners.get('agent:event');
-                      if (currentEvent !== 'stream_chunk') {
+                      if (currentEvent !== 'stream_chunk' && currentEvent !== 'message_delta') {
                         console.debug('[HttpTransport] Dispatching SSE event:', currentEvent, currentSessionId ? `(session: ${currentSessionId})` : '');
                       }
                       if (cbs) {
-                        cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId: currentSessionId }));
+                        cbs.forEach((cb) => cb({
+                          type: currentEvent,
+                          data,
+                          sessionId: currentSessionId,
+                          seq: getNumberField(data, 'seq'),
+                        }));
                       }
                     } catch {
                       // 忽略解析错误

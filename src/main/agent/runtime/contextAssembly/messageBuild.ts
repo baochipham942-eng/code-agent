@@ -186,15 +186,16 @@ function getArtifactRepairHistoryToolAllowlist(ctx: ContextAssemblyCtx): Set<str
   if (guard.patched) {
     return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file', 'Bash', 'bash']);
   }
-  // noOpPatchCount 阈值放宽到 3:让模型一次"无效修改"后还能 Read verify 实际状态再下手,
-  // 避免"Edit noOp -> 立刻禁 Read -> 模型盲改 -> 又 noOp -> admission_stop"死循环。
-  // 真死循环兜底仍由 attempts >= 3 + noOpPatchCount >= 1 触发的 full rewrite 路径(line 147)接管。
+  const mutationTools = new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+  if ((guard.targetReadCount ?? 0) > 0) {
+    return mutationTools;
+  }
   if ((guard.noOpPatchCount ?? 0) >= 3) {
-    return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+    return mutationTools;
   }
   const targetReadCount = guard.targetReadCount ?? 0;
   if (targetReadCount >= getArtifactRepairTargetReadBudget(guard)) {
-    return new Set(['Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
+    return mutationTools;
   }
   return new Set(['Read', 'read_file', 'Edit', 'edit_file', 'Write', 'write_file', 'Append', 'append_file']);
 }
@@ -261,6 +262,7 @@ function buildArtifactRepairMutationHints(lines: string[]): string[] {
     '- Repair the embedded test contract against real gameplay state; do not add test-only shortcuts.',
     '- Remove duplicate or dangling contract blocks if the file contains more than one window.__GAME_TEST__ / window.__INTERACTIVE_TEST__ object.',
     '- For a full contract replacement, you may use a short old_text anchor around window.__GAME_TEST__ / window.__INTERACTIVE_TEST__; the repair runtime can expand it to the balanced contract region.',
+    '- The target file has already been read; write the patch now.',
   ];
 
   const contractLines = lines
@@ -825,22 +827,31 @@ function getAllowedArtifactRepairToolCallIds(ctx: ContextAssemblyCtx, messages: 
 
   const allowedIds = new Set<string>();
   const targetFile = getArtifactRepairTargetFile(ctx);
+  const targetReadResultIds = new Set<string>();
+
+  for (const message of messages) {
+    if (!message.toolResults?.length || !targetFile) continue;
+    for (const result of message.toolResults) {
+      const resultFilePath = typeof result.metadata?.filePath === 'string'
+        ? result.metadata.filePath
+        : null;
+      if (
+        result.toolCallId &&
+        result.success === true &&
+        result.metadata?.evidenceKind === 'file_read' &&
+        resultFilePath &&
+        resolveArtifactRepairPath(ctx, resultFilePath) === targetFile
+      ) {
+        targetReadResultIds.add(result.toolCallId);
+      }
+    }
+  }
+
   for (const message of messages) {
     if (!message.toolCalls?.length) continue;
     for (const toolCall of message.toolCalls) {
       const toolName = toolCall.name;
-      const filePath = typeof toolCall.arguments?.file_path === 'string'
-        ? toolCall.arguments.file_path
-        : typeof toolCall.arguments?.path === 'string'
-          ? toolCall.arguments.path
-          : null;
-      const isTargetRead =
-        targetFile &&
-        (toolName === 'Read' || toolName === 'read_file') &&
-        filePath &&
-        resolveArtifactRepairPath(ctx, filePath) === targetFile;
-
-      if (allowlist.has(toolName) || isTargetRead) {
+      if (allowlist.has(toolName) || targetReadResultIds.has(toolCall.id)) {
         allowedIds.add(toolCall.id);
       }
     }
@@ -1506,6 +1517,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Allowlist 在循环内不变（只取决于 artifactRepairGuard），提到外面避免重复计算
   const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
   const repairHistoryAllowlist = getArtifactRepairHistoryToolAllowlist(ctx);
+  const repairHistoryAllowedToolCallIds = repairHistoryAllowlist
+    ? getAllowedArtifactRepairToolCallIds(ctx, ctx.runtime.messages)
+    : null;
 
   // 预扫:identify toolCallIds whose source assistant entry will drop them via allowlist filter.
   // 必须把对应的 tool message 也跳过,否则成 orphan tool — sanitizeToolCallOrder 会 demote 成 user,
@@ -1518,7 +1532,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     const surviving = tcEntry.toolCalls.filter((tc) => {
       if (REMOVED_TOOLS.has(tc.name)) return false;
       if (!repairHistoryAllowlist) return true;
-      return repairHistoryAllowlist.has(tc.name);
+      return repairHistoryAllowedToolCallIds?.has(tc.id) ?? repairHistoryAllowlist.has(tc.name);
     });
     const survivingIds = new Set(surviving.map((tc) => tc.id));
     const willDropAssistant = surviving.length === 0 && !tcEntry.content;
@@ -1550,7 +1564,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       const tcs = entry.toolCalls.filter((tc) => {
         if (REMOVED_TOOLS.has(tc.name)) return false;
         if (!repairHistoryAllowlist) return true;
-        return repairHistoryAllowlist.has(tc.name);
+        return repairHistoryAllowedToolCallIds?.has(tc.id) ?? repairHistoryAllowlist.has(tc.name);
       });
       if (tcs.length === 0 && !entry.content) continue;
       modelMessages.push({

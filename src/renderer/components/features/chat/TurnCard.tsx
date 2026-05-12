@@ -6,6 +6,7 @@ import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
+import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import {
   Anchor,
   AlertTriangle,
@@ -614,7 +615,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
         </div>
       )}
       {failedTool && (
-        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-300" title={failedTool.result}>
+        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-300" title={formatFailedToolTitle(failedTool)}>
           <XCircle className="h-3 w-3" />
           <span className="max-w-[120px] truncate">{failedTool.name}</span>
         </div>
@@ -622,3 +623,15 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
     </div>
   );
 };
+
+function formatFailedToolTitle(failedTool: NonNullable<TraceNode['toolCall']>): string | undefined {
+  if (typeof failedTool.result !== 'string' || !failedTool.result) {
+    return undefined;
+  }
+  const redacted = redactBrowserComputerInputPayloadsInValue(
+    failedTool.name,
+    (failedTool.args ?? {}) as Record<string, unknown>,
+    failedTool.result,
+  );
+  return typeof redacted === 'string' ? redacted : failedTool.result;
+}

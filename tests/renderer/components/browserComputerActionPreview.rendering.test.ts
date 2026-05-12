@@ -22,6 +22,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
+import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
   return {
@@ -270,6 +271,91 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('点击页面元素');
     expect(html).toContain('#phase3-workflow-button');
     expect(html).toContain('trace-grouped-click');
+  });
+
+  it('expands failed browser-scoped computer groups with recovery details', () => {
+    const nodes: TraceNode[] = [
+      {
+        id: 'node-computer-failure',
+        type: 'tool_call',
+        content: '',
+        timestamp: 1,
+        toolCall: {
+          id: 'tool-computer-failure',
+          name: 'computer_use',
+          args: {
+            action: 'smart_type',
+            selector: '#missing-email',
+            text: 'app-host-secret@example.com',
+          },
+          result: 'No element found after trying app-host-secret@example.com',
+          success: false,
+          metadata: {
+            traceId: 'trace-computer-failure',
+            computerSurfaceMode: 'foreground_fallback',
+          },
+        },
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(ToolStepGroup, {
+        nodes,
+      }),
+    );
+
+    expect(html).toContain('Computer');
+    expect(html).toContain('刷新页面证据');
+    expect(html).toContain('读取 DOM / Accessibility snapshot');
+    expect(html).toContain('trace-computer-failure');
+    expect(html).toContain('[redacted 27 chars]');
+    expect(html).not.toContain('app-host-secret@example.com');
+  });
+
+  it('redacts failed computer tool result from turn header tooltip markup', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TurnCard, {
+        defaultExpanded: true,
+        turn: {
+          turnNumber: 1,
+          turnId: 'turn-computer-failure',
+          status: 'completed',
+          startTime: 1,
+          endTime: 2,
+          nodes: [
+            {
+              id: 'user-1',
+              type: 'user',
+              content: 'Trigger failure',
+              timestamp: 1,
+            },
+            {
+              id: 'node-computer-failure',
+              type: 'tool_call',
+              content: '',
+              timestamp: 2,
+              toolCall: {
+                id: 'tool-computer-failure',
+                name: 'computer_use',
+                args: {
+                  action: 'smart_type',
+                  selector: '#missing-email',
+                  text: 'app-host-secret@example.com',
+                },
+                result: 'No element found after trying app-host-secret@example.com',
+                success: false,
+                metadata: {
+                  traceId: 'trace-computer-failure',
+                },
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(html).toContain('[redacted 27 chars]');
+    expect(html).not.toContain('app-host-secret@example.com');
   });
 
   it('marks mixed tool groups as partial instead of a full failure', () => {

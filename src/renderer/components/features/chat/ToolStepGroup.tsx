@@ -3,7 +3,7 @@
 // 默认折叠，点击展开显示原 ToolCallDisplay 列表
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown, GitBranch } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
@@ -26,8 +26,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   defaultExpanded = false,
 }) => {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-
   const label = useMemo(() => {
     if (nodes.length === 1) {
       const tc = nodes[0].toolCall;
@@ -58,6 +56,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (hasError && hasSuccess) return 'partial';
     return hasError ? 'error' : 'ok';
   }, [nodes]);
+  const [expanded, setExpanded] = useState(defaultExpanded || status === 'error' || status === 'partial');
+  useEffect(() => {
+    if (status === 'error' || status === 'partial') {
+      setExpanded(true);
+    }
+  }, [status]);
 
   const loopDecision = useMemo(
     () => summarizeToolLoopDecisionFromNodes(nodes),

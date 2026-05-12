@@ -51,6 +51,21 @@ async function emitSwarmEvent(
   ).toBe(true);
 }
 
+async function createCleanSession(page: Page): Promise<string> {
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+  await newSessionBtn.click();
+
+  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  await expect(activeSession).toBeVisible({ timeout: 10_000 });
+
+  const sessionId = await activeSession.getAttribute('data-session-id');
+  expect(sessionId, 'active session id missing after creating a clean E2E session').toBeTruthy();
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
+
+  return sessionId!;
+}
+
 test('swarm event 从 EventBus 一路传到 DOM', async ({ page, request }) => {
   // 在 goto 之前挂 waitForResponse, 避免错过立即发出的 SSE 初始请求
   const ssePromise = page.waitForResponse(
@@ -128,14 +143,17 @@ test('pending launch request 会以内联卡片出现在聊天区', async ({ pag
   await ssePromise;
 
   const token = await getAuthToken(page);
+  const sessionId = await createCleanSession(page);
 
   const launchRequestId = `e2e-launch-${Date.now()}`;
   await emitSwarmEvent(request, token, {
     type: 'swarm:launch:requested',
+    sessionId,
     timestamp: Date.now(),
     data: {
       launchRequest: {
         id: launchRequestId,
+        sessionId,
         status: 'pending',
         requestedAt: Date.now(),
         summary: '等待启动审批',
@@ -166,7 +184,8 @@ test('pending launch request 会以内联卡片出现在聊天区', async ({ pag
 
   const chatLog = page.getByRole('log', { name: '对话消息' });
   await expect(chatLog).toBeVisible({ timeout: 10_000 });
-  await expect(chatLog).toContainText('并行编排启动确认');
+  await expect(chatLog).toContainText('准备 spawn 2 个 agent');
+  await expect(chatLog).toContainText('待确认');
   await expect(chatLog).toContainText('等待启动审批');
   await expect(chatLog).toContainText('开始执行');
   await expect(chatLog).toContainText('取消编排');

@@ -79,7 +79,7 @@ import {
 } from '../../agent/todoParser';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
+import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS } from '../../agent/loopTypes';
 import {
   compressToolResult,
   HookMessageBuffer,
@@ -316,6 +316,40 @@ function semanticProgressReasonForToolCall(
   if (ctx.antiPatternDetector.isReadOnlyShellCommand(command)) return null;
   if (!commandReferencesActiveSkill(ctx, command)) return null;
   return `active skill target command: ${skillName}`;
+}
+
+function getReadOnlyPreflightWarning(
+  ctx: RuntimeContext,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+): { reserved: boolean; warning: string | null } {
+  if (ctx.artifactRepairGuard) {
+    // Artifact repair has its own target-file read budgets. Reserving the
+    // generic read-loop counter here would consume those budgets before the
+    // repair guard can make its narrower allow/block decision.
+    return { reserved: false, warning: null };
+  }
+
+  if (READ_ONLY_TOOLS.includes(toolCall.name)) {
+    if (typeof ctx.antiPatternDetector.preflightReadOnlyToolExecution !== 'function') {
+      return { reserved: false, warning: null };
+    }
+    const preflight = ctx.antiPatternDetector.preflightReadOnlyToolExecution(toolCall.name);
+    return { reserved: true, warning: preflight };
+  }
+
+  if ((toolCall.name === 'bash' || toolCall.name === 'Bash') && typeof toolCall.arguments?.command === 'string') {
+    const command = toolCall.arguments.command as string;
+    if (!ctx.antiPatternDetector.isReadOnlyShellCommand?.(command)) {
+      return { reserved: false, warning: null };
+    }
+    if (typeof ctx.antiPatternDetector.preflightReadOnlyShellCommand !== 'function') {
+      return { reserved: false, warning: null };
+    }
+    const preflight = ctx.antiPatternDetector.preflightReadOnlyShellCommand(command);
+    return { reserved: true, warning: preflight };
+  }
+
+  return { reserved: false, warning: null };
 }
 
 async function maybeFinishArtifactRepairIfAlreadyValid(
@@ -1746,6 +1780,8 @@ export class ToolExecutionEngine {
   contextAssembly!: ContextAssembly;
   runFinalizer!: RunFinalizer;
   conversationRuntime!: ConversationRuntime;
+  private forceFinalResponseReasonAtBatchStart: string | undefined;
+  private forceFinalResponseBatchActive = false;
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -1785,6 +1821,14 @@ export class ToolExecutionEngine {
     return result.metadata?.cancelledByRun === true && result.metadata?.suppressObservation === true;
   }
 
+  private shouldSkipToolBecauseForceFinalWasSetInBatch(): boolean {
+    return (
+      this.forceFinalResponseBatchActive &&
+      Boolean(this.ctx.forceFinalResponseReason) &&
+      this.ctx.forceFinalResponseReason !== this.forceFinalResponseReasonAtBatchStart
+    );
+  }
+
   async runSessionStartHook(): Promise<void> {
     if (!this.ctx.planningService) return;
 
@@ -1812,6 +1856,8 @@ export class ToolExecutionEngine {
 
   async executeToolsWithHooks(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     logger.debug(` executeToolsWithHooks called with ${toolCalls.length} tool calls`);
+    this.forceFinalResponseBatchActive = true;
+    this.forceFinalResponseReasonAtBatchStart = this.ctx.forceFinalResponseReason;
     seedArtifactRepairGuardFromContext(this.ctx);
 
     // Check for external file changes before executing tools
@@ -1911,6 +1957,8 @@ export class ToolExecutionEngine {
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
     }
 
+    this.forceFinalResponseBatchActive = false;
+    this.forceFinalResponseReasonAtBatchStart = undefined;
     return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 
@@ -1943,6 +1991,35 @@ export class ToolExecutionEngine {
         parallel,
       );
     };
+    const emitBlockedToolResult = (toolResult: ToolResult): ToolResult => {
+      emitToolCallStart();
+      this.ctx.telemetryAdapter?.onToolCallEnd(
+        this.ctx.currentTurnId,
+        toolCall.id,
+        false,
+        toolResult.error,
+        toolResult.duration || 0,
+        undefined,
+        toolResult.metadata,
+      );
+      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
+      return toolResult;
+    };
+
+    if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: `Tool skipped because final response is already forced: ${this.ctx.forceFinalResponseReason}`,
+        duration: 0,
+        metadata: {
+          skipped: true,
+          blocked: true,
+          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+        },
+      };
+      return emitBlockedToolResult(toolResult);
+    }
 
     if (this.ctx.hookManager) {
       try {
@@ -2222,6 +2299,40 @@ export class ToolExecutionEngine {
     if (this.isRunCancelled()) {
       return this.buildSuppressedCancelledResult(toolCall, startTime);
     }
+
+    if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: `Tool skipped because final response is already forced: ${this.ctx.forceFinalResponseReason}`,
+        duration: Date.now() - startTime,
+        metadata: {
+          skipped: true,
+          blocked: true,
+          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+        },
+      };
+      return emitBlockedToolResult(toolResult);
+    }
+
+    const readOnlyPreflight = getReadOnlyPreflightWarning(this.ctx, toolCall);
+    if (readOnlyPreflight.warning === 'HARD_LIMIT') {
+      activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，已在执行前阻止 ${toolCall.name}`);
+      const hardLimitResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: this.ctx.antiPatternDetector.generateHardLimitError(),
+        duration: Date.now() - startTime,
+        metadata: {
+          blocked: true,
+          skipped: true,
+          hardLimitPreflight: true,
+          forceFinalResponseReason: this.ctx.forceFinalResponseReason,
+        },
+      };
+      return emitBlockedToolResult(hardLimitResult);
+    }
+
     emitToolCallStart();
 
     // Langfuse: Start tool span
@@ -2781,16 +2892,20 @@ export class ToolExecutionEngine {
       }
 
       // Track read vs write operations
-      let readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
-      if (
-        !readWriteWarning &&
-        normalizedResult.success &&
-        (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
-        typeof toolCall.arguments?.command === 'string'
-      ) {
-        readWriteWarning = this.ctx.antiPatternDetector.trackReadOnlyShellCommand(
-          toolCall.arguments.command as string,
-        );
+      let readWriteWarning = readOnlyPreflight.warning;
+      if (!readOnlyPreflight.reserved) {
+        readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
+        if (
+          !readWriteWarning &&
+          normalizedResult.success &&
+          (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
+          typeof toolCall.arguments?.command === 'string' &&
+          typeof this.ctx.antiPatternDetector.trackReadOnlyShellCommand === 'function'
+        ) {
+          readWriteWarning = this.ctx.antiPatternDetector.trackReadOnlyShellCommand(
+            toolCall.arguments.command as string,
+          );
+        }
       }
       if (readWriteWarning === 'HARD_LIMIT') {
         activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，最后一次工具为 ${toolCall.name}`);

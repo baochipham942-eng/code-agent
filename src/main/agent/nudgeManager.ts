@@ -9,6 +9,7 @@ import { spawnSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector.js';
 import { AntiPatternDetector } from './antiPattern/detector';
+import type { ReadOnlyTaskIntent } from './antiPattern/detector';
 import { GoalTracker } from './goalTracker';
 import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../services/planning/taskStore';
@@ -29,6 +30,8 @@ export interface NudgeCheckContext {
   workingDirectory: string;
   /** Current file mutation tools to mention in nudges, e.g. "Edit 或 Append". */
   mutationToolPrompt?: string;
+  /** Lightweight task intent override for read-only nudges. */
+  taskIntent?: ReadOnlyTaskIntent;
   /** Inject a system message into the conversation */
   injectSystemMessage: (content: string) => void;
   /** Emit an agent event (notification, etc.) */
@@ -84,6 +87,7 @@ export class NudgeManager {
   private _enhancedValidationDone: boolean = false;
   private _lastStructureInfo: string | null = null;
   private _enforceTaskCompletion: boolean = false;
+  private _readOnlyTaskIntent: ReadOnlyTaskIntent = 'mutation';
 
   // ── Shared detector ──
   private antiPatternDetector: AntiPatternDetector;
@@ -127,6 +131,7 @@ export class NudgeManager {
     this._lastStructureInfo = null;
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
     this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(userMessage);
+    this._readOnlyTaskIntent = this.inferReadOnlyTaskIntent(userMessage, targetFiles, expectedOutputFiles);
 
     // P5-3: snapshot initial data files
     try {
@@ -211,16 +216,22 @@ export class NudgeManager {
     if (ctx.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
       const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(
         ctx.toolsUsedInTurn,
-        { mutationToolPrompt: ctx.mutationToolPrompt },
+        {
+          mutationToolPrompt: ctx.mutationToolPrompt,
+          taskIntent: ctx.taskIntent || this._readOnlyTaskIntent,
+        },
       );
       if (nudgeMessage) {
         this.readOnlyNudgeCount++;
         logger.debug(`[NudgeManager] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
         logCollector.agent('INFO', `Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
         ctx.injectSystemMessage(nudgeMessage);
+        const notificationMessage = (ctx.taskIntent || this._readOnlyTaskIntent) === 'analysis'
+          ? `检测到只读分析路径，提示收束证据 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`
+          : `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`;
         ctx.onEvent({
           type: 'notification',
-          data: { message: `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...` },
+          data: { message: notificationMessage },
         });
         return true;
       }
@@ -466,7 +477,7 @@ export class NudgeManager {
   checkProgressState(
     toolsUsedInTurn: string[],
     injectSystemMessage: (content: string) => void,
-    options: { mutationToolPrompt?: string } = {},
+    options: { mutationToolPrompt?: string; taskIntent?: ReadOnlyTaskIntent } = {},
   ): void {
     const currentState = this.evaluateProgressState(toolsUsedInTurn);
     if (currentState === 'exploring') {
@@ -474,7 +485,10 @@ export class NudgeManager {
       if (this.consecutiveExploringCount >= this.maxConsecutiveExploring) {
         logger.debug(`[NudgeManager] P2 Checkpoint: ${this.consecutiveExploringCount} consecutive exploring iterations, injecting nudge`);
         logCollector.agent('INFO', `P2 Checkpoint nudge: ${this.consecutiveExploringCount} exploring iterations`);
-        injectSystemMessage(this.generateExploringNudge(options.mutationToolPrompt));
+        injectSystemMessage(this.generateExploringNudge(
+          options.mutationToolPrompt,
+          options.taskIntent || this._readOnlyTaskIntent,
+        ));
         this.consecutiveExploringCount = 0;
       }
     } else {
@@ -657,7 +671,44 @@ export class NudgeManager {
     return 'exploring';
   }
 
-  private generateExploringNudge(mutationToolPrompt?: string): string {
+  private inferReadOnlyTaskIntent(
+    userMessage: string,
+    targetFiles: string[],
+    expectedOutputFiles: string[],
+  ): ReadOnlyTaskIntent {
+    if (/不要修改|别改|不改代码|只读|仅分析|只分析|只审|诊断报告|只输出诊断|read[- ]?only|analysis[- ]?only/i.test(userMessage)) {
+      return 'analysis';
+    }
+
+    if (expectedOutputFiles.length > 0 || targetFiles.length > 0) {
+      return 'mutation';
+    }
+
+    const explicitMutation =
+      /修改|改掉|改成|修复|修一下|实现|增加|新增|补上|补齐|落地|写入|创建|生成.*文件|编辑|重构|提交|删掉|删除|替换|跑通|完成/i.test(userMessage);
+    const analysisCue =
+      /怎么|如何|为什么|原因|分析|诊断|排查|研究|评估|审计|看一下|看看|解释|建议|方案|对比|review|inspect|investigate|diagnos|analy[sz]e/i.test(userMessage);
+
+    if (analysisCue && !explicitMutation) {
+      return 'analysis';
+    }
+
+    return 'mutation';
+  }
+
+  private generateExploringNudge(
+    mutationToolPrompt?: string,
+    taskIntent: ReadOnlyTaskIntent = 'mutation',
+  ): string {
+    if (taskIntent === 'analysis') {
+      return (
+        `<checkpoint-nudge priority="medium">\n` +
+        `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
+        `当前任务看起来是分析/诊断，请收束证据并输出分析；如果还缺关键事实，只读一次最关键范围。\n` +
+        `</checkpoint-nudge>`
+      );
+    }
+
     const mutationTools = mutationToolPrompt || 'edit_file 或 write_file';
     return (
       `<checkpoint-nudge priority="medium">\n` +

@@ -293,6 +293,18 @@ describe('skillModule (native)', () => {
       }
     });
 
+    it('does NOT pre-approve tools for cloud skills', async () => {
+      getSkillMock.mockReturnValue(
+        makeSkill({ name: 'demo', source: 'cloud', allowedTools: ['Read', 'Write'] }),
+      );
+      const result = await run({ command: 'demo' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const meta = result.meta as { skillResult: { contextModifier: { preApprovedTools?: string[] } } };
+        expect(meta.skillResult.contextModifier.preApprovedTools).toBeUndefined();
+      }
+    });
+
     it('does NOT pre-approve tools for user skills (security boundary)', async () => {
       getSkillMock.mockReturnValue(
         makeSkill({ name: 'demo', source: 'user', allowedTools: ['Read', 'Write'] }),

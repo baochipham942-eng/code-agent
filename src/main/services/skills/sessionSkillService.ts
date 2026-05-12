@@ -17,6 +17,12 @@ import { loadSkillContent } from './skillLoader';
 
 const logger = createLogger('SessionSkillService');
 
+function getSkillLibraryId(skill: ParsedSkill): string {
+  if (skill.source === 'builtin') return 'builtin';
+  if (skill.source === 'cloud') return 'cloud';
+  return skill.basePath;
+}
+
 /**
  * 会话级 Skill 挂载服务
  * 管理每个会话挂载的 skills
@@ -178,7 +184,7 @@ class SessionSkillService {
         const skill = allSkills.find((s) => s.name === skillName);
         if (skill) {
           // 确定所属库 ID
-          const libraryId = skill.source === 'builtin' ? 'builtin' : skill.basePath;
+          const libraryId = getSkillLibraryId(skill);
 
           recommendations.push({
             skillName: skill.name,

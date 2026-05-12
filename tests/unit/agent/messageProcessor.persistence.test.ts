@@ -489,6 +489,189 @@ describe('MessageProcessor persistence', () => {
     expect(contextAssembly.flushHookMessageBuffer).toHaveBeenCalledTimes(1);
   });
 
+  it('defers read-loop hard limit final content to a no-tool inference pass', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => {
+        ctx.forceFinalResponseReason = '连续只读操作达到硬阈值，最后一次工具为 Read';
+        ctx.forceFinalResponsePrompt = [
+          '<force-final-response reason="read-loop-hard-limit">',
+          'Produce the final answer now.',
+          '</force-final-response>',
+        ].join('\n');
+        return [{
+          toolCallId: 'tool-1',
+          success: false,
+          error: 'read loop hard limit',
+          duration: 1,
+        }];
+      }),
+    };
+    const endSpan = vi.fn();
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/evidence.txt' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan },
+    );
+
+    expect(action).toBe('continue');
+    expect(ctx.forceFinalResponseReason).toBe('连续只读操作达到硬阈值，最后一次工具为 Read');
+    expect(ctx.forceFinalResponsePrompt).toContain('reason="read-loop-hard-limit"');
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({
+        id: 'assistant-message-1',
+        role: 'assistant',
+      }),
+      expect.objectContaining({
+        id: 'tool-message-1',
+        role: 'tool',
+      }),
+    ]);
+    expect(ctx.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          content: '任务已结束，已停止继续调用工具。执行记录和产物已保留。',
+        }),
+      ]),
+    );
+    expect(endSpan).toHaveBeenCalledWith(
+      'iteration-1',
+      expect.objectContaining({ forcedFinalResponseDeferred: true }),
+    );
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledWith('turn-1', '', undefined, 'hash-1');
+    expect(ctx.onEvent).toHaveBeenCalledWith({
+      type: 'turn_end',
+      data: { turnId: 'turn-1' },
+    });
+  });
+
+  it('persists the deferred read-loop final text and clears force-final state without another nudge', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [{ id: 'user-1', role: 'user', content: '分析一下 Alma 的流式输出', timestamp: Date.now() }],
+      isCancelled: false,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      _researchModeActive: false,
+      _consecutiveTruncations: 0,
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      toolsUsedInTurn: ['Glob', 'Bash', 'Bash'],
+      isSimpleTaskMode: false,
+      forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash',
+      forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>',
+      totalToolCallCount: 3,
+      antiScrapingHitsInRun: 0,
+      nudgeManager: {
+        runNudgeChecks: vi.fn(() => true),
+        runOutputValidation: vi.fn(() => true),
+        getModifiedFiles: vi.fn(() => new Set()),
+      },
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn().mockReturnValue('final-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    };
+    const endSpan = vi.fn();
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '基于已有证据，Alma 的主进程入口包含 SSE/ReadableStream 相关实现。',
+        finishReason: 'stop',
+      } as ModelResponse,
+      false,
+      2,
+      true,
+      { endSpan },
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.nudgeManager.runNudgeChecks).not.toHaveBeenCalled();
+    expect(ctx.nudgeManager.runOutputValidation).not.toHaveBeenCalled();
+    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'final-message-1',
+        role: 'assistant',
+        content: expect.stringContaining('ReadableStream'),
+      }),
+    );
+    expect(endSpan).toHaveBeenCalledWith('iteration-1', { type: 'text_response' });
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledTimes(1);
+  });
+
   it('persists artifact repair target reads as an immediate anchored preview', async () => {
     const largeHtml = [
       '<!doctype html>',

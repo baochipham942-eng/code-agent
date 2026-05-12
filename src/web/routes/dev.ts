@@ -6,8 +6,9 @@ import path from 'path';
 import fs from 'fs';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { PermissionRequest, PermissionResponse } from '../../shared/contract';
+import type { AgentEvent, PermissionRequest, PermissionResponse } from '../../shared/contract';
 import { generatePermissionRequestId } from '../../shared/utils/id';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { sseClients, broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
@@ -54,6 +55,8 @@ interface OfficeSmokeStep {
   params: Record<string, unknown>;
   check: 'connected' | 'array';
 }
+
+type RendererAgentEvent = AgentEvent & { sessionId?: string };
 
 export interface PendingDevPermissionRequest {
   request: PermissionRequest;
@@ -328,6 +331,43 @@ function evaluateOfficeSmokeStep(
   };
 }
 
+function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
+  if (!body || typeof body !== 'object') {
+    return null;
+  }
+
+  const payload = body as { event?: unknown; events?: unknown } | unknown[];
+  const rawEvents = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { events?: unknown }).events)
+      ? (payload as { events: unknown[] }).events
+      : (payload as { event?: unknown }).event !== undefined
+        ? [(payload as { event: unknown }).event]
+        : [payload];
+
+  if (rawEvents.length === 0) {
+    return null;
+  }
+
+  const events: RendererAgentEvent[] = [];
+  for (const event of rawEvents) {
+    if (!event || typeof event !== 'object') {
+      return null;
+    }
+
+    const candidate = event as Partial<RendererAgentEvent> & { type?: unknown; sessionId?: unknown };
+    if (
+      typeof candidate.type !== 'string'
+      || (candidate.sessionId !== undefined && typeof candidate.sessionId !== 'string')
+    ) {
+      return null;
+    }
+    events.push(candidate as RendererAgentEvent);
+  }
+
+  return events;
+}
+
 // ── Router factory ────────────────────────────────────────────────────────
 
 interface DevRouterDeps {
@@ -480,6 +520,31 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
     getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
     res.json({ ok: true });
+  });
+
+  // ── POST /api/dev/emit-agent-events (E2E test hook) ─────────────────
+  // 仅 CODE_AGENT_E2E=1 启用。Playwright 用它注入 agent:event / agent:event:batch,
+  // 验证全局 SSE → httpTransport → ipcService → useAgent → DOM 的真实 renderer 链路。
+  router.post('/dev/emit-agent-events', (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+
+    const events = normalizeDevAgentEvents(req.body);
+    if (!events) {
+      res.status(400).json({
+        error: 'Body must be an AgentEvent, { event }, { events }, or an AgentEvent array.',
+      });
+      return;
+    }
+
+    if (events.length === 1) {
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, events[0]);
+    } else {
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT_BATCH, events);
+    }
+    res.json({ ok: true, count: events.length });
   });
 
   return router;

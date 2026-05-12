@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecutionEngine';
+import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
 import { fileReadTracker } from '../../../src/main/tools/fileReadTracker';
+import {
+  getArtifactRepairTargetReadBudget,
+  getArtifactRepairTargetRangedReadBudget,
+} from '../../../src/main/agent/runtime/artifactRepairGuard';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -209,6 +214,10 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
       trackDuplicateCall: vi.fn(),
       trackFileReread: vi.fn(),
       trackToolExecution: vi.fn(),
+      trackReadOnlyShellCommand: vi.fn(),
+      isReadOnlyShellCommand: vi.fn().mockReturnValue(false),
+      preflightReadOnlyToolExecution: vi.fn().mockReturnValue(null),
+      preflightReadOnlyShellCommand: vi.fn().mockReturnValue(null),
       generateHardLimitError: vi.fn(),
     } as never,
     goalTracker: { recordAction: vi.fn() } as never,
@@ -473,7 +482,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
   });
 
-  it('emits tool_call_end when anti-pattern hard limit aborts after execution', async () => {
+  it('emits tool_call_end when anti-pattern hard limit blocks before execution', async () => {
     serviceMocks.langfuse.endSpan.mockClear();
     const toolExecutor = {
       execute: vi.fn(async (): Promise<ToolResult> => ({
@@ -487,7 +496,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       clearToolFailure: vi.fn(),
       trackDuplicateCall: vi.fn(),
       trackFileReread: vi.fn(),
-      trackToolExecution: vi.fn().mockReturnValue('HARD_LIMIT'),
+      trackToolExecution: vi.fn(),
+      preflightReadOnlyToolExecution: vi.fn().mockReturnValue('HARD_LIMIT'),
       generateHardLimitError: vi.fn().mockReturnValue('too many reads'),
     };
 
@@ -517,7 +527,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       toolCallId: 'tool-hard-limit',
       success: false,
       error: 'too many reads',
+      metadata: expect.objectContaining({
+        blocked: true,
+        skipped: true,
+        hardLimitPreflight: true,
+      }),
     });
+    expect(toolExecutor.execute).not.toHaveBeenCalled();
+    expect(antiPatternDetector.trackToolExecution).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter?.onToolCallEnd).toHaveBeenCalledWith(
       'turn-1',
       'tool-hard-limit',
@@ -525,16 +542,156 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       'too many reads',
       expect.any(Number),
       undefined,
+      expect.objectContaining({
+        blocked: true,
+        skipped: true,
+        hardLimitPreflight: true,
+      }),
     );
     expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'tool_call_end')).toBe(true);
-    expect(serviceMocks.langfuse.endSpan).toHaveBeenCalledWith(
-      'tool-tool-hard-limit',
-      expect.objectContaining({ success: false, error: 'too many reads' }),
-      'ERROR',
-      'too many reads',
-    );
+    expect(serviceMocks.langfuse.endSpan).not.toHaveBeenCalled();
     expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
     expect(ctx.forceFinalResponsePrompt).toContain('force-final-response');
+  });
+
+  it('blocks the fifteenth read and skips the sixteenth sequential read in the same batch', async () => {
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: 'read ok',
+      })),
+    };
+    const antiPatternDetector = new AntiPatternDetector();
+    for (let index = 0; index < 14; index += 1) {
+      antiPatternDetector.trackToolExecution('Read', true);
+    }
+
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      antiPatternDetector,
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const results = await engine.executeToolsWithHooks([
+      { id: 'tool-read-15', name: 'Read', arguments: { file_path: '/tmp/a.ts' } } as ToolCall,
+      { id: 'tool-read-16', name: 'Read', arguments: { file_path: '/tmp/b.ts' } } as ToolCall,
+    ]);
+
+    expect(toolExecutor.execute).not.toHaveBeenCalled();
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({
+      toolCallId: 'tool-read-15',
+      success: false,
+      metadata: expect.objectContaining({
+        hardLimitPreflight: true,
+        skipped: true,
+      }),
+    });
+    expect(results[1]).toMatchObject({
+      toolCallId: 'tool-read-16',
+      success: false,
+      metadata: expect.objectContaining({
+        skipped: true,
+        forceFinalResponseReason: expect.stringContaining('连续只读操作达到硬阈值'),
+      }),
+    });
+    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+
+    const toolEvents = vi.mocked(ctx.onEvent).mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'tool_call_start' || event.type === 'tool_call_end');
+    expect(toolEvents.map((event) => event.type)).toEqual([
+      'tool_call_start',
+      'tool_call_end',
+      'tool_call_start',
+      'tool_call_end',
+    ]);
+    expect(toolEvents[0]?.data).toMatchObject({ id: 'tool-read-15' });
+    expect(toolEvents[1]?.data).toMatchObject({ toolCallId: 'tool-read-15' });
+    expect(toolEvents[2]?.data).toMatchObject({ id: 'tool-read-16' });
+    expect(toolEvents[3]?.data).toMatchObject({ toolCallId: 'tool-read-16' });
+  });
+
+  it('preflights batched read-only Bash calls before the hard-limit command executes', async () => {
+    const toolExecutor = {
+      execute: vi.fn(async (_toolName: string, args: Record<string, unknown>): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: `read ok: ${String(args.command)}`,
+      })),
+    };
+
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      antiPatternDetector: new AntiPatternDetector(),
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const calls = Array.from({ length: 16 }, (_, index) => {
+      const id = String(index + 1).padStart(2, '0');
+      return {
+        id: `bash-read-${id}`,
+        name: 'Bash',
+        arguments: { command: `cat evidence-${id}.txt`, description: `read ${id}` },
+      } as ToolCall;
+    });
+
+    const results = await engine.executeToolsWithHooks(calls);
+
+    expect(toolExecutor.execute).toHaveBeenCalledTimes(14);
+    expect(toolExecutor.execute).not.toHaveBeenCalledWith(
+      'Bash',
+      expect.objectContaining({ command: 'cat evidence-15.txt' }),
+      expect.anything(),
+    );
+    expect(toolExecutor.execute).not.toHaveBeenCalledWith(
+      'Bash',
+      expect.objectContaining({ command: 'cat evidence-16.txt' }),
+      expect.anything(),
+    );
+    expect(results).toHaveLength(16);
+    expect(results.slice(0, 14).every((result) => result.success)).toBe(true);
+    expect(results[14]).toMatchObject({
+      toolCallId: 'bash-read-15',
+      success: false,
+      metadata: expect.objectContaining({
+        hardLimitPreflight: true,
+        skipped: true,
+      }),
+    });
+    expect(results[15]).toMatchObject({
+      toolCallId: 'bash-read-16',
+      success: false,
+      metadata: expect.objectContaining({
+        skipped: true,
+        forceFinalResponseReason: expect.stringContaining('执行前阻止 Bash'),
+      }),
+    });
   });
 
   it('marks successful read_file output as preserved file evidence', async () => {
@@ -1203,7 +1360,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
               risks: ['timer']
             }
           };
-          const state = { x: 0, score: 0 };
+          const state = {
+            x: 0,
+            score: 0,
+            distanceTraveled: 0,
+            obstaclesAvoided: 0,
+            pickupsCollected: 0,
+            gameOver: false
+          };
           window.__GAME_TEST__ = {
             runSmokeTest: () => ({
               passed: false,
@@ -2246,48 +2410,82 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
           window.__GAME_META__ = {
             domain: 'game',
             subtype: 'runner',
-            controls: { ArrowRight: 'Move right' },
+            autoRun: true,
+            forwardAxis: 'x',
+            runSpeed: 8,
+            controls: { ArrowRight: 'Move right', Space: 'Jump' },
             levels: [{ id: 0 }],
-            progressPlan: [{ input: 'ArrowRight', metric: 'playerX', expect: 'increase' }],
+            obstacles: [{ id: 'pit-1', type: 'pit', position: 48, action: 'jump' }],
+            progressPlan: [
+              { input: 'ArrowRight', frames: 2, metric: 'distanceTraveled', expect: 'increase' },
+              { input: 'Space', frames: 1, metric: 'obstaclesAvoided', expect: 'increase' }
+            ],
             qualityPlan: {
               actorReadable: true,
-              mechanics: ['platform_movement'],
-              rewards: ['score_from_treats'],
-              risks: ['fall_death'],
+              mechanics: ['auto_run', 'jump_evade'],
+              rewards: ['score_from_distance'],
+              risks: ['pit_obstacle'],
               levelsCovered: 1,
               allLevelsReachable: true,
-              stateChanges: ['playerX', 'score']
+              stateChanges: ['distanceTraveled', 'obstaclesAvoided', 'pickupsCollected', 'score']
             }
           };
           window.__GAME_TEST__ = {
-            start() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
-            reset() { state.x = 0; state.score = 0; draw(); return { mode: 'playing' }; },
-            snapshot() { return { playerX: state.x, score: state.score, mode: 'playing' }; },
+            start() {
+              state.x = 0;
+              state.score = 0;
+              state.distanceTraveled = 0;
+              state.obstaclesAvoided = 0;
+              state.pickupsCollected = 0;
+              state.gameOver = false;
+              draw();
+              return { mode: 'playing' };
+            },
+            reset() { return this.start(); },
+            snapshot() {
+              return {
+                playerX: state.x,
+                score: state.score,
+                distanceTraveled: state.distanceTraveled,
+                obstaclesAvoided: state.obstaclesAvoided,
+                pickupsCollected: state.pickupsCollected,
+                gameOver: state.gameOver,
+                mode: 'playing'
+              };
+            },
             step(input, frames = 1) {
               for (let i = 0; i < frames; i++) {
+                state.distanceTraveled += 8;
+                state.x = state.distanceTraveled;
+                state.score += 1;
                 if (input?.ArrowRight) {
-                  state.x += 8;
                   state.score += 1;
+                }
+                if (input?.Space || input?.ArrowUp || input?.jump) {
+                  state.obstaclesAvoided += 1;
+                }
+                if (state.distanceTraveled >= 24 && state.pickupsCollected === 0) {
+                  state.pickupsCollected = 1;
                 }
               }
               draw();
               return this.snapshot();
             },
             runSmokeTest() {
-              this.start();
               this.step({ ArrowRight: true }, 2);
+              this.step({ Space: true }, 1);
               return {
-                passed: state.x > 0 && state.score > 0,
+                passed: state.distanceTraveled > 0 && state.obstaclesAvoided > 0 && state.score > 0,
                 checks: ['runtime smoke passed via target read'],
                 failures: [],
                 coverage: {
                   levelsPassed: 1,
                   totalLevels: 1,
                   allLevelsReachable: true,
-                  mechanics: ['platform_movement'],
-                  rewards: ['score_from_treats'],
-                  risks: ['fall_death'],
-                  stateChanges: ['playerX', 'score']
+                  mechanics: ['auto_run', 'jump_evade'],
+                  rewards: ['score_from_distance'],
+                  risks: ['pit_obstacle'],
+                  stateChanges: ['distanceTraveled', 'obstaclesAvoided', 'pickupsCollected', 'score']
                 }
               };
             }
@@ -2550,15 +2748,19 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         output: `${name} ok`,
       })),
     };
+    const initialGuard = {
+      targetFile,
+      attempts: 0,
+      phase: 'initial_repair',
+      blockedToolCount: 1,
+    };
+    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
       artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        blockedToolCount: 1,
-        targetReadCount: 0,
+        ...initialGuard,
+        targetReadCount: readBudget - 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2588,7 +2790,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       makeToolCall('repair-read-target-1', targetFile),
     ]);
     expect(allowedRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(1);
+    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
     vi.mocked(toolExecutor.execute).mockClear();
@@ -2603,7 +2805,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
-  it('allows only one ranged target-file read after artifact repair full-read budget is exhausted', async () => {
+  it('blocks ranged target-file reads after the configured artifact repair ranged-read budget is exhausted', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-ranged-read-'));
     const targetFile = path.join(dir, 'game.html');
     await writeFile(targetFile, '<!doctype html><html><body></body></html>', 'utf-8');
@@ -2615,15 +2817,21 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         output: `${name} ok`,
       })),
     };
+    const initialGuard = {
+      targetFile,
+      attempts: 0,
+      phase: 'read_then_patch',
+      blockedToolCount: 2,
+    };
+    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
+    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
       artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'read_then_patch',
-        targetReadCount: 1,
-        blockedToolCount: 2,
+        ...initialGuard,
+        targetReadCount: readBudget,
+        targetRangedReadCount: rangedReadBudget - 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2662,8 +2870,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(allowedRangeRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(1);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(1);
+    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
+    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
     vi.mocked(toolExecutor.execute).mockClear();
@@ -2699,15 +2907,21 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         output: `${name} ok`,
       })),
     };
+    const initialGuard = {
+      targetFile,
+      attempts: 0,
+      phase: 'read_then_patch',
+      blockedToolCount: 2,
+    };
+    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
+    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
       artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'read_then_patch',
-        targetReadCount: 1,
-        blockedToolCount: 2,
+        ...initialGuard,
+        targetReadCount: readBudget,
+        targetRangedReadCount: rangedReadBudget - 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2744,8 +2958,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(allowedLinesRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(1);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(1);
+    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
+    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
     vi.mocked(toolExecutor.execute).mockClear();
@@ -2764,7 +2978,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
-  it('allows a second ranged target-file read for coverage evidence repairs', async () => {
+  it('blocks coverage evidence ranged reads after the configured repair ranged-read budget is exhausted', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-coverage-ranged-read-'));
     const targetFile = path.join(dir, 'game.html');
     await writeFile(targetFile, [
@@ -2791,16 +3005,21 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         output: `${name} ok`,
       })),
     };
+    const initialGuard = {
+      targetFile,
+      attempts: 0,
+      phase: 'initial_repair',
+      activeIssueCodes: ['coverage_without_runtime_evidence'],
+    };
+    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
+    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
       artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
+        ...initialGuard,
+        targetReadCount: readBudget,
+        targetRangedReadCount: rangedReadBudget - 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2839,7 +3058,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(allowedSecondRangeRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(2);
+    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
     vi.mocked(toolExecutor.execute).mockClear();
@@ -3340,12 +3559,17 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         },
       } as ToolCall,
     ]);
+    const exhaustedReadBudget = getArtifactRepairTargetReadBudget({
+      targetFile,
+      attempts: 1,
+      phase: 'baseline_repair',
+    });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('Artifact validation failed');
     expect(ctx.artifactRepairGuard).toMatchObject({
       targetFile,
-      targetReadCount: 1,
+      targetReadCount: exhaustedReadBudget,
       blockedToolCount: 2,
       noOpPatchCount: 1,
       patched: false,

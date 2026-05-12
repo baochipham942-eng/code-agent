@@ -181,6 +181,7 @@ export function projectTurns(
               duration: tc.result?.duration,
               outputPath: tc.result?.outputPath,
               metadata: tc.result?.metadata,
+              liveOutput: tc.liveOutput,
               _streaming: tc._streaming,
               shortDescription: tc.shortDescription,
               targetContext: tc.targetContext,

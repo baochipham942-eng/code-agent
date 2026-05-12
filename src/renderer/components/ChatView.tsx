@@ -6,6 +6,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useAgent } from '../hooks/useAgent';
@@ -43,6 +44,8 @@ import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
+import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
+import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import {
   ArrowRight,
   Code2,
@@ -65,7 +68,8 @@ export const ChatView: React.FC = () => {
     streamSnapshot,
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
-  const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+  const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.entries);
+  const { messages, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
 
@@ -278,7 +282,20 @@ export const ChatView: React.FC = () => {
 
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests);
-  const projection = useTurnExecutionClarity(baseProjection);
+  const clarityProjection = useTurnExecutionClarity(baseProjection);
+  const projection = React.useMemo(
+    () => applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
+    [clarityProjection, messages, streamingMessageEntries],
+  );
+
+  useEffect(() => {
+    recordStreamingPerformanceCounter('stream.projection.base_commit');
+  }, [baseProjection]);
+
+  useEffect(() => {
+    if (Object.keys(streamingMessageEntries).length === 0) return;
+    recordStreamingPerformanceCounter('stream.projection.overlay_commit');
+  }, [projection, streamingMessageEntries]);
 
   // Global drop zone state
   const chatInputRef = useRef<ChatInputHandle>(null);

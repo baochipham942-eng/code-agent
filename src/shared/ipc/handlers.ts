@@ -8,7 +8,7 @@ import type {
   Session,
   FileInfo,
   AppSettings,
-  AgentEvent,
+  AgentEventEnvelope,
   TaskPlan,
   Finding,
   ErrorRecord,
@@ -637,7 +637,8 @@ export type TaskRuntimeEvent =
   | { type: 'queue_update'; sessionId: string; queue: string[] };
 
 export interface IpcEventHandlers {
-  [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
+  [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;
+  [IPC_CHANNELS.AGENT_EVENT_BATCH]: (events: AgentEventEnvelope[]) => void;
   [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
   [IPC_CHANNELS.MEMORY_CONFIRM_REQUEST]: (request: MemoryConfirmRequest) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;

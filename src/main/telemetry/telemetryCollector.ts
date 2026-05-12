@@ -954,6 +954,8 @@ export class TelemetryCollector {
         return `Notification: ${(data as { message?: string })?.message?.substring(0, 100) ?? ''}`;
       case 'context_compressed':
         return `Context compaction triggered`;
+      case 'message_delta':
+        return data?.path === 'reasoning' ? `Thinking...` : `Streaming response...`;
       case 'stream_reasoning':
         return `Thinking...`;
       default:

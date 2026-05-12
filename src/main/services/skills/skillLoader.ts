@@ -50,6 +50,10 @@ function isPathInside(parentPath: string, childPath: string): boolean {
 }
 
 async function resolveSkillReferencePath(skill: ParsedSkill, ref: string): Promise<string | null> {
+  if (!skill.basePath) {
+    return null;
+  }
+
   const basePath = path.resolve(skill.basePath);
   const refPath = path.resolve(basePath, ref);
 
@@ -82,6 +86,13 @@ const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
  */
 export async function loadSkillContent(skill: ParsedSkill): Promise<void> {
   if (skill.loaded) return;
+
+  if (!skill.basePath) {
+    skill.promptContent = skill.promptContent ?? '';
+    skill.loaded = true;
+    logger.debug('Using inline skill content', { name: skill.name, source: skill.source });
+    return;
+  }
 
   const skillPath = path.join(skill.basePath, 'SKILL.md');
   try {

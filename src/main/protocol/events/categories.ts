@@ -31,8 +31,11 @@ export type AgentEventType = AgentEvent['type'];
  * 对应 CC 的 "中间产物" 语义（stream chunk / reasoning delta）
  */
 export const BATCHABLE_EVENT_TYPES = new Set<AgentEventType>([
+  'message_delta',
   'stream_chunk',
+  'stream_reasoning',
   'stream_tool_call_delta',
+  'tool_output_delta',
 ]);
 
 /**
@@ -60,10 +63,12 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
 /** 是否为流式中间产物（UI 可选择节流渲染） */
 export function isStreamingEvent(type: AgentEventType): boolean {
   return (
+    type === 'message_delta' ||
     type === 'stream_chunk' ||
     type === 'stream_reasoning' ||
     type === 'stream_tool_call_start' ||
     type === 'stream_tool_call_delta' ||
+    type === 'tool_output_delta' ||
     type === 'stream_usage' ||
     type === 'stream_token_estimate'
   );
@@ -76,6 +81,7 @@ export function isToolEvent(type: AgentEventType): boolean {
     type === 'tool_call_end' ||
     type === 'tool_progress' ||
     type === 'tool_timeout' ||
+    type === 'tool_output_delta' ||
     type === 'tool_call_local'
   );
 }

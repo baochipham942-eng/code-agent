@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Runtime coordinator split is out of scope for this stabilization change. */
 // ============================================================================
 // MessageProcessor — Message building, parsing, and telemetry recording
 // Extracted from ConversationRuntime
@@ -85,6 +86,13 @@ function buildForcedFinalAssistantContent(reason: string): string {
     return '目标产物已通过交互验收，修复流程已结束。';
   }
   return '任务已结束，已停止继续调用工具。执行记录和产物已保留。';
+}
+
+function shouldDeferForcedFinalToInference(ctx: RuntimeContext): boolean {
+  const reason = ctx.forceFinalResponseReason ?? '';
+  const prompt = ctx.forceFinalResponsePrompt ?? '';
+  return reason.startsWith('连续只读操作达到硬阈值')
+    || prompt.includes('reason="read-loop-hard-limit"');
 }
 
 function buildArtifactRepairAdmissionRecoveryPrompt(
@@ -233,6 +241,8 @@ export class MessageProcessor {
       return 'break';
     }
 
+    const isForcedFinalTextPass = Boolean(this.ctx.forceFinalResponseReason);
+
     // Research mode: indicate report generation phase
     if (this.ctx._researchModeActive) {
       this.runFinalizer.emitTaskProgress('generating', '正在生成报告...');
@@ -241,7 +251,7 @@ export class MessageProcessor {
     }
 
     // User-configurable Stop hook
-    if (this.ctx.hookManager && !isSimpleTask) {
+    if (!isForcedFinalTextPass && this.ctx.hookManager && !isSimpleTask) {
       try {
         const userStopResult = await this.ctx.hookManager.triggerStop(response.content, this.ctx.sessionId);
         if (!userStopResult.shouldProceed) {
@@ -260,7 +270,7 @@ export class MessageProcessor {
     }
 
     // Planning stop hook
-    if (shouldRunHooks && this.ctx.planningService) {
+    if (!isForcedFinalTextPass && shouldRunHooks && this.ctx.planningService) {
       try {
         const stopResult = await this.ctx.planningService.hooks.onStop();
 
@@ -354,27 +364,31 @@ export class MessageProcessor {
 
     // P1-P5 Nudge checks (delegated to NudgeManager)
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
-    const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
-      toolsUsedInTurn: this.ctx.toolsUsedInTurn,
-      isSimpleTaskMode: this.ctx.isSimpleTaskMode,
-      sessionId: this.ctx.sessionId,
-      iterations,
-      workingDirectory: this.ctx.workingDirectory,
-      mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
-      injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): NudgeManager 的 onEvent 形参 { type: string; data: unknown } 是宽口，外层 ctx.onEvent 期望 AgentEvent 严格联合；应让 NudgeManager 直接接受 AgentEvent，或在外层定义 AnyEvent 类型
-      onEvent: (event: { type: string; data: unknown }) => this.ctx.onEvent(event as any),
-      goalTracker: this.ctx.goalTracker,
-    });
-    if (nudgeTriggered) {
-      return 'continue';
+    if (!isForcedFinalTextPass) {
+      const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
+        toolsUsedInTurn: this.ctx.toolsUsedInTurn,
+        isSimpleTaskMode: this.ctx.isSimpleTaskMode,
+        sessionId: this.ctx.sessionId,
+        iterations,
+        workingDirectory: this.ctx.workingDirectory,
+        mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
+        injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): NudgeManager 的 onEvent 形参 { type: string; data: unknown } 是宽口，外层 ctx.onEvent 期望 AgentEvent 严格联合；应让 NudgeManager 直接接受 AgentEvent，或在外层定义 AnyEvent 类型
+        onEvent: (event: { type: string; data: unknown }) => this.ctx.onEvent(event as any),
+        goalTracker: this.ctx.goalTracker,
+      });
+      if (nudgeTriggered) {
+        return 'continue';
+      }
     }
     // P7 + P0 Output validation (delegated to NudgeManager)
-    const validationTriggered = this.ctx.nudgeManager.runOutputValidation(
-      (msg: string) => this.contextAssembly.injectSystemMessage(msg),
-    );
-    if (validationTriggered) {
-      return 'continue';
+    if (!isForcedFinalTextPass) {
+      const validationTriggered = this.ctx.nudgeManager.runOutputValidation(
+        (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+      );
+      if (validationTriggered) {
+        return 'continue';
+      }
     }
 
     const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
@@ -439,6 +453,10 @@ export class MessageProcessor {
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
+    if (isForcedFinalTextPass) {
+      this.ctx.forceFinalResponseReason = undefined;
+      this.ctx.forceFinalResponsePrompt = undefined;
+    }
 
     // === 自动解析任务列表（替代 TodoWrite 工具） ===
     this.runFinalizer.tryParseTodosFromResponse(response);
@@ -895,6 +913,26 @@ export class MessageProcessor {
     }
 
     if (this.ctx.forceFinalResponseReason) {
+      if (shouldDeferForcedFinalToInference(this.ctx)) {
+        logger.warn('[AgentLoop] Read-loop hard limit reached; deferring final answer to no-tool inference', {
+          reason: this.ctx.forceFinalResponseReason,
+        });
+        this.contextAssembly.flushHookMessageBuffer();
+        langfuse.endSpan(this.ctx.currentIterationSpanId, {
+          type: 'tool_calls',
+          toolCount: toolCalls.length,
+          successCount: toolResults.filter((r: ToolResult) => r.success).length,
+          forcedFinalResponseDeferred: true,
+        });
+        // Close this tool turn before the deferred no-tool inference starts a fresh turn.
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.onEvent({
+          type: 'turn_end',
+          data: { turnId: this.ctx.currentTurnId },
+        });
+        return 'continue';
+      }
+
       const finalMessage: Message = {
         id: this.contextAssembly.generateId(),
         role: 'assistant',

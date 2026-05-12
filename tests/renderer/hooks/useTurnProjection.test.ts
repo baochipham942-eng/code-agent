@@ -364,4 +364,36 @@ describe('projectTurns', () => {
       path: '/repo/app/report.md',
     });
   });
+
+  it('preserves pending tool live output on tool call nodes', () => {
+    const messages: Message[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 130,
+        toolCalls: [
+          {
+            id: 'call-bash-1',
+            name: 'Bash',
+            arguments: {
+              command: 'npm test',
+            },
+            liveOutput: {
+              stdout: 'running tests\n',
+              updatedAt: 200,
+            },
+          },
+        ],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-live-output', true, []);
+    const toolNode = projection.turns[0]?.nodes.find((node) => node.type === 'tool_call');
+
+    expect(toolNode?.toolCall?.liveOutput).toMatchObject({
+      stdout: 'running tests\n',
+      updatedAt: 200,
+    });
+  });
 });

@@ -8,17 +8,65 @@
 // ============================================================================
 
 import {
+  BATCHABLE_EVENT_TYPES,
   IMMEDIATE_EVENT_TYPES,
   type AgentEvent,
 } from '../protocol/events';
 
-export interface EventBatcherConfig {
+export interface EventBatcherConfig<TEvent extends AgentEvent = AgentEvent> {
   /** 批处理间隔（毫秒），默认 16ms（约 60fps） */
   flushInterval?: number;
   /** 最大批量大小，超过此值立即刷新 */
   maxBatchSize?: number;
   /** 事件发送回调 */
-  onFlush: (events: AgentEvent[]) => void;
+  onFlush: (events: TEvent[]) => void;
+}
+
+type StreamTextEventType = 'message_delta' | 'stream_chunk' | 'stream_reasoning';
+
+interface EventEnvelopeMeta {
+  sessionId?: string;
+  seq?: number;
+}
+
+interface StreamTextBuffer {
+  type: StreamTextEventType;
+  content: string;
+  role?: 'assistant';
+  path?: 'content' | 'reasoning';
+  op?: 'append';
+  turnId?: string;
+  messageId?: string;
+  parentToolUseId?: string;
+  meta: EventEnvelopeMeta;
+}
+
+interface StreamToolCallDeltaBuffer {
+  index?: number;
+  name?: string;
+  argumentsDelta: string;
+  turnId?: string;
+  parentToolUseId?: string;
+  meta: EventEnvelopeMeta;
+}
+
+function getEventEnvelopeMeta(event: AgentEvent): EventEnvelopeMeta {
+  const envelope = event as AgentEvent & EventEnvelopeMeta;
+  return {
+    ...(typeof envelope.sessionId === 'string' ? { sessionId: envelope.sessionId } : {}),
+    ...(typeof envelope.seq === 'number' ? { seq: envelope.seq } : {}),
+  };
+}
+
+function hasEnvelopeMeta(meta: EventEnvelopeMeta): boolean {
+  return meta.sessionId !== undefined || meta.seq !== undefined;
+}
+
+function mergeLatestEnvelopeMeta(target: EventEnvelopeMeta, source: EventEnvelopeMeta): EventEnvelopeMeta {
+  return {
+    ...(target.sessionId !== undefined ? { sessionId: target.sessionId } : {}),
+    ...(source.seq !== undefined ? { seq: source.seq } : target.seq !== undefined ? { seq: target.seq } : {}),
+  };
 }
 
 /**
@@ -29,19 +77,18 @@ export interface EventBatcherConfig {
  * 2. 关键事件（message, error）立即发送
  * 3. 使用 requestAnimationFrame 节奏或固定间隔
  */
-export class EventBatcher {
-  private batch: AgentEvent[] = [];
+export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
+  private batch: TEvent[] = [];
   private timer: NodeJS.Timeout | null = null;
   private flushInterval: number;
   private maxBatchSize: number;
-  private onFlush: (events: AgentEvent[]) => void;
+  private onFlush: (events: TEvent[]) => void;
   private isDestroyed: boolean = false;
 
-  // 流式 chunk 合并缓冲
-  private streamChunkBuffer: string = '';
-  private lastStreamTurnId: string | undefined;
+  private streamTextBuffer: StreamTextBuffer | null = null;
+  private streamToolCallDeltaBuffer: StreamToolCallDeltaBuffer | null = null;
 
-  constructor(config: EventBatcherConfig) {
+  constructor(config: EventBatcherConfig<TEvent>) {
     this.flushInterval = config.flushInterval ?? 16; // 60fps
     this.maxBatchSize = config.maxBatchSize ?? 50;
     this.onFlush = config.onFlush;
@@ -50,32 +97,134 @@ export class EventBatcher {
   /**
    * 添加事件到批处理队列
    */
-  emit(event: AgentEvent): void {
+  emit(event: TEvent): void {
     if (this.isDestroyed) return;
 
     // 关键事件立即发送（先刷新现有批次）
-    if (IMMEDIATE_EVENT_TYPES.has(event.type)) {
+    if (IMMEDIATE_EVENT_TYPES.has(event.type) || !BATCHABLE_EVENT_TYPES.has(event.type)) {
       this.flush();
       this.onFlush([event]);
       return;
     }
 
-    // stream_chunk 特殊处理：合并连续的 chunk
-    if (event.type === 'stream_chunk') {
-      const data = event.data as { content: string | undefined; turnId?: string };
-      if (data.content) {
-        // 如果 turnId 变了，先刷新之前的
-        if (this.lastStreamTurnId !== undefined && this.lastStreamTurnId !== data.turnId) {
-          this.flushStreamChunks();
+    // message_delta / stream_chunk / stream_reasoning 特殊处理：合并连续的文本 delta
+    if (
+      event.type === 'message_delta' ||
+      event.type === 'stream_chunk' ||
+      event.type === 'stream_reasoning'
+    ) {
+      this.flushToolCallDelta();
+      const data = event.data as {
+        content?: string;
+        text?: string;
+        role?: 'assistant';
+        path?: 'content' | 'reasoning';
+        op?: 'append' | 'replace';
+        turnId?: string;
+        messageId?: string;
+        parentToolUseId?: string;
+      };
+      const content = event.type === 'message_delta' ? data.text : data.content;
+      const meta = getEventEnvelopeMeta(event);
+      if (event.type === 'message_delta' && data.op === 'replace') {
+        this.flushStreamText();
+        this.batch.push(event);
+        this.scheduleFlush();
+        return;
+      }
+      if (content) {
+        if (
+          this.streamTextBuffer &&
+          (
+            this.streamTextBuffer.type !== event.type ||
+            this.streamTextBuffer.path !== data.path ||
+            this.streamTextBuffer.turnId !== data.turnId ||
+            this.streamTextBuffer.messageId !== data.messageId ||
+            this.streamTextBuffer.parentToolUseId !== data.parentToolUseId ||
+            this.streamTextBuffer.meta.sessionId !== meta.sessionId
+          )
+        ) {
+          this.flushStreamText();
         }
-        this.streamChunkBuffer += data.content;
-        this.lastStreamTurnId = data.turnId;
+
+        if (!this.streamTextBuffer) {
+          this.streamTextBuffer = {
+            type: event.type,
+            content: '',
+            role: data.role,
+            path: data.path,
+            op: event.type === 'message_delta' ? 'append' : undefined,
+            turnId: data.turnId,
+            messageId: data.messageId,
+            parentToolUseId: data.parentToolUseId,
+            meta,
+          };
+        }
+        this.streamTextBuffer.content += content;
+        this.streamTextBuffer.meta = mergeLatestEnvelopeMeta(this.streamTextBuffer.meta, meta);
         this.scheduleFlush();
         return;
       }
     }
 
-    // 其他可批处理事件
+    // stream_tool_call_delta 特殊处理：合并同一 pending tool call 的连续参数片段
+    if (event.type === 'stream_tool_call_delta') {
+      this.flushStreamText();
+      const data = event.data as {
+        index?: number;
+        name?: string;
+        argumentsDelta?: string;
+        turnId?: string;
+        parentToolUseId?: string;
+      };
+      const meta = getEventEnvelopeMeta(event);
+
+      if (data.name || data.argumentsDelta) {
+        if (
+          this.streamToolCallDeltaBuffer &&
+          (
+            this.streamToolCallDeltaBuffer.index !== data.index ||
+            this.streamToolCallDeltaBuffer.turnId !== data.turnId ||
+            this.streamToolCallDeltaBuffer.parentToolUseId !== data.parentToolUseId ||
+            this.streamToolCallDeltaBuffer.meta.sessionId !== meta.sessionId ||
+            (
+              this.streamToolCallDeltaBuffer.name !== undefined &&
+              data.name !== undefined &&
+              this.streamToolCallDeltaBuffer.name !== data.name
+            )
+          )
+        ) {
+          this.flushToolCallDelta();
+        }
+
+        if (!this.streamToolCallDeltaBuffer) {
+          this.streamToolCallDeltaBuffer = {
+            index: data.index,
+            name: data.name,
+            argumentsDelta: '',
+            turnId: data.turnId,
+            parentToolUseId: data.parentToolUseId,
+            meta,
+          };
+        }
+        if (!this.streamToolCallDeltaBuffer.name && data.name) {
+          this.streamToolCallDeltaBuffer.name = data.name;
+        }
+        if (data.argumentsDelta) {
+          this.streamToolCallDeltaBuffer.argumentsDelta += data.argumentsDelta;
+        }
+        this.streamToolCallDeltaBuffer.meta = mergeLatestEnvelopeMeta(
+          this.streamToolCallDeltaBuffer.meta,
+          meta,
+        );
+        this.scheduleFlush();
+        return;
+      }
+    }
+
+    // 其他可批处理事件，先落下已有文本缓冲，保持事件顺序
+    this.flushStreamText();
+    this.flushToolCallDelta();
     this.batch.push(event);
 
     // 批量超限立即刷新
@@ -100,19 +249,66 @@ export class EventBatcher {
   }
 
   /**
-   * 刷新流式 chunk 缓冲
+   * 刷新流式文本缓冲
    */
-  private flushStreamChunks(): void {
-    if (this.streamChunkBuffer.length > 0) {
-      this.batch.push({
-        type: 'stream_chunk',
-        data: {
-          content: this.streamChunkBuffer,
-          turnId: this.lastStreamTurnId,
-        },
-      });
-      this.streamChunkBuffer = '';
+  private flushStreamText(): void {
+    if (this.streamTextBuffer && this.streamTextBuffer.content.length > 0) {
+      const buffered = this.streamTextBuffer;
+      if (buffered.type === 'message_delta') {
+        this.batch.push({
+          type: 'message_delta',
+          data: {
+            role: buffered.role ?? 'assistant',
+            path: buffered.path ?? 'content',
+            op: buffered.op ?? 'append',
+            text: buffered.content,
+            turnId: buffered.turnId,
+            messageId: buffered.messageId,
+            parentToolUseId: buffered.parentToolUseId,
+          },
+          ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),
+        } as TEvent);
+      } else {
+        this.batch.push({
+          type: buffered.type,
+          data: {
+            content: buffered.content,
+            turnId: buffered.turnId,
+            parentToolUseId: buffered.parentToolUseId,
+          },
+          ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),
+        } as TEvent);
+      }
+      this.streamTextBuffer = null;
     }
+  }
+
+  /**
+   * 刷新工具参数流缓冲
+   */
+  private flushToolCallDelta(): void {
+    if (!this.streamToolCallDeltaBuffer) return;
+
+    const buffered = this.streamToolCallDeltaBuffer;
+    const data: {
+      index?: number;
+      name?: string;
+      argumentsDelta?: string;
+      turnId?: string;
+      parentToolUseId?: string;
+    } = {};
+    if (buffered.index !== undefined) data.index = buffered.index;
+    if (buffered.name !== undefined) data.name = buffered.name;
+    if (buffered.argumentsDelta.length > 0) data.argumentsDelta = buffered.argumentsDelta;
+    if (buffered.turnId !== undefined) data.turnId = buffered.turnId;
+    if (buffered.parentToolUseId !== undefined) data.parentToolUseId = buffered.parentToolUseId;
+
+    this.batch.push({
+      type: 'stream_tool_call_delta',
+      data,
+      ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),
+    } as TEvent);
+    this.streamToolCallDeltaBuffer = null;
   }
 
   /**
@@ -124,8 +320,9 @@ export class EventBatcher {
       this.timer = null;
     }
 
-    // 先刷新流式 chunk
-    this.flushStreamChunks();
+    // 先刷新流式文本
+    this.flushStreamText();
+    this.flushToolCallDelta();
 
     if (this.batch.length === 0) return;
 
@@ -152,7 +349,7 @@ export class EventBatcher {
  */
 export function createBatchedEventEmitter(
   originalOnEvent: (event: AgentEvent) => void,
-  config?: Partial<EventBatcherConfig>
+  config?: Partial<Omit<EventBatcherConfig, 'onFlush'>>
 ): {
   emit: (event: AgentEvent) => void;
   flush: () => void;
@@ -161,18 +358,7 @@ export function createBatchedEventEmitter(
   const batcher = new EventBatcher({
     ...config,
     onFlush: (events) => {
-      // 批量事件以数组形式发送，渲染进程需要支持
-      if (events.length === 1) {
-        originalOnEvent(events[0]);
-      } else {
-        // 发送批量事件
-        originalOnEvent({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentEvent 联合里没有 'batch' 这个 type；批量事件协议应该作为独立类型 BatchedAgentEvent 加入联合或换成专用 onBatch 回调
-          type: 'batch' as any,
-          data: events,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 batch type 不在 AgentEvent 联合里，整个 envelope 强转后应替换为 BatchedAgentEvent
-        } as any);
-      }
+      events.forEach(originalOnEvent);
     },
   });
 

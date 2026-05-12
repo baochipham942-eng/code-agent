@@ -18,10 +18,12 @@ type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
 
 export interface AgentEffectsProps {
   addMessage: SessionStoreState['addMessage'];
+  appendStreamingMessageDelta: (messageId: string, delta: { content?: string; reasoning?: string }) => void;
   currentSessionId: string | null;
   currentTurnMessageIdRef: MutableRefObject<string | null>;
   enqueuePermissionRequest: AppStoreState['enqueuePermissionRequest'];
   flushRef: MutableRefObject<() => void>;
+  flushStreamingMessages: () => void;
   lastEventAtRef: MutableRefObject<number>;
   pendingPermissionRequest: AppStoreState['pendingPermissionRequest'];
   pendingPermissionSessionId: AppStoreState['pendingPermissionSessionId'];

@@ -339,6 +339,14 @@ export class ChannelAgentBridge {
       if (clientDisconnected || res.writableEnded) return;
 
       switch (event.type) {
+        case 'message_delta':
+          if (event.data.text) {
+            await safeWrite(`data: ${JSON.stringify({
+              type: event.data.path === 'reasoning' ? 'stream_reasoning' : 'stream_chunk',
+              content: event.data.text,
+            })}\n\n`);
+          }
+          break;
         case 'stream_chunk':
           if (event.data.content) {
             await safeWrite(`data: ${JSON.stringify({ type: 'stream_chunk', content: event.data.content })}\n\n`);

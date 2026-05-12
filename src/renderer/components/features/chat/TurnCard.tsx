@@ -52,6 +52,7 @@ interface TurnCardProps {
   isSessionProcessing?: boolean;
   streamSnapshot?: StreamRecoverySnapshot | null;
   showSeparator?: boolean;
+  onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
 }
 
@@ -68,6 +69,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   isSessionProcessing,
   streamSnapshot,
   showSeparator = true,
+  onStreamingDisplayUpdate,
   onRewindUserPrompt,
 }) => {
   const stats = useMemo(() => {
@@ -230,6 +232,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
+                  onStreamingDisplayUpdate={isNodeStreaming ? onStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
                   rewindDisabled={Boolean(isSessionProcessing)}
                 />

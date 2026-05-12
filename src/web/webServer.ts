@@ -15,7 +15,7 @@
 import './webEnvInit';
 
 // Platform 模块替代 electron mock
-import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush } from '../main/platform';
+import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, type HandlerFn } from '../main/platform';
 
 import http from 'http';
 import os from 'os';
@@ -26,12 +26,72 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
-import { IPC_CHANNELS } from '../shared/ipc';
+import { loadShellEnvironment } from '../main/services/infra/shellEnvironment';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
-import type { ModelProvider, PermissionResponse } from '../shared/contract';
+import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse } from '../shared/contract';
 
 const logger = createLogger('WebServer');
+
+const LOCAL_WEB_AUTH_TEST_USER: AuthUser = {
+  id: 'local-web-test-user',
+  email: 'local-web-test-user@code-agent.local',
+  username: 'local-web-test-user',
+  nickname: 'Local Web Test User',
+  isAdmin: true,
+};
+
+type DomainIpcRequest = {
+  action: string;
+  payload?: unknown;
+  requestId?: string;
+};
+
+export function shouldUseLocalWebAuthStatus(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true';
+}
+
+export function getLocalWebAuthStatus(): AuthStatus {
+  return {
+    isAuthenticated: true,
+    user: { ...LOCAL_WEB_AUTH_TEST_USER },
+    isLoading: false,
+  };
+}
+
+export function installLocalWebAuthStatusHandler(
+  handlerMap: Map<string, HandlerFn>,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!shouldUseLocalWebAuthStatus(env)) {
+    return false;
+  }
+
+  const originalAuthHandler = handlerMap.get(IPC_DOMAINS.AUTH);
+  handlerMap.set(IPC_DOMAINS.AUTH, async (event: unknown, request?: DomainIpcRequest) => {
+    if (request?.action === 'getStatus') {
+      return {
+        success: true,
+        data: getLocalWebAuthStatus(),
+      };
+    }
+
+    if (originalAuthHandler) {
+      return originalAuthHandler(event, request);
+    }
+
+    return {
+      success: false,
+      error: {
+        code: 'AUTH_HANDLER_UNAVAILABLE',
+        message: 'Auth handler unavailable in local web auth mode',
+      },
+    };
+  });
+
+  return true;
+}
 
 // ============================================================================
 // SSE 客户端管理 & 会话缓存（从 helpers/ 导入）
@@ -93,6 +153,7 @@ async function initializeServices(): Promise<void> {
   // 设置环境
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
+  loadShellEnvironment();
 
   // 加载 .env 文件（确保 API Key、HTTPS_PROXY 等环境变量可用）
   // 优先级：~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）
@@ -320,6 +381,10 @@ function registerHandlers(): void {
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): mockIpcMain 类型不完整匹配 Electron.IpcMain，应该把 setupAllIpcHandlers 第一个参数改成 IpcMainLike 鸭子类型接口
   setupAllIpcHandlers(mockIpcMain as any, deps);
+
+  if (installLocalWebAuthStatusHandler(handlers)) {
+    logger.info('Local web auth status enabled for E2E/dev API mode');
+  }
 
   const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE);
   handlers.set(
@@ -761,7 +826,9 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-main().catch((err) => {
-  console.error('Failed to start web server:', err);
-  process.exit(1);
-});
+if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
+  main().catch((err) => {
+    console.error('Failed to start web server:', err);
+    process.exit(1);
+  });
+}

@@ -73,6 +73,25 @@ export interface ToolTimeoutData {
   threshold: number;       // 超时阈值 ms
 }
 
+export interface ToolOutputDeltaData {
+  toolCallId: string;
+  toolName: string;
+  stream: 'stdout' | 'stderr';
+  content: string;
+  elapsedMs?: number;
+  truncated?: boolean;
+}
+
+export interface MessageDeltaData {
+  role: 'assistant';
+  path: 'content' | 'reasoning';
+  op: 'append' | 'replace';
+  text: string;
+  turnId?: string;
+  messageId?: string;
+  parentToolUseId?: string;
+}
+
 export interface TaskUpdateEventData {
   tasks: SessionTask[];
   action: 'create' | 'update' | 'delete' | 'sync';
@@ -187,6 +206,7 @@ export type AgentEvent =
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'hook_trigger'; data: HookTriggerEventData }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
+  | { type: 'message_delta'; data: MessageDeltaData }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string; parentToolUseId?: string } }
@@ -270,6 +290,8 @@ export type AgentEvent =
   | { type: 'model_switched'; data: { from: string; to: string; provider?: string } }
   // 工具执行进度（每 5 秒发射，前端展示耗时）
   | { type: 'tool_progress'; data: ToolProgressData }
+  // 工具输出增量（前台 Bash 等长命令边跑边显示 stdout/stderr）
+  | { type: 'tool_output_delta'; data: ToolOutputDeltaData }
   // 工具执行超时警告（超过阈值时发射）
   | { type: 'tool_timeout'; data: ToolTimeoutData }
   // Plan mode events
@@ -287,6 +309,11 @@ export type AgentEvent =
   | { type: 'tool_call_local'; data: LocalToolCallData }
   // Context-aware follow-up suggestions
   | { type: 'suggestions_update'; data: Array<{ id: string; text: string; source: string }> };
+
+export type AgentEventEnvelope = AgentEvent & {
+  sessionId?: string;
+  seq?: number;
+};
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

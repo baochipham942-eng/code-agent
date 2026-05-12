@@ -94,7 +94,7 @@ function makeLivePrompt(id: string, defaultText: string): string {
     },
   };
 
-  return new Proxy<object>(new String(defaultText), handler) as unknown as string;
+  return new Proxy<object>({}, handler) as unknown as string;
 }
 
 /**
@@ -132,7 +132,7 @@ export function dynamic(build: () => string): string {
       return prop in (build() as unknown as object);
     },
   };
-  return new Proxy<object>(new String(''), handler) as unknown as string;
+  return new Proxy<object>({}, handler) as unknown as string;
 }
 
 /**

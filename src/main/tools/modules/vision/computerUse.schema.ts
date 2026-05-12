@@ -18,6 +18,13 @@ export const computerUseSchema: ToolSchema = {
 - key: Press keyboard key/shortcut. Same caveat as type — global keyboard event sent to the frontmost app. Cmd+N etc. cannot be routed via background AX; if you only need to invoke a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath instead of a global shortcut.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
+- mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
+- open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
+- write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
+- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected.
+- hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration ms then release. Pass via modifiers (or single key). Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
+- triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if app does not respond.
+- cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y", metadata.x / metadata.y populated.
 
 ## Smart Actions (Playwright-powered, browser only unless noted):
 - locate_element: [browser only] Find element by CSS selector, return coordinates
@@ -85,6 +92,8 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           'diagnose_app',
           'get_windows',
           'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
+          'mouse_down', 'mouse_up', 'open_application', 'write_clipboard', 'computer_batch',
+          'hold_key', 'triple_click', 'cursor_position',
           'locate_element', 'locate_text', 'locate_role',
           'smart_click', 'smart_type', 'smart_hover', 'get_elements'
         ],
@@ -96,7 +105,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       targetApp: {
         type: 'string',
-        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost.',
+        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
+      },
+      actions: {
+        type: 'array',
+        items: { type: 'object' },
+        description: '[computer_batch] Sequential list of action descriptors to execute in one call. Nested computer_batch is rejected.',
       },
       y: {
         type: 'number',
@@ -153,7 +167,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       text: {
         type: 'string',
-        description: 'Text to type or text content to locate',
+        description: 'Text to type, text to locate, or text to write to clipboard (write_clipboard)',
       },
       role: {
         type: 'string',
@@ -174,8 +188,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       modifiers: {
         type: 'array',
-        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift'] },
-        description: 'Modifier keys to hold during action',
+        items: { type: 'string', enum: ['cmd', 'ctrl', 'alt', 'shift', 'fn'] },
+        description: 'Modifier keys to hold during action. For hold_key, this is the list of modifier keys to press together.',
+      },
+      duration: {
+        type: 'number',
+        description: '[hold_key] Duration in milliseconds to hold the key(s) down before releasing. Default 1000.',
       },
       direction: {
         type: 'string',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
   applyConversationStreamEvent,
@@ -193,5 +193,123 @@ describe('mergeCommittedAssistantContent', () => {
     expect(messages[0]?.content).toBe('Google Assistant。国行版把这');
     expect(state.committedAssistantMessageIds.has('turn-1')).toBe(true);
     expect(state.committedAssistantMessageIds.has('assistant-1')).toBe(true);
+  });
+});
+
+describe('applyConversationStreamEvent streaming accumulator', () => {
+  it('routes stream chunks to the local accumulator when available', () => {
+    const appendStreamingMessageDelta = vi.fn();
+    const queueUpdate = vi.fn();
+    const messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+      },
+    ];
+
+    applyConversationStreamEvent(
+      {
+        type: 'stream_chunk',
+        data: { turnId: 'turn-1', content: 'hello' },
+      },
+      {
+        currentTurnMessageId: 'turn-1',
+        committedAssistantMessageIds: new Set<string>(),
+      },
+      {
+        addMessage: () => {},
+        appendStreamingMessageDelta,
+        updateMessage: () => {},
+        setMessages: () => {},
+        getMessages: () => messages,
+        queueUpdate,
+      },
+    );
+
+    expect(appendStreamingMessageDelta).toHaveBeenCalledWith('turn-1', { content: 'hello' });
+    expect(queueUpdate).not.toHaveBeenCalled();
+  });
+
+  it('routes message_delta content to the local accumulator when available', () => {
+    const appendStreamingMessageDelta = vi.fn();
+    const queueUpdate = vi.fn();
+    const messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+      },
+    ];
+
+    applyConversationStreamEvent(
+      {
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'hello',
+          turnId: 'turn-1',
+          messageId: 'turn-1',
+        },
+      },
+      {
+        currentTurnMessageId: 'turn-1',
+        committedAssistantMessageIds: new Set<string>(),
+      },
+      {
+        addMessage: () => {},
+        appendStreamingMessageDelta,
+        updateMessage: () => {},
+        setMessages: () => {},
+        getMessages: () => messages,
+        queueUpdate,
+      },
+    );
+
+    expect(appendStreamingMessageDelta).toHaveBeenCalledWith('turn-1', { content: 'hello' });
+    expect(queueUpdate).not.toHaveBeenCalled();
+  });
+
+  it('routes message_delta reasoning to the reasoning accumulator', () => {
+    const appendStreamingMessageDelta = vi.fn();
+    const messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+      },
+    ];
+
+    applyConversationStreamEvent(
+      {
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'reasoning',
+          op: 'append',
+          text: 'thinking',
+          turnId: 'turn-1',
+        },
+      },
+      {
+        currentTurnMessageId: 'turn-1',
+        committedAssistantMessageIds: new Set<string>(),
+      },
+      {
+        addMessage: () => {},
+        appendStreamingMessageDelta,
+        updateMessage: () => {},
+        setMessages: () => {},
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(appendStreamingMessageDelta).toHaveBeenCalledWith('turn-1', { reasoning: 'thinking' });
   });
 });

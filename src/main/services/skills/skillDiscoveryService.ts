@@ -422,6 +422,7 @@ class SkillDiscoveryService {
       project: 0,
       plugin: 0,
       builtin: 0,
+      cloud: 0,
       library: 0,
     };
 

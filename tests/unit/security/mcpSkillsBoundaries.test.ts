@@ -32,7 +32,7 @@ vi.mock('../../../src/main/services/core/configService', () => ({
 
 const { createStdioMCPEnv, createTransport } = await import('../../../src/main/mcp/mcpTransport');
 const { getDefaultMCPServers } = await import('../../../src/main/mcp/mcpDefaultServers');
-const { checkSkillDependencies, loadSkillReferences } = await import('../../../src/main/services/skills/skillLoader');
+const { checkSkillDependencies, loadSkillContent, loadSkillReferences } = await import('../../../src/main/services/skills/skillLoader');
 
 function makeSkill(basePath: string, references: string[]): ParsedSkill {
   return {
@@ -145,5 +145,29 @@ describe('MCP and skill security boundaries', () => {
     expect(dependencies.satisfied).toBe(false);
     expect(dependencies.missingReferences).toEqual(['references/link.md']);
     expect(references.has('references/link.md')).toBe(false);
+  });
+
+  it('loads inline builtin skill content without reading a SKILL.md file', async () => {
+    const skill = makeSkill('', []);
+    skill.name = 'test';
+    skill.source = 'builtin';
+    skill.promptContent = 'inline instructions';
+    skill.loaded = false;
+
+    await loadSkillContent(skill);
+
+    expect(skill.loaded).toBe(true);
+    expect(skill.promptContent).toBe('inline instructions');
+  });
+
+  it('does not resolve inline skill references against the process cwd', async () => {
+    const skill = makeSkill('', ['package.json']);
+
+    const dependencies = await checkSkillDependencies(skill);
+    const references = await loadSkillReferences(skill);
+
+    expect(dependencies.satisfied).toBe(false);
+    expect(dependencies.missingReferences).toEqual(['package.json']);
+    expect(references.size).toBe(0);
   });
 });

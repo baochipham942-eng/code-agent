@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { stat, unlink } from 'fs/promises';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
@@ -118,6 +119,15 @@ const BACKGROUND_CGEVENT_ACTIONS = new Set(['click', 'doubleClick', 'rightClick'
 // target app start running and become frontmost.
 const LAUNCH_ACTIONS = new Set(['open_application']);
 
+async function hasNonEmptyFile(filepath: string): Promise<boolean> {
+  try {
+    const fileStat = await stat(filepath);
+    return fileStat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 class DesktopComputerSurface {
   private readonly id = 'default-computer-surface';
   private approvedAppScopes = new Set<string>();
@@ -181,13 +191,27 @@ class DesktopComputerSurface {
       const { x, y, width, height } = win.bounds;
       if (width <= 0 || height <= 0) return null;
       const filepath = path.join(os.tmpdir(), `code-agent-computer-surface-app-${Date.now()}.png`);
+      if (Number.isFinite(win.windowId)) {
+        try {
+          await execFileAsync('screencapture', ['-x', '-l', String(win.windowId), filepath]);
+          if (await hasNonEmptyFile(filepath)) {
+            return filepath;
+          }
+        } catch {
+          await unlink(filepath).catch(() => undefined);
+        }
+      }
+
       await execFileAsync('screencapture', [
         '-x',
-        '-R',
-        `${Math.floor(x)},${Math.floor(y)},${Math.floor(width)},${Math.floor(height)}`,
+        `-R${Math.floor(x)},${Math.floor(y)},${Math.floor(width)},${Math.floor(height)}`,
         filepath,
       ]);
-      return filepath;
+      if (await hasNonEmptyFile(filepath)) {
+        return filepath;
+      }
+      await unlink(filepath).catch(() => undefined);
+      return null;
     } catch {
       return null;
     }

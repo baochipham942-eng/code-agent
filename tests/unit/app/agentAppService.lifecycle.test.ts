@@ -248,7 +248,25 @@ describe('AgentAppService lifecycle routing', () => {
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/tmp/project');
   });
 
-	  it('ignores stream snapshots from another session', async () => {
+  it('keeps the previous session running when switching sessions', async () => {
+    sessionManager.restoreSession.mockResolvedValue({
+      id: 'session-2',
+      title: 'Next Session',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+      workingDirectory: '/tmp/project',
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [],
+    });
+
+    const service = createService(taskManager, 'session-1');
+    await service.loadSession('session-2');
+
+    expect(orchestrator.cancel).not.toHaveBeenCalled();
+    expect(taskManager.setCurrentSessionId).toHaveBeenCalledWith('session-2');
+  });
+
+  it('ignores stream snapshots from another session', async () => {
     sessionManager.restoreSession.mockResolvedValue({
         id: 'session-1',
         title: 'Streaming Session',

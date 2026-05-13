@@ -639,8 +639,7 @@ export class SessionManager implements Disposable {
     // 残留的异步调用只会打误导性 log "Ending session, generating summary"
     // 还会与切会话期间的 zombie inference 在 currentSessionId 上 race。
     //
-    // 切会话时 streaming partial 的持久化由调用方负责
-    // (agentAppService.flushPreviousSessionIfRunning)，本方法只负责更新 ID。
+    // 切会话不取消正在运行的旧 session；本方法只负责更新当前 ID。
     this.currentSessionId = sessionId;
 
     // 设置工具缓存的 session

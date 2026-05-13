@@ -44,6 +44,7 @@ export function shouldFollowTurnOutput(isAtBottom: boolean, keepActiveOutputVisi
 
 export interface TurnOutputRevisionOptions {
   includeAssistantContentLength?: boolean;
+  includeThinkingLength?: boolean;
 }
 
 export function getTurnOutputRevision(
@@ -53,6 +54,7 @@ export function getTurnOutputRevision(
   if (!turn) return null;
 
   const includeAssistantContentLength = options.includeAssistantContentLength ?? true;
+  const includeThinkingLength = options.includeThinkingLength ?? true;
   const outputNodes = turn.nodes
     .filter((node) => (
       node.type === 'assistant_text'
@@ -67,8 +69,8 @@ export function getTurnOutputRevision(
       node.type === 'assistant_text' && !includeAssistantContentLength
         ? 0
         : node.content?.length ?? 0,
-      node.reasoning?.length ?? 0,
-      node.thinking?.length ?? 0,
+      includeThinkingLength ? node.reasoning?.length ?? 0 : 0,
+      includeThinkingLength ? node.thinking?.length ?? 0 : 0,
       node.toolCall?.result?.length ?? 0,
       node.toolCall?._streaming ? 1 : 0,
     ].join(':'));
@@ -194,6 +196,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const activeTurnOutputRevision = useMemo(
     () => getTurnOutputRevision(activeTurn, {
       includeAssistantContentLength: activeTurn?.status !== 'streaming',
+      includeThinkingLength: activeTurn?.status !== 'streaming',
     }),
     [activeTurn],
   );

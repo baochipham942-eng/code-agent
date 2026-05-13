@@ -143,6 +143,40 @@ describe('TurnBasedTraceView focus helpers', () => {
     ).toBe(getTurnOutputRevision(baseTurn, { includeAssistantContentLength: false }));
   });
 
+  it('can ignore hidden thinking length so collapsed reasoning does not drive scroll', () => {
+    const baseTurn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'streaming',
+      startTime: 100,
+      nodes: [
+        { id: 'user-1', type: 'user', content: 'question', timestamp: 100 },
+        {
+          id: 'assistant-1',
+          type: 'assistant_text',
+          content: '',
+          reasoning: 'thinking',
+          timestamp: 120,
+        },
+      ],
+    };
+    const nextTurn: TraceTurn = {
+      ...baseTurn,
+      nodes: [
+        baseTurn.nodes[0],
+        {
+          ...baseTurn.nodes[1],
+          reasoning: 'thinking with more streamed hidden reasoning',
+        },
+      ],
+    };
+
+    expect(getTurnOutputRevision(nextTurn)).not.toBe(getTurnOutputRevision(baseTurn));
+    expect(
+      getTurnOutputRevision(nextTurn, { includeThinkingLength: false }),
+    ).toBe(getTurnOutputRevision(baseTurn, { includeThinkingLength: false }));
+  });
+
   it('builds a selector for trace node anchors', () => {
     expect(getTraceNodeSelector('assistant-1', 'assistant_text')).toBe(
       '[data-trace-node-id="assistant-1"][data-trace-node-type="assistant_text"]',

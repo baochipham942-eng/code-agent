@@ -469,35 +469,12 @@ function registerHandlers(): void {
       if (!sm) {
         return { success: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' } };
       }
-      // 切会话/新建会话之前先 flush 旧 session 的 streaming partial，避免 AI 回复在切换中丢失。
-      // 与 AppService.flushPreviousSessionIfRunning 等价（web mode 下 AppService 为 null，
-      // 所以直接拿 TaskManager 的 orchestrator 触发 cancel）。
-      // web mode 的 inference 走 routes/agent.ts → activeAgentLoops（不通过 TaskManager.activeOrchestrators），
-      // 切会话前从 activeAgentLoops 拿当前 session 的 agentLoop.cancel('session-switch')，
-      // 让 ConversationRuntime.cancel 把 partial 持久化到 DB 后再 abort。
-      const flushPreviousIfRunning = async (nextSessionId?: string): Promise<void> => {
-        const currentSessionId = sm!.getCurrentSessionId();
-        if (!currentSessionId) return;
-        if (nextSessionId && currentSessionId === nextSessionId) return;
-        const agentLoop = activeAgentLoops.get(currentSessionId);
-        if (!agentLoop) return;
-        logger.info('[webServer:session] flush previous session before switch', { currentSessionId, nextSessionId });
-        try {
-          // agentLoop.cancel 已改成 async (B1)，但 deps 类型签名是 cancel(): void —— 这里用 await 兼容两者
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): activeAgentLoops 的元素类型 cancel() 签名是 void，但实际实现已改 async，需要把 IAgentLoopHandle.cancel 类型改成 () => void | Promise<void>
-          await Promise.resolve((agentLoop as any).cancel('session-switch'));
-        } catch (err) {
-          logger.warn('[webServer:session] flush previous session failed', err);
-        }
-      };
-
       let data: unknown;
       switch (action) {
         case 'list':
           data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
           break;
         case 'create':
-          await flushPreviousIfRunning();
           data = await sm.createSession({
             title: payload?.title || 'New Session',
             workingDirectory:
@@ -509,7 +486,6 @@ function registerHandlers(): void {
           sm.setCurrentSession((data as { id: string }).id);
           break;
         case 'load':
-          await flushPreviousIfRunning(payload?.sessionId);
           data = await sm.restoreSession(payload?.sessionId);
           break;
         case 'delete':

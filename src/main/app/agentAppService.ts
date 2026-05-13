@@ -43,6 +43,9 @@ import {
 } from '../session/exportMarkdown';
 import type { CachedMessage, CachedSession } from '../session/localCache';
 import { loadStreamSnapshot } from '../session/streamSnapshot';
+import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
+import type { CancellationReason } from '../../shared/contract/cancellation';
+import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -52,6 +55,12 @@ function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
 }
 
 export class AgentAppServiceImpl implements AgentApplicationService {
+  /**
+   * Per-session in-flight cancel promise. Second ESC during first shutdown
+   * reuses the same promise instead of triggering a duplicate cascade.
+   */
+  private readonly cancelInFlight = new Map<string, Promise<void>>();
+
   constructor(
     private getTaskManager: () => TaskManager,
     private getConfigService: () => ConfigService | null,
@@ -250,19 +259,71 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     );
   }
 
-  async cancel(sessionId?: string, reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(
+    sessionId?: string,
+    reason?: 'user' | 'session-switch' | CancellationReason,
+  ): Promise<void> {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
 
-    const state = tm.getSessionState(resolvedSessionId);
-    if (isTaskManagerOwnedRunState(state.status)) {
-      await tm.cancelTask(resolvedSessionId);
-      return;
+    // Normalize legacy 'user' alias to 'user-cancel' for the cascade contract.
+    const normalizedReason: CancellationReason = reason === 'user'
+      ? 'user-cancel'
+      : normalizeCancellationReason(reason);
+
+    // In-flight dedupe — second ESC during first cancel should reuse the
+    // same shutdown promise (idempotent, prevents double-flush race).
+    const existing = this.cancelInFlight.get(resolvedSessionId);
+    if (existing) {
+      return existing;
     }
 
-    const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
-    await orchestrator.cancel(reason);
+    const promise = (async () => {
+      try {
+        const state = tm.getSessionState(resolvedSessionId);
+        if (isTaskManagerOwnedRunState(state.status)) {
+          await tm.cancelTask(resolvedSessionId);
+        } else {
+          const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
+          // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
+          // — map our cascade reasons back for backward compatibility.
+          const legacyReason = normalizedReason === 'session-switch'
+            ? 'session-switch'
+            : 'user';
+          await orchestrator.cancel(legacyReason);
+        }
+
+        // Subagent-level cascade — independent of orchestrator path because
+        // single-spawn AbortController is not reachable from agentLoop.cancel().
+        // Only cascade reasons trigger this fan-out; non-cascade reasons
+        // (child-error/timeout/idle-timeout/budget-exceeded) intentionally
+        // skip it to preserve sibling autonomy.
+        if (
+          hasSwarmServices() &&
+          (normalizedReason === 'user-cancel' ||
+            normalizedReason === 'session-switch' ||
+            normalizedReason === 'parent-cancel')
+        ) {
+          try {
+            const services = getSwarmServices();
+            const cancelled = services.spawnGuard.cancelAll?.(normalizedReason) ?? 0;
+            if (cancelled > 0) {
+              logger.info(
+                `[appService.cancel] spawnGuard cancelled ${cancelled} subagents reason=${normalizedReason}`,
+              );
+            }
+            services.parallelCoordinator.abortAllRunning(normalizedReason);
+          } catch (err) {
+            logger.warn('[appService.cancel] subagent cascade fan-out failed', err);
+          }
+        }
+      } finally {
+        this.cancelInFlight.delete(resolvedSessionId);
+      }
+    })();
+    this.cancelInFlight.set(resolvedSessionId, promise);
+    return promise;
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void {

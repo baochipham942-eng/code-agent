@@ -42,6 +42,7 @@ import { estimateTokens } from '../context/tokenEstimator';
 import { getWarningLevel } from '../../shared/contract/contextHealth';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
+import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
 import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
@@ -478,9 +479,19 @@ export class SubagentExecutor {
     // Filter tools to only those allowed for this subagent
     let effectiveToolNames = config.availableTools;
 
-    // Only use buildChildContext when we have parent context available
-    // This is additive — if no parent context, existing logic unchanged
+    // M2-Task 5 partial: 走 buildChildContext 三档合并算法
+    // - 有 parentContext：合并算法接管（默认 strict-inherit）
+    // - 没 parentContext：fallback 到 legacy 行为（warn 一次给老 caller），plan AC-5
     if (context.parentContext) {
+      // 从 settings 读 inheritance 配置（默认 strict-inherit）
+      let inheritance: 'strict-inherit' | 'child-narrow' | 'independent' = 'strict-inherit';
+      try {
+        const cfg = getConfigService().getSettings();
+        inheritance = cfg.permissions.inheritance ?? 'strict-inherit';
+      } catch {
+        // 配置服务未就绪（单测环境）时按默认 strict-inherit 走
+      }
+
       const childCtx = buildChildContext(
         {
           agentType: config.name,
@@ -488,12 +499,24 @@ export class SubagentExecutor {
           readOnly: (config.permissionPreset as string) === 'review' || (config.permissionPreset as string) === 'audit',
         },
         context.parentContext,
+        { inheritance },
       );
-      // Use child context's tool pool (intersection with parent)
-      // Only override if childCtx provides a different (narrower) pool
-      if (childCtx.toolPool.length > 0) {
-        effectiveToolNames = childCtx.toolPool;
-      }
+
+      // tools 交集是核心约束（永不扩张），三档都生效
+      effectiveToolNames = childCtx.toolPool;
+
+      logger.info(`[${config.name}] childContext applied`, {
+        inheritance,
+        parentTools: context.parentContext.availableTools.length,
+        childDeclared: config.availableTools.length,
+        toolPool: effectiveToolNames.length,
+        denyMerged: childCtx.permissions.deny.length,
+        effectiveMode: childCtx.permissions.effectiveMode,
+      });
+    } else {
+      // 老 caller 没传 parentContext：warn 一次但不破坏（plan AC-5），后续 P4 收敛
+      logger.warn(`[${config.name}] No parentContext supplied — subagent runs without inheritance merge. ` +
+        `Caller should pass parentContext via buildParentContextFromToolContext (M2-Task 5).`);
     }
 
     const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);

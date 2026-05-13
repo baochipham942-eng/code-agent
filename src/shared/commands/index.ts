@@ -12,6 +12,7 @@ export { contextCommands } from './definitions/contextCommands';
 export { toolsCommands } from './definitions/toolsCommands';
 export { systemCommands } from './definitions/systemCommands';
 export { newCommands } from './definitions/newCommands';
+export { doctorCommands } from './definitions/doctorCommands';
 
 import { getCommandRegistry } from './commandRegistry';
 import { sessionCommands } from './definitions/sessionCommands';
@@ -20,6 +21,7 @@ import { contextCommands } from './definitions/contextCommands';
 import { toolsCommands } from './definitions/toolsCommands';
 import { systemCommands } from './definitions/systemCommands';
 import { newCommands } from './definitions/newCommands';
+import { doctorCommands } from './definitions/doctorCommands';
 
 let initialized = false;
 
@@ -38,6 +40,7 @@ export function initializeCommands(): void {
     ...toolsCommands,
     ...systemCommands,
     ...newCommands,
+    ...doctorCommands,
   ];
 
   for (const def of allDefs) {

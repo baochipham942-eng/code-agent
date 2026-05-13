@@ -33,7 +33,12 @@ import {
 } from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
 import { getContextWindow, SUBAGENT_COMPACTION } from '../../shared/constants';
-import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
+import { createTimedAbortController, createChildAbortController, initiateShutdown } from './shutdownProtocol';
+import type { CancellationReason } from '../../shared/contract/cancellation';
+import { normalizeCancellationReason } from '../../shared/contract/cancellation';
+import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
+import { getUserDataPath } from '../platform/appPaths';
+import { join as pathJoin } from 'path';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
@@ -122,6 +127,14 @@ export interface SubagentResult {
   agentId?: string;
   /** Lightweight context snapshot for swarm UI */
   contextSnapshot?: SwarmAgentContextSnapshot;
+  /**
+   * When success === false because of an abort, this carries the
+   * cancellation reason (`user-cancel | parent-cancel | timeout |
+   * idle-timeout | child-error | session-switch | budget-exceeded`).
+   * Caller (spawnAgent / parallel coordinator) can route on this to
+   * decide whether to retry, surface to UI, or treat as terminal.
+   */
+  cancellationReason?: CancellationReason;
 }
 
 interface SubagentContext {
@@ -462,6 +475,26 @@ export class SubagentExecutor {
       : timeoutController;
     const effectiveSignal = effectiveController.signal;
 
+    // Idle-progress watchdog (scenario D — network hangs forever).
+    // Tracks the last time we made forward progress (iteration start, inference
+    // returned a chunk-equivalent response, tool finished). If the gap exceeds
+    // CANCELLATION_TIMEOUTS.IDLE_TIMEOUT we abort with reason='idle-timeout'.
+    let lastProgressAt = Date.now();
+    const markProgress = () => { lastProgressAt = Date.now(); };
+    const idleWatchdog = setInterval(() => {
+      if (effectiveSignal.aborted) return;
+      const idle = Date.now() - lastProgressAt;
+      if (idle > CANCELLATION_TIMEOUTS.IDLE_TIMEOUT) {
+        logger.warn(
+          `[${config.name}] idle ${idle}ms exceeded ${CANCELLATION_TIMEOUTS.IDLE_TIMEOUT}ms, triggering idle-timeout`,
+        );
+        effectiveController.abort('idle-timeout');
+      }
+    }, CANCELLATION_TIMEOUTS.IDLE_CHECK_INTERVAL);
+    // unref the timer so it doesn't keep the event loop alive in node tests.
+    (idleWatchdog as { unref?: () => void }).unref?.();
+    const stopIdleWatchdog = () => clearInterval(idleWatchdog);
+
     // Create pipeline context
     const pipeline = getSubagentPipeline();
     const dynamicConfig: DynamicAgentConfig = {
@@ -758,15 +791,60 @@ export class SubagentExecutor {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
 
-        // Check abort signal (covers both external cancel and timeout)
+        // Check abort signal (covers both external cancel and timeout).
+        // Wires the four-phase shutdownProtocol (Signal→Grace→Flush→Force)
+        // so that partial transcript + metadata get persisted via
+        // AgentTask.saveToDisk before we return failure.
         if (effectiveSignal.aborted) {
-          const reason = effectiveSignal.reason === 'timeout' ? 'timeout' : 'cancelled';
-          logger.info(`[${config.name}] Execution ${reason} by AbortSignal after ${Date.now() - startTime}ms`);
+          const rawReason = effectiveSignal.reason;
+          const cancellationReason: CancellationReason =
+            rawReason === 'timeout'
+              ? 'timeout'
+              : rawReason === 'idle-timeout'
+                ? 'idle-timeout'
+                : normalizeCancellationReason(rawReason, 'parent-cancel');
+
+          logger.info(
+            `[${config.name}] Execution aborted reason=${cancellationReason} after ${Date.now() - startTime}ms`,
+          );
           cleanupTimer();
-          pipeline.completeContext(pipelineContext.agentId, false, reason);
-          const errorMsg = reason === 'timeout'
+          stopIdleWatchdog();
+
+          // Phase 3 flush — persist partial transcript + metadata.
+          // sessionDir convention: <userDataPath>/sessions/<sessionId>.
+          // saveToDisk creates the agent subdir itself; we just hand it
+          // the session root.
+          const sessionDir = pathJoin(getUserDataPath(), 'sessions', sessionId);
+          // R5 — agentPromise self-reference: this is the running executor's
+          // own loop. We pass `Promise.resolve()` so the grace phase
+          // doesn't deadlock waiting for ourselves; the abort signal has
+          // already propagated to inference / tools, their cleanup runs
+          // in parallel.
+          try {
+            await initiateShutdown(effectiveController, Promise.resolve(), {
+              gracePeriodMs: CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE,
+              label: `${config.name}:${agentTask.id}`,
+              onFlush: async () => {
+                try {
+                  await agentTask.saveToDisk(sessionDir);
+                } catch (err) {
+                  logger.warn(
+                    `[${config.name}] saveToDisk failed during flush`,
+                    err,
+                  );
+                }
+              },
+            });
+          } catch (err) {
+            logger.warn(`[${config.name}] initiateShutdown threw`, err);
+          }
+
+          pipeline.completeContext(pipelineContext.agentId, false, cancellationReason);
+          const errorMsg = cancellationReason === 'timeout'
             ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
-            : '任务已取消';
+            : cancellationReason === 'idle-timeout'
+              ? `子代理 ${Math.round(CANCELLATION_TIMEOUTS.IDLE_TIMEOUT / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
+              : `任务已取消 (${cancellationReason})`;
           agentTask.fail(errorMsg);
           // Fire SubagentStop on abort/timeout
           context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
@@ -778,6 +856,7 @@ export class SubagentExecutor {
             iterations,
             agentId: agentTask.id,
             contextSnapshot: latestContextSnapshot,
+            cancellationReason,
           };
         }
 
@@ -874,6 +953,7 @@ export class SubagentExecutor {
           effectiveSignal,
         );
         const inferenceDuration = Date.now() - inferenceStartedAt;
+        markProgress();
 
         const responseTextForTokens = [
           response.content,
@@ -1246,6 +1326,7 @@ export class SubagentExecutor {
 
       // Get final cost
       cleanupTimer();
+      stopIdleWatchdog();
       const budgetStatus = pipeline.getBudgetStatus(pipelineContext);
       pipeline.completeContext(pipelineContext.agentId, true);
 
@@ -1277,6 +1358,7 @@ export class SubagentExecutor {
       };
     } catch (error) {
       cleanupTimer();
+      stopIdleWatchdog();
       pipeline.completeContext(
         pipelineContext.agentId,
         false,

@@ -310,7 +310,7 @@ const defaultModelConfig: ModelConfig = {
   maxTokens: MODEL_MAX_TOKENS.DEFAULT,
 };
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()((set, get) => ({
   // Initial UI State
   showSettings: false,
   settingsInitialTab: null,

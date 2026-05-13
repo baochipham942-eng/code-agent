@@ -15,7 +15,6 @@ import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
 import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
-import { formatWorkbenchHistoryActionSummary } from '../../../utils/workbenchPresentation';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
@@ -76,6 +75,13 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = <LaunchRequestNode node={node} />;
       break;
     case 'turn_timeline':
+      if (!node.turnTimeline) return null;
+      if (
+        node.turnTimeline.kind === 'workbench_snapshot' ||
+        node.turnTimeline.kind === 'capability_scope'
+      ) {
+        return null;
+      }
       content = <TurnTimelineNodeRenderer node={node} />;
       break;
     default:
@@ -179,7 +185,7 @@ const UserNode: React.FC<{
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
 }> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => (
-  <div className="select-text">
+  <div>
     <WorkbenchSummary metadata={metadata} />
     {attachments && attachments.length > 0 && (
       <div className="mb-2">
@@ -202,9 +208,9 @@ const UserNode: React.FC<{
             </button>
           )}
           <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
-          <div className="text-zinc-200 leading-relaxed">
-            <MessageContent content={content} isUser={true} />
-          </div>
+            <div className="text-zinc-200 leading-relaxed select-text">
+              <MessageContent content={content} isUser={true} />
+            </div>
           </div>
         </div>
       </div>
@@ -212,24 +218,51 @@ const UserNode: React.FC<{
   </div>
 );
 
-// ---- Strip markdown to plain text ----
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, '')           // headings
-    .replace(/\*\*(.+?)\*\*/g, '$1')       // bold
-    .replace(/\*(.+?)\*/g, '$1')           // italic
-    .replace(/`{3}[\s\S]*?`{3}/g, (m) =>   // code blocks → keep content
-      m.replace(/^`{3}.*\n?/, '').replace(/`{3}$/, ''))
-    .replace(/`(.+?)`/g, '$1')             // inline code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
-    .replace(/^[-*+]\s+/gm, '• ')          // unordered lists
-    .replace(/^\d+\.\s+/gm, '')            // ordered lists
-    .replace(/^>\s+/gm, '')                // blockquotes
-    .replace(/\n{3,}/g, '\n\n')            // collapse blank lines
-    .trim();
+// ---- Assistant Text Node ----
+interface SelectionCopyState {
+  text: string;
+  top: number;
+  left: number;
 }
 
-// ---- Assistant Text Node ----
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getSelectionCopyState(root: HTMLElement | null, content: HTMLElement | null): SelectionCopyState | null {
+  if (!root || !content || typeof window === 'undefined') return null;
+
+  const selection = window.getSelection?.();
+  const selectedText = selection?.toString() || '';
+  if (!selection || selection.rangeCount === 0 || selectedText.trim().length === 0) {
+    return null;
+  }
+
+  if (!selection.anchorNode || !selection.focusNode) return null;
+  if (!content.contains(selection.anchorNode) || !content.contains(selection.focusNode)) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const selectionRect = range.getBoundingClientRect();
+  const rootRect = root.getBoundingClientRect();
+  if (!selectionRect.width && !selectionRect.height) return null;
+
+  const buttonWidth = 32;
+  const buttonHeight = 30;
+  const offset = 6;
+  const maxLeft = Math.max(0, rootRect.width - buttonWidth);
+  const maxTop = Math.max(0, rootRect.height - buttonHeight);
+  const topAboveSelection = selectionRect.top - rootRect.top - buttonHeight - offset;
+  const topBelowSelection = selectionRect.bottom - rootRect.top + offset;
+
+  return {
+    text: selectedText,
+    left: clamp(selectionRect.right - rootRect.left - buttonWidth, 0, maxLeft),
+    top: clamp(topAboveSelection >= 0 ? topAboveSelection : topBelowSelection, 0, maxTop),
+  };
+}
+
 const AssistantTextNode: React.FC<{
   node: TraceNode;
   isStreaming?: boolean;
@@ -238,8 +271,10 @@ const AssistantTextNode: React.FC<{
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
-  const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
-  const [hovered, setHovered] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+  const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
 
   const reasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
   const { displayContent, isAnimating } = useSmoothStreamingText({
@@ -258,36 +293,50 @@ const AssistantTextNode: React.FC<{
     onStreamingDisplayUpdate?.(node.id, displayContent.length, isAnimating);
   }, [displayContent.length, isAnimating, node.id, onStreamingDisplayUpdate, turnStreaming]);
 
-  const handleCopy = useCallback(async (mode: 'markdown' | 'plain') => {
-    if (!node.content) return;
-    const text = mode === 'markdown' ? node.content : stripMarkdown(node.content);
-    await navigator.clipboard.writeText(text);
-    setCopied(mode);
-    setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
-  }, [node.content]);
+  const updateSelectionCopy = useCallback(() => {
+    setSelectionCopy(getSelectionCopyState(rootRef.current, contentRef.current));
+  }, []);
+
+  useEffect(() => {
+    if (!selectionCopy) return;
+    const handleSelectionChange = () => {
+      setSelectionCopy(getSelectionCopyState(rootRef.current, contentRef.current));
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [selectionCopy]);
+
+  const handleCopySelection = useCallback(async () => {
+    if (!selectionCopy?.text.trim()) return;
+    await navigator.clipboard.writeText(selectionCopy.text);
+    setCopied(true);
+    setTimeout(() => {
+      setCopied(false);
+      setSelectionCopy(null);
+    }, UI.COPY_FEEDBACK_DURATION);
+  }, [selectionCopy]);
 
   return (
     <div
+      ref={rootRef}
       className="relative group/msg"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseUp={updateSelectionCopy}
+      onKeyUp={updateSelectionCopy}
     >
-      {/* Copy action bar - top right on hover */}
-      {node.content && hovered && (
-        <div className="absolute -top-1 right-0 flex items-center gap-0.5 bg-zinc-800 border border-zinc-700 rounded-md px-0.5 py-0.5 z-10 shadow-lg">
+      {selectionCopy && (
+        <div
+          className="absolute z-20"
+          style={{ top: selectionCopy.top, left: selectionCopy.left }}
+        >
           <button
-            onClick={() => handleCopy('markdown')}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-            title="复制 Markdown"
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={handleCopySelection}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800/95 text-zinc-300 shadow-lg transition-colors hover:bg-zinc-700 hover:text-zinc-100"
+            title="复制选中文本"
+            aria-label="复制选中文本"
           >
-            {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
-          </button>
-          <button
-            onClick={() => handleCopy('plain')}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-            title="复制纯文本"
-          >
-            {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}
@@ -324,7 +373,7 @@ const AssistantTextNode: React.FC<{
 
       {/* Text content */}
       {node.content && (
-        <div className="text-zinc-200 leading-relaxed select-text">
+        <div ref={contentRef} className="text-zinc-200 leading-relaxed select-text">
           <MessageContent
             content={displayContent}
             isUser={false}
@@ -394,7 +443,8 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
       // 组件代码保留以便后续在专门视图里复用。
       return null;
     case 'capability_scope':
-      return <CapabilityScopeNode timeline={node.turnTimeline} />;
+      // 能力范围属于右侧 TaskPanel / replay 调试信息，不再默认插入聊天主流。
+      return null;
     case 'blocked_capabilities':
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
@@ -424,141 +474,6 @@ function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
       return 'border-white/[0.06] bg-white/[0.02]';
   }
 }
-
-function getCapabilityPillTone(kind: 'skill' | 'connector' | 'mcp'): 'skill' | 'connector' | 'mcp' {
-  switch (kind) {
-    case 'skill':
-      return 'skill';
-    case 'connector':
-      return 'connector';
-    case 'mcp':
-      return 'mcp';
-    default:
-      return 'connector';
-  }
-}
-
-const CapabilityScopeSection: React.FC<{
-  label: string;
-  children: React.ReactNode;
-}> = ({ label, children }) => {
-  return (
-    <div className="rounded-md bg-black/10 px-2.5 py-2">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
-      {children}
-    </div>
-  );
-};
-
-function hasCapabilityScopeRouting(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): boolean {
-  return scope.selected.length > 0 || scope.allowed.length > 0 || scope.blocked.length > 0;
-}
-
-function getCapabilityScopeTitle(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): string {
-  return hasCapabilityScopeRouting(scope) ? '能力范围' : '实际调用';
-}
-
-function getCapabilityScopeSummary(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): string {
-  if (!hasCapabilityScopeRouting(scope)) {
-    return `调用 ${scope.invoked.length}`;
-  }
-  return `已选 ${scope.selected.length} · 放行 ${scope.allowed.length} · 阻塞 ${scope.blocked.length} · 调用 ${scope.invoked.length}`;
-}
-
-const CapabilityScopeNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const scope = timeline.capabilityScope;
-  if (!scope) return null;
-  const hasRouting = hasCapabilityScopeRouting(scope);
-
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-300">
-        <Wrench className="h-3.5 w-3.5 text-amber-300" />
-        <span>{getCapabilityScopeTitle(scope)}</span>
-        <span className="text-zinc-500">
-          {getCapabilityScopeSummary(scope)}
-        </span>
-      </div>
-
-      <div className="space-y-2">
-        {scope.selected.length > 0 && (
-          <CapabilityScopeSection label="用户选择">
-            <div className="flex flex-wrap gap-1.5">
-              {scope.selected.map((item) => (
-                <WorkbenchPill key={`selected-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
-                  {item.label}
-                </WorkbenchPill>
-              ))}
-            </div>
-          </CapabilityScopeSection>
-        )}
-
-        {scope.allowed.length > 0 && (
-          <CapabilityScopeSection label="运行时放行">
-            <div className="flex flex-wrap gap-1.5">
-              {scope.allowed.map((item) => (
-                <WorkbenchPill key={`allowed-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
-                  {item.label}
-                </WorkbenchPill>
-              ))}
-            </div>
-          </CapabilityScopeSection>
-        )}
-
-        {scope.blocked.length > 0 && (
-          <CapabilityScopeSection label="运行时阻塞">
-            <div className="space-y-2">
-              {scope.blocked.map((reason) => (
-                <div key={`blocked-${reason.kind}-${reason.id}`} className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <WorkbenchPill tone={getCapabilityPillTone(reason.kind)}>
-                      {reason.label}
-                    </WorkbenchPill>
-                    <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
-                      {reason.code}
-                    </span>
-                  </div>
-                  <div className="text-xs text-zinc-200">{reason.detail}</div>
-                  <div className="mt-1 text-[11px] text-zinc-500">{reason.hint}</div>
-                </div>
-              ))}
-            </div>
-          </CapabilityScopeSection>
-        )}
-
-        {scope.invoked.length > 0 && (
-          <CapabilityScopeSection label={hasRouting ? '实际调用' : '调用明细'}>
-            {/* subgrid 让所有行的 pill / summary / count 三列在跨行间对齐，
-                col1 由所有 pill 中最长的撑出来，避免 server name 长度不同导致错位。 */}
-            <div
-              className="grid gap-y-1.5"
-              style={{ gridTemplateColumns: 'max-content minmax(0, 1fr) max-content' }}
-            >
-              {scope.invoked.map((item) => {
-                const actionSummary = formatWorkbenchHistoryActionSummary(item.topActions, { maxActions: 2 });
-                return (
-                  <div
-                    key={`invoked-${item.kind}-${item.id}`}
-                    className="col-span-3 grid items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
-                    style={{ gridTemplateColumns: 'subgrid' }}
-                  >
-                    <WorkbenchPill tone={getCapabilityPillTone(item.kind)}>
-                      {item.label}
-                    </WorkbenchPill>
-                    <div className="min-w-0 truncate text-[11px] text-zinc-400">
-                      {actionSummary || '已调用'}
-                    </div>
-                    <div className="text-[10px] text-zinc-600">{item.count}x</div>
-                  </div>
-                );
-              })}
-            </div>
-          </CapabilityScopeSection>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
   const blocked = timeline.blockedCapabilities || [];

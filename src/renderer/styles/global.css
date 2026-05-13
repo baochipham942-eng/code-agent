@@ -97,6 +97,24 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Treat the app shell as controls by default; explicitly opt content back in. */
+body,
+button,
+[role="button"],
+.select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.select-text,
+.select-text *:not(button):not([role="button"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Theme transition */
 body,
 body * {
@@ -172,10 +190,7 @@ body.theme-switching * {
 .select-text::selection,
 .select-text *::selection,
 .prose ::selection,
-.prose *::selection,
-p::selection,
-span::selection,
-div::selection {
+.prose *::selection {
   background-color: rgba(20, 184, 166, 0.5) !important;
   color: #FFFFFF !important;
 }
@@ -183,10 +198,7 @@ div::selection {
 .select-text::-moz-selection,
 .select-text *::-moz-selection,
 .prose ::-moz-selection,
-.prose *::-moz-selection,
-p::-moz-selection,
-span::-moz-selection,
-div::-moz-selection {
+.prose *::-moz-selection {
   background-color: rgba(20, 184, 166, 0.5) !important;
   color: #FFFFFF !important;
 }

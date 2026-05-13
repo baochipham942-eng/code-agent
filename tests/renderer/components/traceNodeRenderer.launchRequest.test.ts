@@ -153,6 +153,38 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('title="回到这条提示词"');
   });
 
+  it('keeps user prompt selection on the text content instead of the bubble chrome', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-selectable',
+          type: 'user',
+          content: '只选这里的文字',
+          timestamp: 322,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('class="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]"');
+    expect(html).toContain('class="text-zinc-200 leading-relaxed select-text"');
+    expect(html).not.toContain('border border-white/[0.06] select-text');
+  });
+
+  it('does not render assistant copy controls until text is selected', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'assistant-copy-hidden',
+          type: 'assistant_text',
+          content: '选中文本后才出现复制按钮',
+          timestamp: 323,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).not.toContain('复制选中文本');
+  });
+
   it('disables the prompt rewind action while the session is processing', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
@@ -288,18 +320,18 @@ describe('TraceNodeRenderer launch request', () => {
 
     expect(html).not.toContain('本轮执行快照');
     expect(html).not.toContain('Browser Blocked');
-    expect(html).toContain('能力范围');
-    expect(html).toContain('用户选择');
-    expect(html).toContain('运行时阻塞');
-    expect(html).toContain('实际调用');
-    expect(html).toContain('skill_not_mounted');
-    expect(html).toContain('Mail');
-    expect(html).toContain('send');
+    expect(html).not.toContain('能力范围');
+    expect(html).not.toContain('用户选择');
+    expect(html).not.toContain('运行时阻塞');
+    expect(html).not.toContain('实际调用');
+    expect(html).not.toContain('skill_not_mounted');
+    expect(html).not.toContain('Mail');
+    expect(html).not.toContain('send');
     expect(html).toContain('report.md');
     expect(html).toContain('Created');
   });
 
-  it('renders invoked-only capability scope without empty routing sections', () => {
+  it('does not render capability scope timeline nodes in the chat stream', () => {
     const invokedOnlyScope: TurnTimelineNode = {
       id: 'timeline-scope',
       kind: 'capability_scope',
@@ -333,16 +365,13 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('实际调用');
-    expect(html).toContain('调用 1');
-    expect(html).toContain('调用明细');
-    expect(html).toContain('doctor');
-    expect(html).toContain('2x');
-    expect(html).toContain('已调用');
+    expect(html).toBe('');
+    expect(html).not.toContain('实际调用');
+    expect(html).not.toContain('调用明细');
+    expect(html).not.toContain('doctor');
     expect(html).not.toContain('invoked');
     expect(html).not.toContain('用户选择');
     expect(html).not.toContain('运行时放行');
     expect(html).not.toContain('运行时阻塞');
-    expect(html).not.toContain('本轮没有显式选择');
   });
 });

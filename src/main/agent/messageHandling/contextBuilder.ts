@@ -152,7 +152,13 @@ export function injectWorkingDirectoryContext(
 **When user intent is CLEAR**, just use the appropriate path directly.`
     : `Use relative paths (resolved against working directory) or absolute paths.`;
 
-  return `${basePrompt}\n\n${envBlock}\n\n${workingDirInfo}`;
+  const workingDirBoundaryInfo = `**Working Directory Boundary**:
+- Treat the working directory as the default base for relative file paths, not as the full boundary of the user's task.
+- If the user asks about this Mac, local disk, caches, downloads, apps, processes, or other machine-level state, inspect the relevant absolute paths under the home directory instead of asking for a project path just because the working directory is empty or unrelated.
+- If the previous assistant turn promised to continue work (for example ended after a colon or "let me check") and the user says "继续", "看呀", or a similar short confirmation, continue from the already established task scope and latest tool results.
+- Do not quote or paraphrase a phrase as the user's wording unless the user actually wrote it.`;
+
+  return `${basePrompt}\n\n${envBlock}\n\n${workingDirInfo}\n\n${workingDirBoundaryInfo}`;
 }
 
 // ----------------------------------------------------------------------------

@@ -33,6 +33,7 @@ import { PromptManagerModal } from './components/features/prompts/PromptManagerM
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
+import { KnowledgeMemoryPanel } from './components/features/knowledge/KnowledgeMemoryPanel';
 import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabilityPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
@@ -97,6 +98,7 @@ export const App: React.FC = () => {
     showLab,
     showEvalCenter,
     showComputerUsePanel,
+    showKnowledgeMemoryPanel,
     showActivityPanel,
     setShowActivityPanel,
     setShowSettings,
@@ -465,7 +467,9 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {showComputerUsePanel ? (
+              {showKnowledgeMemoryPanel ? (
+                <KnowledgeMemoryPanel />
+              ) : showComputerUsePanel ? (
                 <ComputerUsePanel />
               ) : showEvalCenter ? (
                 <EvalCenterPanel />

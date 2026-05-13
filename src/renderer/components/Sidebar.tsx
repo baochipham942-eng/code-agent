@@ -39,6 +39,7 @@ import {
   GitBranch,
   ScrollText,
   Activity,
+  Brain,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -148,6 +149,8 @@ export const Sidebar: React.FC = () => {
     setShowComputerUsePanel,
     showActivityPanel,
     setShowActivityPanel,
+    showKnowledgeMemoryPanel,
+    setShowKnowledgeMemoryPanel,
     showDAGPanel,
     setShowDAGPanel,
   } = useAppStore();
@@ -907,6 +910,13 @@ export const Sidebar: React.FC = () => {
                 >
                   <Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
                   Activity
+                </button>
+                <button
+                  onClick={() => { setShowKnowledgeMemoryPanel(true); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
+                  知识与记忆
                 </button>
                 <button
                   onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}

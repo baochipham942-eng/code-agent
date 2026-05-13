@@ -178,6 +178,7 @@ interface AppState {
   showEvalCenter: boolean;
   evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
   evalCenterSessionId: string | null;
+  showKnowledgeMemoryPanel: boolean;
 
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
@@ -254,6 +255,7 @@ interface AppState {
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
+  setShowKnowledgeMemoryPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
@@ -367,6 +369,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showEvalCenter: false,
   evalCenterTab: 'analysis' as const,
   evalCenterSessionId: null,
+  showKnowledgeMemoryPanel: false,
 
   // Initial file preview registry
   previewTabs: [],
@@ -430,7 +433,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showEvalCenter: false, evalCenterSessionId: null } : {}),
+    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false } : {}),
   }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
@@ -482,10 +485,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowEvalCenter: (show, tab, sessionId) => set({
     showEvalCenter: show,
-    ...(show ? { showComputerUsePanel: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
     ...(tab ? { evalCenterTab: tab } : {}),
     ...(sessionId !== undefined ? { evalCenterSessionId: sessionId } : {}),
     ...(!show ? { evalCenterSessionId: null } : {}),
+  }),
+  setShowKnowledgeMemoryPanel: (show) => set({
+    showKnowledgeMemoryPanel: show,
+    ...(show ? { showEvalCenter: false, showComputerUsePanel: false, evalCenterSessionId: null } : {}),
   }),
 
   openPreview: (filePath) => {

@@ -5,11 +5,35 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
+import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { listMemoryFiles, readMemoryFile, deleteMemoryFile, getLightMemoryStats } from '../lightMemory/lightMemoryIpc';
 
 const logger = createLogger('MemoryIPC');
+
+interface MemoryAuditRequest {
+  projectPath?: string | null;
+  sessionId?: string | null;
+  limit?: number;
+}
+
+interface SerializedAuditMemory {
+  id: string;
+  type: StoredMemoryRecord['type'];
+  category: string;
+  content: string;
+  summary?: string;
+  source: StoredMemoryRecord['source'];
+  projectPath: string | null;
+  sessionId: string | null;
+  confidence: number;
+  accessCount: number;
+  createdAt: number;
+  updatedAt: number;
+  lastAccessedAt: number | null;
+  metadata: Record<string, unknown>;
+}
 
 // ----------------------------------------------------------------------------
 // Helper Functions
@@ -298,6 +322,86 @@ async function handleGetMemoryStats(): Promise<MemoryStats> {
   };
 }
 
+function serializeAuditMemory(memory: StoredMemoryRecord): SerializedAuditMemory {
+  return {
+    id: memory.id,
+    type: memory.type,
+    category: memory.category,
+    content: memory.content,
+    summary: memory.summary,
+    source: memory.source,
+    projectPath: memory.projectPath ?? null,
+    sessionId: memory.sessionId ?? null,
+    confidence: memory.confidence,
+    accessCount: memory.accessCount,
+    createdAt: memory.createdAt,
+    updatedAt: memory.updatedAt,
+    lastAccessedAt: memory.lastAccessedAt ?? null,
+    metadata: memory.metadata ?? {},
+  };
+}
+
+function isAuditableMemory(memory: StoredMemoryRecord): boolean {
+  return memory.type !== 'desktop_activity';
+}
+
+function sortSeedCandidates(a: StoredMemoryRecord, b: StoredMemoryRecord): number {
+  if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+  return b.updatedAt - a.updatedAt;
+}
+
+async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
+  projectPath: string | null;
+  sessionId: string | null;
+  lightFiles: Awaited<ReturnType<typeof listMemoryFiles>>;
+  lightStats: Awaited<ReturnType<typeof getLightMemoryStats>>;
+  databaseMemories: SerializedAuditMemory[];
+  seedCandidates: SerializedAuditMemory[];
+}> {
+  const projectPath = payload.projectPath?.trim() || null;
+  const sessionId = payload.sessionId?.trim() || null;
+  const limit = Math.max(1, Math.min(payload.limit ?? 80, 200));
+  const [lightFiles, lightStats] = await Promise.all([
+    listMemoryFiles(),
+    getLightMemoryStats(),
+  ]);
+
+  let databaseMemories: StoredMemoryRecord[] = [];
+  let seedCandidates: StoredMemoryRecord[] = [];
+
+  try {
+    const db = getDatabase();
+    databaseMemories = db.listMemories({
+      limit,
+      orderBy: 'updated_at',
+      orderDir: 'DESC',
+    }).filter(isAuditableMemory);
+
+    seedCandidates = db.listMemories({
+      ...(projectPath ? { projectPath } : {}),
+      limit: 30,
+      orderBy: 'updated_at',
+      orderDir: 'DESC',
+    })
+      .filter(isAuditableMemory)
+      .sort(sortSeedCandidates)
+      .slice(0, 10);
+  } catch (error) {
+    logger.warn('Memory audit database read skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return {
+    projectPath,
+    sessionId,
+    lightFiles,
+    lightStats,
+    databaseMemories: databaseMemories.map(serializeAuditMemory),
+    seedCandidates: seedCandidates.map(serializeAuditMemory),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Category Mapping Helpers
 // ----------------------------------------------------------------------------
@@ -441,6 +545,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'lightStats':
           data = await getLightMemoryStats();
           break;
+        case 'memoryAudit':
+          data = await handleMemoryAudit(payload as MemoryAuditRequest);
+          break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }
@@ -492,6 +599,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'lightStats':
           data = await getLightMemoryStats();
+          break;
+        case 'memoryAudit':
+          data = await handleMemoryAudit(request as MemoryAuditRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

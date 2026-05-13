@@ -336,13 +336,16 @@ export interface IpcInvokeHandlers {
 
   // Memory (Phase 2/3)
   [IPC_CHANNELS.MEMORY]: (payload: {
-    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats';
+    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'memoryAudit';
     category?: MemoryCategory;
     id?: string;
     content?: string;
     data?: MemoryExport;
     item?: Partial<MemoryItem>;
     filename?: string;
+    projectPath?: string | null;
+    sessionId?: string | null;
+    limit?: number;
   }) => Promise<{
     success: boolean;
     data?: MemoryItem[] | MemoryStatsNew | MemoryExport | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;

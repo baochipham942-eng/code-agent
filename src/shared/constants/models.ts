@@ -228,8 +228,8 @@ export function getModelAbbrev(modelId: string): string {
   return MODEL_ABBREV[modelId] ?? modelId.slice(0, 12);
 }
 
-/** 智谱视觉模型（支持 base64） */
-export const ZHIPU_VISION_MODEL = 'glm-4v-plus' as const;
+/** 智谱视觉模型（支持 base64）。glm-4.1v-thinking-flash 是免费档，带推理链。 */
+export const ZHIPU_VISION_MODEL = 'glm-4.1v-thinking-flash' as const;
 
 /**
  * visual_edit 工具专用模型配置 — 可被环境变量 override。

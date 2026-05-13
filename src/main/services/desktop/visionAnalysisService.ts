@@ -67,7 +67,7 @@ export async function analyzeImageWithVisionDetailed(args: {
   timeoutMs?: number;
 }): Promise<VisionAnalysisResult> {
   const configService = getConfigService();
-  const zhipuApiKey = configService.getApiKey('zhipu');
+  const zhipuApiKey = configService.getZhipuOfficialKey();
 
   if (!zhipuApiKey) {
     logger.info('Vision analysis skipped: zhipu API key is not configured', { source: args.source });
@@ -86,7 +86,7 @@ export async function analyzeImageWithVisionDetailed(args: {
     const base64Image = imageData.toString('base64');
 
     const response = await fetchWithTimeout(
-      `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
+      `${MODEL_API_ENDPOINTS.zhipuOfficial}/chat/completions`,
       {
         method: 'POST',
         headers: {

@@ -42,6 +42,29 @@ export function shouldFollowTurnOutput(isAtBottom: boolean, keepActiveOutputVisi
   return isAtBottom ? 'smooth' : false;
 }
 
+export function isScrollerNearBottom(
+  scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  threshold = 96,
+): boolean {
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
+}
+
+export function getOutputFollowTurnIndex(
+  projection: TraceProjection,
+  followedTurnId: string | null,
+  keepOutputVisible: boolean,
+): number {
+  if (
+    projection.activeTurnIndex >= 0 &&
+    projection.activeTurnIndex < projection.turns.length
+  ) {
+    return projection.activeTurnIndex;
+  }
+
+  if (!keepOutputVisible || !followedTurnId) return -1;
+  return projection.turns.findIndex((turn) => turn.turnId === followedTurnId);
+}
+
 export interface TurnOutputRevisionOptions {
   includeAssistantContentLength?: boolean;
   includeThinkingLength?: boolean;
@@ -134,6 +157,12 @@ export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
   return `[data-trace-node-id="${escapeAttributeSelector(nodeId)}"][data-trace-node-type="${escapeAttributeSelector(nodeType)}"]`;
 }
 
+const TRACE_TURN_ANCHOR_SELECTOR = '[data-trace-turn-id]';
+
+export function getTraceTurnSelector(turnId: string): string {
+  return `[data-trace-turn-id="${escapeAttributeSelector(turnId)}"]`;
+}
+
 export function getActiveAssistantTextAnchor(projection: TraceProjection): {
   turnIndex: number;
   nodeId: string;
@@ -176,6 +205,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
   const keepActiveOutputVisibleRef = useRef(false);
+  const followedOutputSessionIdRef = useRef<string | null>(null);
+  const followedOutputTurnIdRef = useRef<string | null>(null);
+  const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -193,14 +225,22 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const activeTurn = projection.activeTurnIndex >= 0
     ? projection.turns[projection.activeTurnIndex]
     : undefined;
-  const activeTurnOutputRevision = useMemo(
-    () => getTurnOutputRevision(activeTurn, {
-      includeAssistantContentLength: activeTurn?.status !== 'streaming',
-      includeThinkingLength: activeTurn?.status !== 'streaming',
-    }),
-    [activeTurn],
+  const outputFollowTurnIndex = getOutputFollowTurnIndex(
+    projection,
+    followedOutputTurnId,
+    keepActiveOutputVisibleRef.current,
   );
-  const hasActiveTurnOutput = projection.activeTurnIndex >= 0 && Boolean(activeTurnOutputRevision);
+  const outputFollowTurn = outputFollowTurnIndex >= 0
+    ? projection.turns[outputFollowTurnIndex]
+    : undefined;
+  const outputFollowRevision = useMemo(
+    () => getTurnOutputRevision(outputFollowTurn, {
+      includeAssistantContentLength: outputFollowTurn?.status !== 'streaming',
+      includeThinkingLength: outputFollowTurn?.status !== 'streaming',
+    }),
+    [outputFollowTurn],
+  );
+  const hasOutputFollowTurnOutput = outputFollowTurnIndex >= 0 && Boolean(outputFollowRevision);
 
   // 让滚动条在两侧各占一半空间：
   // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
@@ -222,6 +262,22 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       activeDisplayScrollCancelRef.current = null;
     };
   }, []);
+
+  const updateFollowedOutputTurnId = useCallback((turnId: string | null) => {
+    followedOutputTurnIdRef.current = turnId;
+    setFollowedOutputTurnId((current) => current === turnId ? current : turnId);
+  }, []);
+
+  useEffect(() => {
+    if (followedOutputSessionIdRef.current !== projection.sessionId) {
+      followedOutputSessionIdRef.current = projection.sessionId;
+      updateFollowedOutputTurnId(null);
+    }
+
+    if (projection.activeTurnIndex >= 0 && activeTurn?.turnId) {
+      updateFollowedOutputTurnId(activeTurn.turnId);
+    }
+  }, [activeTurn?.turnId, projection.activeTurnIndex, projection.sessionId, updateFollowedOutputTurnId]);
 
   useEffect(() => {
     const scroller = scrollerElement;
@@ -250,6 +306,29 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       scroller.removeEventListener('keydown', handleKeyDown);
     };
   }, [scrollerElement]);
+
+  useEffect(() => {
+    const scroller = scrollerElement;
+    if (!scroller) return;
+
+    const handleClickCapture = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return;
+      if (!isScrollerNearBottom(scroller)) return;
+
+      const turnElement = event.target.closest<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR);
+      const turnId = turnElement?.dataset.traceTurnId;
+      if (!turnId) return;
+
+      const latestTurn = projection.turns[projection.turns.length - 1];
+      if (turnId !== latestTurn?.turnId && turnId !== followedOutputTurnIdRef.current) return;
+
+      keepActiveOutputVisibleRef.current = true;
+      updateFollowedOutputTurnId(turnId);
+    };
+
+    scroller.addEventListener('click', handleClickCapture, true);
+    return () => scroller.removeEventListener('click', handleClickCapture, true);
+  }, [projection.turns, scrollerElement, updateFollowedOutputTurnId]);
 
   // Scroll to active search match when it changes
   useEffect(() => {
@@ -380,22 +459,22 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [latestUserNodeId, projection.sessionId, projection.turns]);
 
   useEffect(() => {
-    if (!activeTurnOutputRevision) return;
-    if (projection.activeTurnIndex < 0) return;
+    if (!outputFollowRevision) return;
+    if (outputFollowTurnIndex < 0) return;
     if (!keepActiveOutputVisibleRef.current) return;
 
     return scheduleAfterLayout(() => {
       virtuosoRef.current?.scrollToIndex({
-        index: projection.activeTurnIndex,
+        index: outputFollowTurnIndex,
         align: 'end',
         behavior: 'auto',
       });
     });
-  }, [activeTurnOutputRevision, projection.activeTurnIndex]);
+  }, [outputFollowRevision, outputFollowTurnIndex]);
 
   const scheduleActiveDisplayScroll = useCallback((turnIndex: number) => {
     if (!keepActiveOutputVisibleRef.current) return;
-    if (turnIndex !== projection.activeTurnIndex) return;
+    if (turnIndex !== outputFollowTurnIndex) return;
     if (activeDisplayScrollCancelRef.current) return;
 
     const delay = getActiveDisplayScrollDelay(
@@ -407,7 +486,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       () => {
         activeDisplayScrollCancelRef.current = null;
         if (!keepActiveOutputVisibleRef.current) return;
-        if (turnIndex !== projection.activeTurnIndex) return;
+        if (turnIndex !== outputFollowTurnIndex) return;
         activeDisplayScrollLastAtRef.current = Date.now();
         recordStreamingPerformanceCounter('stream.active_display_scroll');
         virtuosoRef.current?.scrollToIndex({
@@ -418,7 +497,37 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       },
       delay,
     );
-  }, [projection.activeTurnIndex]);
+  }, [outputFollowTurnIndex]);
+
+  useEffect(() => {
+    const scroller = scrollerElement;
+    const turnId = outputFollowTurn?.turnId;
+    if (!scroller || !turnId || outputFollowTurnIndex < 0) return;
+    if (typeof ResizeObserver !== 'function') return;
+
+    const turnSelector = getTraceTurnSelector(turnId);
+    const targets = Array.from(scroller.querySelectorAll<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR));
+    if (!targets.some((target) => target.matches(turnSelector))) return;
+
+    const lastHeights = new WeakMap<Element, number>();
+    const observer = new ResizeObserver((entries) => {
+      const hasHeightChange = entries.some((entry) => {
+        const lastHeight = lastHeights.get(entry.target);
+        const nextHeight = entry.contentRect.height;
+        if (lastHeight === nextHeight) return false;
+        lastHeights.set(entry.target, nextHeight);
+        return true;
+      });
+      if (!hasHeightChange) return;
+      scheduleActiveDisplayScroll(outputFollowTurnIndex);
+    });
+
+    targets.forEach((target) => {
+      lastHeights.set(target, target.getBoundingClientRect().height);
+      observer.observe(target);
+    });
+    return () => observer.disconnect();
+  }, [outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
 
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {
@@ -431,10 +540,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     (isAtBottom: boolean) => {
       return shouldFollowTurnOutput(
         isAtBottom,
-        hasActiveTurnOutput && keepActiveOutputVisibleRef.current,
+        hasOutputFollowTurnOutput && keepActiveOutputVisibleRef.current,
       );
     },
-    [hasActiveTurnOutput],
+    [hasOutputFollowTurnOutput],
   );
 
   // Render individual turn card
@@ -445,6 +554,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 
       const isLast = index === projection.turns.length - 1;
       const isStreaming = index === projection.activeTurnIndex;
+      const shouldFollowOutput = index === outputFollowTurnIndex;
       const hasSearchMatch = searchMatches.some(m => m.turnIndex === index);
       const activeMatch = searchMatches.length > 0 ? searchMatches[activeMatchIndex] : undefined;
       const isActiveMatchTurn = activeMatch?.turnIndex === index;
@@ -452,7 +562,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const previousTurn = index > 0 ? projection.turns[index - 1] : null;
 
       return (
-        <div className="w-full px-4">
+        <div className="w-full px-4" data-trace-turn-id={turn.turnId}>
           <div className="max-w-3xl mx-auto">
             <TurnCard
               key={turn.turnId}
@@ -466,7 +576,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               streamSnapshot={projectionStreamSnapshot}
               showSeparator={shouldShowTurnTimeSeparator(previousTurn, turn)}
               onStreamingDisplayUpdate={
-                isStreaming ? () => scheduleActiveDisplayScroll(index) : undefined
+                shouldFollowOutput ? () => scheduleActiveDisplayScroll(index) : undefined
               }
               onRewindUserPrompt={onRewindUserPrompt}
             />
@@ -474,7 +584,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
+    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator
@@ -496,13 +606,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       role="log"
       aria-live="polite"
       aria-label="对话消息"
-      className="h-full min-h-0 py-3 overflow-x-hidden"
+      className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
       scrollerRef={handleScrollerRef}
       totalCount={projection.turns.length}
       itemContent={itemContent}
       followOutput={followOutput}
       atBottomStateChange={(atBottom) => {
-        if (atBottom) keepActiveOutputVisibleRef.current = true;
+        if (atBottom) {
+          keepActiveOutputVisibleRef.current = true;
+          const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
+          if (turnId) updateFollowedOutputTurnId(turnId);
+        }
       }}
       atBottomThreshold={96}
       initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}

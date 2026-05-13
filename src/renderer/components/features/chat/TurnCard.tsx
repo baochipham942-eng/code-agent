@@ -226,13 +226,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               }
               const isNodeStreaming =
                 isStreaming && i === lastIndex && node.type === 'assistant_text';
+              const shouldReportDisplayUpdate =
+                node.type === 'assistant_text' &&
+                Boolean(onStreamingDisplayUpdate) &&
+                (isNodeStreaming || (!isStreaming && node.id === foldedView?.finalTextNode?.id));
               return (
                 <TraceNodeRenderer
                   key={node.id}
                   node={node}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
-                  onStreamingDisplayUpdate={isNodeStreaming ? onStreamingDisplayUpdate : undefined}
+                  onStreamingDisplayUpdate={shouldReportDisplayUpdate ? onStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
                   rewindDisabled={Boolean(isSessionProcessing)}
                 />
@@ -254,6 +258,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <TraceNodeRenderer
             node={foldedView.finalTextNode}
             attachments={foldedView.finalTextNode.attachments}
+            onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />
         )}
 

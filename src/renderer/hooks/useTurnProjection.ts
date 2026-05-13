@@ -145,13 +145,16 @@ export function projectTurns(
       }
 
       const hasContent = msg.content && msg.content.trim().length > 0;
+      const hasReasoning = Boolean(
+        msg.reasoning?.trim().length || msg.thinking?.trim().length,
+      );
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
       // Skip empty assistant messages
-      if (!hasContent && !hasToolCalls) continue;
+      if (!hasContent && !hasReasoning && !hasToolCalls) continue;
 
       // Text content node
-      if (hasContent) {
+      if (hasContent || hasReasoning) {
         currentTurn.nodes.push({
           id: `${msg.id}-text`,
           type: 'assistant_text',

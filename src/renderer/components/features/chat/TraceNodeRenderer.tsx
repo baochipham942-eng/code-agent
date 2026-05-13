@@ -273,6 +273,7 @@ const AssistantTextNode: React.FC<{
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const wasReportingStreamingDisplayRef = useRef(false);
   const [copied, setCopied] = useState(false);
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
 
@@ -289,8 +290,17 @@ const AssistantTextNode: React.FC<{
   }, [showReasoning, reasoningContent]);
 
   useEffect(() => {
-    if (!turnStreaming && !isAnimating) return;
-    onStreamingDisplayUpdate?.(node.id, displayContent.length, isAnimating);
+    const isDisplayingStream = Boolean(turnStreaming || isAnimating);
+
+    if (isDisplayingStream) {
+      wasReportingStreamingDisplayRef.current = true;
+      onStreamingDisplayUpdate?.(node.id, displayContent.length, isAnimating);
+      return;
+    }
+
+    if (!wasReportingStreamingDisplayRef.current) return;
+    wasReportingStreamingDisplayRef.current = false;
+    onStreamingDisplayUpdate?.(node.id, displayContent.length, false);
   }, [displayContent.length, isAnimating, node.id, onStreamingDisplayUpdate, turnStreaming]);
 
   const updateSelectionCopy = useCallback(() => {

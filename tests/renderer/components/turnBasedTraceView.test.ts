@@ -5,8 +5,11 @@ import {
   getActiveDisplayScrollDelay,
   getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
+  getOutputFollowTurnIndex,
   getTurnOutputRevision,
   getTraceNodeSelector,
+  getTraceTurnSelector,
+  isScrollerNearBottom,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
@@ -42,9 +45,27 @@ describe('TurnBasedTraceView focus helpers', () => {
     expect(getFocusedTurnIndex(makeProjection(-1, 0))).toBe(-1);
   });
 
+  it('uses the active turn as the output follow target while streaming', () => {
+    expect(getOutputFollowTurnIndex(makeProjection(1), null, false)).toBe(1);
+  });
+
+  it('keeps following the completed turn after streaming finishes', () => {
+    expect(getOutputFollowTurnIndex(makeProjection(-1), 'turn-2', true)).toBe(1);
+  });
+
+  it('stops following completed output after the user leaves the bottom', () => {
+    expect(getOutputFollowTurnIndex(makeProjection(-1), 'turn-2', false)).toBe(-1);
+  });
+
   it('does not force bottom-follow when the viewport is away from the bottom', () => {
     expect(shouldFollowTurnOutput(false)).toBe(false);
     expect(shouldFollowTurnOutput(true)).toBe('smooth');
+  });
+
+  it('treats short or near-bottom scrollers as bottom anchored', () => {
+    expect(isScrollerNearBottom({ scrollHeight: 400, scrollTop: 0, clientHeight: 700 })).toBe(true);
+    expect(isScrollerNearBottom({ scrollHeight: 900, scrollTop: 120, clientHeight: 700 })).toBe(true);
+    expect(isScrollerNearBottom({ scrollHeight: 1200, scrollTop: 200, clientHeight: 700 })).toBe(false);
   });
 
   it('keeps the active output visible after the view programmatically focused a new turn', () => {
@@ -180,6 +201,12 @@ describe('TurnBasedTraceView focus helpers', () => {
   it('builds a selector for trace node anchors', () => {
     expect(getTraceNodeSelector('assistant-1', 'assistant_text')).toBe(
       '[data-trace-node-id="assistant-1"][data-trace-node-type="assistant_text"]',
+    );
+  });
+
+  it('builds a selector for trace turn anchors', () => {
+    expect(getTraceTurnSelector('turn-"1"')).toBe(
+      '[data-trace-turn-id="turn-\\"1\\""]',
     );
   });
 });

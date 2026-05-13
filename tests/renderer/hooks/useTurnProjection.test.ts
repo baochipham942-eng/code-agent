@@ -281,6 +281,39 @@ describe('projectTurns', () => {
     expect(projection.turns[1].startTime).toBe(220);
   });
 
+  it('keeps a reasoning-only assistant node visible during streaming flushes', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '先思考',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        reasoning: '正在分析约束和上下文',
+        timestamp: 130,
+        toolCalls: [],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-thinking', true, []);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.activeTurnIndex).toBe(0);
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-text',
+    ]);
+    expect(projection.turns[0].nodes[1]).toMatchObject({
+      type: 'assistant_text',
+      content: '',
+      reasoning: '正在分析约束和上下文',
+    });
+  });
+
   it('ignores pending launch requests from another session', () => {
     const messages: Message[] = [
       {

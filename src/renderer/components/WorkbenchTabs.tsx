@@ -10,6 +10,7 @@ import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
+import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -35,6 +36,8 @@ export const WorkbenchTabs: React.FC = () => {
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const { isStandard } = useDisclosure();
   const workspacePreviewItems = useWorkspacePreviewModel();
+  const savedPresetCount = useWorkbenchPresetStore((s) => s.presets.length);
+  const savedRecipeCount = useWorkbenchPresetStore((s) => s.recipes.length);
 
   // "+" 按钮的 popover 状态：列出未打开的 Task/Skills/Files 让用户重开
   const [addOpen, setAddOpen] = useState(false);
@@ -77,11 +80,11 @@ export const WorkbenchTabs: React.FC = () => {
       return { id, label: '文件', title: '文件浏览器', isDirty: false };
     }
     if (id === 'workspace-preview') {
-      const count = workspacePreviewItems.length;
+      const count = workspacePreviewItems.length + savedPresetCount + savedRecipeCount;
       return {
         id,
-        label: count > 0 ? `Preview ${count}` : 'Preview',
-        title: 'Workspace Preview',
+        label: count > 0 ? `Assets ${count}` : 'Assets',
+        title: 'Workspace Assets',
         isDirty: false,
       };
     }
@@ -191,7 +194,7 @@ export const WorkbenchTabs: React.FC = () => {
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                 >
                   <Eye className="w-3.5 h-3.5 text-cyan-400/80" />
-                  Preview
+                  Assets
                 </button>
               )}
               {!hasContext && (

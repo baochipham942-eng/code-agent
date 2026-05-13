@@ -28,10 +28,17 @@ import type {
 } from '@shared/contract';
 import { formatDesignBriefLabel } from '@shared/contract/designBrief';
 import type { DesignBrief } from '@shared/contract/designBrief';
-import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
+import {
+  createWorkbenchRecipeMergedContext,
+  type WorkbenchPreset,
+  type WorkbenchRecipe,
+} from '@shared/contract/workbenchPreset';
+import { EVALUATION_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
+import { useComposerStore } from '../stores/composerStore';
+import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { isPreviewable } from '../utils/previewable';
 import {
@@ -47,6 +54,12 @@ import {
   DESIGN_BRIEF_SUBMIT_EVENT,
   type DesignBriefSubmitDetail,
 } from './QuestionFormPreview';
+import {
+  AssetTabButton,
+  PromptAppLibrary,
+  isGalleryItem,
+  type WorkspaceAssetTab,
+} from './WorkspaceAssets';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 
@@ -521,8 +534,14 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const items = useWorkspacePreviewModel();
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
+  const setWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessions = useSessionStore((state) => state.sessions);
+  const presets = useWorkbenchPresetStore((state) => state.presets);
+  const recipes = useWorkbenchPresetStore((state) => state.recipes);
+  const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
+  const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
+  const [activeAssetTab, setActiveAssetTab] = useState<WorkspaceAssetTab>('preview');
   const [copied, setCopied] = useState(false);
   const [deliveryReview, setDeliveryReview] = useState<DeliveryReviewRunResult | null>(null);
   const [reviewRunning, setReviewRunning] = useState(false);
@@ -530,6 +549,9 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [feedbackNote, setFeedbackNote] = useState('');
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [sentContext, setSentContext] = useState(false);
+  const [assetActionError, setAssetActionError] = useState<string | null>(null);
+  const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
+  const activePreviewItems = activeAssetTab === 'gallery' ? galleryItems : items;
 
   // 监听 question-form 提交事件，把 brief 锁定到当前 session 运行时 state（不进 DB）。
   // 下一轮 sendMessage 会从 sessionStore 读这条 brief，prepend 到 IPC content 注入 LLM。
@@ -546,8 +568,8 @@ export const WorkspacePreviewPanel: React.FC = () => {
   }, []);
 
   const selected = useMemo(() => (
-    items.find((item) => item.id === selectedId) || items[0] || null
-  ), [items, selectedId]);
+    activePreviewItems.find((item) => item.id === selectedId) || activePreviewItems[0] || null
+  ), [activePreviewItems, selectedId]);
   const currentSessionTitle = useMemo(() => {
     if (!currentSessionId) return undefined;
     return sessions.find((session) => session.id === currentSessionId)?.title;
@@ -572,6 +594,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
   }, [reloadFeedback]);
 
   useEffect(() => {
+    if (activeAssetTab === 'apps') return;
     if (!selected && selectedId) {
       setSelectedId(null);
       return;
@@ -579,7 +602,42 @@ export const WorkspacePreviewPanel: React.FC = () => {
     if (selected && selected.id !== selectedId) {
       setSelectedId(selected.id);
     }
-  }, [selected, selectedId, setSelectedId]);
+  }, [activeAssetTab, selected, selectedId, setSelectedId]);
+
+  const syncWorkspaceDirectory = useCallback(async (dir?: string | null) => {
+    const trimmed = dir?.trim();
+    if (!trimmed) return;
+    const response = await window.domainAPI?.invoke<string | null>(
+      IPC_DOMAINS.WORKSPACE,
+      'setCurrent',
+      { dir: trimmed },
+    );
+    if (response && !response.success) {
+      throw new Error(response.error?.message || 'Failed to sync workspace directory');
+    }
+    setWorkingDirectory(response?.data || trimmed);
+  }, [setWorkingDirectory]);
+
+  const handleUsePreset = useCallback((preset: WorkbenchPreset) => {
+    setAssetActionError(null);
+    void (async () => {
+      await syncWorkspaceDirectory(preset.context.workingDirectory);
+      applyWorkbenchPreset(preset);
+    })().catch((error) => {
+      setAssetActionError(error instanceof Error ? error.message : String(error));
+    });
+  }, [applyWorkbenchPreset, syncWorkspaceDirectory]);
+
+  const handleUseRecipe = useCallback((recipe: WorkbenchRecipe) => {
+    setAssetActionError(null);
+    void (async () => {
+      const context = createWorkbenchRecipeMergedContext(recipe);
+      await syncWorkspaceDirectory(context.workingDirectory);
+      applyWorkbenchRecipe(recipe);
+    })().catch((error) => {
+      setAssetActionError(error instanceof Error ? error.message : String(error));
+    });
+  }, [applyWorkbenchRecipe, syncWorkspaceDirectory]);
 
   const copySelected = async () => {
     if (!selected) return;
@@ -663,38 +721,86 @@ export const WorkspacePreviewPanel: React.FC = () => {
     <div className="flex h-full min-h-0 flex-col bg-zinc-900">
       <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-zinc-100">Workspace Preview</div>
+          <div className="text-sm font-semibold text-zinc-100">Workspace Assets</div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {items.length > 0 ? `${items.length} items from this workspace` : 'No previewable workspace items yet'}
+            {presets.length + recipes.length} apps · {galleryItems.length} gallery · {items.length} preview
           </div>
         </div>
-        <button
-          type="button"
-          onClick={copySelected}
-          disabled={!selected}
-          className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-        <button
-          type="button"
-          onClick={runDeliveryReview}
-          disabled={!selected || !currentSessionId || reviewRunning}
-          className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {reviewRunning ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
-          Review
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-1">
+            <AssetTabButton
+              active={activeAssetTab === 'apps'}
+              label="Apps"
+              count={presets.length + recipes.length}
+              onClick={() => setActiveAssetTab('apps')}
+            />
+            <AssetTabButton
+              active={activeAssetTab === 'gallery'}
+              label="Gallery"
+              count={galleryItems.length}
+              onClick={() => setActiveAssetTab('gallery')}
+            />
+            <AssetTabButton
+              active={activeAssetTab === 'preview'}
+              label="Preview"
+              count={items.length}
+              onClick={() => setActiveAssetTab('preview')}
+            />
+          </div>
+          {activeAssetTab !== 'apps' && (
+            <>
+              <button
+                type="button"
+                onClick={copySelected}
+                disabled={!selected}
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                onClick={runDeliveryReview}
+                disabled={!selected || !currentSessionId || reviewRunning}
+                className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {reviewRunning ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
+                Review
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {items.length === 0 ? (
+      {activeAssetTab === 'apps' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {assetActionError && (
+            <div className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {assetActionError}
+            </div>
+          )}
+          <PromptAppLibrary
+            presets={presets}
+            recipes={recipes}
+            onUsePreset={handleUsePreset}
+            onUseRecipe={handleUseRecipe}
+          />
+        </div>
+      ) : activePreviewItems.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div>
-            <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
-            <div className="mt-3 text-sm text-zinc-300">暂无可预览产物</div>
+            {activeAssetTab === 'gallery' ? (
+              <Image className="mx-auto h-8 w-8 text-zinc-600" />
+            ) : (
+              <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
+            )}
+            <div className="mt-3 text-sm text-zinc-300">
+              {activeAssetTab === 'gallery' ? '暂无 Gallery 资产' : '暂无可预览产物'}
+            </div>
             <div className="mt-1 text-xs leading-relaxed text-zinc-500">
-              文档、表格、消息草稿、日程、网页截图、diff 和文件产物会出现在这里。
+              {activeAssetTab === 'gallery'
+                ? 'HTML、图表、幻灯片、网页截图这类视觉产物会出现在这里。'
+                : '文档、表格、消息草稿、日程、网页截图、diff 和文件产物会出现在这里。'}
             </div>
           </div>
         </div>
@@ -702,7 +808,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
         <div className="grid min-h-0 flex-1 grid-cols-[190px_minmax(0,1fr)_260px]">
           <div className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-3">
             <div className="space-y-2">
-              {items.map((item) => (
+              {activePreviewItems.map((item) => (
                 <PreviewListItem
                   key={item.id}
                   item={item}

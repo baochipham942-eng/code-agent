@@ -6,6 +6,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
+import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
@@ -186,6 +187,13 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeAuthStore().catch((error) => {
       logger.error('Failed to initialize auth store', error);
+    });
+  }, []);
+
+  // Initialize agent registry store (custom .md agents 列表 + 热加载推送订阅)
+  useEffect(() => {
+    initializeAgentRegistryStore().catch((error) => {
+      logger.error('Failed to initialize agent registry store', error);
     });
   }, []);
 

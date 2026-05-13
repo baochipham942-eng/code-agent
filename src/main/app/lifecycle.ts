@@ -6,6 +6,7 @@ import { app, BrowserWindow } from '../platform';
 import { getDatabase, getLangfuseService } from '../services';
 import { getMCPClient } from '../mcp/mcpClient';
 import { cleanupSessionStateManager } from '../session/sessionStateManager';
+import { disposeAgentRegistry } from '../agent/agentRegistry';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('Lifecycle');
@@ -50,6 +51,14 @@ export async function cleanup(): Promise<void> {
     logger.info('Session state manager cleaned up');
   } catch (error) {
     logger.error('Error cleaning up session state manager', error);
+  }
+
+  // Dispose agent registry watcher
+  try {
+    await disposeAgentRegistry();
+    logger.info('Agent registry disposed');
+  } catch (error) {
+    logger.error('Error disposing agent registry', error);
   }
 }
 

@@ -10,6 +10,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ModelIndicator } from './ModelIndicator';
 import { ModelSwitcher } from './ModelSwitcher';
+import { AgentSwitcher } from './AgentSwitcher';
 import { InteractionModeIndicator } from './InteractionModeIndicator';
 import { EffortLevelIndicator } from './EffortLevelIndicator';
 import { MessageCounter } from './MessageCounter';
@@ -64,6 +65,8 @@ export function StatusBar() {
       <div className="flex items-center gap-3">
         <ModelSwitcher currentModel={modelConfig.model} />
         <Separator />
+        <AgentSwitcher />
+        <Separator />
         <InteractionModeIndicator />
         <Separator />
         <EffortLevelIndicator />
@@ -107,6 +110,7 @@ export function StatusBar() {
 // 导出所有子组件，方便单独使用
 export { ModelIndicator } from './ModelIndicator';
 export { ModelSwitcher } from './ModelSwitcher';
+export { AgentSwitcher } from './AgentSwitcher';
 export { MessageCounter } from './MessageCounter';
 export { TokenUsage } from './TokenUsage';
 export { CostDisplay } from './CostDisplay';

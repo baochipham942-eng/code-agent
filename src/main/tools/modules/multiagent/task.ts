@@ -104,19 +104,23 @@ function parseAndValidateTaskParams(params: Record<string, unknown>): TaskParams
     subagentType = subagentType.trim();
   }
 
+  // 取当前可用 agent ID 列表（含自定义），fallback 到 builtin
+  const knownIds = listPredefinedAgents().map((a) => a.id);
+  const validIds = knownIds.length > 0 ? knownIds : [...CORE_AGENT_IDS];
+
   if (!subagentType || typeof subagentType !== 'string') {
     return {
       success: false,
-      error: `Missing subagent_type parameter. Valid types: ${CORE_AGENT_IDS.join(', ')}`,
+      error: `Missing subagent_type parameter. Valid types: ${validIds.join(', ')}`,
     };
   }
 
-  if (!isCoreAgent(subagentType)) {
-    const suggestion = findSimilarAgentType(subagentType, [...CORE_AGENT_IDS]);
+  if (!validIds.includes(subagentType)) {
+    const suggestion = findSimilarAgentType(subagentType, validIds);
     const suggestionText = suggestion ? ` Did you mean "${suggestion}"?` : '';
     return {
       success: false,
-      error: `Invalid subagent_type: "${subagentType}".${suggestionText} Valid types: ${CORE_AGENT_IDS.join(', ')}`,
+      error: `Invalid subagent_type: "${subagentType}".${suggestionText} Valid types: ${validIds.join(', ')}`,
     };
   }
 

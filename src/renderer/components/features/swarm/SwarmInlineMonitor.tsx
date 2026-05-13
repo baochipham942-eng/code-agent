@@ -92,44 +92,46 @@ export function SwarmInlineMonitor() {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <Bot size={14} className="text-zinc-400" />
-        <span className="text-zinc-300">
-          {activeAgents.length} background agent{activeAgents.length > 1 ? 's' : ''}
-        </span>
-        <span className="text-zinc-500">(@ to tag agents)</span>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleStopAll}
-            disabled={stopping || activeAgents.length === 0}
-            className={`transition-colors ${
-              stopping
-                ? 'text-zinc-600 cursor-wait'
-                : 'text-zinc-400 hover:text-red-400'
-            } disabled:cursor-not-allowed disabled:opacity-50`}
-            title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
-          >
-            <Square size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors"
-            title={collapsed ? '展开' : '折叠'}
-          >
-            {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+    <div className="w-full shrink-0 px-4">
+      <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Bot size={14} className="text-zinc-400" />
+          <span className="text-zinc-300">
+            {activeAgents.length} background agent{activeAgents.length > 1 ? 's' : ''}
+          </span>
+          <span className="text-zinc-500">(@ to tag agents)</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleStopAll}
+              disabled={stopping || activeAgents.length === 0}
+              className={`transition-colors ${
+                stopping
+                  ? 'text-zinc-600 cursor-wait'
+                  : 'text-zinc-400 hover:text-red-400'
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+              title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
+            >
+              <Square size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed(!collapsed)}
+              className="text-zinc-400 hover:text-zinc-200 transition-colors"
+              title={collapsed ? '展开' : '折叠'}
+            >
+              {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
         </div>
+        {!collapsed && (
+          <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
+            {agents.map((agent) => (
+              <SwarmAgentRow key={agent.id} agent={agent} />
+            ))}
+          </div>
+        )}
       </div>
-      {!collapsed && (
-        <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
-          {agents.map((agent) => (
-            <SwarmAgentRow key={agent.id} agent={agent} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

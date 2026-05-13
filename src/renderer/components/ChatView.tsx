@@ -467,15 +467,17 @@ export const ChatView: React.FC = () => {
 
         {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
         {researchDetected && (
-          <div className="px-6 w-full">
-            <SemanticResearchIndicator
-              intent={researchDetected.intent}
-              confidence={researchDetected.confidence}
-              suggestedDepth={researchDetected.suggestedDepth}
-              reasoning={researchDetected.reasoning}
-              visible={true}
-              onDismiss={dismissResearchDetected}
-            />
+          <div className="w-full shrink-0 px-4">
+            <div className="mx-auto max-w-3xl">
+              <SemanticResearchIndicator
+                intent={researchDetected.intent}
+                confidence={researchDetected.confidence}
+                suggestedDepth={researchDetected.suggestedDepth}
+                reasoning={researchDetected.reasoning}
+                visible={true}
+                onDismiss={dismissResearchDetected}
+              />
+            </div>
           </div>
         )}
 

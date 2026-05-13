@@ -156,7 +156,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       )}
 
       {/* Content */}
-      <div className="space-y-2">
+      <div className="space-y-2 px-4">
         {/* User message always at top */}
         {foldedView?.userNode && (
           <TraceNodeRenderer

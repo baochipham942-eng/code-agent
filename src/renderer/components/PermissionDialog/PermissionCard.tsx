@@ -201,12 +201,13 @@ export function PermissionCard() {
   }, []);
 
   return (
-    <div className="w-full px-6 animate-slideUp">
+    <div className="w-full px-4 animate-slideUp">
       <div
         ref={cardRef}
         tabIndex={-1}
         className={`
           w-full
+          max-w-3xl mx-auto
           bg-zinc-900 rounded-lg shadow-2xl
           border-2 outline-none
           ${isDangerous ? 'border-red-500' : config.borderColor}

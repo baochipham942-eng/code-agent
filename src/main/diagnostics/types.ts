@@ -60,10 +60,3 @@ export interface RunDoctorOptions {
   perCheckTimeoutMs?: number;
 }
 
-/**
- * @deprecated 使用 DoctorItem
- * 向后兼容别名：原 DiagnosticItem / DiagnosticReport 已被多处引用，Step 6 收尾清除
- */
-export type DiagnosticItem = DoctorItem;
-/** @deprecated 使用 DoctorReport */
-export type DiagnosticReport = DoctorReport;

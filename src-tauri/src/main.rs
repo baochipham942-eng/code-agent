@@ -514,7 +514,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .separator()
         .quit()
         .build()?;
-    const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/32x32.png");
+    const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/tray-template.png");
 
     let _tray = TrayIconBuilder::new()
         .icon(TRAY_ICON)

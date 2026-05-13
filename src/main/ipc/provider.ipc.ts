@@ -11,20 +11,22 @@ import {
 } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/contract';
 import { runDiagnostics } from './doctor.ipc';
+import { runDoctor } from '../diagnostics/doctorRunner';
+import type { RunDoctorOptions } from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
 
-interface TestConnectionPayload {
+export interface TestConnectionPayload {
   provider: string;
   apiKey: string;
   baseUrl?: string;
   model?: string;
 }
 
-interface TestConnectionResult {
+export interface TestConnectionResult {
   success: boolean;
   latencyMs: number;
   error?: {
@@ -120,7 +122,7 @@ function mapHttpError(status: number, body: string): TestConnectionResult['error
   }
 }
 
-async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
+export async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
   const config = buildTestConfig(payload.provider, payload.apiKey, payload.baseUrl);
 
   if (!config) {
@@ -222,6 +224,10 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
         }
         case 'run_diagnostics': {
           const data = await runDiagnostics();
+          return { success: true, data };
+        }
+        case 'run_doctor': {
+          const data = await runDoctor(payload as RunDoctorOptions | undefined);
           return { success: true, data };
         }
         case 'getHealthStatus': {

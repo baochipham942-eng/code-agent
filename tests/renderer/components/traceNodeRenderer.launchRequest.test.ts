@@ -288,14 +288,61 @@ describe('TraceNodeRenderer launch request', () => {
 
     expect(html).not.toContain('本轮执行快照');
     expect(html).not.toContain('Browser Blocked');
-    expect(html).toContain('Scope Inspector Lite');
-    expect(html).toContain('User Selected');
-    expect(html).toContain('Runtime Blocked');
-    expect(html).toContain('Actually Invoked');
+    expect(html).toContain('能力范围');
+    expect(html).toContain('用户选择');
+    expect(html).toContain('运行时阻塞');
+    expect(html).toContain('实际调用');
     expect(html).toContain('skill_not_mounted');
     expect(html).toContain('Mail');
     expect(html).toContain('send');
     expect(html).toContain('report.md');
     expect(html).toContain('Created');
+  });
+
+  it('renders invoked-only capability scope without empty routing sections', () => {
+    const invokedOnlyScope: TurnTimelineNode = {
+      id: 'timeline-scope',
+      kind: 'capability_scope',
+      timestamp: 400,
+      tone: 'info',
+      capabilityScope: {
+        selected: [],
+        allowed: [],
+        blocked: [],
+        invoked: [
+          {
+            kind: 'skill',
+            id: 'doctor',
+            label: 'doctor',
+            count: 2,
+            topActions: [],
+          },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'timeline-scope-node',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 400,
+          turnTimeline: invokedOnlyScope,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('实际调用');
+    expect(html).toContain('调用 1');
+    expect(html).toContain('调用明细');
+    expect(html).toContain('doctor');
+    expect(html).toContain('2x');
+    expect(html).toContain('已调用');
+    expect(html).not.toContain('invoked');
+    expect(html).not.toContain('用户选择');
+    expect(html).not.toContain('运行时放行');
+    expect(html).not.toContain('运行时阻塞');
+    expect(html).not.toContain('本轮没有显式选择');
   });
 });

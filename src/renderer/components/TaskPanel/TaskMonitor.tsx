@@ -478,7 +478,7 @@ function InvokedCapabilityRows({
               {item.label}
             </WorkbenchPill>
             <div className="min-w-0 flex-1 text-[11px] text-zinc-400">
-              {actionSummary || 'invoked'}
+              {actionSummary || '已调用'}
             </div>
             <div className="text-[10px] text-zinc-600">{item.count}x</div>
             <WorkbenchCapabilityDetailButton
@@ -568,6 +568,11 @@ function CurrentTurnCapabilityScopeCard({
   ) => void;
 }) {
   const { scope } = scopeView;
+  const hasRouting = scope.selected.length > 0 || scope.allowed.length > 0 || scope.blocked.length > 0;
+  const title = hasRouting ? '能力范围' : '实际调用';
+  const summary = hasRouting
+    ? `已选 ${scope.selected.length} · 放行 ${scope.allowed.length} · 阻塞 ${scope.blocked.length} · 调用 ${scope.invoked.length}`
+    : `调用 ${scope.invoked.length}`;
   const selectedCapabilityMap = new Map(
     scopeView.selectedCapabilities.map((capability) => [
       `${capability.kind}:${capability.id}`,
@@ -585,110 +590,118 @@ function CurrentTurnCapabilityScopeCard({
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-[11px] text-zinc-300">
         <Wrench className="h-3.5 w-3.5 text-amber-300" />
-        <span>Scope Inspector Lite</span>
+        <span>{title}</span>
         <span className="text-zinc-500">
-          已选 {scope.selected.length} · 放行 {scope.allowed.length} · 阻塞 {scope.blocked.length} · 调用 {scope.invoked.length}
+          {summary}
         </span>
       </div>
 
       <div className="space-y-2">
-        <CompactCapabilityScopeSection
-          label="User Selected"
-          emptyLabel="本轮没有显式选择 capability。"
-          hasContent={scope.selected.length > 0}
-        >
-          <CapabilityPillRow items={scope.selected} onOpenCapability={onOpenCapability} />
-        </CompactCapabilityScopeSection>
+        {scope.selected.length > 0 && (
+          <CompactCapabilityScopeSection
+            label="用户选择"
+            emptyLabel=""
+            hasContent
+          >
+            <CapabilityPillRow items={scope.selected} onOpenCapability={onOpenCapability} />
+          </CompactCapabilityScopeSection>
+        )}
 
-        <CompactCapabilityScopeSection
-          label="Runtime Allowed"
-          emptyLabel="当前没有被 runtime 放行的已选 capability。"
-          hasContent={scope.allowed.length > 0}
-        >
-          <CapabilityPillRow items={scope.allowed} onOpenCapability={onOpenCapability} />
-        </CompactCapabilityScopeSection>
+        {scope.allowed.length > 0 && (
+          <CompactCapabilityScopeSection
+            label="运行时放行"
+            emptyLabel=""
+            hasContent
+          >
+            <CapabilityPillRow items={scope.allowed} onOpenCapability={onOpenCapability} />
+          </CompactCapabilityScopeSection>
+        )}
 
-        <CompactCapabilityScopeSection
-          label="Runtime Blocked"
-          emptyLabel="当前没有 runtime blocked capability。"
-          hasContent={scope.blocked.length > 0}
-        >
-          <div className="space-y-2">
-            {scope.blocked.map((reason) => {
-              const currentCapability = selectedCapabilityMap.get(`${reason.kind}:${reason.id}`);
-              const blockedCapability = blockedCapabilityMap.get(`${reason.kind}:${reason.id}`);
-              const error = blockedCapability ? actionErrors[blockedCapability.capability.key] : null;
-              const feedback = currentCapability
-                ? getWorkbenchCapabilityQuickActionFeedback(
-                  currentCapability,
-                  completedActions[currentCapability.key],
-                )
-                : null;
+        {scope.blocked.length > 0 && (
+          <CompactCapabilityScopeSection
+            label="运行时阻塞"
+            emptyLabel=""
+            hasContent
+          >
+            <div className="space-y-2">
+              {scope.blocked.map((reason) => {
+                const currentCapability = selectedCapabilityMap.get(`${reason.kind}:${reason.id}`);
+                const blockedCapability = blockedCapabilityMap.get(`${reason.kind}:${reason.id}`);
+                const error = blockedCapability ? actionErrors[blockedCapability.capability.key] : null;
+                const feedback = currentCapability
+                  ? getWorkbenchCapabilityQuickActionFeedback(
+                    currentCapability,
+                    completedActions[currentCapability.key],
+                  )
+                  : null;
 
-              return (
-                <div
-                  key={`${reason.kind}-${reason.id}`}
-                  className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
-                >
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <WorkbenchPill tone={getCapabilityPillTone(reason.kind)}>
-                      {reason.label}
-                    </WorkbenchPill>
-                    <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
-                      {reason.code}
-                    </span>
-                    <WorkbenchCapabilityDetailButton
-                      label={reason.label}
-                      onClick={() => onOpenCapability({
-                        kind: reason.kind,
-                        id: reason.id,
-                      }, reason)}
-                      className="ml-auto h-5 w-5"
-                    />
+                return (
+                  <div
+                    key={`${reason.kind}-${reason.id}`}
+                    className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
+                  >
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <WorkbenchPill tone={getCapabilityPillTone(reason.kind)}>
+                        {reason.label}
+                      </WorkbenchPill>
+                      <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
+                        {reason.code}
+                      </span>
+                      <WorkbenchCapabilityDetailButton
+                        label={reason.label}
+                        onClick={() => onOpenCapability({
+                          kind: reason.kind,
+                          id: reason.id,
+                        }, reason)}
+                        className="ml-auto h-5 w-5"
+                      />
+                    </div>
+                    <div className="text-xs text-zinc-200">{reason.detail}</div>
+                    <div className="mt-1 text-[11px] text-zinc-500">{reason.hint}</div>
+                    {blockedCapability && blockedCapability.actions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {blockedCapability.actions.map((action) => {
+                          const actionKey = `${blockedCapability.capability.key}:${action.kind}`;
+                          const loading = runningActionKey === actionKey;
+                          return (
+                            <button
+                              key={actionKey}
+                              type="button"
+                              onClick={() => void onQuickAction(blockedCapability.capability, action)}
+                              disabled={loading}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${getQuickActionButtonClasses(action)}`}
+                            >
+                              {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+                              <span>{action.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {error && (
+                      <div className="mt-1 text-[11px] text-red-300">{error}</div>
+                    )}
+                    {feedback && !error && (
+                      <div className={`mt-1 text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
+                        {feedback.message}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-xs text-zinc-200">{reason.detail}</div>
-                  <div className="mt-1 text-[11px] text-zinc-500">{reason.hint}</div>
-                  {blockedCapability && blockedCapability.actions.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {blockedCapability.actions.map((action) => {
-                        const actionKey = `${blockedCapability.capability.key}:${action.kind}`;
-                        const loading = runningActionKey === actionKey;
-                        return (
-                          <button
-                            key={actionKey}
-                            type="button"
-                            onClick={() => void onQuickAction(blockedCapability.capability, action)}
-                            disabled={loading}
-                            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${getQuickActionButtonClasses(action)}`}
-                          >
-                            {loading && <Loader2 className="h-3 w-3 animate-spin" />}
-                            <span>{action.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {error && (
-                    <div className="mt-1 text-[11px] text-red-300">{error}</div>
-                  )}
-                  {feedback && !error && (
-                    <div className={`mt-1 text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
-                      {feedback.message}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </CompactCapabilityScopeSection>
+                );
+              })}
+            </div>
+          </CompactCapabilityScopeSection>
+        )}
 
-        <CompactCapabilityScopeSection
-          label="Actually Invoked"
-          emptyLabel="本轮还没有 tool call 命中这些 capability。"
-          hasContent={scope.invoked.length > 0}
-        >
-          <InvokedCapabilityRows items={scope.invoked} onOpenCapability={onOpenCapability} />
-        </CompactCapabilityScopeSection>
+        {scope.invoked.length > 0 && (
+          <CompactCapabilityScopeSection
+            label={hasRouting ? '实际调用' : '调用明细'}
+            emptyLabel=""
+            hasContent
+          >
+            <InvokedCapabilityRows items={scope.invoked} onOpenCapability={onOpenCapability} />
+          </CompactCapabilityScopeSection>
+        )}
       </div>
     </div>
   );

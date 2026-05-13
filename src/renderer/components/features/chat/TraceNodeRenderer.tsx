@@ -440,119 +440,121 @@ function getCapabilityPillTone(kind: 'skill' | 'connector' | 'mcp'): 'skill' | '
 
 const CapabilityScopeSection: React.FC<{
   label: string;
-  emptyLabel: string;
-  hasContent: boolean;
   children: React.ReactNode;
-}> = ({ label, emptyLabel, hasContent, children }) => {
+}> = ({ label, children }) => {
   return (
     <div className="rounded-md bg-black/10 px-2.5 py-2">
       <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
-      {hasContent ? (
-        children
-      ) : (
-        <div className="text-[11px] text-zinc-600">{emptyLabel}</div>
-      )}
+      {children}
     </div>
   );
 };
 
+function hasCapabilityScopeRouting(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): boolean {
+  return scope.selected.length > 0 || scope.allowed.length > 0 || scope.blocked.length > 0;
+}
+
+function getCapabilityScopeTitle(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): string {
+  return hasCapabilityScopeRouting(scope) ? '能力范围' : '实际调用';
+}
+
+function getCapabilityScopeSummary(scope: NonNullable<TurnTimelinePayload['capabilityScope']>): string {
+  if (!hasCapabilityScopeRouting(scope)) {
+    return `调用 ${scope.invoked.length}`;
+  }
+  return `已选 ${scope.selected.length} · 放行 ${scope.allowed.length} · 阻塞 ${scope.blocked.length} · 调用 ${scope.invoked.length}`;
+}
+
 const CapabilityScopeNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
   const scope = timeline.capabilityScope;
   if (!scope) return null;
+  const hasRouting = hasCapabilityScopeRouting(scope);
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-300">
         <Wrench className="h-3.5 w-3.5 text-amber-300" />
-        <span>Scope Inspector Lite</span>
+        <span>{getCapabilityScopeTitle(scope)}</span>
         <span className="text-zinc-500">
-          已选 {scope.selected.length} · 放行 {scope.allowed.length} · 阻塞 {scope.blocked.length} · 调用 {scope.invoked.length}
+          {getCapabilityScopeSummary(scope)}
         </span>
       </div>
 
       <div className="space-y-2">
-        <CapabilityScopeSection
-          label="User Selected"
-          emptyLabel="本轮没有显式选择 capability。"
-          hasContent={scope.selected.length > 0}
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {scope.selected.map((item) => (
-              <WorkbenchPill key={`selected-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
-                {item.label}
-              </WorkbenchPill>
-            ))}
-          </div>
-        </CapabilityScopeSection>
+        {scope.selected.length > 0 && (
+          <CapabilityScopeSection label="用户选择">
+            <div className="flex flex-wrap gap-1.5">
+              {scope.selected.map((item) => (
+                <WorkbenchPill key={`selected-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
+                  {item.label}
+                </WorkbenchPill>
+              ))}
+            </div>
+          </CapabilityScopeSection>
+        )}
 
-        <CapabilityScopeSection
-          label="Runtime Allowed"
-          emptyLabel="当前没有被 runtime 放行的已选 capability。"
-          hasContent={scope.allowed.length > 0}
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {scope.allowed.map((item) => (
-              <WorkbenchPill key={`allowed-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
-                {item.label}
-              </WorkbenchPill>
-            ))}
-          </div>
-        </CapabilityScopeSection>
+        {scope.allowed.length > 0 && (
+          <CapabilityScopeSection label="运行时放行">
+            <div className="flex flex-wrap gap-1.5">
+              {scope.allowed.map((item) => (
+                <WorkbenchPill key={`allowed-${item.kind}-${item.id}`} tone={getCapabilityPillTone(item.kind)}>
+                  {item.label}
+                </WorkbenchPill>
+              ))}
+            </div>
+          </CapabilityScopeSection>
+        )}
 
-        <CapabilityScopeSection
-          label="Runtime Blocked"
-          emptyLabel="当前没有 runtime blocked capability。"
-          hasContent={scope.blocked.length > 0}
-        >
-          <div className="space-y-2">
-            {scope.blocked.map((reason) => (
-              <div key={`blocked-${reason.kind}-${reason.id}`} className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
-                <div className="mb-1 flex items-center gap-1.5">
-                  <WorkbenchPill tone={getCapabilityPillTone(reason.kind)}>
-                    {reason.label}
-                  </WorkbenchPill>
-                  <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
-                    {reason.code}
-                  </span>
-                </div>
-                <div className="text-xs text-zinc-200">{reason.detail}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">{reason.hint}</div>
-              </div>
-            ))}
-          </div>
-        </CapabilityScopeSection>
-
-        <CapabilityScopeSection
-          label="Actually Invoked"
-          emptyLabel="本轮还没有 tool call 命中这些 capability。"
-          hasContent={scope.invoked.length > 0}
-        >
-          {/* subgrid 让所有行的 pill / summary / count 三列在跨行间对齐 —
-              col1 由所有 pill 中最长的撑出来，避免 server name 长度不同导致错位 */}
-          <div
-            className="grid gap-y-1.5"
-            style={{ gridTemplateColumns: 'max-content minmax(0, 1fr) max-content' }}
-          >
-            {scope.invoked.map((item) => {
-              const actionSummary = formatWorkbenchHistoryActionSummary(item.topActions, { maxActions: 2 });
-              return (
-                <div
-                  key={`invoked-${item.kind}-${item.id}`}
-                  className="col-span-3 grid items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
-                  style={{ gridTemplateColumns: 'subgrid' }}
-                >
-                  <WorkbenchPill tone={getCapabilityPillTone(item.kind)}>
-                    {item.label}
-                  </WorkbenchPill>
-                  <div className="min-w-0 truncate text-[11px] text-zinc-400">
-                    {actionSummary || 'invoked'}
+        {scope.blocked.length > 0 && (
+          <CapabilityScopeSection label="运行时阻塞">
+            <div className="space-y-2">
+              {scope.blocked.map((reason) => (
+                <div key={`blocked-${reason.kind}-${reason.id}`} className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <WorkbenchPill tone={getCapabilityPillTone(reason.kind)}>
+                      {reason.label}
+                    </WorkbenchPill>
+                    <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
+                      {reason.code}
+                    </span>
                   </div>
-                  <div className="text-[10px] text-zinc-600">{item.count}x</div>
+                  <div className="text-xs text-zinc-200">{reason.detail}</div>
+                  <div className="mt-1 text-[11px] text-zinc-500">{reason.hint}</div>
                 </div>
-              );
-            })}
-          </div>
-        </CapabilityScopeSection>
+              ))}
+            </div>
+          </CapabilityScopeSection>
+        )}
+
+        {scope.invoked.length > 0 && (
+          <CapabilityScopeSection label={hasRouting ? '实际调用' : '调用明细'}>
+            {/* subgrid 让所有行的 pill / summary / count 三列在跨行间对齐，
+                col1 由所有 pill 中最长的撑出来，避免 server name 长度不同导致错位。 */}
+            <div
+              className="grid gap-y-1.5"
+              style={{ gridTemplateColumns: 'max-content minmax(0, 1fr) max-content' }}
+            >
+              {scope.invoked.map((item) => {
+                const actionSummary = formatWorkbenchHistoryActionSummary(item.topActions, { maxActions: 2 });
+                return (
+                  <div
+                    key={`invoked-${item.kind}-${item.id}`}
+                    className="col-span-3 grid items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"
+                    style={{ gridTemplateColumns: 'subgrid' }}
+                  >
+                    <WorkbenchPill tone={getCapabilityPillTone(item.kind)}>
+                      {item.label}
+                    </WorkbenchPill>
+                    <div className="min-w-0 truncate text-[11px] text-zinc-400">
+                      {actionSummary || '已调用'}
+                    </div>
+                    <div className="text-[10px] text-zinc-600">{item.count}x</div>
+                  </div>
+                );
+              })}
+            </div>
+          </CapabilityScopeSection>
+        )}
       </div>
     </div>
   );

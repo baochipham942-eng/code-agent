@@ -603,9 +603,7 @@ function enrichTurn(
           ? 'error'
           : capabilityScope.blocked.length > 0
             ? 'warning'
-            : capabilityScope.invoked.length > 0
-              ? 'success'
-              : 'info',
+            : 'info',
         capabilityScope,
       }));
     }

@@ -11,6 +11,8 @@ import {
 } from '../../shared/constants';
 import type { ModelProvider } from '../../shared/contract';
 import { runDiagnostics } from './doctor.ipc';
+import { runDoctor } from '../diagnostics/doctorRunner';
+import type { RunDoctorOptions } from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 
 // ----------------------------------------------------------------------------
@@ -222,6 +224,10 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
         }
         case 'run_diagnostics': {
           const data = await runDiagnostics();
+          return { success: true, data };
+        }
+        case 'run_doctor': {
+          const data = await runDoctor(payload as RunDoctorOptions | undefined);
           return { success: true, data };
         }
         case 'getHealthStatus': {

@@ -39,6 +39,7 @@ export const IPC_DOMAINS = {
   OPENCHRONICLE: 'domain:openchronicle', // 屏幕记忆（外部 OpenChronicle daemon 集成）
   PROMPT: 'domain:prompt', // 提示词管理（查看 + override）
   HOOK: 'domain:hook', // Hook 管理（列出已启用/未启用 + 打开配置）
+  AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

@@ -1,91 +1,49 @@
-import { existsSync } from 'fs';
-import { stat } from 'fs/promises';
-import { join } from 'path';
-import { getUserConfigDir } from '../config/configPaths';
+// ============================================================================
+// Doctor IPC - 旧入口，保留向后兼容
+// 实际检查逻辑已迁移到 src/main/diagnostics/checks/environment.ts
+// runDiagnostics 现在只覆盖 environment + database + disk 子集
+// 完整诊断请使用 src/main/diagnostics/doctorRunner.ts 的 runDoctor()
+// ============================================================================
 
-export interface DiagnosticItem {
-  category: 'environment' | 'network' | 'config' | 'database' | 'disk';
-  name: string;
-  status: 'pass' | 'warn' | 'fail';
-  message: string;
-  details?: string;
-}
+import {
+  checkNodeVersion,
+  checkConfigDir,
+  checkDatabase,
+  checkDiskUsage,
+} from '../diagnostics/checks/environment';
+import type {
+  DoctorItem,
+  DoctorReport,
+  DiagnosticItem,
+  DiagnosticReport,
+} from '../diagnostics/types';
 
-export interface DiagnosticReport {
-  timestamp: number;
-  items: DiagnosticItem[];
-  summary: { pass: number; warn: number; fail: number };
-}
+// 重新导出类型，避免破坏现有引用（如 ProviderDoctorDialog.tsx）
+export type { DoctorItem, DoctorReport, DiagnosticItem, DiagnosticReport };
 
-export async function runDiagnostics(): Promise<DiagnosticReport> {
-  const items: DiagnosticItem[] = [];
+/**
+ * @deprecated 仅保留向后兼容。新代码请直接调用 `runDoctor()`，覆盖更全。
+ */
+export async function runDiagnostics(): Promise<DoctorReport> {
+  const startedAt = Date.now();
+  const items: DoctorItem[] = [];
 
-  // Environment checks
   items.push(checkNodeVersion());
   items.push(checkConfigDir());
-
-  // Database checks
   items.push(await checkDatabase());
-
-  // Disk checks
   items.push(await checkDiskUsage());
 
   const summary = {
     pass: items.filter(i => i.status === 'pass').length,
     warn: items.filter(i => i.status === 'warn').length,
     fail: items.filter(i => i.status === 'fail').length,
+    skip: items.filter(i => i.status === 'skip').length,
   };
 
-  return { timestamp: Date.now(), items, summary };
-}
-
-function checkNodeVersion(): DiagnosticItem {
-  const version = process.version;
-  const major = parseInt(version.slice(1).split('.')[0], 10);
   return {
-    category: 'environment',
-    name: 'Node.js version',
-    status: major >= 18 ? 'pass' : 'fail',
-    message: `Node.js ${version}`,
-    details: major < 18 ? 'Requires Node.js >= 18' : undefined,
+    timestamp: startedAt,
+    durationMs: Date.now() - startedAt,
+    items,
+    summary,
   };
-}
-
-function checkConfigDir(): DiagnosticItem {
-  const configDir = getUserConfigDir();
-  const exists = existsSync(configDir);
-  return {
-    category: 'config',
-    name: 'Config directory',
-    status: exists ? 'pass' : 'warn',
-    message: exists ? configDir : 'Config directory not found',
-    details: exists ? undefined : `Expected at ${configDir}`,
-  };
-}
-
-async function checkDatabase(): Promise<DiagnosticItem> {
-  const dbPath = join(getUserConfigDir(), 'code-agent.db');
-  if (!existsSync(dbPath)) {
-    return { category: 'database', name: 'SQLite database', status: 'warn', message: 'Database not found' };
-  }
-  try {
-    const stats = await stat(dbPath);
-    const sizeMB = (stats.size / (1024 * 1024)).toFixed(1);
-    return { category: 'database', name: 'SQLite database', status: 'pass', message: `${sizeMB} MB` };
-  } catch {
-    return { category: 'database', name: 'SQLite database', status: 'fail', message: 'Cannot read database' };
-  }
-}
-
-async function checkDiskUsage(): Promise<DiagnosticItem> {
-  const configDir = getUserConfigDir();
-  if (!existsSync(configDir)) {
-    return { category: 'disk', name: 'Disk usage', status: 'pass', message: 'No data directory' };
-  }
-  try {
-    const stats = await stat(configDir);
-    return { category: 'disk', name: 'Config directory size', status: 'pass', message: 'Checked', details: `${configDir}` };
-  } catch {
-    return { category: 'disk', name: 'Disk usage', status: 'warn', message: 'Cannot check disk usage' };
-  }
 }

@@ -120,6 +120,23 @@ export interface ErrorStats {
  * - 跨 Agent 错误传播控制
  * - 智能降级和分解策略
  * - 错误学习和解决方案缓存
+ *
+ * **重要语义警示（advisory layer, 非执行层）**：
+ *
+ * `recoveryStrategy: 'abort'` 和 `shouldContinueExecution(): false`
+ * 都是给主 agent / 调用方的**建议信号**，**不直接下发 abort 信号**。
+ * 是否真正停止后续执行由 main agent 下一轮 LLM 决策。
+ *
+ * **特别注意**：单个 child error 不应触发
+ * `parallelCoordinator.abortAllRunning`。child-error 属于
+ * `NON_CASCADE_REASONS`（见 `shared/contract/cancellation.ts`）——
+ * 一个 subagent 抛错时，兄弟 subagent 应继续完成各自任务。
+ *
+ * 反例：LangChain deepagents Issue #694 把 child-fail 路径接到
+ * abort 信号上，导致"1 个 subagent 失败，全队被 cancel"——这是 bug
+ * 不是 feature。本项目当前路径正确（`parallelAgentCoordinator.executeTask`
+ * 的 try/catch 只清理自己的 abortController，不调 abortAllRunning），
+ * 任何后续 PR 试图"修复"此处都属于 regression。
  */
 export class ParallelErrorHandler {
   private errors: AgentError[] = [];

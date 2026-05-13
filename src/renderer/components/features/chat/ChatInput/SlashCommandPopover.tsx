@@ -17,6 +17,7 @@ import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
+import { generateMessageId } from '@shared/utils/id';
 
 interface SlashCommand {
   id: string;
@@ -243,9 +244,36 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         description: def.description,
         icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
         action: () => {
-          // Registry command execution in GUI: log to console for now
-          // Full IPC execution will be added in a future phase
-          console.log(`[Command] /${def.id} — ${def.description}`);
+          // 调真实 handler，output 路由到 sessionStore.addMessage 写进 chat 流
+          // (#139 follow-up: 之前是 console.log placeholder，导致 /doctor 等 registry
+          //  command 触发后被 fallback 当 chat message 发给 agent loop，模型 hallucinate
+          //  出假报告)
+          const addMessage = useSessionStore.getState().addMessage;
+          const writeAssistant = (prefix: string) => (msg: string) => {
+            addMessage({
+              id: generateMessageId(),
+              role: 'assistant',
+              content: prefix ? `${prefix}${msg}` : msg,
+              timestamp: Date.now(),
+            });
+          };
+          void def
+            .handler(
+              {
+                surface: 'gui',
+                output: {
+                  info: writeAssistant(''),
+                  success: writeAssistant('✅ '),
+                  warn: writeAssistant('⚠️ '),
+                  error: writeAssistant('❌ '),
+                },
+              },
+              [],
+            )
+            .catch((err: unknown) => {
+              const message = err instanceof Error ? err.message : String(err);
+              writeAssistant('❌ ')(`/${def.id} 执行失败：${message}`);
+            });
         },
       }));
 

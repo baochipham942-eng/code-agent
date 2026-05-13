@@ -29,6 +29,7 @@ import {
   getAgentTools,
   getAgentMaxIterations,
 } from '../agent/agentDefinition';
+import { initAgentRegistry } from '../agent/agentRegistry';
 import { initCronService, getCronService, initHeartbeatService, getHeartbeatService, HeartbeatTaskLoader } from '../cron';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
@@ -583,6 +584,15 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     logger.info('Soul/Profile loader initialized');
   } catch (error) {
     logger.warn('Soul/Profile loader failed (using default identity)', { error: String(error) });
+  }
+
+  // Initialize Agent Registry (custom agents from .code-agent/agents/*.md)
+  try {
+    const workingDir = getDesktopBootstrapWorkingDirectory();
+    await initAgentRegistry(workingDir);
+    logger.info('Agent registry initialized');
+  } catch (error) {
+    logger.warn('Agent registry initialization failed (non-blocking)', { error: String(error) });
   }
 
   // 模型一致性校验（非阻塞，仅日志告警）

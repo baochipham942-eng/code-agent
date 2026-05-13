@@ -95,6 +95,54 @@ describe('EventBatcher', () => {
     ]);
   });
 
+  it('keeps the latest deltaSeq when message deltas are merged', () => {
+    vi.useFakeTimers();
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush, flushInterval: 16 });
+
+    batcher.emit({
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'hello ',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        deltaSeq: 1,
+      },
+    });
+    batcher.emit({
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'world',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        deltaSeq: 2,
+      },
+    });
+    vi.advanceTimersByTime(16);
+
+    expect(onFlush).toHaveBeenCalledWith([
+      {
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'hello world',
+          turnId: 'turn-1',
+          messageId: 'turn-1',
+          deltaSeq: 2,
+          parentToolUseId: undefined,
+        },
+      },
+    ]);
+  });
+
   it('keeps content and reasoning message deltas separate', () => {
     const onFlush = vi.fn();
     const batcher = new EventBatcher({ onFlush });

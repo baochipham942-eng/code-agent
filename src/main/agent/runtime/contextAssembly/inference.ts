@@ -104,6 +104,7 @@ function emitAssistantMessageDelta(
       text,
       turnId: ctx.runtime.currentTurnId,
       messageId: ctx.runtime.currentTurnId,
+      deltaSeq: ++ctx.runtime.messageDeltaSeq,
     },
   });
 }

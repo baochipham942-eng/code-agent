@@ -224,6 +224,7 @@ export class AgentLoop {
       traceId: '',
       currentIterationSpanId: '',
       currentTurnId: '',
+      messageDeltaSeq: 0,
       pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,

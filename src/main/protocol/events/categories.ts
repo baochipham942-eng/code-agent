@@ -44,6 +44,7 @@ export const BATCHABLE_EVENT_TYPES = new Set<AgentEventType>([
  */
 export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'message',
+  'message_snapshot',
   'error',
   'permission_request',
   'agent_complete',
@@ -64,6 +65,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
 export function isStreamingEvent(type: AgentEventType): boolean {
   return (
     type === 'message_delta' ||
+    type === 'message_snapshot' ||
     type === 'stream_chunk' ||
     type === 'stream_reasoning' ||
     type === 'stream_tool_call_start' ||

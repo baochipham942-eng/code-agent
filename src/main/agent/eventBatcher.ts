@@ -37,6 +37,7 @@ interface StreamTextBuffer {
   op?: 'append';
   turnId?: string;
   messageId?: string;
+  deltaSeq?: number;
   parentToolUseId?: string;
   meta: EventEnvelopeMeta;
 }
@@ -122,6 +123,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
         op?: 'append' | 'replace';
         turnId?: string;
         messageId?: string;
+        deltaSeq?: number;
         parentToolUseId?: string;
       };
       const content = event.type === 'message_delta' ? data.text : data.content;
@@ -156,11 +158,15 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             op: event.type === 'message_delta' ? 'append' : undefined,
             turnId: data.turnId,
             messageId: data.messageId,
+            deltaSeq: data.deltaSeq,
             parentToolUseId: data.parentToolUseId,
             meta,
           };
         }
         this.streamTextBuffer.content += content;
+        if (data.deltaSeq !== undefined) {
+          this.streamTextBuffer.deltaSeq = data.deltaSeq;
+        }
         this.streamTextBuffer.meta = mergeLatestEnvelopeMeta(this.streamTextBuffer.meta, meta);
         this.scheduleFlush();
         return;
@@ -264,6 +270,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             text: buffered.content,
             turnId: buffered.turnId,
             messageId: buffered.messageId,
+            ...(buffered.deltaSeq !== undefined ? { deltaSeq: buffered.deltaSeq } : {}),
             parentToolUseId: buffered.parentToolUseId,
           },
           ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),

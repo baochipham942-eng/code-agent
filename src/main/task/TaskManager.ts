@@ -5,7 +5,7 @@
 
 import { EventEmitter } from 'events';
 import { app, BrowserWindow } from '../platform';
-import type { AgentEvent, Message, MessageMetadata, ToolCall } from '../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, ToolCall } from '../../shared/contract';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
@@ -14,6 +14,7 @@ import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
+import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -143,9 +144,12 @@ export class TaskManager extends EventEmitter {
   // Per-session turnState for message aggregation (moved from createAgentRuntime)
   private turnStateBySession: Map<string, {
     messageId: string;
+    turnId?: string;
     toolCalls: ToolCall[];
     content: string;
+    reasoning?: string;
   }> = new Map();
+  private messageDeltaAccumulator = new MessageDeltaAccumulator();
 
   constructor(config: Partial<TaskManagerConfig> = {}) {
     super();
@@ -745,13 +749,7 @@ export class TaskManager extends EventEmitter {
       const orchestrator = new AgentOrchestrator({
         configService: this.configService!,
         planningService: this.planningService,
-        onEvent: async (event: AgentEvent) => {
-          // 1. Forward to renderer (via onAgentEvent callback)
-          this.onAgentEvent!(sessionId, event);
-
-          // 2. Persist messages via sessionManager
-          await this.persistEventToSession(sessionId, event);
-        },
+        onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event),
         getHomeDir: () => app.getPath('home'),
         broadcastDAGEvent: (event) => {
           for (const win of BrowserWindow.getAllWindows()) {
@@ -780,11 +778,72 @@ export class TaskManager extends EventEmitter {
    * Persist agent events to session storage (moved from createAgentRuntime.ts)
    * Handles message aggregation, tool call results, and desktop notifications.
    */
-  private async persistEventToSession(sessionId: string, event: AgentEvent): Promise<void> {
+  private async handleAgentEvent(sessionId: string, event: AgentEvent): Promise<void> {
+    const snapshot = this.messageDeltaAccumulator.apply(sessionId, event);
+    if (event.type === 'message_delta' && !snapshot) {
+      return;
+    }
+    const finalSnapshot = (
+      event.type === 'turn_end'
+      || event.type === 'agent_complete'
+      || event.type === 'agent_cancelled'
+    )
+      ? this.messageDeltaAccumulator.getSnapshot(sessionId, true)
+      : null;
+
+    if (finalSnapshot) {
+      this.onAgentEvent!(sessionId, { type: 'message_snapshot', data: finalSnapshot });
+    }
+    this.onAgentEvent!(sessionId, event);
+
+    await this.persistEventToSession(sessionId, event, snapshot ?? finalSnapshot);
+
+    if (finalSnapshot) {
+      this.messageDeltaAccumulator.clear(sessionId);
+    }
+  }
+
+  private async persistEventToSession(
+    sessionId: string,
+    event: AgentEvent,
+    snapshot?: MessageSnapshotData | null,
+  ): Promise<void> {
     try {
       const { getSessionManager, notificationService } = await import('../services');
 
       const sessionManager = getSessionManager();
+
+      if (event.type === 'turn_start') {
+        this.turnStateBySession.set(sessionId, {
+          messageId: '',
+          turnId: event.data.turnId,
+          toolCalls: [],
+          content: '',
+        });
+      }
+
+      if (event.type === 'message_delta' && event.data.role === 'assistant') {
+        let turnState = this.turnStateBySession.get(sessionId);
+        if (!turnState) {
+          turnState = {
+            messageId: '',
+            turnId: event.data.turnId,
+            toolCalls: [],
+            content: '',
+          };
+          this.turnStateBySession.set(sessionId, turnState);
+        }
+        if (event.data.turnId && !turnState.turnId) turnState.turnId = event.data.turnId;
+        if (event.data.path === 'reasoning') {
+          turnState.reasoning = event.data.op === 'replace'
+            ? event.data.text
+            : (turnState.reasoning || '') + event.data.text;
+        } else {
+          turnState.content = event.data.op === 'replace'
+            ? event.data.text
+            : turnState.content + event.data.text;
+        }
+      }
 
       // Aggregate assistant messages within a single turn
       if (event.type === 'message' && event.data?.role === 'assistant') {
@@ -800,9 +859,8 @@ export class TaskManager extends EventEmitter {
           turnState.toolCalls.push(...message.toolCalls);
         }
 
-        if (message.content) {
-          turnState.content = message.content;
-        }
+        turnState.content = message.content || snapshot?.content || turnState.content;
+        turnState.reasoning = message.reasoning || snapshot?.reasoning || turnState.reasoning;
 
         if (!turnState.messageId) {
           turnState.messageId = message.id;
@@ -811,12 +869,14 @@ export class TaskManager extends EventEmitter {
               ...message,
               toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
               content: turnState.content,
+              reasoning: turnState.reasoning,
             });
           }
         } else {
           await sessionManager.updateMessage(turnState.messageId, {
             toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
             content: turnState.content,
+            reasoning: turnState.reasoning,
           });
         }
       }
@@ -840,6 +900,7 @@ export class TaskManager extends EventEmitter {
       // Reset turn state when turn ends or agent completes
       if (event.type === 'turn_end' || event.type === 'agent_complete' || event.type === 'agent_cancelled') {
         this.turnStateBySession.delete(sessionId);
+        this.messageDeltaAccumulator.clear(sessionId);
       }
 
       // Send desktop notification on permission request (needs user input)

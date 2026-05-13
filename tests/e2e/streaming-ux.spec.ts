@@ -167,6 +167,79 @@ test('批量 message_delta 能经由全局 SSE 渲染到聊天页', async ({ pag
   });
 });
 
+test('长段 message_delta 结束后能用 message_snapshot 追平草稿', async ({ page, request }) => {
+  const ssePromise = page.waitForResponse(
+    (resp) => resp.url().includes('/api/events'),
+    { timeout: 20_000 },
+  );
+
+  await page.goto('/');
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await ssePromise;
+
+  const token = await getAuthToken(page);
+  const sessionId = await createCleanSession(page);
+
+  await page.evaluate(() => {
+    (window as unknown as {
+      __CODE_AGENT_STREAMING_PERF__?: { reset: () => void };
+    }).__CODE_AGENT_STREAMING_PERF__?.reset();
+  });
+
+  const turnId = `e2e-long-message-delta-${Date.now()}`;
+  const snapshotMarker = `SNAPSHOT_FLUSH_DONE_${Date.now()}`;
+  const chunks = Array.from({ length: 36 }, (_, index) => `长回答片段 ${index + 1}，用于模拟持续生成的 markdown 文本。`);
+  const accumulatedText = chunks.join('');
+
+  await emitAgentEvents(request, token, [
+    { type: 'turn_start', sessionId, data: { turnId } },
+    ...chunks.map((text, index) => ({
+      type: 'message_delta' as const,
+      sessionId,
+      data: {
+        role: 'assistant' as const,
+        path: 'content' as const,
+        op: 'append' as const,
+        text,
+        turnId,
+        messageId: turnId,
+        deltaSeq: index + 1,
+      },
+    })),
+    {
+      type: 'message_snapshot',
+      sessionId,
+      data: {
+        role: 'assistant',
+        turnId,
+        messageId: turnId,
+        content: `${accumulatedText}${snapshotMarker}`,
+        isFinal: true,
+        source: 'main_accumulator',
+      },
+    },
+    { type: 'turn_end', sessionId, data: { turnId } },
+    { type: 'agent_complete', sessionId, data: null },
+  ]);
+
+  await expect(page.locator(`text=${snapshotMarker}`).first()).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await expect.poll(async () => page.evaluate(() => {
+    const snapshot = (window as unknown as {
+      __CODE_AGENT_STREAMING_PERF__?: { snapshot: () => { counters: Record<string, number>; gauges: Record<string, number> } };
+    }).__CODE_AGENT_STREAMING_PERF__?.snapshot();
+    return {
+      accumulatorAppends: snapshot?.counters['stream.accumulator.append'] ?? 0,
+      activeEntries: snapshot?.gauges['stream.accumulator.active_entries'] ?? 0,
+    };
+  }), { timeout: 10_000 }).toMatchObject({
+    accumulatorAppends: chunks.length,
+    activeEntries: 0,
+  });
+});
+
 test('tool_output_delta 能显示在 pending 工具详情里', async ({ page, request }) => {
   const ssePromise = page.waitForResponse(
     (resp) => resp.url().includes('/api/events'),

@@ -110,6 +110,7 @@ export class StreamHandler {
     langfuse: ReturnType<typeof getLangfuseService>,
   ): void {
     this.ctx.currentTurnId = generateMessageId();
+    this.ctx.messageDeltaSeq = 0;
 
     this.ctx.currentIterationSpanId = `iteration-${this.ctx.traceId}-${iterations}`;
     langfuse.startSpan(this.ctx.traceId, this.ctx.currentIterationSpanId, {

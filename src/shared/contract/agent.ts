@@ -89,7 +89,18 @@ export interface MessageDeltaData {
   text: string;
   turnId?: string;
   messageId?: string;
+  deltaSeq?: number;
   parentToolUseId?: string;
+}
+
+export interface MessageSnapshotData {
+  role: 'assistant';
+  turnId?: string;
+  messageId?: string;
+  content: string;
+  reasoning?: string;
+  isFinal?: boolean;
+  source: 'main_accumulator';
 }
 
 export interface TaskUpdateEventData {
@@ -207,6 +218,7 @@ export type AgentEvent =
   | { type: 'hook_trigger'; data: HookTriggerEventData }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
   | { type: 'message_delta'; data: MessageDeltaData }
+  | { type: 'message_snapshot'; data: MessageSnapshotData }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string; parentToolUseId?: string } }

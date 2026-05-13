@@ -134,6 +134,120 @@ describe('TaskManager message event persistence', () => {
     });
   });
 
+  it('emits a final main-accumulator snapshot before turn_end without writing every delta', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    const onAgentEvent = vi.fn();
+    manager.initialize({
+      configService: {} as never,
+      onAgentEvent,
+    });
+
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'turn_start',
+      data: { turnId: 'turn-1' },
+    });
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'hello ',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+      },
+    });
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'world',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+      },
+    });
+
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(sessionManagerState.updateMessage).not.toHaveBeenCalled();
+
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'turn_end',
+      data: { turnId: 'turn-1' },
+    });
+
+    expect(onAgentEvent).toHaveBeenCalledWith('session-1', {
+      type: 'message_snapshot',
+      data: expect.objectContaining({
+        role: 'assistant',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        content: 'hello world',
+        isFinal: true,
+        source: 'main_accumulator',
+      }),
+    });
+    const calls = onAgentEvent.mock.calls.map((call) => call[1].type);
+    expect(calls.indexOf('message_snapshot')).toBeLessThan(calls.indexOf('turn_end'));
+  });
+
+  it('drops duplicate sequenced message deltas before renderer and persistence', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    const onAgentEvent = vi.fn();
+    manager.initialize({
+      configService: {} as never,
+      onAgentEvent,
+    });
+
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'turn_start',
+      data: { turnId: 'turn-1' },
+    });
+    const delta = {
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'hello ',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        deltaSeq: 1,
+      },
+    };
+    await (manager as any).handleAgentEvent('session-1', delta);
+    await (manager as any).handleAgentEvent('session-1', delta);
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'world',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        deltaSeq: 2,
+      },
+    });
+    await (manager as any).handleAgentEvent('session-1', {
+      type: 'turn_end',
+      data: { turnId: 'turn-1' },
+    });
+
+    const forwardedDeltas = onAgentEvent.mock.calls
+      .map((call) => call[1])
+      .filter((event) => event.type === 'message_delta');
+    expect(forwardedDeltas).toHaveLength(2);
+    expect(onAgentEvent).toHaveBeenCalledWith('session-1', {
+      type: 'message_snapshot',
+      data: expect.objectContaining({
+        content: 'hello world',
+        isFinal: true,
+      }),
+    });
+  });
+
   it('cancels an active task without emitting task_completed', async () => {
     const manager = new TaskManager({ maxConcurrentTasks: 1 });
     manager.initialize({

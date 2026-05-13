@@ -1,4 +1,4 @@
-// useAgentConversationStreamEffects - turn_start, message_delta, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
+// useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
@@ -204,6 +204,23 @@ export function applyConversationStreamEvent(
       }
       break;
 
+    case 'message_snapshot':
+      if (event.data?.role === 'assistant') {
+        const targetMessageId = event.data.turnId || event.data.messageId || state.currentTurnMessageId;
+        const freshMsgs = getFreshMessages();
+        const targetMessage = targetMessageId
+          ? freshMsgs.find(m => m.id === targetMessageId)
+          : freshMsgs[freshMsgs.length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          actions.updateMessage(targetMessage.id, {
+            content: event.data.content,
+            reasoning: event.data.reasoning,
+          });
+        }
+      }
+      break;
+
     case 'message':
       if (event.data) {
         const targetMessageId = event.data.turnId || state.currentTurnMessageId;
@@ -300,7 +317,7 @@ export const useConversationStreamEffects = ({
       const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
       const getFreshMessages = () => useSessionStore.getState().messages;
       const logHandledEvent = () => {
-        const silentEvents = ['message_delta', 'stream_chunk', 'stream_reasoning'];
+        const silentEvents = ['message_delta', 'message_snapshot', 'stream_chunk', 'stream_reasoning'];
         if (!silentEvents.includes(event.type)) {
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
@@ -348,6 +365,7 @@ export const useConversationStreamEffects = ({
 
         case 'stream_chunk':
         case 'message_delta':
+        case 'message_snapshot':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {

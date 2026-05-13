@@ -112,6 +112,7 @@ export interface RuntimeContext {
   traceId: string;
   currentIterationSpanId: string;
   currentTurnId: string;
+  messageDeltaSeq: number;
   currentSystemPromptHash?: string;
   pendingRuntimeDiagnostics: string[];
   forceFinalResponseReason?: string;

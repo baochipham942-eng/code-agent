@@ -11,6 +11,7 @@ import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
+import { getPolicyEngine } from '../../permissions/policyEngine';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -236,6 +237,48 @@ export class ConfigService implements IReadConfigService {
 
     // Save merged settings
     await this.save();
+
+    // 加载用户级权限规则到 PolicyEngine（subagent 继承机制依赖这一步在 spawn 之前完成）
+    this.applyUserPermissionRules();
+
+    // 兼容性标记：旧配置首次升级到 6.8.x 时，如果用户尚未声明 inheritance，
+    // 打上 _legacyPermissions=true 由 UI 弹一次性引导。strict-inherit 仍然作为默认行为。
+    if (this.settings.permissions.inheritance === undefined) {
+      this.settings.permissions._legacyPermissions = true;
+      logger.info('Settings upgrade: permissions.inheritance not set, marked as legacy (default strict-inherit applies).');
+      // 注意：不主动 save，等用户在 UI 上做选择后再持久化，避免悄悄改写用户配置。
+    }
+  }
+
+  /**
+   * 把 settings.permissions.{deny, ask, allow} 注入 PolicyEngine，供 UserConfigSource 使用。
+   * 启动期间调用一次；用户在 UI 上更新规则时通过 reloadUserPermissionRules 重新调用。
+   */
+  private applyUserPermissionRules(): void {
+    try {
+      const policy = getPolicyEngine();
+      const perms = this.settings.permissions;
+      policy.loadUserRules({
+        deny: perms.deny,
+        ask: perms.ask,
+        allow: perms.allow,
+      });
+      logger.info('User permission rules applied', {
+        deny: perms.deny?.length ?? 0,
+        ask: perms.ask?.length ?? 0,
+        allow: perms.allow?.length ?? 0,
+        inheritance: perms.inheritance ?? 'strict-inherit (default)',
+      });
+    } catch (error) {
+      logger.error('Failed to apply user permission rules:', error);
+    }
+  }
+
+  /**
+   * 公开接口：UI 改了 permissions.deny/ask/allow 后调一次，重新生效。
+   */
+  reloadUserPermissionRules(): void {
+    this.applyUserPermissionRules();
   }
 
   // Restore user settings from Keychain (for app reinstall scenarios)
@@ -431,6 +474,15 @@ export class ConfigService implements IReadConfigService {
 
     this.settings = this.mergeSettings(this.settings, updates);
     await this.save();
+
+    // 用户更新 permissions.{deny,ask,allow} 后立即重新加载到 PolicyEngine
+    if (updates.permissions && (
+      updates.permissions.deny !== undefined ||
+      updates.permissions.ask !== undefined ||
+      updates.permissions.allow !== undefined
+    )) {
+      this.applyUserPermissionRules();
+    }
   }
 
   async setApiKey(provider: ModelProvider, apiKey: string): Promise<void> {

@@ -43,6 +43,9 @@ export {
   type GuardDecision,
 } from './guardFabric';
 
+// User Config Source (用户级 deny/ask/allow 规则)
+export { UserConfigSource } from './userConfigSource';
+
 // Specifier Parser
 export {
   parseToolSpecifier,

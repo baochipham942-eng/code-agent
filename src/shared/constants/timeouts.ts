@@ -262,6 +262,23 @@ export const TOOL_PROGRESS = {
   DEFAULT_THRESHOLD: 90_000,
 } as const;
 
+/**
+ * Cancellation / shutdown 协议超时配置。
+ *
+ * 用于 `shutdownProtocol.initiateShutdown` 和 `subagentExecutor` 的
+ * idle-progress watchdog（场景 D — N 分钟无 stream 自动 cancel）。
+ */
+export const CANCELLATION_TIMEOUTS = {
+  /** Subagent 无 stream/progress 视为 idle 的阈值 */
+  IDLE_TIMEOUT: 120_000,
+  /** Idle watchdog 轮询间隔 */
+  IDLE_CHECK_INTERVAL: 5_000,
+  /** 优雅关闭 grace 期 — Phase 2 等待当前 tool 完成 */
+  GRACEFUL_SHUTDOWN_GRACE: 5_000,
+  /** Phase 3 flush 持久化最大耗时（防 fs lock 卡死） */
+  FLUSH_TIMEOUT: 2_000,
+} as const;
+
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */
 export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   bash: 120_000,            // 2 min（命令可能耗时较长）

@@ -41,6 +41,7 @@ import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
+import { useToastStore } from './hooks/useToast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -265,6 +266,11 @@ export const App: React.FC = () => {
           // 可选更新不弹窗，用户可以在设置中查看
         } else {
           logger.info('App is up to date');
+          // 启动时给一个轻量"已是最新版"反馈，2s 自动消失。只在本次冷启动触发一次。
+          const v = updateInfo?.currentVersion;
+          if (v) {
+            useToastStore.getState().addToast('info', `已是最新版本 v${v}`, 2000);
+          }
         }
       } catch (error) {
         logger.error('Failed to check for updates', error);

@@ -26,6 +26,7 @@ import { loadAgentMdFiles } from './hybrid/agentMdLoader';
 import { CORE_AGENTS, CORE_AGENT_IDS, isCoreAgent } from './hybrid/coreAgents';
 import type { CoreAgentConfig, CoreAgentId } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
+import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
 
 const logger = createLogger('AgentRegistry');
 
@@ -33,20 +34,10 @@ const logger = createLogger('AgentRegistry');
 // 类型
 // ----------------------------------------------------------------------------
 
-export type AgentSource = 'builtin' | 'user' | 'project';
+export type { AgentSource, AgentListEntry };
 
 export interface RegisteredAgent extends CoreAgentConfig {
   source: AgentSource;
-}
-
-export interface AgentListEntry {
-  id: string;
-  name: string;
-  description: string;
-  source: AgentSource;
-  modelTier: CoreAgentConfig['model'];
-  readonly: boolean;
-  tools: string[];
 }
 
 // ----------------------------------------------------------------------------

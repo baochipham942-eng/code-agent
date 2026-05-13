@@ -68,4 +68,28 @@ describe('exportSessionToMarkdown Browser/Computer redaction', () => {
     expect(result.markdown).not.toContain('cookie-secret');
     expect(result.markdown).not.toContain('profileDir');
   });
+
+  it('applies the shared Sensitive Data Guard to exported conversation text', () => {
+    const result = exportSessionToMarkdown({
+      sessionId: 'session-1',
+      startedAt: 1,
+      lastActivityAt: 2,
+      totalTokens: 0,
+      messages: [{
+        id: 'msg-1',
+        role: 'user',
+        content: 'Contact alice@example.com with token=secret-token at /Users/linchen/private.txt via https://example.com/path?token=secret-token',
+        timestamp: 1,
+      }],
+    }, {
+      includeMetadata: false,
+      includeTimestamps: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).not.toContain('alice@example.com');
+    expect(result.markdown).not.toContain('secret-token');
+    expect(result.markdown).not.toContain('/Users/linchen');
+    expect(result.markdown).toContain('https://example.com/path');
+  });
 });

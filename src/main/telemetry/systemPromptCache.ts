@@ -7,6 +7,7 @@
 
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
 
 const logger = createLogger('SystemPromptCache');
 
@@ -54,10 +55,15 @@ export class SystemPromptCache {
     try {
       const db = this.getDb();
       if (!db) return;
+      const safeContent = guardSensitiveText(content, {
+        surface: 'prompt',
+        mode: 'diagnostic',
+        maxLength: 100_000,
+      });
       db.prepare(`
         INSERT OR IGNORE INTO system_prompt_cache (hash, content, tokens, generation_id, created_at)
         VALUES (?, ?, ?, ?, ?)
-      `).run(hash, content, tokens ?? null, generationId ?? null, Date.now());
+      `).run(hash, safeContent, tokens ?? null, generationId ?? null, Date.now());
     } catch (error) {
       logger.debug('Failed to store system prompt:', { errorMessage: (error as Error).message });
     }

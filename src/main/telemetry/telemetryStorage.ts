@@ -17,12 +17,38 @@ import type {
 } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
+import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 
 const logger = createLogger('TelemetryStorage');
 const truncate = (value: string | undefined | null, limit: number): string | null => {
   if (typeof value !== 'string') return null;
   return value.substring(0, limit);
 };
+
+const guardTelemetryText = (value: string | undefined | null, limit: number): string | null => {
+  if (typeof value !== 'string') return null;
+  return truncate(guardSensitiveText(value, {
+    surface: 'telemetry',
+    mode: 'diagnostic',
+    maxLength: limit * 2,
+  }), limit);
+};
+
+const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null => {
+  if (typeof value !== 'string') return null;
+  const guarded = guardSensitiveJsonText(value, {
+    surface: 'telemetry',
+    mode: 'diagnostic',
+    maxLength: limit * 2,
+  });
+  return truncate(guarded, limit);
+};
+
+const stringifyGuardedTelemetry = (value: unknown): string => JSON.stringify(guardSensitiveValue(value, {
+  surface: 'telemetry',
+  mode: 'diagnostic',
+  maxLength: 20_000,
+}));
 
 const emptyComputerSurfaceReliabilitySummary = (sessionId: string): ComputerSurfaceReliabilitySummary => ({
   sessionId,
@@ -104,8 +130,8 @@ export class TelemetryStorage {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
-        session.id, session.title, session.generationId,
-        session.modelProvider, session.modelName, session.workingDirectory,
+        session.id, guardTelemetryText(session.title, 2_000), session.generationId,
+        session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000),
         session.startTime, session.endTime ?? null, session.durationMs ?? null,
         session.turnCount, session.totalInputTokens, session.totalOutputTokens,
         session.totalTokens, session.estimatedCost, session.totalToolCalls,
@@ -135,7 +161,10 @@ export class TelemetryStorage {
       for (const [key, col] of Object.entries(fieldMap)) {
         if (key in updates) {
           fields.push(`${col} = ?`);
-          values.push((updates as Record<string, unknown>)[key]);
+          const value = (updates as Record<string, unknown>)[key];
+          values.push(key === 'title' && typeof value === 'string'
+            ? guardTelemetryText(value, 2_000)
+            : value);
         }
       }
 
@@ -232,20 +261,20 @@ export class TelemetryStorage {
       stmt.run(
         turn.id, turn.sessionId, turn.turnNumber,
         turn.startTime, turn.endTime, turn.durationMs,
-        truncate(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT),
+        guardTelemetryText(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT),
         turn.userPromptTokens, turn.hasAttachments ? 1 : 0, turn.attachmentCount,
         turn.systemPromptHash ?? null, turn.agentMode,
-        JSON.stringify(turn.activeSkills ?? []),
-        JSON.stringify(turn.activeMcpServers ?? []),
+        stringifyGuardedTelemetry(turn.activeSkills ?? []),
+        stringifyGuardedTelemetry(turn.activeMcpServers ?? []),
         turn.effortLevel,
-        truncate(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
-        turn.assistantResponseTokens, truncate(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
+        guardTelemetryText(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
+        turn.assistantResponseTokens, guardTelemetryText(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
         turn.totalInputTokens, turn.totalOutputTokens,
         turn.intent.primary, turn.intent.secondary ?? null,
         turn.intent.confidence, turn.intent.method,
-        JSON.stringify(turn.intent.keywords),
+        stringifyGuardedTelemetry(turn.intent.keywords),
         turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
-        JSON.stringify(turn.outcome.signals),
+        stringifyGuardedTelemetry(turn.outcome.signals),
         turn.compactionOccurred ? 1 : 0, turn.compactionSavedTokens ?? null,
         turn.iterationCount, turn.agentId || 'main',
         turn.turnType || 'user', turn.parentTurnId ?? null
@@ -341,8 +370,10 @@ export class TelemetryStorage {
               mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null,
               mc.inputTokens, mc.outputTokens, mc.latencyMs,
               mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0,
-              mc.error ?? null, mc.fallbackUsed ? JSON.stringify(mc.fallbackUsed) : null,
-              mc.prompt ?? null, mc.completion ?? null
+              guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+              mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null,
+              guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT),
+              guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE)
             );
           }
         }
@@ -361,10 +392,10 @@ export class TelemetryStorage {
           for (const tc of data.toolCalls) {
             stmt.run(
               tc.id, tc.turnId, tc.sessionId, tc.toolCallId,
-              tc.name, truncate(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
-              truncate(tc.actualArguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
-              truncate(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
-              tc.success ? 1 : 0, tc.error ?? null,
+              tc.name, guardTelemetryJsonText(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
+              guardTelemetryJsonText(tc.actualArguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
+              guardTelemetryText(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
+              tc.success ? 1 : 0, guardTelemetryText(tc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
               tc.errorCategory ?? null,
               tc.computerSurfaceFailureKind ?? null,
               tc.computerSurfaceMode ?? null,
@@ -388,8 +419,8 @@ export class TelemetryStorage {
           for (const ev of data.events) {
             stmt.run(
               ev.id, ev.turnId, ev.sessionId, ev.timestamp,
-              ev.eventType, truncate(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
-              ev.data ?? null, ev.durationMs ?? null
+              ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+              guardTelemetryJsonText(ev.data, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), ev.durationMs ?? null
             );
           }
         }

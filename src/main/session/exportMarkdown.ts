@@ -17,6 +17,7 @@ import {
   sanitizeBrowserComputerToolArguments,
   redactBrowserComputerInputPayloadsInValue,
 } from '../../shared/utils/browserComputerRedaction';
+import { guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 import {
   SessionLocalCache,
   CachedSession,
@@ -57,6 +58,8 @@ export interface ExportOptions {
   fromIndex?: number;
   /** Message range (end index) */
   toIndex?: number;
+  /** Apply shared Sensitive Data Guard to export output */
+  guardSensitiveData?: boolean;
 }
 
 /**
@@ -151,7 +154,11 @@ function sanitizeToolExecutionForMarkdown(tool: {
   output?: unknown;
 } {
   if (!isBrowserComputerToolName(tool.tool)) {
-    return tool;
+    return guardSensitiveValue(tool, {
+      surface: 'export',
+      mode: 'share',
+      maxLength: 20_000,
+    }) as typeof tool;
   }
   const rawArgs = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
     ? tool.input as Record<string, unknown>
@@ -159,11 +166,16 @@ function sanitizeToolExecutionForMarkdown(tool: {
   const input = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
     ? sanitizeBrowserComputerToolArguments(tool.tool, tool.input as Record<string, unknown>) || tool.input
     : tool.input;
-  return {
+  const sanitized = {
     ...tool,
     input,
     output: redactBrowserComputerInputPayloadsInValue(tool.tool, rawArgs, tool.output),
   };
+  return guardSensitiveValue(sanitized, {
+    surface: 'export',
+    mode: 'share',
+    maxLength: 20_000,
+  }) as typeof tool;
 }
 
 /**
@@ -411,6 +423,7 @@ export function exportSessionToMarkdown(
     filterRoles,
     fromIndex = 0,
     toIndex,
+    guardSensitiveData = true,
   } = options;
 
   try {
@@ -471,6 +484,13 @@ export function exportSessionToMarkdown(
     }
 
     const markdown = parts.join('\n');
+    const safeMarkdown = guardSensitiveData
+      ? guardSensitiveText(markdown, {
+          surface: 'export',
+          mode: 'share',
+          maxLength: Math.max(markdown.length + 1_000, 50_000),
+        })
+      : markdown;
 
     // Calculate stats
     let codeBlockCount = 0;
@@ -484,10 +504,10 @@ export function exportSessionToMarkdown(
 
     return {
       success: true,
-      markdown,
+      markdown: safeMarkdown,
       stats: {
         messageCount: messages.length,
-        characterCount: markdown.length,
+        characterCount: safeMarkdown.length,
         codeBlockCount,
         toolExecutionCount,
       },

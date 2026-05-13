@@ -121,6 +121,35 @@ describe('TelemetryStorage computer surface fields', () => {
     });
   });
 
+  it('guards sensitive tool telemetry before persistence', () => {
+    const storage = new TelemetryStorage();
+
+    storage.batchInsert({
+      toolCalls: [makeToolCall({
+        id: 'record-sensitive',
+        toolCallId: 'tool-sensitive',
+        name: 'shell',
+        arguments: JSON.stringify({
+          command: 'curl https://example.com/path?token=secret-token',
+          password: 'plain-secret',
+        }),
+        actualArguments: JSON.stringify({
+          email: 'alice@example.com',
+          file: '/Users/linchen/private.txt',
+        }),
+        resultSummary: 'sent alice@example.com with token=secret-token from /Users/linchen/private.txt',
+      })],
+    });
+
+    const call = storage.getToolCallsBySession('session-1')[0];
+    expect(call.arguments).not.toContain('plain-secret');
+    expect(call.arguments).not.toContain('token=secret-token');
+    expect(call.actualArguments).not.toContain('alice@example.com');
+    expect(call.actualArguments).not.toContain('/Users/linchen');
+    expect(call.resultSummary).not.toContain('alice@example.com');
+    expect(call.resultSummary).not.toContain('secret-token');
+  });
+
   it('aggregates Computer Surface reliability counts, modes, failure kinds, and recent failures', () => {
     const storage = new TelemetryStorage();
 

@@ -5,6 +5,8 @@
 // characters and stripping system-level closing tags.
 // ============================================================================
 
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
+
 /** Maximum characters per individual memory entry after sanitization */
 const SANITIZE_MAX_CHARS = 200;
 
@@ -25,7 +27,11 @@ const DANGEROUS_CLOSING_TAGS = [
 export function sanitizeMemoryContent(text: string): string {
   if (!text) return '';
 
-  let sanitized = text;
+  let sanitized = guardSensitiveText(text, {
+    surface: 'memory',
+    mode: 'model-context',
+    maxLength: SANITIZE_MAX_CHARS * 4,
+  });
 
   // Strip dangerous closing tags (case-insensitive) before escaping,
   // so we catch them even if they appear verbatim

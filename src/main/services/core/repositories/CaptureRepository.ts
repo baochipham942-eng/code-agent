@@ -4,6 +4,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../../shared/contract/capture';
+import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
@@ -12,18 +13,29 @@ export class CaptureRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
   createCapture(item: CaptureItem): void {
+    const safeUrl = item.url ? guardCaptureText(item.url, 4_000) : null;
+    const safeTitle = guardCaptureText(item.title, 2_000);
+    const safeContent = guardCaptureText(item.content, 100_000);
+    const safeSummary = item.summary ? guardCaptureText(item.summary, 2_000) : null;
+    const safeTags = item.tags.map((tag) => guardCaptureText(tag, 500));
+    const safeMetadata = guardSensitiveValue(item.metadata, {
+      surface: 'knowledge',
+      mode: 'local-persist',
+      maxLength: 20_000,
+    });
+
     this.db.prepare(`
       INSERT OR REPLACE INTO captures (id, url, title, content, summary, source, tags, metadata, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       item.id,
-      item.url || null,
-      item.title,
-      item.content,
-      item.summary || null,
+      safeUrl,
+      safeTitle,
+      safeContent,
+      safeSummary,
       item.source,
-      JSON.stringify(item.tags),
-      JSON.stringify(item.metadata),
+      JSON.stringify(safeTags),
+      JSON.stringify(safeMetadata),
       item.createdAt,
       item.updatedAt,
     );
@@ -112,4 +124,12 @@ export class CaptureRepository {
       updatedAt: row.updated_at as number,
     };
   }
+}
+
+function guardCaptureText(value: string, maxLength: number): string {
+  return guardSensitiveText(value, {
+    surface: 'knowledge',
+    mode: 'local-persist',
+    maxLength,
+  }).trim();
 }

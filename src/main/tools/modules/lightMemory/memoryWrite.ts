@@ -27,6 +27,7 @@ import {
   getMemoryIndexPath,
 } from '../../../lightMemory/indexLoader';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 
 const VALID_TYPES = ['user', 'feedback', 'project', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
@@ -139,19 +140,22 @@ async function executeWrite(
   const memDir = await ensureMemoryDir();
   const filePath = path.join(memDir, filename);
   const existed = await exists(filePath);
+  const safeName = guardMemoryText(name, 1_000);
+  const safeDescription = guardMemoryText(description, 2_000);
+  const safeContent = guardMemoryText(content, 50_000);
 
   // Build markdown with frontmatter
   const fileContent = `---
-name: ${name}
-description: ${description}
+name: ${safeName}
+description: ${safeDescription}
 type: ${memType}
 ---
 
-${content}
+${safeContent}
 `;
 
   await fs.writeFile(filePath, fileContent, 'utf-8');
-  await updateIndex(filename, description);
+  await updateIndex(filename, safeDescription);
   const artifact = await createFileArtifact(filePath, schema.name, ctx, {
     kind: 'text',
     mimeType: 'text/markdown',
@@ -161,21 +165,21 @@ ${content}
       path: filePath,
       existed,
       memoryType: memType,
-      description,
+      description: safeDescription,
       indexPath: getMemoryIndexPath(),
     },
   });
 
   return {
     ok: true,
-    output: `Memory saved: ${filename}\n- Type: ${memType}\n- Description: ${description}`,
+    output: `Memory saved: ${filename}\n- Type: ${memType}\n- Description: ${safeDescription}`,
     meta: {
       action: 'write',
       filename,
       path: filePath,
       existed,
       memoryType: memType,
-      description,
+      description: safeDescription,
       bytes: Buffer.byteLength(fileContent, 'utf8'),
       indexPath: getMemoryIndexPath(),
       artifact,
@@ -276,6 +280,14 @@ async function removeFromIndex(filename: string): Promise<void> {
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function guardMemoryText(value: string, maxLength: number): string {
+  return guardSensitiveText(value, {
+    surface: 'memory',
+    mode: 'local-persist',
+    maxLength,
+  }).trim();
 }
 
 async function exists(filePath: string): Promise<boolean> {

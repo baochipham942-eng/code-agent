@@ -21,8 +21,17 @@ import {
   CachedMessage,
   getDefaultCache,
 } from './localCache';
+import { guardSensitiveText, guardSensitiveTextAsync } from '../security/sensitiveDataGuard';
 
 const logger = createLogger('TranscriptExporter');
+
+async function guardTranscriptExportText(content: string): Promise<string> {
+  return guardSensitiveTextAsync(content, {
+    surface: 'export',
+    mode: 'share',
+    maxLength: Math.max(content.length + 1_000, 50_000),
+  });
+}
 
 // ----------------------------------------------------------------------------
 // Types
@@ -59,32 +68,6 @@ export interface TranscriptExportResult extends ExportResult {
   /** 使用的模板 */
   template?: TranscriptTemplate;
 }
-
-// ----------------------------------------------------------------------------
-// Anonymization Patterns
-// ----------------------------------------------------------------------------
-
-const ANONYMIZE_PATTERNS = [
-  // Email addresses
-  { pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, replacement: '[EMAIL]' },
-  // API Keys (generic patterns)
-  { pattern: /(?:sk|pk|api|key|secret|token)[-_]?[a-zA-Z0-9]{20,}/gi, replacement: '[API_KEY]' },
-  // AWS Access Keys
-  { pattern: /AKIA[0-9A-Z]{16}/g, replacement: '[AWS_KEY]' },
-  // GitHub Tokens
-  { pattern: /ghp_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /gho_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  // IP Addresses
-  { pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, replacement: '[IP]' },
-  // User paths (Mac/Linux/Windows)
-  { pattern: /\/Users\/[a-zA-Z0-9_-]+/g, replacement: '/Users/[USER]' },
-  { pattern: /\/home\/[a-zA-Z0-9_-]+/g, replacement: '/home/[USER]' },
-  { pattern: /C:\\Users\\[a-zA-Z0-9_-]+/gi, replacement: 'C:\\Users\\[USER]' },
-  // Database URLs
-  { pattern: /(?:mongodb|postgres|mysql|redis):\/\/[^\s]+/gi, replacement: '[DATABASE_URL]' },
-  // JWT tokens
-  { pattern: /eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, replacement: '[JWT_TOKEN]' },
-];
 
 // ----------------------------------------------------------------------------
 // Template Renderers
@@ -395,15 +378,18 @@ export class TranscriptExporter extends MarkdownExporter {
             messageCount: messages.length,
           },
         };
+        const jsonMarkdown = options.guardSensitiveData === false
+          ? JSON.stringify(jsonResult, null, 2)
+          : await guardTranscriptExportText(JSON.stringify(jsonResult, null, 2));
         return {
           success: true,
-          markdown: JSON.stringify(jsonResult, null, 2),
+          markdown: jsonMarkdown,
           summary,
           wasAnonymized,
           template,
           stats: {
             messageCount: messages.length,
-            characterCount: JSON.stringify(jsonResult).length,
+            characterCount: jsonMarkdown.length,
             codeBlockCount: 0,
             toolExecutionCount: 0,
           },
@@ -418,16 +404,17 @@ export class TranscriptExporter extends MarkdownExporter {
           codeBlockCount += Math.floor(matches.length / 2);
         }
       }
+      const safeMarkdown = options.guardSensitiveData === false ? markdown : await guardTranscriptExportText(markdown);
 
       return {
         success: true,
-        markdown,
+        markdown: safeMarkdown,
         summary,
         wasAnonymized,
         template,
         stats: {
           messageCount: messages.length,
-          characterCount: markdown.length,
+          characterCount: safeMarkdown.length,
           codeBlockCount,
           toolExecutionCount: 0,
         },
@@ -495,11 +482,11 @@ export class TranscriptExporter extends MarkdownExporter {
    * 匿名化内容
    */
   private anonymizeContent(content: string): string {
-    let result = content;
-    for (const { pattern, replacement } of ANONYMIZE_PATTERNS) {
-      result = result.replace(pattern, replacement);
-    }
-    return result;
+    return guardSensitiveText(content, {
+      surface: 'transcript',
+      mode: 'share',
+      maxLength: Math.max(content.length + 1_000, 50_000),
+    });
   }
 
   /**
@@ -528,13 +515,19 @@ export class TranscriptExporter extends MarkdownExporter {
         contextToSummarize = `${firstPart}\n\n[... ${messages.length - 6} messages omitted ...]\n\n${lastPart}`;
       }
 
+      const safeContextToSummarize = await guardSensitiveTextAsync(contextToSummarize, {
+        surface: 'transcript',
+        mode: 'model-context',
+        maxLength: Math.max(contextToSummarize.length + 1_000, 20_000),
+      });
+
       const prompt = `请为以下对话生成一个简洁的摘要（2-3 句话），重点概括：
 1. 用户的主要需求
 2. 完成了什么
 3. 关键决策或结论
 
 对话内容：
-${contextToSummarize}
+${safeContextToSummarize}
 
 摘要：`;
 

@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { createLogger } from '../infra/logger';
 import { getDatabase } from '../core/databaseService';
 import type { CaptureItem, CaptureRequest, CaptureSearchResult, CaptureStats, CaptureSource } from '@shared/contract/capture';
+import { guardSensitiveText, guardSensitiveValue } from '../../security/sensitiveDataGuard';
 
 const logger = createLogger('CaptureService');
 
@@ -39,21 +40,30 @@ export class CaptureService {
   async capture(request: CaptureRequest): Promise<CaptureItem> {
     const id = `cap_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();
+    const safeContent = guardKnowledgeText(request.content, 100_000);
+    const safeTitle = guardKnowledgeText(request.title, 2_000);
+    const safeUrl = request.url ? guardKnowledgeText(request.url, 4_000) : undefined;
+    const safeTags = (request.tags || []).map((tag) => guardKnowledgeText(tag, 500));
+    const safeMetadata = guardSensitiveValue(request.metadata || {}, {
+      surface: 'knowledge',
+      mode: 'local-persist',
+      maxLength: 20_000,
+    }) as Record<string, unknown>;
 
     // 生成摘要（取前 200 字符）
-    const summary = request.content.length > 200
-      ? request.content.substring(0, 200) + '...'
-      : request.content;
+    const summary = safeContent.length > 200
+      ? safeContent.substring(0, 200) + '...'
+      : safeContent;
 
     const item: CaptureItem = {
       id,
-      url: request.url,
-      title: request.title,
-      content: request.content,
+      url: safeUrl,
+      title: safeTitle,
+      content: safeContent,
       summary,
       source: request.source || 'browser_extension',
-      tags: request.tags || [],
-      metadata: request.metadata || {},
+      tags: safeTags,
+      metadata: safeMetadata,
       createdAt: now,
       updatedAt: now,
     };
@@ -74,20 +84,20 @@ export class CaptureService {
     // 向量化存储（异步，不阻塞）
     if (this.vectorStore) {
       try {
-        await this.vectorStore.add(request.content, {
+        await this.vectorStore.add(safeContent, {
           source: 'web_capture',
           captureId: id,
-          url: request.url,
-          title: request.title,
+          url: safeUrl,
+          title: safeTitle,
           timestamp: now,
         });
-        logger.info('Content vectorized', { id, title: request.title });
+        logger.info('Content vectorized', { id, title: safeTitle });
       } catch (error) {
         logger.warn('Failed to vectorize content', { id, error });
       }
     }
 
-    logger.info('Content captured', { id, title: request.title, source: item.source });
+    logger.info('Content captured', { id, title: safeTitle, source: item.source });
     return item;
   }
 
@@ -245,4 +255,12 @@ export function getCaptureService(): CaptureService {
     instance = new CaptureService();
   }
   return instance;
+}
+
+function guardKnowledgeText(value: string, maxLength: number): string {
+  return guardSensitiveText(value, {
+    surface: 'knowledge',
+    mode: 'local-persist',
+    maxLength,
+  }).trim();
 }

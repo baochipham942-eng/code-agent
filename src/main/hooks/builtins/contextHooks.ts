@@ -9,6 +9,7 @@ import type { CompactContext, HookExecutionResult } from '../../protocol/events'
 import type { Message } from '../../../shared/contract';
 import { getDatabase, type MemoryRecord } from '../../services';
 import { MEMORY } from '../../../shared/constants';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 
 // ----------------------------------------------------------------------------
 // DB bridge — CLI 模式走 CLIDatabaseService，主进程走 Electron DatabaseService
@@ -456,7 +457,11 @@ function generatePreservationSummary(preserved: PreservedContext): string | null
     return null;
   }
 
-  return `---\n**上下文保留摘要**（压缩前提取）:\n\n${parts.join('\n\n')}\n---`;
+  return guardSensitiveText(`---\n**上下文保留摘要**（压缩前提取）:\n\n${parts.join('\n\n')}\n---`, {
+    surface: 'memory',
+    mode: 'model-context',
+    maxLength: 12_000,
+  });
 }
 
 // ----------------------------------------------------------------------------

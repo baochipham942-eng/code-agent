@@ -6,6 +6,8 @@
 // This does not inject system messages by itself; callers decide the wrapper tag.
 // ============================================================================
 
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+
 export type ActivityPromptMode = 'legacySeparate' | 'unified';
 
 export type ActivityContextSource =
@@ -139,13 +141,11 @@ export function formatActivityPromptContext(
 
 export function sanitizeActivityText(value: unknown): string {
   if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/<\/?\s*(system|assistant|user)\b[^>]*>/gi, (match) =>
-      match.replace(/</g, '[').replace(/>/g, ']'),
-    )
-    .replace(/ignore\s+(all\s+)?(previous|prior|above)\s+instructions/gi, '[neutralized instruction override]')
-    .replace(/disregard\s+(all\s+)?(previous|prior|above)\s+instructions/gi, '[neutralized instruction override]')
-    .replace(/forget\s+(all\s+)?(previous|prior|above)\s+instructions/gi, '[neutralized instruction override]')
+  return guardSensitiveText(value, {
+    surface: 'activity',
+    mode: 'model-context',
+    maxLength: 8_000,
+  })
     .replace(/\s+\n/g, '\n')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();

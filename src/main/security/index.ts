@@ -44,6 +44,31 @@ export {
   type MaskingResult,
 } from './logMasker';
 
+// Sensitive Data Guard
+export {
+  guardSensitiveText,
+  guardSensitiveTextAsync,
+  guardSensitiveValue,
+  guardSensitiveJsonText,
+  neutralizePromptInjectionText,
+  sanitizeUrlTokens,
+  type SensitiveDataSurface,
+  type SensitiveDataMode,
+  type SensitiveDataGuardOptions,
+} from './sensitiveDataGuard';
+
+export {
+  detectPiiEntities,
+  getConfiguredPiiEntityDetector,
+  getPiiEntityDetectorConfig,
+  redactPiiEntities,
+  setPiiEntityDetectorForTesting,
+  shouldUsePiiEntityDetection,
+  type PiiEntity,
+  type PiiEntityDetectionRequest,
+  type PiiEntityDetector,
+} from './piiEntityDetector';
+
 // Input Sanitizer
 export {
   InputSanitizer,

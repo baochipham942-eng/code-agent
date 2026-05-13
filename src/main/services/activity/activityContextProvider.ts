@@ -8,6 +8,7 @@ import type {
 } from '@shared/contract';
 import { fetchOpenchronicleContext } from '../external/openchronicleContextProvider';
 import { getNativeDesktopService } from '../desktop/nativeDesktopService';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 
 const DEFAULT_MAX_CHARS = 12_000;
 const OPENCHRONICLE_MAX_CHARS = 3_000;
@@ -103,7 +104,7 @@ async function buildOpenchronicleSource(args: {
       privacy: 'redacted',
       generatedAtMs: args.now,
       maxChars: OPENCHRONICLE_MAX_CHARS,
-      text: trimToMaxChars(text, OPENCHRONICLE_MAX_CHARS),
+      text: trimToMaxChars(guardActivityText(text), OPENCHRONICLE_MAX_CHARS),
       evidenceRefs: [evidenceRef],
     };
   } catch (error) {
@@ -228,21 +229,21 @@ function toDesktopActivityItem(event: DesktopActivityEvent): ActivityContextItem
     source: 'tauri-native-desktop',
     kind: 'desktop-event',
     id: event.id,
-    label: event.windowTitle || event.browserTitle || event.appName,
+    label: guardActivityOptional(event.windowTitle || event.browserTitle || event.appName),
     capturedAtMs: event.capturedAtMs,
   };
 
   return {
     id: event.id,
-    title: event.windowTitle || event.browserTitle || event.appName,
-    appName: event.appName,
-    windowTitle: event.windowTitle,
-    browserUrl: event.browserUrl,
-    screenshotPath: event.screenshotPath,
+    title: guardActivityOptional(event.windowTitle || event.browserTitle || event.appName),
+    appName: guardActivityOptional(event.appName),
+    windowTitle: guardActivityOptional(event.windowTitle),
+    browserUrl: guardActivityOptional(event.browserUrl),
+    screenshotPath: guardActivityOptional(event.screenshotPath),
     capturedAtMs: event.capturedAtMs,
     confidence: 0.8,
     evidenceRefs: [evidenceRef],
-    raw: event,
+    raw: null,
   };
 }
 
@@ -251,20 +252,20 @@ function toAudioItem(segment: AudioSegment): ActivityContextItem {
     source: 'audio',
     kind: 'audio-segment',
     id: segment.id,
-    label: segment.transcript,
-    path: segment.wav_path,
+    label: guardActivityOptional(segment.transcript),
+    path: guardActivityOptional(segment.wav_path),
     startAtMs: segment.start_at_ms,
     endAtMs: segment.end_at_ms,
   };
 
   return {
     id: segment.id,
-    text: segment.transcript,
+    text: guardActivityOptional(segment.transcript),
     startAtMs: segment.start_at_ms,
     endAtMs: segment.end_at_ms,
     confidence: 0.62,
     evidenceRefs: [evidenceRef],
-    raw: segment,
+    raw: null,
   };
 }
 
@@ -273,22 +274,22 @@ function toScreenshotAnalysisItem(event: DesktopActivityEvent): ActivityContextI
     source: 'screenshot-analysis',
     kind: 'screenshot-analysis',
     id: event.id,
-    label: event.analyzeText || event.windowTitle || event.appName,
-    path: event.screenshotPath,
+    label: guardActivityOptional(event.analyzeText || event.windowTitle || event.appName),
+    path: guardActivityOptional(event.screenshotPath),
     capturedAtMs: event.capturedAtMs,
   };
 
   return {
     id: event.id,
-    title: event.windowTitle || event.browserTitle || event.appName,
-    text: event.analyzeText || null,
-    appName: event.appName,
-    windowTitle: event.windowTitle,
-    screenshotPath: event.screenshotPath,
+    title: guardActivityOptional(event.windowTitle || event.browserTitle || event.appName),
+    text: guardActivityOptional(event.analyzeText),
+    appName: guardActivityOptional(event.appName),
+    windowTitle: guardActivityOptional(event.windowTitle),
+    screenshotPath: guardActivityOptional(event.screenshotPath),
     capturedAtMs: event.capturedAtMs,
     confidence: event.analyzeText?.trim() ? 0.74 : 0.42,
     evidenceRefs: [evidenceRef],
-    raw: event,
+    raw: null,
   };
 }
 
@@ -308,7 +309,7 @@ function unavailableSource(
     text: null,
     items: [],
     evidenceRefs: [],
-    unavailableReason,
+    unavailableReason: guardActivityText(unavailableReason),
   };
 }
 
@@ -329,21 +330,34 @@ function formatDesktopItem(item: ActivityContextItem): string {
     item.windowTitle,
     item.browserUrl,
   ].filter(Boolean);
-  return parts.join(' | ');
+  return guardActivityText(parts.join(' | '));
 }
 
 function formatAudioItem(item: ActivityContextItem): string {
   if (!item.text) return '';
-  return `[${item.startAtMs ?? ''}-${item.endAtMs ?? ''}] ${item.text}`;
+  return guardActivityText(`[${item.startAtMs ?? ''}-${item.endAtMs ?? ''}] ${item.text}`);
 }
 
 function formatScreenshotItem(item: ActivityContextItem): string {
   const title = [item.appName, item.windowTitle].filter(Boolean).join(' | ');
   const text = item.text || (item.screenshotPath ? `Screenshot: ${item.screenshotPath}` : '');
-  return [title, text].filter(Boolean).join('\n');
+  return guardActivityText([title, text].filter(Boolean).join('\n'));
 }
 
 function trimToMaxChars(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, Math.max(0, maxChars - 12))}\n...(truncated)`;
+}
+
+function guardActivityText(value: unknown): string {
+  return guardSensitiveText(value, {
+    surface: 'activity',
+    mode: 'model-context',
+    maxLength: 8_000,
+  }).trim();
+}
+
+function guardActivityOptional(value: unknown): string | null {
+  const guarded = guardActivityText(value);
+  return guarded || null;
 }

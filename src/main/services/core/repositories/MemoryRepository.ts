@@ -9,6 +9,7 @@ import type {
   RelationQueryOptions,
   EntityRelation,
 } from '../../../protocol/types';
+import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
 
 export type { MemoryRecord, RelationQueryOptions, EntityRelation };
 
@@ -25,6 +26,9 @@ export class MemoryRepository {
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord {
     const id = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const now = Date.now();
+    const safeContent = guardMemoryText(data.content, 50_000);
+    const safeSummary = data.summary ? guardMemoryText(data.summary, 2_000) : undefined;
+    const safeMetadata = guardMemoryMetadata(data.metadata || {});
 
     this.db.prepare(`
       INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, access_count, created_at, updated_at)
@@ -33,13 +37,13 @@ export class MemoryRepository {
       id,
       data.type,
       data.category,
-      data.content,
-      data.summary || null,
+      safeContent,
+      safeSummary || null,
       data.source,
       data.projectPath || null,
       data.sessionId || null,
       data.confidence,
-      JSON.stringify(data.metadata || {}),
+      JSON.stringify(safeMetadata),
       now,
       now
     );
@@ -47,6 +51,9 @@ export class MemoryRepository {
     return {
       id,
       ...data,
+      content: safeContent,
+      summary: safeSummary,
+      metadata: safeMetadata,
       accessCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -120,11 +127,11 @@ export class MemoryRepository {
     }
     if (updates.content !== undefined) {
       sets.push('content = ?');
-      params.push(updates.content);
+      params.push(guardMemoryText(updates.content, 50_000));
     }
     if (updates.summary !== undefined) {
       sets.push('summary = ?');
-      params.push(updates.summary);
+      params.push(updates.summary ? guardMemoryText(updates.summary, 2_000) : null);
     }
     if (updates.confidence !== undefined) {
       sets.push('confidence = ?');
@@ -132,7 +139,7 @@ export class MemoryRepository {
     }
     if (updates.metadata !== undefined) {
       sets.push('metadata = ?');
-      params.push(JSON.stringify(updates.metadata));
+      params.push(JSON.stringify(guardMemoryMetadata(updates.metadata)));
     }
 
     params.push(id);
@@ -363,4 +370,20 @@ export class MemoryRepository {
       lastAccessedAt: row.last_accessed_at as number | undefined,
     };
   }
+}
+
+function guardMemoryText(value: string, maxLength: number): string {
+  return guardSensitiveText(value, {
+    surface: 'memory',
+    mode: 'local-persist',
+    maxLength,
+  }).trim();
+}
+
+function guardMemoryMetadata(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  return guardSensitiveValue(value || {}, {
+    surface: 'memory',
+    mode: 'local-persist',
+    maxLength: 20_000,
+  }) as Record<string, unknown>;
 }

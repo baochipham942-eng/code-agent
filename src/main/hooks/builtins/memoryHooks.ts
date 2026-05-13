@@ -7,6 +7,7 @@
 import { createLogger } from '../../services/infra/logger';
 import type { SessionContext, HookExecutionResult } from '../../protocol/events';
 import type { Message } from '../../../shared/contract';
+import { guardSensitiveText, guardSensitiveValue } from '../../security/sensitiveDataGuard';
 
 const logger = createLogger('MemoryHooks');
 
@@ -99,11 +100,15 @@ export async function sessionEndMemoryHook(
       try {
         await memoryService.add({
           type: learning.type,
-          content: learning.content,
+          content: guardMemoryHookText(learning.content),
           source: `session_extracted:${learning.source}`,
           sessionId: context.sessionId,
           confidence: learning.confidence,
-          metadata: learning.context,
+          metadata: guardSensitiveValue(learning.context || {}, {
+            surface: 'memory',
+            mode: 'local-persist',
+            maxLength: 20_000,
+          }) as Record<string, unknown>,
         });
         savedCount++;
       } catch (error) {
@@ -126,6 +131,14 @@ export async function sessionEndMemoryHook(
       duration: Date.now() - startTime,
     };
   }
+}
+
+function guardMemoryHookText(value: string): string {
+  return guardSensitiveText(value, {
+    surface: 'memory',
+    mode: 'local-persist',
+    maxLength: 50_000,
+  });
 }
 
 // ----------------------------------------------------------------------------

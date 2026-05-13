@@ -22,6 +22,7 @@ import type {
 } from '../../../protocol/tools';
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { guardSensitiveTextAsync } from '../../../security/sensitiveDataGuard';
 
 const schema: ToolSchema = {
   name: 'MemoryRead',
@@ -83,6 +84,11 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
+      const safeContent = await guardSensitiveTextAsync(content, {
+        surface: 'memory',
+        mode: 'model-context',
+        maxLength: 50_000,
+      });
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('MemoryRead done', { filename: sanitized, bytes: content.length });
       const artifact = await createFileArtifact(filePath, schema.name, ctx, {
@@ -96,7 +102,7 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
       });
       return {
         ok: true,
-        output: content,
+        output: safeContent,
         meta: {
           filename: sanitized,
           path: filePath,

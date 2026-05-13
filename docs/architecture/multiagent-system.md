@@ -77,6 +77,38 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 产品口径：这是并发隔离和隐私边界，不改变单 agent 默认浏览器/桌面语义。Browser 隔离 smoke 是证据，不单独作为功能入口。
 
+## 0.0.2 2026-05-13 Custom Agents + Permission Inheritance
+
+本轮把多 Agent 的两个基础承诺补实：用户能定义可复用 agent，subagent 不能绕过父级权限。
+
+### Custom Agent Registry
+
+自定义 agent 采用 Claude Code 兼容的 Markdown frontmatter + 正文格式，落盘位置是用户级 `~/.code-agent/agents/*.md` 和项目级 `<cwd>/.code-agent/agents/*.md`。`agentRegistry` 是新的单一来源，合并顺序为 project > user > builtin。
+
+| 能力 | 当前状态 | 关键文件 / 验证 |
+|------|----------|----------------|
+| 三层 agent 合并 | builtin、user、project 同名时按 project > user > builtin 覆盖；需要原始内置定义时走 `getBuiltinAgent()` | `src/main/agent/agentRegistry.ts`、`src/main/agent/agentDefinition.ts` |
+| Double-buffer 热加载 | chokidar 触发重扫时先构建 next map，再原子替换当前 registry，避免 in-flight spawn 读到半填充状态 | `src/main/agent/agentRegistry.ts` |
+| Spawn / Task 共用 registry | `spawn_agent` 和 Task 工具不再只读 `PREDEFINED_AGENTS`；错误提示和 validation 使用最新 agent id 集 | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/tools/modules/multiagent/task.ts` |
+| CLI / UI 暴露 | `ca list-agents` 显示 builtin/user/project 来源；renderer 通过 `agents:list` 和 `agents:changed` 刷新 StatusBar AgentSwitcher | `src/cli/commands/listAgents.ts`、`src/main/ipc/agentRegistry.ipc.ts`、`src/renderer/components/StatusBar/AgentSwitcher.tsx` |
+
+当前边界：`activeAgentId` 已进入 renderer store 和切换 UI，但自动作为下一轮默认 spawn role 的 chat send pipeline 还留在后续小切片。
+
+### Subagent Permission Inheritance
+
+权限继承是 M2-Task 5 的 partial 版本：先接通 `parentContext` 和用户 deny 级联，AgentTask/profile matrix 暂不一起扩。
+
+| 能力 | 当前状态 | 关键文件 / 验证 |
+|------|----------|----------------|
+| 三档继承模式 | `strict-inherit` / `child-narrow` / `independent`；默认 `strict-inherit` | `src/main/agent/childContext.ts`、`src/shared/contract/settings.ts` |
+| 权限合并算法 | 子 tools = parent tools ∩ child declared；deny = parent deny ∪ child deny；permission mode 取更严格者 | `tests/agent/permissionInheritance.test.ts` |
+| 用户规则级联 | `settings.permissions.deny/ask/allow` 经 `UserConfigSource` 进入 GuardFabric，主 agent 和 subagent 同时生效 | `src/main/permissions/userConfigSource.ts`、`src/main/permissions/index.ts` |
+| Spawn parentContext | `spawn_agent` 注入父级权限、工具和 role 信息；`subagentExecutor` 可为旧 caller auto-derive parentContext | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/main/agent/subagentExecutor.ts` |
+| Reviewer / readonly 保护 | reviewer / readonly 父 agent 禁止派生带写能力的 coder 类子 agent | `tests/permission-inheritance/scenarios.test.ts` |
+| 设置入口 | General settings 暴露继承模式和用户 deny/ask/allow 规则 | `src/renderer/components/features/settings/tabs/GeneralSettings.tsx` |
+
+验证口径：`feature/permission-inheritance` 分支覆盖 52/52 权限测试，包括 26 条 AC 场景、6 条 legacy grandfathering、20 条 unit。产品口径里，它属于多 agent 安全语义升级：从"用户以为会继承"变成"运行时强制继承"。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

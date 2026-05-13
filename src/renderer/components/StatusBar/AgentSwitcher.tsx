@@ -200,7 +200,7 @@ export function AgentSwitcher() {
             ref={searchInputRef}
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             placeholder="搜索 agent..."
             className="
               w-full px-2 py-1 text-xs
@@ -239,7 +239,7 @@ export function AgentSwitcher() {
     <>
       <button
         ref={triggerRef}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((v: boolean) => !v)}
         aria-label="切换 agent"
         aria-expanded={open}
         className={`

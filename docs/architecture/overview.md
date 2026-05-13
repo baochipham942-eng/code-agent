@@ -123,6 +123,9 @@
 | Runtime / Context hardening | CompactionService + SurvivorManifest + audit/validation/hooks；partial-failure trace、Web session recovery、assistant persistence、failure-mode loop breaker | [agent-core.md](./agent-core.md) |
 | Delivery Review / Artifact verifier | AcceptanceRunner、Game/Deck/Dashboard verifier、Delivery Review、Preview Feedback 进入交付验收闭环 | [artifact-verification.md](./artifact-verification.md) |
 | Browser / Computer multi-agent isolation | BrowserService pool、ephemeral launch semaphore、ComputerSurface write lock、targetApp screenshot crop | [multiagent-system.md](./multiagent-system.md) |
+| Custom Agent registry | `~/.code-agent/agents/*.md` 与 `<cwd>/.code-agent/agents/*.md` 进入 `agentRegistry` 单一来源；project > user > builtin；CLI / spawn / @mention / StatusBar 共用同一列表 | [multiagent-system.md](./multiagent-system.md) |
+| Subagent permission inheritance | `strict-inherit` 默认；parentContext、用户 deny/ask/allow、readonly→writer 禁止派生进入 subagent 运行时 | [multiagent-system.md](./multiagent-system.md) |
+| Doctor diagnostics | `/doctor` 聚合 9 categories / 24 items，CLI 和 GUI 共享 `DoctorReport`；MCP lazy 计 skip，网络/版本失败降级 warn | [cli.md](./cli.md) |
 | Frontend execution rails | Chat 顶部 Run Status Rail、TaskPanel task-first rail、Workspace Preview artifact review workbench | [frontend.md](./frontend.md) |
 | Typed IPC / provider wrappers | `defineHandler` + zod schemas + renderer typedInvoke；provider response/SSE wrappers 与 provider symmetry guard | [ipc-channels.md](./ipc-channels.md) |
 | Cloud task retirement | 旧 cloud agent / orchestrator / POC cloud tools 已退役；当前保留 cloud config、update、feature flag、cloud proxy 等服务 | [cloud-architecture.md](./cloud-architecture.md) |

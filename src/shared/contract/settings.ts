@@ -72,6 +72,11 @@ export interface AppSettings {
      * UI 检测到该标记会弹一次性引导，提醒用户选择继承策略。
      */
     _legacyPermissions?: boolean;
+    /**
+     * P6 grandfathering：升级 banner 已被用户 ack（点击"知道了"或显式选择
+     * inheritance 后置 true）。为 true 时不再弹引导，保证一次性。
+     */
+    inheritanceMigrationAcked?: boolean;
   };
   ui: {
     theme: 'light' | 'dark' | 'system';

@@ -37,6 +37,7 @@ import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabilityPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
 import { ActivityPanel } from './components/features/activity/ActivityPanel';
+import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -95,6 +96,7 @@ export const App: React.FC = () => {
     selectedSwarmAgentId,
     showLab,
     showEvalCenter,
+    showComputerUsePanel,
     showActivityPanel,
     setShowActivityPanel,
     setShowSettings,
@@ -463,7 +465,9 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {showEvalCenter ? (
+              {showComputerUsePanel ? (
+                <ComputerUsePanel />
+              ) : showEvalCenter ? (
                 <EvalCenterPanel />
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">

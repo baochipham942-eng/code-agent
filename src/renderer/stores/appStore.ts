@@ -136,6 +136,7 @@ interface AppState {
   activeAgentId: string | null;
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
+  showComputerUsePanel: boolean;
   showActivityPanel: boolean;
   showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
@@ -230,6 +231,7 @@ interface AppState {
   setActiveAgentId: (agentId: string | null) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
+  setShowComputerUsePanel: (show: boolean) => void;
   setShowActivityPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
@@ -327,6 +329,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeAgentId: loadInitialActiveAgentId(),
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
+  showComputerUsePanel: false,
   showActivityPanel: false,
   showCronCenter: false,
   showTimeCapabilityCenter: false,
@@ -425,6 +428,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
+  setShowComputerUsePanel: (show) => set({
+    showComputerUsePanel: show,
+    ...(show ? { showEvalCenter: false, evalCenterSessionId: null } : {}),
+  }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
@@ -475,6 +482,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowEvalCenter: (show, tab, sessionId) => set({
     showEvalCenter: show,
+    ...(show ? { showComputerUsePanel: false } : {}),
     ...(tab ? { evalCenterTab: tab } : {}),
     ...(sessionId !== undefined ? { evalCenterSessionId: sessionId } : {}),
     ...(!show ? { evalCenterSessionId: null } : {}),

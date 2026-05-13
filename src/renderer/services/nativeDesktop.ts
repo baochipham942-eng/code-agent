@@ -8,6 +8,8 @@
  * - native screenshot capture
  */
 
+import { IPC_DOMAINS, type IPCResponse } from '@shared/ipc';
+
 export interface NativeDesktopCapabilities {
   platform: string;
   supportsScreenCapture: boolean;
@@ -164,6 +166,25 @@ export interface ComputerSurfaceState {
   axQuality?: ComputerSurfaceAxQuality | null;
 }
 
+export interface ComputerSurfaceObservationResult {
+  snapshot: {
+    capturedAtMs: number;
+    appName?: string | null;
+    windowTitle?: string | null;
+    screenshotPath?: string | null;
+    failureKind?: ComputerSurfaceFailureKind | null;
+    blockingReasons?: string[];
+    recommendedAction?: string | null;
+  };
+  state: ComputerSurfaceState;
+}
+
+export interface ComputerSurfaceElementsResult {
+  state: ComputerSurfaceState;
+  output?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface NativeDesktopCollectorRequest {
   intervalSecs?: number;
   captureScreenshots?: boolean;
@@ -301,6 +322,32 @@ async function postDesktopAction<T>(action: string, payload?: Record<string, unk
   return result.data as T;
 }
 
+async function invokeDesktopDomain<T>(
+  action: string,
+  payload?: Record<string, unknown>,
+): Promise<IPCResponse<T>> {
+  const bridge = window.codeAgentDomainAPI || window.domainAPI;
+  if (bridge) {
+    return bridge.invoke<T>(IPC_DOMAINS.DESKTOP, action, payload);
+  }
+
+  const resp = await fetch('/api/domain/desktop/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ action, payload }),
+  });
+  if (!resp.ok) {
+    return {
+      success: false,
+      error: {
+        code: 'HTTP_ERROR',
+        message: `请求失败: ${resp.status}`,
+      },
+    };
+  }
+  return await resp.json() as IPCResponse<T>;
+}
+
 export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture', { mode });
 }
@@ -332,6 +379,24 @@ export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null
   } catch {
     return null;
   }
+}
+
+export async function observeComputerSurface(
+  request: { targetApp?: string; includeScreenshot?: boolean } = {},
+): Promise<IPCResponse<ComputerSurfaceObservationResult>> {
+  return invokeDesktopDomain<ComputerSurfaceObservationResult>('observeComputerSurface', request);
+}
+
+export async function listComputerSurfaceElements(
+  request: { targetApp?: string; limit?: number; maxDepth?: number },
+): Promise<IPCResponse<ComputerSurfaceElementsResult>> {
+  return invokeDesktopDomain<ComputerSurfaceElementsResult>('listComputerSurfaceElements', request);
+}
+
+export async function readComputerSurfaceState(
+  request: { targetApp?: string } = {},
+): Promise<IPCResponse<ComputerSurfaceState>> {
+  return invokeDesktopDomain<ComputerSurfaceState>('getComputerSurfaceState', request);
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {

@@ -35,6 +35,7 @@ import {
   Clock3,
   CalendarDays,
   Monitor,
+  MousePointerClick,
   GitBranch,
   ScrollText,
   Activity,
@@ -143,6 +144,8 @@ export const Sidebar: React.FC = () => {
     setShowTimeCapabilityCenter,
     showDesktopPanel,
     setShowDesktopPanel,
+    showComputerUsePanel,
+    setShowComputerUsePanel,
     showActivityPanel,
     setShowActivityPanel,
     showDAGPanel,
@@ -948,6 +951,13 @@ export const Sidebar: React.FC = () => {
                 >
                   <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
                   桌面采集
+                </button>
+                <button
+                  onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
+                  Computer Use
                 </button>
                 <button
                   onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}

@@ -14,7 +14,11 @@ export function createStaticRouter(deps: StaticDeps): Router {
   const { serverAuthToken } = deps;
 
   // ── Static file serving (production) ─────────────────────────────
-  const staticDir = deps.staticDir ?? path.join(process.cwd(), 'dist', 'renderer');
+  // 用 __dirname 解析，不靠 process.cwd()——cargo tauri dev 启动 main process 时
+  // cwd 是 src-tauri/，导致 join(cwd, 'dist/renderer') 解析到不存在的 src-tauri/dist/renderer。
+  // bundled webServer.cjs 在 dist/web/，dist/renderer 在 ../renderer (dev) /
+  // app bundle 里也是 ../renderer (prod)，两处一致。
+  const staticDir = deps.staticDir ?? path.resolve(__dirname, '..', 'renderer');
   router.use(express.static(staticDir, {
     // Don't serve index.html via static middleware — we inject the auth token below
     index: false,

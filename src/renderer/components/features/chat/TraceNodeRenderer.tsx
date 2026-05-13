@@ -559,48 +559,62 @@ const HOOK_EVENT_LABELS: Record<string, string> = {
 
 const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
   const activity = timeline.hookActivity;
+  const [expanded, setExpanded] = useState(false);
   if (!activity || activity.items.length === 0) return null;
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
-        <Wrench className="h-3.5 w-3.5 text-sky-300" />
+      <button
+        type="button"
+        className="mb-1 flex w-full items-center gap-2 text-left text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={expanded ? '收起 Hooks' : '展开 Hooks'}
+      >
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-sky-300" />
         <span>Hooks</span>
         <span className="text-zinc-500">{activity.items.length} 次触发</span>
-      </div>
+        {expanded ? (
+          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
       <div className="text-xs text-zinc-100">{activity.summary}</div>
-      <div className="mt-2 space-y-1.5">
-        {activity.items.map((item, index) => {
-          const hasError = (item.errorCount || 0) > 0;
-          const toneClass = item.action === 'block'
-            ? 'bg-red-400'
-            : hasError
-              ? 'bg-amber-400'
-              : item.modified
-                ? 'bg-sky-400'
-                : 'bg-emerald-400';
-          return (
-            <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
-              <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${toneClass}`} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
-                  {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
-                  <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
-                    {item.action === 'block' ? 'blocked' : 'allow'}
-                  </WorkbenchPill>
-                  {item.modified && <WorkbenchPill tone="info">modified</WorkbenchPill>}
-                  {hasError && <WorkbenchPill tone="info">error {item.errorCount}</WorkbenchPill>}
-                  <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
+      {expanded && (
+        <div className="mt-2 space-y-1.5">
+          {activity.items.map((item, index) => {
+            const hasError = (item.errorCount || 0) > 0;
+            const toneClass = item.action === 'block'
+              ? 'bg-red-400'
+              : hasError
+                ? 'bg-amber-400'
+                : item.modified
+                  ? 'bg-sky-400'
+                  : 'bg-emerald-400';
+            return (
+              <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${toneClass}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
+                    {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
+                    <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
+                      {item.action === 'block' ? 'blocked' : 'allow'}
+                    </WorkbenchPill>
+                    {item.modified && <WorkbenchPill tone="info">modified</WorkbenchPill>}
+                    {hasError && <WorkbenchPill tone="info">error {item.errorCount}</WorkbenchPill>}
+                    <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
+                  </div>
+                  {item.message && (
+                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.message}</div>
+                  )}
                 </div>
-                {item.message && (
-                  <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.message}</div>
-                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

@@ -311,7 +311,7 @@ function getHookStatusText(activity: TurnHookActivity): string {
 }
 
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
   const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
   const tone = getHookActivityTone(activity);

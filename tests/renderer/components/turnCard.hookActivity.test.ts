@@ -68,7 +68,7 @@ describe('TurnCard hook activity', () => {
     expect(html).not.toContain('bg-amber-500/10');
   });
 
-  it('shows hook execution summary as a visible turn banner', () => {
+  it('shows hook execution summary as a collapsed turn banner by default', () => {
     const turn: TraceTurn = {
       turnNumber: 1,
       turnId: 'turn-1',
@@ -125,9 +125,9 @@ describe('TurnCard hook activity', () => {
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
     expect(html).toContain('执行了 2 个钩子');
-    expect(html).toContain('用户提示提交');
-    expect(html).toContain('会话开始');
-    expect(html).toContain('钩子');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('用户提示提交');
+    expect(html).not.toContain('会话开始');
     expect(html).not.toContain('已放行');
   });
 });

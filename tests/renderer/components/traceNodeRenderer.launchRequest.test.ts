@@ -374,4 +374,55 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).not.toContain('运行时放行');
     expect(html).not.toContain('运行时阻塞');
   });
+
+  it('renders hook activity timeline nodes collapsed by default', () => {
+    const hookTimeline: TurnTimelineNode = {
+      id: 'timeline-hooks',
+      kind: 'hook_activity',
+      timestamp: 500,
+      tone: 'success',
+      hookActivity: {
+        summary: '命中 2 个 hook · 已放行 · 12ms',
+        items: [
+          {
+            timestamp: 501,
+            event: 'UserPromptSubmit',
+            action: 'allow',
+            hookCount: 1,
+            durationMs: 4,
+            message: 'prompt hook passed',
+          },
+          {
+            timestamp: 502,
+            event: 'PreToolUse',
+            action: 'allow',
+            hookCount: 1,
+            durationMs: 8,
+            toolName: 'Bash',
+          },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'timeline-hooks-node',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 500,
+          turnTimeline: hookTimeline,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('Hooks');
+    expect(html).toContain('2 次触发');
+    expect(html).toContain('命中 2 个 hook');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('UserPromptSubmit');
+    expect(html).not.toContain('PreToolUse');
+    expect(html).not.toContain('prompt hook passed');
+    expect(html).not.toContain('Bash');
+  });
 });

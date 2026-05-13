@@ -31,7 +31,7 @@ interface AgentRegistryState {
   setEntries: (entries: AgentListEntry[]) => void;
 }
 
-export const useAgentRegistryStore = create<AgentRegistryState>((set) => ({
+export const useAgentRegistryStore = create<AgentRegistryState>()((set) => ({
   entries: [],
   isLoaded: false,
   loadError: null,

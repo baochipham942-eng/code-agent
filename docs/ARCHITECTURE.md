@@ -495,6 +495,7 @@ API View (model actually sees)
 | **Overlay 引擎** | `src/main/prompts/overlayEngine.ts` | 5 层叠加（substrate → mode → memory → append → projection），每层独立可开关 |
 | **Prompt Profile** | `src/main/prompts/profiles.ts` | 4 种入口 profile（interactive/oneshot/subagent/fork）各有独立 overlay 组合 |
 | **子 Agent 上下文重建** | `src/main/agent/childContext.ts` | `buildChildContext()` 从父上下文派生完整子运行时（prompt/tools/permissions/hooks/memory） |
+| **Agent Registry** | `src/main/agent/agentRegistry.ts` | 用户/项目 `.code-agent/agents/*.md` 与 builtin agent 合并；project > user > builtin；spawn、Task、CLI、@mention、StatusBar 共用 |
 | **AgentTask 状态机** | `src/main/agent/agentTask.ts` | 7 态生命周期（pending→registered→running→stopped→resumed→failed→cancelled）+ transcript 持久化 |
 | **Mailbox 协调** | `src/main/agent/mailboxBridge.ts` + `agentBus.ts` | worker↔leader 协调协议（permission_request/response、task_dispatch、status_report） |
 
@@ -502,8 +503,9 @@ API View (model actually sees)
 
 | 模块 | 位置 | 描述 |
 |------|------|------|
-| **GuardFabric** | `src/main/permissions/guardFabric.ts` | 多源竞争（Rules + Mode + Hooks + Classifier），deny > ask > allow，first-valid-wins |
+| **GuardFabric** | `src/main/permissions/guardFabric.ts` | 多源竞争（Rules + Mode + Hooks + Classifier + UserConfigSource），deny > ask > allow，first-valid-wins |
 | **拓扑感知** | guardFabric 内置 | main/async_agent/teammate/coordinator 各有不同裁决（async_agent+bash→deny） |
+| **Subagent 权限继承** | `src/main/agent/childContext.ts` + `src/main/permissions/userConfigSource.ts` | 默认 `strict-inherit`；tools 交集、deny 并集、mode 取严；用户 deny/ask/allow 级联 |
 | **事件三通道** | `src/main/events/internalEventStore.ts` + `controlStream.ts` | Internal（持久化 JSONL）+ Control（实时推送）+ Mailbox（agent 协调） |
 | **EventReplay** | `src/main/events/eventReplay.ts` | 从 InternalEventStore 回放事件，支持 agentId/时间范围过滤 |
 | **Worker Epoch** | `src/main/session/workerEpoch.ts` | 生成代围栏防止并发写入，`guardedWrite()` 校验 epoch 一致性 |
@@ -519,7 +521,7 @@ API View (model actually sees)
 | **请求规范化** | `src/main/model/middleware/requestNormalizer.ts` | 统一消息格式转换、工具 schema 适配、beta flags、缓存 TTL |
 | **TokenWarning** | `src/renderer/components/TokenWarning.tsx` | 动态指示器：绿(<60%)→黄(60-85%)→黄脉冲(压缩中)→红(overflow/fallback) |
 | **ContextVisualization** | `src/renderer/components/ContextVisualization.tsx` | token 分布柱状图 + 压缩时间线 + 活跃 agent + deferred tools |
-| **/doctor 诊断** | `src/main/ipc/doctor.ipc.ts` | 环境/网络/配置/数据库/磁盘 5 类诊断，结构化 pass/warn/fail 报告 |
+| **/doctor 诊断** | `src/main/diagnostics/doctorRunner.ts` + `src/shared/commands/definitions/doctorCommands.ts` | 9 类 / 24 项健康检查，CLI 和 GUI 共用 `DoctorReport`，结构化 pass/warn/fail/skip 报告 |
 
 ---
 

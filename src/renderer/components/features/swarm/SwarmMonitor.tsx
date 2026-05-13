@@ -21,10 +21,13 @@ import {
   DollarSign,
   FileText,
   TrendingUp,
+  Square,
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState, SwarmVerificationResult } from '@shared/contract/swarm';
+import ipcService from '../../../services/ipcService';
+import { IPC_CHANNELS } from '../../../../shared/ipc/legacy-channels';
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -73,10 +76,28 @@ const AgentCard: React.FC<{
     ? (agent.endTime || Date.now()) - agent.startTime
     : 0;
 
+  const handleStop = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await ipcService.invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { agentId: agent.id });
+    } catch (err) {
+      // eslint-disable-next-line no-console -- user-initiated cancel; surfacing via UI toast is follow-up
+      console.warn('[SwarmMonitor] swarm:cancel-agent failed', err);
+    }
+  };
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all cursor-pointer ${
         selected
           ? 'border-cyan-500/40 bg-cyan-500/10 ring-1 ring-cyan-500/20'
           : `${colors.border} ${colors.bg} hover:border-zinc-500/50 hover:bg-zinc-800/60`
@@ -94,6 +115,18 @@ const AgentCard: React.FC<{
         <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
           {agent.role}
         </span>
+        {/* Per-agent Stop button — only meaningful while running. */}
+        {agent.status === 'running' && (
+          <button
+            type="button"
+            onClick={handleStop}
+            className="p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
+            title="Stop this subagent"
+            aria-label={`Stop subagent ${agent.name}`}
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -171,7 +204,7 @@ const AgentCard: React.FC<{
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 };
 

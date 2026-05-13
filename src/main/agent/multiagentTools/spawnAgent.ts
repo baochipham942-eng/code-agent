@@ -283,6 +283,27 @@ export async function executeSpawnAgent(
       // Create AbortController for this agent
       const abortController = new AbortController();
 
+      // Bridge parent abortSignal to this child controller.
+      // 没有这个 bridge 的话单 spawn 路径下，主 agent ESC 后 child 还会跑完当前 LLM call。
+      // Cascade 透传 reason（'user-cancel' / 'session-switch' / 'parent-cancel'）
+      // 供 subagentExecutor 的 abort 检测块区分。
+      if (context.abortSignal) {
+        if (context.abortSignal.aborted) {
+          abortController.abort(context.abortSignal.reason ?? 'parent-cancel');
+        } else {
+          const parentSignal = context.abortSignal;
+          parentSignal.addEventListener(
+            'abort',
+            () => {
+              if (!abortController.signal.aborted) {
+                abortController.abort(parentSignal.reason ?? 'parent-cancel');
+              }
+            },
+            { once: true },
+          );
+        }
+      }
+
       // Build executor context.
       // 注入 agentId 到 toolContext —— 让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
       // 共享 context 不能直接 mutate（父 agent 也用同一个），clone 后注入。

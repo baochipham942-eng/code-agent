@@ -35,6 +35,8 @@ import {
   getAgentContextLevel,
 } from '../subagentContextBuilder';
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
+import { checkReadonlyParentRule, buildParentContextFromToolContext, type ParentContext } from '../childContext';
+import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
@@ -208,6 +210,23 @@ export async function executeSpawnAgent(
     // ========================================================================
     const guard = getSpawnGuard();
 
+    // ========================================================================
+    // P3: 场景 D 兜底 — readonly 父 role 禁止 spawn writer 子 agent
+    // 这是 hard topology rule，不受 inheritance 配置影响（即便用户选 independent
+    // 也生效）。基于 plan §4.7 / AC-4。
+    // ========================================================================
+    const readonlyCheck = checkReadonlyParentRule(
+      context.agentRole,
+      role,
+      [], // FullAgentConfig 不带 capabilities；spawnAgent 这层只用 role 做黑名单匹配
+    );
+    if (!readonlyCheck.allowed) {
+      return {
+        success: false,
+        error: `PERMISSION_DENIED: ${readonlyCheck.reason}. Switch to default mode or spawn a non-writer agent.`,
+      };
+    }
+
     if (!guard.canSpawn()) {
       return {
         success: false,
@@ -267,6 +286,14 @@ export async function executeSpawnAgent(
       // Build executor context.
       // 注入 agentId 到 toolContext —— 让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。
       // 共享 context 不能直接 mutate（父 agent 也用同一个），clone 后注入。
+      // P3: 注入 parentContext，让 subagentExecutor 走 buildChildContext 三档合并
+      // 现阶段从 ToolContext 推导；后续 caller 在 P4 阶段补全父级 rules/memory/tools。
+      const parentContext: ParentContext = buildParentContextFromToolContext(context, {
+        permissionMode: getPermissionModeManager().getMode() as string,
+        availableTools: tools.slice(),
+        role: context.agentRole,
+      });
+
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
         toolResolver: context.resolver as ToolResolver,
@@ -277,6 +304,7 @@ export async function executeSpawnAgent(
         executionAgentId: agentId,
         worktreePath: worktreeInfo?.worktreePath,
         hookManager: context.hookManager,
+        parentContext,
       };
 
       const executorConfig = {

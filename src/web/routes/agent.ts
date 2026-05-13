@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { Message } from '../../shared/contract';
+import type { AgentEvent, Message } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
@@ -20,6 +20,7 @@ import {
   dbAvailable,
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
+import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -267,6 +268,28 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     };
     const agentSSEBatcher = createAgentRunSSEBatcher(emitSSE, sessionId);
+    const messageAccumulator = new MessageDeltaAccumulator();
+    const emitAgentEvent = (event: AgentEvent): boolean => {
+      const snapshot = messageAccumulator.apply(sessionId, event);
+      if (event.type === 'message_delta' && !snapshot) {
+        return false;
+      }
+      const finalSnapshot = (
+        event.type === 'turn_end'
+        || event.type === 'agent_complete'
+        || event.type === 'agent_cancelled'
+      )
+        ? messageAccumulator.getSnapshot(sessionId, true)
+        : null;
+      if (finalSnapshot) {
+        agentSSEBatcher.emit({ type: 'message_snapshot', data: finalSnapshot });
+      }
+      agentSSEBatcher.emit(event);
+      if (finalSnapshot) {
+        messageAccumulator.clear(sessionId);
+      }
+      return true;
+    };
     const cancelForDisconnect = () => {
       if (runSettled || clientDisconnected) return;
       clientDisconnected = true;
@@ -482,7 +505,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         // 附带 sessionId 确保前端会话隔离。
         // event.data 可能是对象或数组（如 todo_update 的 TodoItem[]），
         // 数组不能 spread 进对象，需要区分处理。
-        agentSSEBatcher.emit(event);
+        const emitted = emitAgentEvent(event);
+        if (!emitted) return;
         if (event.type === 'agent_cancelled') {
           runCancelled = true;
         }
@@ -823,10 +847,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // session:updated 和 session:list-updated 已在 agentLoop.run() 之前广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      agentSSEBatcher.emit({ type: 'agent_complete', data: null });
+      emitAgentEvent({ type: 'agent_complete', data: null });
     } catch (error) {
       if (!clientDisconnected) {
-        agentSSEBatcher.emit({
+        emitAgentEvent({
           type: 'error',
           data: {
             message: error instanceof Error ? error.message : 'Unknown error',

@@ -4,6 +4,9 @@ import { defineConfig } from '@playwright/test';
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
 
+const webPort = Number(process.env.E2E_WEB_PORT || 8180);
+const reuseExistingServer = !process.env.CI && !process.env.E2E_WEB_PORT;
+
 export default defineConfig({
   testDir: '.',
   testMatch: ['**/*.spec.ts'],
@@ -14,16 +17,16 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]] : 'list',
   timeout: 60000,
   use: {
-    baseURL: 'http://127.0.0.1:8180',
+    baseURL: `http://127.0.0.1:${webPort}`,
     // ADR-010 #1: 失败（或重试）时强制保留 trace + 截图作为 CI artifact。
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
   webServer: {
-    command: 'cd ../.. && npm run build:web && npm run build:renderer && WEB_HOST=127.0.0.1 WEB_PORT=8180 node dist/web/webServer.cjs',
-    port: 8180,
-    reuseExistingServer: !process.env.CI,
+    command: `cd ../.. && npm run build:web && npm run build:renderer && WEB_HOST=127.0.0.1 WEB_PORT=${webPort} node dist/web/webServer.cjs`,
+    port: webPort,
+    reuseExistingServer,
     timeout: 180000,
     env: {
       // Enables /api/dev/emit-swarm-event for swarm-chain.spec.ts.

@@ -434,7 +434,9 @@ describe('createAgentRouter', () => {
     });
 
     expect(response.ok).toBe(true);
-    await response.text();
+    const body = await response.text();
+    expect(body).toContain('message_snapshot');
+    expect(body).toContain('最终回复');
 
     expect(addMessageToSession).toHaveBeenCalledWith(
       'session-assistant-fallback',
@@ -450,5 +452,66 @@ describe('createAgentRouter', () => {
         content: '最终回复',
       }),
     );
+  });
+
+  it('drops duplicate sequenced message deltas from /api/run streaming and cache', async () => {
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({
+          type: 'message_delta',
+          data: {
+            role: 'assistant',
+            path: 'content',
+            op: 'append',
+            text: 'hello ',
+            turnId: 'turn-1',
+            messageId: 'turn-1',
+            deltaSeq: 1,
+          },
+        });
+        onEvent({
+          type: 'message_delta',
+          data: {
+            role: 'assistant',
+            path: 'content',
+            op: 'append',
+            text: 'hello ',
+            turnId: 'turn-1',
+            messageId: 'turn-1',
+            deltaSeq: 1,
+          },
+        });
+        onEvent({
+          type: 'message_delta',
+          data: {
+            role: 'assistant',
+            path: 'content',
+            op: 'append',
+            text: 'world',
+            turnId: 'turn-1',
+            messageId: 'turn-1',
+            deltaSeq: 2,
+          },
+        });
+      }),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'stream with duplicate delta',
+        sessionId: 'session-duplicate-delta',
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('"text":"hello world"');
+    expect(body).not.toContain('"text":"hello hello world"');
+    const cached = sessionMessages.get('session-duplicate-delta') || [];
+    const assistant = cached.find((message) => message.role === 'assistant');
+    expect(assistant?.content).toBe('hello world');
   });
 });

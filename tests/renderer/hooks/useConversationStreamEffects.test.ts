@@ -312,4 +312,51 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
 
     expect(appendStreamingMessageDelta).toHaveBeenCalledWith('turn-1', { reasoning: 'thinking' });
   });
+
+  it('uses message_snapshot to replace the active assistant draft', () => {
+    let messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: 'partial',
+        reasoning: 'old',
+        timestamp: 100,
+      },
+    ];
+
+    applyConversationStreamEvent(
+      {
+        type: 'message_snapshot',
+        data: {
+          role: 'assistant',
+          turnId: 'turn-1',
+          messageId: 'assistant-final-1',
+          content: 'authoritative text',
+          reasoning: 'authoritative reasoning',
+          isFinal: true,
+          source: 'main_accumulator',
+        },
+      },
+      {
+        currentTurnMessageId: 'turn-1',
+        committedAssistantMessageIds: new Set<string>(),
+      },
+      {
+        addMessage: () => {},
+        updateMessage: (id, updates) => {
+          messages = messages.map((message) => (
+            message.id === id ? { ...message, ...updates } : message
+          ));
+        },
+        setMessages: () => {},
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages[0]).toMatchObject({
+      content: 'authoritative text',
+      reasoning: 'authoritative reasoning',
+    });
+  });
 });

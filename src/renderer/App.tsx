@@ -35,6 +35,7 @@ import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
 import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
+import { ActivityPanel } from './components/features/activity/ActivityPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -92,6 +93,8 @@ export const App: React.FC = () => {
     selectedSwarmAgentId,
     showLab,
     showEvalCenter,
+    showActivityPanel,
+    setShowActivityPanel,
     setShowSettings,
     setLanguage,
     workbenchTabs,
@@ -582,6 +585,10 @@ export const App: React.FC = () => {
       {/* Cron Center - 定时任务中心 */}
       {showCronCenter && (
         <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+      )}
+
+      {showActivityPanel && (
+        <ActivityPanel onClose={() => setShowActivityPanel(false)} />
       )}
 
       {showAgentTeamPanel && (

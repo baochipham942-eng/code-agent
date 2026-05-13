@@ -36,6 +36,7 @@ import {
   Monitor,
   GitBranch,
   ScrollText,
+  Activity,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -139,6 +140,8 @@ export const Sidebar: React.FC = () => {
     setShowCronCenter,
     showDesktopPanel,
     setShowDesktopPanel,
+    showActivityPanel,
+    setShowActivityPanel,
     showDAGPanel,
     setShowDAGPanel,
   } = useAppStore();
@@ -892,6 +895,13 @@ export const Sidebar: React.FC = () => {
             {showUserMenu && (
               <div className="absolute bottom-full left-2 right-2 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-50">
                 {/* 全局工具入口（原顶栏右侧 5 个按钮挪过来） */}
+                <button
+                  onClick={() => { setShowActivityPanel(true); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
+                  Activity
+                </button>
                 <button
                   onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"

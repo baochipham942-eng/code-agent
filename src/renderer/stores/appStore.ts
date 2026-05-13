@@ -136,6 +136,7 @@ interface AppState {
   activeAgentId: string | null;
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
+  showActivityPanel: boolean;
   showCronCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -228,6 +229,7 @@ interface AppState {
   setActiveAgentId: (agentId: string | null) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
+  setShowActivityPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
@@ -323,6 +325,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeAgentId: loadInitialActiveAgentId(),
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
+  showActivityPanel: false,
   showCronCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -419,6 +422,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
+  setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();

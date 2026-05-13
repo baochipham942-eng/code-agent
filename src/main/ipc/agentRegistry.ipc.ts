@@ -8,7 +8,7 @@
 // ============================================================================
 
 import type { IpcMain, BrowserWindow } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
   listAllAgents,
   onAgentRegistryChange,
@@ -17,8 +17,11 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentRegistryIPC');
 
-/** 主进程 → 渲染端推送的事件通道（与 IPC_DOMAINS 风格保持一致） */
-export const AGENT_REGISTRY_EVENT = 'agents:changed';
+/**
+ * 主进程 → 渲染端推送的事件通道。
+ * 同步暴露为 IPC_CHANNELS.AGENTS_CHANGED（type-safe），保留常量便于本模块内部引用。
+ */
+export const AGENT_REGISTRY_EVENT = IPC_CHANNELS.AGENTS_CHANGED;
 
 export function registerAgentRegistryHandlers(
   ipcMain: IpcMain,

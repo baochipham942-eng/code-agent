@@ -2,6 +2,7 @@
 // IPC Handlers - Invoke + Event handler 接口定义
 // ============================================================================
 
+import type { AgentsChangedEvent } from '../contract/agentRegistry';
 import type {
   Message,
   PermissionResponse,
@@ -684,6 +685,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
   // Evaluation experiment progress (UI 实时刷新)
   [EVALUATION_CHANNELS.EXPERIMENT_PROGRESS]: (event: ExperimentProgressEvent) => void;
+  // Agent Registry change broadcast (custom .md agents 热加载推送)
+  [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
 }
 
 export interface ProviderFallbackEvent {

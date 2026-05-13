@@ -52,6 +52,26 @@ export interface AppSettings {
     devModeAutoApprove: boolean; // Development mode: auto-approve all permissions
     /** 权限模式，持久化存储（重启/重装后恢复） */
     permissionMode?: 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
+    /**
+     * 子 agent 权限继承策略（M2-Task 5 partial — childContext only）
+     * - strict-inherit（默认）：子 = 父真子集；tools ∩、deny ∪、mode 取更严，永不扩张
+     * - child-narrow：子可在父集合内声明更窄能力（仅父 mode ∈ {default, acceptEdits} 时允许子放宽 allow）
+     * - independent：子完全独立（仍受 GuardFabric topology + 用户 deny 约束）
+     *
+     * 未设置时按 `strict-inherit` 处理；首次升级老配置时打 `_legacyPermissions=true` 标记触发引导。
+     */
+    inheritance?: 'strict-inherit' | 'child-narrow' | 'independent';
+    /** 用户级 deny 规则（tool specifier 语法，例：'Bash(rm -rf *)'、'Write(/etc/*)'） */
+    deny?: string[];
+    /** 用户级 ask 规则 */
+    ask?: string[];
+    /** 用户级 allow 规则（最低优先级，不能压过 deny） */
+    allow?: string[];
+    /**
+     * 内部标记：true 表示配置升级到 6.8.x 但用户尚未显式声明 inheritance。
+     * UI 检测到该标记会弹一次性引导，提醒用户选择继承策略。
+     */
+    _legacyPermissions?: boolean;
   };
   ui: {
     theme: 'light' | 'dark' | 'system';

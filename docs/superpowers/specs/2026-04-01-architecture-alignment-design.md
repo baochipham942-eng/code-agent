@@ -37,6 +37,18 @@ M4 (Multi-Model + Operator)
   ↑ 整合 M1-M3 所有基础设施
 ```
 
+## 2026-05-13 迭代状态更新
+
+本轮多 Agent 协作把三个原本分散在 M2/M3/M4 的能力推进到独立 feature 分支。它们还未并入 `main`，但分支已经有明确代码、测试和验证数据，正式 spec 的口径按这些分支更新。
+
+| 分支 | 对应里程碑 | 已落地内容 | 验证口径 |
+|------|------------|------------|----------|
+| `feature/doctor-command` | M4-S6 | `/doctor` 从 5 类诊断升级为 `doctorRunner.runDoctor()` 聚合层，覆盖 9 categories / 24 items；CLI slash、GUI `ProviderDoctorDialog`、`provider.run_doctor` IPC 和启动"已是最新版本"toast 共用同一报告模型 | 7 commits，`tests/main/diagnostics/doctorRunner.test.ts` 6 条 vitest；实跑报告 9 categories / 24 items / 约 3.05s |
+| `feature/permission-inheritance` | M2-Task 5 partial + M3 | 接通 `parentContext`、`buildChildContext`、`SubAgentPermissionManager`、`PolicyEngine.loadUserRules`、`UserConfigSource`；默认 `strict-inherit`，用户 `deny/ask/allow` 级联到 subagent；reviewer 不能派生 writer | 7 commits，52/52 权限测试通过；覆盖 26 AC、6 条 grandfathering、20 条 unit |
+| `feature/agent-customization` | M2 子 Agent 定义 + Operator UI | `~/.code-agent/agents/*.md` 与 `<cwd>/.code-agent/agents/*.md` 进入 `agentRegistry` 单一来源；project > user > builtin；double-buffer 热加载；`spawn_agent`、Task 工具、CLI `list-agents`、@mention、StatusBar AgentSwitcher 共用 registry | 8 commits，集成测试覆盖 registry、hot reload、spawn/task/list-agents/UI store；热加载验证约 207ms |
+
+合并建议保持本轮顺序：`doctor` 先合并，`permission-inheritance` 单独走安全说明，`agent-customization` 最后处理与 `App.tsx` 的轻微文本冲突。
+
 ---
 
 ## M1：关键路径端到端 — Token + 上下文投影 + Loop 恢复
@@ -319,6 +331,27 @@ Mailbox 消息类型：
   - In-process：Map<agentId, MailboxMessage[]>（默认）
   - File-based：`{sessionDir}/agents/{agentId}/mailbox.jsonl`（swarm 场景）
 
+### M2-S6：用户自定义 Agent Registry（2026-05-13 增量）
+
+**现状**：`coreAgents.ts` 已经有 `loadCustomAgents()` 和 `agentMdLoader.ts`，但 spawn 路径仍通过 `getPredefinedAgent()` 读取模块加载期常量 `PREDEFINED_AGENTS`，自定义 agent 对聊天 spawn、Task 工具和 CLI 都不可见。
+**目标**：把 builtin / user / project 三层 agent 定义收敛到 `agentRegistry`，所有入口共享同一份可热加载注册表。
+
+注册层级：
+
+| 层级 | 路径 | 优先级 | 用途 |
+|------|------|--------|------|
+| project | `<cwd>/.code-agent/agents/*.md` | 最高 | 项目专属 agent，覆盖同名 user/builtin |
+| user | `~/.code-agent/agents/*.md` | 中 | 用户长期自定义 agent，可覆盖同名 builtin |
+| builtin | `CORE_AGENT_IDS` / core agent definitions | 最低 | 内置 coder/reviewer/explore/plan/awaiter |
+
+关键约束：
+- Markdown frontmatter 与正文作为 agent 定义来源，字段至少包含 `name`、`description`、`model`、`tools`、`readonly`、`context-level`。
+- `agentRegistry` 使用 double-buffer：先在局部 `Map` 完整构建下一版，再原子替换当前引用，避免热加载时 in-flight spawn 读到半成品。
+- `resolveAgent(id)` 是上层入口；`getBuiltinAgent(id)` 保留给内部需要绕过用户覆盖的路径。
+- `agents:list` IPC、CLI `list-agents`、ChatInput @mention、StatusBar AgentSwitcher 都消费 `listAllAgents()`，并显示 `source: builtin | user | project`。
+
+当前分支状态：`feature/agent-customization` 已把 registry、IPC、CLI、Task 工具 validation、renderer store 和 StatusBar UI 接通。`activeAgentId` 自动作为下一轮默认 role 的聊天发送链路仍留作后续小切片。
+
 ---
 
 ## M3：权限矩阵 + 事件分层 + 连续性协议
@@ -338,6 +371,7 @@ Decision Sources (parallel evaluation):
   ├─ Mode State       — session 级语义（default/auto/plan/bypass）
   ├─ Hooks            — PreToolUse hook 可 allow/deny/ask
   ├─ Classifier       — 上下文风险评估（可选）
+  ├─ User Config      — 用户级 deny/ask/allow（settings.permissions）
   └─ Policy           — 企业级管控（managed settings）
 
                   ↓ first-valid-wins
@@ -354,6 +388,7 @@ Decision Sources (parallel evaluation):
 - 改造 `src/main/permissions/policyEngine.ts`：作为 guardFabric 的一个 source
 - 新建 `src/main/permissions/hookSource.ts`：PreToolUse hook 作为决策源
 - 新建 `src/main/permissions/classifierSource.ts`：可选的上下文风险评估
+- 新建 `src/main/permissions/userConfigSource.ts`：把 `settings.permissions.deny/ask/allow` 接入 GuardFabric；用户级 deny 需要传递到主 agent 和所有 subagent
 
 ### M3-S2：拓扑感知裁决
 
@@ -373,6 +408,27 @@ Decision Sources (parallel evaluation):
   - Interactive topology（main/teammate）→ fail-open（降级到 ask）
   - Headless topology（async_agent）→ fail-closed（直接 deny）
 - Classifier 超时/不可用时：按拓扑类型决定 fail-open 或 fail-closed
+
+### M3-S2.5：Subagent 权限继承（2026-05-13 增量）
+
+**现状**：`SubAgentPermissionManager`、`buildChildContext`、`denyRules.addDenyRule` 和 `PolicyEngine.loadUserRules` 已存在，但实际 caller 没把 `parentContext` 传入 subagent 执行路径，plan→coder、reviewer→coder、CI 子代理都可能绕过父级权限语义。
+**目标**：M2-Task 5 partial 先只锁 `parentContext` 和 deny 级联，AgentTask/profile matrix 留到 full 版本。
+
+继承模式：
+
+| 模式 | 语义 | 默认 |
+|------|------|------|
+| `strict-inherit` | 子 agent 是父 agent 的真子集：tools 取交集、deny 取并集、permission mode 取更严 | 是 |
+| `child-narrow` | 子 agent 可以在父集合内继续收窄，也可在父允许范围内细调 ask/allow | 否 |
+| `independent` | 子 agent 独立运行，但仍受 GuardFabric topology 和用户级 deny 规则约束 | 否，仅兼容老 caller |
+
+强约束：
+- 用户 `settings.permissions.deny` 必须对主 agent 和 subagent 同时生效，`ask/allow` 不能压过 deny。
+- CI / plan / readonly 父级语义进入 `parentContext`，subagent 不能把父级写权限、网络权限或危险命令限制放宽。
+- reviewer / readonly role 禁止派生 writer role，避免"审查 agent 自己召唤 coder 写文件"。
+- 没有显式 parentContext 的老 caller 通过 P4 auto-derive 自动补齐，同时保留 grandfathering 提示，减少旧配置突然失效。
+
+当前分支状态：`feature/permission-inheritance` 已完成 `userConfigSource`、`childContext` 三档合并算法、`spawnAgent` parentContext 注入、`subagentExecutor` auto-derive、settings UI 和 52 条权限测试。
 
 ### M3-S3：事件三通道分离
 
@@ -540,15 +596,17 @@ User Messages → normalizeMessages() → toolToAPISchema() → applyBetaFlags()
 ### M4-S6：Doctor 诊断命令
 
 变更清单：
-- 新增 `/doctor` 命令（`src/cli/commands/doctor.ts` + `src/main/ipc/doctor.ipc.ts`）
-- 诊断项：
-  - **环境**：Node 版本、Rust 工具链、Python（ASR 依赖）
-  - **网络**：代理连通性（7897 端口）、各 provider API 可达性
-  - **配置**：API keys 有效性（调用 /models 接口验证）、MCP server 状态
-  - **数据库**：SQLite integrity check、Supabase 连接状态
-  - **磁盘**：session 目录大小、日志目录大小
-- 输出：结构化诊断报告（pass/warn/fail per item）
-- `/context` 命令集成（M1-S6 的 CLI + Web 双模式）
+- 新增 `doctorRunner.runDoctor()` 聚合层，CLI 和 GUI 共享同一个 `DoctorReport`，避免 `run_diagnostics` / `run_doctor` 双份逻辑漂移。
+- `/doctor` 命令通过 shared slash command 注册，CLI 输出分段报告，GUI 复用 `ProviderDoctorDialog`。
+- IPC 走 `provider.run_doctor` 兼容扩展；旧 `doctor.ipc.ts` 保持 shim，旧 4 项环境诊断不丢。
+- 诊断覆盖 9 类：environment、database、disk、network、provider health、MCP、hooks、version、config / provider readiness。
+- 状态语义统一为 `pass/warn/fail/skip`：MCP `lazy` 计为 `skip`，`connecting` 计为 `warn`，`error` 计为 `fail`；网络和版本检查超时/失败降级为 `warn`，不让诊断命令本身卡死。
+- 启动更新检查增加"已是最新版本"轻提示，`hasUpdate=true` 仍走原有 update banner。
+
+当前分支状态：
+- `feature/doctor-command` 已完成 7 个 step commit。
+- 新增/修改核心文件包括 `src/main/diagnostics/doctorRunner.ts`、`src/main/diagnostics/checks/*`、`src/shared/commands/definitions/doctorCommands.ts`、`src/renderer/components/features/settings/ProviderDoctorDialog.tsx`。
+- 验证为 6 条 `doctorRunner` vitest + 一次实跑 9 categories / 24 items / 约 3.05s。
 
 ---
 
@@ -574,11 +632,14 @@ M1:
 M2:
   src/main/prompts/overlayEngine.ts         (叠加引擎)
   src/main/prompts/profiles/                (Profile 定义)
+  src/main/agent/agentRegistry.ts           (Agent 定义注册中心)
+  src/main/ipc/agentRegistry.ipc.ts         (Agent registry IPC)
   src/main/agent/agentTask.ts               (生命周期状态机)
   src/main/agent/mailboxBridge.ts           (Mailbox 桥接)
 
 M3:
   src/main/permissions/guardFabric.ts       (多源竞争)
+  src/main/permissions/userConfigSource.ts  (用户 deny/ask/allow 决策源)
   src/main/permissions/hookSource.ts        (Hook 决策源)
   src/main/permissions/classifierSource.ts  (风险评估源)
   src/main/events/internalEventStore.ts     (持久化事件)
@@ -589,9 +650,10 @@ M4:
   src/main/context/compressionModelRouter.ts (压缩模型路由)
   src/main/agent/agentModelPolicy.ts         (子 agent 模型策略)
   src/main/model/middleware/requestNormalizer.ts (请求规范化)
+  src/main/diagnostics/doctorRunner.ts       (/doctor 聚合层)
+  src/shared/commands/definitions/doctorCommands.ts (/doctor slash command)
   src/renderer/components/TokenWarning.tsx    (实时指示器)
   src/renderer/components/ContextVisualization.tsx (状态面板)
-  src/cli/commands/doctor.ts                 (诊断命令)
   src/main/ipc/doctor.ipc.ts                (诊断 IPC)
 ```
 

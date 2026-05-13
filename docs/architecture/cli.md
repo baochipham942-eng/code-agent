@@ -49,6 +49,8 @@ ca [command] [options]
 
 辅助命令：`ca list-tools`、`ca list-agents`、`ca export`
 
+`ca list-agents` 现在从 `agentRegistry` 读取 builtin / user / project 三层定义，并输出 `source` 字段。用户级 agent 放在 `~/.code-agent/agents/*.md`，项目级 agent 放在 `<cwd>/.code-agent/agents/*.md`，项目级同名定义优先。
+
 ---
 
 ## 核心架构
@@ -112,6 +114,7 @@ ca chat [--model moonshot/kimi-k2.5] [--from-pr <url>]
 | `/cost` | Token 用量 + 成本估算 |
 | `/tools` | 列出已加载工具 |
 | `/skills` | 列出已挂载 skill |
+| `/doctor` | 运行 9 类本地健康检查，输出 pass/warn/fail/skip 报告 |
 | `/sessions` | 列出最近会话 |
 | `/restore <id>` | 恢复历史会话 |
 | `/config` | 当前配置 |
@@ -119,6 +122,18 @@ ca chat [--model moonshot/kimi-k2.5] [--from-pr <url>]
 | `!cmd` | Shell 快捷方式 |
 
 **PR 支持**：`--from-pr <url>` 解析 GitHub PR，通过 `gh` CLI 获取信息并注入上下文。
+
+### /doctor — 本地健康诊断
+
+`/doctor` 复用主应用的 `doctorRunner.runDoctor()`，CLI 和 GUI 输出同一份 `DoctorReport`。报告覆盖 environment、database、disk、network、provider health、MCP、hooks、version、config / provider readiness 9 类，共 24 个检查项。
+
+状态语义：
+- `pass`：检查通过。
+- `warn`：可继续工作但需要用户处理，例如 provider 超时、版本检查失败、MCP connecting。
+- `fail`：本地能力不可用或配置错误，例如 MCP error、SQLite integrity 失败。
+- `skip`：资源尚未配置或 lazy server 未触发，不计入 fail。
+
+MCP `lazy` 明确标为 `skip`，避免新机器首启就被误报为失败；network 和 version 检查有 per-check timeout，超时返回 `warn`，CLI 不会一直卡住。
 
 ### run — 单次执行
 

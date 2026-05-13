@@ -92,4 +92,31 @@ describe('httpTransport domain API', () => {
     });
   });
 
+  it('routes agent interrupt through the web runtime interrupt endpoint', async () => {
+    const api = createHttpDomainAPI('http://localhost:8180');
+    const payload = {
+      content: '补一句',
+      sessionId: 'session-running',
+      clientMessageId: 'client-msg-1',
+      context: {
+        runtimeInput: { mode: 'supplement' },
+      },
+    };
+
+    await api.invoke(IPC_DOMAINS.AGENT, 'interrupt', payload);
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchMock.mock.calls[0];
+    const requestInit = init as RequestInit;
+    expect(url).toBe('http://localhost:8180/api/interrupt');
+    expect(requestInit).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer test-token',
+      },
+    });
+    expect(JSON.parse(String(requestInit.body))).toEqual(payload);
+  });
+
 });

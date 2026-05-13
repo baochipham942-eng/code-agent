@@ -3,8 +3,12 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AgentEvent, Message } from '../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
+import type {
+  ConversationEnvelopeContext,
+  WorkbenchMessageMetadata,
+} from '../../shared/contract/conversationEnvelope';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -31,7 +35,7 @@ export interface PendingLocalToolCall {
 }
 
 interface AgentRouterDeps {
-  activeAgentLoops: Map<string, { cancel(reason?: string): void | Promise<void> }>;
+  activeAgentLoops: Map<string, ActiveAgentLoop>;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
   logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
@@ -42,6 +46,16 @@ interface AgentRouterDeps {
 }
 
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
+
+export interface ActiveAgentLoop {
+  cancel(reason?: string): void | Promise<void>;
+  steer?(
+    newMessage: string,
+    clientMessageId?: string,
+    attachments?: MessageAttachment[],
+    metadata?: MessageMetadata,
+  ): void | Promise<void>;
+}
 
 function extractWorkingDirectory(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -60,6 +74,41 @@ async function ensureDefaultWebWorkingDirectory(): Promise<string> {
 
 function buildSessionTitle(prompt: string): string {
   return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+}
+
+function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMetadata | undefined {
+  if (!context) return undefined;
+
+  const workbench: WorkbenchMessageMetadata = {};
+  if (context.workingDirectory !== undefined) {
+    workbench.workingDirectory = context.workingDirectory;
+  }
+  if (context.routing) {
+    workbench.routingMode = context.routing.mode;
+    if (context.routing.targetAgentIds?.length) {
+      workbench.targetAgentIds = [...context.routing.targetAgentIds];
+    }
+  }
+  if (context.selectedSkillIds?.length) {
+    workbench.selectedSkillIds = [...context.selectedSkillIds];
+  }
+  if (context.selectedConnectorIds?.length) {
+    workbench.selectedConnectorIds = [...context.selectedConnectorIds];
+  }
+  if (context.selectedMcpServerIds?.length) {
+    workbench.selectedMcpServerIds = [...context.selectedMcpServerIds];
+  }
+  if (context.designBrief) {
+    workbench.designBrief = context.designBrief;
+  }
+  if (context.executionIntent) {
+    workbench.executionIntent = { ...context.executionIntent };
+  }
+  if (context.runtimeInput) {
+    workbench.runtimeInputMode = context.runtimeInput.mode;
+  }
+
+  return Object.keys(workbench).length > 0 ? { workbench } : undefined;
 }
 
 function upsertCachedMessage(messages: CachedMessage[], message: CachedMessage): CachedMessage[] {
@@ -889,6 +938,75 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       res.json({ message: 'Cancelled', sessionId: lastKey });
     } else {
       res.json({ message: 'No active agent to cancel' });
+    }
+  });
+
+  router.post('/interrupt', async (req: Request, res: Response) => {
+    const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+    const content = typeof body.content === 'string'
+      ? body.content
+      : typeof body.prompt === 'string'
+        ? body.prompt
+        : '';
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
+    const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined;
+    const attachments = Array.isArray(body.attachments)
+      ? body.attachments as MessageAttachment[]
+      : undefined;
+    const context = body.context && typeof body.context === 'object'
+      ? body.context as ConversationEnvelopeContext
+      : undefined;
+
+    if (!content.trim()) {
+      res.status(400).json({ success: false, error: { code: 'INVALID_PAYLOAD', message: 'Missing interrupt content' } });
+      return;
+    }
+
+    const activeLoopEntry = sessionId
+      ? [sessionId, activeAgentLoops.get(sessionId)] as const
+      : [...activeAgentLoops.entries()].at(-1);
+    const targetSessionId = activeLoopEntry?.[0];
+    const activeLoop = activeLoopEntry?.[1];
+
+    if (!targetSessionId || !activeLoop || typeof activeLoop.steer !== 'function') {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'NO_ACTIVE_RUN',
+          message: 'Agent not initialized for session',
+        },
+      });
+      return;
+    }
+
+    broadcastSSE('agent:event', {
+      type: 'interrupt_start',
+      data: { message: '正在调整方向...', newUserMessage: content },
+      sessionId: targetSessionId,
+    });
+
+    try {
+      await Promise.resolve(activeLoop.steer(
+        content,
+        clientMessageId,
+        attachments,
+        toWorkbenchMetadata(context),
+      ));
+      broadcastSSE('agent:event', {
+        type: 'interrupt_complete',
+        data: { message: '已调整方向', newUserMessage: content },
+        sessionId: targetSessionId,
+      });
+      res.json({ success: true, data: null });
+    } catch (error) {
+      logger.error(`[AgentRouter] Failed to interrupt active run for ${targetSessionId}:`, error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERRUPT_FAILED',
+          message: formatError(error),
+        },
+      });
     }
   });
 

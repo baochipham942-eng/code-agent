@@ -121,7 +121,7 @@ import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createStaticRouter } from './routes/static';
 import { createAgentRouter } from './routes/agent';
-import type { PendingLocalToolCall } from './routes/agent';
+import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
 import { createSessionsRouter } from './routes/sessions';
 import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
@@ -134,8 +134,8 @@ onRendererPush((channel, data) => {
   broadcastSSE(channel, data);
 });
 
-// 活跃 AgentLoop 实例追踪（用于 cancel）
-const activeAgentLoops = new Map<string, { cancel(): void }>();
+// 活跃 AgentLoop 实例追踪（用于 cancel / interrupt）
+const activeAgentLoops = new Map<string, ActiveAgentLoop>();
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();

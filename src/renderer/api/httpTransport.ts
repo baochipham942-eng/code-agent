@@ -679,14 +679,21 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
       const cleanDomain = domain.replace(/^domain:/, '');
 
       try {
-        const res = await fetch(`${baseUrl}/api/domain/${cleanDomain}/${action}`, {
+        const endpoint = cleanDomain === 'agent' && action === 'interrupt'
+          ? `${baseUrl}/api/interrupt`
+          : `${baseUrl}/api/domain/${cleanDomain}/${action}`;
+        const body = cleanDomain === 'agent' && action === 'interrupt'
+          ? payload
+          : {
+              action,
+              payload,
+              requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            };
+
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({
-            action,
-            payload,
-            requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (res.ok) {

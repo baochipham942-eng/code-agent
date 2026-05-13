@@ -5,11 +5,12 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCLIAgent } from '../../../src/cli/adapter';
-import { createAgentRouter } from '../../../src/web/routes/agent';
+import { createAgentRouter, type ActiveAgentLoop } from '../../../src/web/routes/agent';
 import { inMemorySessions, sessionMessages, setDbAvailable } from '../../../src/web/helpers/sessionCache';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
+const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
 const mockDb = vi.hoisted(() => ({
   getSession: vi.fn(() => ({
@@ -59,7 +60,7 @@ vi.mock('../../../src/main/telemetry', () => ({
 
 let server: http.Server | undefined;
 let baseUrl = '';
-const activeAgentLoops = new Map<string, { cancel(reason?: string): void | Promise<void> }>();
+const activeAgentLoops = new Map<string, ActiveAgentLoop>();
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
 let tempDataDir: string | undefined;
 
@@ -139,6 +140,7 @@ describe('createAgentRouter', () => {
     mockCreateAgentLoop.mockImplementation(() => ({
       run: mockRun,
       cancel: mockCancel,
+      steer: mockSteer,
     }));
     await startAgentApi();
   });
@@ -184,6 +186,64 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('routes /api/interrupt to the active loop steer method', async () => {
+    activeAgentLoops.set('session-steer', {
+      cancel: mockCancel,
+      steer: mockSteer,
+    });
+
+    const response = await fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '补一句',
+        sessionId: 'session-steer',
+        clientMessageId: 'client-msg-1',
+        attachments: [{ name: 'note.txt' }],
+        context: {
+          workingDirectory: '/tmp/project',
+          runtimeInput: { mode: 'supplement' },
+        },
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(body).toEqual({ success: true, data: null });
+    expect(mockSteer).toHaveBeenCalledWith(
+      '补一句',
+      'client-msg-1',
+      [{ name: 'note.txt' }],
+      {
+        workbench: {
+          workingDirectory: '/tmp/project',
+          runtimeInputMode: 'supplement',
+        },
+      },
+    );
+  });
+
+  it('rejects /api/interrupt when there is no active loop for the session', async () => {
+    const response = await fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '补一句',
+        sessionId: 'missing-session',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({
+      success: false,
+      error: {
+        code: 'NO_ACTIVE_RUN',
+      },
+    });
+    expect(mockSteer).not.toHaveBeenCalled();
+  });
+
   it('preserves structured artifact metadata from tool_call_end in the SSE-backed session cache', async () => {
     mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
       run: vi.fn(async () => {
@@ -220,6 +280,7 @@ describe('createAgentRouter', () => {
         });
       }),
       cancel: mockCancel,
+      steer: mockSteer,
     }));
 
     const response = await fetch(`${baseUrl}/api/run`, {

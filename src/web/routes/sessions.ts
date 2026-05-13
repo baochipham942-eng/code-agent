@@ -9,6 +9,7 @@ import {
   sessionMessages,
   inMemorySessions,
 } from '../helpers/sessionCache';
+import type { ActiveAgentLoop } from './agent';
 
 interface SessionsRouterDeps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): logger 第二参以后是任意上下文对象（Logger 的标准 idiom），应抽 Logger 接口共享 unknown[] 形参
@@ -17,7 +18,7 @@ interface SessionsRouterDeps {
   tryGetSessionManager: () => Promise<any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient 实例，应 import { SupabaseClient } from '@supabase/supabase-js'
   getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
-  activeAgentLoops: Map<string, { cancel(reason?: string): void | Promise<void> }>;
+  activeAgentLoops: Map<string, ActiveAgentLoop>;
 }
 
 export function createSessionsRouter(deps: SessionsRouterDeps): Router {

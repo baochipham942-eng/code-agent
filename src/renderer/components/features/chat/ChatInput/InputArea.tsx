@@ -72,6 +72,14 @@ export interface InputAreaRef {
   getTextarea: () => HTMLTextAreaElement | null;
 }
 
+export function shouldBrowseHistoryOnArrowUp(selectionStart: number, selectionEnd: number): boolean {
+  return selectionStart === selectionEnd && selectionStart === 0;
+}
+
+export function shouldBrowseHistoryOnArrowDown(value: string, selectionStart: number, selectionEnd: number): boolean {
+  return selectionStart === selectionEnd && selectionStart === value.length;
+}
+
 /**
  * 输入区域 - 包含文本输入框和附件按钮
  */
@@ -132,18 +140,16 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       }
 
       // 历史命令浏览（上下箭头）
-      // 仅在光标在第一行时响应上箭头，在最后一行时响应下箭头
+      // 只有光标已经到输入开头/结尾时才接管，先保留 textarea 原生光标移动。
       const textarea = textareaRef.current;
       if (!textarea) return;
 
-      const cursorPosition = textarea.selectionStart;
-      const textBeforeCursor = value.substring(0, cursorPosition);
-      const textAfterCursor = value.substring(cursorPosition);
+      const selectionStart = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
 
       // 上箭头 - 获取上一条历史
       if (e.key === 'ArrowUp' && onHistoryPrev) {
-        // 仅在光标在第一行时触发
-        if (!textBeforeCursor.includes('\n')) {
+        if (shouldBrowseHistoryOnArrowUp(selectionStart, selectionEnd)) {
           const prevInput = onHistoryPrev(value);
           if (prevInput !== null) {
             e.preventDefault();
@@ -159,8 +165,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
 
       // 下箭头 - 获取下一条历史
       if (e.key === 'ArrowDown' && onHistoryNext) {
-        // 仅在光标在最后一行时触发
-        if (!textAfterCursor.includes('\n')) {
+        if (shouldBrowseHistoryOnArrowDown(value, selectionStart, selectionEnd)) {
           const nextInput = onHistoryNext();
           if (nextInput !== null) {
             e.preventDefault();

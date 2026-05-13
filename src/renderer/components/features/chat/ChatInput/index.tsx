@@ -32,6 +32,7 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import { AgentSwitcher } from '../../../StatusBar/AgentSwitcher';
 import ipcService from '../../../../services/ipcService';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import {
@@ -775,6 +776,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
+
+            {/* Agent 切换器 — 模型选择器左侧 (#141 follow-up: 之前 StatusBar 整体未 mount，导致 AgentSwitcher 不可见) */}
+            <div className="text-xs">
+              <AgentSwitcher />
+            </div>
 
             {/* 模型选择器 */}
             <div className="text-xs">

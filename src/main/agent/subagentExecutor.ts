@@ -36,7 +36,8 @@ import { getContextWindow, SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, createChildAbortController } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard, type AgentMessage } from './spawnGuard';
-import { buildChildContext, type ParentContext } from './childContext';
+import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
+import { getPermissionModeManager } from '../permissions/modes';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { estimateTokens } from '../context/tokenEstimator';
 import { getWarningLevel } from '../../shared/contract/contextHealth';
@@ -480,44 +481,61 @@ export class SubagentExecutor {
     let effectiveToolNames = config.availableTools;
 
     // M2-Task 5 partial: 走 buildChildContext 三档合并算法
-    // - 有 parentContext：合并算法接管（默认 strict-inherit）
-    // - 没 parentContext：fallback 到 legacy 行为（warn 一次给老 caller），plan AC-5
-    if (context.parentContext) {
-      // 从 settings 读 inheritance 配置（默认 strict-inherit）
-      let inheritance: 'strict-inherit' | 'child-narrow' | 'independent' = 'strict-inherit';
-      try {
-        const cfg = getConfigService().getSettings();
-        inheritance = cfg.permissions.inheritance ?? 'strict-inherit';
-      } catch {
-        // 配置服务未就绪（单测环境）时按默认 strict-inherit 走
-      }
-
-      const childCtx = buildChildContext(
-        {
-          agentType: config.name,
-          allowedTools: config.availableTools,
-          readOnly: (config.permissionPreset as string) === 'review' || (config.permissionPreset as string) === 'audit',
-        },
-        context.parentContext,
-        { inheritance },
-      );
-
-      // tools 交集是核心约束（永不扩张），三档都生效
-      effectiveToolNames = childCtx.toolPool;
-
-      logger.info(`[${config.name}] childContext applied`, {
-        inheritance,
-        parentTools: context.parentContext.availableTools.length,
-        childDeclared: config.availableTools.length,
-        toolPool: effectiveToolNames.length,
-        denyMerged: childCtx.permissions.deny.length,
-        effectiveMode: childCtx.permissions.effectiveMode,
+    // P4 收敛点：caller 没显式传 parentContext 时，自动从 ToolContext 推导，
+    // 而不是让 10+ caller 各自写一遍 parentContext 字面量（plan §3.4 / R4）。
+    let effectiveParentContext: ParentContext | undefined = context.parentContext;
+    if (!effectiveParentContext) {
+      const wideCtx = context.toolContext as ToolContext & {
+        parentAvailableTools?: string[];
+        parentPermissionMode?: string;
+      };
+      effectiveParentContext = buildParentContextFromToolContext(context.toolContext, {
+        // 顶层 agent 默认看到所有声明的工具；availableTools 为空时不会触发 narrowing
+        // （toolPool = parent.allTools ∩ child.declared 会退化成 child.declared，
+        //  也就是不变）。
+        availableTools: wideCtx.parentAvailableTools ?? [],
+        permissionMode: wideCtx.parentPermissionMode ?? (getPermissionModeManager().getMode() as string),
       });
-    } else {
-      // 老 caller 没传 parentContext：warn 一次但不破坏（plan AC-5），后续 P4 收敛
-      logger.warn(`[${config.name}] No parentContext supplied — subagent runs without inheritance merge. ` +
-        `Caller should pass parentContext via buildParentContextFromToolContext (M2-Task 5).`);
+      logger.debug(`[${config.name}] parentContext auto-derived from ToolContext (caller did not provide explicit context)`);
     }
+
+    // 从 settings 读 inheritance 配置（默认 strict-inherit）
+    let inheritance: 'strict-inherit' | 'child-narrow' | 'independent' = 'strict-inherit';
+    try {
+      const cfg = getConfigService().getSettings();
+      inheritance = cfg.permissions.inheritance ?? 'strict-inherit';
+    } catch {
+      // 配置服务未就绪（单测环境）时按默认 strict-inherit 走
+    }
+
+    const childCtx = buildChildContext(
+      {
+        agentType: config.name,
+        allowedTools: config.availableTools,
+        readOnly: (config.permissionPreset as string) === 'review' || (config.permissionPreset as string) === 'audit',
+      },
+      effectiveParentContext,
+      { inheritance },
+    );
+
+    // tools 交集是核心约束（永不扩张），三档都生效；
+    // 当 parent.availableTools 为空（caller 没显式传）时 intersect 结果为 []，
+    // 此时退化为 child.allowedTools（避免无害 caller 拿不到任何工具）。
+    if (effectiveParentContext.availableTools.length === 0) {
+      effectiveToolNames = config.availableTools;
+    } else {
+      effectiveToolNames = childCtx.toolPool;
+    }
+
+    logger.info(`[${config.name}] childContext applied`, {
+      inheritance,
+      parentTools: effectiveParentContext.availableTools.length,
+      childDeclared: config.availableTools.length,
+      toolPool: effectiveToolNames.length,
+      denyMerged: childCtx.permissions.deny.length,
+      effectiveMode: childCtx.permissions.effectiveMode,
+      explicitParent: !!context.parentContext,
+    });
 
     const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);
     const allowedNames = new Set(allowedToolDefs.map((d) => d.name));

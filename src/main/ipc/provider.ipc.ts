@@ -17,14 +17,14 @@ import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 // Types
 // ----------------------------------------------------------------------------
 
-interface TestConnectionPayload {
+export interface TestConnectionPayload {
   provider: string;
   apiKey: string;
   baseUrl?: string;
   model?: string;
 }
 
-interface TestConnectionResult {
+export interface TestConnectionResult {
   success: boolean;
   latencyMs: number;
   error?: {
@@ -120,7 +120,7 @@ function mapHttpError(status: number, body: string): TestConnectionResult['error
   }
 }
 
-async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
+export async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
   const config = buildTestConfig(payload.provider, payload.apiKey, payload.baseUrl);
 
   if (!config) {

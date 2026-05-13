@@ -132,6 +132,8 @@ interface AppState {
   taskPanelTab: TaskPanelTab;
   showAgentTeamPanel: boolean;
   selectedSwarmAgentId: string | null;
+  /** 用户在 StatusBar 选中的默认 agent id（来自 agentRegistryStore），持久化到 localStorage。 */
+  activeAgentId: string | null;
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
   showCronCenter: boolean;
@@ -222,6 +224,8 @@ interface AppState {
   setTaskPanelTab: (tab: TaskPanelTab) => void;
   setShowAgentTeamPanel: (show: boolean) => void;
   setSelectedSwarmAgentId: (agentId: string | null) => void;
+  /** 设置默认 agent；传 null 表示回到 builtin 'coder'（spawn 端处理）。 */
+  setActiveAgentId: (agentId: string | null) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
@@ -284,6 +288,18 @@ interface AppState {
   setCacheStats: (stats: { promptCacheHits: number; promptCacheMisses: number; totalCachedTokens: number } | null) => void;
 }
 
+// localStorage key for activeAgentId 持久化
+const ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
+
+function loadInitialActiveAgentId(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(ACTIVE_AGENT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 // Default model config — 引用 shared/constants.ts 常量
 const defaultModelConfig: ModelConfig = {
   provider: DEFAULT_PROVIDER,
@@ -304,6 +320,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   taskPanelTab: 'monitor',
   showAgentTeamPanel: false,
   selectedSwarmAgentId: null,
+  activeAgentId: loadInitialActiveAgentId(),
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showCronCenter: false,
@@ -389,6 +406,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),
   setSelectedSwarmAgentId: (agentId) => set({ selectedSwarmAgentId: agentId }),
+  setActiveAgentId: (agentId) => {
+    set({ activeAgentId: agentId });
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (agentId) localStorage.setItem(ACTIVE_AGENT_STORAGE_KEY, agentId);
+        else localStorage.removeItem(ACTIVE_AGENT_STORAGE_KEY);
+      }
+    } catch {
+      // localStorage 在隐私模式下可能不可用——降级为纯内存状态
+    }
+  },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),

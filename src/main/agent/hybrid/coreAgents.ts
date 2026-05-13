@@ -447,14 +447,32 @@ export function getCoreAgent(id: CoreAgentId): CoreAgentConfig {
 }
 
 /**
- * 获取角色配置（优先检查自定义 agents，然后检查内置）
+ * 获取角色配置（优先检查自定义 agents，然后检查内置）。
+ *
+ * 实现走 agentRegistry（dynamic require 防止循环依赖）。
+ * 旧 customAgentCache 保留只是为了向后兼容 getCustomAgentCache() 调用方，
+ * 不再被本函数使用。
  */
 export function getAgent(id: string): CoreAgentConfig | undefined {
-  // Check custom agents first
+  try {
+    // dynamic require 避免 agentRegistry → coreAgents 的循环
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const reg = require('../agentRegistry') as typeof import('../agentRegistry');
+    const resolved = reg.resolveAgent(id);
+    if (resolved) {
+      // 剥掉 source 字段，让返回值兼容 CoreAgentConfig 旧契约
+       
+      const { source: _source, ...rest } = resolved;
+      return rest;
+    }
+  } catch {
+    /* registry not ready yet (e.g. during bootstrap) — fall back */
+  }
+  // Legacy custom cache fallback（保留向后兼容）
   if (customAgentCache?.has(id)) {
     return customAgentCache.get(id);
   }
-  // Fall back to built-in
+  // Built-in
   if (isCoreAgent(id)) {
     return CORE_AGENTS[id];
   }

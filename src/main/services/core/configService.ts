@@ -494,6 +494,14 @@ export class ConfigService implements IReadConfigService {
   }
 
   /**
+   * 智谱官方 API key。视觉模型走官方端点（0ki 代理订阅不含视觉），
+   * 优先读 ZHIPU_OFFICIAL_API_KEY，缺失时回落到 ZHIPU_API_KEY。
+   */
+  public getZhipuOfficialKey(): string | undefined {
+    return process.env.ZHIPU_OFFICIAL_API_KEY || this.getApiKey('zhipu');
+  }
+
+  /**
    * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, SkillsMP, etc.)
    * Priority: secure storage > environment variable
    */

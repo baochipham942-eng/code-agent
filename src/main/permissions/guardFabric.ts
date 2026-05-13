@@ -8,6 +8,7 @@
 
 import { getPolicyEngine } from './policyEngine';
 import { HookGuardSource } from './hookSource';
+import { UserConfigSource } from './userConfigSource';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 
@@ -202,6 +203,9 @@ export function getGuardFabric(): GuardFabric {
   if (!instance) {
     instance = new GuardFabric();
     // Register default sources
+    // UserConfigSource 在前面，让 user deny 的 reason 在 trace 上优先显示。
+    // PolicyEngineSource 兜底处理内置规则（priority < 500）。
+    instance.registerSource(new UserConfigSource());
     instance.registerSource(new PolicyEngineSource());
     instance.registerSource(new HookGuardSource());
   }

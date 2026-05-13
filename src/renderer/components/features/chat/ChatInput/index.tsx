@@ -391,11 +391,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const nextEnvelope = buildEnvelope(trimmedValue, attachments, activeRuntimeInputMode);
     const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
+      const draftSnapshot = {
+        value,
+        attachments,
+        runtimeInputMode,
+      };
+      const restoreDraft = () => {
+        setValue(draftSnapshot.value);
+        setAttachments(draftSnapshot.attachments);
+        setRuntimeInputMode(draftSnapshot.runtimeInputMode);
+      };
+
       setRuntimeDraftStatus(null);
       // 添加到输入历史
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
       }
+      setValue('');
+      setAttachments([]);
+      setRuntimeInputMode('supplement');
+
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
       if (nextEnvelope.content.startsWith('!')) {
         const shellCmd = nextEnvelope.content.slice(1).trim();
@@ -406,10 +421,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               context: nextEnvelope.context,
             });
             if (!shouldClearComposerAfterSend(sent)) {
+              restoreDraft();
               inputAreaRef.current?.focus();
               return;
             }
           } catch {
+            restoreDraft();
             if (isProcessing) {
               setRuntimeDraftStatus(runtimeInputMode === 'redirect'
                 ? '改道没发出去，草稿已保留'
@@ -423,10 +440,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         try {
           const sent = await onSend(nextEnvelope);
           if (!shouldClearComposerAfterSend(sent)) {
+            restoreDraft();
             inputAreaRef.current?.focus();
             return;
           }
         } catch {
+          restoreDraft();
           if (isProcessing) {
             setRuntimeDraftStatus(runtimeInputMode === 'redirect'
               ? '改道没发出去，草稿已保留'
@@ -436,9 +455,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           return;
         }
       }
-      setValue('');
-      setAttachments([]);
-      setRuntimeInputMode('supplement');
     }
   };
 

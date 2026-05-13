@@ -54,6 +54,7 @@ import { registerLivePreviewHandlers } from './livePreview.ipc';
 import { registerActivityHandlers } from './activity.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
+import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 
 export * from './types';
 
@@ -219,6 +220,14 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Hook handlers (Hook 列表 + 打开配置)
   registerHookHandlers(ipcMain, getAppService);
+
+  // Agent Registry handlers (自定义 agent 列表 + 变更推送)
+  registerAgentRegistryHandlers(ipcMain, () => {
+    // 用 BrowserWindow.getAllWindows() 拿全部窗口（不光是 main），保证 Lab/Inspector 等子窗口也能收到变更
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { BrowserWindow } = require('../platform') as typeof import('../platform');
+    return BrowserWindow.getAllWindows();
+  });
 
   logger.info('All handlers registered');
 }

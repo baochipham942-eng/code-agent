@@ -57,6 +57,11 @@ import {
   MODEL_CONFIG,
 } from './hybrid';
 
+import {
+  resolveAgent as registryResolveAgent,
+  listAllAgents as registryListAllAgents,
+} from './agentRegistry';
+
 import type { FullAgentConfig } from '../../shared/contract/agentTypes';
 import type { PermissionPreset } from '@shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -111,40 +116,70 @@ export const PREDEFINED_AGENTS: Record<string, FullAgentConfig> = Object.fromEnt
 // ============================================================================
 
 /**
- * 获取预定义 Agent
+ * 获取预定义 / 自定义 Agent。
  *
- * @throws 如果 ID 无效则抛出错误
+ * 路由：先查 agentRegistry（自定义优先 + builtin 兜底），找不到再回退到
+ * PREDEFINED_AGENTS（防御兜底，registry 未初始化时仍可工作）。
+ *
+ * @throws 如果 ID 既不是 builtin、也不在 registry 中则抛错
  */
 export function getPredefinedAgent(id: string): FullAgentConfig {
-  if (!isCoreAgent(id)) {
-    throw new Error(`Invalid agent ID: "${id}". Valid IDs: ${CORE_AGENT_IDS.join(', ')}`);
+  // 1) 自定义优先（含 builtin 兜底）
+  const resolved = registryResolveAgent(id);
+  if (resolved) {
+    return toFullAgentConfig(resolved);
   }
-  return PREDEFINED_AGENTS[id];
+  // 2) registry 未初始化时的最终兜底
+  if (isCoreAgent(id)) {
+    return PREDEFINED_AGENTS[id];
+  }
+  const availableIds = registryListAllAgents().map((a) => a.id);
+  const knownIds = availableIds.length > 0 ? availableIds : [...CORE_AGENT_IDS];
+  throw new Error(`Invalid agent ID: "${id}". Valid IDs: ${knownIds.join(', ')}`);
 }
 
 /**
- * 列出所有预定义 Agent ID
+ * 列出所有预定义 / 自定义 Agent ID。
  */
 export function listPredefinedAgentIds(): string[] {
+  const fromRegistry = registryListAllAgents().map((a) => a.id);
+  if (fromRegistry.length > 0) return fromRegistry;
   return [...CORE_AGENT_IDS];
 }
 
 /**
- * 列出所有预定义 Agent
+ * 列出所有预定义 / 自定义 Agent。
+ *
+ * 返回结构兼容旧调用：{ id, name, description }，额外多挂一个 source 字段。
  */
-export function listPredefinedAgents(): Array<{ id: string; name: string; description: string }> {
+export function listPredefinedAgents(): Array<{
+  id: string;
+  name: string;
+  description: string;
+  source?: 'builtin' | 'user' | 'project';
+}> {
+  const fromRegistry = registryListAllAgents();
+  if (fromRegistry.length > 0) {
+    return fromRegistry.map((a) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      source: a.source,
+    }));
+  }
   return CORE_AGENT_IDS.map(id => ({
     id,
     name: CORE_AGENTS[id].name,
     description: CORE_AGENTS[id].description,
+    source: 'builtin' as const,
   }));
 }
 
 /**
- * 检查是否为预定义 Agent
+ * 检查是否为预定义 / 已注册 Agent
  */
 export function isPredefinedAgent(id: string): boolean {
-  return isCoreAgent(id);
+  return registryResolveAgent(id) !== undefined || isCoreAgent(id);
 }
 
 /**
@@ -245,14 +280,21 @@ export function estimateTaskComplexity(prompt: string): TaskComplexity {
 }
 
 /**
- * 计算最大迭代次数
+ * 计算最大迭代次数。
+ *
+ * 自定义 agent 走 registry 拿到的 maxIterations，builtin 走 CORE_AGENTS。
  */
 export function calculateMaxIterations(agentId: string, prompt: string): number {
-  if (!isCoreAgent(agentId)) {
+  const resolved = registryResolveAgent(agentId);
+  let baseIterations: number;
+  if (resolved) {
+    baseIterations = resolved.maxIterations;
+  } else if (isCoreAgent(agentId)) {
+    baseIterations = CORE_AGENTS[agentId].maxIterations;
+  } else {
     throw new Error(`Invalid agent ID: "${agentId}"`);
   }
 
-  const baseIterations = CORE_AGENTS[agentId].maxIterations;
   const complexity = estimateTaskComplexity(prompt);
 
   const factor = { simple: 0.6, moderate: 1.0, complex: 1.3 }[complexity];
@@ -262,10 +304,12 @@ export function calculateMaxIterations(agentId: string, prompt: string): number 
 }
 
 /**
- * 获取 Agent 的动态最大迭代次数
+ * 获取 Agent 的动态最大迭代次数。
+ *
+ * builtin 和自定义 agent 都走 calculateMaxIterations 做复杂度调节。
  */
 export function getAgentDynamicMaxIterations(agent: FullAgentConfig, prompt?: string): number {
-  if (prompt && isCoreAgent(agent.id)) {
+  if (prompt && (isCoreAgent(agent.id) || registryResolveAgent(agent.id))) {
     return calculateMaxIterations(agent.id, prompt);
   }
   return getAgentMaxIterations(agent);
@@ -284,12 +328,17 @@ export function getAgentDynamicMaxIterations(agent: FullAgentConfig, prompt?: st
  * - coder → powerful (Kimi K2.5)
  */
 export function getSubagentModelConfig(agentId: string): { provider: ModelProvider; model: string } {
-  if (!isCoreAgent(agentId)) {
-    throw new Error(`Invalid agent ID: "${agentId}". Valid IDs: ${CORE_AGENT_IDS.join(', ')}`);
+  const resolved = registryResolveAgent(agentId);
+  if (resolved) {
+    return MODEL_CONFIG[resolved.model];
   }
-
-  const tier = CORE_AGENTS[agentId].model;
-  return MODEL_CONFIG[tier];
+  if (isCoreAgent(agentId)) {
+    const tier = CORE_AGENTS[agentId].model;
+    return MODEL_CONFIG[tier];
+  }
+  const knownIds = registryListAllAgents().map((a) => a.id);
+  const fallback = knownIds.length > 0 ? knownIds.join(', ') : CORE_AGENT_IDS.join(', ');
+  throw new Error(`Invalid agent ID: "${agentId}". Valid IDs: ${fallback}`);
 }
 
 /**

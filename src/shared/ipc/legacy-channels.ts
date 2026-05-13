@@ -360,6 +360,9 @@ export const IPC_CHANNELS = {
 
   // Provider fallback channels (错误处理)
   PROVIDER_FALLBACK: 'provider:fallback',
+
+  // Agent Registry change broadcast (custom .md agents 热加载推送到所有窗口)
+  AGENTS_CHANGED: 'agents:changed',
 } as const;
 
 /** Union type of all IPC channel string literals */

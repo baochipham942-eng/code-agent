@@ -39,6 +39,9 @@ export * from './memory';
 // Built-in Agent types (Gen7+)
 export * from './builtInAgents';
 
+// Agent Registry (custom .md agents — builtin + user + project)
+export * from './agentRegistry';
+
 // Workflow types (Gen7+)
 export * from './workflow';
 

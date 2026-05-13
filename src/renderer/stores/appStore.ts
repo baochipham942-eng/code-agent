@@ -138,6 +138,7 @@ interface AppState {
   showDesktopPanel: boolean;
   showActivityPanel: boolean;
   showCronCenter: boolean;
+  showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
@@ -231,6 +232,7 @@ interface AppState {
   setShowDesktopPanel: (show: boolean) => void;
   setShowActivityPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
+  setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -327,6 +329,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showDesktopPanel: false,
   showActivityPanel: false,
   showCronCenter: false,
+  showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
@@ -424,6 +427,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
+  setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();
     if (show) state.openWorkbenchTab('files');

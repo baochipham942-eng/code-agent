@@ -45,6 +45,8 @@ export interface CronJobDefinition {
   tags?: string[];
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+  /** Computed next run timestamp. Returned by the runtime service; not persisted. */
+  nextRunAt?: number;
   /** Created timestamp */
   createdAt: number;
   /** Last updated timestamp */

@@ -34,6 +34,7 @@ import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
 import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
+import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabilityPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
 import { ActivityPanel } from './components/features/activity/ActivityPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
@@ -87,6 +88,7 @@ export const App: React.FC = () => {
     showSettings,
     setTaskPanelTab,
     showCronCenter,
+    showTimeCapabilityCenter,
     setShowFileExplorer,
     showAgentTeamPanel,
     setShowAgentTeamPanel,
@@ -585,6 +587,10 @@ export const App: React.FC = () => {
       {/* Cron Center - 定时任务中心 */}
       {showCronCenter && (
         <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+      )}
+
+      {showTimeCapabilityCenter && (
+        <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
       )}
 
       {showActivityPanel && (

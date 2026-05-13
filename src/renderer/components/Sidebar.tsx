@@ -33,6 +33,7 @@ import {
   ChevronRight,
   FlaskConical,
   Clock3,
+  CalendarDays,
   Monitor,
   GitBranch,
   ScrollText,
@@ -138,6 +139,8 @@ export const Sidebar: React.FC = () => {
     setShowLab,
     showCronCenter,
     setShowCronCenter,
+    showTimeCapabilityCenter,
+    setShowTimeCapabilityCenter,
     showDesktopPanel,
     setShowDesktopPanel,
     showActivityPanel,
@@ -922,6 +925,13 @@ export const Sidebar: React.FC = () => {
                 >
                   <Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />
                   自动化
+                </button>
+                <button
+                  onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />
+                  Time & Capability
                 </button>
                 {dagPanelEnabled && (
                   <button

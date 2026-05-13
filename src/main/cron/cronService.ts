@@ -178,14 +178,15 @@ export class CronService implements Disposable {
    * Get a job by ID
    */
   getJob(jobId: string): CronJobDefinition | null {
-    return this.jobs.get(jobId)?.definition || null;
+    const job = this.jobs.get(jobId);
+    return job ? this.withRuntimeScheduleState(job) : null;
   }
 
   /**
    * List all jobs
    */
   listJobs(filter?: { enabled?: boolean; tags?: string[] }): CronJobDefinition[] {
-    let jobs = Array.from(this.jobs.values()).map((j) => j.definition);
+    let jobs = Array.from(this.jobs.values()).map((j) => this.withRuntimeScheduleState(j));
 
     if (filter?.enabled !== undefined) {
       jobs = jobs.filter((j) => j.enabled === filter.enabled);
@@ -370,6 +371,14 @@ export class CronService implements Disposable {
     });
 
     console.error(`[CronService] Registered job: ${definition.name} (${definition.id})`);
+  }
+
+  private withRuntimeScheduleState(job: ActiveJob): CronJobDefinition {
+    const nextRun = job.cronInstance?.nextRun() ?? job.nextRun;
+    return {
+      ...job.definition,
+      nextRunAt: nextRun instanceof Date ? nextRun.getTime() : undefined,
+    };
   }
 
   private createCronInstance(definition: CronJobDefinition): Cron | undefined {

@@ -267,6 +267,60 @@ export class CodeAgentMCPServer {
               required: ['command'],
             },
           },
+          {
+            name: 'computer',
+            description: 'Drive macOS UI (mouse, keyboard, Accessibility, browser smart actions). Forwards to the running Code Agent main process. Requires Code Agent to be running. Action enum and full param reference: see Code Agent vision/ComputerTool.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                action: {
+                  type: 'string',
+                  description: 'click, doubleClick, rightClick, move, type, key, scroll, drag, mouse_down, mouse_up, open_application, write_clipboard, computer_batch, hold_key, triple_click, cursor_position, get_state, observe, get_ax_elements, get_windows, diagnose_app, locate_element, locate_text, locate_role, smart_click, smart_type, smart_hover, get_elements',
+                },
+                x: { type: 'number' },
+                y: { type: 'number' },
+                toX: { type: 'number' },
+                toY: { type: 'number' },
+                text: { type: 'string' },
+                key: { type: 'string' },
+                modifiers: { type: 'array', items: { type: 'string' } },
+                selector: { type: 'string' },
+                role: { type: 'string' },
+                name: { type: 'string' },
+                axPath: { type: 'string' },
+                targetApp: { type: 'string' },
+                direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
+                amount: { type: 'number' },
+                actions: { type: 'array', description: 'For computer_batch: list of sub-actions' },
+              },
+              required: ['action'],
+              additionalProperties: true,
+            },
+          },
+          {
+            name: 'screenshot',
+            description: 'Capture screen or specific window via the running Code Agent. Returns saved PNG path. Set analyze=true to get AI description of contents.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                target: { type: 'string', enum: ['screen', 'window'] },
+                windowName: { type: 'string' },
+                outputPath: { type: 'string' },
+                region: {
+                  type: 'object',
+                  properties: {
+                    x: { type: 'number' },
+                    y: { type: 'number' },
+                    width: { type: 'number' },
+                    height: { type: 'number' },
+                  },
+                },
+                analyze: { type: 'boolean' },
+                prompt: { type: 'string' },
+              },
+              additionalProperties: true,
+            },
+          },
         ],
       };
     });
@@ -375,6 +429,42 @@ export class CodeAgentMCPServer {
               {
                 type: 'text',
                 text: `Failed to connect to Code Agent. Make sure it's running. Error: ${error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === 'computer' || name === 'screenshot') {
+        try {
+          const { ComputerTool } = await import('../tools/vision/ComputerTool.js');
+          const { screenshotTool } = await import('../tools/vision/screenshot.js');
+          const tool = name === 'computer' ? ComputerTool : screenshotTool;
+          const os = await import('node:os');
+          const path = await import('node:path');
+          const ctx = {
+            workingDirectory: path.join(os.homedir(), '.code-agent'),
+            requestPermission: async () => true,
+          };
+          const result = await tool.execute((args ?? {}) as Record<string, unknown>, ctx as never);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: result.success
+                  ? (result.output ?? result.outputPath ?? 'OK')
+                  : `Error: ${result.error}`,
+              },
+            ],
+            isError: !result.success,
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
               },
             ],
             isError: true,

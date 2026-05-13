@@ -1,5 +1,6 @@
 // ============================================================================
 // ProviderDoctorDialog - 系统诊断面板
+// 数据源：provider:run_doctor → 9 category 报告
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
@@ -9,6 +10,10 @@ import {
   Settings,
   Database,
   HardDrive,
+  Server,
+  Activity,
+  GitBranch,
+  Package,
   ChevronDown,
   ChevronRight,
   ClipboardCopy,
@@ -22,21 +27,37 @@ import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
 
 // ============================================================================
-// Types (mirrors doctor.ipc.ts)
+// Types — 与 src/main/diagnostics/types.ts 对齐
 // ============================================================================
 
-interface DiagnosticItem {
-  category: 'environment' | 'network' | 'config' | 'database' | 'disk';
+type DoctorCategory =
+  | 'environment'
+  | 'database'
+  | 'config'
+  | 'disk'
+  | 'network'
+  | 'provider_health'
+  | 'mcp'
+  | 'hooks'
+  | 'version';
+
+type DoctorStatus = 'pass' | 'warn' | 'fail' | 'skip';
+
+interface DoctorItem {
+  category: DoctorCategory;
   name: string;
-  status: 'pass' | 'warn' | 'fail';
+  status: DoctorStatus;
   message: string;
   details?: string;
+  suggestion?: string;
+  durationMs?: number;
 }
 
-interface DiagnosticReport {
+interface DoctorReport {
   timestamp: number;
-  items: DiagnosticItem[];
-  summary: { pass: number; warn: number; fail: number };
+  durationMs: number;
+  items: DoctorItem[];
+  summary: { pass: number; warn: number; fail: number; skip: number };
 }
 
 export interface ProviderDoctorDialogProps {
@@ -48,23 +69,43 @@ export interface ProviderDoctorDialogProps {
 // Constants
 // ============================================================================
 
-const CATEGORY_ICONS: Record<DiagnosticItem['category'], React.FC<{ className?: string }>> = {
+const CATEGORY_ICONS: Record<DoctorCategory, React.FC<{ className?: string }>> = {
   environment: Monitor,
   network: Wifi,
   config: Settings,
   database: Database,
   disk: HardDrive,
+  provider_health: Activity,
+  mcp: Server,
+  hooks: GitBranch,
+  version: Package,
 };
 
-const CATEGORY_LABELS: Record<DiagnosticItem['category'], string> = {
+const CATEGORY_LABELS: Record<DoctorCategory, string> = {
   environment: '运行环境',
   network: '网络连接',
   config: '配置文件',
   database: '数据库',
   disk: '磁盘存储',
+  provider_health: 'Provider 健康',
+  mcp: 'MCP 服务器',
+  hooks: 'Hooks 配置',
+  version: '应用版本',
 };
 
-const STATUS_STYLES: Record<DiagnosticItem['status'], { badge: string; dot: string }> = {
+const CATEGORY_ORDER: DoctorCategory[] = [
+  'environment',
+  'database',
+  'config',
+  'disk',
+  'network',
+  'provider_health',
+  'mcp',
+  'hooks',
+  'version',
+];
+
+const STATUS_STYLES: Record<DoctorStatus, { badge: string; dot: string }> = {
   pass: {
     badge: 'bg-green-500/15 text-green-400 border-green-500/30',
     dot: 'bg-green-400',
@@ -77,24 +118,29 @@ const STATUS_STYLES: Record<DiagnosticItem['status'], { badge: string; dot: stri
     badge: 'bg-red-500/15 text-red-400 border-red-500/30',
     dot: 'bg-red-400',
   },
+  skip: {
+    badge: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+    dot: 'bg-zinc-400',
+  },
 };
 
-const STATUS_LABELS: Record<DiagnosticItem['status'], string> = {
+const STATUS_LABELS: Record<DoctorStatus, string> = {
   pass: 'PASS',
   warn: 'WARN',
   fail: 'FAIL',
+  skip: 'SKIP',
 };
 
 // ============================================================================
 // Sub-components
 // ============================================================================
 
-const DiagnosticItemRow: React.FC<{
-  item: DiagnosticItem;
+const DoctorItemRow: React.FC<{
+  item: DoctorItem;
   defaultExpanded: boolean;
 }> = ({ item, defaultExpanded }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const hasDetails = !!item.details;
+  const hasDetails = !!(item.details || item.suggestion);
   const style = STATUS_STYLES[item.status];
 
   return (
@@ -129,12 +175,19 @@ const DiagnosticItemRow: React.FC<{
         )}
       </button>
 
-      {/* Details */}
+      {/* Details + suggestion */}
       {hasDetails && expanded && (
-        <div className="px-3 pb-2.5 pt-0">
-          <pre className="text-xs text-zinc-400 bg-zinc-800/60 rounded p-2 whitespace-pre-wrap break-all">
-            {item.details}
-          </pre>
+        <div className="px-3 pb-2.5 pt-0 space-y-1.5">
+          {item.suggestion && (
+            <div className="text-xs text-amber-300/90 bg-amber-900/15 border border-amber-700/30 rounded p-2">
+              建议：{item.suggestion}
+            </div>
+          )}
+          {item.details && (
+            <pre className="text-xs text-zinc-400 bg-zinc-800/60 rounded p-2 whitespace-pre-wrap break-all">
+              {item.details}
+            </pre>
+          )}
         </div>
       )}
     </div>
@@ -149,16 +202,16 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
   isOpen,
   onClose,
 }) => {
-  const [report, setReport] = useState<DiagnosticReport | null>(null);
+  const [report, setReport] = useState<DoctorReport | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
-  const runDiagnostics = useCallback(async () => {
+  const runDoctor = useCallback(async () => {
     setIsRunning(true);
     setReport(null);
     try {
-      const result = await ipcService.invokeDomain<DiagnosticReport>(
+      const result = await ipcService.invokeDomain<DoctorReport>(
         IPC_DOMAINS.PROVIDER,
-        'run_diagnostics',
+        'run_doctor',
       );
       setReport(result);
     } catch (err) {
@@ -177,15 +230,17 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
     );
   }, [report]);
 
-  // Group items by category
-  const groupedItems = report
-    ? (Object.entries(
-        report.items.reduce<Record<string, DiagnosticItem[]>>((acc, item) => {
-          (acc[item.category] ??= []).push(item);
-          return acc;
-        }, {}),
-      ) as [DiagnosticItem['category'], DiagnosticItem[]][])
-    : [];
+  // Group by category, ordered by CATEGORY_ORDER
+  const groupedItems: Array<[DoctorCategory, DoctorItem[]]> = (() => {
+    if (!report) return [];
+    const byCat = report.items.reduce<Record<string, DoctorItem[]>>((acc, item) => {
+      (acc[item.category] ??= []).push(item);
+      return acc;
+    }, {});
+    return CATEGORY_ORDER
+      .filter((c) => byCat[c])
+      .map((c) => [c, byCat[c]] as [DoctorCategory, DoctorItem[]]);
+  })();
 
   return (
     <Modal
@@ -212,7 +267,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             {report ? (
               <Button
                 variant="secondary"
-                onClick={runDiagnostics}
+                onClick={runDoctor}
                 loading={isRunning}
               >
                 <RefreshCw className="w-4 h-4 mr-1.5" />
@@ -221,7 +276,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             ) : (
               <Button
                 variant="primary"
-                onClick={runDiagnostics}
+                onClick={runDoctor}
                 loading={isRunning}
               >
                 开始诊断
@@ -233,7 +288,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
     >
       {/* Summary bar */}
       {report && (
-        <div className="flex items-center gap-4 mb-4 px-3 py-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700/50">
+        <div className="flex items-center gap-4 mb-4 px-3 py-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700/50 flex-wrap">
           <span className="flex items-center gap-1.5 text-sm text-green-400">
             <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
             {report.summary.pass} 通过
@@ -246,8 +301,12 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
             {report.summary.fail} 失败
           </span>
+          <span className="flex items-center gap-1.5 text-sm text-zinc-400">
+            <span className="inline-block w-2 h-2 rounded-full bg-zinc-400" />
+            {report.summary.skip} 跳过
+          </span>
           <span className="ml-auto text-xs text-zinc-500">
-            {new Date(report.timestamp).toLocaleTimeString()}
+            {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
           </span>
         </div>
       )}
@@ -283,7 +342,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
                 </div>
                 <div className="space-y-1.5">
                   {items.map((item, idx) => (
-                    <DiagnosticItemRow
+                    <DoctorItemRow
                       key={`${item.name}-${idx}`}
                       item={item}
                       defaultExpanded={item.status === 'fail'}

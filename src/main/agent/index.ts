@@ -42,18 +42,6 @@ export {
   type SessionIndexEntry,
 } from './sessionPersistence';
 
-// Sub-Agent Permissions
-export {
-  getSubAgentPermissionManager,
-  resetSubAgentPermissionManager,
-  evaluateSubAgentPermission,
-  createSubAgentConstraints,
-  SubAgentPermissionManager,
-  type SubAgentPermissionResult,
-  type SubAgentPermissionContext,
-  type ContractionRule,
-} from './permissions';
-
 // Agent Bus (Gen7 - Multi-Agent Communication)
 export {
   getAgentBus,

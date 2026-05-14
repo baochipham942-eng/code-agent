@@ -7,6 +7,7 @@ import type { DesignBrief } from './designBrief';
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
 export type RuntimeInputMode = 'supplement' | 'redirect';
+export type RuntimeInputDelivery = 'in_flight' | 'queued_next_turn';
 
 export interface BrowserSessionIntentPreview {
   url?: string | null;
@@ -51,6 +52,7 @@ export interface ConversationExecutionIntent {
 
 export interface RuntimeInputIntent {
   mode: RuntimeInputMode;
+  delivery?: RuntimeInputDelivery;
 }
 
 export interface DirectRoutingDeliverySnapshot {
@@ -94,6 +96,7 @@ export interface WorkbenchMessageMetadata {
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;
+  runtimeInputDelivery?: RuntimeInputDelivery;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
   runCancellation?: {
     status: 'cancelled';

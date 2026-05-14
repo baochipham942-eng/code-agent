@@ -15,7 +15,6 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
-import { SessionDiffSummary } from './features/chat/SessionDiffSummary';
 import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
@@ -69,7 +68,17 @@ export const ChatView: React.FC = () => {
   } = useSessionStore();
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.entries);
-  const { messages, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+  const {
+    messages,
+    sendMessage,
+    cancel,
+    researchDetected,
+    dismissResearchDetected,
+    isInterrupting,
+    queuedRuntimeInputs,
+    cancelQueuedRuntimeInput,
+    sendQueuedRuntimeInput,
+  } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
 
@@ -511,9 +520,6 @@ export const ChatView: React.FC = () => {
           {/* Context inline strip - shows when > 50% */}
           <InlineStrip />
 
-          {/* 会话级 Diff 聚合卡（Codex 风格 X files changed +A -B / Review changes ↗）*/}
-          <SessionDiffSummary messages={messages} />
-
           {/* Pinned todo progress bar — visible above the input */}
           <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
 
@@ -528,6 +534,9 @@ export const ChatView: React.FC = () => {
             isProcessing={effectiveIsProcessing}
             isInterrupting={isInterrupting}
             onStop={cancel}
+            queuedRuntimeInputs={queuedRuntimeInputs}
+            onCancelQueuedRuntimeInput={cancelQueuedRuntimeInput}
+            onSendQueuedRuntimeInput={sendQueuedRuntimeInput}
             hasPlan={false}
           />
         </div>

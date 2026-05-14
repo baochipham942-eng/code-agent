@@ -1,5 +1,5 @@
 // useAgentIPC owns send/cancel IPC calls and direct-routing metadata.
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, type MutableRefObject } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message } from '@shared/contract';
 import type {
@@ -144,6 +144,22 @@ export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
   return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
 }
 
+export function getRuntimeInputQueuedMessage(mode: RuntimeInputMode): string {
+  return mode === 'redirect'
+    ? '已排队，本轮回复结束后按这条重新处理。'
+    : '已排队，本轮回复结束后作为下一条发送。';
+}
+
+export interface QueuedRuntimeInput {
+  id: string;
+  sessionId: string;
+  envelope: ConversationEnvelope;
+  content: string;
+  mode: RuntimeInputMode;
+  attachmentsCount: number;
+  createdAt: number;
+}
+
 export function resolveDirectRouting(
   envelope: ConversationEnvelope,
   agents: DirectRoutingTarget[],
@@ -240,6 +256,9 @@ function toWorkbenchMetadata(
   }
   if (context.runtimeInput) {
     metadata.runtimeInputMode = context.runtimeInput.mode;
+    if (context.runtimeInput.delivery) {
+      metadata.runtimeInputDelivery = context.runtimeInput.delivery;
+    }
   }
 
   return Object.keys(metadata).length > 0 ? metadata : undefined;
@@ -258,8 +277,8 @@ interface UseAgentIPCArgs {
   addMessage: SessionStoreState['addMessage'];
   currentSessionId: string | null;
   currentTurnMessageIdRef: MutableRefObject<string | null>;
+  enqueueRuntimeInput: (input: QueuedRuntimeInput) => void;
   isProcessing: boolean;
-  setIsInterrupting: Dispatch<SetStateAction<boolean>>;
   setIsProcessing: AppStoreState['setIsProcessing'];
   setSessionProcessing: AppStoreState['setSessionProcessing'];
 }
@@ -268,8 +287,8 @@ export function useAgentIPC({
   addMessage,
   currentSessionId,
   currentTurnMessageIdRef,
+  enqueueRuntimeInput,
   isProcessing,
-  setIsInterrupting,
   setIsProcessing,
   setSessionProcessing,
 }: UseAgentIPCArgs) {
@@ -288,7 +307,7 @@ export function useAgentIPC({
       }
 
       // 没有会话时自动创建一个（web 模式下数据库可能未初始化，使用临时会话）
-      let effectiveSessionId = currentSessionId;
+      let effectiveSessionId = envelope.sessionId ?? currentSessionId;
       if (!effectiveSessionId) {
         logger.warn('sendMessage - no current session, creating fallback');
         const sessionStore = useSessionStore.getState();
@@ -422,52 +441,46 @@ export function useAgentIPC({
         throw new Error('Session is already cancelling');
       }
 
-      // 运行中发送的新输入作为补充指令交给当前任务，后端仍通过 interruptAndContinue 接入。
+      // 运行中发送的新输入默认排到下一轮，当前流式回复继续完成。
       if (isCurrentSessionProcessing) {
         const runtimeInputMode = getRuntimeInputMode(contextWithDesignBrief);
-        logger.info('sendMessage - session processing, sending runtime input', {
+        logger.info('sendMessage - session processing, queueing runtime input for next turn', {
           isCurrentSessionProcessing,
           runtimeInputMode,
         });
 
-        // 添加用户消息到界面
-        const userMessage: Message = {
-          id: generateMessageId(),
-          role: 'user',
-          content,
-          timestamp: Date.now(),
-          attachments,
-          metadata: toMessageMetadata(contextWithDesignBrief),
-        };
-        addMessage(userMessage);
-
-        const rollbackUserMessage = () => {
-          const sessionState = useSessionStore.getState();
-          sessionState.setMessages(sessionState.messages.filter((message) => message.id !== userMessage.id));
-        };
-
-        setIsInterrupting(true);
-        try {
-          await ipcService.invokeDomain<void>('agent', 'interrupt', {
+        const queuedMessageId = generateMessageId();
+        const queuedContext: ConversationEnvelopeContext | undefined = contextWithDesignBrief
+          ? {
+              ...contextWithDesignBrief,
+              runtimeInput: {
+                mode: runtimeInputMode,
+                delivery: 'queued_next_turn',
+              },
+            }
+          : {
+              runtimeInput: {
+                mode: runtimeInputMode,
+                delivery: 'queued_next_turn',
+              },
+            };
+        enqueueRuntimeInput({
+          id: queuedMessageId,
+          sessionId: effectiveSessionId!,
+          envelope: {
             ...envelope,
             content: envelope.content,
-            context: contextWithDesignBrief,
-            clientMessageId: userMessage.id,
-            sessionId: effectiveSessionId,
-          });
-          logger.debug('runtime input invoke returned');
-          toast.info(getRuntimeInputSuccessMessage(runtimeInputMode));
-        } catch (error) {
-          logger.error('Runtime input error', error);
-          rollbackUserMessage();
-          setIsInterrupting(false);
-          const taskStatus = useTaskStore.getState().sessionStates[effectiveSessionId!]?.status;
-          if (!isRuntimeBusyStatus(taskStatus)) {
-            setSessionProcessing(effectiveSessionId!, false);
-          }
-          toast.warning(getRuntimeFollowupFailureMessage(error));
-          throw error;
-        }
+            attachments,
+            context: queuedContext,
+            clientMessageId: queuedMessageId,
+            sessionId: effectiveSessionId!,
+          },
+          content,
+          mode: runtimeInputMode,
+          attachmentsCount: attachments?.length || 0,
+          createdAt: Date.now(),
+        });
+        toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
         return;
       }
 
@@ -527,7 +540,7 @@ export function useAgentIPC({
         setSessionProcessing(effectiveSessionId!, false);
       }
     },
-    [addMessage, setSessionProcessing, isProcessing, currentSessionId]
+    [addMessage, enqueueRuntimeInput, setSessionProcessing, isProcessing, currentSessionId]
   );
 
   // Cancel the current operation

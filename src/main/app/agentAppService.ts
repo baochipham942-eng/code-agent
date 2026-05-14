@@ -120,6 +120,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
     if (context.runtimeInput) {
       metadata.runtimeInputMode = context.runtimeInput.mode;
+      if (context.runtimeInput.delivery) {
+        metadata.runtimeInputDelivery = context.runtimeInput.delivery;
+      }
     }
 
     return Object.keys(metadata).length > 0 ? metadata : undefined;

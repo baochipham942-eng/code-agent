@@ -86,7 +86,12 @@ export function projectTurns(
 
     // Runtime supplements are part of the in-flight task, not a new turn.
     const runtimeInputMode = msg.metadata?.workbench?.runtimeInputMode;
-    if (msg.role === 'user' && runtimeInputMode === 'supplement' && currentTurn) {
+    if (
+      msg.role === 'user'
+      && runtimeInputMode === 'supplement'
+      && msg.metadata?.workbench?.runtimeInputDelivery !== 'queued_next_turn'
+      && currentTurn
+    ) {
       currentTurn.nodes.push({
         id: msg.id,
         type: 'user',

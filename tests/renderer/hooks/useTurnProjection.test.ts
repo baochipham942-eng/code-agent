@@ -181,6 +181,47 @@ describe('projectTurns', () => {
     ]);
   });
 
+  it('starts a new turn for queued runtime supplements', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '先分析这个问题',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '第一轮分析完成',
+        timestamp: 180,
+      },
+      {
+        id: 'user-2',
+        role: 'user',
+        content: '按客户读者重新整理',
+        timestamp: 240,
+        metadata: {
+          workbench: {
+            runtimeInputMode: 'supplement',
+            runtimeInputDelivery: 'queued_next_turn',
+          },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-4', true, []);
+
+    expect(projection.turns).toHaveLength(2);
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-text',
+    ]);
+    expect(projection.turns[1].nodes.map((node) => node.id)).toEqual([
+      'user-2',
+    ]);
+    expect(projection.activeTurnIndex).toBe(1);
+  });
+
   it('keeps skill status inside the current turn instead of creating a new user turn', () => {
     const messages: Message[] = [
       {

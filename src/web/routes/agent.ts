@@ -106,6 +106,9 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   }
   if (context.runtimeInput) {
     workbench.runtimeInputMode = context.runtimeInput.mode;
+    if (context.runtimeInput.delivery) {
+      workbench.runtimeInputDelivery = context.runtimeInput.delivery;
+    }
   }
 
   return Object.keys(workbench).length > 0 ? { workbench } : undefined;

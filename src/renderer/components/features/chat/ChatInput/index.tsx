@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { AlertTriangle, Image, FileText, Plus, GitBranch } from 'lucide-react';
+import { AlertTriangle, Image, FileText, Plus, GitBranch, Clock3, CornerDownRight, X } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
@@ -60,6 +60,15 @@ export interface ChatInputProps {
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
+  queuedRuntimeInputs?: Array<{
+    id: string;
+    content: string;
+    mode: RuntimeInputMode;
+    attachmentsCount: number;
+    createdAt: number;
+  }>;
+  onCancelQueuedRuntimeInput?: (id: string) => void;
+  onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
@@ -83,6 +92,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   isInterrupting,
   onStop,
+  queuedRuntimeInputs = [],
+  onCancelQueuedRuntimeInput,
+  onSendQueuedRuntimeInput,
   hasPlan,
   onPlanClick,
 }, ref) => {
@@ -370,8 +382,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return runtimeInputMode === 'redirect'
-      ? '改道：按这条重新处理...'
-      : '补充当前任务...';
+      ? '下一轮按这条重新处理...'
+      : '本轮结束后发送...';
   }, [inputPlaceholder, isProcessing, runtimeInputMode]);
 
   useEffect(() => {
@@ -382,7 +394,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [isProcessing]);
 
   // 处理提交
-  // 运行中允许提交，把新输入作为补充指令交给当前任务。
+  // 运行中允许提交，把新输入排到当前回复结束后发送。
   // P3-18: ! prefix executes shell command directly
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -723,7 +735,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                   aria-pressed={runtimeInputMode === 'supplement'}
-                  title="加入当前任务，不改变整体方向"
+                  title="本轮回复结束后作为下一条发送"
                 >
                   <Plus className="h-3 w-3" />
                   <span>补充</span>
@@ -740,7 +752,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                   aria-pressed={runtimeInputMode === 'redirect'}
-                  title="停止当前思路，按这条重新处理"
+                  title="本轮回复结束后按这条重新处理"
                 >
                   <GitBranch className="h-3 w-3" />
                   <span>改道</span>
@@ -757,8 +769,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <span className="truncate">
                   {runtimeDraftStatus || (
                     runtimeInputMode === 'redirect'
-                      ? '将停止当前思路并按这条改道'
-                      : '将加入当前任务，不打断整体方向'
+                      ? '本轮回复结束后按这条重新处理'
+                      : '本轮回复结束后作为下一条发送'
                   )}
                 </span>
                 {runtimeDraftStatus && (
@@ -776,6 +788,58 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                   </button>
                 )}
               </div>
+            </div>
+          )}
+          {queuedRuntimeInputs.length > 0 && (
+            <div className="px-4 pb-2 -mt-1 space-y-1.5">
+              {queuedRuntimeInputs.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-h-9 items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-1.5 text-[11px] text-amber-100"
+                >
+                  <Clock3 className="h-3.5 w-3.5 flex-shrink-0 text-amber-300" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-normal text-amber-300/90">
+                      <span>{item.mode === 'redirect' ? '本轮后重新处理' : '本轮后发送'}</span>
+                      {item.attachmentsCount > 0 && (
+                        <span className="text-amber-200/70">附件 {item.attachmentsCount}</span>
+                      )}
+                    </div>
+                    <div className="truncate text-amber-50/90">
+                      {item.content}
+                    </div>
+                  </div>
+                  {isProcessing ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex h-7 flex-shrink-0 items-center gap-1 rounded-md border border-amber-300/20 px-2 text-amber-200/60"
+                      title="当前回复结束后自动发送"
+                    >
+                      <Clock3 className="h-3 w-3" />
+                      <span>等待</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSendQueuedRuntimeInput?.(item.id)}
+                      className="inline-flex h-7 flex-shrink-0 items-center gap-1 rounded-md border border-amber-300/30 px-2 text-amber-100 hover:bg-amber-300/10"
+                      title="立即发送这条排队消息"
+                    >
+                      <CornerDownRight className="h-3 w-3" />
+                      <span>发送</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onCancelQueuedRuntimeInput?.(item.id)}
+                    className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-amber-200/70 hover:bg-amber-300/10 hover:text-amber-50"
+                    title="撤回这条排队消息"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
           {/* 底部工具栏 */}

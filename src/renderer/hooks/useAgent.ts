@@ -22,16 +22,17 @@
 //
 // ============================================================================
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
-import { useAgentIPC } from './agent/useAgentIPC';
+import { isRuntimeBusyStatus, useAgentIPC, type QueuedRuntimeInput } from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
@@ -77,6 +78,9 @@ export const useAgent = () => {
     setTodos,
     currentSessionId,
   } = useSessionStore();
+  const currentSessionTaskStatus = useTaskStore((state) => (
+    currentSessionId ? state.sessionStates[currentSessionId]?.status : undefined
+  ));
 
   const {
     currentTurnMessageIdRef,
@@ -92,6 +96,30 @@ export const useAgent = () => {
   } = useAgentState();
 
   const streamingFlushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const queuedRuntimeInputsRef = useRef<QueuedRuntimeInput[]>([]);
+  const queuedRuntimeInputSendInFlightRef = useRef<Set<string>>(new Set());
+  const [queuedRuntimeInputs, setQueuedRuntimeInputsSnapshot] = useState<QueuedRuntimeInput[]>([]);
+
+  const setQueuedRuntimeInputs = useCallback((
+    updater: QueuedRuntimeInput[] | ((current: QueuedRuntimeInput[]) => QueuedRuntimeInput[]),
+  ) => {
+    const next = typeof updater === 'function'
+      ? updater(queuedRuntimeInputsRef.current)
+      : updater;
+    queuedRuntimeInputsRef.current = next;
+    setQueuedRuntimeInputsSnapshot(next);
+  }, []);
+
+  const enqueueRuntimeInput = useCallback((input: QueuedRuntimeInput) => {
+    setQueuedRuntimeInputs((current) => [
+      ...current.filter((item) => item.id !== input.id),
+      input,
+    ]);
+  }, [setQueuedRuntimeInputs]);
+
+  const cancelQueuedRuntimeInput = useCallback((id: string) => {
+    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+  }, [setQueuedRuntimeInputs]);
 
   const clearStreamingFlushTimer = useCallback((messageId: string) => {
     const timer = streamingFlushTimersRef.current.get(messageId);
@@ -245,11 +273,38 @@ export const useAgent = () => {
     addMessage,
     currentSessionId,
     currentTurnMessageIdRef,
+    enqueueRuntimeInput,
     isProcessing,
-    setIsInterrupting,
     setIsProcessing,
     setSessionProcessing,
   });
+
+  const sendQueuedRuntimeInput = useCallback(async (id: string) => {
+    const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
+    if (!queued || queuedRuntimeInputSendInFlightRef.current.has(id)) return;
+
+    queuedRuntimeInputSendInFlightRef.current.add(id);
+    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+    try {
+      await sendMessage(queued.envelope);
+    } finally {
+      queuedRuntimeInputSendInFlightRef.current.delete(id);
+    }
+  }, [sendMessage, setQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    if (
+      isProcessing
+      || !currentSessionId
+      || isRuntimeBusyStatus(currentSessionTaskStatus)
+      || currentSessionTaskStatus === 'cancelling'
+    ) {
+      return;
+    }
+    const nextQueued = queuedRuntimeInputs.find((item) => item.sessionId === currentSessionId);
+    if (!nextQueued) return;
+    void sendQueuedRuntimeInput(nextQueued.id);
+  }, [currentSessionId, currentSessionTaskStatus, isProcessing, queuedRuntimeInputs, sendQueuedRuntimeInput]);
 
   const dismissResearchDetected = useCallback(() => {
     setResearchDetected(null);
@@ -271,5 +326,10 @@ export const useAgent = () => {
     dismissResearchDetected,
     // 中断状态（Claude Code 风格）
     isInterrupting,
+    queuedRuntimeInputs: currentSessionId
+      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
+      : [],
+    cancelQueuedRuntimeInput,
+    sendQueuedRuntimeInput,
   };
 };

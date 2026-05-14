@@ -1,5 +1,5 @@
 // ============================================================================
-// SendButton - 发送按钮组件（含加载状态、停止功能和运行中补充指令）
+// SendButton - 发送按钮组件（含加载状态、停止功能和运行中排队发送）
 // ============================================================================
 
 import React from 'react';
@@ -8,9 +8,9 @@ import { Send, Square, Loader2 } from 'lucide-react';
 export interface SendButtonProps {
   /** 是否禁用 */
   disabled?: boolean;
-  /** 是否正在处理（显示停止按钮或补充指令按钮） */
+  /** 是否正在处理（显示停止按钮或排队发送按钮） */
   isProcessing?: boolean;
-  /** 运行中补充指令正在接入（显示旋转加载图标） */
+  /** 运行中输入正在接入（显示旋转加载图标） */
   isInterrupting?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
@@ -28,8 +28,8 @@ export interface SendButtonProps {
  * 发送按钮 - 支持三种状态：
  * 1. 空闲时：显示发送按钮
  * 2. 处理中 + 无内容：显示停止按钮
- * 3. 处理中 + 有内容：显示补充指令按钮
- * 4. 补充指令接入中：显示旋转加载图标
+ * 3. 处理中 + 有内容：显示排队发送按钮
+ * 4. 运行中输入接入中：显示旋转加载图标
  */
 export const SendButton: React.FC<SendButtonProps> = ({
   disabled = false,
@@ -41,29 +41,29 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onStop,
   label,
 }) => {
-  // 补充指令接入中：显示旋转加载图标
+  // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {
     return (
       <button
         type="button"
         disabled
         className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-200 transition-all duration-200 bg-white/10 cursor-wait"
-        aria-label="正在发送补充指令"
+        aria-label="正在处理运行中输入"
       >
         <Loader2 className="w-4 h-4 animate-spin" />
       </button>
     );
   }
 
-  // 处理中 + 有内容：显示补充指令按钮
+  // 处理中 + 有内容：显示排队到下一轮按钮
   if (isProcessing && hasContent) {
     return (
       <button
         type={type}
         onClick={onClick}
         className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-950 transition-all duration-300 bg-zinc-100 hover:bg-white shadow-lg shadow-white/10 hover:shadow-white/20 scale-100 hover:scale-105"
-        aria-label="发送补充指令"
-        title="发送补充指令"
+        aria-label="排队到下一轮"
+        title="排队到下一轮"
       >
         <Send className="w-4 h-4 -rotate-45" />
       </button>

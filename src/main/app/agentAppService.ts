@@ -95,6 +95,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (context.workingDirectory !== undefined) {
       metadata.workingDirectory = context.workingDirectory;
     }
+    if (context.preferredAgentId !== undefined) {
+      metadata.preferredAgentId = context.preferredAgentId;
+    }
     if (context.routing) {
       metadata.routingMode = context.routing.mode;
       if (context.routing.targetAgentIds?.length) {

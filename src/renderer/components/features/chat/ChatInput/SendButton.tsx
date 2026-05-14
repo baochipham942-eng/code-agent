@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Send, Square, Loader2 } from 'lucide-react';
+import { ArrowUp, Square, Loader2 } from 'lucide-react';
 
 export interface SendButtonProps {
   /** 是否禁用 */
@@ -41,16 +41,18 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onStop,
   label,
 }) => {
+  const baseIconButtonClass = 'flex-shrink-0 h-9 w-9 rounded-xl grid place-items-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20';
+
   // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {
     return (
       <button
         type="button"
         disabled
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-200 transition-all duration-200 bg-white/10 cursor-wait"
+        className={`${baseIconButtonClass} bg-white/[0.08] text-zinc-200 cursor-wait`}
         aria-label="正在处理运行中输入"
       >
-        <Loader2 className="w-4 h-4 animate-spin" />
+        <Loader2 className="h-4 w-4 animate-spin" />
       </button>
     );
   }
@@ -61,25 +63,25 @@ export const SendButton: React.FC<SendButtonProps> = ({
       <button
         type={type}
         onClick={onClick}
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-950 transition-all duration-300 bg-zinc-100 hover:bg-white shadow-lg shadow-white/10 hover:shadow-white/20 scale-100 hover:scale-105"
+        className={`${baseIconButtonClass} bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95`}
         aria-label="排队到下一轮"
         title="排队到下一轮"
       >
-        <Send className="w-4 h-4 -rotate-45" />
+        <ArrowUp className="h-4 w-4 stroke-[2.4]" />
       </button>
     );
   }
 
-  // 处理中 + 无内容：显示停止按钮（柔和样式，白色图标 + 浅灰背景）
+  // 处理中 + 无内容：显示停止按钮
   if (isProcessing) {
     return (
       <button
         type="button"
         onClick={onStop}
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 transition-all duration-200 bg-zinc-600 hover:bg-zinc-600 hover:text-zinc-200"
+        className={`${baseIconButtonClass} bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
         aria-label="停止"
       >
-        <Square className="w-4 h-4 fill-current" />
+        <Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />
       </button>
     );
   }
@@ -100,11 +102,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
             : 'bg-zinc-700 text-zinc-400 cursor-not-allowed scale-95 opacity-60'
         }`}
       >
-        <Send
-          className={`w-4 h-4 transition-transform duration-200 ${
-            hasContent ? '-rotate-45' : ''
-          }`}
-        />
+        <ArrowUp className="w-4 h-4 stroke-[2.4]" />
         <span>{label}</span>
       </button>
     );
@@ -115,18 +113,14 @@ export const SendButton: React.FC<SendButtonProps> = ({
       type={type}
       disabled={isDisabled}
       onClick={onClick}
-      className={`flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
+      className={`${baseIconButtonClass} disabled:cursor-not-allowed ${
         showActiveState
-          ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
-          : 'bg-zinc-700 cursor-not-allowed scale-95 opacity-60'
+          ? 'bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95'
+          : 'bg-zinc-800/80 text-zinc-500 ring-1 ring-white/[0.04] opacity-70'
       }`}
       aria-label="发送消息"
     >
-      <Send
-        className={`w-4 h-4 transition-transform duration-200 ${
-          hasContent ? '-rotate-45' : ''
-        }`}
-      />
+      <ArrowUp className="h-4 w-4 stroke-[2.4]" />
     </button>
   );
 };

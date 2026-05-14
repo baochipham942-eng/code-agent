@@ -22,6 +22,7 @@ import { CostDisplay } from '../../../StatusBar/CostDisplay';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
+import { AgentChip } from './AgentChip';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
@@ -29,11 +30,12 @@ import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
+import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
-import { AgentSwitcher } from '../../../StatusBar/AgentSwitcher';
 import ipcService from '../../../../services/ipcService';
+import { toast } from '../../../../hooks/useToast';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import {
   applyAgentMentionSuggestion,
@@ -44,6 +46,12 @@ import {
   parseLeadingAgentMentions,
   syncLeadingAgentMentions,
 } from './agentMentionRouting';
+import {
+  applyAgentCommandOption,
+  getAgentCommandOptions,
+  getAgentSlashCommandQuery,
+  parseAgentSlashCommand,
+} from './agentCommand';
 import { collectDroppedAttachments, shouldClearComposerAfterSend } from './utils';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
 
@@ -108,6 +116,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
+  const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
@@ -123,6 +132,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
+  const agentEntries = useAgentRegistryStore((state) => state.entries);
+  const activeAgentId = useAppStore((state) => state.activeAgentId);
+  const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
   const mentionPreview = useMemo(
@@ -138,6 +150,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     && agentMentionAutocomplete.matches.length > 0
     && dismissedAgentAutocompleteValue !== value,
   );
+  const agentSlashCommandQuery = useMemo(() => getAgentSlashCommandQuery(value), [value]);
+  const agentCommandOptions = useMemo(
+    () => agentSlashCommandQuery === null ? [] : getAgentCommandOptions(agentEntries, agentSlashCommandQuery),
+    [agentEntries, agentSlashCommandQuery],
+  );
+  const isAgentCommandAutocompleteOpen = agentSlashCommandQuery !== null && agentCommandOptions.length > 0;
   const selectedDirectAgents = useMemo(
     () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
     [swarmAgents, targetAgentIds],
@@ -153,19 +171,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     rawContent: string,
     nextAttachments?: MessageAttachment[],
     nextRuntimeInputMode?: RuntimeInputMode,
+    preferredAgentIdOverride?: string | null,
   ): ConversationEnvelope => {
     const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
     const content = parsedMentions ? parsedMentions.content : rawContent.trim();
     const baseContext = buildContext();
+    const preferredAgentId = preferredAgentIdOverride === undefined ? activeAgentId : preferredAgentIdOverride;
     const nextContext = parsedMentions
       ? {
           ...baseContext,
+          ...(preferredAgentId ? { preferredAgentId } : {}),
           routing: {
             mode: 'direct' as const,
             targetAgentIds: parsedMentions.targetAgentIds,
           },
         }
-      : baseContext;
+      : {
+          ...baseContext,
+          ...(preferredAgentId ? { preferredAgentId } : {}),
+        };
     const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
     const context = browserSessionMode
       ? {
@@ -193,7 +217,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
       context: runtimeScopedContext,
     };
-  }, [browserSession, buildContext, swarmAgents]);
+  }, [activeAgentId, browserSession, buildContext, swarmAgents]);
 
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
@@ -271,6 +295,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, [agentMentionAutocomplete?.query, agentMentionAutocomplete?.matches.length, dismissedAgentAutocompleteValue, value]);
 
+  useEffect(() => {
+    setSelectedAgentCommandIndex(0);
+  }, [agentSlashCommandQuery, agentCommandOptions.length]);
+
   // Handle suggestion selection
   const handleSuggestionSelect = useCallback((text: string) => {
     setValue(text);
@@ -283,6 +311,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
+    if (newValue.toLowerCase().startsWith('/agent ')) {
+      setShowSlashPopover(false);
+      dismissAutocomplete();
+      return;
+    }
     // Detect / prefix to show inline slash command popover
     if (newValue.startsWith('/')) {
       setShowSlashPopover(true);
@@ -323,7 +356,51 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     inputAreaRef.current?.focus();
   }, [swarmAgents]);
 
+  const openAgentCommand = useCallback(() => {
+    setValue('/agent ');
+    setShowSlashPopover(false);
+    setSlashFilter('');
+    setDismissedAgentAutocompleteValue(null);
+    requestAnimationFrame(() => inputAreaRef.current?.focus());
+  }, []);
+
+  const handleAgentCommandOptionSelect = useCallback((index: number) => {
+    const option = agentCommandOptions[index];
+    if (!option) return;
+    setValue(applyAgentCommandOption(option));
+    setSelectedAgentCommandIndex(index);
+    requestAnimationFrame(() => inputAreaRef.current?.focus());
+  }, [agentCommandOptions]);
+
   const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isAgentCommandAutocompleteOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedAgentCommandIndex((prev) => (prev + 1) % agentCommandOptions.length);
+        return true;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedAgentCommandIndex((prev) => (
+          prev === 0 ? agentCommandOptions.length - 1 : prev - 1
+        ));
+        return true;
+      }
+
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+        e.preventDefault();
+        handleAgentCommandOptionSelect(selectedAgentCommandIndex);
+        return true;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setValue('');
+        return true;
+      }
+    }
+
     if (!isAgentMentionAutocompleteOpen || !agentMentionAutocomplete) {
       return false;
     }
@@ -360,8 +437,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return false;
   }, [
     agentMentionAutocomplete,
+    agentCommandOptions.length,
+    handleAgentCommandOptionSelect,
     handleAgentMentionSelect,
+    isAgentCommandAutocompleteOpen,
     isAgentMentionAutocompleteOpen,
+    selectedAgentCommandIndex,
     selectedAgentMentionIndex,
     value,
   ]);
@@ -386,8 +467,47 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
+    let contentToSend = trimmedValue;
+    let preferredAgentIdOverride: string | null | undefined;
+
+    const agentCommand = parseAgentSlashCommand(trimmedValue, agentEntries);
+    if (agentCommand.kind === 'prompt') {
+      openAgentCommand();
+      return;
+    }
+    if (agentCommand.kind === 'unknown') {
+      toast.warning(`没找到 agent: ${agentCommand.token}`);
+      inputAreaRef.current?.focus();
+      return;
+    }
+    if (agentCommand.kind === 'clear') {
+      setActiveAgentId(null);
+      preferredAgentIdOverride = null;
+      contentToSend = agentCommand.content;
+      if (!contentToSend && attachments.length === 0) {
+        setValue('');
+        toast.info('已恢复自动 agent');
+        return;
+      }
+    }
+    if (agentCommand.kind === 'select') {
+      setActiveAgentId(agentCommand.agent.id);
+      preferredAgentIdOverride = agentCommand.agent.id;
+      contentToSend = agentCommand.content;
+      if (!contentToSend && attachments.length === 0) {
+        setValue('');
+        toast.info(`已切到 ${agentCommand.agent.name || agentCommand.agent.id}`);
+        return;
+      }
+    }
+
     const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing ? 'supplement' : undefined;
-    const nextEnvelope = buildEnvelope(trimmedValue, attachments, activeRuntimeInputMode);
+    const nextEnvelope = buildEnvelope(
+      contentToSend,
+      attachments,
+      activeRuntimeInputMode,
+      preferredAgentIdOverride,
+    );
     const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       const draftSnapshot = {
@@ -400,8 +520,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       };
 
       // 添加到输入历史
-      if (trimmedValue) {
-        addToInputHistory(trimmedValue);
+      if (contentToSend) {
+        addToInputHistory(contentToSend);
       }
       setValue('');
       setAttachments([]);
@@ -629,12 +749,45 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onClose={() => { setShowSlashPopover(false); setValue(''); }}
             onSelect={(cmd) => {
               setShowSlashPopover(false);
+              if (cmd.id === 'agent') {
+                openAgentCommand();
+                return;
+              }
               setValue('');
               cmd.action();
             }}
           />
+          {isAgentCommandAutocompleteOpen && (
+            <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg border border-zinc-700/70 bg-zinc-900 shadow-xl">
+              <div className="border-b border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                /agent
+              </div>
+              {agentCommandOptions.map((option, index) => (
+                <button
+                  key={option.id ?? 'default'}
+                  type="button"
+                  onClick={() => handleAgentCommandOptionSelect(index)}
+                  className={`w-full px-3 py-2 text-left transition-colors ${
+                    index === selectedAgentCommandIndex
+                      ? 'bg-zinc-800 text-zinc-100'
+                      : 'text-zinc-300 hover:bg-zinc-800/70'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{option.name}</span>
+                    <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
+                      {option.token}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-zinc-500">
+                    {option.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
           {/* @ File autocomplete dropdown */}
-          {isAgentMentionAutocompleteOpen && agentMentionAutocomplete && (
+          {!isAgentCommandAutocompleteOpen && isAgentMentionAutocompleteOpen && agentMentionAutocomplete && (
             <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[240px] overflow-y-auto">
               {agentMentionAutocomplete.matches.map((agent, index) => {
                 const agentRole = (agent as { role?: string }).role;
@@ -770,10 +923,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
 
-            {/* Agent 切换器 — 模型选择器左侧 (#141 follow-up: 之前 StatusBar 整体未 mount，导致 AgentSwitcher 不可见) */}
-            <div className="text-xs">
-              <AgentSwitcher />
-            </div>
+            <AgentChip onOpenAgentCommand={openAgentCommand} />
 
             {/* 模型选择器 */}
             <div className="text-xs">

@@ -201,12 +201,19 @@ export function withWorkbenchTurnSystemContext(
       ...(workbenchToolScope?.allowedMcpServerIds || []),
     ],
   });
-  if (turnSystemContext.length === 0 && !toolScope && !context?.executionIntent && !context?.runtimeInput) {
+  if (
+    turnSystemContext.length === 0
+    && !toolScope
+    && !context?.preferredAgentId
+    && !context?.executionIntent
+    && !context?.runtimeInput
+  ) {
     return options;
   }
 
   return {
     ...(options || {}),
+    ...(context?.preferredAgentId ? { agentOverrideId: context.preferredAgentId } : {}),
     ...(turnSystemContext.length > 0 ? { turnSystemContext } : {}),
     ...(toolScope ? { toolScope } : {}),
     ...(context?.executionIntent ? { executionIntent: { ...context.executionIntent } } : {}),

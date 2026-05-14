@@ -116,6 +116,7 @@ export const ContextUsagePill: React.FC = () => {
   const maxTokens = contextHealth?.maxTokens ?? 0;
   const pct = Math.max(0, Math.min(100, usagePercent));
   const displayPct = formatContextUsagePercent(pct);
+  const displayRemainingPct = formatContextUsagePercent(Math.max(0, 100 - pct));
   const tone = toneFromPercent(pct);
   const styles = TONE_STYLES[tone];
   const canCompact = pct >= 70;
@@ -134,13 +135,16 @@ export const ContextUsagePill: React.FC = () => {
     <div
       ref={wrapperRef}
       className="relative flex-shrink-0"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
+        onFocus={() => setOpen(true)}
         className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label="上下文使用"
-        title={`${displayPct}% · ${formatTokens(currentTokens)}/${formatTokens(maxTokens)} tokens`}
+        title={`${displayPct}% 已用 · ${formatTokens(currentTokens)}/${formatTokens(maxTokens)} 标记`}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle
@@ -166,44 +170,45 @@ export const ContextUsagePill: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 w-60 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-3 shadow-xl backdrop-blur">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">上下文占用</div>
-          <div className={`text-lg font-semibold tabular-nums ${styles.text}`}>
-            {displayPct}%
-          </div>
-          <div className="mt-1 text-xs tabular-nums text-zinc-300">
+        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[260px] rounded-xl border border-white/[0.12] bg-zinc-900/95 px-5 py-4 text-center shadow-2xl backdrop-blur">
+          <div className="text-sm font-medium text-zinc-400">背景信息窗口：</div>
+          <div className="mt-2 text-[22px] font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
-              ? `${formatTokens(currentTokens)} / ${formatTokens(maxTokens)} tokens`
+              ? `${displayPct}% 已用（剩余 ${displayRemainingPct}%）`
               : '等待首轮对话'}
           </div>
+          <div className="mt-2 text-lg leading-tight text-zinc-100 tabular-nums">
+            {hasData
+              ? `已用 ${formatTokens(currentTokens)} 标记，共 ${formatTokens(maxTokens)}`
+              : '等待统计上下文容量'}
+          </div>
 
-          <button
-            type="button"
-            onClick={handleCompact}
-            disabled={!canCompact || isCompacting}
-            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 transition-colors hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
-            title={canCompact ? '主动压缩上下文' : '当前上下文占用不高'}
-          >
-            {isCompacting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Shrink className="h-3.5 w-3.5" />
-            )}
-            <span>{isCompacting ? '正在压缩' : '压缩上下文'}</span>
-          </button>
+          {canCompact && (
+            <button
+              type="button"
+              onClick={handleCompact}
+              disabled={isCompacting}
+              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.06] px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
+              title="主动压缩上下文"
+            >
+              {isCompacting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Shrink className="h-3.5 w-3.5" />
+              )}
+              <span>{isCompacting ? '正在压缩' : '压缩'}</span>
+            </button>
+          )}
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-emerald-400">
               {compactResult.totalSavedTokens > 0
-                ? `释放 ${formatTokens(compactResult.totalSavedTokens)} tokens`
+                ? `释放 ${formatTokens(compactResult.totalSavedTokens)} 标记`
                 : `已压缩 ${compactResult.compressionCount} 次`}
             </div>
           )}
           {compactError && (
             <div className="mt-2 text-[11px] text-red-400">{compactError}</div>
-          )}
-          {!canCompact && !compactResult && !compactError && (
-            <div className="mt-2 text-[11px] text-zinc-500">70% 后启用手动压缩。</div>
           )}
         </div>
       )}

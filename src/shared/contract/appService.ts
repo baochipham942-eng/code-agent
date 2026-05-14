@@ -21,6 +21,7 @@ import type {
  */
 export interface AppServiceRunOptions {
   researchMode?: boolean;
+  agentOverrideId?: string | null;
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;

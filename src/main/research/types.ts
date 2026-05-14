@@ -167,6 +167,7 @@ export interface ResearchProgressData {
 export interface AgentRunOptions {
   mode: 'normal' | 'deep-research';
   reportStyle?: ReportStyle;
+  agentOverrideId?: string | null;
   turnSystemContext?: string[];
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;

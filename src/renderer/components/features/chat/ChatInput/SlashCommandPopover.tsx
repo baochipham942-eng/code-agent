@@ -9,7 +9,7 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame, Rocket,
-  Lock, LockOpen,
+  Lock, LockOpen, Bot,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -158,6 +158,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       action: () => setShowSettings(true),
     },
     // --- 模式 / 强度 / 权限命令 ---
+    {
+      id: 'agent',
+      label: '选择 Agent',
+      description: '输入 /agent coder 切换本轮 agent',
+      icon: <Bot className="w-4 h-4" />,
+      action: () => {},
+    },
     {
       id: 'code',
       label: 'Code 模式',

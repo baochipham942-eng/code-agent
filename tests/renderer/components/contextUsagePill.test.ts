@@ -54,7 +54,7 @@ describe('ContextUsagePill', () => {
     const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
 
     expect(html).toContain('aria-label="上下文使用"');
-    expect(html).toContain('82% · 82k/100k tokens');
+    expect(html).toContain('82% 已用 · 82k/100k 标记');
     expect(html).not.toContain('<span>82%</span>');
     expect(html).not.toContain('Context window');
   });

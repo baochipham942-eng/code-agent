@@ -63,6 +63,7 @@ export interface DirectRoutingDeliverySnapshot {
 
 export interface ConversationEnvelopeContext {
   workingDirectory?: string | null;
+  preferredAgentId?: string | null;
   routing?: ConversationRouting;
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
@@ -87,6 +88,8 @@ export interface ConversationEnvelope {
 
 export interface WorkbenchMessageMetadata {
   workingDirectory?: string | null;
+  preferredAgentId?: string | null;
+  preferredAgentName?: string | null;
   routingMode?: ConversationRoutingMode;
   targetAgentIds?: string[];
   targetAgentNames?: string[];

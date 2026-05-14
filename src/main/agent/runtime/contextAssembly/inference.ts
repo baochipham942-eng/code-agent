@@ -378,7 +378,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
             const currentUser = authService.getCurrentUser();
             const isAdmin = currentUser?.isAdmin === true;
 
-            const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+            const fallbackApiKey = configService.getApiKey(fallbackConfig.provider)
+              || fallbackConfig.apiKey;
             logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
 
             if (fallbackApiKey) {

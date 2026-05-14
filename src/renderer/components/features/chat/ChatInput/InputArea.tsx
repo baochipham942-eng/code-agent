@@ -2,7 +2,7 @@
 // InputArea - 输入区域组件（textarea + 快捷键 + 附件按钮）
 // ============================================================================
 
-import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useLayoutEffect, useImperativeHandle, forwardRef } from 'react';
 import { UI } from '@shared/constants';
 import { useModeStore } from '../../../../stores/modeStore';
 
@@ -116,14 +116,16 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       getTextarea: () => textareaRef.current,
     }));
 
-    // 自动调整 textarea 高度
-    useEffect(() => {
+    // 自动调整 textarea 高度。先压到 0 再测 scrollHeight，避免空草稿沿用上一条长输入的高度。
+    useLayoutEffect(() => {
       const textarea = textareaRef.current;
       if (textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = `${Math.min(textarea.scrollHeight, UI.TEXTAREA_MAX_HEIGHT)}px`;
+        textarea.style.height = '0px';
+        const nextHeight = Math.min(textarea.scrollHeight, UI.TEXTAREA_MAX_HEIGHT);
+        textarea.style.height = `${nextHeight}px`;
+        textarea.style.overflowY = textarea.scrollHeight > UI.TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
       }
-    }, [value]);
+    }, [hasAttachments, placeholder, value]);
 
     // 处理键盘事件
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

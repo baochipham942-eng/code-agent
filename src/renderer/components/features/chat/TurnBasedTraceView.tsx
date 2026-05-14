@@ -598,7 +598,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [hasOlderMessages, isLoadingOlder]);
 
   // Footer: permission card (plan moved to PinnedTodoBar above the input)
-  const Footer = useCallback(() => <PermissionCard />, []);
+  const Footer = useCallback(() => (
+    <>
+      <PermissionCard />
+      <div className="h-6" aria-hidden="true" />
+    </>
+  ), []);
 
   return (
     <Virtuoso

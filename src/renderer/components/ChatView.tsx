@@ -465,70 +465,72 @@ export const ChatView: React.FC = () => {
           )}
         </div>
 
-        {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
-        {researchDetected && (
-          <div className="w-full shrink-0 px-4">
-            <div className="mx-auto max-w-3xl">
-              <SemanticResearchIndicator
-                intent={researchDetected.intent}
-                confidence={researchDetected.confidence}
-                suggestedDepth={researchDetected.suggestedDepth}
-                reasoning={researchDetected.reasoning}
-                visible={true}
-                onDismiss={dismissResearchDetected}
-              />
+        <div className="shrink-0">
+          {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
+          {researchDetected && (
+            <div className="w-full px-4">
+              <div className="mx-auto max-w-3xl">
+                <SemanticResearchIndicator
+                  intent={researchDetected.intent}
+                  confidence={researchDetected.confidence}
+                  suggestedDepth={researchDetected.suggestedDepth}
+                  reasoning={researchDetected.reasoning}
+                  visible={true}
+                  onDismiss={dismissResearchDetected}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Bridge 拦截提示 (Phase 4) */}
-        {bridgePrompt && (
-          <LocalBridgePrompt
-            toolName={bridgePrompt.toolName}
-            onGoToSettings={handleGoToSettings}
-            onDismiss={() => setBridgePrompt(null)}
+          {/* Bridge 拦截提示 (Phase 4) */}
+          {bridgePrompt && (
+            <LocalBridgePrompt
+              toolName={bridgePrompt.toolName}
+              onGoToSettings={handleGoToSettings}
+              onDismiss={() => setBridgePrompt(null)}
+            />
+          )}
+          {bridgeUpdatePrompt && (
+            <BridgeUpdatePrompt
+              currentVersion={bridgeUpdatePrompt.currentVersion}
+              requiredVersion={bridgeUpdatePrompt.requiredVersion}
+              onGoToSettings={handleGoToSettings}
+              onDismiss={() => setBridgeUpdatePrompt(null)}
+            />
+          )}
+
+          {/* 工作目录选择弹窗 (Phase 4) */}
+          <DirectoryPickerModal
+            isOpen={showDirPicker}
+            onSelect={() => setShowDirPicker(false)}
+            onClose={() => setShowDirPicker(false)}
           />
-        )}
-        {bridgeUpdatePrompt && (
-          <BridgeUpdatePrompt
-            currentVersion={bridgeUpdatePrompt.currentVersion}
-            requiredVersion={bridgeUpdatePrompt.requiredVersion}
-            onGoToSettings={handleGoToSettings}
-            onDismiss={() => setBridgeUpdatePrompt(null)}
+
+          {/* Permission Card moved inline into TurnBasedTraceView */}
+
+          {/* Context inline strip - shows when > 50% */}
+          <InlineStrip />
+
+          {/* 会话级 Diff 聚合卡（Codex 风格 X files changed +A -B / Review changes ↗）*/}
+          <SessionDiffSummary messages={messages} />
+
+          {/* Pinned todo progress bar — visible above the input */}
+          <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
+
+          {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
+          <SwarmInlineMonitor />
+
+          {/* Input */}
+          <ChatInput
+            ref={chatInputRef}
+            onSend={handleSendEnvelope}
+            disabled={effectiveIsProcessing}
+            isProcessing={effectiveIsProcessing}
+            isInterrupting={isInterrupting}
+            onStop={cancel}
+            hasPlan={false}
           />
-        )}
-
-        {/* 工作目录选择弹窗 (Phase 4) */}
-        <DirectoryPickerModal
-          isOpen={showDirPicker}
-          onSelect={() => setShowDirPicker(false)}
-          onClose={() => setShowDirPicker(false)}
-        />
-
-        {/* Permission Card moved inline into TurnBasedTraceView */}
-
-        {/* Context inline strip - shows when > 50% */}
-        <InlineStrip />
-
-        {/* 会话级 Diff 聚合卡（Codex 风格 X files changed +A -B / Review changes ↗）*/}
-        <SessionDiffSummary messages={messages} />
-
-        {/* Pinned todo progress bar — visible above the input */}
-        <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
-
-        {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
-        <SwarmInlineMonitor />
-
-        {/* Input */}
-        <ChatInput
-          ref={chatInputRef}
-          onSend={handleSendEnvelope}
-          disabled={effectiveIsProcessing}
-          isProcessing={effectiveIsProcessing}
-          isInterrupting={isInterrupting}
-          onStop={cancel}
-          hasPlan={false}
-        />
+        </div>
       </div>
 
       {/* Plan is now inline in TurnBasedTraceView */}

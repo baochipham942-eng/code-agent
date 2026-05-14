@@ -5,10 +5,10 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Plus, GitBranch } from 'lucide-react';
+import { AlertTriangle, Image, FileText, Plus, GitBranch } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
-import { UI } from '@shared/constants';
+import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
@@ -554,6 +554,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
   const hasContent = value.trim().length > 0 || attachments.length > 0;
+  const hasImageAttachments = attachments.some((attachment) => (
+    attachment.type === 'image' || attachment.category === 'image'
+  ));
+  const selectedModelHasVision = (MODEL_FEATURES[modelConfig.model] ?? []).includes('vision');
+  const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision;
 
   return (
     <div
@@ -594,6 +599,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {attachments.length > 0 && (
           <div className="mb-2">
             <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+          </div>
+        )}
+
+        {showVisionModelNotice && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              当前 {getModelDisplayLabel(modelConfig.model)} 不直接读图，图片会走视觉模型。
+            </span>
           </div>
         )}
 

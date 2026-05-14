@@ -266,6 +266,24 @@ describe('ModelRouter', () => {
       expect(fallback).not.toBeNull();
     });
 
+    it('should route Xiaomi MiMo text models to MiMo Omni for vision fallback', () => {
+      const originalConfig: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'xiaomi-key',
+        maxTokens: 131072,
+      };
+
+      const fallback = router.getFallbackConfig('vision', originalConfig);
+
+      expect(fallback).toMatchObject({
+        provider: 'xiaomi',
+        model: 'mimo-v2-omni',
+        apiKey: 'xiaomi-key',
+      });
+      expect(router.getModelInfo(fallback!.provider, fallback!.model)?.supportsVision).toBe(true);
+    });
+
     it('should allow overriding fallback models', () => {
       router.setFallbackModel('vision', 'openai', 'gpt-4o');
       // 用 deepseek（无 vision 模型），强制走默认 fallback 而非 same-provider

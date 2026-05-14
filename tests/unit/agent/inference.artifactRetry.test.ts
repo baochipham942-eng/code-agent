@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
 import { inference } from '../../../src/main/agent/runtime/contextAssembly/inference';
 
+const { mockGetApiKey } = vi.hoisted(() => ({
+  mockGetApiKey: vi.fn(() => 'mock-key'),
+}));
+
 vi.mock('../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -12,7 +16,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/main/services', () => ({
-  getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
+  getConfigService: () => ({ getApiKey: mockGetApiKey }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
     startGenerationInSpan: vi.fn(),
@@ -132,6 +136,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
 describe('contextAssembly inference artifact retry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetApiKey.mockReturnValue('mock-key');
   });
 
   it('emits user-visible progress while waiting for artifact model output', async () => {
@@ -196,6 +201,68 @@ describe('contextAssembly inference artifact retry', () => {
       '模型流中断，正在用非流式方式重试 artifact 生成...',
     );
     expect(ctx.runtime._artifactNonStreamingRetried).toBe(false);
+  });
+
+  it('reuses the current provider key for same-provider vision fallback', async () => {
+    mockGetApiKey.mockReturnValue('');
+    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'current-xiaomi-key',
+        temperature: 0,
+        maxTokens: 131072,
+      },
+    } as any);
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看这张图' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'base64data',
+            },
+          },
+        ],
+      },
+    ]);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+    ctx.runtime.modelRouter.detectRequiredCapabilities = vi.fn().mockReturnValue(['vision']);
+    ctx.runtime.modelRouter.getModelInfo = vi.fn()
+      .mockReturnValueOnce({ supportsVision: false, supportsTool: true, capabilities: ['general'] })
+      .mockReturnValueOnce({ supportsVision: true, supportsTool: true, capabilities: ['general', 'vision'] });
+    ctx.runtime.modelRouter.getFallbackConfig = vi.fn().mockReturnValue({
+      provider: 'xiaomi',
+      model: 'mimo-v2-omni',
+      apiKey: 'current-xiaomi-key',
+      maxTokens: 131072,
+    });
+
+    await inference(ctx);
+
+    const [, , effectiveConfig] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(effectiveConfig).toMatchObject({
+      provider: 'xiaomi',
+      model: 'mimo-v2-omni',
+      apiKey: 'current-xiaomi-key',
+    });
+    expect(ctx.runtime.onEvent).toHaveBeenCalledWith({
+      type: 'model_fallback',
+      data: {
+        reason: 'vision',
+        from: 'mimo-v2.5-pro',
+        to: 'mimo-v2-omni',
+      },
+    });
   });
 
   it('narrows visible tools during artifact repair mode before a patch exists', async () => {

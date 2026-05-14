@@ -296,11 +296,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
         const options = typeof arg === 'object' && arg !== null ? (arg as { options?: unknown }).options : undefined;
         const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
+        const clientMessageId = typeof arg === 'object' && arg !== null ? (arg as { clientMessageId?: string }).clientMessageId : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             prompt,
+            ...(clientMessageId ? { clientMessageId } : {}),
             ...(sessionId ? { sessionId } : {}),
             ...(attachments?.length ? { attachments } : {}),
             ...(options ? { options } : {}),

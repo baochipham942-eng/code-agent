@@ -16,7 +16,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
   __CODE_AGENT_TOKEN__: 'test-token',
 };
 
-import { createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
+import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../src/shared/contract/openchronicle';
 
@@ -117,6 +117,33 @@ describe('httpTransport domain API', () => {
       },
     });
     expect(JSON.parse(String(requestInit.body))).toEqual(payload);
+  });
+
+  it('forwards clientMessageId for SSE-backed chat sends', async () => {
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await api.invoke('agent:send-message', {
+      content: 'hello',
+      sessionId: 'session-chat',
+      clientMessageId: 'client-msg-chat',
+    });
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchMock.mock.calls[0];
+    const requestInit = init as RequestInit;
+    expect(url).toBe('http://localhost:8180/api/run');
+    expect(requestInit).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer test-token',
+      },
+    });
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      prompt: 'hello',
+      sessionId: 'session-chat',
+      clientMessageId: 'client-msg-chat',
+    });
   });
 
 });

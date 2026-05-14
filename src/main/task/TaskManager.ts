@@ -209,6 +209,7 @@ export class TaskManager extends EventEmitter {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
@@ -229,10 +230,10 @@ export class TaskManager extends EventEmitter {
     // 尝试获取信号量
     if (this.semaphore.tryAcquire()) {
       // 立即执行
-      await this.executeTask(sessionId, message, attachments, options, messageMetadata);
+      await this.executeTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
     } else {
       // 加入队列
-      await this.enqueueTask(sessionId, message, attachments, options, messageMetadata);
+      await this.enqueueTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
     }
   }
 
@@ -251,7 +252,7 @@ export class TaskManager extends EventEmitter {
 
     if (state.status === 'queued') {
       await this.cancelTask(sessionId);
-      await this.startTask(sessionId, message, attachments, options, messageMetadata);
+      await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
       return;
     }
 
@@ -260,7 +261,7 @@ export class TaskManager extends EventEmitter {
       if (!wrapper) {
         logger.warn(`No orchestrator found for session ${sessionId}; starting a fresh task for interrupt`);
         this.cleanupSession(sessionId);
-        await this.startTask(sessionId, message, attachments, options, messageMetadata);
+        await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
         return;
       }
 
@@ -274,7 +275,7 @@ export class TaskManager extends EventEmitter {
       return;
     }
 
-    await this.startTask(sessionId, message, attachments, options, messageMetadata);
+    await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
   }
 
   /**
@@ -586,6 +587,7 @@ export class TaskManager extends EventEmitter {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
   ): Promise<void> {
     logger.info(`Executing task for session ${sessionId}`);
 
@@ -600,7 +602,7 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
 
     try {
-      await wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata);
+      await wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId);
 
       if (this.cancellingSessions.has(sessionId)) {
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -640,6 +642,7 @@ export class TaskManager extends EventEmitter {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
   ): Promise<void> {
     logger.info(`Enqueueing task for session ${sessionId}`);
 
@@ -678,7 +681,7 @@ export class TaskManager extends EventEmitter {
       this.removeFromQueue(sessionId);
 
       // 执行任务
-      await this.executeTask(sessionId, message, attachments, options, messageMetadata);
+      await this.executeTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
     } catch (error) {
       logger.error(`Failed to acquire semaphore for session ${sessionId}:`, error);
       this.removeFromQueue(sessionId);

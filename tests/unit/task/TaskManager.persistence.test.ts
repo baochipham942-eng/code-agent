@@ -325,13 +325,14 @@ describe('TaskManager message event persistence', () => {
     const options = { toolScope: { allowedSkillIds: ['docx'] } } as never;
     const metadata = { workbench: { workingDirectory: '/tmp/project' } } as never;
 
-    await manager.startTask('session-options', 'hello', ['attachment'], options, metadata);
+    await manager.startTask('session-options', 'hello', ['attachment'], options, metadata, 'client-msg-options');
 
     expect(orchestratorMocks.sendMessage).toHaveBeenCalledWith(
       'hello',
       ['attachment'],
       options,
       metadata,
+      'client-msg-options',
     );
     expect(manager.getSessionState('session-options').status).toBe('idle');
   });
@@ -390,6 +391,7 @@ describe('TaskManager message event persistence', () => {
 
     expect(orchestratorMocks.sendMessage).toHaveBeenCalledWith(
       'fresh task',
+      undefined,
       undefined,
       undefined,
       undefined,

@@ -144,13 +144,14 @@ export class AgentOrchestrator {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
   ): Promise<void> {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
 
     const userMessage: Message = {
-      id: this.generateId(),
+      id: clientMessageId ?? this.generateId(),
       role: 'user',
       content,
       timestamp: Date.now(),

@@ -102,6 +102,7 @@ describe('AgentAppService lifecycle routing', () => {
     await service.sendMessage({
       sessionId: 'session-1',
       content: 'hello',
+      clientMessageId: 'client-msg-send-1',
       attachments: [{ name: 'a.txt' }],
       context: {
         workingDirectory: '/tmp/project',
@@ -126,6 +127,7 @@ describe('AgentAppService lifecycle routing', () => {
       expect.objectContaining({
         workbench: expect.objectContaining({ workingDirectory: '/tmp/project', selectedSkillIds: ['docx'] }),
       }),
+      'client-msg-send-1',
     );
   });
 

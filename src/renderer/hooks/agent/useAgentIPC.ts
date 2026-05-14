@@ -503,6 +503,7 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
+          clientMessageId: userMessage.id,
           context: contextWithDesignBrief,
           sessionId: effectiveSessionId,
         };

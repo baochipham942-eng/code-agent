@@ -186,6 +186,48 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('uses clientMessageId as the persisted user message id for /api/run', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+
+    const addMessageToSession = vi.fn(async () => undefined);
+    await closeServer();
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-client-id', title: 'Client id' })),
+      }),
+    });
+    setDbAvailable(true);
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '第二轮消息',
+        sessionId: 'session-client-id',
+        clientMessageId: 'client-msg-run-1',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-client-id',
+      expect.objectContaining({
+        id: 'client-msg-run-1',
+        role: 'user',
+        content: '第二轮消息',
+      }),
+    );
+    expect(sessionMessages.get('session-client-id')?.[0]).toMatchObject({
+      id: 'client-msg-run-1',
+      role: 'user',
+      content: '第二轮消息',
+    });
+  });
+
   it('routes /api/interrupt to the active loop steer method', async () => {
     activeAgentLoops.set('session-steer', {
       cancel: mockCancel,

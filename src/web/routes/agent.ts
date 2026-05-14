@@ -288,6 +288,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   router.post('/run', async (req: Request, res: Response) => {
     const { prompt, project, sessionDir, model, provider, generation } = req.body;
+    const clientMessageId = typeof req.body?.clientMessageId === 'string' && req.body.clientMessageId.trim()
+      ? req.body.clientMessageId.trim()
+      : undefined;
 
     if (!prompt) {
       res.status(400).json({ error: 'Missing prompt' });
@@ -461,7 +464,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
       userContent.unshift({ type: 'text', text: enrichedPrompt });
 
-      const msgId = `msg-${Date.now()}`;
+      const msgId = clientMessageId || `msg-${Date.now()}`;
       const userMsg: CachedMessage = {
         id: msgId,
         role: 'user' as const,

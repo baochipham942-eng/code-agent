@@ -58,6 +58,34 @@ describe('MCPToolRegistry.parseMCPToolName', () => {
 });
 
 describe('MCPToolRegistry permission metadata', () => {
+  it('skips resource and prompt probes when server capabilities only declare tools', async () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+    const client = {
+      getServerCapabilities: vi.fn(() => ({ tools: {} })),
+      listTools: vi.fn(async () => ({
+        tools: [
+          {
+            name: 'ping',
+            description: 'Ping',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      })),
+      listResources: vi.fn(),
+      listPrompts: vi.fn(),
+    };
+
+    await registry.discoverCapabilities('codex', client as never);
+
+    expect(client.listTools).toHaveBeenCalledOnce();
+    expect(client.listResources).not.toHaveBeenCalled();
+    expect(client.listPrompts).not.toHaveBeenCalled();
+    expect(registry.getToolCount('codex')).toBe(1);
+    expect(registry.getResourceCount('codex')).toBe(0);
+    expect(registry.getPrompts().filter((prompt) => prompt.serverName === 'codex')).toHaveLength(0);
+  });
+
   it('maps read-only and destructive MCP annotations into tool permissions', () => {
     const registry = new MCPToolRegistry();
     registry.tools = [

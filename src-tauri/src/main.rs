@@ -202,32 +202,36 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
         })
 }
 
-fn wait_for_healthcheck() -> Result<(), String> {
-    let handle = thread::spawn(|| -> Result<(), String> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .map_err(|error| format!("Failed to build HTTP client: {error}"))?;
+fn wait_for_healthcheck(child: &mut Child) -> Result<(), String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|error| format!("Failed to build HTTP client: {error}"))?;
 
-        let deadline = Instant::now() + HEALTH_TIMEOUT;
+    let deadline = Instant::now() + HEALTH_TIMEOUT;
 
-        while Instant::now() < deadline {
-            match client.get(HEALTH_URL).send() {
-                Ok(response) if response.status().as_u16() == 200 => return Ok(()),
-                Ok(_) | Err(_) => thread::sleep(HEALTH_INTERVAL),
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "Web server exited before healthcheck completed: {status}"
+                ));
             }
+            Ok(None) => {}
+            Err(error) => return Err(format!("Failed to inspect web server process: {error}")),
         }
 
-        Err(format!(
-            "Timed out after {}s waiting for {}",
-            HEALTH_TIMEOUT.as_secs(),
-            HEALTH_URL
-        ))
-    });
+        match client.get(HEALTH_URL).send() {
+            Ok(response) if response.status().as_u16() == 200 => return Ok(()),
+            Ok(_) | Err(_) => thread::sleep(HEALTH_INTERVAL),
+        }
+    }
 
-    handle
-        .join()
-        .map_err(|_| "Healthcheck thread panicked".to_string())?
+    Err(format!(
+        "Timed out after {}s waiting for {}",
+        HEALTH_TIMEOUT.as_secs(),
+        HEALTH_URL
+    ))
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
@@ -606,13 +610,15 @@ fn main() {
                 // a stale dev server can serve mismatched renderer assets and leave the app white.
                 println!("Web server already running on {SERVER_URL}, skipping spawn");
             } else {
-                let child = spawn_web_server(&app.handle())?;
-                app.state::<AppState>().store_child(child);
+                let mut child = spawn_web_server(&app.handle())?;
 
-                if let Err(error) = wait_for_healthcheck() {
-                    cleanup_server(&app.handle());
+                if let Err(error) = wait_for_healthcheck(&mut child) {
+                    let _ = child.kill();
+                    let _ = child.wait();
                     return Err(error.into());
                 }
+
+                app.state::<AppState>().store_child(child);
             }
 
             if let Some(window) = app.get_webview_window("main") {

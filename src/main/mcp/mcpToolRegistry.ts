@@ -102,50 +102,66 @@ export class MCPToolRegistry {
    * 发现外部服务器能力
    */
   async discoverCapabilities(serverName: string, client: Client): Promise<void> {
+    const capabilities = client.getServerCapabilities();
+    const shouldProbe = (capability: 'tools' | 'resources' | 'prompts') =>
+      !capabilities || Boolean(capabilities[capability]);
+
     // 获取工具列表
-    try {
-      const toolsResult = await client.listTools();
-      if (toolsResult.tools) {
-        for (const tool of toolsResult.tools) {
-          this.tools.push(mapSdkToolToMCPTool(serverName, tool));
+    if (shouldProbe('tools')) {
+      try {
+        const toolsResult = await client.listTools();
+        if (toolsResult.tools) {
+          for (const tool of toolsResult.tools) {
+            this.tools.push(mapSdkToolToMCPTool(serverName, tool));
+          }
         }
+      } catch {
+        logger.debug(`Server ${serverName} does not support tools`);
       }
-    } catch {
+    } else {
       logger.debug(`Server ${serverName} does not support tools`);
     }
 
     // 获取资源列表
-    try {
-      const resourcesResult = await client.listResources();
-      if (resourcesResult.resources) {
-        for (const resource of resourcesResult.resources) {
-          this.resources.push({
-            uri: resource.uri,
-            name: resource.name,
-            description: resource.description,
-            mimeType: resource.mimeType,
-            serverName,
-          });
+    if (shouldProbe('resources')) {
+      try {
+        const resourcesResult = await client.listResources();
+        if (resourcesResult.resources) {
+          for (const resource of resourcesResult.resources) {
+            this.resources.push({
+              uri: resource.uri,
+              name: resource.name,
+              description: resource.description,
+              mimeType: resource.mimeType,
+              serverName,
+            });
+          }
         }
+      } catch {
+        logger.debug(`Server ${serverName} does not support resources`);
       }
-    } catch {
+    } else {
       logger.debug(`Server ${serverName} does not support resources`);
     }
 
     // 获取提示列表
-    try {
-      const promptsResult = await client.listPrompts();
-      if (promptsResult.prompts) {
-        for (const prompt of promptsResult.prompts) {
-          this.prompts.push({
-            name: prompt.name,
-            description: prompt.description,
-            arguments: prompt.arguments,
-            serverName,
-          });
+    if (shouldProbe('prompts')) {
+      try {
+        const promptsResult = await client.listPrompts();
+        if (promptsResult.prompts) {
+          for (const prompt of promptsResult.prompts) {
+            this.prompts.push({
+              name: prompt.name,
+              description: prompt.description,
+              arguments: prompt.arguments,
+              serverName,
+            });
+          }
         }
+      } catch {
+        logger.debug(`Server ${serverName} does not support prompts`);
       }
-    } catch {
+    } else {
       logger.debug(`Server ${serverName} does not support prompts`);
     }
 

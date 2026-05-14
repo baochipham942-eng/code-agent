@@ -167,6 +167,43 @@ describe('applyToolResultBudget', () => {
   });
 
   // --------------------------------------------------------------------------
+  // G24: key error line preservation
+  // --------------------------------------------------------------------------
+  describe('key error line preservation (G24)', () => {
+    const padBlock = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => `${prefix} line ${i} with several filler words here`).join('\n');
+
+    it('preserves error-signal lines buried in the dropped middle', () => {
+      const errorBand = [
+        'AssertionError: expected 200 but got 500',
+        '    at Object.<anonymous> (/app/test.js:42:10)',
+        'error TS2345: Argument of type string is not assignable to number',
+      ].join('\n');
+      const content = padBlock('head', 500) + '\n' + errorBand + '\n' + padBlock('tail', 500);
+
+      const msg = makeToolMsg('t1', content);
+      applyToolResultBudget([msg], state);
+
+      // error lines survive even though they sit in the truncated-away middle
+      expect(msg.content).toContain('AssertionError: expected 200 but got 500');
+      expect(msg.content).toContain('error TS2345');
+      expect(msg.content).toContain('at Object.<anonymous>');
+      expect(msg.content).toContain('key line(s) preserved');
+      // still within budget
+      expect(estimateTokens(msg.content)).toBeLessThanOrEqual(2200);
+    });
+
+    it('falls back to plain head+tail when the middle has no error signals', () => {
+      const content = padBlock('plain', 1200); // no error-signal lines anywhere
+      const msg = makeToolMsg('t1', content);
+      applyToolResultBudget([msg], state);
+
+      expect(msg.content).toContain('...[truncated]...');
+      expect(msg.content).not.toContain('key line(s) preserved');
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Snapshot state
   // --------------------------------------------------------------------------
   describe('snapshot state', () => {

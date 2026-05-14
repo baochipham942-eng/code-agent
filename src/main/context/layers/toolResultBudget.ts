@@ -19,6 +19,43 @@ const DEFAULT_CONFIG: Pick<ToolResultBudgetConfig, 'maxTokensPerResult'> = {
   maxTokensPerResult: 2000,
 };
 
+// G24: 错误信号行的正则。head+tail 截断会丢掉夹在中段的关键报错行
+// （stack trace / 编译错误 / 断言失败），模型看不到失败原因就反复重试 (stagnation)。
+// 截断时这些行优先保留，即使它们落在被丢弃的中段。
+// 模式刻意偏宽松：漏判一行真错误 → stagnation；误判多留一行 → 只是稍微占点预算。
+// 所以不用 \b 词边界（否则 AssertionError / TypeError 这类会漏）。
+const KEY_LINE_PATTERNS: RegExp[] = [
+  /error/i,                    // error, Error, AssertionError, error TS2345 ...
+  /exception/i,
+  /\bfail/i,                   // fail, failed, failure, FAIL, Failed
+  /panic/i,
+  /traceback/i,
+  /fatal/i,
+  /assert/i,                   // assert, assertion, AssertionError
+  /^\s+at\s/,                  // JS stack frame
+  /^\s+File\s"/,               // Python stack frame
+  /\b(ENOENT|EACCES|ECONNREFUSED|ETIMEDOUT|EADDRINUSE)\b/,
+  /not found|cannot find|is not (defined|a function)|undefined is not/i,
+  /[✗✘❌⛔]/,
+];
+
+/**
+ * 从一组行里挑出匹配错误信号的行，最多取 maxTokens 预算。
+ */
+function extractKeyLines(lines: string[], maxTokens: number): string[] {
+  if (maxTokens <= 0) return [];
+  const kept: string[] = [];
+  let tokens = 0;
+  for (const line of lines) {
+    if (!KEY_LINE_PATTERNS.some((re) => re.test(line))) continue;
+    const lt = estimateTokens(line) + 1;
+    if (tokens + lt > maxTokens) break;
+    kept.push(line);
+    tokens += lt;
+  }
+  return kept;
+}
+
 /**
  * Extract the first code block from text if present.
  * Returns { pre, block, post } or null if no code block found.
@@ -70,37 +107,57 @@ function truncateHeadTail(text: string, maxTokens: number): string {
 }
 
 /**
- * Truncate from the start: keep first half + last half of budget.
+ * Truncate keeping head + key error lines from the dropped middle + tail.
+ * Budget split: head ~40% / key middle lines ~20% / tail ~40%.
+ * G24: if the dropped middle contains error signals (stack traces, compiler
+ * errors, assertion failures), they are preserved so the model can still
+ * diagnose the failure instead of looping. No error signals → plain head+tail.
  */
 function truncatePlain(text: string, maxTokens: number): string {
   const currentTokens = estimateTokens(text);
   if (currentTokens <= maxTokens) return text;
 
   const lines = text.split('\n');
-  const half = Math.floor(maxTokens / 2);
+  const keyBudget = Math.floor(maxTokens * 0.2);
+  const sideBudget = Math.floor((maxTokens - keyBudget) / 2);
 
   // Take lines from head
   const headLines: string[] = [];
   let headTokens = 0;
-  for (const line of lines) {
-    const lt = estimateTokens(line) + 1; // +1 for newline
-    if (headTokens + lt > half) break;
-    headLines.push(line);
+  let headEnd = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const lt = estimateTokens(lines[i]) + 1; // +1 for newline
+    if (headTokens + lt > sideBudget) break;
+    headLines.push(lines[i]);
     headTokens += lt;
+    headEnd = i + 1;
   }
 
-  // Take lines from tail
+  // Take lines from tail — start from headEnd so head and tail never overlap
   const tailLines: string[] = [];
   let tailTokens = 0;
-  for (let i = lines.length - 1; i >= 0; i--) {
+  let tailStart = lines.length;
+  for (let i = lines.length - 1; i >= headEnd; i--) {
     const lt = estimateTokens(lines[i]) + 1;
-    if (tailTokens + lt > half) break;
+    if (tailTokens + lt > sideBudget) break;
     tailLines.unshift(lines[i]);
     tailTokens += lt;
+    tailStart = i;
   }
 
-  const marker = '\n...[truncated]...\n';
-  return headLines.join('\n') + marker + tailLines.join('\n');
+  // Scan the dropped middle for key error lines
+  const keyLines = extractKeyLines(lines.slice(headEnd, tailStart), keyBudget);
+
+  if (keyLines.length === 0) {
+    return headLines.join('\n') + '\n...[truncated]...\n' + tailLines.join('\n');
+  }
+  return (
+    headLines.join('\n')
+    + `\n...[truncated, ${keyLines.length} key line(s) preserved]...\n`
+    + keyLines.join('\n')
+    + '\n...[truncated]...\n'
+    + tailLines.join('\n')
+  );
 }
 
 /**

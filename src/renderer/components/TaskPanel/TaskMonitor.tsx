@@ -1,11 +1,11 @@
 // ============================================================================
 // TaskMonitor - StatusRail 主工作面视图
 // ============================================================================
-// 主卡片链路: 进度 → 来源 → 连接 → 产物
+// 主卡片链路: 任务 → 待审 → 产物 → 上下文 → MCP
 // 数据统一来自 useStatusRailModel
 // ============================================================================
 
-import React, { useMemo, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import type {
   BlockedCapabilityReason,
   TurnCapabilityInvocationItem,
@@ -24,7 +24,7 @@ import { useWorkbenchCapabilityQuickActionRunner } from '../../hooks/useWorkbenc
 import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
 import {
   Loader2, AlertTriangle,
-  Wrench, GitBranch, Monitor, RefreshCw,
+  Wrench, GitBranch,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { formatElapsed } from './taskPanelUtils';
@@ -36,7 +36,6 @@ import {
   OutputFileRows,
 } from './OutputArtifactRows';
 import {
-  MemoryActivitySummary,
   TaskDashboardSummary,
 } from './RunWorkbenchCards';
 import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './WorkbenchPrimitives';
@@ -48,18 +47,12 @@ import {
   getWorkbenchCapabilityQuickActionFeedback,
   type WorkbenchQuickAction,
 } from '../../utils/workbenchQuickActions';
-import { getMemoryActivityFocus } from '../../utils/memoryActivityNavigation';
-import {
-  getCurrentActivityContext,
-  type ActivityContextPreview,
-} from '../../services/activityContext';
 import type { WorkbenchCapabilityRegistryItem } from '../../utils/workbenchCapabilityRegistry';
 import {
   findWorkbenchCapabilityHistoryItem,
   resolveWorkbenchCapabilityFromSources,
   type WorkbenchCapabilityTarget,
 } from '../../utils/workbenchCapabilitySheet';
-import type { MemoryActivityEvent } from '../../types/runWorkbench';
 
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId } = useSessionStore();
@@ -68,8 +61,6 @@ export const TaskMonitor: React.FC = () => {
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
-  const openMemorySettings = useAppStore((state) => state.openMemorySettings);
-  const setShowDesktopPanel = useAppStore((state) => state.setShowDesktopPanel);
   const { references: referencedWorkbenchItems, history: workbenchHistory } = useWorkbenchInsights();
   const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const currentTurnCapabilityScope = useCurrentTurnCapabilityScope();
@@ -126,9 +117,6 @@ export const TaskMonitor: React.FC = () => {
   const openPreviewWorkspace = useCallback((itemId?: string | null) => {
     openWorkspacePreview(itemId ?? workspacePreviewItems[0]?.id ?? null);
   }, [openWorkspacePreview, workspacePreviewItems]);
-  const openMemoryActivity = useCallback((activity: MemoryActivityEvent) => {
-    openMemorySettings(getMemoryActivityFocus(activity));
-  }, [openMemorySettings]);
   const visiblePendingApproval = Boolean(
     pendingPermissionRequest
     && (!pendingPermissionSessionId || !currentSessionId || pendingPermissionSessionId === currentSessionId),
@@ -151,25 +139,6 @@ export const TaskMonitor: React.FC = () => {
     && (currentTurnRoutingEvidence?.tone === 'warning' || currentTurnRoutingEvidence?.tone === 'error');
   const mcpDefaultExpanded = mcpNeedsAttention || sourceHasActionFeedback;
   const loopFilesDefaultExpanded = loopFileItems.length > 0 || runWorkbench.run.status !== 'completed';
-  const [activityContext, setActivityContext] = useState<ActivityContextPreview | null>(null);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityError, setActivityError] = useState<string | null>(null);
-  const refreshActivityContext = useCallback(async () => {
-    setActivityLoading(true);
-    try {
-      const context = await getCurrentActivityContext();
-      setActivityContext(context);
-      setActivityError(null);
-    } catch (error) {
-      setActivityError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setActivityLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshActivityContext();
-  }, [refreshActivityContext, currentSessionId]);
 
   // ── 渲染 ──
 
@@ -190,44 +159,6 @@ export const TaskMonitor: React.FC = () => {
         highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
       >
         <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
-      </Card>
-
-      <Card
-        title="Activity"
-        storageKey="activity"
-        count={String((activityContext?.sources.length ?? 0) + runWorkbench.memoryActivities.length)}
-        defaultExpanded
-        highlight={Boolean(activityError)}
-        rightElement={(
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={refreshActivityContext}
-              disabled={activityLoading}
-              className="rounded-md border border-white/[0.08] bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40"
-              aria-label="刷新 Activity"
-              title="刷新 Activity"
-            >
-              <RefreshCw className={`h-3 w-3 ${activityLoading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDesktopPanel(true)}
-              className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 hover:bg-cyan-500/15"
-              aria-label="打开桌面活动"
-            >
-              Open
-            </button>
-          </div>
-        )}
-      >
-        <ActivityMainCard
-          context={activityContext}
-          loading={activityLoading}
-          error={activityError}
-          memoryActivities={runWorkbench.memoryActivities}
-          onOpenActivity={openMemoryActivity}
-        />
       </Card>
 
       {approvalCount > 0 && (
@@ -356,119 +287,6 @@ export const TaskMonitor: React.FC = () => {
     </div>
   );
 };
-
-function formatActivityCapturedAt(ms?: number | null): string {
-  if (!ms) return '尚未捕获';
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(ms));
-}
-
-function activitySourceClass(kind: ActivityContextPreview['sources'][number]['kind']): string {
-  switch (kind) {
-    case 'automatic_background':
-      return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300';
-    case 'manual_capture':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-    case 'meeting_audio':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
-    case 'screenshot_analysis':
-      return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
-    default:
-      return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/naming-convention
-function ActivityMainCard({
-  context,
-  loading,
-  error,
-  memoryActivities,
-  onOpenActivity,
-}: {
-  context: ActivityContextPreview | null;
-  loading: boolean;
-  error: string | null;
-  memoryActivities: MemoryActivityEvent[];
-  onOpenActivity: (activity: MemoryActivityEvent) => void;
-}) {
-  const hasContext = Boolean(context && context.status !== 'empty');
-  const visibleSources = context?.sources.slice(0, 4) ?? [];
-  const evidence = context?.evidence.slice(0, 2) ?? [];
-
-  return (
-    <div className="space-y-2">
-      <div className="rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <div className="inline-flex min-w-0 items-center gap-1.5">
-            <Monitor className="h-3.5 w-3.5 flex-shrink-0 text-cyan-300" />
-            <span className="truncate text-xs text-zinc-200">
-              {hasContext ? context?.recentContextSummary : '暂无可用桌面上下文'}
-            </span>
-          </div>
-          <span className="flex-shrink-0 text-[10px] text-zinc-600">
-            {loading ? '刷新中' : formatActivityCapturedAt(context?.capturedAtMs)}
-          </span>
-        </div>
-
-        {error ? (
-          <div className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200">
-            {error}
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap gap-1">
-              {visibleSources.length > 0 ? (
-                visibleSources.map((source, index) => (
-                  <span
-                    key={`${source.kind}:${source.label}:${index}`}
-                    title={source.summary}
-                    className={`rounded border px-1.5 py-0.5 text-[10px] ${activitySourceClass(source.kind)}`}
-                  >
-                    {source.label}
-                  </span>
-                ))
-              ) : (
-                <span className="text-[11px] text-zinc-600">还没有来源</span>
-              )}
-            </div>
-            {context?.agentInjectionPreview && (
-              <div className="line-clamp-2 text-[11px] leading-relaxed text-zinc-500">
-                {context.agentInjectionPreview}
-              </div>
-            )}
-            {evidence.length > 0 && (
-              <div className="space-y-0.5">
-                {evidence.map((item) => (
-                  <div key={item} className="truncate text-[10px] text-zinc-600">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {memoryActivities.length > 0 ? (
-        <div className="space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">Memory activity</div>
-          <MemoryActivitySummary
-            activities={memoryActivities}
-            onOpenActivity={onOpenActivity}
-          />
-        </div>
-      ) : (
-        <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
-          本轮还没有记忆写入或引用。
-        </div>
-      )}
-    </div>
-  );
-}
 
 type LoopFileItem = StatusRailContextModel['items'][number];
 

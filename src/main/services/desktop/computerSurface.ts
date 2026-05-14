@@ -10,6 +10,7 @@ import type {
   BackgroundCgEventWindowPoint,
   BackgroundCgEventWindowBounds,
   ListBackgroundCgEventWindowsOptions,
+  DisplayInfo,
 } from './backgroundCgEventSurface';
 import { backgroundCgEventSurface } from './backgroundCgEventSurface';
 import { isMultiAgentMode } from '../multiAgentMode';
@@ -92,11 +93,14 @@ interface ComputerSurfacePreflightBlock {
   recommendedAction: string;
 }
 
+// Code Agent 自身的 app 名（与 src-tauri/tauri.conf.json 的 productName 一致）。
+const SELF_APP_NAME = 'Code Agent';
+
 const DEFAULT_DENIED_APPS = [
   'Terminal',
   'iTerm',
   'iTerm2',
-  'Code Agent',
+  SELF_APP_NAME,
   'Codex',
   'System Settings',
   'System Preferences',
@@ -133,12 +137,39 @@ class DesktopComputerSurface {
   private approvedAppScopes = new Set<string>();
   private lastAction: WorkbenchActionTrace | null = null;
   private lastSnapshot: ComputerSurfaceSnapshot | null = null;
+  /** 主显示器信息，进程级缓存（显示配置很少会话中途变；forceRefresh 可手动刷新） */
+  private displayInfo: DisplayInfo | null = null;
+  /** 最近一次视觉分析截图的尺寸记账，供 executeMacOSAction 把图像坐标换算回逻辑点 */
+  private lastAnalyzedImageDims: { width: number; height: number } | null = null;
   private deniedApps = parseList(process.env.CODE_AGENT_COMPUTER_DENIED_APPS, DEFAULT_DENIED_APPS);
   private allowedApps = parseList(process.env.CODE_AGENT_COMPUTER_ALLOWED_APPS, []);
   private backgroundEnabled = process.env.CODE_AGENT_COMPUTER_BACKGROUND_SURFACE !== '0';
 
+  /**
+   * 主显示器信息，进程级缓存。helper 失败返回 null（调用方降级到 FALLBACK_SCALE_FACTOR）。
+   */
+  async getDisplayInfo(forceRefresh = false): Promise<DisplayInfo | null> {
+    if (this.displayInfo && !forceRefresh) return this.displayInfo;
+    if (process.platform !== 'darwin') return null;
+    try {
+      this.displayInfo = await backgroundCgEventSurface.getDisplayInfo();
+    } catch {
+      this.displayInfo = null;
+    }
+    return this.displayInfo;
+  }
+
+  /** 记录最近一次视觉分析截图的实际像素尺寸（screenshot 工具在 analyze 后调用） */
+  setLastAnalyzedImageDims(dims: { width: number; height: number } | null): void {
+    this.lastAnalyzedImageDims = dims;
+  }
+
+  getLastAnalyzedImageDims(): { width: number; height: number } | null {
+    return this.lastAnalyzedImageDims;
+  }
+
   async observe(options: { includeScreenshot?: boolean; targetApp?: string } = {}): Promise<ComputerSurfaceSnapshot> {
-    if (options.targetApp && this.isDeniedApp(options.targetApp)) {
+    if (options.targetApp && this.isReadBlockedApp(options.targetApp)) {
       const blocked = this.buildDeniedAppBlock('observe');
       const snapshot = {
         capturedAtMs: Date.now(),
@@ -288,7 +319,7 @@ class DesktopComputerSurface {
       };
     }
 
-    if (this.isDeniedApp(targetApp)) {
+    if (this.isReadBlockedApp(targetApp)) {
       return this.deniedAppActionResult('accessibility read');
     }
 
@@ -435,7 +466,7 @@ class DesktopComputerSurface {
   async listBackgroundCgEventWindows(
     options: ListBackgroundCgEventWindowsOptions = {},
   ): Promise<ComputerSurfaceActionResult> {
-    if (options.targetApp && this.isDeniedApp(options.targetApp)) {
+    if (options.targetApp && this.isReadBlockedApp(options.targetApp)) {
       return this.deniedAppActionResult('window listing', {
         computerSurfaceMode: 'background_cgevent',
       });
@@ -565,7 +596,7 @@ class DesktopComputerSurface {
   }
 
   async diagnoseApp(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
-    if (action.targetApp && this.isDeniedApp(action.targetApp)) {
+    if (action.targetApp && this.isReadBlockedApp(action.targetApp)) {
       return this.deniedAppActionResult('app diagnosis', {
         computerSurfaceMode: 'background_cgevent',
       });
@@ -1186,6 +1217,26 @@ class DesktopComputerSurface {
 
   private isDeniedApp(targetApp: string): boolean {
     return this.deniedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase());
+  }
+
+  // 目标是否为 Code Agent 自身。
+  private isSelfApp(targetApp: string): boolean {
+    return targetApp.trim().toLowerCase() === SELF_APP_NAME.toLowerCase();
+  }
+
+  /**
+   * 只读 Computer Surface 操作（observe / get_ax_elements / get_windows /
+   * diagnose_app）的门禁：被保护的 app 一律拦，但 Code Agent 自身豁免。
+   *
+   * 自操作真正该拦的是 reentrancy —— agent loop 通过 computer-use 驱动自己的
+   * 输入/run 入口形成递归咬尾。而读自己的 UI 状态（设置页 / 会话列表 / AX 树）
+   * 物理上不可能造成 reentrancy，是合理且更智能的自操作能力。写路径仍走
+   * isDeniedApp 全拦，self-write 收窄留到后续 reentrancy 护栏阶段再做。
+   * 注意：仅豁免 self —— 其它被保护 app（1Password / Keychain 等）读操作仍全拦，
+   * 它们的 UI/AX 树本身可能泄露敏感信息。
+   */
+  private isReadBlockedApp(targetApp: string): boolean {
+    return this.isDeniedApp(targetApp) && !this.isSelfApp(targetApp);
   }
 
   private buildDeniedAppBlock(actionDescription: string): ComputerSurfacePreflightBlock {

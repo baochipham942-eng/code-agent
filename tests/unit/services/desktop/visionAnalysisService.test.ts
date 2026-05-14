@@ -13,8 +13,15 @@ const { getApiKeyMock, readFileSyncMock, loggerMock } = vi.hoisted(() => ({
 
 vi.mock('../../../../src/main/services/core/configService', () => ({
   getConfigService: () => ({
-    getApiKey: getApiKeyMock,
+    getZhipuOfficialKey: getApiKeyMock,
   }),
+}));
+
+vi.mock('sharp', () => ({
+  // prepareImageForVision 走降级路径：sharp 抛错 → 回退用 readFileSync 原始字节
+  default: () => {
+    throw new Error('sharp not available in unit test');
+  },
 }));
 
 vi.mock('../../../../src/main/services/infra/logger', () => ({

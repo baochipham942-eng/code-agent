@@ -16,3 +16,4 @@ export * from './misc';
 export * from './repair';
 export * from './acceptance';
 export * from './game';
+export * from './vision';

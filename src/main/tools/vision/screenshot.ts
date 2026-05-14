@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import { analyzeImageWithVisionDetailed } from '../../services/desktop/visionAnalysisService';
+import { getComputerSurface } from '../../services/desktop/computerSurface';
 
 const execAsync = promisify(exec);
 
@@ -195,16 +196,27 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
 
       // 如果启用分析，进行视觉分析
       let analysis: string | null = null;
+      // 分析图像的尺寸记账（供下游坐标变换把图像坐标换算回逻辑屏幕点）
+      let visionDims: {
+        originalWidth: number | null;
+        originalHeight: number | null;
+        analyzedWidth: number | null;
+        analyzedHeight: number | null;
+      } | null = null;
       if (analyze) {
         context.emit?.('tool_output', {
           tool: 'screenshot',
           message: '🔍 正在分析截图内容...',
         });
 
+        // 实测主显示器 backingScaleFactor，让降采样按真实 DPI 换算（缺省回退 FALLBACK_SCALE_FACTOR）
+        const displayInfo = await getComputerSurface().getDisplayInfo().catch(() => null);
+
         const analysisResult = await analyzeImageWithVisionDetailed({
           imagePath: outputPath,
           prompt: analysisPrompt,
           source: 'screenshot',
+          scaleFactorHint: displayInfo?.backingScaleFactor,
         });
 
         if (!analysisResult.ok) {
@@ -229,13 +241,33 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
               analysis: null,
               visionAnalysis: analysisResult,
               cannotObserveScreen: true,
+              originalWidth: analysisResult.originalWidth,
+              originalHeight: analysisResult.originalHeight,
+              analyzedWidth: analysisResult.analyzedWidth,
+              analyzedHeight: analysisResult.analyzedHeight,
             },
           };
         }
 
         analysis = analysisResult.analysis;
+        visionDims = {
+          originalWidth: analysisResult.originalWidth,
+          originalHeight: analysisResult.originalHeight,
+          analyzedWidth: analysisResult.analyzedWidth,
+          analyzedHeight: analysisResult.analyzedHeight,
+        };
+        // 记账给 computerSurface：后续 coordSpace='image' 的 click 没带 imageWidth/Height 时兜底
+        getComputerSurface().setLastAnalyzedImageDims(
+          analysisResult.analyzedWidth && analysisResult.analyzedHeight
+            ? { width: analysisResult.analyzedWidth, height: analysisResult.analyzedHeight }
+            : null,
+        );
         if (analysis) {
           output += `\n\n📝 AI 分析结果:\n${analysis}`;
+        }
+        if (visionDims.analyzedWidth && visionDims.analyzedHeight) {
+          output += `\n\n- Analyzed at: ${visionDims.analyzedWidth}x${visionDims.analyzedHeight}`
+            + ` (source ${visionDims.originalWidth ?? '?'}x${visionDims.originalHeight ?? '?'})`;
         }
       }
 
@@ -251,6 +283,10 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
           analyzed: !!analysis,
           analysisRequested: !!analyze,
           analysis,
+          originalWidth: visionDims?.originalWidth ?? null,
+          originalHeight: visionDims?.originalHeight ?? null,
+          analyzedWidth: visionDims?.analyzedWidth ?? null,
+          analyzedHeight: visionDims?.analyzedHeight ?? null,
         },
       };
     } catch (error) {

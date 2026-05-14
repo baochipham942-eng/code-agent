@@ -37,7 +37,7 @@ export const ComputerTool: Tool = {
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them — every mouse_down must be followed by a mouse_up.
 - open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. "Safari", "Visual Studio Code"). Chain observe to confirm it became frontmost.
 - write_clipboard: Set the system pasteboard to text (text param). Faster and focus-shift-immune compared to type for large/formatted text.
-- computer_batch: Execute a list of actions sequentially in one tool call (actions param, e.g. [{action:"click",x:100,y:200},{action:"type",text:"hi"}]). Stops on first failure. Nested computer_batch is rejected.
+- computer_batch: Execute a list of actions sequentially in one tool call (actions param, e.g. [{action:"click",x:100,y:200},{action:"type",text:"hi"}]). Stops on first failure. Nested computer_batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle; pass observeAfter:true to capture an observe snapshot after the batch into metadata.postBatchObserve.
 - hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration (ms), then release. Pass via modifiers (preferred) or single key. Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy.
 - triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if target app does not respond.
 - cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y" plus metadata.x / metadata.y.
@@ -152,6 +152,19 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
       },
+      coordSpace: {
+        type: 'string',
+        enum: ['screen', 'image'],
+        description: 'Coordinate space for x/y/toX/toY. Use "image" when the coordinates came from a screenshot you analyzed (they get scaled to logical screen points before clicking). Default "screen".',
+      },
+      imageWidth: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel width of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedWidth). Falls back to the last analyzed screenshot if omitted.',
+      },
+      imageHeight: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel height of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedHeight).',
+      },
       pid: {
         type: 'number',
         description: '[macOS CGEvent] Process id returned by get_windows',
@@ -205,6 +218,14 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         type: 'array',
         items: { type: 'object' },
         description: '[computer_batch] Sequential list of action descriptors to execute in one call. Each item has the same shape as a normal Computer call. Nested computer_batch is rejected.',
+      },
+      settleMs: {
+        type: 'number',
+        description: '[computer_batch] Delay in ms inserted after each sub-action before the next runs. Default 0. Use ~150-300 for click→type or click→click sequences so the UI can settle. Capped at 5000.',
+      },
+      observeAfter: {
+        type: 'boolean',
+        description: '[computer_batch] When true, capture an observe snapshot after the batch completes into metadata.postBatchObserve so you can verify the end state. Default false.',
       },
       toX: {
         type: 'number',

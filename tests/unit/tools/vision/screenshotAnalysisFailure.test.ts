@@ -46,8 +46,19 @@ vi.mock('../../../../src/main/services/desktop/visionAnalysisService', () => ({
   analyzeImageWithVisionDetailed: (...args: unknown[]) => analyzeImageWithVisionDetailedMock(...args),
 }));
 
+// screenshot.ts 现在依赖 computerSurface（Gap 2：取 displayInfo + 写尺寸记账）。
+// 直接 mock 这个依赖，避免拉入 backgroundCgEventSurface 的 native helper 栈。
+vi.mock('../../../../src/main/services/desktop/computerSurface', () => ({
+  getComputerSurface: () => ({
+    getDisplayInfo: vi.fn().mockResolvedValue(null),
+    setLastAnalyzedImageDims: vi.fn(),
+    getLastAnalyzedImageDims: vi.fn().mockReturnValue(null),
+  }),
+}));
+
 vi.mock('../../../../src/main/tools/artifacts/artifactMeta', () => ({
-  createFileArtifact: (...args: unknown[]) => createFileArtifactMock(...args),
+  // createFileArtifactMock 是带类型签名的 vi.fn，直接引用避免 unknown[] 展开类型不匹配
+  createFileArtifact: createFileArtifactMock,
   createVirtualArtifact: vi.fn(),
   inferArtifactKind: vi.fn().mockReturnValue('image'),
 }));
@@ -141,6 +152,8 @@ describe('screenshotTool analyze failure handling', () => {
     );
 
     expect(result.ok).toBe(false);
+    // 收窄判别联合：ok:true 分支没有 error 字段
+    if (result.ok) throw new Error('expected handler to fail when vision analysis fails');
     expect(result.error).toContain('cannot observe or describe the screen content');
     expect(result.meta).toMatchObject({
       path: outputPath,

@@ -95,6 +95,18 @@ export interface ListBackgroundCgEventWindowsOptions {
   timeoutMs?: number;
 }
 
+export interface DisplayInfo {
+  /** 主显示器逻辑点尺寸（osascript/cliclick/CGEvent 都吃这个空间） */
+  pointWidth: number;
+  pointHeight: number;
+  /** 物理像素尺寸（screencapture 出的就是这个） */
+  physicalWidth: number;
+  physicalHeight: number;
+  /** Retina backing scale，physical = point × scale */
+  backingScaleFactor: number;
+  capturedAtMs: number;
+}
+
 export interface BackgroundCgEventAppDiagnosis {
   targetApp?: string | null;
   capturedAtMs: number;
@@ -145,7 +157,7 @@ export interface BackgroundCgEventAppDiagnosis {
   };
 }
 
-const HELPER_VERSION = 'v2';
+const HELPER_VERSION = 'v3';
 const HELPER_SOURCE = String.raw`import AppKit
 import ApplicationServices
 import CoreGraphics
@@ -591,9 +603,25 @@ func diagnoseApp(_ args: [String]) {
   ])
 }
 
+func displayInfo() {
+  guard let screen = NSScreen.main else {
+    fail("no main screen")
+  }
+  let frame = screen.frame
+  let scale = screen.backingScaleFactor
+  emitJson([
+    "pointWidth": Int(frame.width),
+    "pointHeight": Int(frame.height),
+    "physicalWidth": Int(frame.width * scale),
+    "physicalHeight": Int(frame.height * scale),
+    "backingScaleFactor": scale,
+    "capturedAtMs": Int(Date().timeIntervalSince1970 * 1000),
+  ])
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-  fail("command required: list-windows | click | diagnose-app")
+  fail("command required: list-windows | click | diagnose-app | display-info")
 }
 
 switch command {
@@ -603,6 +631,8 @@ case "click":
   clickWindow(args)
 case "diagnose-app":
   diagnoseApp(args)
+case "display-info":
+  displayInfo()
 default:
   fail("unknown command: \(command)")
 }
@@ -718,6 +748,33 @@ class BackgroundCgEventSurface {
       ...options,
       helperPath,
     });
+  }
+
+  async getDisplayInfo(timeoutMs?: number): Promise<DisplayInfo> {
+    if (process.platform !== 'darwin') {
+      throw new Error(`Background CGEvent display info is only available on macOS, not ${process.platform}.`);
+    }
+    const stdout = await this.runHelper(['display-info'], timeoutMs);
+    const parsed = parseJson(stdout);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Background CGEvent helper returned invalid display info.');
+    }
+    const record = parsed as Record<string, unknown>;
+    const num = (key: string): number => {
+      const value = record[key];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(`Background CGEvent helper display info missing numeric "${key}".`);
+      }
+      return value;
+    };
+    return {
+      pointWidth: num('pointWidth'),
+      pointHeight: num('pointHeight'),
+      physicalWidth: num('physicalWidth'),
+      physicalHeight: num('physicalHeight'),
+      backingScaleFactor: num('backingScaleFactor'),
+      capturedAtMs: num('capturedAtMs'),
+    };
   }
 
   private async verifyWindowTarget(

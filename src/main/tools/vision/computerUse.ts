@@ -23,8 +23,12 @@ import {
   ensureManagedBrowserSessionForWorkbench,
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
+import { COMPUTER_BATCH } from '../../../shared/constants';
+import { imageCoordsToScreenPoints } from './coordinateTransform';
 
 const execFileAsync = promisify(execFile);
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const MACOS_APP_ALIASES = new Map<string, string>([
   ['notepad', 'Notes'],
@@ -87,6 +91,14 @@ export interface ComputerAction {
   targetAppAliasApplied?: boolean;
   x?: number;
   y?: number;
+  /**
+   * 坐标空间。'image' 表示 x/y/toX/toY 来自视觉分析截图（分析图像像素空间），
+   * 执行前会换算成逻辑屏幕点。缺省 'screen'（= 现有行为，不换算）。
+   */
+  coordSpace?: 'screen' | 'image';
+  /** [coordSpace=image] 模型看到的分析图像像素尺寸；缺省时回退到 computerSurface 缓存的最近一次 */
+  imageWidth?: number;
+  imageHeight?: number;
   pid?: number;
   windowId?: number;
   windowRef?: string;
@@ -116,6 +128,10 @@ export interface ComputerAction {
   maxDepth?: number;
   // computer_batch
   actions?: ComputerAction[];
+  /** [computer_batch] 子动作间延迟 (ms)，让 UI settle。默认 0，capped MAX_SETTLE_MS */
+  settleMs?: number;
+  /** [computer_batch] true 时 batch 完成后抓一次 observe 快照塞进 metadata.postBatchObserve */
+  observeAfter?: boolean;
   // hold_key
   duration?: number;
 }
@@ -139,7 +155,7 @@ export const computerUseTool: Tool = {
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
 - open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
 - write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
-- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected.
+- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle (click→type / click→click); pass observeAfter:true to capture an observe snapshot after the batch into metadata.postBatchObserve.
 - hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration ms then release. Pass via modifiers (or single key). Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
 - triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if app does not respond.
 - cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y", metadata.x / metadata.y populated.
@@ -158,6 +174,7 @@ export const computerUseTool: Tool = {
 ## Parameters:
 - action: The action to perform
 - x, y: Screen coordinates (for basic mouse actions)
+- coordSpace: 'screen' (default) or 'image'. Set 'image' when x/y came from a screenshot you analyzed — they will be scaled from the analyzed-image space to logical screen points before clicking. Pass imageWidth/imageHeight (from screenshot metadata.analyzedWidth/Height) alongside it.
 - targetApp: Expected app for desktop actions. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
 - pid/windowId/windowRef/windowLocalPoint: macOS background CGEvent target from get_windows, for closed-source app debugging without foreground activation
 - bundleId/title: Optional expected target identity from get_windows; checked before background CGEvent clicks
@@ -173,6 +190,8 @@ export const computerUseTool: Tool = {
 - includeScreenshot: Include a screenshot path for observe (default: false)
 - limit: Maximum elements for get_ax_elements (default: 40)
 - maxDepth: Maximum Accessibility tree depth for get_ax_elements (default: 4)
+- settleMs: [computer_batch] Delay in ms between sub-actions (default: 0, capped at 5000)
+- observeAfter: [computer_batch] Capture an observe snapshot after the batch (default: false)
 
 ## Examples:
 - {"action": "get_state"} - check Computer Surface readiness
@@ -232,9 +251,30 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         items: { type: 'object' },
         description: '[computer_batch] Sequential list of action descriptors to execute in one call. Nested computer_batch is rejected.',
       },
+      settleMs: {
+        type: 'number',
+        description: '[computer_batch] Delay in ms inserted after each sub-action before the next runs. Default 0. Use ~150-300 for click→type or click→click sequences so the UI can settle. Capped at 5000.',
+      },
+      observeAfter: {
+        type: 'boolean',
+        description: '[computer_batch] When true, capture an observe snapshot after the batch completes into metadata.postBatchObserve so you can verify the end state. Default false.',
+      },
       y: {
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
+      },
+      coordSpace: {
+        type: 'string',
+        enum: ['screen', 'image'],
+        description: 'Coordinate space for x/y/toX/toY. Use "image" when the coordinates came from a screenshot you analyzed (they get scaled to logical screen points before clicking). Default "screen".',
+      },
+      imageWidth: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel width of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedWidth). Falls back to the last analyzed screenshot if omitted.',
+      },
+      imageHeight: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel height of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedHeight).',
       },
       pid: {
         type: 'number',
@@ -1388,8 +1428,41 @@ async function getInteractiveElements(
   }
 }
 
+/**
+ * coordSpace='image' 时把 x/y/toX/toY 从分析图像空间换算成逻辑屏幕点。
+ * 显式 imageWidth/Height 优先，缺省回退 computerSurface 缓存的最近一次分析截图尺寸。
+ * 缺少任一依赖（无 displayInfo / 无尺寸记账）→ imageCoordsToScreenPoints 原样返回（= 现有行为）。
+ */
+async function normalizeImageSpaceCoords(action: ComputerAction): Promise<ComputerAction> {
+  if (action.coordSpace !== 'image' || process.platform !== 'darwin') return action;
+  const surface = getComputerSurface();
+  const cached = surface.getLastAnalyzedImageDims();
+  const analyzedWidth = isFiniteNumber(action.imageWidth) ? action.imageWidth : cached?.width ?? null;
+  const analyzedHeight = isFiniteNumber(action.imageHeight) ? action.imageHeight : cached?.height ?? null;
+  const displayInfo = await surface.getDisplayInfo().catch(() => null);
+  const ctx = {
+    analyzedWidth,
+    analyzedHeight,
+    displayPointWidth: displayInfo?.pointWidth ?? null,
+    displayPointHeight: displayInfo?.pointHeight ?? null,
+  };
+  const next: ComputerAction = { ...action };
+  if (isFiniteNumber(action.x) && isFiniteNumber(action.y)) {
+    const p = imageCoordsToScreenPoints({ x: action.x, y: action.y }, ctx);
+    next.x = p.x;
+    next.y = p.y;
+  }
+  if (isFiniteNumber(action.toX) && isFiniteNumber(action.toY)) {
+    const p = imageCoordsToScreenPoints({ x: action.toX, y: action.toY }, ctx);
+    next.toX = p.x;
+    next.toY = p.y;
+  }
+  return next;
+}
+
 // macOS implementation using AppleScript/cliclick
-async function executeMacOSAction(action: ComputerAction): Promise<ToolExecutionResult> {
+async function executeMacOSAction(rawAction: ComputerAction): Promise<ToolExecutionResult> {
+  const action = await normalizeImageSpaceCoords(rawAction);
   switch (action.action) {
     case 'click':
       if (!isFiniteNumber(action.x) || !isFiniteNumber(action.y)) {
@@ -1563,6 +1636,13 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       if (!Array.isArray(action.actions)) {
         return { success: false, error: 'actions array required for computer_batch' };
       }
+      const settleMs = Math.max(
+        0,
+        Math.min(
+          isFiniteNumber(action.settleMs) ? action.settleMs : COMPUTER_BATCH.DEFAULT_SETTLE_MS,
+          COMPUTER_BATCH.MAX_SETTLE_MS,
+        ),
+      );
       const results: Array<{ index: number; action: string; success: boolean; error?: string }> = [];
       for (let i = 0; i < action.actions.length; i++) {
         const rawSub = action.actions[i] as ComputerAction | undefined;
@@ -1582,11 +1662,22 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
             metadata: { results },
           };
         }
+        // settle 仅在成功且非最后一个动作后插入
+        if (settleMs > 0 && i < action.actions.length - 1) {
+          await sleep(settleMs);
+        }
+      }
+      // 可选 post-batch observe：best-effort，失败不影响 batch 成功判定
+      let postBatchObserve: unknown = null;
+      if (action.observeAfter) {
+        postBatchObserve = await getComputerSurface()
+          .observe({ includeScreenshot: false })
+          .catch(() => null);
       }
       return {
         success: true,
         output: `computer_batch completed: ${results.length} action(s)`,
-        metadata: { results },
+        metadata: { results, settleMs, postBatchObserve },
       };
     }
 

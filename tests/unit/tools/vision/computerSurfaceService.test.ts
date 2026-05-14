@@ -468,6 +468,84 @@ describe('DesktopComputerSurface target boundaries', () => {
     });
   });
 
+  // G26 片1：Code Agent 自身的只读 Computer Surface 操作豁免保护，写操作仍全拦。
+  describe('Code Agent self-app read carve-out (G26)', () => {
+    it('allows observe on Code Agent itself (read is reentrancy-safe)', async () => {
+      const surface = await loadSurface();
+
+      const snapshot = await surface.observe({ targetApp: 'Code Agent' });
+
+      // 放行 = 越过门禁、真去查 app context（mock 的 osascript 被调用）
+      expect(childProcessMocks.execFile).toHaveBeenCalled();
+      expect(snapshot.failureKind ?? null).not.toBe('permission_denied');
+      expect(snapshot.blockingReasons ?? []).not.toContainEqual(
+        expect.stringContaining('protected app'),
+      );
+    });
+
+    it('allows get_ax_elements / get_windows / diagnose_app on Code Agent itself', async () => {
+      const surface = await loadSurface();
+
+      const ax = await surface.listBackgroundElements({ action: 'get_ax_elements', targetApp: 'Code Agent' });
+      const windows = await surface.listBackgroundCgEventWindows({ targetApp: 'Code Agent' });
+      const diagnosis = await surface.diagnoseApp({ action: 'diagnose_app', targetApp: 'Code Agent' });
+
+      for (const result of [ax, windows, diagnosis]) {
+        expect(result.error ?? '').not.toContain('protected app');
+        expect((result.metadata?.failureKind as string | undefined) ?? null).not.toBe('permission_denied');
+      }
+    });
+
+    it('still blocks write authorization on Code Agent itself (reentrancy guard)', async () => {
+      const surface = await loadSurface();
+      const requestPermission = vi.fn(async () => true);
+
+      const authorization = await surface.authorizeAction({
+        action: 'click',
+        targetApp: 'Code Agent',
+        role: 'button',
+        name: 'Send',
+      }, { requestPermission });
+
+      expect(requestPermission).not.toHaveBeenCalled();
+      expect(authorization.allowed).toBe(false);
+      expect(authorization).toMatchObject({
+        failureKind: 'permission_denied',
+        blockingReasons: expect.arrayContaining([
+          expect.stringContaining('protected app'),
+        ]),
+      });
+    });
+
+    it('still blocks mutating surface actions on Code Agent itself', async () => {
+      const surface = await loadSurface();
+
+      const axResult = await surface.executeBackgroundAction({
+        action: 'click',
+        targetApp: 'Code Agent',
+        role: 'button',
+        name: 'Send',
+      });
+      const cgEventResult = await surface.executeBackgroundCgEventAction({
+        action: 'click',
+        targetApp: 'Code Agent',
+        pid: 1234,
+        windowId: 42,
+        windowLocalPoint: { x: 10, y: 20 },
+      });
+
+      for (const result of [axResult, cgEventResult]) {
+        expect(result.success).toBe(false);
+        expect(result.metadata).toMatchObject({
+          failureKind: 'permission_denied',
+          blockingReasons: expect.arrayContaining([
+            expect.stringContaining('protected app'),
+          ]),
+        });
+      }
+    });
+  });
+
   it('keeps session_app approvals scoped to the current session', async () => {
     const surface = await loadSurface();
     const requestPermission = vi.fn(async () => true);

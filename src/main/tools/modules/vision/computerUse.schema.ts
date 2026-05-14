@@ -21,7 +21,7 @@ export const computerUseSchema: ToolSchema = {
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
 - open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
 - write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
-- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected.
+- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle (click→type / click→click); pass observeAfter:true to capture an observe snapshot after the batch into metadata.postBatchObserve.
 - hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration ms then release. Pass via modifiers (or single key). Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
 - triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if app does not respond.
 - cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y", metadata.x / metadata.y populated.
@@ -40,6 +40,7 @@ export const computerUseSchema: ToolSchema = {
 ## Parameters:
 - action: The action to perform
 - x, y: Screen coordinates (for basic mouse actions)
+- coordSpace: 'screen' (default) or 'image'. Set 'image' when x/y came from a screenshot you analyzed — they will be scaled from the analyzed-image space to logical screen points before clicking. Pass imageWidth/imageHeight (from screenshot metadata.analyzedWidth/Height) alongside it.
 - targetApp: Expected app for desktop actions. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
 - pid/windowId/windowRef/windowLocalPoint: macOS background CGEvent target from get_windows, for closed-source app debugging without foreground activation
 - bundleId/title: Optional expected target identity from get_windows; checked before background CGEvent clicks
@@ -55,6 +56,8 @@ export const computerUseSchema: ToolSchema = {
 - includeScreenshot: Include a screenshot path for observe (default: false)
 - limit: Maximum elements for get_ax_elements (default: 40)
 - maxDepth: Maximum Accessibility tree depth for get_ax_elements (default: 4)
+- settleMs: [computer_batch] Delay in ms between sub-actions (default: 0, capped at 5000)
+- observeAfter: [computer_batch] Capture an observe snapshot after the batch (default: false)
 
 ## Examples:
 - {"action": "get_state"} - check Computer Surface readiness
@@ -112,9 +115,30 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
         items: { type: 'object' },
         description: '[computer_batch] Sequential list of action descriptors to execute in one call. Nested computer_batch is rejected.',
       },
+      settleMs: {
+        type: 'number',
+        description: '[computer_batch] Delay in ms inserted after each sub-action before the next runs. Default 0. Use ~150-300 for click→type or click→click sequences so the UI can settle. Capped at 5000.',
+      },
+      observeAfter: {
+        type: 'boolean',
+        description: '[computer_batch] When true, capture an observe snapshot after the batch completes into metadata.postBatchObserve so you can verify the end state. Default false.',
+      },
       y: {
         type: 'number',
         description: 'Y coordinate on screen (for basic mouse actions)',
+      },
+      coordSpace: {
+        type: 'string',
+        enum: ['screen', 'image'],
+        description: 'Coordinate space for x/y/toX/toY. Use "image" when the coordinates came from a screenshot you analyzed (they get scaled to logical screen points before clicking). Default "screen".',
+      },
+      imageWidth: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel width of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedWidth). Falls back to the last analyzed screenshot if omitted.',
+      },
+      imageHeight: {
+        type: 'number',
+        description: '[coordSpace=image] Pixel height of the analyzed screenshot the coordinates came from (see screenshot result metadata.analyzedHeight).',
       },
       pid: {
         type: 'number',

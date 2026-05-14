@@ -12,7 +12,8 @@ Raw session messages remain full fidelity in this slice. They are the operationa
 | --- | --- | --- |
 | prompt | system prompt assembly, activity context, memory snippets, system prompt cache | memory prompt snippets, activity prompt formatting, system prompt cache |
 | memory | file memory tools, compaction flush, session learning extraction, SQLite memory repository | file write/read content, injected memory content, generated preservation summaries, repository create/update |
-| activity | OpenChronicle, native desktop, audio, screenshot analysis, renderer/provider activity context | provider text, item fields, evidence refs, raw event removal, prompt formatter |
+| activity | OpenChronicle, native desktop, audio, screenshot analysis, renderer/provider activity context | provider text, item fields, evidence refs, raw event removal, prompt formatter, native desktop snapshot, screenshot pixel redaction |
+| channel | feishu / telegram / http-api inbound messages, raw event storage | inbound message text/sender/attachments, raw payload, gated by per-channel privacy mode |
 | knowledge | browser/manual/local capture, capture DB, vector store | capture title/url/content/summary/tags/metadata before DB and vectorization |
 | transcript | local transcript exporter, optional AI summary | anonymization path uses shared guard, summary prompt input is guarded |
 | export | markdown/session export, tool details | Browser/Computer redaction remains, shared guard now runs on tool details and final markdown |
@@ -30,8 +31,35 @@ It handles:
 - sensitive object keys such as password, token, authorization, cookie, secret, and api key
 - prompt-injection neutralization for model-context surfaces
 - screenshot/audio evidence filename hiding for activity context
+- deterministic PII such as US SSN and Luhn-valid credit card numbers (`redactDeterministicPii`)
 
 Browser/Computer redaction stays as a specialized adapter because it knows action semantics such as typed input, form data, cookies, DOM snapshots, and profile paths. Sensitive Data Guard complements it for general local data.
+
+## Channel and Local Activity Privacy Firewall (2026-05-14)
+
+Two firewall layers wrap the shared guard so that inbound channel messages and local desktop activity are sanitized before they land in storage or fan out to an agent run.
+
+### Channel privacy firewall
+
+`src/main/channels/privacy/channelPrivacyFirewall.ts` sanitizes channel messages, attachments and raw payloads through `guardSensitiveText`. It exposes a per-channel `ChannelPrivacyMode`:
+
+| Mode | Behavior |
+| --- | --- |
+| `local-redact` | Default. Inbound text, attachments and raw payload are redacted before local persistence or dispatch. |
+| `allow-raw` | Business text is still redacted, but the original raw payload is retained for connector debugging. |
+| `off` | Channel-layer redaction disabled, length-trim only — controlled local debugging use. |
+
+`feishuPrivacy.ts` is the thin Feishu binding (`sanitizeFeishuInboundMessage` / `sanitizeFeishuRawEventForStorage`); `FeishuChannel` resolves the mode at init and sanitizes every inbound message at construction. The mode is configurable per channel in `ChannelsSettings`. `ChannelPrivacyConfig` is mixed into `HttpApiChannelConfig` / `FeishuChannelConfig` / `TelegramChannelConfig`.
+
+### Local activity privacy firewall
+
+`src/main/services/activity/localActivityPrivacyFirewall.ts` sanitizes `DesktopActivityEvent` fields (appName, windowTitle, browserUrl, documentPath, analyzeText, etc.) on the `local-persist` mode. `NativeDesktopService.parseEventLine` runs it on every collected event line, and `desktopVisionAnalyzer` sanitizes vision analyze-text before it is written back to SQLite.
+
+`screenshotPrivacyRedactor.ts` adds pixel-level redaction: it extracts explicit / OCR redaction regions from event metadata (multi-format bbox parsing, normalized-coordinate detection), blurs them with `sharp`, and falls back to full-frame blur when analyze-text is sensitive but no regions are available.
+
+### Rust-side symmetry
+
+`src-tauri/src/native_desktop.rs` mirrors the deterministic redaction at the collector boundary: `sanitize_snapshot_for_local_persistence` strips home paths, emails and Luhn-valid credit card numbers, and `sanitize_browser_url_for_local_activity` removes URL credentials, query and fragment before the snapshot is persisted. This keeps the Rust collector and the TypeScript guard on the same redaction contract.
 
 ## Optional GLiNER PII Entity Layer
 

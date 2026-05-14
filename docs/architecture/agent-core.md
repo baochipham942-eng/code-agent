@@ -270,6 +270,68 @@ artifact 验收分成通用 runner 和 kind-specific verifier 两层。当前不
 
 ---
 
+## 2026-05-13 取消级联 + Runtime Steer + Context Health 溯源
+
+这一轮把「取消怎么往下传」「运行中途怎么插话」「上下文 token 来自哪里」三件事补成可解释的闭环。它复用既有 `subagentExecutor`、`ConversationRuntime` 和 `ContextHealthService`，没有引入新的运行时。
+
+### 取消级联（Cancellation Cascading）
+
+`CancellationReason` 把取消原因分成两类，决定是否向兄弟 / 子 agent 穿透：
+
+| 分类 | reason | 行为 |
+|------|--------|------|
+| CASCADE | `user-cancel` / `session-switch` / `parent-cancel` | 触发 `spawnGuard.cancelAll()`，父级取消向下穿透到全部子 agent |
+| NON_CASCADE | `child-error` / `timeout` / `idle-timeout` / `budget-exceeded` | 只熔断单个 agent，兄弟不受影响 |
+
+`initiateShutdown` 走四阶段优雅退出：
+
+```
+Phase 1 Signal   -> abortController.abort(reason)
+Phase 2 Grace    -> 等待 5s 让 in-flight 工具收尾，成功则直接返回
+Phase 3 Flush    -> 2s 内经 TeamManager 持久化 findings
+Phase 4 Force    -> 返回 partial results
+```
+
+`subagentExecutor` 里的 idle watchdog 每 `IDLE_CHECK_INTERVAL`（5s）轮询，发现 `IDLE_TIMEOUT`（2 分钟）无 stream/progress 就 `abort('idle-timeout')`。父子信号通过 `createChildAbortController` 单向桥接：parent abortSignal 与内部 timeout 都汇入子控制器，子控制器 abort 不反向传播到 parent/sibling，正好对应 NON_CASCADE 语义。
+
+关键文件：
+
+- `src/shared/contract/cancellation.ts` — `CancellationReason`、`CASCADE_REASONS` / `NON_CASCADE_REASONS`
+- `src/main/agent/shutdownProtocol.ts` — `initiateShutdown` 四阶段
+- `src/main/agent/subagentExecutor.ts` — idle watchdog、`createChildAbortController` 桥接
+- `src/shared/constants/timeouts.ts` — `CANCELLATION_TIMEOUTS`（`IDLE_TIMEOUT` / `IDLE_CHECK_INTERVAL` / `GRACEFUL_SHUTDOWN_GRACE` / `FLUSH_TIMEOUT`）
+
+per-agent Stop UI 见 [multiagent-system.md](./multiagent-system.md) 的取消级联章节。
+
+### Runtime Steer（运行中途转向）
+
+用户在 agent 运行过程中插话不再打断当前轮次。`steer()` 调用 `messageProcessor.injectSteerMessage()`，把用户输入排队进当前轮次的消息历史并同步持久化到 SessionManager，置 `needsReinference=true` 让下一轮推理读取。guided UI 用 `RuntimeInputDelivery` 元数据把消息标记为 `queued_next_turn`，让用户知道输入已收到、会在本轮结束后生效。web host 的 follow-up 在 `/web/routes/agent.ts` 接收 `clientMessageId` 字段，保存时带上该 ID，让 web 端消息拥有稳定标识供 prompt rewind 溯源。
+
+关键文件：`src/main/agent/runtime/conversationRuntime.ts`、`src/main/agent/runtime/messageProcessor.ts`、`src/web/routes/agent.ts`、`src/shared/contract/conversationEnvelope.ts`（`clientMessageId`）。
+
+### Context Health Token 溯源
+
+`TokenBreakdown` 在原有「消息结构维度」（systemPrompt / messages / toolResults / toolDefinitions）之外新增可选的 `bySource`，按产品来源拆分 token 占用：
+
+```ts
+interface SourceBreakdown {
+  rules: number;
+  skills: Record<string, number>;
+  mcp: Record<string, number>;
+  subagents: Record<string, number>;
+  fileReads: number;
+  conversation: number;
+}
+```
+
+`ContextHealthService.recordSourceContribution(sessionId, source, tokens, mode)` 支持 `add`（累加，如每次 fileRead / MCP 结果）和 `set`（替换，如 skill mount）；`clearSourceContribution` / `resetSourceContributions` / `clearMcpServerAcrossSessions` 负责卸载与压缩后清零。更新经 200ms 防抖后通过 `context:health:event` 广播到 renderer。
+
+上报点遍布主链路：skill mount/unmount（`sessionSkillService`）、SessionStart AGENTS.md 注入（`agentsHooks`）、fileRead（`read.ts`）、MCP 工具结果（`mcpInvoke`）、subagent 输出（`task.ts` / `spawnAgent.ts`）。renderer 侧 `ContextPanel` / `ContextHealthPanel` 的二级展开与卸载交互见 [workbench.md](./workbench.md)。
+
+关键文件：`src/main/context/contextHealthService.ts`、`src/shared/contract/contextHealth.ts`、`src/renderer/components/ContextHealthPanel.tsx`。
+
+---
+
 ## 子代理上下文注入（v0.16.55+）
 
 **位置**: `src/main/agent/activeAgentContext.ts`

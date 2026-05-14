@@ -373,6 +373,21 @@ prompt builder 要求 _meta
 - `LinkPreviewCard` 把 raw URL 渲染为 favicon chip
 - `enableSemanticToolUI` feature flag 保留一键回退旧 UI 的通道
 
+### 4.7 Workbench 诊断面板群（2026-05-13~14）
+
+聊天主链路工作台新增一批诊断面板，让用户在不离开聊天的前提下看清「上下文 token 从哪来」「记忆里存了什么」「桌面活动采到什么」「Computer 工具为什么失败」。
+
+| 面板 | 职责 | 关键文件 |
+|------|------|---------|
+| Context Health | workbench 新增 `context` tab，`ContextPanel` 挂载 `ContextHealthPanel`：一级展开按消息结构、二级展开按产品来源（rules/skills/mcp/subagents/fileReads/conversation），Skills/MCP/Subagents 可嵌套折叠；每项提供跳转（联动 SkillsPanel highlight）和 ✕ 卸载（MCP 走 `setServerEnabled` IPC，skill 走 unmount）。数据模型见 [agent-core.md](./agent-core.md) | `src/renderer/components/ContextPanel.tsx`、`ContextHealthPanel.tsx` |
+| Knowledge Memory Audit | 展示数据库 memory + 轻记忆文件 + 种子候选；`memory.ipc.ts` 的 `MemoryAuditRequest` / `serializedAuditMemory` 负责序列化，`formatValueForDisplay` 把工具偏好、编码风格等 metadata 格式化供 UI 展示 | `src/renderer/components/features/knowledge/KnowledgeMemoryPanel.tsx`、`src/main/ipc/memory.ipc.ts` |
+| Activity Entry | 从 OpenChronicle / Tauri native desktop / audio / screenshot-analysis 多源采集活动快照，`ActivityNativeSnapshot` / `ActivityPanelModel` 描述展示模型，受 char limit 隔离和敏感数据守护约束 | `src/renderer/components/features/activity/ActivityPanel.tsx`、`src/main/services/activity/activityContextProvider.ts` |
+| Computer-use Diagnostics | `ComputerUseTarget` / `ComputerUseActionTraceSummary` / `ComputerUseFailureExplanation` 追踪渲染状态、权限、失败原因；main 侧 `computerSurface.ts` 提供权限上下文和操作追踪 | `src/renderer/utils/computerUseWorkbench.ts`、`src/main/services/desktop/computerSurface.ts` |
+| Time Capability | 把 MCP / DAG scheduler / service / interaction 等超时策略集中到 `timeouts.ts`，workbench 可查询当前 timeout 配置，避免魔法数字散布 | `src/shared/constants/timeouts.ts` |
+| Workspace Assets | `WorkspacePreviewPanel` 露出 Document / Spreadsheet / PPT / HTML 等工作区产物，`memoryActivityNavigation.ts` 的 `MemoryActivityFocus` 支持快速导航活动中提及的文件 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/utils/memoryActivityNavigation.ts` |
+
+边界：诊断面板是观测与控制面，不改变 agent 运行语义；卸载类操作（MCP server / skill）才会真正影响下一轮上下文构建。
+
 ## 5. 落点地图（看 workbench 从哪里入）
 
 ### 5.1 Contract 层

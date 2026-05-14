@@ -174,6 +174,32 @@ code-agent/
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
 
+### 2026-05-13 ~ 05-14 Context Health 溯源 + 取消级联 + Computer-use MCP 入口归位 + 工作台面板群
+
+这一轮把上下文 token 的来源可观测性、多 agent 取消的级联语义、Computer/Screenshot 的 MCP 入口归位，以及一批聊天主链路诊断面板收进主产品面。架构上复用既有 `ContextHealthService`、`subagentExecutor`、native ToolModule registry 和 workbench 面板体系，没有引入新的并行运行时。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Context Health Token 溯源 | `TokenBreakdown` 新增 `bySource`（rules / skills / mcp / subagents / fileReads / conversation 六维）；`ContextHealthService.recordSourceContribution(sessionId, source, tokens, mode)` 支持 add/set，`clearSourceContribution` / `resetSourceContributions` / `clearMcpServerAcrossSessions` 负责卸载与压缩后清零；200ms 防抖广播 `context:health:event` | `src/main/context/contextHealthService.ts`、`src/shared/contract/contextHealth.ts` |
+| Token 上报点 | skill mount/unmount（`sessionSkillService`）、SessionStart AGENTS.md 注入（`agentsHooks`）、fileRead（`read.ts`）、MCP 工具结果（`mcpInvoke`）、subagent 输出（`task.ts` / `spawnAgent.ts`）统一调用 `recordSourceContribution` 上报 token 占用 | `src/main/services/skills/sessionSkillService.ts`、`src/main/hooks/agentsHooks.ts`、`src/main/tools/modules/*` |
+| Context Panel UI | workbench 新增 `context` tab，`ContextPanel` 容器挂载 `ContextHealthPanel`；一级展开按消息结构（systemPrompt / messages / toolResults / toolDefs），二级展开按产品来源并支持 Skills/MCP/Subagents 嵌套折叠；每项提供跳转（联动 SkillsPanel highlight）和 ✕ 卸载（MCP 走 `setServerEnabled` IPC，skill 走 unmount） | `src/renderer/components/ContextPanel.tsx`、`src/renderer/components/ContextHealthPanel.tsx` |
+| 取消级联契约 | `CancellationReason` 区分 CASCADE（`user-cancel` / `session-switch` / `parent-cancel`，触发 `spawnGuard.cancelAll()`）与 NON_CASCADE（`child-error` / `timeout` / `idle-timeout` / `budget-exceeded`，只影响单 agent）；单个 child 抛错不波及兄弟 | `src/shared/contract/cancellation.ts` |
+| 四阶段 Shutdown | `initiateShutdown` 走 Signal（abort）→ Grace（5s 等工具收尾）→ Flush（2s 经 TeamManager 持久化 findings）→ Force（返回 partial results）；idle watchdog 监测 2 分钟无 stream/progress 自动 `abort('idle-timeout')` | `src/main/agent/shutdownProtocol.ts`、`src/main/agent/subagentExecutor.ts` |
+| Per-agent Stop UI / 信号桥接 | `SwarmMonitor` 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC（`spawnGuard.cancel` 或 `parallelCoordinator.abortTask`）；`subagentExecutor` 用 `createChildAbortController` 把 parent abortSignal 与内部 timeout 单向桥接到子控制器，child abort 不反向传播 | `src/renderer/components/features/swarm/SwarmMonitor.tsx`、`src/main/ipc/swarm.ipc.ts`、`src/shared/constants/timeouts.ts`（`CANCELLATION_TIMEOUTS`） |
+| Computer-use MCP 入口归位（Level 1） | Computer + Screenshot 包装成 native ToolModule（`computer.ts` + `computer.schema.ts`），统一走 MCP 工具入口；handler 做权限检查后委托 legacy `ComputerTool.execute`，结果经 `adaptVisionLegacyResult` 适配。当前是 wrapper-mode，占位到 ToolModule 协议层，为后续 Level 2 原生重写留接口 | `src/main/tools/modules/vision/computer.ts`、`computer.schema.ts` |
+| Workbench 诊断面板群 | Context Health、Knowledge Memory Audit（`KnowledgeMemoryPanel` + `memory.ipc.ts` 的 `MemoryAuditRequest`/`serializedAuditMemory`）、Activity Entry（`ActivityPanel` + `activityContextProvider`）、Computer-use Diagnostics（`computerUseWorkbench.ts` + `computerSurface.ts`）、Time Capability（集中读 `timeouts.ts`）五类诊断面板进入聊天主链路；Workspace Preview 露出活动与工作区产物（`WorkspacePreviewPanel` + `memoryActivityNavigation`） | `src/renderer/components/features/{knowledge,activity}/*`、`src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/utils/computerUseWorkbench.ts` |
+| Runtime Steer | 运行中途用户输入经 `steer()` → `messageProcessor.injectSteerMessage()` 排队进当前轮次消息历史并持久化，置 `needsReinference=true` 下轮推理；guided UI 用 `RuntimeInputDelivery` 元数据标记 `queued_next_turn`；web host follow-up 在 `/web/routes/agent.ts` 接 `clientMessageId` 字段供 prompt rewind 溯源 | `src/main/agent/runtime/conversationRuntime.ts`、`messageProcessor.ts`、`src/web/routes/agent.ts` |
+| Vision 模型切换 | `ZHIPU_VISION_MODEL` 切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块（视觉分析 / 图像标注 / 截图 / PPT 生成等）统一从常量读取 | `src/shared/constants/models.ts` |
+| Context builder 工作目录边界 | 系统提示新增 `workingDirBoundaryInfo` 块，澄清三点：工作目录是相对路径基准而非任务边界、系统级查询可访问 home 绝对路径、续接指令保留上文任务作用域 | `src/main/agent/messageHandling/contextBuilder.ts` |
+| Channel / 本地活动隐私防火墙 | 渠道入站消息与本地桌面活动在落地/分发前统一脱敏：`channelPrivacyFirewall` 三模式（local-redact/allow-raw/off）+ 飞书 `feishuPrivacy` 接入 + `ChannelsSettings` 策略 UI；`localActivityPrivacyFirewall` 脱敏 `DesktopActivityEvent` 字段，`screenshotPrivacyRedactor` 用 sharp 做截图区域级 blur；`sensitiveDataGuard` 补 SSN / 信用卡（Luhn 校验）确定性 PII 脱敏；`native_desktop.rs` Rust 侧对称脱敏（URL 凭证 / home 路径 / email / 信用卡 Luhn） | `src/main/channels/privacy/channelPrivacyFirewall.ts`、`src/main/services/activity/localActivityPrivacyFirewall.ts`、`src/main/services/activity/screenshotPrivacyRedactor.ts`、`src/main/security/sensitiveDataGuard.ts`、`src-tauri/src/native_desktop.rs` |
+
+**架构边界澄清**：
+- Context Health 溯源是观测层增强，`bySource` 为 `TokenBreakdown` 上的可选维度，不改变既有消息结构统计口径。
+- 取消级联区分 CASCADE / NON_CASCADE 是核心语义：父级取消向下穿透，子级失败/超时只熔断自身，避免一个 subagent 出错拖垮整个 Agent Team。
+- Computer-use MCP 入口归位是 Level 1 wrapper-mode：当前仍委托 legacy 实现，用户可见的 Computer 工具语义不变，Level 2 原生重写后再替换执行内核。
+- Prompt rewind web host 暴露依赖 `ConversationEnvelope.clientMessageId`，让 web 端消息拥有稳定标识供 rewind 追踪。
+- 隐私防火墙是 Sensitive Data Guard（Scope 1 派生数据脱敏层）的延伸：channel 入站消息和本地桌面活动作为新的脱敏 sink 接入，raw session 消息仍保持全保真，详见 [architecture/sensitive-data-guard.md](./architecture/sensitive-data-guard.md)。
+
 ### v0.16.74 Prompt / Hook / Prompt Rewind（2026-05-11）
 
 这一轮把可配置 prompt、Hook 可观测性和会话回退收进主产品面。架构上复用既有 domain IPC、SessionRepository、FileCheckpointService 和 turn timeline，没有引入新的并行会话模型。

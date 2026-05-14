@@ -436,6 +436,34 @@ artifact 不再只看"有没有生成文件"，而是进入按类型验证、失
 | God-file split | ✅ | HookManager execution engine、telemetryQueryService transcript replay、TaskDAG graph algorithms 拆分，配合 `max-lines` 守门继续压大型单体 |
 | Dead code retirement | ✅ | POC subsystem、cloud agent module、legacy provider functions、old decorated tools、orphan resume、unused exports 清理；Message 类型统一到 shared/contract |
 
+#### 3.1.21 自定义 Agent + 权限继承 + Doctor 诊断（2026-05-13）
+
+把多 Agent 的两个基础承诺（可复用 agent、subagent 不能绕权限）和环境自检补实。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| Custom Agent Registry | ✅ | 用户级 `~/.code-agent/agents/*.md` 和项目级 `<cwd>/.code-agent/agents/*.md` 进入 `agentRegistry` 单一来源，合并顺序 project > user > builtin；double-buffer 热加载避免 in-flight spawn 读到半填充态 |
+| Agent 全链路暴露 | ✅ | `ca list-agents` 显示来源，`spawn_agent` / Task 工具共用最新 agent id 集，renderer StatusBar AgentSwitcher 通过 `agents:list` / `agents:changed` 刷新 |
+| Subagent 权限继承 | ✅ | 三档模式 `strict-inherit`（默认）/ `child-narrow` / `independent`；子 tools = parent ∩ child、deny 取并集、permission mode 取更严格者；reviewer/readonly 父 agent 禁止派生写能力子 agent |
+| 用户规则级联 | ✅ | `settings.permissions.deny/ask/allow` 经 `UserConfigSource` 进入 GuardFabric，主 agent 和 subagent 同时生效，General settings 可配置 |
+| Doctor 诊断 | ✅ | `/doctor` 聚合环境检查项，CLI 和 GUI 共享 `DoctorReport`；MCP lazy 计 skip，网络/版本失败降级 warn 而非 fail |
+
+#### 3.1.22 Context Health 溯源 + 取消级联 + Computer-use MCP 入口归位 + 工作台诊断面板群（2026-05-13~05-14）
+
+这一轮把「上下文 token 从哪来」「取消怎么往下传」「Computer 工具为什么失败」做成可观测、可控制的主链路能力。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| Context Health Token 溯源 | ✅ | `TokenBreakdown.bySource` 按 rules/skills/mcp/subagents/fileReads/conversation 六维拆分；skill mount/unmount、AGENTS.md 注入、fileRead、MCP 结果、subagent 输出统一上报 |
+| Context Panel | ✅ | workbench 新增 `context` tab，一级按消息结构、二级按产品来源展开，每项可跳转（联动 SkillsPanel）或 ✕ 卸载（MCP 走 `setServerEnabled` IPC） |
+| 取消级联 | ✅ | `CancellationReason` 分 CASCADE（user-cancel/session-switch/parent-cancel 向下穿透）和 NON_CASCADE（child-error/timeout/idle-timeout/budget-exceeded 只熔断单 agent）；四阶段 shutdown + 2 分钟 idle watchdog |
+| Per-agent Stop UI | ✅ | SwarmMonitor 每个 agent 卡片可独立 Stop，取消单 agent 不级联兄弟 |
+| Computer-use MCP 入口归位（Level 1） | ✅ | Computer + Screenshot 暴露成独立 native ToolModule，统一走 MCP 入口；当前是 wrapper-mode，执行仍委托 legacy `ComputerTool`，为 Level 2 原生重写留接口 |
+| 工作台诊断面板群 | ✅ | Context Health、Knowledge Memory Audit、Activity Entry、Computer-use Diagnostics、Time Capability 五类诊断面板进入聊天主链路，Workspace Preview 露出工作区产物 |
+| Runtime Steer | ✅ | 运行中途用户输入排队进当前轮次消息历史，下轮推理生效，guided UI 标记 `queued_next_turn`；web host follow-up 带 `clientMessageId` 供 rewind 溯源 |
+| Vision 模型切换 | ✅ | 视觉模型切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块统一从 `ZHIPU_VISION_MODEL` 常量读取 |
+| Channel / 本地活动隐私防火墙 | ✅ | 渠道入站消息与本地桌面活动落地前统一脱敏：`ChannelPrivacyMode` 三档（local-redact/allow-raw/off）+ 飞书接入 + 设置 UI；本地活动事件脱敏 + 截图区域级 blur；`sensitiveDataGuard` 补 SSN / 信用卡 Luhn 脱敏；Rust 采集器侧对称脱敏。是 Sensitive Data Guard 派生数据脱敏层的延伸，raw session 消息仍全保真 |
+
 ---
 
 ### 3.2 智能层（差异化）
@@ -506,6 +534,8 @@ artifact 不再只看"有没有生成文件"，而是进入按类型验证、失
 | 任务自管理 | Agent 可自主认领/完成任务 |
 | 计划审批 | 高风险操作需用户确认 |
 | 优雅关闭 | 4 阶段：Signal → Grace → Flush → Force |
+| 取消级联 | `CancellationReason` 区分 CASCADE / NON_CASCADE；父级取消向下穿透，子级失败/超时只熔断自身 |
+| Idle watchdog | 子 agent 2 分钟无 stream/progress 自动 abort，单 agent 可独立 Stop |
 | 断点恢复 | 会话中断后可恢复未完成任务 |
 | 暂停/恢复 | Graceful pause，等当前迭代结束后暂停 |
 | 检查点回溯 | 文件回滚 + 消息截断 + "从此重试" Fork |

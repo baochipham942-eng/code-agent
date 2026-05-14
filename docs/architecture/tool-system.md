@@ -186,6 +186,15 @@ LSP 不再只是“有 diagnostics 工具”。当前实现把语言识别、ser
 
 用户侧结果要表达“这个语言服务不可用以及怎么装”，不要只返回 generic tool error。
 
+### Computer-use MCP 入口归位（2026-05-13）
+
+`feature/mcp-computer-use` 把 Computer + Screenshot 包装成独立 native ToolModule，统一走 MCP 工具入口。这是 Level 1 wrapper-mode 的运行时入口归位，不改变用户可见的 Computer 工具语义。
+
+| 能力 | 文件 | 说明 |
+|------|------|------|
+| Computer ToolModule | `src/main/tools/modules/vision/computer.ts`、`computer.schema.ts` | `ComputerHandler` 做权限检查（`canUseTool`）后委托 legacy `ComputerTool.execute`，结果经 `adaptVisionLegacyResult` 适配回 native 形态 |
+| 当前边界 | — | 执行内核仍委托 legacy 实现，Level 2 原生重写后再替换为直连截图 / computer surface；computer-use 工作台诊断（失败原因 / 权限拒绝 / 目标应用状态）见 [workbench.md](./workbench.md) |
+
 ### Shell command policy
 
 5/10 后，旧 Codex sandbox / cross-verify 路径退场，shell 统一走 `src/main/tools/modules/shell/commandPolicy.ts`。它负责把命令风险、审批范围、bash policy 和 UI 展示放到同一个决策面，避免 hybrid agent 分支里再维护第二套 shell 解释。

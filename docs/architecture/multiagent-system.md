@@ -109,6 +109,30 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 验证口径：`feature/permission-inheritance` 分支覆盖 52/52 权限测试，包括 26 条 AC 场景、6 条 legacy grandfathering、20 条 unit。产品口径里，它属于多 agent 安全语义升级：从"用户以为会继承"变成"运行时强制继承"。
 
+## 0.0.3 2026-05-13 取消级联（Cancellation Cascading）
+
+`feature/cancellation-cascading` 分支把多 agent 的取消语义补成可解释闭环：父级取消向下穿透，子级失败/超时只熔断自身，单个 subagent 出错不再拖垮整个 Agent Team。
+
+### CancellationReason 契约
+
+`src/shared/contract/cancellation.ts` 把取消原因分成两类，决定是否级联：
+
+| 分类 | reason | 行为 |
+|------|--------|------|
+| `CASCADE_REASONS` | `user-cancel` / `session-switch` / `parent-cancel` | 触发 `spawnGuard.cancelAll()`，向下穿透到全部子 agent |
+| `NON_CASCADE_REASONS` | `child-error` / `timeout` / `idle-timeout` / `budget-exceeded` | 只影响单个 agent，兄弟不受影响 |
+
+### 四阶段 Shutdown + Idle Watchdog
+
+| 能力 | 当前状态 | 关键文件 |
+|------|----------|---------|
+| 四阶段 initiateShutdown | Signal（`abort(reason)`）→ Grace（5s 等 in-flight 工具收尾）→ Flush（2s 经 TeamManager 持久化 findings）→ Force（返回 partial results） | `src/main/agent/shutdownProtocol.ts` |
+| Idle watchdog | `subagentExecutor` 每 `IDLE_CHECK_INTERVAL`（5s）轮询，`IDLE_TIMEOUT`（2 分钟）无 stream/progress 则 `abort('idle-timeout')` | `src/main/agent/subagentExecutor.ts`、`src/shared/constants/timeouts.ts`（`CANCELLATION_TIMEOUTS`） |
+| 父子信号单向桥接 | `createChildAbortController` 把 parent abortSignal 与内部 timeout 汇入子控制器；子控制器 abort 不反向传播到 parent/sibling，对应 NON_CASCADE 语义 | `src/main/agent/subagentExecutor.ts` |
+| Per-agent Stop UI | `SwarmMonitor` 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC（`spawnGuard.cancel` 或 `parallelCoordinator.abortTask`），触发 `agentCancelled` 但不级联兄弟 | `src/renderer/components/features/swarm/SwarmMonitor.tsx`、`src/main/ipc/swarm.ipc.ts` |
+
+验证口径：`feature/cancellation-cascading` 分支带 AC 测试套件覆盖 cascade / non-cascade 场景。产品口径里，它把多 agent 取消从"取消一个可能误伤一片"升级为"取消语义按 reason 显式分层"。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

@@ -2,7 +2,7 @@
 
 ## 概览
 
-截至 2026-05-11，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context、native tool protocol、artifact acceptance、quality gates、prompt/hook 管理和 prompt rewind 十一条主线：
+截至 2026-05-14，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context、native tool protocol、artifact acceptance、quality gates、prompt/hook 管理、prompt rewind、自定义 Agent / 权限继承 / Doctor 诊断，以及最新一轮的 Context Health 溯源 / 取消级联 / Computer-use MCP 入口归位 / 工作台诊断面板群：
 
 1. **Agent Runtime Capability Hardening** - run lifecycle、run-level abort、Tool/MCP 权限合同、durable runtime state、multiagent reliability、real-agent-run eval gate
 2. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
@@ -22,6 +22,59 @@
 2. **云端 Agent（历史，已退役）** - 早期 Vercel Serverless 方案，当前 active path 已迁回本地 / Web runtime
 3. **GUI Agent** - 基于 Claude Computer Use 的屏幕控制能力
 4. **macOS 签名打包** - 完整的代码签名和公证配置
+
+---
+
+## 2026-05-13 ~ 2026-05-14 当前新增能力
+
+### Context Health / Token 来源溯源
+
+| 能力 | 说明 |
+|------|------|
+| Token bySource 维度 | `TokenBreakdown` 在消息结构维度之外新增 `bySource`，按 rules / skills / mcp / subagents / fileReads / conversation 六类拆分上下文 token 占用 |
+| 来源上报 | skill mount/unmount、SessionStart AGENTS.md 注入、fileRead、MCP 工具结果、subagent 输出统一调用 `ContextHealthService.recordSourceContribution` 上报，200ms 防抖广播到 UI |
+| Context Panel | workbench 新增 `context` tab，一级展开按消息结构、二级展开按产品来源，Skills/MCP/Subagents 可嵌套折叠 |
+| 跳转与卸载 | 每项可跳转（联动 SkillsPanel highlight）或 ✕ 卸载（MCP 走 `setServerEnabled` IPC，skill 走 unmount），卸载后影响下一轮上下文构建 |
+
+### 取消级联（Cancellation Cascading）
+
+| 能力 | 说明 |
+|------|------|
+| CancellationReason 契约 | 取消原因分 CASCADE（user-cancel / session-switch / parent-cancel，向下穿透）和 NON_CASCADE（child-error / timeout / idle-timeout / budget-exceeded，只熔断单 agent） |
+| 四阶段 Shutdown | `initiateShutdown` 走 Signal → Grace（5s 等工具收尾）→ Flush（2s 持久化 findings）→ Force（返回 partial results） |
+| Idle watchdog | 子 agent 2 分钟无 stream/progress 自动 `abort('idle-timeout')`，每 5s 轮询 |
+| Per-agent Stop UI | SwarmMonitor 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC，取消单 agent 不级联兄弟 |
+| 父子信号桥接 | `createChildAbortController` 把 parent abortSignal 与内部 timeout 单向桥接到子控制器，child abort 不反向传播 |
+
+### Computer-use MCP 入口归位 + 工作台诊断面板群
+
+| 能力 | 说明 |
+|------|------|
+| Computer / Screenshot MCP 入口归位（Level 1） | Computer + Screenshot 暴露成独立 native ToolModule，统一走 MCP 工具入口；当前是 wrapper-mode，执行仍委托 legacy ComputerTool，为 Level 2 原生重写留接口 |
+| Computer-use 诊断 | 工作台追踪 computer use 的渲染状态、权限、失败原因和目标应用状态 |
+| 知识记忆审计面板 | 展示数据库 memory + 轻记忆文件 + 种子候选，metadata（工具偏好、编码风格等）格式化展示 |
+| 活动入口面板 | 从 OpenChronicle / native desktop / audio / screenshot-analysis 多源采集活动快照，受 char limit 和敏感数据守护约束 |
+| 时间能力工作台 | MCP / DAG / service / interaction 超时策略集中到 `timeouts.ts`，可查询当前 timeout 配置 |
+| Workspace Assets | 聊天里露出 Document / Spreadsheet / PPT / HTML 等工作区产物，支持快速导航活动中提及的文件 |
+
+### Runtime Steer / Vision / Prompt Rewind
+
+| 能力 | 说明 |
+|------|------|
+| Runtime Steer 排队 | 运行中途用户输入经 `injectSteerMessage` 排队进当前轮次消息历史，置 `needsReinference` 下轮推理；guided UI 标记 `queued_next_turn` 让用户知道输入已收到 |
+| Web host follow-up | web 端运行中 follow-up 带 `clientMessageId`，让消息拥有稳定标识供 prompt rewind 溯源 |
+| Vision 模型切换 | 视觉模型切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块统一从 `ZHIPU_VISION_MODEL` 常量读取 |
+| 工作目录边界澄清 | 系统提示新增工作目录边界说明：工作目录是相对路径基准而非任务边界，系统级查询可访问 home 绝对路径，续接指令保留上文任务作用域 |
+
+### Channel / 本地活动隐私防火墙
+
+| 能力 | 说明 |
+|------|------|
+| 通道隐私防火墙 | 渠道入站消息、附件、raw payload 在本地落地/分发前统一脱敏；`ChannelPrivacyMode` 三档：`local-redact`（默认）/ `allow-raw`（保留 raw 便于连接器调试）/ `off`（仅受控本地调试）；飞书渠道已接入，每个通道可在设置里单独配置 |
+| 本地活动脱敏 | `DesktopActivityEvent` 字段（appName / windowTitle / browserUrl / documentPath / analyzeText 等）在 `NativeDesktopService` 解析每行事件时脱敏；视觉分析的 analyze-text 写回 SQLite 前脱敏 |
+| 截图像素级脱敏 | `screenshotPrivacyRedactor` 从事件元数据提取 explicit/OCR 脱敏区域（多格式 bbox 解析 + 归一化坐标识别），用 sharp 做区域级 blur；analyze-text 敏感但无区域时降级为整帧 blur |
+| 确定性 PII 脱敏 | `sensitiveDataGuard` 补 US SSN 和信用卡（Luhn 校验）确定性脱敏，接入共享 `guardSensitiveText` 入口 |
+| Rust 侧对称脱敏 | `native_desktop.rs` 在采集边界镜像同一套脱敏：剥离 URL 凭证/query/fragment、home 路径、email、信用卡 Luhn，保证 Rust 采集器与 TS guard 同一脱敏契约 |
 
 ---
 

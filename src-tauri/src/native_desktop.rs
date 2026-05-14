@@ -943,6 +943,178 @@ fn redact_sensitive_snapshot(snapshot: FrontmostContextSnapshot) -> FrontmostCon
     }
 }
 
+fn sanitize_snapshot_for_local_persistence(
+    snapshot: FrontmostContextSnapshot,
+) -> FrontmostContextSnapshot {
+    FrontmostContextSnapshot {
+        app_name: sanitize_activity_text(snapshot.app_name),
+        bundle_id: sanitize_activity_text_option(snapshot.bundle_id),
+        window_title: sanitize_activity_text_option(snapshot.window_title),
+        browser_url: sanitize_browser_url_for_local_activity(snapshot.browser_url),
+        browser_title: sanitize_activity_text_option(snapshot.browser_title),
+        document_path: sanitize_activity_text_option(snapshot.document_path),
+        session_state: sanitize_activity_text_option(snapshot.session_state),
+        power_source: sanitize_activity_text_option(snapshot.power_source),
+        ..snapshot
+    }
+}
+
+fn sanitize_activity_text_option(value: Option<String>) -> Option<String> {
+    value.map(sanitize_activity_text).and_then(|sanitized| {
+        if sanitized.trim().is_empty() {
+            None
+        } else {
+            Some(sanitized)
+        }
+    })
+}
+
+fn sanitize_activity_text(value: String) -> String {
+    redact_credit_card_tokens(&redact_email_tokens(&redact_home_paths(&value)))
+}
+
+fn sanitize_browser_url_for_local_activity(value: Option<String>) -> Option<String> {
+    let mut url = sanitize_activity_text_option(value)?;
+
+    if let Some(scheme_index) = url.find("://") {
+        let authority_start = scheme_index + 3;
+        let authority_end = url[authority_start..]
+            .find('/')
+            .map(|index| authority_start + index)
+            .unwrap_or(url.len());
+
+        if let Some(at_index) = url[authority_start..authority_end].rfind('@') {
+            let userinfo_end = authority_start + at_index + 1;
+            url.replace_range(authority_start..userinfo_end, "");
+        }
+    }
+
+    let query_index = url.find('?');
+    let fragment_index = url.find('#');
+    let cut_index = match (query_index, fragment_index) {
+        (Some(query), Some(fragment)) => Some(query.min(fragment)),
+        (Some(query), None) => Some(query),
+        (None, Some(fragment)) => Some(fragment),
+        (None, None) => None,
+    };
+    if let Some(index) = cut_index {
+        url.truncate(index);
+    }
+
+    Some(url)
+}
+
+fn redact_home_paths(value: &str) -> String {
+    let mut redacted = value.to_string();
+    for prefix in ["/Users/", "/home/"] {
+        redacted = redact_unix_home_prefix(&redacted, prefix);
+    }
+    redacted
+}
+
+fn redact_unix_home_prefix(value: &str, prefix: &str) -> String {
+    let mut output = String::new();
+    let mut cursor = 0;
+
+    while let Some(relative_index) = value[cursor..].find(prefix) {
+        let start = cursor + relative_index;
+        let username_start = start + prefix.len();
+        let username_end = value[username_start..]
+            .find(|character: char| character == '/' || character.is_whitespace())
+            .map(|index| username_start + index)
+            .unwrap_or(value.len());
+
+        output.push_str(&value[cursor..start]);
+        output.push('~');
+        cursor = username_end;
+    }
+
+    output.push_str(&value[cursor..]);
+    output
+}
+
+fn redact_email_tokens(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|token| {
+            let trimmed = token.trim_matches(|character: char| {
+                matches!(
+                    character,
+                    '<' | '>' | '"' | '\'' | '(' | ')' | '[' | ']' | ',' | ';' | ':'
+                )
+            });
+            if is_email_like_token(trimmed) {
+                token.replace(trimmed, "[email hidden]")
+            } else {
+                token.to_string()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
+fn is_email_like_token(value: &str) -> bool {
+    let Some((local, domain)) = value.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && domain.contains('.')
+        && domain.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
+        })
+}
+
+fn redact_credit_card_tokens(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|token| {
+            let digits: String = token
+                .chars()
+                .filter(|character| character.is_ascii_digit())
+                .collect();
+            if (13..=19).contains(&digits.len())
+                && token
+                    .chars()
+                    .all(|character| character.is_ascii_digit() || character == '-')
+                && is_luhn_valid(&digits)
+            {
+                "[credit card hidden]".to_string()
+            } else {
+                token.to_string()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
+fn is_luhn_valid(digits: &str) -> bool {
+    if digits
+        .chars()
+        .all(|character| character == digits.chars().next().unwrap_or(' '))
+    {
+        return false;
+    }
+
+    let mut sum = 0u32;
+    let mut should_double = false;
+
+    for character in digits.chars().rev() {
+        let Some(mut digit) = character.to_digit(10) else {
+            return false;
+        };
+        if should_double {
+            digit *= 2;
+            if digit > 9 {
+                digit -= 9;
+            }
+        }
+        sum += digit;
+        should_double = !should_double;
+    }
+
+    sum % 10 == 0
+}
+
 fn cleanup_path_if_older_than(path: &PathBuf, cutoff: SystemTime) -> Result<bool, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Failed to stat {}: {error}", path.display()))?;
@@ -1568,6 +1740,7 @@ pub fn desktop_start_collector(
             } else {
                 snapshot
             };
+            let snapshot = sanitize_snapshot_for_local_persistence(snapshot);
 
             let fingerprint = fingerprint_for_context(&snapshot);
             let should_persist = {
@@ -1745,6 +1918,8 @@ pub fn desktop_update_analyze_text(
     if !sqlite_path.exists() {
         return Err("SQLite database not found".to_string());
     }
+
+    let analyze_text = sanitize_activity_text(analyze_text);
 
     // Update SQLite
     let sql = format!(
@@ -1989,4 +2164,33 @@ pub fn desktop_stop_audio_rec() -> Result<bool, String> {
     }
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod privacy_tests {
+    use super::*;
+
+    #[test]
+    fn strips_browser_url_credentials_query_and_fragment_before_local_persistence() {
+        let sanitized = sanitize_browser_url_for_local_activity(Some(
+            "https://alice:secret@example.test/pay?token=abc123#section".to_string(),
+        ));
+
+        assert_eq!(sanitized.as_deref(), Some("https://example.test/pay"));
+    }
+
+    #[test]
+    fn redacts_activity_text_tokens_before_local_persistence() {
+        let sanitized = sanitize_activity_text(
+            "email alice@example.com path /Users/linchen/private card 4242-4242-4242-4242"
+                .to_string(),
+        );
+
+        assert!(sanitized.contains("[email hidden]"));
+        assert!(sanitized.contains("~/private"));
+        assert!(sanitized.contains("[credit card hidden]"));
+        assert!(!sanitized.contains("alice@example.com"));
+        assert!(!sanitized.contains("/Users/linchen"));
+        assert!(!sanitized.contains("4242-4242-4242-4242"));
+    }
 }

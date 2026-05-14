@@ -6,6 +6,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import { v4 as uuidv4 } from 'uuid';
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server } from 'http';
+import type { AddressInfo } from 'net';
 import {
   BaseChannelPlugin,
   type ChannelResponseCallback,
@@ -14,6 +15,7 @@ import type {
   ChannelMeta,
   ChannelMessage,
   ChannelAccountConfig,
+  ChannelPrivacyMode,
   FeishuChannelConfig,
   SendMessageOptions,
   SendMessageResult,
@@ -21,6 +23,10 @@ import type {
   ChannelAttachment,
 } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
+import {
+  sanitizeFeishuInboundMessage,
+  resolveFeishuPrivacyMode,
+} from './feishuPrivacy';
 
 const logger = createLogger('FeishuChannel');
 
@@ -82,6 +88,7 @@ interface FeishuMessageEvent {
 export class FeishuChannel extends BaseChannelPlugin {
   readonly meta: ChannelMeta;
   private feishuConfig: FeishuChannelConfig | null = null;
+  private privacyMode: ChannelPrivacyMode = 'local-redact';
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
 
@@ -114,6 +121,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       throw new Error('Invalid config type for FeishuChannel');
     }
     this.feishuConfig = config as FeishuChannelConfig;
+    this.privacyMode = resolveFeishuPrivacyMode(this.feishuConfig.privacyMode);
     this.config = config;
 
     // 初始化飞书客户端
@@ -123,7 +131,10 @@ export class FeishuChannel extends BaseChannelPlugin {
       disableTokenCache: false,
     });
 
-    logger.info('FeishuChannel initialized', { appId: this.feishuConfig.appId });
+    logger.info('FeishuChannel initialized', {
+      appId: this.feishuConfig.appId,
+      privacyMode: this.privacyMode,
+    });
   }
 
   async connect(): Promise<void> {
@@ -188,7 +199,6 @@ export class FeishuChannel extends BaseChannelPlugin {
     logger.info('FeishuChannel.sendMessage called', {
       chatId: options.chatId,
       contentLength: options.content?.length || 0,
-      contentPreview: options.content?.substring(0, 100),
     });
 
     if (!this.client) {
@@ -428,8 +438,8 @@ export class FeishuChannel extends BaseChannelPlugin {
       throw new Error('Config not initialized');
     }
 
-    const port = this.feishuConfig.webhookPort || 3200;
-    const host = this.feishuConfig.webhookHost || '0.0.0.0';
+    const port = this.feishuConfig.webhookPort ?? 3200;
+    const host = this.feishuConfig.webhookHost ?? '0.0.0.0';
 
     // 创建事件分发器
     this.eventDispatcher = new lark.EventDispatcher({
@@ -464,7 +474,7 @@ export class FeishuChannel extends BaseChannelPlugin {
           logger.info('Received Feishu message event', {
             eventId: body.header.event_id,
             messageId: body.event.message?.message_id,
-            content: body.event.message?.content,
+            contentLength: String(body.event.message?.content || '').length,
           });
 
           // 直接调用消息处理器
@@ -505,14 +515,19 @@ export class FeishuChannel extends BaseChannelPlugin {
     return new Promise((resolve, reject) => {
       try {
         this.webhookServer = this.webhookApp!.listen(port, host, () => {
+          const address = this.webhookServer?.address();
+          const actualPort = typeof address === 'object' && address
+            ? (address as AddressInfo).port
+            : port;
+          const displayHost = host === '0.0.0.0' ? 'localhost' : host;
           logger.info('Feishu webhook server started', {
             host,
-            port,
-            endpoint: `http://${host}:${port}/webhook/feishu`,
+            port: actualPort,
+            endpoint: `http://${displayHost}:${actualPort}/webhook/feishu`,
           });
           logger.info('Configure this URL in Feishu developer console (use ngrok for public access):');
-          logger.info(`  Local: http://localhost:${port}/webhook/feishu`);
-          logger.info(`  Example with ngrok: ngrok http ${port}`);
+          logger.info(`  Local: http://${displayHost}:${actualPort}/webhook/feishu`);
+          logger.info(`  Example with ngrok: ngrok http ${actualPort}`);
           resolve();
         });
 
@@ -622,7 +637,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       }
 
       // 构建统一消息格式
-      const channelMessage: ChannelMessage = {
+      const channelMessage: ChannelMessage = sanitizeFeishuInboundMessage({
         id: msg.message_id,
         channelId: this._accountId,
         sender: {
@@ -641,12 +656,12 @@ export class FeishuChannel extends BaseChannelPlugin {
         timestamp: parseInt(msg.create_time),
         mentions: msg.mentions?.map(m => m.id.open_id),
         raw: event,
-      };
+      }, this.privacyMode);
 
       // 发出消息事件
       logger.info('Emitting message event', {
         messageId: channelMessage.id,
-        content: channelMessage.content.substring(0, 50),
+        contentLength: channelMessage.content.length,
         chatId: channelMessage.context.chatId,
       });
       this.emit('message', channelMessage);

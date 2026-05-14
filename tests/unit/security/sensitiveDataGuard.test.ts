@@ -40,6 +40,23 @@ describe('Sensitive Data Guard', () => {
     expect(guarded).toContain('[neutralized instruction override]');
   });
 
+  it('masks deterministic local PII without requiring the optional entity detector', () => {
+    const guarded = guardSensitiveText(
+      [
+        'card 4242 4242 4242 4242',
+        'ssn 123-45-6789',
+        'noise 1234 5678 9012',
+      ].join('\n'),
+      { surface: 'activity', mode: 'local-persist' },
+    );
+
+    expect(guarded).toContain('[credit card hidden]');
+    expect(guarded).toContain('[ssn hidden]');
+    expect(guarded).toContain('1234 5678 9012');
+    expect(guarded).not.toContain('4242 4242 4242 4242');
+    expect(guarded).not.toContain('123-45-6789');
+  });
+
   it('redacts sensitive keys while preserving non-sensitive structured fields', () => {
     const guarded = guardSensitiveValue({
       action: 'login',

@@ -181,9 +181,22 @@ export interface SendMessageResult {
 export type ChannelAccountStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 /**
+ * 通道隐私策略
+ * - local-redact: 默认策略，入站文本、附件、raw payload 在本地落地/分发前脱敏
+ * - allow-raw: 业务文本仍脱敏，但保留原始 raw payload，便于连接器调试
+ * - off: 关闭通道层脱敏，仅用于受控本地调试
+ */
+export type ChannelPrivacyMode = 'local-redact' | 'allow-raw' | 'off';
+
+export interface ChannelPrivacyConfig {
+  /** 入站消息隐私策略，默认 local-redact */
+  privacyMode?: ChannelPrivacyMode;
+}
+
+/**
  * HTTP API 通道配置
  */
-export interface HttpApiChannelConfig {
+export interface HttpApiChannelConfig extends ChannelPrivacyConfig {
   type: 'http-api';
   /** 监听端口 */
   port: number;
@@ -200,7 +213,7 @@ export interface HttpApiChannelConfig {
 /**
  * 飞书通道配置
  */
-export interface FeishuChannelConfig {
+export interface FeishuChannelConfig extends ChannelPrivacyConfig {
   type: 'feishu';
   /** 应用 App ID */
   appId: string;
@@ -223,7 +236,7 @@ export interface FeishuChannelConfig {
 /**
  * Telegram 通道配置
  */
-export interface TelegramChannelConfig {
+export interface TelegramChannelConfig extends ChannelPrivacyConfig {
   type: 'telegram';
   /** Bot Token (从 @BotFather 获取) */
   botToken: string;

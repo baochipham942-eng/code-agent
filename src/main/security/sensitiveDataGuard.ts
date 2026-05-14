@@ -60,6 +60,8 @@ const SCREENSHOT_PATH_PATTERN =
   /(?:~|\/Users\/[a-zA-Z0-9_.-]+|\/home\/[a-zA-Z0-9_.-]+|[A-Z]:\\Users\\[a-zA-Z0-9_.-]+)[^\s<>"'`]*?(?:(?:screenshot|screen-capture|screen_capture)[^\s<>"'`]*?\.(?:png|jpe?g|webp)|\[screenshot hidden\])/gi;
 const AUDIO_PATH_PATTERN =
   /(?:~|\/Users\/[a-zA-Z0-9_.-]+|\/home\/[a-zA-Z0-9_.-]+|[A-Z]:\\Users\\[a-zA-Z0-9_.-]+)[^\s<>"'`]*?\.(?:wav|mp3|m4a|aac|flac)/gi;
+const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g;
+const CREDIT_CARD_CANDIDATE_PATTERN = /\b(?:\d[ -]?){13,19}\b/g;
 
 const CUSTOM_PATTERNS = [
   {
@@ -108,6 +110,7 @@ export function guardSensitiveText(value: unknown, options: SensitiveDataGuardOp
     maxLength: options.maxLength ?? DEFAULT_MAX_LENGTH,
     preserveLines: options.preserveLines ?? true,
   }).masked;
+  guarded = redactDeterministicPii(guarded);
   guarded = guarded.replace(MASKED_EMAIL_PATTERN, '[email hidden]');
 
   if (options.surface === 'activity') {
@@ -118,6 +121,36 @@ export function guardSensitiveText(value: unknown, options: SensitiveDataGuardOp
   }
 
   return guarded;
+}
+
+function redactDeterministicPii(value: string): string {
+  return value
+    .replace(SSN_PATTERN, '[ssn hidden]')
+    .replace(CREDIT_CARD_CANDIDATE_PATTERN, (match) =>
+      isLikelyCreditCardNumber(match) ? '[credit card hidden]' : match,
+    );
+}
+
+function isLikelyCreditCardNumber(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+
+  let sum = 0;
+  let shouldDouble = false;
+
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    let digit = Number(digits[index]);
+    if (!Number.isFinite(digit)) return false;
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+
+  return sum % 10 === 0;
 }
 
 export async function guardSensitiveTextAsync(

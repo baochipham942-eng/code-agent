@@ -25,6 +25,7 @@ import type {
   ChannelAccount,
   ChannelType,
   ChannelAccountConfig,
+  ChannelPrivacyMode,
   HttpApiChannelConfig,
   FeishuChannelConfig,
   TelegramChannelConfig,
@@ -69,6 +70,9 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   const [name, setName] = useState(account?.name || '');
   const [type, setType] = useState<ChannelType>(account?.type || 'http-api');
   const [showSecrets, setShowSecrets] = useState(false);
+  const [privacyMode, setPrivacyMode] = useState<ChannelPrivacyMode>(
+    account?.config.privacyMode || 'local-redact'
+  );
 
   // HTTP API 配置
   const [apiPort, setApiPort] = useState(
@@ -123,6 +127,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         port: parseInt(apiPort) || 8080,
         apiKey: apiKey || crypto.randomUUID().replace(/-/g, ''),
         enableCors,
+        privacyMode,
       };
     } else if (type === 'feishu') {
       config = {
@@ -133,6 +138,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         verificationToken: verificationToken || undefined,
         useWebSocket: false, // 默认使用 Webhook 模式
         webhookPort: parseInt(webhookPort) || 3200,
+        privacyMode,
       };
     } else if (type === 'telegram') {
       const userIds = tgAllowedUserIds
@@ -145,6 +151,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         proxyUrl: tgProxyUrl || undefined,
         fallbackProxyUrl: tgFallbackProxy || undefined,
         allowedUserIds: userIds.length > 0 ? userIds : undefined,
+        privacyMode,
       };
     } else {
       console.warn('Unknown channel type:', type);
@@ -157,7 +164,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-zinc-900 rounded-xl border border-zinc-700 p-6">
+      <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto bg-zinc-900 rounded-xl border border-zinc-700 p-6">
         <h3 className="text-lg font-semibold text-zinc-200 mb-4">
           {account ? '编辑通道' : '添加通道'}
         </h3>
@@ -193,6 +200,19 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
               </select>
             </div>
           )}
+
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">隐私策略</label>
+            <select
+              value={privacyMode}
+              onChange={(e) => setPrivacyMode(e.target.value as ChannelPrivacyMode)}
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+            >
+              <option value="local-redact">local-redact</option>
+              <option value="allow-raw">allow-raw</option>
+              <option value="off">off</option>
+            </select>
+          </div>
 
           {/* HTTP API 配置 */}
           {type === 'http-api' && (

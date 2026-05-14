@@ -140,7 +140,7 @@ function buildNativeDesktopSource(args: {
         source: 'tauri-native-desktop',
         status: 'available',
         confidence: current ? 0.82 : 0.64,
-        privacy: 'local-only',
+        privacy: 'redacted',
         generatedAtMs: args.now,
         maxChars: NATIVE_DESKTOP_MAX_CHARS,
         text: trimToMaxChars(items.map(formatDesktopItem).filter(Boolean).join('\n'), NATIVE_DESKTOP_MAX_CHARS),
@@ -215,7 +215,7 @@ function buildScreenshotAnalysisSource(args: {
     source: 'screenshot-analysis',
     status: 'available',
     confidence: analyzedCount > 0 ? 0.74 : 0.42,
-    privacy: 'local-only',
+    privacy: 'redacted',
     generatedAtMs: args.now,
     maxChars: SCREENSHOT_ANALYSIS_MAX_CHARS,
     text: trimToMaxChars(items.map(formatScreenshotItem).filter(Boolean).join('\n'), SCREENSHOT_ANALYSIS_MAX_CHARS),
@@ -303,7 +303,9 @@ function unavailableSource(
     source,
     status: 'unavailable',
     confidence: 0,
-    privacy: source === 'openchronicle' ? 'redacted' : 'local-only',
+    privacy: source === 'openchronicle' || source === 'tauri-native-desktop' || source === 'screenshot-analysis'
+      ? 'redacted'
+      : 'local-only',
     generatedAtMs,
     maxChars,
     text: null,

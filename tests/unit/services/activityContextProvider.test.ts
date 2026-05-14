@@ -77,6 +77,8 @@ describe('buildActivityContext', () => {
     expect(context.sources.every((source) => source.status === 'available')).toBe(true);
     expect(context.sources.find((source) => source.source === 'audio')?.items?.[0]?.text).toBe('Discussing activity context');
     expect(context.sources.find((source) => source.source === 'screenshot-analysis')?.items?.[0]?.text).toBe('Visible screenshot text');
+    expect(context.sources.find((source) => source.source === 'tauri-native-desktop')?.privacy).toBe('redacted');
+    expect(context.sources.find((source) => source.source === 'screenshot-analysis')?.privacy).toBe('redacted');
     expect(context.evidenceRefs.map((ref) => ref.source)).toEqual([
       'openchronicle',
       'tauri-native-desktop',

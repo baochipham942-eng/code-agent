@@ -8,6 +8,13 @@ import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
+import { sanitizeLocalActivityText } from '../activity/localActivityPrivacyFirewall';
+import {
+  redactScreenshotFile,
+  selectScreenshotRedactionRegions,
+  shouldRedactScreenshotFromText,
+  type ScreenshotRedactionOptions,
+} from '../activity/screenshotPrivacyRedactor';
 
 const logger = createLogger('DesktopVisionAnalyzer');
 
@@ -127,13 +134,14 @@ function sqlEscape(value: string): string {
 interface PendingEvent {
   id: string;
   screenshot_path: string;
+  raw_json?: string;
 }
 
 function findPendingEvents(sqlitePath: string, limit: number): PendingEvent[] {
   if (!fs.existsSync(sqlitePath)) return [];
 
   try {
-    const sql = `SELECT id, screenshot_path FROM desktop_activity_events WHERE screenshot_path IS NOT NULL AND (analyze_text IS NULL OR analyze_text = '') ORDER BY captured_at_ms DESC LIMIT ${limit};`;
+    const sql = `SELECT id, screenshot_path, raw_json FROM desktop_activity_events WHERE screenshot_path IS NOT NULL AND (analyze_text IS NULL OR analyze_text = '') ORDER BY captured_at_ms DESC LIMIT ${limit};`;
     const output = execFileSync('sqlite3', ['-json', sqlitePath, sql], {
       encoding: 'utf-8',
     }).trim();
@@ -147,6 +155,42 @@ function findPendingEvents(sqlitePath: string, limit: number): PendingEvent[] {
 function updateAnalyzeText(sqlitePath: string, eventId: string, analyzeText: string): void {
   const sql = `UPDATE desktop_activity_events SET analyze_text = '${sqlEscape(analyzeText)}', raw_json = json_set(raw_json, '$.analyzeText', '${sqlEscape(analyzeText)}') WHERE id = '${sqlEscape(eventId)}';`;
   execFileSync('sqlite3', [sqlitePath, sql], { encoding: 'utf-8' });
+}
+
+export function sanitizeDesktopVisionAnalyzeText(analyzeText: string): string {
+  return sanitizeLocalActivityText(analyzeText);
+}
+
+export function buildScreenshotRedactionOptionsForAnalysis(
+  analyzeText: string,
+  rawJson?: string | null,
+): ScreenshotRedactionOptions | null {
+  if (!shouldRedactScreenshotFromText(analyzeText)) return null;
+
+  const metadata = parseDesktopActivityRawJson(rawJson);
+  const regions = selectScreenshotRedactionRegions(metadata, analyzeText);
+  if (regions.length > 0) {
+    return {
+      regions,
+      overwrite: true,
+      reason: 'analysis-sensitive-regions',
+    };
+  }
+
+  return {
+    fullFrame: true,
+    overwrite: true,
+    reason: 'analysis-sensitive-text',
+  };
+}
+
+function parseDesktopActivityRawJson(rawJson?: string | null): unknown {
+  if (!rawJson) return null;
+  try {
+    return JSON.parse(rawJson) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 async function runAnalysisCycle(): Promise<void> {
@@ -186,11 +230,21 @@ async function runAnalysisCycle(): Promise<void> {
 
         const text = await analyzeScreenshot(event.screenshot_path);
         if (text) {
-          updateAnalyzeText(sqlitePath, event.id, text);
+          const safeText = sanitizeDesktopVisionAnalyzeText(text);
+          const redactionOptions = buildScreenshotRedactionOptionsForAnalysis(text, event.raw_json);
+          if (redactionOptions) {
+            await redactScreenshotFile(event.screenshot_path, redactionOptions).catch((error) => {
+              logger.warn('[视觉分析] 截图像素脱敏失败', {
+                eventId: event.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
+          updateAnalyzeText(sqlitePath, event.id, safeText);
           lastAnalyzedHash = hash;
-          lastAnalyzedText = text;
+          lastAnalyzedText = safeText;
           duplicateSkipCount = 0;
-          logger.info('[视觉分析] 完成', { eventId: event.id, textLength: text.length });
+          logger.info('[视觉分析] 完成', { eventId: event.id, textLength: safeText.length });
         }
       } catch (error) {
         logger.warn('[视觉分析] 单张分析失败', {

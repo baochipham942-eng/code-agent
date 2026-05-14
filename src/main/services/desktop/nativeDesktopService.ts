@@ -9,6 +9,7 @@ import { execFileSync } from 'child_process';
 import { app } from '../../platform';
 import { getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
+import { sanitizeLocalActivityEvent } from '../activity/localActivityPrivacyFirewall';
 import type {
   AudioSegment,
   DesktopActivityEvent,
@@ -89,7 +90,9 @@ export class NativeDesktopService {
 
   private parseEventLine(line: string): DesktopActivityEvent | null {
     try {
-      return JSON.parse(line) as DesktopActivityEvent;
+      return sanitizeLocalActivityEvent(JSON.parse(line) as DesktopActivityEvent, {
+        hideScreenshotPath: false,
+      });
     } catch (error) {
       logger.warn('Failed to parse desktop activity line', { error: String(error) });
       return null;

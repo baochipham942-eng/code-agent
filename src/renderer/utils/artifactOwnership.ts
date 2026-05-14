@@ -44,6 +44,10 @@ const READ_ONLY_ARTIFACT_TOOL_NAMES = new Set([
   'ls',
   'readclipboard',
   'clipboard_read',
+  'memoryread',
+  'memory_read',
+  'episodicrecall',
+  'episodic_recall',
 ]);
 
 export function isReadOnlyArtifactTool(toolName: string | undefined): boolean {

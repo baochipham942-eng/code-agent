@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
-import { buildArtifactOwnershipItems } from '../../../src/renderer/utils/artifactOwnership';
+import {
+  buildArtifactOwnershipItems,
+  isReadOnlyArtifactTool,
+} from '../../../src/renderer/utils/artifactOwnership';
 
 describe('buildArtifactOwnershipItems', () => {
   it('collects assistant artifacts and tool output files with owner labels', () => {
@@ -232,6 +235,46 @@ describe('buildArtifactOwnershipItems', () => {
         sourceNodeId: 'tool-3',
       },
     ]);
+  });
+
+  it('keeps MemoryRead files out of the deliverable artifact list', () => {
+    expect(isReadOnlyArtifactTool('MemoryRead')).toBe(true);
+
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 4,
+      turnId: 'turn-4',
+      status: 'completed',
+      startTime: 400,
+      endTime: 440,
+      nodes: [
+        {
+          id: 'memory-read',
+          type: 'tool_call',
+          content: '',
+          timestamp: 420,
+          toolCall: {
+            id: 'memory-read',
+            name: 'MemoryRead',
+            args: { filename: 'soul.md' },
+            result: 'memory content',
+            success: true,
+            metadata: {
+              filename: 'soul.md',
+              path: '/Users/linchen/.codex/memories/soul.md',
+              artifact: {
+                artifactId: 'artifact-memory-soul',
+                kind: 'text',
+                sourceTool: 'MemoryRead',
+                name: 'soul.md',
+                path: '/Users/linchen/.codex/memories/soul.md',
+              },
+            },
+          },
+        },
+      ],
+    } satisfies TraceTurn);
+
+    expect(items).toEqual([]);
   });
 
   it('caps unified tool artifact metadata before projecting ownership items', () => {

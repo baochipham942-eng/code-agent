@@ -20,6 +20,9 @@ import { applyContextCollapse } from './layers/contextCollapse';
 import { applyOverflowRecovery } from './layers/overflowRecovery';
 import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 import { getProtectedMessageIds } from './contextInterventionHelpers';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('CompressionPipeline');
 
 export interface PipelineConfig {
   maxTokens: number;
@@ -155,22 +158,27 @@ export class CompressionPipeline {
     // L4: Context Collapse — if ≥ 75%
     // -------------------------------------------------------------------------
     const postMicroUsage = totalTokens / config.maxTokens;
-    if (
-      postMicroUsage >= THRESHOLDS.contextCollapse &&
-      config.enableContextCollapse &&
-      config.summarize !== undefined
-    ) {
-      const messagesWithTurnIndex = withTurnIndex(transcript);
-      await applyContextCollapse(messagesWithTurnIndex, state, {
-        minSpanSize: 3,
-        summarize: config.summarize,
-        maxSummaryTokens: 200,
-        protectedMessageIds,
-      });
-      layersTriggered.push('contextCollapse');
+    if (postMicroUsage >= THRESHOLDS.contextCollapse && config.enableContextCollapse) {
+      if (config.summarize !== undefined) {
+        const messagesWithTurnIndex = withTurnIndex(transcript);
+        await applyContextCollapse(messagesWithTurnIndex, state, {
+          minSpanSize: 3,
+          summarize: config.summarize,
+          maxSummaryTokens: 200,
+          protectedMessageIds,
+        });
+        layersTriggered.push('contextCollapse');
 
-      apiView = this.projectionEngine.projectMessages(transcript, state);
-      totalTokens = countProjectedTokens(apiView);
+        apiView = this.projectionEngine.projectMessages(transcript, state);
+        totalTokens = countProjectedTokens(apiView);
+      } else {
+        // G12: L4 阈值已达但调用方没注入 summarize fn —— 此前是静默跳过，高压下
+        // AI 摘要悄无声息地没发生。现在显式 warn + 留 skip marker，让缺配置可见。
+        logger.warn(
+          `[CompressionPipeline] L4 contextCollapse threshold reached (usage ${Math.round(postMicroUsage * 100)}%) but no summarize fn configured — skipping AI summary, transcript stays hot`,
+        );
+        layersTriggered.push('contextCollapse-skipped-no-summarizer');
+      }
     }
 
     // -------------------------------------------------------------------------

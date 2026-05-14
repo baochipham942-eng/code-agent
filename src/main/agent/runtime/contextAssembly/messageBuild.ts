@@ -1501,12 +1501,28 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         (messageId) => entryIdToOriginMessageId.get(messageId) ?? messageId,
       );
 
-      if (nextCompressionState.getCommitLog().length > 0) {
+      const autocompactNeeded = pipelineResult.layersTriggered.includes('autocompact-needed');
+      const commitCount = nextCompressionState.getCommitLog().length;
+      if (commitCount > 0 || autocompactNeeded) {
+        // G12/G20: 真正消费 pipeline 的报告 —— 此前 layersTriggered 只 logger.debug 就丢了，
+        // autocompact-needed 是个静默死信号。现在落进结构化 turn trace，并对未执行的 L5 显式 warn。
+        ctx.runtime.turnTrace.record('compaction', {
+          layersTriggered: pipelineResult.layersTriggered,
+          totalTokens: pipelineResult.totalTokens,
+          commitCount,
+          autocompactNeeded,
+        });
         logger.debug('[ContextAssembly] Compression pipeline applied', {
           layersTriggered: pipelineResult.layersTriggered,
-          commitCount: nextCompressionState.getCommitLog().length,
+          commitCount,
           apiViewMessages: pipelineResult.apiView.length,
         });
+        if (autocompactNeeded) {
+          logger.warn(
+            '[ContextAssembly] Pipeline reports autocompact-needed (usage ≥ 85%) — this path does not auto-execute L5; context stays hot until the AutoContextCompressor path triggers',
+            { totalTokens: pipelineResult.totalTokens },
+          );
+        }
       }
     }
   } catch (error) {

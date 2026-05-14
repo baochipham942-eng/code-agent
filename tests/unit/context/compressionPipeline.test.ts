@@ -183,18 +183,23 @@ describe('CompressionPipeline', () => {
   // L4: Context collapse
   // --------------------------------------------------------------------------
   describe('context collapse', () => {
-    it('should not trigger contextCollapse without summarize function', async () => {
+    it('marks an explicit skip when the threshold is reached but no summarize fn is provided', async () => {
+      // snip/microcompact off so usage stays above the L4 threshold — exercises
+      // the no-summarizer branch deterministically (G12: no longer a silent skip).
       const transcript: ProjectableMessage[] = Array.from({ length: 10 }, (_, i) =>
-        makeMsg(`t${i}`, 'tool', makeText(400)),
+        makeMsg(`t${i}`, 'tool', makeText(400), i),
       );
 
       const result = await pipeline.evaluate(transcript, state, {
         ...BASE_CONFIG,
         maxTokens: 1000,
         summarize: undefined,
+        enableSnip: false,
+        enableMicrocompact: false,
       });
 
       expect(result.layersTriggered).not.toContain('contextCollapse');
+      expect(result.layersTriggered).toContain('contextCollapse-skipped-no-summarizer');
     });
 
     it('should call summarize when contextCollapse triggers', async () => {

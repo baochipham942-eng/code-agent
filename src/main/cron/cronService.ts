@@ -38,6 +38,36 @@ interface JobExecutionContext {
   startTime: number;
 }
 
+interface CronAgentActionResult {
+  agentType: string;
+  prompt: string;
+  result: unknown;
+  sessionId: string;
+}
+
+interface CronExecutionRow {
+  id: string;
+  job_id: string;
+  session_id?: string | null;
+  status: CronJobStatus;
+  scheduled_at: number;
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration?: number | null;
+  result?: string | null;
+  error?: string | null;
+  retry_attempt: number;
+  exit_code?: number | null;
+}
+
+function isCronAgentActionResult(value: unknown): value is CronAgentActionResult {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof (value as { sessionId?: unknown }).sessionId === 'string'
+  );
+}
+
 // ============================================================================
 // CronService
 // ============================================================================
@@ -309,7 +339,15 @@ export class CronService implements Disposable {
    */
   getJobExecutions(jobId: string, limit: number = 10): CronJobExecution[] {
     const executions = this.executions.get(jobId) || [];
-    return executions.slice(-limit);
+    if (executions.length > 0) {
+      return executions.slice(-limit);
+    }
+
+    const persisted = this.loadExecutionsFromDatabase(jobId, limit);
+    if (persisted.length > 0) {
+      this.executions.set(jobId, persisted);
+    }
+    return persisted;
   }
 
   /**
@@ -463,7 +501,10 @@ export class CronService implements Disposable {
     }
 
     try {
-      const result = await this.executeAction(definition, definition.action, definition.timeout);
+      const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+      if (isCronAgentActionResult(result)) {
+        execution.sessionId = result.sessionId;
+      }
       execution.status = 'completed';
       execution.result = result;
     } catch (error) {
@@ -493,7 +534,8 @@ export class CronService implements Disposable {
   private async executeAction(
     definition: CronJobDefinition,
     action: CronJobAction,
-    timeout?: number
+    timeout?: number,
+    executionId?: string
   ): Promise<unknown> {
     switch (action.type) {
       case 'shell': {
@@ -526,7 +568,7 @@ export class CronService implements Disposable {
         // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
         const { getTaskManager } = await import('../task');
         const tm = getTaskManager();
-        const cronSession = await this.createCronAgentSession(definition);
+        const cronSession = await this.createCronAgentSession(definition, action, executionId);
         const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
         if (!orchestrator) {
           throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
@@ -558,7 +600,7 @@ export class CronService implements Disposable {
           }
         }
 
-        return { agentType: action.agentType, prompt: action.prompt, result };
+        return { agentType: action.agentType, prompt: action.prompt, result, sessionId: cronSession.id };
       }
 
       case 'webhook': {
@@ -581,7 +623,25 @@ export class CronService implements Disposable {
     }
   }
 
-  private async createCronAgentSession(definition: CronJobDefinition) {
+  private getAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
+    if (action.type === 'agent' && action.context?.heartbeatTask) {
+      return 'heartbeat';
+    }
+    return 'schedule';
+  }
+
+  private formatAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
+    const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
+    return sessionType === 'heartbeat'
+      ? `[Heartbeat] ${cleanName}`
+      : `[Schedule] ${cleanName}`;
+  }
+
+  private async createCronAgentSession(
+    definition: CronJobDefinition,
+    action: CronJobAction,
+    executionId?: string
+  ) {
     const { getConfigService, getSessionManager } = await import('../services');
 
     const configService = getConfigService();
@@ -591,9 +651,11 @@ export class CronService implements Disposable {
       ? await sessionManager.getSession(currentSessionId)
       : null;
     const settings = configService.getSettings();
+    const sessionType = this.getAgentSessionType(action);
+    const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
 
     return sessionManager.createSession({
-      title: `[Cron] ${definition.name}`,
+      title: this.formatAgentSessionTitle(definition, sessionType),
       modelConfig: resolveSessionDefaultModelConfig({
         provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
@@ -601,6 +663,18 @@ export class CronService implements Disposable {
         maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens,
       }),
       workingDirectory: currentSession?.workingDirectory,
+      type: sessionType,
+      origin: {
+        kind: originKind,
+        id: definition.id,
+        name: definition.name,
+        metadata: {
+          scheduleType: definition.scheduleType,
+          actionType: action.type,
+        },
+      },
+      sourceRunId: executionId,
+      readOnly: true,
     });
   }
 
@@ -617,7 +691,10 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(definition, definition.action, definition.timeout);
+      const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+      if (isCronAgentActionResult(result)) {
+        execution.sessionId = result.sessionId;
+      }
       execution.status = 'completed';
       execution.result = result;
     } catch (error) {
@@ -694,6 +771,39 @@ export class CronService implements Disposable {
     }
   }
 
+  private loadExecutionsFromDatabase(jobId: string, limit: number): CronJobExecution[] {
+    try {
+      const db = getDatabase().getDb();
+      if (!db) return [];
+
+      const rows = db.prepare(`
+        SELECT *
+        FROM cron_executions
+        WHERE job_id = ?
+        ORDER BY scheduled_at DESC
+        LIMIT ?
+      `).all(jobId, limit) as CronExecutionRow[];
+
+      return rows.reverse().map((row) => ({
+        id: row.id,
+        jobId: row.job_id,
+        sessionId: row.session_id || undefined,
+        status: row.status,
+        scheduledAt: row.scheduled_at,
+        startedAt: row.started_at ?? undefined,
+        completedAt: row.completed_at ?? undefined,
+        duration: row.duration ?? undefined,
+        result: row.result ? JSON.parse(row.result) : undefined,
+        error: row.error || undefined,
+        retryAttempt: row.retry_attempt,
+        exitCode: row.exit_code ?? undefined,
+      }));
+    } catch (error) {
+      console.error('[CronService] Failed to load executions from database:', error);
+      return [];
+    }
+  }
+
   private async deleteJobFromDatabase(jobId: string): Promise<void> {
     try {
       const db = getDatabase().getDb();
@@ -710,10 +820,10 @@ export class CronService implements Disposable {
       if (!db) return;
       db.prepare(`
         INSERT INTO cron_executions
-        (id, job_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        execution.id, execution.jobId, execution.status,
+        execution.id, execution.jobId, execution.sessionId || null, execution.status,
         execution.scheduledAt, execution.startedAt || null,
         execution.completedAt || null, execution.duration || null,
         execution.result ? JSON.stringify(execution.result) : null,

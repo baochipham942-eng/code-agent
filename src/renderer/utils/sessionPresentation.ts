@@ -93,6 +93,8 @@ export function buildSessionSearchText(args: {
   const { session, snapshot, status } = args;
   return [
     session.title,
+    session.type,
+    session.origin?.name,
     session.workingDirectory,
     session.gitBranch,
     status.label,

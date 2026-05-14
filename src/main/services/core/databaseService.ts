@@ -444,7 +444,24 @@ export class DatabaseService {
 
   // --- SessionRepository ---
   createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
-  createSessionWithId(id: string, data: { title: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number | string; updatedAt?: number | string; isDeleted?: boolean }, options?: { syncOrigin?: 'local' | 'remote' }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
+  createSessionWithId(
+    id: string,
+    data: {
+      title: string;
+      modelConfig: { provider: ModelProvider; model: string };
+      workingDirectory?: string;
+      type?: Session['type'];
+      origin?: Session['origin'];
+      parentSessionId?: string;
+      sourceRunId?: string;
+      readOnly?: boolean;
+      retryOfSessionId?: string;
+      createdAt?: number | string;
+      updatedAt?: number | string;
+      isDeleted?: boolean;
+    },
+    options?: { syncOrigin?: 'local' | 'remote' },
+  ): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
   getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId, options); }
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }

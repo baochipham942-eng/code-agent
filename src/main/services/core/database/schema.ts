@@ -32,6 +32,12 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
+      session_type TEXT NOT NULL DEFAULT 'chat',
+      origin TEXT,
+      parent_session_id TEXT,
+      source_run_id TEXT,
+      read_only INTEGER NOT NULL DEFAULT 0,
+      retry_of_session_id TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       workbench_provenance TEXT,
@@ -267,6 +273,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     CREATE TABLE IF NOT EXISTS cron_executions (
       id TEXT PRIMARY KEY,
       job_id TEXT NOT NULL,
+      session_id TEXT,
       status TEXT NOT NULL,
       scheduled_at INTEGER NOT NULL,
       started_at INTEGER,
@@ -276,9 +283,12 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       error TEXT,
       retry_attempt INTEGER NOT NULL DEFAULT 0,
       exit_code INTEGER,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
       FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
     )
   `);
+
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN session_id TEXT', logger);
 
   // Heartbeats 表 (心跳配置)
   db.exec(`

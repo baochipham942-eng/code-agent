@@ -39,6 +39,12 @@ export interface SessionCreateOptions {
   title?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
+  type?: Session['type'];
+  origin?: Session['origin'];
+  parentSessionId?: string;
+  sourceRunId?: string;
+  readOnly?: boolean;
+  retryOfSessionId?: string;
 }
 
 export interface SessionListOptions {
@@ -221,6 +227,12 @@ export class SessionManager implements Disposable {
       title: options.title || this.generateSessionTitle(),
       modelConfig: sanitizeModelConfigForSession(options.modelConfig),
       workingDirectory: options.workingDirectory,
+      type: options.type || 'chat',
+      origin: options.origin,
+      parentSessionId: options.parentSessionId,
+      sourceRunId: options.sourceRunId,
+      readOnly: options.readOnly,
+      retryOfSessionId: options.retryOfSessionId,
       createdAt: now,
       updatedAt: now,
       gitBranch,
@@ -1024,6 +1036,12 @@ export class SessionManager implements Disposable {
       title: data.title,
       modelConfig: sanitizeModelConfigForSession(data.modelConfig),
       workingDirectory: data.workingDirectory,
+      type: data.type || 'chat',
+      origin: data.origin,
+      parentSessionId: data.parentSessionId,
+      sourceRunId: data.sourceRunId,
+      readOnly: data.readOnly,
+      retryOfSessionId: data.retryOfSessionId,
       createdAt: now,
       updatedAt: now,
     };

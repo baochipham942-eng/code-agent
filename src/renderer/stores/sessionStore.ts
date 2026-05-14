@@ -108,6 +108,7 @@ function normalizeSession(session: Session & {
   return {
     ...session,
     title: session.title || '未命名会话',
+    type: session.type || 'chat',
     updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : (Number.isFinite(session.createdAt) ? session.createdAt : Date.now()),
     createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
     messageCount: session.messageCount || 0,

@@ -159,6 +159,12 @@ export class CloudStorageService implements Disposable {
             title: session.title,
             modelConfig: session.modelConfig,
             workingDirectory: session.workingDirectory,
+            type: session.type || 'chat',
+            origin: session.origin,
+            parentSessionId: session.parentSessionId,
+            sourceRunId: session.sourceRunId,
+            readOnly: session.readOnly,
+            retryOfSessionId: session.retryOfSessionId,
             createdAt: session.createdAt,
             updatedAt: session.updatedAt,
           });

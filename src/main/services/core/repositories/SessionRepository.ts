@@ -154,8 +154,13 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, workbench_provenance, status, last_token_usage, is_deleted, synced_at, git_branch)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+      INSERT INTO sessions (
+        id, title, model_provider, model_name, working_directory,
+        session_type, origin, parent_session_id, source_run_id, read_only, retry_of_session_id,
+        created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
+        is_deleted, synced_at, git_branch
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
     stmt.run(
@@ -164,6 +169,12 @@ export class SessionRepository {
       session.modelConfig.provider,
       session.modelConfig.model,
       session.workingDirectory || null,
+      session.type || 'chat',
+      session.origin ? JSON.stringify(session.origin) : null,
+      session.parentSessionId || null,
+      session.sourceRunId || null,
+      session.readOnly ? 1 : 0,
+      session.retryOfSessionId || null,
       session.createdAt,
       session.updatedAt,
       session.workspace || null,
@@ -180,6 +191,12 @@ export class SessionRepository {
       title: string;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
+      type?: Session['type'];
+      origin?: Session['origin'];
+      parentSessionId?: string;
+      sourceRunId?: string;
+      readOnly?: boolean;
+      retryOfSessionId?: string;
       createdAt?: number | string;
       updatedAt?: number | string;
       isDeleted?: boolean;
@@ -190,8 +207,12 @@ export class SessionRepository {
     const createdAt = this.normalizeTimestamp(data.createdAt, now);
     const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, is_deleted, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (
+        id, title, model_provider, model_name, working_directory,
+        session_type, origin, parent_session_id, source_run_id, read_only, retry_of_session_id,
+        created_at, updated_at, is_deleted, synced_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -200,6 +221,12 @@ export class SessionRepository {
       data.modelConfig.provider,
       data.modelConfig.model,
       data.workingDirectory || null,
+      data.type || 'chat',
+      data.origin ? JSON.stringify(data.origin) : null,
+      data.parentSessionId || null,
+      data.sourceRunId || null,
+      data.readOnly ? 1 : 0,
+      data.retryOfSessionId || null,
       createdAt,
       updatedAt,
       data.isDeleted ? 1 : 0,
@@ -1104,6 +1131,24 @@ export class SessionRepository {
       }
     }
 
+    let origin: Session['origin'] | undefined;
+    if (row.origin) {
+      const parsedOrigin = parseJsonObject(row.origin);
+      if (typeof parsedOrigin.kind === 'string') {
+        const metadata = parsedOrigin.metadata &&
+          typeof parsedOrigin.metadata === 'object' &&
+          !Array.isArray(parsedOrigin.metadata)
+          ? parsedOrigin.metadata as Record<string, unknown>
+          : undefined;
+        origin = {
+          kind: parsedOrigin.kind as NonNullable<Session['origin']>['kind'],
+          id: typeof parsedOrigin.id === 'string' ? parsedOrigin.id : undefined,
+          name: typeof parsedOrigin.name === 'string' ? parsedOrigin.name : undefined,
+          metadata,
+        };
+      }
+    }
+
     const isArchived = row.status === 'archived';
     const isDeleted = Boolean(row.is_deleted);
 
@@ -1115,6 +1160,12 @@ export class SessionRepository {
         model: row.model_name as string,
       },
       workingDirectory: row.working_directory as string | undefined,
+      type: (row.session_type as Session['type']) || 'chat',
+      origin,
+      parentSessionId: row.parent_session_id as string | undefined,
+      sourceRunId: row.source_run_id as string | undefined,
+      readOnly: Boolean(row.read_only),
+      retryOfSessionId: row.retry_of_session_id as string | undefined,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
       messageCount: (row.message_count as number) || 0,

@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { CronJobExecution } from '@shared/contract';
+import { MessageSquareText } from 'lucide-react';
+import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import {
   formatDateTime,
   formatDuration,
@@ -12,6 +15,10 @@ interface CronExecutionDetailProps {
 }
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution }) => {
+  const switchSession = useSessionStore((state) => state.switchSession);
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
+  const [isOpeningSession, setIsOpeningSession] = useState(false);
+
   if (!execution) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-500">
@@ -21,6 +28,16 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
+  const handleOpenSession = async () => {
+    if (!execution.sessionId || isOpeningSession) return;
+    setIsOpeningSession(true);
+    try {
+      await switchSession(execution.sessionId);
+      setShowCronCenter(false);
+    } finally {
+      setIsOpeningSession(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
@@ -29,12 +46,26 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
           <h4 className="text-sm font-medium text-zinc-100">执行详情</h4>
           <p className="mt-1 text-xs text-zinc-500">{execution.id}</p>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-          {statusMeta.label}
-        </span>
+        <div className="flex items-center gap-2">
+          {execution.sessionId && (
+            <button
+              type="button"
+              onClick={handleOpenSession}
+              disabled={isOpeningSession}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+            >
+              <MessageSquareText className="h-3.5 w-3.5" />
+              {isOpeningSession ? '打开中' : '打开会话'}
+            </button>
+          )}
+          <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+            {statusMeta.label}
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
+        <Info label="运行会话" value={execution.sessionId || '—'} />
         <Info label="计划时间" value={formatDateTime(execution.scheduledAt)} />
         <Info label="开始时间" value={formatDateTime(execution.startedAt)} />
         <Info label="完成时间" value={formatDateTime(execution.completedAt)} />

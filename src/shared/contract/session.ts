@@ -21,6 +21,30 @@ export type SessionStatus =
   | 'archived';
 
 /**
+ * 会话代表的工作单元类型。
+ *
+ * chat 是用户主动对话；schedule / heartbeat / subagent 是由系统或子运行生成的
+ * 可回看工作单元。background / review 仍然是状态或分析队列，不进这里。
+ */
+export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent';
+
+export type SessionOriginKind =
+  | 'manual'
+  | 'cron'
+  | 'heartbeat'
+  | 'subagent'
+  | 'channel'
+  | 'import'
+  | 'retry';
+
+export interface SessionOrigin {
+  kind: SessionOriginKind;
+  id?: string;
+  name?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Token 使用统计
  */
 export interface TokenUsage {
@@ -67,6 +91,12 @@ export interface Session {
   title: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
+  type?: SessionType;              // 工作单元类型，旧数据默认 chat
+  origin?: SessionOrigin;          // 触发来源，如 cron job / heartbeat task / parent agent
+  parentSessionId?: string;        // 子 session 或派生 session 的父级
+  sourceRunId?: string;            // 外部执行记录 ID，如 CronJobExecution.id
+  readOnly?: boolean;              // 生成型 session 默认只读，由 UI 决定是否允许继续输入
+  retryOfSessionId?: string;       // 重试链路
   createdAt: number;
   updatedAt: number;
   turnCount?: number;             // 轮次数（user turns）

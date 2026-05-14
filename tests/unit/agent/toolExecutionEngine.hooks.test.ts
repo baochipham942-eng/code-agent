@@ -240,7 +240,6 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     } as never,
     lastStreamedContent: '',
     isCancelled: false,
-    _isRunning: false,
     isInterrupted: false,
     isPaused: false,
     interruptMessage: null,

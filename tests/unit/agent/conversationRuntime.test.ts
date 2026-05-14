@@ -378,7 +378,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     autoCompressor: { compress: vi.fn() } as any,
 
     isCancelled: false,
-    _isRunning: false,
     isInterrupted: false,
     isPaused: false,
     interruptMessage: null,

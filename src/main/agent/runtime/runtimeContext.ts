@@ -71,7 +71,6 @@ export interface RuntimeContext {
   // --- Mutable run state ---
   lastStreamedContent: string;
   isCancelled: boolean;
-  _isRunning: boolean;
   isInterrupted: boolean;
   isPaused: boolean;
   interruptMessage: string | null;

@@ -185,7 +185,6 @@ export class AgentLoop {
       // Mutable state
       lastStreamedContent: '',
       isCancelled: false,
-      _isRunning: false,
       isInterrupted: false,
       isPaused: false,
       interruptMessage: null,

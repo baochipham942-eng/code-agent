@@ -214,7 +214,7 @@ export const ChatView: React.FC = () => {
     currentSessionId ? state.processingSessionIds?.has(currentSessionId) ?? false : false
   );
   // 当前 session 没有 taskStore 记录 = 这个 session 没在跑（新建/未发消息），不能继承全局 isProcessing
-  // 否则别的 session 在 in-flight 时切到新 session，新 session 的 ChatInput 会错误显示"补充/改道"
+  // 否则别的 session 在 in-flight 时切到新 session，新 session 的 ChatInput 会错误显示运行中引导态
   // 历史选择：原 fallback 用全局 isProcessing 是为了向后兼容 Wave 5 之前的单任务模型，
   // 但多任务并行后这个 fallback 反而成了 state 跨 session 泄漏的源头
   const effectiveIsProcessing = isCurrentSessionProcessing || isCurrentSessionLocallyProcessing;

@@ -116,12 +116,12 @@ function markLatestUserMessageRunCancelled(cancelledAt: number): void {
 export function getRuntimeFollowupFailureMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
   if (/already cancelling/i.test(raw)) {
-    return '上一轮还在暂停或收尾，等它回到运行中再补充。草稿还在输入框里。';
+    return '上一轮还在暂停或收尾，等它回到运行中再发。草稿还在输入框里。';
   }
   if (/agent not initialized|no active session|not initialized/i.test(raw)) {
-    return '当前任务还没准备好接收补充指令，稍后再发一次。';
+    return '当前任务还没准备好接收引导消息，稍后再发一次。';
   }
-  return `补充指令没发出去：${raw}`;
+  return `引导消息没发出去：${raw}`;
 }
 
 export function getAgentSendFailureMessage(error: unknown): string {
@@ -294,7 +294,7 @@ export function useAgentIPC({
 }: UseAgentIPCArgs) {
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
-  // 运行中继续发送时，自动作为补充指令接入当前任务
+  // 运行中继续发送时，排队到当前回复结束后作为下一轮用户消息发送
   const sendMessage = useCallback(
     async (envelope: ConversationEnvelope) => {
       const { content, attachments, context } = envelope;

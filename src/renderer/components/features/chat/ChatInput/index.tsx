@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { AlertTriangle, Image, FileText, Plus, GitBranch, Clock3, CornerDownRight, X } from 'lucide-react';
+import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
@@ -56,7 +56,7 @@ export interface ChatInputProps {
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
-  /** 运行中补充指令正在接入 */
+  /** 运行中输入正在接入 */
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
@@ -109,8 +109,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
-  const [runtimeInputMode, setRuntimeInputMode] = useState<RuntimeInputMode>('supplement');
-  const [runtimeDraftStatus, setRuntimeDraftStatus] = useState<string | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
     suggestedName: string;
@@ -207,7 +205,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setDraft: (draft) => {
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
-      setRuntimeDraftStatus(null);
       inputAreaRef.current?.focus();
     },
     focus: () => {
@@ -286,7 +283,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
-    setRuntimeDraftStatus(null);
     // Detect / prefix to show inline slash command popover
     if (newValue.startsWith('/')) {
       setShowSlashPopover(true);
@@ -381,17 +377,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return runtimeInputMode === 'redirect'
-      ? '下一轮按这条重新处理...'
-      : '本轮结束后发送...';
-  }, [inputPlaceholder, isProcessing, runtimeInputMode]);
-
-  useEffect(() => {
-    if (!isProcessing) {
-      setRuntimeInputMode('supplement');
-      setRuntimeDraftStatus(null);
-    }
-  }, [isProcessing]);
+    return '引导对话，本轮结束后发送...';
+  }, [inputPlaceholder, isProcessing]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -399,29 +386,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
-    const activeRuntimeInputMode = isProcessing ? runtimeInputMode : undefined;
+    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing ? 'supplement' : undefined;
     const nextEnvelope = buildEnvelope(trimmedValue, attachments, activeRuntimeInputMode);
     const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       const draftSnapshot = {
         value,
         attachments,
-        runtimeInputMode,
       };
       const restoreDraft = () => {
         setValue(draftSnapshot.value);
         setAttachments(draftSnapshot.attachments);
-        setRuntimeInputMode(draftSnapshot.runtimeInputMode);
       };
 
-      setRuntimeDraftStatus(null);
       // 添加到输入历史
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
       }
       setValue('');
       setAttachments([]);
-      setRuntimeInputMode('supplement');
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
       if (nextEnvelope.content.startsWith('!')) {
@@ -439,11 +422,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             }
           } catch {
             restoreDraft();
-            if (isProcessing) {
-              setRuntimeDraftStatus(runtimeInputMode === 'redirect'
-                ? '改道没发出去，草稿已保留'
-                : '当前任务还没准备好，草稿已保留');
-            }
             inputAreaRef.current?.focus();
             return;
           }
@@ -458,11 +436,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }
         } catch {
           restoreDraft();
-          if (isProcessing) {
-            setRuntimeDraftStatus(runtimeInputMode === 'redirect'
-              ? '改道没发出去，草稿已保留'
-              : '当前任务还没准备好，草稿已保留');
-          }
           inputAreaRef.current?.focus();
           return;
         }
@@ -720,124 +693,50 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
-          {isProcessing && hasContent && !isInterrupting && (
-            <div className="px-4 pb-2 -mt-1 flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRuntimeInputMode('supplement');
-                    setRuntimeDraftStatus(null);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                    runtimeInputMode === 'supplement'
-                      ? 'bg-zinc-100 text-zinc-950'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                  aria-pressed={runtimeInputMode === 'supplement'}
-                  title="本轮回复结束后作为下一条发送"
-                >
-                  <Plus className="h-3 w-3" />
-                  <span>补充</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRuntimeInputMode('redirect');
-                    setRuntimeDraftStatus(null);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                    runtimeInputMode === 'redirect'
-                      ? 'bg-amber-400 text-zinc-950'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                  aria-pressed={runtimeInputMode === 'redirect'}
-                  title="本轮回复结束后按这条重新处理"
-                >
-                  <GitBranch className="h-3 w-3" />
-                  <span>改道</span>
-                </button>
-              </div>
-              <div className="inline-flex max-w-full items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-400">
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  runtimeDraftStatus
-                    ? 'bg-amber-300'
-                    : runtimeInputMode === 'redirect'
-                      ? 'bg-amber-300'
-                      : 'bg-emerald-400'
-                }`} />
-                <span className="truncate">
-                  {runtimeDraftStatus || (
-                    runtimeInputMode === 'redirect'
-                      ? '本轮回复结束后按这条重新处理'
-                      : '本轮回复结束后作为下一条发送'
-                  )}
-                </span>
-                {runtimeDraftStatus && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRuntimeDraftStatus(null);
-                      setValue('');
-                      setAttachments([]);
-                    }}
-                    className="ml-1 text-zinc-500 hover:text-zinc-200"
-                    title="清除这条草稿"
-                  >
-                    取消
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
           {queuedRuntimeInputs.length > 0 && (
             <div className="px-4 pb-2 -mt-1 space-y-1.5">
               {queuedRuntimeInputs.map((item) => (
                 <div
                   key={item.id}
-                  className="flex min-h-9 items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-1.5 text-[11px] text-amber-100"
+                  className="flex justify-end"
                 >
-                  <Clock3 className="h-3.5 w-3.5 flex-shrink-0 text-amber-300" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-normal text-amber-300/90">
-                      <span>{item.mode === 'redirect' ? '本轮后重新处理' : '本轮后发送'}</span>
+                  <div className="max-w-[86%]">
+                    <div className="mb-1 flex items-center justify-end gap-2 text-[11px] text-zinc-400">
+                      <CornerDownRight className="h-3.5 w-3.5" />
+                      <span>已引导对话</span>
                       {item.attachmentsCount > 0 && (
-                        <span className="text-amber-200/70">附件 {item.attachmentsCount}</span>
+                        <span className="text-zinc-500">附件 {item.attachmentsCount}</span>
                       )}
+                      {isProcessing ? (
+                        <span className="inline-flex items-center gap-1 text-zinc-500">
+                          <Clock3 className="h-3 w-3" />
+                          等待发送
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onSendQueuedRuntimeInput?.(item.id)}
+                          className="text-zinc-400 hover:text-zinc-200"
+                          title="立即发送这条排队消息"
+                        >
+                          发送
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onCancelQueuedRuntimeInput?.(item.id)}
+                        className="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                        title="撤回这条排队消息"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <div className="truncate text-amber-50/90">
-                      {item.content}
+                    <div className="rounded-2xl bg-zinc-800/70 border border-white/[0.04] px-4 py-2.5 text-zinc-100 shadow-sm">
+                      <div className="leading-relaxed select-text">
+                        {item.content}
+                      </div>
                     </div>
                   </div>
-                  {isProcessing ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex h-7 flex-shrink-0 items-center gap-1 rounded-md border border-amber-300/20 px-2 text-amber-200/60"
-                      title="当前回复结束后自动发送"
-                    >
-                      <Clock3 className="h-3 w-3" />
-                      <span>等待</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onSendQueuedRuntimeInput?.(item.id)}
-                      className="inline-flex h-7 flex-shrink-0 items-center gap-1 rounded-md border border-amber-300/30 px-2 text-amber-100 hover:bg-amber-300/10"
-                      title="立即发送这条排队消息"
-                    >
-                      <CornerDownRight className="h-3 w-3" />
-                      <span>发送</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onCancelQueuedRuntimeInput?.(item.id)}
-                    className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-amber-200/70 hover:bg-amber-300/10 hover:text-amber-50"
-                    title="撤回这条排队消息"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               ))}
             </div>
@@ -888,7 +787,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 disabled={disabled}
               />
             )}
-            {/* 发送/停止/补充指令按钮 */}
+            {/* 发送/停止/引导按钮 */}
             <SendButton
               disabled={disabled && !isProcessing}
               isProcessing={isProcessing}

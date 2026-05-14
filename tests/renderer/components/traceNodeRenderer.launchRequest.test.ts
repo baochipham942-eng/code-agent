@@ -64,6 +64,27 @@ function makeNode(request: SwarmLaunchRequest): TraceNode {
 }
 
 describe('TraceNodeRenderer launch request', () => {
+  it('marks queued runtime steer user messages as guided dialogue', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-guided-1',
+          type: 'user',
+          content: '我说的不是评测，而是刚才你说不走的地方',
+          timestamp: 100,
+          metadata: {
+            workbench: {
+              runtimeInputMode: 'supplement',
+              runtimeInputDelivery: 'queued_next_turn',
+            },
+          },
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('已引导对话');
+  });
+
   it('renders pending launch request as an inline approval card', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {

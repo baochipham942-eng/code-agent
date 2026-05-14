@@ -12,8 +12,8 @@ describe('runtime follow-up helpers', () => {
     expect(isRuntimeBusyStatus('paused')).toBe(true);
     expect(isRuntimeBusyStatus('queued')).toBe(true);
     // 'cancelling' 在 commit bce470a2 后从 busy 集合里分离出来：
-    // busy = 可接受补充指令的活跃态；cancelling = 不能接，专门走 isRuntimeCancellingStatus
-    // 防止用户在 cancelling 期间发补充指令而被静默吞掉。
+    // busy = 可接受运行中引导的活跃态；cancelling = 不能接，专门走 isRuntimeCancellingStatus
+    // 防止用户在 cancelling 期间发引导消息而被静默吞掉。
     expect(isRuntimeBusyStatus('cancelling')).toBe(false);
     expect(isRuntimeBusyStatus('idle')).toBe(false);
     expect(isRuntimeBusyStatus('error')).toBe(false);
@@ -22,7 +22,7 @@ describe('runtime follow-up helpers', () => {
   it('keeps Agent not initialized out of the chat-facing copy', () => {
     const message = getRuntimeFollowupFailureMessage(new Error('Agent not initialized'));
 
-    expect(message).toBe('当前任务还没准备好接收补充指令，稍后再发一次。');
+    expect(message).toBe('当前任务还没准备好接收引导消息，稍后再发一次。');
     expect(message).not.toContain('Agent not initialized');
     expect(message).not.toContain('中断失败');
   });

@@ -19,7 +19,7 @@ import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
 import { UI } from '@shared/constants';
 
 interface TraceNodeRendererProps {
@@ -184,39 +184,51 @@ const UserNode: React.FC<{
   metadata?: WorkbenchMessageMetadata;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => (
-  <div>
-    <WorkbenchSummary metadata={metadata} />
-    {attachments && attachments.length > 0 && (
-      <div className="mb-2">
-        <AttachmentDisplay attachments={attachments} />
-      </div>
-    )}
-    {content && (
-      <div className="flex justify-end">
-        <div className="flex items-start gap-1.5 max-w-[86%]">
-          {onRewind && (
-            <button
-              type="button"
-              onClick={() => onRewind(messageId, content)}
-              disabled={rewindDisabled}
-              className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
-              aria-label="回到这条提示词"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
-            <div className="text-zinc-200 leading-relaxed select-text">
-              <MessageContent content={content} isUser={true} />
+}> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => {
+  const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
+
+  return (
+    <div>
+      <WorkbenchSummary metadata={metadata} />
+      {attachments && attachments.length > 0 && (
+        <div className="mb-2">
+          <AttachmentDisplay attachments={attachments} />
+        </div>
+      )}
+      {content && (
+        <div className="flex justify-end">
+          <div className="max-w-[86%]">
+            {isGuidedTurn && (
+              <div className="mb-1 flex items-center justify-end gap-2 text-xs text-zinc-400">
+                <CornerDownRight className="h-3.5 w-3.5" />
+                <span>已引导对话</span>
+              </div>
+            )}
+            <div className="flex items-start gap-1.5">
+              {onRewind && (
+                <button
+                  type="button"
+                  onClick={() => onRewind(messageId, content)}
+                  disabled={rewindDisabled}
+                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
+                  aria-label="回到这条提示词"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
+                <div className="text-zinc-200 leading-relaxed select-text">
+                  <MessageContent content={content} isUser={true} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+    </div>
+  );
+};
 
 // ---- Assistant Text Node ----
 interface SelectionCopyState {

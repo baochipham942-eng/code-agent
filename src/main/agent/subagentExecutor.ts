@@ -7,13 +7,13 @@ import type { Message, MessageAttachment, ModelConfig, ToolCall, ToolDefinition 
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
+import { ToolExecutor } from '../tools/toolExecutor';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
 import {
   getSubagentPipeline,
-  type SubagentExecutionContext,
   type ToolExecutionRequest,
 } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
@@ -573,6 +573,31 @@ export class SubagentExecutor {
     const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);
     const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
 
+    // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
+    // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
+    // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
+    const subagentToolExecutor = new ToolExecutor({
+      workingDirectory: context.toolContext.workingDirectory,
+      // subagent 非交互：这是 classifier 'ask' 的兜底。硬阻断（validateCommand /
+      // classifier-deny / exec-policy / subagentPolicy deny）已在 ToolExecutor 管道内生效，
+      // 高风险走下方 loop 内的 plan-approval gate，到这里说明父 agent 已授权且非高风险。
+      requestPermission: async () => true,
+    });
+    const subagentPolicy = {
+      allowedTools: allowedNames,
+      check: (toolName: string, params: Record<string, unknown>): 'deny' | 'ask' => {
+        const def = context.toolResolver.getDefinition(toolName);
+        const req: ToolExecutionRequest = {
+          toolName,
+          permissionLevel: def?.permissionLevel ?? 'read',
+          path: (params.path as string | undefined) ?? (params.file_path as string | undefined),
+          command: params.command as string | undefined,
+          url: params.url as string | undefined,
+        };
+        return pipeline.checkToolExecution(pipelineContext, req).allowed ? 'ask' : 'deny';
+      },
+    };
+
     // Check if the model supports tool calls
     const providerConfig = PROVIDER_REGISTRY[context.modelConfig.provider];
     const modelInfo = providerConfig?.models.find((m: { id: string; supportsTool?: boolean }) => m.id === context.modelConfig.model);
@@ -1090,12 +1115,12 @@ export class SubagentExecutor {
               url: toolCall.arguments.url as string | undefined,
             };
 
-            // Check permission via pipeline
-            const permCheck = pipeline.preExecutionCheck(pipelineContext, toolRequest);
+            // Budget pre-gate（权限检查已收口到 ToolExecutor 的 subagentPolicy，见下方 execute 调用）
+            const permCheck = pipeline.checkBudget(pipelineContext);
             if (!permCheck.allowed) {
-              const error = `Permission denied for ${toolCall.name}: ${permCheck.reason}`;
+              const error = `Budget exceeded for ${toolCall.name}: ${permCheck.reason}`;
               toolResults.push(`Error: ${error}`);
-              logger.warn(`[${config.name}] Tool ${toolCall.name} denied: ${permCheck.reason}`);
+              logger.warn(`[${config.name}] Tool ${toolCall.name} blocked: ${permCheck.reason}`);
               telemetryToolCalls.push({
                 toolCallId: toolCall.id,
                 name: toolCall.name,
@@ -1105,7 +1130,7 @@ export class SubagentExecutor {
                 durationMs: 0,
                 timestamp: Date.now(),
                 index: toolIndex,
-                metadata: { permissionTrace: 'pipeline_denied', reason: permCheck.reason },
+                metadata: { permissionTrace: 'budget_exceeded', reason: permCheck.reason },
               });
               pushObservabilityMessage({
                 id: generateMessageId(),
@@ -1185,10 +1210,20 @@ export class SubagentExecutor {
 
             const toolStartTime = Date.now();
             try {
-              const result = await context.toolResolver.execute(
+              const result = await subagentToolExecutor.execute(
                 toolCall.name,
                 toolCall.arguments,
-                context.toolContext,
+                {
+                  sessionId: (context.toolContext as { sessionId?: string }).sessionId,
+                  agentId: pipelineContext.agentId,
+                  hookManager: context.hookManager,
+                  abortSignal: context.abortSignal,
+                  currentToolCallId: toolCall.id,
+                  toolScope: context.toolContext.toolScope,
+                  emitEvent: context.toolContext.emit,
+                  modelConfig: context.modelConfig,
+                  subagentPolicy,
+                },
               );
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(

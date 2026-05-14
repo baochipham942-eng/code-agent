@@ -105,6 +105,15 @@ export interface ExecuteOptions {
   executionIntent?: ConversationExecutionIntent;
   // Run-level cancellation signal propagated from the agent loop.
   abortSignal?: AbortSignal;
+  // Subagent 执行策略 — 存在即表示这是 subagent 调用。
+  // ToolExecutor 在权限决策前先过这道闸：工具白名单 + 收缩策略。
+  // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
+  // （validateCommand / classifyPermission / exec policy / 审计 / cache）。
+  // 这保证 subagent 与主 agent 走同一条 ToolExecutor 管道，而非绕过权限的旁路。
+  subagentPolicy?: {
+    allowedTools: Set<string>;
+    check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask';
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -207,6 +216,26 @@ export class ToolExecutor {
     const policyToolName = normalizeToolName(executionToolName);
 
     logger.debug('Tool found', { toolName: executionToolName, requestedToolName });
+
+    // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。
+    // 策略只能收紧不能放宽——'deny' 直接拒，'ask' 继续走下面的常规管道。
+    if (options.subagentPolicy) {
+      if (!options.subagentPolicy.allowedTools.has(executionToolName)) {
+        logger.warn('Tool not in subagent allowlist', { toolName: executionToolName });
+        return {
+          success: false,
+          error: `Tool not allowed for subagent: ${executionToolName}`,
+        };
+      }
+      if (options.subagentPolicy.check(executionToolName, params) === 'deny') {
+        logger.warn('Denied by subagent permission policy', { toolName: executionToolName });
+        recordDecision(executionToolName, params, 'policy-deny', 'subagent policy', Date.now());
+        return {
+          success: false,
+          error: `Denied by subagent permission policy: ${executionToolName}`,
+        };
+      }
+    }
 
     // Required-field guardrail: 在执行前校验 schema 里声明的 required 字段是否都提供了。
     // 模型经常幻觉工具名并传空参数，护栏把错误往前移到 executor 入口，避免下游 handler 炸。

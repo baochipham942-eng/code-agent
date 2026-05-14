@@ -6,6 +6,7 @@ import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import { estimateTokens } from '../../../context/tokenOptimizer';
+import { assessContextPressure } from '../../../context/contextPressureController';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { fileReadTracker } from '../../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../../tools/dataFingerprint';
@@ -239,76 +240,42 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
 
 export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<void> {
   try {
-    // 计算当前 token 使用量
     const currentTokens = ctx.runtime.messages.reduce(
       (sum, msg) => sum + estimateTokens(msg.content || ''),
       0
     );
 
-    // 检查绝对 token 阈值触发（Claude Code 风格）
-    if (ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens)) {
-      logger.info(`[AgentLoop] Token threshold reached (${currentTokens}), triggering compaction`);
-
-      // Emit context_compacting event (Claude Code style)
-      const compactionStartTime = Date.now();
-      ctx.runtime.onEvent({
-        type: 'context_compacting',
-        data: {
-          tokensBefore: currentTokens,
-          messagesCount: ctx.runtime.messages.length,
-        },
-      } as AgentEvent);
-
-      const preserveCount = ctx.runtime.autoCompressor.getConfig().preserveRecentCount;
-      const compactionResult = await compactMessagesWithSummary({
-        sessionId: ctx.runtime.sessionId,
-        source: 'auto_threshold',
-        messages: ctx.runtime.messages,
-        preserveRecentCount: preserveCount,
-        systemPrompt: ctx.runtime.systemPrompt,
-        modelConfig: ctx.runtime.modelConfig,
-        hookManager: ctx.runtime.hookManager,
-      });
-
-      if (compactionResult.success && compactionResult.block) {
-        const { block } = compactionResult;
-        ctx.runtime.autoCompressor.recordCompaction(block.compactedTokenCount, 'ai_summary');
-
-        await commitCompactionBlock(ctx, block, preserveCount, {
-          currentTokens,
-          compactionStartTime,
-          emitCompacted: true,
-          survivorReason: 'Compaction block inserted after hard threshold compaction',
-        });
-
-        // 检查是否应该收尾（总预算超限）
-        if (ctx.runtime.autoCompressor.shouldWrapUp()) {
-          logger.warn('[AgentLoop] Total token budget exceeded, injecting wrap-up instruction');
-          ctx.injectSystemMessage(
-            '<wrap-up>\n' +
-            '你已经使用了大量 token。请总结当前工作进展并收尾：\n' +
-            '1. 列出已完成的任务\n' +
-            '2. 列出未完成的任务及原因\n' +
-            '3. 给出后续建议\n' +
-            '</wrap-up>'
-          );
-        }
-
-        return; // compaction 成功，跳过旧的压缩逻辑
-      }
-    }
-
-    // 百分比阈值 fallback 也统一走 compactMessagesWithSummary，避免继续分叉旧压缩器。
     const compressorConfig = ctx.runtime.autoCompressor.getConfig();
-    if (!compressorConfig.enabled) return;
-
     const health = getContextHealthService().get(ctx.runtime.sessionId);
-    if (!health) return;
 
-    const usageRatio = health.usagePercent / 100;
-    if (usageRatio < compressorConfig.warningThreshold) return;
+    // P2-full/G11: 单一压力决策点 —— 绝对 token 阈值、百分比 warning、Pipeline 的
+    // autocompact-needed 信号，三者统一在 ContextPressureController 里裁定，不再各自内联。
+    // 注意 compressionEnabled 只 gate 百分比软触发；token 硬阈值和 pipeline 信号必须压。
+    const decision = assessContextPressure({
+      currentTokens,
+      tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens),
+      usageRatio: health ? health.usagePercent / 100 : undefined,
+      warningThreshold: compressorConfig.warningThreshold,
+      pipelineAutocompactNeeded: ctx.runtime.pipelineAutocompactNeeded,
+      compressionEnabled: compressorConfig.enabled,
+    });
+    // one-shot 信号：评估后立即清零，避免跨 turn 残留
+    ctx.runtime.pipelineAutocompactNeeded = false;
 
-    logger.info(`[AgentLoop] Usage at ${(usageRatio * 100).toFixed(1)}%, triggering unified fallback compaction`);
+    if (decision.action === 'none') return;
+
+    logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering compaction`);
+
+    // Emit context_compacting event (Claude Code style) — 现在所有触发路径统一发，
+    // 不再只有 token-threshold 路径发。
+    const compactionStartTime = Date.now();
+    ctx.runtime.onEvent({
+      type: 'context_compacting',
+      data: {
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      },
+    } as AgentEvent);
 
     const preserveCount = compressorConfig.preserveRecentCount;
     const compactionResult = await compactMessagesWithSummary({
@@ -319,7 +286,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       systemPrompt: ctx.runtime.systemPrompt,
       modelConfig: ctx.runtime.modelConfig,
       hookManager: ctx.runtime.hookManager,
-      usagePercent: health.usagePercent,
+      usagePercent: health?.usagePercent,
     });
 
     if (compactionResult.success && compactionResult.block) {
@@ -327,8 +294,24 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       ctx.runtime.autoCompressor.recordCompaction(block.compactedTokenCount, 'ai_summary');
 
       await commitCompactionBlock(ctx, block, preserveCount, {
-        survivorReason: 'Compaction block inserted after percentage fallback compaction',
+        currentTokens,
+        compactionStartTime,
+        emitCompacted: true,
+        survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
+
+      // 检查是否应该收尾（总预算超限）—— 同样统一到所有触发路径
+      if (ctx.runtime.autoCompressor.shouldWrapUp()) {
+        logger.warn('[AgentLoop] Total token budget exceeded, injecting wrap-up instruction');
+        ctx.injectSystemMessage(
+          '<wrap-up>\n' +
+          '你已经使用了大量 token。请总结当前工作进展并收尾：\n' +
+          '1. 列出已完成的任务\n' +
+          '2. 列出未完成的任务及原因\n' +
+          '3. 给出后续建议\n' +
+          '</wrap-up>'
+        );
+      }
     }
   } catch (error) {
     logger.error('[AgentLoop] Auto compression failed:', error);

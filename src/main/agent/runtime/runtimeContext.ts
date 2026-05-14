@@ -212,4 +212,7 @@ export interface RuntimeContext {
   contextBudgetRatio: number;
   genNum: number;
   initialSystemPromptLength: number;
+  /** G12/P2-full: 本 turn CompressionPipeline 是否报了 autocompact-needed。
+   *  由 messageBuild 写入，checkAndAutoCompress 经 ContextPressureController 消费后清零。 */
+  pipelineAutocompactNeeded: boolean;
 }

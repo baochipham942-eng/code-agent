@@ -292,6 +292,7 @@ export class AgentLoop {
       contextBudgetRatio: 0,
       genNum: 8,
       initialSystemPromptLength: 0,
+      pipelineAutocompactNeeded: false,
     };
 
     // Create modules

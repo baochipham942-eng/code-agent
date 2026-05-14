@@ -1502,6 +1502,10 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       );
 
       const autocompactNeeded = pipelineResult.layersTriggered.includes('autocompact-needed');
+      // P2-full/G12: 把 Pipeline 的压力信号交给 ContextPressureController（经
+      // checkAndAutoCompress 消费），不再让它只停留在 log/trace。无条件写入，
+      // false 也写，避免上一 turn 的 stale true 残留。
+      ctx.runtime.pipelineAutocompactNeeded = autocompactNeeded;
       const commitCount = nextCompressionState.getCommitLog().length;
       if (commitCount > 0 || autocompactNeeded) {
         // G12/G20: 真正消费 pipeline 的报告 —— 此前 layersTriggered 只 logger.debug 就丢了，

@@ -725,10 +725,12 @@ export class ConversationRuntime {
       runError = error;
       await this.persistFailedRunContinuationContext(userMessage, iterations, error);
     } finally {
+      // G20: 先同步 flush turn trace —— 必须排在 await finalizeRun 之前。
+      // finalizeRun 会发出 agent_complete 事件，CLI/host 收到后可能立即 process.exit，
+      // 进程在那个 await 让出点被杀，排在其后的同步代码就永远执行不到。
+      this.ctx.turnTrace.flush();
       await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum, terminal);
       this.ctx.runAbortController = null;
-      // G20: run 收尾把本次 run 累积的 turn trace 落盘（增量 append，失败只 warn）
-      this.ctx.turnTrace.flush();
     }
 
     if (runError) throw runError;

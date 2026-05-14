@@ -552,6 +552,7 @@ export class ConversationRuntime {
         if (this.ctx.isCancelled || this.ctx.isInterrupted) break;
 
         iterations++;
+        this.ctx.turnTrace.setTurn(iterations);
         logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
         // Check for interrupt at the start of each iteration
@@ -623,6 +624,15 @@ export class ConversationRuntime {
           duration: inferenceDuration,
         });
 
+        this.ctx.turnTrace.record('inference', {
+          responseType: response.type,
+          durationMs: inferenceDuration,
+          inputTokens: response.usage?.inputTokens ?? 0,
+          outputTokens: response.usage?.outputTokens ?? 0,
+          finishReason: response.finishReason ?? null,
+          truncated: response.truncated ?? false,
+        });
+
         // Telemetry: record model call
         this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
 
@@ -666,6 +676,19 @@ export class ConversationRuntime {
           if (decision.execution === 'advisory') {
             logger.info(`[AgentLoop] Advisory loop decision: ${decision.action} - ${decision.reason}`);
           }
+
+          // G20: 把决策落进结构化 trace，不再只 log 就丢 —— 这是 G1（决策死区）
+          // 可观测化的前置：等 trace 有数据后才能判定 G1 是核心缺口还是废抽象。
+          this.ctx.turnTrace.record('loop_decision', {
+            action: decision.action,
+            execution: decision.execution,
+            reason: decision.reason,
+            stopReason: loopState.stopReason,
+            consecutiveErrors: loopState.consecutiveErrors,
+            contextRatio: loopState.maxTokens > 0
+              ? Math.round((loopState.tokenUsage.input / loopState.maxTokens) * 100) / 100
+              : 0,
+          });
         }
 
         // 2. Handle text response - check for text-described tool calls
@@ -704,6 +727,8 @@ export class ConversationRuntime {
     } finally {
       await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum, terminal);
       this.ctx.runAbortController = null;
+      // G20: run 收尾把本次 run 累积的 turn trace 落盘（增量 append，失败只 warn）
+      this.ctx.turnTrace.flush();
     }
 
     if (runError) throw runError;

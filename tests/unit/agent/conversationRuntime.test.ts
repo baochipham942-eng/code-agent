@@ -409,6 +409,12 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     stepByStepMode: false,
 
     traceId: '',
+    turnTrace: {
+      setTurn: () => {},
+      record: () => {},
+      flush: () => {},
+      getEvents: () => [],
+    } as any,
     currentIterationSpanId: '',
     currentTurnId: '',
     pendingRuntimeDiagnostics: [],

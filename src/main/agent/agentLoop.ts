@@ -120,6 +120,7 @@ import { ContextAssembly } from './runtime/contextAssembly';
 import { RunFinalizer } from './runtime/runFinalizer';
 import { LearningPipeline } from './runtime/learningPipeline';
 import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
+import { TurnTraceRecorder } from './runtime/turnTrace';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -222,6 +223,7 @@ export class AgentLoop {
 
       // Tracing
       traceId: '',
+      turnTrace: new TurnTraceRecorder(resolvedSessionId),
       currentIterationSpanId: '',
       currentTurnId: '',
       messageDeltaSeq: 0,

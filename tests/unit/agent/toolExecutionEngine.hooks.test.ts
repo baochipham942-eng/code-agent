@@ -232,6 +232,12 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     compressionState: {} as never,
     compressionPipeline: {} as never,
     telemetryAdapter,
+    turnTrace: {
+      setTurn: vi.fn(),
+      record: vi.fn(),
+      flush: vi.fn(),
+      getEvents: vi.fn().mockReturnValue([]),
+    } as never,
     lastStreamedContent: '',
     isCancelled: false,
     _isRunning: false,

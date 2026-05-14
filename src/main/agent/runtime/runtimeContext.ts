@@ -28,6 +28,7 @@ import type {
   WorkbenchToolScope,
 } from '../../../shared/contract/conversationEnvelope';
 import type { SkillInvocationMatchKind } from '../../services/skills/skillInvocationResolver';
+import type { TurnTraceRecorder } from './turnTrace';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -114,6 +115,8 @@ export interface RuntimeContext {
   currentTurnId: string;
   messageDeltaSeq: number;
   currentSystemPromptHash?: string;
+  /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
+  turnTrace: TurnTraceRecorder;
   pendingRuntimeDiagnostics: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;

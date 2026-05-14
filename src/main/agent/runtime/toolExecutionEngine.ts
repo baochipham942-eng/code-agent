@@ -2399,6 +2399,16 @@ export class ToolExecutionEngine {
       clearInterval(progressInterval);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
+      // G20: 记一条 tool_dispatch trace —— 工具名 / 成败 / 耗时 / 错误，
+      // 用于回放"这个 turn 派了哪些工具、结果如何"（也是验证 G7 是否死代码的数据来源）。
+      this.ctx.turnTrace.record('tool_dispatch', {
+        toolName: toolCall.name,
+        success: result.success,
+        durationMs: Date.now() - startTime,
+        error: result.error ?? null,
+        fromCache: result.fromCache ?? false,
+      });
+
       if (this.isRunCancelled()) {
         const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
         langfuse.endSpan(toolSpanId, {

@@ -9,6 +9,18 @@ import type { ToolDefinition, ToolResult } from '../../shared/contract';
 // ----------------------------------------------------------------------------
 
 /**
+ * MCP 配置来源 scope（用于可观测性与优先级判定）
+ * - builtin: 内置默认配置
+ * - cloud: 云端配置服务
+ * - user: ~/.code-agent/mcp.json
+ * - project: <wd>/.code-agent/mcp.json（版本控制、团队共享）
+ * - local: <wd>/.code-agent/mcp.local.json（项目内私有）
+ * - runtime: 运行时 UI / settings.json 添加
+ * 优先级：builtin/cloud < user < project < local < runtime
+ */
+export type MCPConfigScope = 'builtin' | 'cloud' | 'user' | 'project' | 'local' | 'runtime';
+
+/**
  * Stdio 服务器配置 (本地命令行)
  */
 export interface MCPStdioServerConfig {
@@ -24,6 +36,8 @@ export interface MCPStdioServerConfig {
    * 设为 false 将在应用启动时立即连接
    */
   lazyLoad?: boolean;
+  /** 配置来源 scope（由加载层填充，业务代码不应手写） */
+  scope?: MCPConfigScope;
 }
 
 /**
@@ -36,6 +50,8 @@ export interface MCPSSEServerConfig {
   enabled: boolean;
   /** Optional headers for authentication */
   headers?: Record<string, string>;
+  /** 配置来源 scope（由加载层填充，业务代码不应手写） */
+  scope?: MCPConfigScope;
 }
 
 /**
@@ -51,6 +67,8 @@ export interface MCPHttpStreamableServerConfig {
   headers?: Record<string, string>;
   /** Required environment variables (server disabled if missing) */
   requiredEnvVars?: string[];
+  /** 配置来源 scope（由加载层填充，业务代码不应手写） */
+  scope?: MCPConfigScope;
 }
 
 /**
@@ -66,6 +84,8 @@ export interface MCPInProcessServerConfig {
    * 返回一个实现了 InProcessMCPServerInterface 的实例
    */
   serverFactory?: () => InProcessMCPServerInterface;
+  /** 配置来源 scope（由加载层填充，业务代码不应手写） */
+  scope?: MCPConfigScope;
 }
 
 /**

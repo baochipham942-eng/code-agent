@@ -212,6 +212,30 @@ export function getMcpConfigPath(workingDirectory: string): {
 }
 
 /**
+ * Get scoped MCP config file paths (user / project / local).
+ * - user: ~/.code-agent/mcp.json — 跨所有项目生效
+ * - project: <wd>/.code-agent/mcp.json — 随项目走、纳入版本控制、团队共享
+ * - local: <wd>/.code-agent/mcp.local.json — 项目内私有、应 gitignore
+ * 优先级 local > project > user（同名后者覆盖前者）。
+ */
+export function getMcpScopedConfigPaths(workingDirectory?: string): {
+  user: string;
+  project?: string;
+  local?: string;
+} {
+  const result: { user: string; project?: string; local?: string } = {
+    user: path.join(getUserConfigDir(), 'mcp.json'),
+  };
+
+  if (workingDirectory) {
+    result.project = path.join(getProjectConfigDir(workingDirectory), 'mcp.json');
+    result.local = path.join(getProjectConfigDir(workingDirectory), 'mcp.local.json');
+  }
+
+  return result;
+}
+
+/**
  * Get settings.json path (for non-hooks settings)
  */
 export function getSettingsPath(workingDirectory?: string): {

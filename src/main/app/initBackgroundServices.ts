@@ -126,7 +126,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 
   // Now initialize MCP client AFTER CloudConfig is ready
   logger.info('Initializing MCP servers...', { customCount: mcpConfigs.length });
-  await initMCPClient(mcpConfigs);
+  await initMCPClient(mcpConfigs, getDesktopBootstrapWorkingDirectory());
 
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();

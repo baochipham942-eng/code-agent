@@ -13,6 +13,7 @@ import type {
 } from './types';
 import { createMemoryKVServer } from './servers/memoryKVServer';
 import { createCodeIndexServer } from './servers/codeIndexServer';
+import { loadMcpConfigFiles } from './mcpConfigFile';
 import type { MCPClient } from './mcpClient';
 
 const logger = createLogger('MCPDefaultServers');
@@ -207,11 +208,16 @@ export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig):
 
 /**
  * 初始化 MCP 客户端
- * 优先使用云端配置，失败时使用内置配置
+ *
+ * 配置来源优先级（同名后者覆盖前者）：
+ *   内置默认 / 云端 < user .mcp.json < project .mcp.json < local .mcp.json < runtime
+ *
+ * @param workingDirectory 当前项目目录，用于定位 project / local scope 的 .mcp.json
  */
 export async function initMCPClient(
   getMCPClientFn: () => MCPClient,
   customConfigs?: MCPServerConfig[],
+  workingDirectory?: string,
 ): Promise<MCPClient> {
   const client = getMCPClientFn();
 
@@ -223,20 +229,35 @@ export async function initMCPClient(
     logger.info(`Loading ${cloudMCPServers.length} MCP servers from cloud config`);
     for (const cloudConfig of cloudMCPServers) {
       const internalConfig = convertCloudConfigToInternal(cloudConfig);
+      internalConfig.scope = 'cloud';
       client.addServer(internalConfig);
     }
   } else {
     logger.warn('No MCP servers in cloud config, using default servers');
     const defaultServers = getDefaultMCPServers();
     for (const config of defaultServers) {
+      config.scope = 'builtin';
       client.addServer(config);
     }
   }
 
-  // 添加自定义配置（优先级最高）
+  // .mcp.json 配置文件：user → project → local 三档 scope
+  try {
+    const fileConfigs = await loadMcpConfigFiles(workingDirectory);
+    if (fileConfigs.length > 0) {
+      logger.info(`Loading ${fileConfigs.length} MCP servers from .mcp.json config files`);
+      for (const config of fileConfigs) {
+        client.addServer(config);
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to load .mcp.json config files (non-blocking):', error);
+  }
+
+  // 添加自定义配置（运行时来源，优先级最高）
   if (customConfigs) {
     for (const config of customConfigs) {
-      client.addServer(config);
+      client.addServer({ ...config, scope: 'runtime' });
     }
   }
 

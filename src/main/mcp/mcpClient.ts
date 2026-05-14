@@ -931,8 +931,11 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
 
 export const DEFAULT_MCP_SERVERS = _DEFAULT_MCP_SERVERS;
 
-export async function initMCPClient(customConfigs?: MCPServerConfig[]): Promise<MCPClient> {
-  return _initMCPClient(getMCPClient, customConfigs);
+export async function initMCPClient(
+  customConfigs?: MCPServerConfig[],
+  workingDirectory?: string,
+): Promise<MCPClient> {
+  return _initMCPClient(getMCPClient, customConfigs, workingDirectory);
 }
 
 export async function refreshMCPServersFromCloud(): Promise<void> {

@@ -573,6 +573,22 @@ export class SubagentExecutor {
     const allowedToolDefs = this.filterToolDefs(effectiveToolNames, context.toolResolver);
     const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
 
+    // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
+    // permissionConfig。此前 childCtx.permissions 只被 log、从未生效，导致
+    // checkToolExecution（subagentPolicy 收缩闸）跑的是未收缩的子 preset。
+    // 父级 blockedCommands 合并进来 → 子 agent 不能执行父 agent 禁的命令。
+    if (childCtx.permissions.blockedCommands?.length) {
+      pipelineContext.permissionConfig = {
+        ...pipelineContext.permissionConfig,
+        blockedCommands: [...new Set([
+          ...pipelineContext.permissionConfig.blockedCommands,
+          ...childCtx.permissions.blockedCommands,
+        ])],
+      };
+    }
+    // 收缩后的有效 mode（buildChildContext 已取父子较严者，canEscalate 恒 false）
+    const subagentEffectiveMode = childCtx.permissions.effectiveMode;
+
     // P0(G5): subagent 工具调用统一收口到 ToolExecutor —— 与主 agent 同一条
     // 权限/校验/审计/缓存管道，不再走 ProtocolToolResolver.execute 旁路。
     // subagent 的"不同策略"通过 subagentPolicy 表达：工具白名单 + checkToolExecution 收缩闸。
@@ -580,8 +596,11 @@ export class SubagentExecutor {
       workingDirectory: context.toolContext.workingDirectory,
       // subagent 非交互：这是 classifier 'ask' 的兜底。硬阻断（validateCommand /
       // classifier-deny / exec-policy / subagentPolicy deny）已在 ToolExecutor 管道内生效，
-      // 高风险走下方 loop 内的 plan-approval gate，到这里说明父 agent 已授权且非高风险。
-      requestPermission: async () => true,
+      // 高风险走下方 loop 内的 plan-approval gate。
+      // P0(G18): 只有收缩后的有效 mode 本身免确认（bypassPermissions / acceptEdits）才自动放行；
+      // 否则保守拒绝 —— 父 agent 此时会弹用户确认，子 agent 不能替用户做主、不能越父权限。
+      requestPermission: async () =>
+        subagentEffectiveMode === 'bypassPermissions' || subagentEffectiveMode === 'acceptEdits',
     });
     const subagentPolicy = {
       allowedTools: allowedNames,

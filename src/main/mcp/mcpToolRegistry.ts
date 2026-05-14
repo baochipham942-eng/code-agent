@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
@@ -33,6 +34,21 @@ function buildCancelledToolResult(toolCallId: string, startTime: number): ToolRe
     metadata: {
       cancelledByRun: true,
     },
+  };
+}
+
+/**
+ * 将 SDK 返回的 Tool 映射为内部 MCPTool
+ */
+function mapSdkToolToMCPTool(serverName: string, tool: Tool): MCPTool {
+  // SDK 返回的 annotations 包含 readOnlyHint/destructiveHint/openWorldHint/idempotentHint
+  const annotations = (tool as { annotations?: MCPToolAnnotations }).annotations;
+  return {
+    name: tool.name,
+    description: tool.description || '',
+    inputSchema: tool.inputSchema,
+    serverName,
+    ...(annotations ? { annotations } : {}),
   };
 }
 
@@ -91,15 +107,7 @@ export class MCPToolRegistry {
       const toolsResult = await client.listTools();
       if (toolsResult.tools) {
         for (const tool of toolsResult.tools) {
-          // SDK 返回的 annotations 包含 readOnlyHint/destructiveHint/openWorldHint/idempotentHint
-          const annotations = (tool as { annotations?: MCPToolAnnotations }).annotations;
-          this.tools.push({
-            name: tool.name,
-            description: tool.description || '',
-            inputSchema: tool.inputSchema,
-            serverName,
-            ...(annotations ? { annotations } : {}),
-          });
+          this.tools.push(mapSdkToolToMCPTool(serverName, tool));
         }
       }
     } catch {
@@ -190,6 +198,8 @@ export class MCPToolRegistry {
   private registerMCPToolsToSearch(serverName: string): void {
     try {
       const toolSearchService = getToolSearchService();
+      // 先清掉该 server 旧的元数据，避免 listChanged 后 stale 工具残留
+      toolSearchService.unregisterMCPServer(serverName);
       const serverTools = this.tools.filter(t => t.serverName === serverName);
 
       const mcpMetas = serverTools.map(tool => ({
@@ -219,6 +229,55 @@ export class MCPToolRegistry {
     this.tools = this.tools.filter((t) => t.serverName !== serverName);
     this.resources = this.resources.filter((r) => r.serverName !== serverName);
     this.prompts = this.prompts.filter((p) => p.serverName !== serverName);
+  }
+
+  // --------------------------------------------------------------------------
+  // listChanged Refresh — server 动态增删能力后的热刷新
+  // --------------------------------------------------------------------------
+
+  /**
+   * 用 server 推送的最新工具列表替换该 server 的工具，并同步 ToolSearchService
+   */
+  refreshServerTools(serverName: string, sdkTools: Tool[]): void {
+    this.tools = this.tools.filter((t) => t.serverName !== serverName);
+    for (const tool of sdkTools) {
+      this.tools.push(mapSdkToolToMCPTool(serverName, tool));
+    }
+    this.registerMCPToolsToSearch(serverName);
+    logger.info(`Refreshed ${sdkTools.length} tools from ${serverName} (listChanged)`);
+  }
+
+  /**
+   * 用 server 推送的最新资源列表替换该 server 的资源
+   */
+  refreshServerResources(serverName: string, sdkResources: Resource[]): void {
+    this.resources = this.resources.filter((r) => r.serverName !== serverName);
+    for (const resource of sdkResources) {
+      this.resources.push({
+        uri: resource.uri,
+        name: resource.name,
+        description: resource.description,
+        mimeType: resource.mimeType,
+        serverName,
+      });
+    }
+    logger.info(`Refreshed ${sdkResources.length} resources from ${serverName} (listChanged)`);
+  }
+
+  /**
+   * 用 server 推送的最新提示列表替换该 server 的提示
+   */
+  refreshServerPrompts(serverName: string, sdkPrompts: Prompt[]): void {
+    this.prompts = this.prompts.filter((p) => p.serverName !== serverName);
+    for (const prompt of sdkPrompts) {
+      this.prompts.push({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments,
+        serverName,
+      });
+    }
+    logger.info(`Refreshed ${sdkPrompts.length} prompts from ${serverName} (listChanged)`);
   }
 
   // --------------------------------------------------------------------------

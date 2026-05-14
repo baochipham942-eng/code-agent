@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -143,8 +144,12 @@ export function createTransport(config: MCPServerConfig): { transport: Transport
 /**
  * 创建 MCP SDK Client 实例
  * 声明 form elicitation 能力，使 MCP 服务器可以请求用户输入
+ *
+ * @param listChangedHandlers 可选的 listChanged 通知处理器。SDK 仅在 server 声明
+ *   对应 listChanged capability 时激活；autoRefresh 默认 true，会自动重新拉取列表
+ *   并通过 onChanged(error, items) 回调最新结果。
  */
-export function createMCPSDKClient(): Client {
+export function createMCPSDKClient(listChangedHandlers?: ListChangedHandlers): Client {
   return new Client(
     {
       name: 'code-agent',
@@ -156,6 +161,7 @@ export function createMCPSDKClient(): Client {
           form: {},
         },
       },
+      ...(listChangedHandlers ? { listChanged: listChangedHandlers } : {}),
     }
   );
 }

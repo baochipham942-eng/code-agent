@@ -11,8 +11,10 @@
 // - mcpDefaultServers.ts — 默认服务器配置 + 云端配置转换 + 初始化/刷新
 // ============================================================================
 
+import { EventEmitter } from 'node:events';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
@@ -89,7 +91,17 @@ function buildCancelledToolResult(toolCallId: string): ToolResult {
   };
 }
 
-export class MCPClient {
+/**
+ * MCPClient 发出的事件
+ * - 'capabilities-changed': server 通过 listChanged 通知动态增删了工具/资源/提示
+ */
+export interface MCPCapabilitiesChangedEvent {
+  serverName: string;
+  kind: 'tools' | 'resources' | 'prompts';
+  count: number;
+}
+
+export class MCPClient extends EventEmitter {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, Transport> = new Map();
   private serverConfigs: Map<string, MCPServerConfig> = new Map();
@@ -110,7 +122,70 @@ export class MCPClient {
   /** Max cache entries */
   private static readonly MAX_CACHE_SIZE = 20;
 
-  constructor() {}
+  constructor() {
+    super();
+  }
+
+  /**
+   * 构建 listChanged 通知处理器。
+   * SDK 仅在 server 声明对应 listChanged capability 时激活；autoRefresh 默认 true，
+   * onChanged 回调拿到的 items 即为重新拉取后的最新列表。
+   */
+  private buildListChangedHandlers(serverName: string): ListChangedHandlers {
+    return {
+      tools: {
+        onChanged: (error, tools) => {
+          if (error || !tools) {
+            logger.warn(`listChanged(tools) refresh failed for ${serverName}`, { error: error?.message });
+            return;
+          }
+          this.registry.refreshServerTools(serverName, tools);
+          this.toolDefinitionCache.delete(serverName);
+          const state = this.serverStates.get(serverName);
+          if (state) {
+            state.toolCount = this.registry.getToolCount(serverName);
+          }
+          this.emit('capabilities-changed', {
+            serverName,
+            kind: 'tools',
+            count: tools.length,
+          } satisfies MCPCapabilitiesChangedEvent);
+        },
+      },
+      resources: {
+        onChanged: (error, resources) => {
+          if (error || !resources) {
+            logger.warn(`listChanged(resources) refresh failed for ${serverName}`, { error: error?.message });
+            return;
+          }
+          this.registry.refreshServerResources(serverName, resources);
+          const state = this.serverStates.get(serverName);
+          if (state) {
+            state.resourceCount = this.registry.getResourceCount(serverName);
+          }
+          this.emit('capabilities-changed', {
+            serverName,
+            kind: 'resources',
+            count: resources.length,
+          } satisfies MCPCapabilitiesChangedEvent);
+        },
+      },
+      prompts: {
+        onChanged: (error, prompts) => {
+          if (error || !prompts) {
+            logger.warn(`listChanged(prompts) refresh failed for ${serverName}`, { error: error?.message });
+            return;
+          }
+          this.registry.refreshServerPrompts(serverName, prompts);
+          this.emit('capabilities-changed', {
+            serverName,
+            kind: 'prompts',
+            count: prompts.length,
+          } satisfies MCPCapabilitiesChangedEvent);
+        },
+      },
+    };
+  }
 
   // --------------------------------------------------------------------------
   // Server Management
@@ -284,7 +359,7 @@ export class MCPClient {
 
       // 外部服务器（Stdio/SSE/HTTP Streamable）
       const { transport, connectTimeout } = createTransport(config);
-      const client = createMCPSDKClient();
+      const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
 
       // Register elicitation handler before connecting (required by SDK)
       registerElicitationHandler(client, config.name);

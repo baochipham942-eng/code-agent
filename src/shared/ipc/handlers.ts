@@ -586,7 +586,11 @@ export interface NotificationClickedEvent {
   sessionId: string;
 }
 
-export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected';
+export type MCPEventType =
+  | 'connection_errors'
+  | 'server_connected'
+  | 'server_disconnected'
+  | 'capabilities_changed';
 
 export interface MCPEvent {
   type: MCPEventType;

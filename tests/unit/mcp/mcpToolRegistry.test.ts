@@ -176,6 +176,84 @@ describe('MCPToolRegistry permission metadata', () => {
   });
 });
 
+describe('MCPToolRegistry listChanged refresh', () => {
+  const sdkTool = (name: string) => ({
+    name,
+    description: `tool ${name}`,
+    inputSchema: { type: 'object' as const, properties: {} },
+  });
+  const mcpNames = (server: string) =>
+    getToolSearchService()
+      .getDeferredToolsSummary()
+      .split('\n')
+      .filter((n) => n.startsWith(`mcp__${server}__`))
+      .sort();
+
+  it('replaces a server tools and removes stale ToolSearch entries on refresh', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+
+    registry.refreshServerTools('fs', [sdkTool('read'), sdkTool('write')]);
+    expect(registry.getToolCount('fs')).toBe(2);
+    expect(mcpNames('fs')).toEqual(['mcp__fs__read', 'mcp__fs__write']);
+
+    // server 动态下线 write、新增 stat
+    registry.refreshServerTools('fs', [sdkTool('read'), sdkTool('stat')]);
+    expect(registry.getToolCount('fs')).toBe(2);
+    expect(mcpNames('fs')).toEqual(['mcp__fs__read', 'mcp__fs__stat']);
+  });
+
+  it('does not touch other servers tools when refreshing one server', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+
+    registry.refreshServerTools('fs', [sdkTool('read')]);
+    registry.refreshServerTools('git', [sdkTool('commit')]);
+    expect(registry.getToolCount('fs')).toBe(1);
+    expect(registry.getToolCount('git')).toBe(1);
+
+    registry.refreshServerTools('fs', []);
+    expect(registry.getToolCount('fs')).toBe(0);
+    expect(registry.getToolCount('git')).toBe(1);
+    expect(mcpNames('git')).toEqual(['mcp__git__commit']);
+  });
+
+  it('refreshes resources and prompts independently', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+
+    registry.refreshServerResources('docs', [
+      { uri: 'doc://a', name: 'a' },
+      { uri: 'doc://b', name: 'b' },
+    ]);
+    expect(registry.getResourceCount('docs')).toBe(2);
+
+    registry.refreshServerResources('docs', [{ uri: 'doc://a', name: 'a' }]);
+    expect(registry.getResourceCount('docs')).toBe(1);
+
+    registry.refreshServerPrompts('docs', [{ name: 'summarize' }]);
+    expect(registry.getPrompts().filter((p) => p.serverName === 'docs')).toHaveLength(1);
+  });
+});
+
+describe('ToolSearchService.unregisterMCPServer', () => {
+  it('removes only the targeted server MCP tool metadata', () => {
+    resetToolSearchService();
+    const svc = getToolSearchService();
+    svc.registerMCPTools([
+      { name: 'mcp__fs__read', shortDescription: 'r', tags: ['mcp'], aliases: [], source: 'mcp', mcpServer: 'fs' },
+      { name: 'mcp__git__log', shortDescription: 'l', tags: ['mcp'], aliases: [], source: 'mcp', mcpServer: 'git' },
+    ]);
+
+    svc.unregisterMCPServer('fs');
+    const remaining = svc
+      .getDeferredToolsSummary()
+      .split('\n')
+      .filter((n) => n.startsWith('mcp__'));
+    expect(remaining).toEqual(['mcp__git__log']);
+  });
+});
+
 describe('MCPClient lazy search discovery', () => {
   it('starts matching lazy stdio servers before ToolSearch searches MCP tools', async () => {
     resetToolSearchService();

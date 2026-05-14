@@ -145,6 +145,16 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
       data: errorServers.map(s => ({ server: s.config.name, error: s.error })),
     });
   }
+
+  // MCP server 通过 listChanged 通知动态增删能力时，转发给 renderer 刷新 UI
+  mcpClient.removeAllListeners('capabilities-changed');
+  mcpClient.on('capabilities-changed', (payload: { serverName: string; kind: string; count: number }) => {
+    logger.info('MCP capabilities changed', payload);
+    getMainWindow()?.webContents.send(EVENT_CHANNELS.MCP, {
+      type: 'capabilities_changed',
+      data: [{ server: payload.serverName }],
+    });
+  });
 }
 
 /**

@@ -242,6 +242,23 @@ export class ToolSearchService {
   }
 
   /**
+   * 注销指定 MCP server 的所有工具元数据
+   * 用于 listChanged 通知后清理 stale 条目，避免"工具搜得到却调不到"
+   */
+  unregisterMCPServer(serverName: string): void {
+    let removed = 0;
+    for (const [name, meta] of this.mcpToolsMeta) {
+      if (meta.mcpServer === serverName) {
+        this.mcpToolsMeta.delete(name);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      logger.debug(`Unregistered ${removed} MCP tools from ${serverName}`);
+    }
+  }
+
+  /**
    * 注册 Skill 元数据
    * Skill 作为虚拟工具注册，便于通过 tool_search 发现
    */

@@ -1,4 +1,5 @@
-import { LayoutGrid, Play, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { LayoutGrid, Play, Sparkles, X } from 'lucide-react';
 import type {
   WorkspacePreviewItem,
   WorkspacePreviewKind,
@@ -88,6 +89,90 @@ export function AssetTabButton({
       <span>{label}</span>
       <span className="text-[10px] opacity-70">{count}</span>
     </button>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export function AssetToolbarButton({
+  label,
+  icon,
+  count,
+  active = false,
+  disabled = false,
+  tone = 'neutral',
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  count?: number;
+  active?: boolean;
+  disabled?: boolean;
+  tone?: 'neutral' | 'cyan';
+  onClick: () => void;
+}) {
+  const activeClass = tone === 'cyan'
+    ? 'border-cyan-500/30 bg-cyan-500/[0.10] text-cyan-200'
+    : 'border-white/[0.14] bg-white/[0.07] text-zinc-100';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors ${
+        active
+          ? activeClass
+          : 'border-white/[0.08] bg-white/[0.025] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
+      } disabled:cursor-not-allowed disabled:opacity-40`}
+    >
+      {icon}
+      {count !== undefined && count > 0 && (
+        <span className="absolute -right-1 -top-1 min-w-4 rounded-full border border-zinc-900 bg-cyan-500 px-1 text-[9px] font-medium leading-4 text-zinc-950">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export function AssetDrawerPanel({
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <aside
+      role="dialog"
+      aria-label={title}
+      className="absolute inset-y-0 right-0 z-30 flex w-[min(360px,calc(100%-44px))] flex-col border-l border-white/[0.08] bg-zinc-900 shadow-2xl"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-zinc-100">{title}</div>
+          {subtitle && <div className="mt-0.5 truncate text-xs text-zinc-500">{subtitle}</div>}
+        </div>
+        <button
+          type="button"
+          aria-label="关闭面板"
+          title="关闭面板"
+          onClick={onClose}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.025] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {children}
+      </div>
+    </aside>
   );
 }
 

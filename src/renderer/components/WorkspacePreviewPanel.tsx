@@ -11,6 +11,7 @@ import {
   File,
   FileText,
   Image,
+  LayoutGrid,
   Mail,
   MessageSquare,
   Presentation,
@@ -55,13 +56,15 @@ import {
   type DesignBriefSubmitDetail,
 } from './QuestionFormPreview';
 import {
-  AssetTabButton,
+  AssetDrawerPanel,
+  AssetToolbarButton,
   PromptAppLibrary,
   isGalleryItem,
-  type WorkspaceAssetTab,
 } from './WorkspaceAssets';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
+
+type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
 function kindLabel(kind: WorkspacePreviewKind): string {
   switch (kind) {
@@ -541,7 +544,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const recipes = useWorkbenchPresetStore((state) => state.recipes);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
-  const [activeAssetTab, setActiveAssetTab] = useState<WorkspaceAssetTab>('preview');
+  const [activeDrawer, setActiveDrawer] = useState<WorkspaceAssetDrawer | null>(null);
   const [copied, setCopied] = useState(false);
   const [deliveryReview, setDeliveryReview] = useState<DeliveryReviewRunResult | null>(null);
   const [reviewRunning, setReviewRunning] = useState(false);
@@ -551,7 +554,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [sentContext, setSentContext] = useState(false);
   const [assetActionError, setAssetActionError] = useState<string | null>(null);
   const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
-  const activePreviewItems = activeAssetTab === 'gallery' ? galleryItems : items;
+  const appAssetCount = presets.length + recipes.length;
 
   // 监听 question-form 提交事件，把 brief 锁定到当前 session 运行时 state（不进 DB）。
   // 下一轮 sendMessage 会从 sessionStore 读这条 brief，prepend 到 IPC content 注入 LLM。
@@ -568,8 +571,8 @@ export const WorkspacePreviewPanel: React.FC = () => {
   }, []);
 
   const selected = useMemo(() => (
-    activePreviewItems.find((item) => item.id === selectedId) || activePreviewItems[0] || null
-  ), [activePreviewItems, selectedId]);
+    items.find((item) => item.id === selectedId) || items[0] || null
+  ), [items, selectedId]);
   const currentSessionTitle = useMemo(() => {
     if (!currentSessionId) return undefined;
     return sessions.find((session) => session.id === currentSessionId)?.title;
@@ -594,7 +597,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
   }, [reloadFeedback]);
 
   useEffect(() => {
-    if (activeAssetTab === 'apps') return;
     if (!selected && selectedId) {
       setSelectedId(null);
       return;
@@ -602,7 +604,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
     if (selected && selected.id !== selectedId) {
       setSelectedId(selected.id);
     }
-  }, [activeAssetTab, selected, selectedId, setSelectedId]);
+  }, [selected, selectedId, setSelectedId]);
 
   const syncWorkspaceDirectory = useCallback(async (dir?: string | null) => {
     const trimmed = dir?.trim();
@@ -665,6 +667,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
       });
       setDeliveryReview(result || null);
       await reloadFeedback();
+      setActiveDrawer('feedback');
     } finally {
       setReviewRunning(false);
     }
@@ -718,97 +721,73 @@ export const WorkspacePreviewPanel: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-zinc-900">
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-zinc-100">Workspace Assets</div>
-          <div className="mt-0.5 text-xs text-zinc-500">
-            {presets.length + recipes.length} apps · {galleryItems.length} gallery · {items.length} preview
+          <div className="flex min-w-0 items-center gap-2">
+            <Clipboard className="h-4 w-4 shrink-0 text-cyan-300" />
+            <div className="truncate text-sm font-semibold text-zinc-100">Preview</div>
+          </div>
+          <div className="mt-0.5 truncate text-xs text-zinc-500">
+            {items.length} files · {galleryItems.length} visuals · {appAssetCount} apps
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex items-center gap-1">
-            <AssetTabButton
-              active={activeAssetTab === 'apps'}
-              label="Apps"
-              count={presets.length + recipes.length}
-              onClick={() => setActiveAssetTab('apps')}
-            />
-            <AssetTabButton
-              active={activeAssetTab === 'gallery'}
-              label="Gallery"
-              count={galleryItems.length}
-              onClick={() => setActiveAssetTab('gallery')}
-            />
-            <AssetTabButton
-              active={activeAssetTab === 'preview'}
-              label="Preview"
-              count={items.length}
-              onClick={() => setActiveAssetTab('preview')}
-            />
-          </div>
-          {activeAssetTab !== 'apps' && (
-            <>
-              <button
-                type="button"
-                onClick={copySelected}
-                disabled={!selected}
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-              <button
-                type="button"
-                onClick={runDeliveryReview}
-                disabled={!selected || !currentSessionId || reviewRunning}
-                className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {reviewRunning ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
-                Review
-              </button>
-            </>
-          )}
+        <div className="flex shrink-0 items-center gap-1">
+          <AssetToolbarButton
+            label={`Prompt Apps (${appAssetCount})`}
+            icon={<LayoutGrid className="h-4 w-4" />}
+            count={appAssetCount}
+            active={activeDrawer === 'apps'}
+            onClick={() => setActiveDrawer((current) => (current === 'apps' ? null : 'apps'))}
+          />
+          <AssetToolbarButton
+            label={`Gallery (${galleryItems.length})`}
+            icon={<Image className="h-4 w-4" />}
+            count={galleryItems.length}
+            active={activeDrawer === 'gallery'}
+            onClick={() => setActiveDrawer((current) => (current === 'gallery' ? null : 'gallery'))}
+          />
+          <div className="mx-1 h-5 w-px bg-white/[0.08]" />
+          <AssetToolbarButton
+            label={copied ? 'Copied' : 'Copy preview'}
+            icon={copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
+            disabled={!selected}
+            onClick={copySelected}
+          />
+          <AssetToolbarButton
+            label={reviewRunning ? 'Running review' : 'Run delivery review'}
+            icon={reviewRunning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+            disabled={!selected || !currentSessionId || reviewRunning}
+            tone="cyan"
+            onClick={runDeliveryReview}
+          />
+          <AssetToolbarButton
+            label={`Preview Feedback (${selectedFeedbackItems.length})`}
+            icon={<MessageSquare className="h-4 w-4" />}
+            count={selectedFeedbackItems.length}
+            active={activeDrawer === 'feedback'}
+            onClick={() => setActiveDrawer((current) => (current === 'feedback' ? null : 'feedback'))}
+          />
         </div>
       </div>
 
-      {activeAssetTab === 'apps' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {assetActionError && (
-            <div className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              {assetActionError}
-            </div>
-          )}
-          <PromptAppLibrary
-            presets={presets}
-            recipes={recipes}
-            onUsePreset={handleUsePreset}
-            onUseRecipe={handleUseRecipe}
-          />
-        </div>
-      ) : activePreviewItems.length === 0 ? (
+      {items.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div>
-            {activeAssetTab === 'gallery' ? (
-              <Image className="mx-auto h-8 w-8 text-zinc-600" />
-            ) : (
-              <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
-            )}
-            <div className="mt-3 text-sm text-zinc-300">
-              {activeAssetTab === 'gallery' ? '暂无 Gallery 资产' : '暂无可预览产物'}
-            </div>
-            <div className="mt-1 text-xs leading-relaxed text-zinc-500">
-              {activeAssetTab === 'gallery'
-                ? 'HTML、图表、幻灯片、网页截图这类视觉产物会出现在这里。'
-                : '文档、表格、消息草稿、日程、网页截图、diff 和文件产物会出现在这里。'}
-            </div>
+            <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
+            <div className="mt-3 text-sm text-zinc-300">暂无可预览文件</div>
+            <div className="mt-1 text-xs leading-relaxed text-zinc-500">当前会话还没有文件产物。</div>
           </div>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[190px_minmax(0,1fr)_260px]">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(136px,34%)_minmax(0,1fr)]">
           <div className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+              <span>Files</span>
+              <span>{items.length}</span>
+            </div>
             <div className="space-y-2">
-              {activePreviewItems.map((item) => (
+              {items.map((item) => (
                 <PreviewListItem
                   key={item.id}
                   item={item}
@@ -825,7 +804,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
                   <KindIcon kind={selected.kind} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-zinc-100">{selected.title}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
+                    <div className="mt-0.5 truncate text-xs text-zinc-500">
                       {kindLabel(selected.kind)}
                       {selected.source.label ? ` · ${selected.source.label}` : ''}
                     </div>
@@ -845,40 +824,104 @@ export const WorkspacePreviewPanel: React.FC = () => {
                     )}
                   </div>
                 </div>
-                {deliveryReview && selected && (
-                  <div className={`rounded-lg border px-3 py-2 text-xs ${deliveryReviewStatusClass(deliveryReview.status)}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="inline-flex items-center gap-1.5 font-medium">
-                        {deliveryReview.status === 'pass'
-                          ? <CheckCircle2 className="h-3.5 w-3.5" />
-                          : <AlertTriangle className="h-3.5 w-3.5" />}
-                        Delivery Review · {deliveryReview.score}
-                      </div>
-                      <span className="uppercase">{deliveryReview.status}</span>
-                    </div>
-                    <div className="mt-1 leading-relaxed">{deliveryReview.summary}</div>
-                    <div className="mt-1 text-[11px] opacity-80">
-                      {deliveryReview.skills.map((skill) => skill.title).join(' · ')}
-                    </div>
-                  </div>
-                )}
                 <PreviewBody item={selected} />
               </div>
             )}
           </div>
-          <div className="min-h-0 overflow-y-auto border-l border-white/[0.06] p-3">
-            <div className="flex items-center justify-between gap-2">
+        </div>
+      )}
+
+      {activeDrawer && (
+        <button
+          type="button"
+          aria-label="关闭资源面板"
+          className="absolute inset-0 z-20 cursor-default bg-black/20"
+          onClick={() => setActiveDrawer(null)}
+        />
+      )}
+
+      {activeDrawer === 'apps' && (
+        <AssetDrawerPanel
+          title="Prompt Apps"
+          subtitle={`${appAssetCount} saved`}
+          onClose={() => setActiveDrawer(null)}
+        >
+          <div className="flex min-h-full flex-col">
+            {assetActionError && (
+              <div className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                {assetActionError}
+              </div>
+            )}
+            <PromptAppLibrary
+              presets={presets}
+              recipes={recipes}
+              onUsePreset={handleUsePreset}
+              onUseRecipe={handleUseRecipe}
+            />
+          </div>
+        </AssetDrawerPanel>
+      )}
+
+      {activeDrawer === 'gallery' && (
+        <AssetDrawerPanel
+          title="Gallery"
+          subtitle={`${galleryItems.length} visual assets`}
+          onClose={() => setActiveDrawer(null)}
+        >
+          {galleryItems.length === 0 ? (
+            <div className="flex min-h-full items-center justify-center px-6 text-center">
               <div>
-                <div className="text-xs font-semibold text-zinc-100">Preview Feedback</div>
-                <div className="mt-0.5 text-[10px] text-zinc-500">
-                  {selectedFeedbackItems.length} item{selectedFeedbackItems.length === 1 ? '' : 's'}
+                <Image className="mx-auto h-8 w-8 text-zinc-600" />
+                <div className="mt-3 text-sm text-zinc-300">暂无 Gallery 资产</div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 p-3">
+              {galleryItems.map((item) => (
+                <PreviewListItem
+                  key={item.id}
+                  item={item}
+                  active={item.id === selected?.id}
+                  onSelect={() => setSelectedId(item.id)}
+                />
+              ))}
+            </div>
+          )}
+        </AssetDrawerPanel>
+      )}
+
+      {activeDrawer === 'feedback' && (
+        <AssetDrawerPanel
+          title="Preview Feedback"
+          subtitle={`${selectedFeedbackItems.length} item${selectedFeedbackItems.length === 1 ? '' : 's'}`}
+          onClose={() => setActiveDrawer(null)}
+        >
+          <div className="p-3">
+            {deliveryReview && (
+              <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${deliveryReviewStatusClass(deliveryReview.status)}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="inline-flex min-w-0 items-center gap-1.5 font-medium">
+                    {deliveryReview.status === 'pass'
+                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+                    <span className="truncate">Delivery Review · {deliveryReview.score}</span>
+                  </div>
+                  <span className="shrink-0 uppercase">{deliveryReview.status}</span>
+                </div>
+                <div className="mt-1 leading-relaxed">{deliveryReview.summary}</div>
+                <div className="mt-1 text-[11px] opacity-80">
+                  {deliveryReview.skills.map((skill) => skill.title).join(' · ')}
                 </div>
               </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-zinc-100">{selected?.title || 'No preview selected'}</div>
               <button
                 type="button"
                 onClick={sendFeedbackToChat}
                 disabled={!selectedFeedbackItems.some((item) => item.status === 'open' || item.status === 'sent')}
-                className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Send className="h-3 w-3" />
                 {sentContext ? 'Sent' : 'Send'}
@@ -906,7 +949,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
                       <span className="truncate text-[10px] uppercase text-zinc-500">
                         {item.issueCode || item.source}
                       </span>
-                      <span className="rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-zinc-400">
+                      <span className="shrink-0 rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-zinc-400">
                         {item.status}
                       </span>
                     </div>
@@ -956,7 +999,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </AssetDrawerPanel>
       )}
     </div>
   );

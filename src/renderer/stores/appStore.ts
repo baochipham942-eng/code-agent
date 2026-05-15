@@ -137,6 +137,7 @@ interface AppState {
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
   showComputerUsePanel: boolean;
+  showInAppValidationPanel: boolean;
   showActivityPanel: boolean;
   showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
@@ -233,6 +234,7 @@ interface AppState {
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowComputerUsePanel: (show: boolean) => void;
+  setShowInAppValidationPanel: (show: boolean) => void;
   setShowActivityPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
@@ -332,6 +334,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showComputerUsePanel: false,
+  showInAppValidationPanel: false,
   showActivityPanel: false,
   showCronCenter: false,
   showTimeCapabilityCenter: false,
@@ -433,7 +436,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false } : {}),
+    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false, showInAppValidationPanel: false } : {}),
+  }),
+  setShowInAppValidationPanel: (show) => set({
+    showInAppValidationPanel: show,
+    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
   }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),

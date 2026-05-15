@@ -39,6 +39,7 @@ import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabi
 import { AgentTeamPanel } from './components/features/agentTeam';
 import { ActivityPanel } from './components/features/activity/ActivityPanel';
 import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
+import { InAppValidationPanel } from './components/features/inAppValidation/InAppValidationPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -99,6 +100,7 @@ export const App: React.FC = () => {
     showLab,
     showEvalCenter,
     showComputerUsePanel,
+    showInAppValidationPanel,
     showKnowledgeMemoryPanel,
     showActivityPanel,
     setShowActivityPanel,
@@ -477,6 +479,8 @@ export const App: React.FC = () => {
                 <KnowledgeMemoryPanel />
               ) : showComputerUsePanel ? (
                 <ComputerUsePanel />
+              ) : showInAppValidationPanel ? (
+                <InAppValidationPanel />
               ) : showEvalCenter ? (
                 <EvalCenterPanel />
               ) : (

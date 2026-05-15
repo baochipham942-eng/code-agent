@@ -152,6 +152,8 @@ export const Sidebar: React.FC = () => {
     setShowDesktopPanel,
     showComputerUsePanel,
     setShowComputerUsePanel,
+    showInAppValidationPanel,
+    setShowInAppValidationPanel,
     showActivityPanel,
     setShowActivityPanel,
     showKnowledgeMemoryPanel,
@@ -990,6 +992,13 @@ export const Sidebar: React.FC = () => {
                 >
                   <MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
                   Computer Use
+                </button>
+                <button
+                  onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />
+                  In-App 验证
                 </button>
                 <button
                   onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}

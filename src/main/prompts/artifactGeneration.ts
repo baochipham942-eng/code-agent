@@ -102,6 +102,114 @@ Patch only the generated HTML and the validator-relevant metadata/test contract.
 - Breakout/Arkanoid coverage must prove paddleMove, launch, wallBounce, paddleBounce, brickHit, wide/multi/slow/through/life powerups, win, and lose, with stateChanges for paddleX, ball position, wallBounceCount, paddleBounceCount, brickCount/bricksRemaining, score, powerupsTriggered, lives, and status.
 - \`runSmokeTest()\` must return \`checks\` and \`failures\` as string arrays, not numeric counts, and each assertion should fail only when the observed before/after state contradicts the expected result.
 - Only record coverage after before/after \`snapshot()\` changes driven by \`step()\` or real controls. No direct score/progress/level/win/unlock grants, and no existence-only coverage.
+
+## Reference implementation for runSmokeTest()
+
+The rules above are abstract. Below is the minimum working pattern. EVERY
+mechanic check MUST follow: reset → before snapshot → step() with real declared
+controls → after snapshot → compare → push exactly one \`checks\` OR \`failures\`
+entry. Do NOT push to coverage unless before/after differ. Adapt field names
+to what your snapshot() actually exposes — the key is the pattern, not the
+literal names.
+
+\`\`\`js
+runSmokeTest() {
+  const checks = [];
+  const failures = [];
+  // Initialize ALL coverage fields up front — including levelsPassed/totalLevels/
+  // allLevelsReachable — so the return statement is a simple { ...coverage }
+  // reference. Never read or assign these names as top-level variables.
+  const coverage = {
+    mechanics: [],
+    rewards: [],
+    risks: [],
+    stateChanges: [],
+    levelsPassed: [],
+    totalLevels: 1,
+    allLevelsReachable: true,
+  };
+
+  // --- stomp enemy ---
+  this.reset();
+  const beforeStomp = this.snapshot();
+  // Use the EXACT control names from __GAME_META__.controls (e.g. ArrowRight, Space).
+  this.step({ ArrowRight: true, Space: true }, 30);
+  const afterStomp = this.snapshot();
+  if (afterStomp.enemiesDefeated > beforeStomp.enemiesDefeated && afterStomp.player.vy < 0) {
+    checks.push('stomp_enemy');
+    coverage.mechanics.push('stompEnemy');
+    coverage.stateChanges.push('enemiesDefeated');
+    coverage.stateChanges.push('player.vy');
+  } else {
+    failures.push('stomp_enemy: enemiesDefeated or player.vy did not change');
+  }
+
+  // --- bump block (same pattern) ---
+  this.reset();
+  const beforeBump = this.snapshot();
+  this.step({ ArrowRight: true, Space: true }, 30);
+  const afterBump = this.snapshot();
+  if (afterBump.blocksUsed > beforeBump.blocksUsed) {
+    checks.push('bump_block');
+    coverage.mechanics.push('bumpBlock');
+    coverage.stateChanges.push('blocksUsed');
+  } else {
+    failures.push('bump_block: blocksUsed did not increase');
+  }
+
+  // --- gain ability (e.g. doubleJump unlocked by bumping a question block) ---
+  this.reset();
+  const beforeAbility = this.snapshot();
+  this.step({ ArrowRight: true, Space: true }, 60);
+  const afterAbility = this.snapshot();
+  if (!beforeAbility.player.abilities.doubleJump && afterAbility.player.abilities.doubleJump) {
+    checks.push('gain_ability');
+    coverage.mechanics.push('gainAbility');
+    coverage.stateChanges.push('abilities.doubleJump');
+  } else {
+    failures.push('gain_ability: abilities.doubleJump did not flip false->true');
+  }
+
+  // --- unlock gate (only after ability) ---
+  this.reset();
+  this.step({ ArrowRight: true, Space: true }, 60);   // gain ability first
+  this.step({ ArrowRight: true, Shift: true }, 80);   // use doubleJump to reach gate
+  const afterGate = this.snapshot();
+  if (afterGate.player.gatesUnlocked && afterGate.player.gatesUnlocked.length > 0) {
+    checks.push('unlock_gate');
+    coverage.mechanics.push('unlockGate');
+    coverage.stateChanges.push('gatesUnlocked');
+  } else {
+    failures.push('unlock_gate: gatesUnlocked stayed empty after acquiring ability');
+  }
+
+  // --- combo challenge: jump + stomp + ability + gate ---
+  this.reset();
+  this.step({ ArrowRight: true, Space: true }, 30);
+  this.step({ ArrowRight: true, Space: true }, 30);
+  this.step({ ArrowRight: true, Shift: true }, 40);
+  const afterCombo = this.snapshot();
+  if (afterCombo.enemiesDefeated > 0
+      && afterCombo.player.abilities.doubleJump
+      && afterCombo.player.gatesUnlocked.length > 0) {
+    checks.push('combo_challenge');
+    coverage.mechanics.push('comboChallenge');
+  } else {
+    failures.push('combo_challenge: missing prerequisite evidence');
+  }
+
+  // Finalize the level-pass tally on the same coverage object. Do NOT
+  // introduce a top-level levelsPassed variable — it must live on coverage.
+  coverage.levelsPassed = failures.length === 0 ? ['level-1'] : [];
+  return { passed: failures.length === 0, checks, failures, coverage };
+}
+\`\`\`
+
+Non-negotiable invariants:
+- \`step(inputState, frames)\` MUST drive the same physics/collision code as the playable game loop. Do NOT mock — mechanics must emerge from real \`step()\` calls that mutate the shared live state (player, enemies, blocks, gates).
+- \`snapshot()\` MUST expose the fields you assert on: counters like \`enemiesDefeated\` / \`blocksUsed\`, ability flags under \`player.abilities\`, and \`player.gatesUnlocked\` as an array of unlocked gate ids.
+- Never grant state directly inside \`runSmokeTest\` (no \`player.score += 100\`, no \`player.abilities.doubleJump = true\`). Validation rejects such grants.
+- \`step()\` may be invoked multiple times per mechanic — once to set up state (gain ability, position the player) and again to trigger the asserted event.
 `.trim(),
 );
 

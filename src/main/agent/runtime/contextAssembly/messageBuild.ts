@@ -810,8 +810,28 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     });
   }
 
-  // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配
-  if (!artifactRepairMode && !shouldInjectArtifactBrief && !ctx.runtime.isSimpleTaskMode && userQuery) {
+  // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。
+  // P3.5 change: artifact-brief turns (Round 0 generation) now ALSO get skill
+  // injection. Empirically Round 0 is where models miss the most concrete
+  // implementation patterns (step()/runSmokeTest wiring); a domain-specific
+  // skill in ~/.code-agent/memory/skill_*.md is far cheaper to maintain than
+  // bloating the global game contract prompt. Repair turns (artifactRepairMode)
+  // still skip skill injection — they already get the contract + reference
+  // impl block, and adding skills on top would push past the 6K system budget.
+  //
+  // Provider-aware skip: mimo (xiaomi) is reasoning-heavy and its content
+  // output collapses when the system prompt grows past ~10K. GPT-5.4 and
+  // similar handle long prompts fine. Until skill content can be shortened
+  // for the reasoning-heavy track, mimo opts out and falls back to the
+  // contract-only prompt (which it tolerates well — see the A'+B' baseline).
+  const provider = ctx.runtime.modelConfig?.provider;
+  const skipSkillsForLongPromptIntolerantProvider = provider === 'xiaomi';
+  if (
+    !artifactRepairMode
+    && !ctx.runtime.isSimpleTaskMode
+    && userQuery
+    && !skipSkillsForLongPromptIntolerantProvider
+  ) {
     try {
       const skills = await loadRelevantSkills(userQuery);
       const skillBlock = buildSkillInjectionBlock(skills);

@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { AppSettings } from '@shared/contract';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import { Button } from '../../../primitives';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -45,6 +46,26 @@ const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode; label: string; hint: s
   { value: 'managed', label: 'Managed', hint: '使用 in-app managed browser；默认 System Chrome via CDP，应用隔离 profile' },
   { value: 'desktop', label: 'Desktop', hint: '读取当前桌面/前台浏览器上下文 + Computer Surface；前台动作需人工确认' },
 ];
+
+type DefaultOpenTarget = NonNullable<AppSettings['workspace']['defaultOpenTarget']>;
+
+const DEFAULT_OPEN_OPTIONS: Array<{ value: DefaultOpenTarget; label: string; hint: string }> = [
+  { value: 'lastDirectory', label: '上次目录', hint: '默认沿用最近一次进入的工作区' },
+  { value: 'fixedDirectory', label: '固定目录', hint: '总是进入下面指定的目录' },
+  { value: 'askEachTime', label: '每次询问', hint: '启动时让我选，不预设 cwd' },
+];
+
+function describeOpenTarget(target: DefaultOpenTarget | undefined): string {
+  switch (target ?? 'lastDirectory') {
+    case 'fixedDirectory':
+      return '固定目录';
+    case 'askEachTime':
+      return '每次询问';
+    case 'lastDirectory':
+    default:
+      return '上次目录';
+  }
+}
 
 interface RecentDirRow {
   path: string;
@@ -87,6 +108,9 @@ export const WorkspaceSettings: React.FC = () => {
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState<RecentDirRow | null>(null);
+  const [defaultOpenTarget, setDefaultOpenTargetState] = useState<DefaultOpenTarget>('lastDirectory');
+  const [pinnedDirectory, setPinnedDirectoryState] = useState<string | null>(null);
+  const [savingPreference, setSavingPreference] = useState(false);
 
   const browserStatusRows = useMemo(
     () => buildBrowserWorkbenchStatusRows({ mode: browserSessionMode, browserSession }),
@@ -100,12 +124,15 @@ export const WorkspaceSettings: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [dir, recent] = await Promise.all([
+      const [dir, recent, settings] = await Promise.all([
         ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent'),
         ipcService.invokeDomain<string[]>(IPC_DOMAINS.WORKSPACE, 'listRecent'),
+        ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
       ]);
       setCurrentDir(dir ?? null);
       setRecentDirs(Array.isArray(recent) ? recent : []);
+      setDefaultOpenTargetState(settings?.workspace?.defaultOpenTarget ?? 'lastDirectory');
+      setPinnedDirectoryState(settings?.workspace?.pinnedDirectory ?? null);
     } catch (error) {
       logger.error('Failed to load workspace settings', error);
     } finally {
@@ -157,6 +184,52 @@ export const WorkspaceSettings: React.FC = () => {
     }
   }, []);
 
+  const persistWorkspacePreference = useCallback(async (patch: {
+    defaultOpenTarget?: DefaultOpenTarget;
+    pinnedDirectory?: string | null;
+  }) => {
+    setSavingPreference(true);
+    try {
+      const current = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
+      const nextWorkspace = {
+        ...(current?.workspace ?? { recentDirectories: [] }),
+        ...(patch.defaultOpenTarget !== undefined ? { defaultOpenTarget: patch.defaultOpenTarget } : {}),
+        ...(patch.pinnedDirectory !== undefined
+          ? patch.pinnedDirectory
+            ? { pinnedDirectory: patch.pinnedDirectory }
+            : { pinnedDirectory: undefined }
+          : {}),
+      };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { workspace: nextWorkspace });
+    } catch (error) {
+      logger.error('Failed to persist workspace preference', error);
+    } finally {
+      setSavingPreference(false);
+    }
+  }, []);
+
+  const handleSelectOpenTarget = useCallback(async (value: DefaultOpenTarget) => {
+    setDefaultOpenTargetState(value);
+    await persistWorkspacePreference({ defaultOpenTarget: value });
+  }, [persistWorkspacePreference]);
+
+  const handlePickPinnedDirectory = useCallback(async () => {
+    try {
+      const next = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      if (next) {
+        setPinnedDirectoryState(next);
+        await persistWorkspacePreference({ pinnedDirectory: next });
+      }
+    } catch (error) {
+      logger.error('Failed to pick pinned directory', error);
+    }
+  }, [persistWorkspacePreference]);
+
+  const handleClearPinnedDirectory = useCallback(async () => {
+    setPinnedDirectoryState(null);
+    await persistWorkspacePreference({ pinnedDirectory: null });
+  }, [persistWorkspacePreference]);
+
   return (
     <SettingsPage
       title="工作区"
@@ -183,7 +256,7 @@ export const WorkspaceSettings: React.FC = () => {
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
               ['当前 cwd', currentDir ?? '未设置', '所有 agent 操作的默认根目录'],
-              ['默认打开目标', '聊天侧栏', '工作区切换时默认呈现的视图（TODO：暴露偏好）'],
+              ['默认打开目标', describeOpenTarget(defaultOpenTarget), '启动时如何挑选 working dir'],
               ['本地桥', '内置 IPC', '当前由 Tauri/Web 自带通道承载（TODO：暴露状态）'],
               ['最近目录数', String(rows.length), '含当前 cwd'],
             ].map(([label, value, caption]) => (
@@ -209,6 +282,70 @@ export const WorkspaceSettings: React.FC = () => {
               </Button>
             </div>
           )}
+
+          <div className="border-t border-zinc-700/60 px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">默认打开目标</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">
+                  启动时 agent 选哪个目录当 working dir。
+                </div>
+              </div>
+              {savingPreference && <span className="text-[11px] text-zinc-500">保存中…</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {DEFAULT_OPEN_OPTIONS.map((opt) => {
+                const selected = defaultOpenTarget === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleSelectOpenTarget(opt.value)}
+                    disabled={isWebMode() || savingPreference}
+                    className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors ${
+                      selected
+                        ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
+                        : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
+                    } ${isWebMode() ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-[11px] leading-relaxed text-zinc-500">{opt.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {defaultOpenTarget === 'fixedDirectory' && (
+              <div className="mt-3 flex items-center gap-2 rounded border border-zinc-700/60 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-300">
+                <Folder className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="flex-1 truncate font-mono" title={pinnedDirectory ?? ''}>
+                  {pinnedDirectory || '尚未指定固定目录'}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isWebMode() || savingPreference}
+                  onClick={handlePickPinnedDirectory}
+                  leftIcon={<FolderOpen className="h-3.5 w-3.5" />}
+                >
+                  {pinnedDirectory ? '更换' : '选择目录'}
+                </Button>
+                {pinnedDirectory && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={isWebMode() || savingPreference}
+                    onClick={handleClearPinnedDirectory}
+                    leftIcon={<X className="h-3.5 w-3.5" />}
+                  >
+                    清除
+                  </Button>
+                )}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-zinc-500">
+              TODO：启动期 bootstrap 还没读这个偏好，目前只持久化设置；下一 slice 接到 initBackgroundServices 的 cwd 解析逻辑。
+            </p>
+          </div>
         </div>
       </SettingsSection>
 

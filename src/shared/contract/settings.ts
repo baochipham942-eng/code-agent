@@ -61,6 +61,15 @@ export interface AppSettings {
   workspace: {
     defaultDirectory?: string;
     recentDirectories: string[];
+    /**
+     * 默认打开目标：启动时如何决定 working directory。
+     * - 'lastDirectory'（默认）：使用最近一次的目录（即 recentDirectories[0] 或 defaultDirectory）。
+     * - 'fixedDirectory'：每次启动都进 pinnedDirectory，忽略最近目录。
+     * - 'askEachTime'：启动时不预设 cwd，由用户在 UI 里选择。
+     */
+    defaultOpenTarget?: 'lastDirectory' | 'fixedDirectory' | 'askEachTime';
+    /** 当 defaultOpenTarget === 'fixedDirectory' 时使用的目录路径。 */
+    pinnedDirectory?: string;
   };
   permissions: {
     autoApprove: Record<PermissionLevel, boolean>;

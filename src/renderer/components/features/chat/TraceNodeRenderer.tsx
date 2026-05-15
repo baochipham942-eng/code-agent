@@ -3,7 +3,7 @@
 // Reuses existing MessageContent, ToolCallDisplay, UserMessage components
 // ============================================================================
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
@@ -15,11 +15,15 @@ import { FileArtifactCard } from './MessageBubble/FileArtifactCard';
 import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
-import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
+import {
+  extractAssistantProgressSummary,
+  removePromotedAssistantProgressFromThinking,
+  sanitizeThinkingForDisplay,
+} from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, CircleDot, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
 import { UI } from '@shared/constants';
 
 interface TraceNodeRendererProps {
@@ -289,7 +293,15 @@ const AssistantTextNode: React.FC<{
   const [copied, setCopied] = useState(false);
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
 
-  const reasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
+  const rawReasoningContent = sanitizeThinkingForDisplay(node.thinking || node.reasoning);
+  const progressSummary = useMemo(
+    () => node.content?.trim() ? null : extractAssistantProgressSummary(rawReasoningContent),
+    [node.content, rawReasoningContent],
+  );
+  const reasoningContent = useMemo(
+    () => removePromotedAssistantProgressFromThinking(rawReasoningContent, progressSummary),
+    [progressSummary, rawReasoningContent],
+  );
   const { displayContent, isAnimating } = useSmoothStreamingText({
     content: node.content || '',
     isStreaming: Boolean(turnStreaming),
@@ -360,6 +372,13 @@ const AssistantTextNode: React.FC<{
           >
             {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
+        </div>
+      )}
+
+      {progressSummary && (
+        <div className="mb-2 flex min-w-0 items-center gap-2 rounded-md border border-sky-500/15 bg-sky-500/[0.06] px-2.5 py-1.5 text-xs text-sky-200/90">
+          <CircleDot className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+          <span className="min-w-0 truncate">{progressSummary}</span>
         </div>
       )}
 

@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AgentEvent, Message, MessageAttachment, MessageMetadata } from '../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, MessageMetadata, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
   ConversationEnvelopeContext,
@@ -112,6 +112,16 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   }
 
   return Object.keys(workbench).length > 0 ? { workbench } : undefined;
+}
+
+function isTerminalErrorEvent(event: AgentEvent): boolean {
+  if (event.type !== 'error') return false;
+  const payload = event.data && typeof event.data === 'object'
+    ? event.data as Record<string, unknown>
+    : {};
+  return payload.level !== 'warning'
+    && payload.severity !== 'warning'
+    && payload.terminal !== false;
 }
 
 function upsertCachedMessage(messages: CachedMessage[], message: CachedMessage): CachedMessage[] {
@@ -312,6 +322,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const sessionId = req.body.sessionId || `web-session-${Date.now()}`;
     let runSettled = false;
     let clientDisconnected = false;
+    let runHadTerminalError = false;
 
     const canWriteSSE = () => !res.writableEnded && !res.destroyed;
     const emitSSE = (event: string, data: unknown) => {
@@ -325,6 +336,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const agentSSEBatcher = createAgentRunSSEBatcher(emitSSE, sessionId);
     const messageAccumulator = new MessageDeltaAccumulator();
     const emitAgentEvent = (event: AgentEvent): boolean => {
+      if (isTerminalErrorEvent(event)) {
+        runHadTerminalError = true;
+      }
       const snapshot = messageAccumulator.apply(sessionId, event);
       if (event.type === 'message_delta' && !snapshot) {
         return false;
@@ -345,6 +359,25 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
       return true;
     };
+    const updateRunSessionStatus = async (status: SessionStatus): Promise<void> => {
+      const updates = { status, updatedAt: Date.now() };
+      try {
+        const sm = await tryGetSessionManager();
+        if (sm?.updateSession) {
+          await sm.updateSession(sessionId, updates);
+        } else {
+          const { getDatabase } = await import('../../main/services/core/databaseService');
+          const db = getDatabase();
+          if (db.isReady) {
+            db.updateSession(sessionId, updates);
+          }
+        }
+        broadcastSSE('session:updated', { sessionId, updates });
+        broadcastSSE('session:list-updated', undefined);
+      } catch (error) {
+        logger.warn(`[AgentRouter] Failed to persist session status ${status} for ${sessionId}:`, error);
+      }
+    };
     const cancelForDisconnect = () => {
       if (runSettled || clientDisconnected) return;
       clientDisconnected = true;
@@ -358,6 +391,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     res.once('close', cancelForDisconnect);
     emitSSE('task_start', { taskId, prompt, sessionId });
+    await updateRunSessionStatus('running');
 
     try {
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
@@ -899,11 +933,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
       }
 
-      // session:updated 和 session:list-updated 已在 agentLoop.run() 之前广播
+      const finalStatus: SessionStatus = runCancelled
+        ? 'interrupted'
+        : runHadTerminalError
+          ? 'error'
+          : 'completed';
+      await updateRunSessionStatus(finalStatus);
+
+      // session:updated 和 session:list-updated 已按运行状态广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       emitAgentEvent({ type: 'agent_complete', data: null });
     } catch (error) {
+      await updateRunSessionStatus('error');
       if (!clientDisconnected) {
         emitAgentEvent({
           type: 'error',

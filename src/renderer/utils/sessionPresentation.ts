@@ -5,7 +5,7 @@ import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
 
-export type SessionStatusKind = 'background' | 'live' | 'paused' | 'error' | 'done' | 'idle';
+export type SessionStatusKind = 'background' | 'live' | 'paused' | 'error' | 'done' | 'incomplete' | 'idle';
 
 export interface SessionStatusPresentation {
   kind: SessionStatusKind;
@@ -19,6 +19,7 @@ const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
   paused:     { kind: 'paused',     label: '暂停',   toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20' },
   live:       { kind: 'live',       label: '进行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' },
   done:       { kind: 'done',       label: '已完成', toneClassName: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/50' },
+  incomplete: { kind: 'incomplete', label: '未完成', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20' },
   idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40' },
 };
 
@@ -31,16 +32,18 @@ const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
  * - P2 DB-persisted sessionStatus: survives restart; when the process is gone
  *   but the database remembers 'running'/'completed'/'error', trust it.
  * - P3 messageCount fallback: for sessions with no status but a history,
- *   prefer 'done' over 'idle'; a truly untouched session still renders 'idle'.
+ *   prefer 'done' only when there is output after the user turn. A prompt-only
+ *   session is incomplete, not completed.
  */
 export function getSessionStatusPresentation(args: {
   backgroundTask?: BackgroundTaskInfo;
   runtime?: SessionRuntimeSummary;
   taskState?: TaskSessionState | null;
   messageCount?: number;
+  turnCount?: number;
   sessionStatus?: SessionStatus;
 }): SessionStatusPresentation {
-  const { backgroundTask, runtime, taskState, messageCount, sessionStatus } = args;
+  const { backgroundTask, runtime, taskState, messageCount, turnCount, sessionStatus } = args;
 
   // P1: Live in-memory signals
   if (backgroundTask?.status === 'failed' || taskState?.status === 'error') {
@@ -74,6 +77,13 @@ export function getSessionStatusPresentation(args: {
   // P3: messageCount fallback for sessions without explicit status
   const hasHistory = typeof messageCount === 'number' && messageCount > 0;
   if (hasHistory) {
+    if (
+      typeof turnCount === 'number' &&
+      turnCount > 0 &&
+      messageCount <= turnCount
+    ) {
+      return PRESENTATION.incomplete;
+    }
     return PRESENTATION.done;
   }
 

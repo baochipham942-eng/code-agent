@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractThinkingSummary, sanitizeThinkingForDisplay } from '../../../src/renderer/utils/toolGrouping';
+import {
+  extractAssistantProgressSummary,
+  extractThinkingSummary,
+  removePromotedAssistantProgressFromThinking,
+  sanitizeThinkingForDisplay,
+} from '../../../src/renderer/utils/toolGrouping';
 
 describe('thinking display helpers', () => {
   it('filters runtime diagnostics from displayed thinking', () => {
@@ -51,5 +56,44 @@ describe('thinking display helpers', () => {
     expect(extractThinkingSummary(text)).toBe(
       'The user asked me to run the validation command and repor...',
     );
+  });
+
+  it('promotes concise action/result thinking into progress prose', () => {
+    expect(extractAssistantProgressSummary(
+      '找到了问题所在！_check_model_versions_age 函数在 line 150 触发 set -e。让我修复它然后启动团队。',
+    )).toBe(
+      '找到了问题所在！_check_model_versions_age 函数在 line 150 触发 set -e。修复它然后启动团队。',
+    );
+
+    expect(extractAssistantProgressSummary(
+      '好，内容团队启动！先初始化团队状态：',
+    )).toBe('内容团队启动！先初始化团队状态');
+  });
+
+  it('keeps low-signal deliberation inside collapsed thinking only', () => {
+    expect(extractAssistantProgressSummary(
+      '用户让我启动 agent team 来陪聊天。我需要先检查 agents.sh。',
+    )).toBeNull();
+  });
+
+  it('removes promoted progress prose from the displayed thinking body', () => {
+    const text = [
+      '好，内容团队启动！先初始化团队状态：',
+      '接下来要调用团队初始化命令。',
+    ].join('\n');
+
+    const progress = extractAssistantProgressSummary(text);
+
+    expect(progress).toBe('内容团队启动！先初始化团队状态');
+    expect(removePromotedAssistantProgressFromThinking(text, progress)).toBe(
+      '接下来要调用团队初始化命令。',
+    );
+  });
+
+  it('hides the thinking block when all visible thinking was promoted', () => {
+    const text = '好，内容团队启动！先初始化团队状态：';
+    const progress = extractAssistantProgressSummary(text);
+
+    expect(removePromotedAssistantProgressFromThinking(text, progress)).toBeUndefined();
   });
 });

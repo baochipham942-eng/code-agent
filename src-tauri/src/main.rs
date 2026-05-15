@@ -7,7 +7,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
@@ -141,6 +141,30 @@ fn is_server_running() -> bool {
     matches!(client.get(HEALTH_URL).send(), Ok(resp) if resp.status().as_u16() == 200)
 }
 
+fn make_boot_token() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("tauri-{}-{now}", std::process::id())
+}
+
+fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
+    let Some(expected_token) = expected_token else {
+        return true;
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+
+    parsed
+        .get("tauriBootToken")
+        .and_then(|value| value.as_str())
+        .is_some_and(|actual| actual == expected_token)
+}
+
 fn resolve_node_binary() -> String {
     if let Ok(bin) = env::var("NODE_BINARY") {
         return bin;
@@ -178,16 +202,18 @@ fn resolve_node_binary() -> String {
     "node".to_string()
 }
 
-fn spawn_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
+fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
     let node_binary = resolve_node_binary();
+    let boot_token = make_boot_token();
 
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
     // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
-    Command::new(&node_binary)
+    let child = Command::new(&node_binary)
         .arg(&script_path)
         .current_dir(&working_dir)
         .envs(env::vars())
+        .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -199,10 +225,12 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
                 node_binary,
                 error
             )
-        })
+        })?;
+
+    Ok((child, boot_token))
 }
 
-fn wait_for_healthcheck(child: &mut Child) -> Result<(), String> {
+fn wait_for_healthcheck(child: &mut Child, expected_boot_token: Option<&str>) -> Result<(), String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
@@ -222,7 +250,13 @@ fn wait_for_healthcheck(child: &mut Child) -> Result<(), String> {
         }
 
         match client.get(HEALTH_URL).send() {
-            Ok(response) if response.status().as_u16() == 200 => return Ok(()),
+            Ok(response) if response.status().as_u16() == 200 => {
+                let body = response.text().unwrap_or_default();
+                if health_matches_boot_token(&body, expected_boot_token) {
+                    return Ok(());
+                }
+                thread::sleep(HEALTH_INTERVAL);
+            }
             Ok(_) | Err(_) => thread::sleep(HEALTH_INTERVAL),
         }
     }
@@ -610,9 +644,9 @@ fn main() {
                 // a stale dev server can serve mismatched renderer assets and leave the app white.
                 println!("Web server already running on {SERVER_URL}, skipping spawn");
             } else {
-                let mut child = spawn_web_server(&app.handle())?;
+                let (mut child, boot_token) = spawn_web_server(&app.handle())?;
 
-                if let Err(error) = wait_for_healthcheck(&mut child) {
+                if let Err(error) = wait_for_healthcheck(&mut child, Some(&boot_token)) {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(error.into());

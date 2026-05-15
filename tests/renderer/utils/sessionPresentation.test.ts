@@ -26,6 +26,28 @@ describe('sessionPresentation', () => {
     expect(status.label).toBe('后台');
   });
 
+  it('does not label prompt-only sessions as completed', () => {
+    const status = getSessionStatusPresentation({
+      messageCount: 1,
+      turnCount: 1,
+      sessionStatus: 'idle',
+    });
+
+    expect(status.kind).toBe('incomplete');
+    expect(status.label).toBe('未完成');
+  });
+
+  it('keeps sessions with assistant output in the completed bucket', () => {
+    const status = getSessionStatusPresentation({
+      messageCount: 2,
+      turnCount: 1,
+      sessionStatus: 'idle',
+    });
+
+    expect(status.kind).toBe('done');
+    expect(status.label).toBe('已完成');
+  });
+
   it('indexes snapshot and working directory into session search text', () => {
     const session: SessionWithMeta = {
       id: 'session-1',

@@ -18,6 +18,9 @@ export function createHealthRouter(deps: HealthDeps): Router {
       mode: 'web-standalone',
       timestamp: Date.now(),
       handlers: handlers.size,
+      serverRoot: process.cwd(),
+      pid: process.pid,
+      tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
     });
   });
 

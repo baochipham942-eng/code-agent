@@ -138,6 +138,7 @@ interface AppState {
   showDesktopPanel: boolean;
   showComputerUsePanel: boolean;
   showInAppValidationPanel: boolean;
+  pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
   showActivityPanel: boolean;
   showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
@@ -235,6 +236,9 @@ interface AppState {
   setShowDesktopPanel: (show: boolean) => void;
   setShowComputerUsePanel: (show: boolean) => void;
   setShowInAppValidationPanel: (show: boolean) => void;
+  setPendingInAppValidationRequest: (
+    request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,
+  ) => void;
   setShowActivityPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
@@ -335,6 +339,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showDesktopPanel: false,
   showComputerUsePanel: false,
   showInAppValidationPanel: false,
+  pendingInAppValidationRequest: null,
   showActivityPanel: false,
   showCronCenter: false,
   showTimeCapabilityCenter: false,
@@ -442,6 +447,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     showInAppValidationPanel: show,
     ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
   }),
+  setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),

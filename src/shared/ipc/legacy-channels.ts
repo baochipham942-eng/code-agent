@@ -288,6 +288,10 @@ export const IPC_CHANNELS = {
   // TaskManager runtime channels
   TASK_EVENT: 'task:event',
 
+  // In-App HTML validation
+  IN_APP_VALIDATION_REQUEST: 'in-app-validation:request',
+  IN_APP_VALIDATION_RESULT: 'in-app-validation:result',
+
   // Swarm channels (Agent Swarm 监控)
   SWARM_EVENT: 'swarm:event',
   SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',

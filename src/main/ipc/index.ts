@@ -53,6 +53,7 @@ import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
 import { registerLivePreviewHandlers } from './livePreview.ipc';
 import { registerActivityHandlers } from './activity.ipc';
+import { registerInAppValidationHandlers } from './inAppValidation.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
@@ -198,6 +199,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Activity context handlers (统一活动上下文)
   registerActivityHandlers(ipcMain);
+
+  // In-App HTML validation result handler
+  registerInAppValidationHandlers(ipcMain);
 
   // Soul handlers (人格)
   registerSoulHandlers();

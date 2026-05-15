@@ -45,3 +45,23 @@ export interface BrowserVisualSmokeOptions {
   timeoutMs?: number;
   interactions?: BrowserInteractionStep[];
 }
+
+/**
+ * IPC payload — main → renderer：请求 panel 跑一段验证脚本。
+ * renderer 收到后：打开 / 聚焦 panel → 注入 HTML → 运行 steps → 回传结果。
+ */
+export interface InAppValidationRequest {
+  requestId: string;
+  html: string;
+  steps: BrowserInteractionStep[];
+  timeoutMs?: number;
+}
+
+/**
+ * IPC payload — renderer → main：交付验证结果（或错误）。
+ */
+export interface InAppValidationResultPayload {
+  requestId: string;
+  results?: BrowserInteractionStepResult[];
+  error?: string;
+}

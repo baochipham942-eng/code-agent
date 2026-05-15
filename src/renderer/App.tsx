@@ -52,6 +52,7 @@ import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
+import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
@@ -157,6 +158,7 @@ export const App: React.FC = () => {
   // 防止 dev server 重启 / 网络断开导致前端 isProcessing 卡住不放
   useTaskSync({ pollInterval: 30_000 });
   useBackgroundTaskSync();
+  useInAppValidationBridge();
 
   // 全局快捷键（含 ⌘⇧C compact 触发）
   useKeyboardShortcuts({

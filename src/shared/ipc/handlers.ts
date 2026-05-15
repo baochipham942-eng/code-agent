@@ -27,6 +27,11 @@ import type {
 } from '../contract';
 
 import type {
+  InAppValidationRequest,
+  InAppValidationResultPayload,
+} from '../contract/browserInteraction';
+
+import type {
   MemoryItem,
   MemoryCategory,
   MemoryStats as MemoryStatsNew,
@@ -178,6 +183,9 @@ import type {
 // ----------------------------------------------------------------------------
 
 export interface IpcInvokeHandlers {
+  // In-App validation — renderer → main 回传结果
+  [IPC_CHANNELS.IN_APP_VALIDATION_RESULT]: (payload: InAppValidationResultPayload) => Promise<void>;
+
   // Agent - 支持纯文本或带附件的消息
   [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: (payload?: AgentCancelRequest) => Promise<void>;
@@ -696,6 +704,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events
   [IPC_CHANNELS.TASK_EVENT]: (event: TaskRuntimeEvent) => void;
+  // In-App validation request (main → renderer broadcast)
+  [IPC_CHANNELS.IN_APP_VALIDATION_REQUEST]: (request: InAppValidationRequest) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events

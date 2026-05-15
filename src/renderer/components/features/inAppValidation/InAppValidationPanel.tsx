@@ -1,6 +1,9 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Play, RotateCw, AlertTriangle, CheckCircle2, Code2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Play, RotateCw, AlertTriangle, CheckCircle2, Code2, Radio } from 'lucide-react';
 import { runInAppInteractions } from '../../../utils/inAppValidationExecutor';
+import { ipcService } from '../../../services/ipcService';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { useAppStore } from '../../../stores/appStore';
 import type {
   BrowserInteractionStep,
   BrowserInteractionStepResult,
@@ -75,6 +78,10 @@ export function InAppValidationPanel(): React.ReactElement {
   const [results, setResults] = useState<BrowserInteractionStepResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [iframeReady, setIframeReady] = useState(false);
+  const activeIpcRequestRef = useRef<{ requestId: string } | null>(null);
+
+  const pendingRequest = useAppStore((s) => s.pendingInAppValidationRequest);
+  const setPendingRequest = useAppStore((s) => s.setPendingInAppValidationRequest);
 
   const reloadIframe = useCallback(() => {
     if (!iframeRef.current) return;
@@ -113,9 +120,62 @@ export function InAppValidationPanel(): React.ReactElement {
     }
   }, []);
 
+  // IPC 入口：main 端发来 request → 注入 HTML+steps，等 iframe ready 后自动跑并回传
+  useEffect(() => {
+    if (!pendingRequest) return;
+    activeIpcRequestRef.current = { requestId: pendingRequest.requestId };
+    setHtmlSource(pendingRequest.html);
+    setStepsText(JSON.stringify(pendingRequest.steps, null, 2));
+    setResults([]);
+    setError(null);
+    setIframeReady(false);
+    if (iframeRef.current) {
+      iframeRef.current.srcdoc = pendingRequest.html;
+    }
+  }, [pendingRequest]);
+
+  useEffect(() => {
+    const activeRequest = activeIpcRequestRef.current;
+    if (!activeRequest || !iframeReady || !pendingRequest) return;
+    if (activeRequest.requestId !== pendingRequest.requestId) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    let cancelled = false;
+    setRunning(true);
+    runInAppInteractions(iframe, pendingRequest.steps)
+      .then(async (stepResults) => {
+        if (cancelled) return;
+        setResults(stepResults);
+        await ipcService.invoke(IPC_CHANNELS.IN_APP_VALIDATION_RESULT, {
+          requestId: activeRequest.requestId,
+          results: stepResults,
+        });
+      })
+      .catch(async (err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        await ipcService.invoke(IPC_CHANNELS.IN_APP_VALIDATION_RESULT, {
+          requestId: activeRequest.requestId,
+          error: message,
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setRunning(false);
+        activeIpcRequestRef.current = null;
+        setPendingRequest(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [iframeReady, pendingRequest, setPendingRequest]);
+
   const passedCount = results.filter((r) => r.passed).length;
   const totalCount = results.length;
   const allPassed = totalCount > 0 && passedCount === totalCount;
+  const ipcActive = Boolean(pendingRequest);
 
   return (
     <div className="flex h-full w-full flex-col bg-slate-950 text-slate-100">
@@ -123,6 +183,11 @@ export function InAppValidationPanel(): React.ReactElement {
         <div className="flex items-center gap-2">
           <Code2 className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium">In-App HTML Validation</span>
+          {ipcActive && (
+            <span className="ml-2 flex items-center gap-1 rounded bg-sky-900 px-2 py-0.5 text-xs text-sky-200">
+              <Radio className="h-3 w-3 animate-pulse" /> IPC 驱动中
+            </span>
+          )}
           {totalCount > 0 && (
             <span
               className={`ml-2 rounded px-2 py-0.5 text-xs ${

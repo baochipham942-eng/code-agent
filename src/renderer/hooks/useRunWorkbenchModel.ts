@@ -4,10 +4,12 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useCronStore } from '../stores/cronStore';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
 import { useStatusRailModel } from './useStatusRailModel';
 import type { RunWorkbenchModel, SubagentRunView, TaskRecord } from '../types/runWorkbench';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
+import type { Task } from '@shared/contract/backgroundTask';
 import {
   buildLoopDecisionViews,
   buildMemoryActivityEvents,
@@ -94,6 +96,59 @@ function buildScheduledTaskRecords(args: {
   });
 }
 
+function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['status'] {
+  if (status === 'running' || status === 'queued' || status === 'paused' || status === 'waiting_input' || status === 'stalled') {
+    return 'in_progress';
+  }
+  if (status === 'completed') return 'done';
+  if (status === 'failed' || status === 'cancelled' || status === 'expired' || status === 'orphaned') return 'blocked';
+  return 'pending';
+}
+
+function formatBackgroundTaskDuration(durationMs?: number): string | null {
+  if (!durationMs || durationMs < 0) return null;
+  const seconds = Math.max(1, Math.round(durationMs / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function buildLedgerTaskRecords(tasks: Task[]): TaskRecord[] {
+  return tasks
+    .slice(0, 8)
+    .map((task) => {
+      const status = backgroundTaskStatusToTaskStatus(task.status);
+      const logRef = task.outputRefs.find((ref) => ref.type === 'log' || ref.path || ref.uri);
+      const duration = formatBackgroundTaskDuration(task.durationMs);
+      return {
+        id: `background:${task.id}`,
+        scope: 'global' as const,
+        title: task.title,
+        status,
+        steps: [
+          {
+            title: task.status,
+            status,
+          },
+          ...(duration ? [{
+            title: duration,
+            status,
+          }] : []),
+          ...(logRef ? [{
+            title: logRef.path || logRef.uri || logRef.label || '输出日志',
+            status,
+          }] : []),
+        ],
+        ownerRunId: task.runId ?? null,
+        sourceThreadId: task.sessionId ?? null,
+        resumeHint: task.failure?.message || task.summary,
+      };
+    });
+}
+
 function buildSubagentViews(args: {
   runId: string | null;
   agents: ReturnType<typeof useSwarmStore.getState>['agents'];
@@ -126,6 +181,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const selectedSwarmAgentId = useAppStore((state) => state.selectedSwarmAgentId);
   const cronJobs = useCronStore((state) => state.jobs);
   const cronLatestExecutions = useCronStore((state) => state.latestExecutions);
+  const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
 
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
   const sessionStatus = currentSessionId ? sessionStates[currentSessionId]?.status ?? null : null;
@@ -157,6 +213,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       jobs: cronJobs,
       latestExecutions: cronLatestExecutions,
     });
+    const ledgerTasks = buildLedgerTaskRecords(backgroundTasks);
 
     return {
       run,
@@ -165,6 +222,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       tasks: [
         ...(sessionTask ? [sessionTask] : []),
         ...globalTasks,
+        ...ledgerTasks,
         ...scheduledTasks,
       ],
       subagents: buildSubagentViews({
@@ -177,6 +235,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     };
   }, [
     agents,
+    backgroundTasks,
     cronJobs,
     cronLatestExecutions,
     currentSessionId,

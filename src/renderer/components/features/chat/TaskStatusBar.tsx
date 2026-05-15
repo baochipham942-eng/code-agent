@@ -131,15 +131,16 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
     return null;
   }
 
-  const handleTaskClick = (sessionId: string) => {
-    if (sessionId !== currentSessionId) {
-      switchSession(sessionId);
-    }
-  };
-
   const openOrchestrationPanel = () => {
     openWorkbenchTab('task');
     setTaskPanelTab('monitor');
+  };
+
+  const handleTaskClick = (sessionId: string) => {
+    if (sessionId !== currentSessionId) {
+      void switchSession(sessionId);
+    }
+    openOrchestrationPanel();
   };
 
   const openSelectedSwarmAgent = () => {

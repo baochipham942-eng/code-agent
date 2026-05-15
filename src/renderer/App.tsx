@@ -51,6 +51,7 @@ import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
+import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -153,6 +154,7 @@ export const App: React.FC = () => {
   // Task state 同步：mount 时拉取后端 sessionStates + 30s 兜底轮询
   // 防止 dev server 重启 / 网络断开导致前端 isProcessing 卡住不放
   useTaskSync({ pollInterval: 30_000 });
+  useBackgroundTaskSync();
 
   // 全局快捷键（含 ⌘⇧C compact 触发）
   useKeyboardShortcuts({
@@ -369,14 +371,16 @@ export const App: React.FC = () => {
       IPC_CHANNELS.NOTIFICATION_CLICKED,
       (event: NotificationClickedEvent) => {
         logger.info('Notification clicked, switching to session', { sessionId: event.sessionId });
-        useSessionStore.getState().switchSession(event.sessionId);
+        void useSessionStore.getState().switchSession(event.sessionId);
+        openWorkbenchTab('task');
+        setTaskPanelTab('monitor');
       }
     );
 
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [openWorkbenchTab, setTaskPanelTab]);
 
   // Listen for confirm_action events (Gen 3+)
   useEffect(() => {

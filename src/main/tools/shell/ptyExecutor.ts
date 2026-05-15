@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as pty from 'node-pty';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -38,6 +39,8 @@ export interface PtySessionState {
   lastReadPosition: number;
   timeout?: NodeJS.Timeout;
   cwd: string;
+  ownerSessionId?: string;
+  toolCallId?: string;
   cols: number;
   rows: number;
   inputBuffer: string[];
@@ -48,6 +51,9 @@ export interface PtySessionInfo {
   status: 'running' | 'completed' | 'failed';
   command: string;
   args: string[];
+  cwd: string;
+  ownerSessionId?: string;
+  toolCallId?: string;
   startTime: number;
   endTime?: number;
   duration: number;
@@ -65,11 +71,20 @@ export interface PtySessionOutput {
   duration: number;
 }
 
+export type PtySessionLifecycleEventType = 'started' | 'completed' | 'failed';
+
+export interface PtySessionLifecycleEvent {
+  type: PtySessionLifecycleEventType;
+  session: PtySessionInfo;
+}
+
 // ============================================================================
 // Session Storage
 // ============================================================================
 
 const ptySessions: Map<string, PtySessionState> = new Map();
+const ptySessionEvents = new EventEmitter();
+ptySessionEvents.setMaxListeners(50);
 
 // ============================================================================
 // Directory Management
@@ -87,6 +102,39 @@ function getPtyOutputPath(sessionId: string): string {
   return path.join(getPtyDir(), `${sessionId}.log`);
 }
 
+function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
+  return {
+    sessionId: session.sessionId,
+    status: session.status,
+    command: session.command,
+    args: session.args,
+    cwd: session.cwd,
+    ownerSessionId: session.ownerSessionId,
+    toolCallId: session.toolCallId,
+    startTime: session.startTime,
+    endTime: session.endTime,
+    duration: (session.endTime || Date.now()) - session.startTime,
+    exitCode: session.exitCode,
+    outputFile: session.outputFile,
+    cols: session.cols,
+    rows: session.rows,
+  };
+}
+
+function emitPtySessionLifecycleEvent(type: PtySessionLifecycleEventType, session: PtySessionState): void {
+  ptySessionEvents.emit('lifecycle', {
+    type,
+    session: toPtySessionInfo(session),
+  } satisfies PtySessionLifecycleEvent);
+}
+
+export function onPtySessionLifecycleEvent(
+  listener: (event: PtySessionLifecycleEvent) => void,
+): () => void {
+  ptySessionEvents.on('lifecycle', listener);
+  return () => ptySessionEvents.off('lifecycle', listener);
+}
+
 // ============================================================================
 // PTY Session Lifecycle
 // ============================================================================
@@ -102,6 +150,8 @@ export function createPtySession(options: {
   rows?: number;
   env?: Record<string, string>;
   maxRuntime?: number;
+  sessionId?: string;
+  toolCallId?: string;
 }): { success: boolean; sessionId?: string; error?: string; outputFile?: string } {
   // Check session limit
   if (ptySessions.size >= MAX_PTY_SESSIONS) {
@@ -161,6 +211,8 @@ export function createPtySession(options: {
       args,
       lastReadPosition: 0,
       cwd,
+      ownerSessionId: options.sessionId,
+      toolCallId: options.toolCallId,
       cols,
       rows,
       inputBuffer: [],
@@ -207,9 +259,11 @@ export function createPtySession(options: {
 
       // Close output stream
       sessionState.outputStream?.end();
+      emitPtySessionLifecycleEvent(sessionState.status === 'completed' ? 'completed' : 'failed', sessionState);
     });
 
     ptySessions.set(sessionId, sessionState);
+    emitPtySessionLifecycleEvent('started', sessionState);
 
     return {
       success: true,
@@ -410,20 +464,8 @@ export function getPtySessionLog(sessionId: string, tail?: number): {
 export function getAllPtySessions(): PtySessionInfo[] {
   const result: PtySessionInfo[] = [];
 
-  for (const [sessionId, session] of ptySessions) {
-    result.push({
-      sessionId,
-      status: session.status,
-      command: session.command,
-      args: session.args,
-      startTime: session.startTime,
-      endTime: session.endTime,
-      duration: (session.endTime || Date.now()) - session.startTime,
-      exitCode: session.exitCode,
-      outputFile: session.outputFile,
-      cols: session.cols,
-      rows: session.rows,
-    });
+  for (const [, session] of ptySessions) {
+    result.push(toPtySessionInfo(session));
   }
 
   return result;

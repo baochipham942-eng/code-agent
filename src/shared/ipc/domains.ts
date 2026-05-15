@@ -27,6 +27,7 @@ export const IPC_DOMAINS = {
   DATA: 'domain:data',
   DEVICE: 'domain:device',
   TASK: 'domain:task', // Wave 5: 多任务并行
+  BACKGROUND_TASKS: 'domain:backgroundTasks',
   DIFF: 'domain:diff', // E3: 变更追踪
   ERROR: 'domain:error',
   CRON: 'domain:cron',

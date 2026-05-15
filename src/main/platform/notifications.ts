@@ -2,6 +2,7 @@
 // Platform: Notifications - 替代 Electron Notification
 // ============================================================================
 
+import { EventEmitter } from 'events';
 import { safeExecDetached } from '../utils/safeShell';
 
 interface NotificationOptions {
@@ -21,6 +22,7 @@ function escapeAppleScript(s: string): string {
  */
 export class Notification {
   private options: NotificationOptions;
+  private readonly events = new EventEmitter();
 
   constructor(options?: NotificationOptions) {
     this.options = options || {};
@@ -36,7 +38,24 @@ export class Notification {
   }
 
   close(): void {}
-  on(..._args: unknown[]) { return this; }
+  on(event: string, listener: (...args: unknown[]) => void) {
+    this.events.on(event, listener);
+    return this;
+  }
+
+  once(event: string, listener: (...args: unknown[]) => void) {
+    this.events.once(event, listener);
+    return this;
+  }
+
+  off(event: string, listener: (...args: unknown[]) => void) {
+    this.events.off(event, listener);
+    return this;
+  }
+
+  emit(event: string, ...args: unknown[]): boolean {
+    return this.events.emit(event, ...args);
+  }
 
   static isSupported(): boolean {
     return process.platform === 'darwin';

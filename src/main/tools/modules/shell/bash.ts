@@ -399,6 +399,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         cols,
         rows,
         maxRuntime: timeout,
+        sessionId: ctx.sessionId,
+        toolCallId: ctx.currentToolCallId,
       });
 
       if (!result.success) {
@@ -473,7 +475,10 @@ Use process_kill to terminate the session.`;
     // 后台任务
     // -------------------------------------------------------------------------
     if (runInBackground) {
-      const result = startBackgroundTask(normalizedCommand, workingDirectory, timeout);
+      const result = startBackgroundTask(normalizedCommand, workingDirectory, timeout, {
+        sessionId: ctx.sessionId,
+        toolCallId: ctx.currentToolCallId,
+      });
       if (!result.success) {
         return {
           ok: false,

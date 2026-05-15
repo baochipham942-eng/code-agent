@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { spawn, ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -40,12 +41,17 @@ export interface TaskState {
   /** 内部 SIGKILL 定时器 */
   killTimeout?: NodeJS.Timeout;
   cwd: string;
+  sessionId?: string;
+  toolCallId?: string;
 }
 
 export interface TaskInfo {
   taskId: string;
   status: 'running' | 'completed' | 'failed';
   command: string;
+  cwd: string;
+  sessionId?: string;
+  toolCallId?: string;
   startTime: number;
   endTime?: number;
   duration: number;
@@ -61,11 +67,25 @@ export interface TaskOutput {
   duration: number;
 }
 
+export interface StartBackgroundTaskOptions {
+  sessionId?: string;
+  toolCallId?: string;
+}
+
+export type BackgroundTaskLifecycleEventType = 'started' | 'completed' | 'failed';
+
+export interface BackgroundTaskLifecycleEvent {
+  type: BackgroundTaskLifecycleEventType;
+  task: TaskInfo;
+}
+
 // ============================================================================
 // Task Storage
 // ============================================================================
 
 const backgroundTasks: Map<string, TaskState> = new Map();
+const backgroundTaskEvents = new EventEmitter();
+backgroundTaskEvents.setMaxListeners(50);
 
 // ============================================================================
 // Directory Management
@@ -83,6 +103,36 @@ function getTaskOutputPath(taskId: string): string {
   return path.join(getTasksDir(), `${taskId}.log`);
 }
 
+function toTaskInfo(task: TaskState): TaskInfo {
+  return {
+    taskId: task.taskId,
+    status: task.status,
+    command: task.command,
+    cwd: task.cwd,
+    sessionId: task.sessionId,
+    toolCallId: task.toolCallId,
+    startTime: task.startTime,
+    endTime: task.endTime,
+    duration: (task.endTime || Date.now()) - task.startTime,
+    exitCode: task.exitCode,
+    outputFile: task.outputFile,
+  };
+}
+
+function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: TaskState): void {
+  backgroundTaskEvents.emit('lifecycle', {
+    type,
+    task: toTaskInfo(task),
+  } satisfies BackgroundTaskLifecycleEvent);
+}
+
+export function onBackgroundTaskLifecycleEvent(
+  listener: (event: BackgroundTaskLifecycleEvent) => void,
+): () => void {
+  backgroundTaskEvents.on('lifecycle', listener);
+  return () => backgroundTaskEvents.off('lifecycle', listener);
+}
+
 // ============================================================================
 // Task Lifecycle
 // ============================================================================
@@ -93,7 +143,8 @@ function getTaskOutputPath(taskId: string): string {
 export function startBackgroundTask(
   command: string,
   cwd: string,
-  maxRuntime: number = BACKGROUND_TASK_MAX_RUNTIME
+  maxRuntime: number = BACKGROUND_TASK_MAX_RUNTIME,
+  options: StartBackgroundTaskOptions = {},
 ): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
   // Check task limit
   if (backgroundTasks.size >= MAX_BACKGROUND_TASKS) {
@@ -132,6 +183,8 @@ export function startBackgroundTask(
     command,
     lastReadPosition: 0,
     cwd,
+    sessionId: options.sessionId,
+    toolCallId: options.toolCallId,
   };
 
   // Set timeout for max runtime
@@ -201,11 +254,13 @@ export function startBackgroundTask(
 
     // Close output stream
     taskState.outputStream?.end();
+    emitTaskLifecycleEvent(taskState.status === 'completed' ? 'completed' : 'failed', taskState);
   });
 
   // Handle process error
   proc.on('error', (err) => {
     taskState.status = 'failed';
+    taskState.endTime = Date.now();
     const errorMsg = `[error] ${err.message}`;
     taskState.output.push(errorMsg);
     taskState.outputStream?.write(errorMsg + '\n');
@@ -218,9 +273,11 @@ export function startBackgroundTask(
     if (taskState.killTimeout) {
       clearTimeout(taskState.killTimeout);
     }
+    emitTaskLifecycleEvent('failed', taskState);
   });
 
   backgroundTasks.set(taskId, taskState);
+  emitTaskLifecycleEvent('started', taskState);
 
   return {
     success: true,
@@ -310,17 +367,8 @@ export async function getTaskOutput(
 export function getAllBackgroundTasks(): TaskInfo[] {
   const result: TaskInfo[] = [];
 
-  for (const [taskId, task] of backgroundTasks) {
-    result.push({
-      taskId,
-      status: task.status,
-      command: task.command,
-      startTime: task.startTime,
-      endTime: task.endTime,
-      duration: (task.endTime || Date.now()) - task.startTime,
-      exitCode: task.exitCode,
-      outputFile: task.outputFile,
-    });
+  for (const [, task] of backgroundTasks) {
+    result.push(toTaskInfo(task));
   }
 
   return result;

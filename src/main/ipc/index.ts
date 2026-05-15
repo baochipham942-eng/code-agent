@@ -56,6 +56,7 @@ import { registerActivityHandlers } from './activity.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
+import { registerCapabilityHandlers } from './capability.ipc';
 
 export * from './types';
 
@@ -106,7 +107,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerUpdateHandlers(ipcMain);
 
   // MCP handlers
-  registerMcpHandlers(ipcMain);
+  registerMcpHandlers(ipcMain, {
+    getWorkingDirectory: () => getAppService()?.getWorkingDirectory() || app.getPath('home'),
+  });
 
   // OpenChronicle (屏幕记忆) handlers
   registerOpenchronicleHandlers(ipcMain);
@@ -230,6 +233,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     const { BrowserWindow } = require('../platform') as typeof import('../platform');
     return BrowserWindow.getAllWindows();
   });
+
+  // Capability Center handlers (Skill / MCP / Tool / Channel inventory)
+  registerCapabilityHandlers(ipcMain, { getConfigService, getAppService });
 
   logger.info('All handlers registered');
 }

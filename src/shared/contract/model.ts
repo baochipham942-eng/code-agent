@@ -17,7 +17,8 @@ export type ModelProvider =
   | 'grok'       // xAI Grok
   | 'openrouter' // OpenRouter 中转（Gemini、Claude、GPT 等）
   | 'volcengine' // 火山引擎 (豆包)
-  | 'xiaomi';    // 小米 MiMo (Token Plan 包月套餐)
+  | 'xiaomi'     // 小米 MiMo (Token Plan 包月套餐)
+  | 'custom';    // 自定义 OpenAI-compatible Provider
 
 /**
  * Provider 输入别名。

@@ -110,5 +110,8 @@ export * from './decisionTrace';
 // Extension types (Unified plugin/skill management)
 export * from './extension';
 
+// Capability Center types
+export * from './capability';
+
 // Agent History types (completed agent run records)
 export * from './agentHistory';

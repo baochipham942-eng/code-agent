@@ -7,40 +7,22 @@ import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMe
 import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { AppSettings, ModelProvider } from '@shared/contract';
+import { getProviderDisplayName } from '@shared/constants';
 import {
-  PROVIDER_MODELS_MAP,
-  getProviderDisplayName,
-  getModelDisplayLabel,
-  MODEL_FEATURES,
-} from '@shared/constants';
+  buildRuntimeModelOptions,
+  getRuntimeModelLabel,
+  type RuntimeModelOption,
+} from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
 import { Eye, Wrench, Brain, Sparkles, Zap } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import type { EffortLevel } from '../../../shared/contract/agent';
 
-interface ModelOption {
-  provider: string;
-  model: string;
-  label: string;
-}
-
 const QUICK_SWITCH_PROVIDERS = [
-  'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi',
-] as const;
-
-const MODEL_OPTIONS: ModelOption[] = QUICK_SWITCH_PROVIDERS.flatMap((providerId) => {
-  const providerModels = PROVIDER_MODELS_MAP[providerId];
-  if (!providerModels) {
-    return [];
-  }
-
-  return providerModels.models.map((model) => ({
-    provider: providerId,
-    model: model.id,
-    label: getModelDisplayLabel(model.id),
-  }));
-});
+  'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi', 'custom',
+] as const satisfies readonly ModelProvider[];
 
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
@@ -74,9 +56,11 @@ interface ModelSwitcherProps {
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
+  const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
   const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
+  const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -87,19 +71,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
 
+  const modelOptions = useMemo(
+    () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS),
+    [modelSettings],
+  );
+
   // 搜索过滤
   const filteredOptions = useMemo(() => {
-    if (!searchQuery.trim()) return MODEL_OPTIONS;
+    if (!searchQuery.trim()) return modelOptions;
     const q = searchQuery.toLowerCase();
-    return MODEL_OPTIONS.filter((opt) => {
-      const providerName = (getProviderDisplayName(opt.provider) ?? opt.provider).toLowerCase();
+    return modelOptions.filter((opt) => {
+      const providerName = (opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider).toLowerCase();
       return (
         opt.label.toLowerCase().includes(q) ||
         opt.model.toLowerCase().includes(q) ||
         providerName.includes(q)
       );
     });
-  }, [searchQuery]);
+  }, [modelOptions, searchQuery]);
 
   // 打开时自动聚焦搜索框 + 重置搜索
   useEffect(() => {
@@ -110,6 +99,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         searchInputRef.current?.focus();
       });
     }
+  }, [open]);
+
+  // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
+  useEffect(() => {
+    if (!open) return;
+    window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
+      .then((res) => {
+        if (res?.success && res.data) {
+          setModelSettings(res.data);
+        }
+      })
+      .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ });
   }, [open]);
 
   // 打开时拉取 provider 健康状态
@@ -174,6 +175,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .then((res) => {
         if (res?.success) {
           setOverrideModel(res.data?.model ?? null);
+          setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
           setOverrideAdaptive(!!res.data?.adaptive);
         } else {
           toast.error('加载模型覆盖失败: ' + (res?.error?.message ?? '未知错误'));
@@ -183,7 +185,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [sessionId]);
 
   const handleSelect = useCallback(
-    async (option: ModelOption) => {
+    async (option: RuntimeModelOption) => {
       if (!sessionId) return;
       try {
         const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
@@ -197,6 +199,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           return;
         }
         setOverrideModel(option.model);
+        setOverrideProvider(option.provider);
         setOverrideAdaptive(false);
         setOpen(false);
       } catch (err) {
@@ -221,6 +224,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         return;
       }
       setOverrideModel(currentModel);
+      setOverrideProvider(defaultProvider);
       setOverrideAdaptive(true);
       setOpen(false);
     } catch (err) {
@@ -241,6 +245,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         return;
       }
       setOverrideModel(null);
+      setOverrideProvider(null);
       setOverrideAdaptive(false);
       setOpen(false);
     } catch (err) {
@@ -250,7 +255,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   const displayModel = overrideModel || currentModel;
   const isOverridden = !!overrideModel;
-  const displayLabel = overrideAdaptive ? '自动' : getModelDisplayLabel(displayModel);
+  const displayProvider = overrideProvider || defaultProvider;
+  const displayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
 
   const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> = [
     { value: 'low', label: 'Low', color: 'text-zinc-400' },
@@ -354,7 +360,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="font-medium">{opt.label}</span>
                     {/* 能力标签 */}
-                    {(MODEL_FEATURES[opt.model] ?? []).map((cap) => {
+                    {opt.features.map((cap) => {
                       const cfg = CAPABILITY_CONFIG[cap];
                       if (!cfg) return null;
                       return (
@@ -375,7 +381,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                         title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
                       />
                     )}
-                    {getProviderDisplayName(opt.provider) ?? opt.provider}
+                    {opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider}
                   </span>
                 </button>
               ))
@@ -411,7 +417,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           overrideAdaptive
             ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
             : isOverridden
-              ? `已覆盖: ${overrideModel} (原: ${currentModel})`
+              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel})`
               : `当前: ${currentModel}`
         }
       >

@@ -141,6 +141,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       openrouter: { enabled: false },
       volcengine: { enabled: false },
       xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
+      custom: { enabled: false, baseUrl: undefined, displayName: 'Custom Provider' },
     },
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
@@ -467,7 +468,7 @@ export class ConfigService implements IReadConfigService {
           storage.setApiKey(provider, config.apiKey);
           logger.info('Stored API key to secure storage', { provider });
           // Remove from config to avoid storing in plaintext
-          delete (config as Record<string, unknown>).apiKey;
+          delete (config as unknown as Record<string, unknown>).apiKey;
         }
       }
     }
@@ -532,6 +533,7 @@ export class ConfigService implements IReadConfigService {
       openrouter: 'OPENROUTER_API_KEY',
       volcengine: 'VOLCENGINE_API_KEY',
       xiaomi: 'XIAOMI_API_KEY',
+      custom: 'CUSTOM_PROVIDER_API_KEY',
     };
 
     const envKey = envKeyMap[provider];

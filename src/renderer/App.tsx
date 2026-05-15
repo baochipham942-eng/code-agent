@@ -56,8 +56,8 @@ import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-res
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import type { UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
-import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
+import type { AppSettings, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
+import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderInfo } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
@@ -226,8 +226,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SETTINGS 域 'get' action 返回 AppSettings，应抽 SettingsIpcMap 让 invokeDomain narrow
-        const settings = await invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
+        const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
 
         // 加载语言设置
         if (settings?.ui?.language) {
@@ -244,17 +243,20 @@ export const App: React.FC = () => {
 
         // 加载模型配置
         if (settings?.models) {
-          const defaultProvider = (settings.models.default || DEFAULT_PROVIDER) as import('@shared/contract').ModelProvider;
+          const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {
+            const model = providerConfig.model || DEFAULT_MODEL;
+            const modelSettings = providerConfig.models?.[model];
             setModelConfig({
               provider: defaultProvider,
-              model: providerConfig.model || DEFAULT_MODEL,
+              model,
               apiKey: providerConfig.apiKey || '',
-              baseUrl: providerConfig.baseUrl || '',
+              baseUrl: providerConfig.baseUrl || getProviderInfo(defaultProvider)?.endpoint || '',
               temperature: providerConfig.temperature ?? 0.7,
-              maxTokens: providerConfig.maxTokens ?? 4096,
+              maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,
+              capabilities: modelSettings?.capabilities,
             });
             logger.info('Loaded model config for provider', { provider: defaultProvider });
           }

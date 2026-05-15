@@ -42,6 +42,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'cache', tabLabel: '数据与存储', label: '数据库大小', keywords: ['database', '数据库', '大小', '存储'] },
   { tab: 'cache', tabLabel: '数据与存储', label: '清空缓存', keywords: ['cache', 'clear', '缓存', '清理', '清空'] },
 
+  // Capability Center
+  { tab: 'capabilities', tabLabel: '能力中心', label: '本地能力库存', keywords: ['capability', 'capabilities', '能力', '能力中心', 'marketplace', 'registry', '审计'] },
+  { tab: 'capabilities', tabLabel: '能力中心', label: 'Skill / MCP / Tool / Channel 审计', keywords: ['skill', 'mcp', 'tool', 'channel', 'connector', 'workflow', '权限', '风险', '来源'] },
+
   // MCP
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },
   { tab: 'mcp', tabLabel: 'MCP', label: 'Codex CLI', keywords: ['codex', 'sandbox', '沙箱', '交叉验证', 'cross verify'] },

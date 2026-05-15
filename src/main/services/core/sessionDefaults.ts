@@ -34,12 +34,13 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
   }
   const settings = (config?.getSettings() ?? {}) as Record<string, unknown> & {
     models?: {
+      default?: string;
       defaultProvider?: string;
-      providers?: Record<string, { model?: string; temperature?: number; maxTokens?: number }>;
+      providers?: Record<string, { model?: string; temperature?: number; maxTokens?: number; baseUrl?: string }>;
     };
   };
 
-  const provider = (args.provider || settings.models?.defaultProvider || DEFAULT_PROVIDER) as ModelProvider;
+  const provider = (args.provider || settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER) as ModelProvider;
   const providerCfg = settings.models?.providers?.[provider];
   const model = args.model || providerCfg?.model || DEFAULT_MODELS.chat;
 
@@ -47,6 +48,7 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
     provider,
     model,
     apiKey: config?.getApiKey?.(provider) ?? '',
+    baseUrl: providerCfg?.baseUrl,
     temperature: args.temperature ?? providerCfg?.temperature ?? 0.7,
     maxTokens: args.maxTokens ?? providerCfg?.maxTokens ?? getModelMaxOutputTokens(model),
   };

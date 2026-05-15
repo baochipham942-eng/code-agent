@@ -3,21 +3,37 @@
 // ============================================================================
 
 import type { ModelProvider } from './model';
+import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
+
+export interface ModelEntrySettings {
+  enabled?: boolean;
+  label?: string;
+  capabilities?: ModelCapability[];
+  maxTokens?: number;
+  supportsTool?: boolean;
+  supportsVision?: boolean;
+  supportsStreaming?: boolean;
+  discoveredAt?: number;
+}
+
+export interface ModelProviderSettings {
+  apiKey?: string;
+  enabled: boolean;
+  model?: string;
+  baseUrl?: string;
+  displayName?: string;
+  temperature?: number;
+  maxTokens?: number;
+  models?: Record<string, ModelEntrySettings>;
+}
 
 export interface AppSettings {
   models: {
     default: string;
     defaultProvider?: ModelProvider;
-    providers: Record<ModelProvider, {
-      apiKey?: string;
-      enabled: boolean;
-      model?: string;
-      baseUrl?: string;
-      temperature?: number;
-      maxTokens?: number;
-    }>;
+    providers: Record<ModelProvider, ModelProviderSettings>;
     // 按用途选择模型
     routing: {
       code: { provider: ModelProvider; model: string };

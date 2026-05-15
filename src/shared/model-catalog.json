@@ -490,6 +490,20 @@
           "desc": "2M · X 搜索+廉价批量"
         }
       ]
+    },
+    {
+      "id": "custom",
+      "name": "Custom Provider",
+      "description": "OpenAI-compatible 自定义服务商",
+      "apiUrl": "https://api.example.com/v1",
+      "default": "custom-model",
+      "models": [
+        {
+          "id": "custom-model",
+          "label": "Custom Model",
+          "desc": "通过 Provider 地址发现后替换"
+        }
+      ]
     }
   ]
 }

@@ -1202,6 +1202,24 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
     ],
   },
+  custom: {
+    id: 'custom',
+    name: 'Custom Provider',
+    requiresApiKey: true,
+    baseUrl: MODEL_API_ENDPOINTS.custom,
+    models: [
+      {
+        id: 'custom-model',
+        name: 'Custom Model',
+        capabilities: ['general', 'code'],
+        maxTokens: 16384,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+    ],
+  },
 };
 
 function registerModel(providerId: string, model: ModelInfo): void {

@@ -30,7 +30,7 @@ export function resolveModelConfig(
   const isAdmin = currentUser?.isAdmin === true;
 
   // 从用户配置获取选择的 provider 和 model
-  const userProviderStr = settings.models?.default || settings.models?.defaultProvider || DEFAULT_PROVIDER;
+  const userProviderStr = settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER;
   const normalizedProvider = normalizeProviderId(userProviderStr) ?? DEFAULT_PROVIDER;
   const providerConfig =
     settings.models?.providers?.[normalizedProvider as keyof typeof settings.models.providers]
@@ -88,6 +88,7 @@ export function resolveModelConfig(
     provider: selectedProvider,
     model: selectedModel,
     apiKey: undefined,
+    baseUrl: providerConfig?.baseUrl,
     temperature: 0.7,
     maxTokens: providerConfig?.maxTokens ?? getModelMaxOutputTokens(selectedModel),
   };

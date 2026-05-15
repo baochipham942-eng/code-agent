@@ -21,11 +21,14 @@ async function handleGet(getConfigService: () => ConfigService | null): Promise<
 
 async function handleSet(
   getConfigService: () => ConfigService | null,
-  payload: { settings: Partial<AppSettings> }
+  payload: { settings?: Partial<AppSettings> } | Partial<AppSettings>
 ): Promise<void> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  await configService.updateSettings(payload.settings);
+  const updates = payload && typeof payload === 'object' && 'settings' in payload
+    ? payload.settings
+    : payload;
+  await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
 }
 
 async function handleTestApiKey(payload: { provider: string; apiKey: string }): Promise<{ success: boolean; error?: string }> {

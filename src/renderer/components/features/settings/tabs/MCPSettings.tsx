@@ -73,6 +73,27 @@ export const MCPSettings: React.FC = () => {
     () => activeSheetTarget ? findWorkbenchCapabilityHistoryItem(history, activeSheetTarget) : null,
     [activeSheetTarget, history],
   );
+  const serverSummary = useMemo(() => {
+    const connectedCount = mcpStatus?.connectedServers.length
+      ?? mcpServers.filter((server) => server.lifecycle.connectionState === 'connected').length;
+    const toolCount = mcpStatus?.toolCount
+      ?? mcpServers.reduce((sum, server) => sum + server.toolCount, 0);
+    const resourceCount = mcpStatus?.resourceCount
+      ?? mcpServers.reduce((sum, server) => sum + server.resourceCount, 0);
+    const attentionCount = mcpServers.filter((server) => (
+      server.lifecycle.connectionState === 'error'
+      || (server.enabled && server.lifecycle.connectionState === 'disconnected')
+    )).length;
+
+    return {
+      total: mcpServers.length,
+      connected: connectedCount,
+      enabled: mcpServers.filter((server) => server.enabled).length,
+      attention: attentionCount,
+      tools: toolCount,
+      resources: resourceCount,
+    };
+  }, [mcpServers, mcpStatus]);
 
   // 自动清除成功消息
   useEffect(() => {
@@ -93,7 +114,7 @@ export const MCPSettings: React.FC = () => {
       } else {
         setMessage({ type: 'error', text: result?.error?.message || '刷新失败' });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '刷新失败' });
     } finally {
       setIsRefreshing(false);
@@ -173,6 +194,21 @@ export const MCPSettings: React.FC = () => {
     }
   };
 
+  const getStatusBadgeClass = (status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'lazy' | 'not_applicable') => {
+    switch (status) {
+      case 'connected':
+        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      case 'connecting':
+        return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
+      case 'error':
+        return 'border-red-500/30 bg-red-500/10 text-red-300';
+      case 'lazy':
+        return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
+      default:
+        return 'border-zinc-700 bg-zinc-800 text-zinc-400';
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -189,126 +225,201 @@ export const MCPSettings: React.FC = () => {
       <WebModeBanner />
 
       <SettingsSection
-        title="服务器配置"
-        description="启用、禁用或添加 MCP server。详细连接状态放在诊断区。"
-        actions={(
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setIsEditorOpen(true)}
-            leftIcon={<Plus className="w-3 h-3" />}
-          >
-            添加服务器
-          </Button>
-        )}
+        title="MCP 管理台"
+        description="集中查看 server 可用性、工具资源数量和主操作入口。"
       >
-        <div className="space-y-3">
-        {mcpServers.length === 0 ? (
-          <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
-            没有配置任何 MCP 服务器
-          </div>
-        ) : (
-          mcpServers.map((server) => {
-            const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: 'zh' });
-
-            return (
-              <div
-                key={server.id}
-                className="bg-zinc-800 rounded-lg p-4 flex items-center justify-between"
-                title={getWorkbenchCapabilityTitle(server, { locale: 'zh' })}
-              >
-                <div className="flex items-center gap-3">
-                  {getStatusIcon(server.lifecycle.connectionState)}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-zinc-200">{server.label}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">
-                        {server.transport}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400">
-                      <span className={serverStatus.colorClass}>
-                        {serverStatus.label}
-                      </span>
-                      {server.available && (
-                        <>
-                          <span>{server.toolCount} 工具</span>
-                          <span>{server.resourceCount} 资源</span>
-                        </>
-                      )}
-                      {server.error && (
-                        <span className="text-red-400 truncate max-w-[200px]" title={server.error}>
-                          {server.error}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <WorkbenchCapabilityDetailButton
-                    label={server.label}
-                    onClick={() => openCapabilitySheet(server)}
-                  />
-                  {server.enabled && !server.available && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleReconnect(server.id)}
-                      loading={reconnectingServer === server.id}
-                      leftIcon={<RefreshCw className="w-3 h-3" />}
-                    >
-                      重连
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant={server.enabled ? 'ghost' : 'primary'}
-                    onClick={() => handleToggleServer(server.id, !server.enabled)}
-                    leftIcon={
-                      server.enabled ? (
-                        <PowerOff className="w-3 h-3" />
-                      ) : (
-                        <Power className="w-3 h-3" />
-                      )
-                    }
-                  >
-                    {server.enabled ? '禁用' : '启用'}
-                  </Button>
-                </div>
+        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
+          <div className="flex flex-col gap-3 border-b border-zinc-700/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-zinc-200">服务器配置</div>
+              <div className="mt-1 text-xs text-zinc-500">
+                {serverSummary.total > 0
+                  ? `${serverSummary.enabled}/${serverSummary.total} 已启用 · ${serverSummary.attention} 个需要处理`
+                  : '还没有配置任何 MCP 服务器'}
               </div>
-            );
-          })
-        )}
-        </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleRefreshFromCloud}
+                loading={isRefreshing}
+                leftIcon={!isRefreshing ? <Cloud className="w-3 h-3" /> : undefined}
+              >
+                {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => setIsEditorOpen(true)}
+                leftIcon={<Plus className="w-3 h-3" />}
+              >
+                添加服务器
+              </Button>
+            </div>
+          </div>
 
-        <div className="mt-3">
-          <Button
-            onClick={handleRefreshFromCloud}
-            loading={isRefreshing}
-            variant="secondary"
-            fullWidth
-            leftIcon={!isRefreshing ? <Cloud className="w-4 h-4" /> : undefined}
-          >
-            {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
-          </Button>
+          <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 sm:grid-cols-5">
+            {[
+              ['总览', `${serverSummary.connected}/${serverSummary.total}`, '已连接 / 全部'],
+              ['工具', String(serverSummary.tools), '可调用工具'],
+              ['资源', String(serverSummary.resources), '可访问资源'],
+              ['启用', String(serverSummary.enabled), '配置开启'],
+              ['处理', String(serverSummary.attention), '错误或断开'],
+            ].map(([label, value, caption]) => (
+              <div
+                key={label}
+                className="bg-zinc-900/80 px-3 py-3"
+              >
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
+                <div className="mt-1 text-lg font-semibold text-zinc-100">{value}</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">{caption}</div>
+              </div>
+            ))}
+          </div>
+
+          {message && (
+            <div
+              className={`mx-3 mt-3 flex items-center gap-2 rounded-md px-3 py-2 ${
+                message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+              }`}
+            >
+              {message.type === 'success' ? (
+                <CheckCircle className="w-4 h-4" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              <span className="text-sm">{message.text}</span>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-xs">
+              <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">服务器</th>
+                  <th className="px-3 py-2 font-medium">状态</th>
+                  <th className="px-3 py-2 font-medium">协议</th>
+                  <th className="px-3 py-2 font-medium">工具 / 资源</th>
+                  <th className="px-3 py-2 font-medium">异常信息</th>
+                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/80">
+                {mcpServers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center">
+                      <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800">
+                          <Plug className="h-5 w-5 text-zinc-500" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-zinc-200">没有配置任何 MCP 服务器</div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            添加 server 后会在这里显示连接状态、工具数量和可用操作。
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => setIsEditorOpen(true)}
+                          leftIcon={<Plus className="w-3 h-3" />}
+                        >
+                          添加服务器
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  mcpServers.map((server) => {
+                    const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: 'zh' });
+                    const statusClass = getStatusBadgeClass(server.lifecycle.connectionState);
+
+                    return (
+                      <tr
+                        key={server.id}
+                        className="bg-zinc-900/40 hover:bg-zinc-800/60"
+                        title={getWorkbenchCapabilityTitle(server, { locale: 'zh' })}
+                      >
+                        <td className="px-3 py-3 align-middle">
+                          <div className="flex min-w-0 items-center gap-3">
+                            {getStatusIcon(server.lifecycle.connectionState)}
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium text-zinc-200">{server.label}</div>
+                              <div className="mt-0.5 truncate text-[11px] text-zinc-500">{server.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          <span className={`inline-flex items-center rounded border px-2 py-1 ${statusClass}`}>
+                            {serverStatus.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                            {server.transport}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-middle text-zinc-300">
+                          <span>{server.toolCount} 工具</span>
+                          <span className="mx-2 text-zinc-600">/</span>
+                          <span>{server.resourceCount} 资源</span>
+                        </td>
+                        <td className="max-w-[220px] px-3 py-3 align-middle">
+                          {server.error ? (
+                            <span className="block truncate text-red-400" title={server.error}>
+                              {server.error}
+                            </span>
+                          ) : server.blockedReason ? (
+                            <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
+                              {server.blockedReason.detail}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-600">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          <div className="flex items-center justify-end gap-2">
+                            <WorkbenchCapabilityDetailButton
+                              label={server.label}
+                              onClick={() => openCapabilitySheet(server)}
+                            />
+                            {server.enabled && !server.available && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleReconnect(server.id)}
+                                loading={reconnectingServer === server.id}
+                                leftIcon={<RefreshCw className="w-3 h-3" />}
+                              >
+                                重连
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant={server.enabled ? 'ghost' : 'primary'}
+                              onClick={() => handleToggleServer(server.id, !server.enabled)}
+                              leftIcon={
+                                server.enabled ? (
+                                  <PowerOff className="w-3 h-3" />
+                                ) : (
+                                  <Power className="w-3 h-3" />
+                                )
+                              }
+                            >
+                              {server.enabled ? '禁用' : '启用'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </SettingsSection>
-
-      {/* Message */}
-      {message && (
-        <div
-          className={`flex items-center gap-2 p-3 rounded-lg ${
-            message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-          }`}
-        >
-          {message.type === 'success' ? (
-            <CheckCircle className="w-4 h-4" />
-          ) : (
-            <AlertCircle className="w-4 h-4" />
-          )}
-          <span className="text-sm">{message.text}</span>
-        </div>
-      )}
 
       <SettingsDetails
         title="运行状态与本地桥接"

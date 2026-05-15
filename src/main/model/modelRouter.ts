@@ -108,6 +108,7 @@ export class ModelRouter {
     ['gemini', new GeminiProvider()],
     ['volcengine', new VolcengineProvider()],
     ['xiaomi', new XiaomiProvider()],
+    ['custom', new OpenAIProvider()],
   ]);
 
   private recordProviderHardFailure(provider: string): void {

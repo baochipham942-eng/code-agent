@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "source": {
+    "label": "Code Agent local curated registry",
+    "author": "Code Agent",
+    "reviewedAt": "2026-05-15"
+  },
+  "items": [
+    {
+      "id": "mcp-filesystem-readonly",
+      "kind": "mcp_template",
+      "name": "Filesystem MCP template",
+      "summary": "Expose a bounded local directory through a filesystem MCP server after the user chooses an allowed root.",
+      "tags": ["mcp", "filesystem", "local"],
+      "source": {
+        "url": "https://github.com/modelcontextprotocol/servers",
+        "author": "Model Context Protocol",
+        "reviewedAt": "2026-05-15"
+      },
+      "risk": {
+        "tier": "high",
+        "reasons": [
+          "stdio MCP starts a local command",
+          "filesystem access depends on the user-selected allowed root"
+        ],
+        "dataTouched": ["local files", "MCP tool input/output"]
+      },
+      "permissions": [
+        {
+          "label": "Local command",
+          "level": "high",
+          "detail": "Requires explicit MCP server configuration before any process starts"
+        },
+        {
+          "label": "Filesystem access",
+          "level": "high",
+          "detail": "The allowed root must be configured by the user"
+        }
+      ],
+      "config": [
+        {
+          "kind": "path",
+          "label": "allowedRoot",
+          "status": "missing"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "binary",
+          "label": "npx",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "Template only. Capability Center must not write mcp.json or connect this server."
+        ]
+      }
+    },
+    {
+      "id": "channel-http-api-local",
+      "kind": "channel_adapter",
+      "name": "HTTP API channel template",
+      "summary": "Create a local HTTP ingress account for controlled automation requests after an API key and privacy mode are configured.",
+      "tags": ["channel", "http-api", "local-ingress"],
+      "risk": {
+        "tier": "high",
+        "reasons": [
+          "External requests can enter the agent inbox",
+          "The account requires a secret API key and privacy policy"
+        ],
+        "dataTouched": ["external messages", "account secret"]
+      },
+      "permissions": [
+        {
+          "label": "External ingress",
+          "level": "high",
+          "detail": "Requests are accepted only after account configuration"
+        },
+        {
+          "label": "Secret storage",
+          "level": "high",
+          "detail": "API key must be created in Channels settings"
+        }
+      ],
+      "config": [
+        {
+          "kind": "config",
+          "label": "port",
+          "status": "missing"
+        },
+        {
+          "kind": "secret",
+          "label": "apiKey",
+          "status": "missing",
+          "sensitive": true
+        },
+        {
+          "kind": "config",
+          "label": "privacyMode",
+          "status": "missing"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "Template only. Capability Center must route setup to Channels settings."
+        ]
+      }
+    },
+    {
+      "id": "workflow-meeting-summary",
+      "kind": "workflow_recipe",
+      "name": "Meeting summary workflow template",
+      "summary": "A local workflow recipe shape for turning connected calendar or channel context into a structured meeting summary.",
+      "tags": ["workflow", "meeting", "summary"],
+      "risk": {
+        "tier": "medium",
+        "reasons": [
+          "Workflow quality depends on configured connectors and channel privacy mode"
+        ],
+        "dataTouched": ["calendar events", "messages", "notes"]
+      },
+      "permissions": [
+        {
+          "label": "Connector dependent",
+          "level": "medium",
+          "detail": "Uses only capabilities the user has already configured"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "account",
+          "label": "Calendar or channel account",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    }
+  ]
+}

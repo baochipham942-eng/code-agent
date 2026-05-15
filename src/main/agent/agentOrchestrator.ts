@@ -196,11 +196,13 @@ export class AgentOrchestrator {
           logger.info('[模型选择] session 选了"自动"，使用默认模型 + adaptiveRouter');
         } else {
           const apiKey = this.configService.getApiKey(override.provider);
+          const providerSettings = settings.models?.providers?.[override.provider];
           modelConfig = {
             ...modelConfig,
             provider: override.provider,
             model: override.model,
             apiKey: apiKey || modelConfig.apiKey,
+            baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
             temperature: override.temperature ?? modelConfig.temperature,
             maxTokens: override.maxTokens ?? modelConfig.maxTokens,
             adaptive: false,

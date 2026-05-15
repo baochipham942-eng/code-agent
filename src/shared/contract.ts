@@ -97,3 +97,6 @@ export * from './contract/previewFeedback';
 
 // Decision Trace types (Security decision chain transparency)
 export * from './contract/decisionTrace';
+
+// Capability Center types
+export * from './contract/capability';

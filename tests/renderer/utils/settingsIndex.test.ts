@@ -8,6 +8,11 @@ describe('settings search index', () => {
     expect(searchSettings('路由').map((entry) => entry.tab)).toContain('conversation');
   });
 
+  it('covers capability center settings', () => {
+    expect(searchSettings('capability').map((entry) => entry.tab)).toContain('capabilities');
+    expect(searchSettings('MCP').map((entry) => entry.tab)).toContain('capabilities');
+  });
+
   it('only references registered settings tabs', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {

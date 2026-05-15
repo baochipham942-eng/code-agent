@@ -4,7 +4,24 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Cpu, Palette, Info, Database, Download, Plug, Brain, Sparkles, Eye, GitBranch, Shield, MessageSquare, Webhook } from 'lucide-react';
+import {
+  ChevronLeft,
+  X,
+  Cpu,
+  Palette,
+  Info,
+  Database,
+  Download,
+  Plug,
+  Brain,
+  Sparkles,
+  Eye,
+  GitBranch,
+  Shield,
+  MessageSquare,
+  Webhook,
+  Boxes,
+} from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -26,6 +43,18 @@ import { tauriCheckForUpdate } from '../../../utils/tauriUpdater';
 
 const logger = createLogger('SettingsModal');
 
+const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
+  'cache',
+  'capabilities',
+  'model',
+  'mcp',
+  'skills',
+  'channels',
+  'hooks',
+  'memory',
+  'openchronicle',
+]);
+
 // Tab Components
 import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
@@ -36,6 +65,7 @@ import { UpdateSettings } from './tabs/UpdateSettings';
 import { MCPSettings } from './tabs/MCPSettings';
 import { MemoryTab } from './tabs/MemoryTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
+import { CapabilityCenterSettings } from './tabs/CapabilityCenterSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
@@ -74,6 +104,7 @@ export function buildSettingsTabGroups({
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
+    { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
@@ -145,6 +176,10 @@ export const SettingsModal: React.FC = () => {
     setActiveTab(tab);
   }, []);
 
+  const handleClose = useCallback(() => {
+    setShowSettings(false);
+  }, [setShowSettings]);
+
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -191,6 +226,15 @@ export const SettingsModal: React.FC = () => {
     () => tabGroups.flatMap((group) => group.tabs),
     [tabGroups]
   );
+  const activeTabConfig = useMemo(
+    () => tabs.find((tab) => tab.id === activeTab),
+    [activeTab, tabs]
+  );
+  const activeGroupConfig = useMemo(
+    () => tabGroups.find((group) => group.tabs.some((tab) => tab.id === activeTab)),
+    [activeTab, tabGroups]
+  );
+  const contentWidthClass = WIDE_SETTINGS_TABS.has(activeTab) ? 'max-w-6xl' : 'max-w-4xl';
 
   useEffect(() => {
     if (!settingsInitialTab) return;
@@ -204,64 +248,81 @@ export const SettingsModal: React.FC = () => {
   }, [activeTab, tabs]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={() => setShowSettings(false)}
-      />
-
-      {/* Modal */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-modal-title"
-        className="relative w-full max-w-2xl max-h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
-          <h2 id="settings-modal-title" className="text-lg font-semibold text-zinc-200">{t.settings.title}</h2>
-          <IconButton
-            icon={<X className="w-5 h-5" />}
-            aria-label="Close settings"
-            onClick={() => setShowSettings(false)}
-            variant="default"
-            size="md"
-          />
-        </div>
-
-        <div className="flex h-[500px]">
-          {/* Sidebar */}
-          <div className="w-48 border-r border-zinc-700 p-2 flex flex-col gap-3 overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.settings.title}
+      className="fixed inset-0 z-50 h-screen overflow-hidden bg-zinc-950 text-zinc-100 animate-fadeIn"
+    >
+      <div className="flex h-full min-h-0">
+        <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
+          <div className="px-4 pb-3 pt-5">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span>返回应用</span>
+            </button>
             <SettingsSearch onNavigate={handleSearchNavigate} />
+          </div>
+
+          <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
             {tabGroups.map((group) => (
               <div key={group.id} className="space-y-1">
-                <div className="px-3 text-[11px] font-medium text-zinc-500">
+                <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500">
                   {group.label}
                 </div>
                 {group.tabs.map((tab) => (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
                       activeTab === tab.id
-                        ? 'bg-zinc-700 text-zinc-200'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                        ? 'bg-zinc-800 text-zinc-100'
+                        : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
                     }`}
                   >
-                    {tab.icon}
-                    <span className="text-sm flex-1">{tab.label}</span>
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                      {tab.icon}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {tab.label}
+                    </span>
                     {tab.badge && (
-                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500 animate-pulse" />
                     )}
                   </button>
                 ))}
               </div>
             ))}
-          </div>
+          </nav>
+        </aside>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
+          <div className={`mx-auto min-h-full px-8 pb-16 pt-16 ${contentWidthClass}`}>
+            <div className="mb-10 flex items-start justify-between gap-6">
+              <div>
+                <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
+                  {activeTabConfig?.label || t.settings.title}
+                </h2>
+                {activeGroupConfig && (
+                  <p className="mt-2 text-sm text-zinc-500">
+                    {activeGroupConfig.label}
+                  </p>
+                )}
+              </div>
+              <IconButton
+                icon={<X className="h-5 w-5" />}
+                aria-label="Close settings"
+                onClick={handleClose}
+                variant="ghost"
+                size="lg"
+              />
+            </div>
+
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'model' && (
@@ -269,6 +330,9 @@ export const SettingsModal: React.FC = () => {
             )}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'cache' && <DataSettings />}
+            {activeTab === 'capabilities' && (
+              <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />
+            )}
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}
@@ -284,7 +348,7 @@ export const SettingsModal: React.FC = () => {
             )}
             {activeTab === 'about' && <AboutSettings />}
           </div>
-        </div>
+        </main>
       </div>
 
       {/* Optional Update Modal */}

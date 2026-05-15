@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Globe,
   MessageSquare,
+  Search,
   Eye,
   EyeOff,
 } from 'lucide-react';
@@ -40,11 +41,125 @@ const logger = createLogger('ChannelsSettings');
 // Types
 // ============================================================================
 
-interface ChannelTypeInfo {
+export interface ChannelTypeInfo {
   type: ChannelType;
   name: string;
   description?: string;
 }
+
+export type ChannelStatusFilter = 'all' | ChannelAccount['status'];
+
+const CHANNEL_STATUS_FILTERS: Array<{ value: ChannelStatusFilter; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'connected', label: '已连接' },
+  { value: 'connecting', label: '连接中' },
+  { value: 'error', label: '异常' },
+  { value: 'disconnected', label: '未连接' },
+];
+
+export function getChannelTypeLabel(
+  type: ChannelType,
+  channelTypes: ChannelTypeInfo[],
+): string {
+  return channelTypes.find((channelType) => channelType.type === type)?.name || type;
+}
+
+export function getChannelConfigSummary(account: ChannelAccount): string {
+  if (account.type === 'http-api') {
+    const config = account.config as HttpApiChannelConfig;
+    return `端口 ${config.port}`;
+  }
+
+  if (account.type === 'feishu') {
+    const config = account.config as FeishuChannelConfig;
+    return `Webhook ${config.webhookPort || 3200}`;
+  }
+
+  if (account.type === 'telegram') {
+    const config = account.config as TelegramChannelConfig;
+    return config.allowedUserIds?.length
+      ? `${config.allowedUserIds.length} 个白名单用户`
+      : 'Long Polling';
+  }
+
+  return '已配置';
+}
+
+export function getChannelStatusSummary(accounts: ChannelAccount[]) {
+  return {
+    total: accounts.length,
+    connected: accounts.filter((account) => account.status === 'connected').length,
+    connecting: accounts.filter((account) => account.status === 'connecting').length,
+    error: accounts.filter((account) => account.status === 'error').length,
+    disconnected: accounts.filter((account) => account.status === 'disconnected').length,
+  };
+}
+
+export function filterChannelAccounts({
+  accounts,
+  channelTypes,
+  statusFilter,
+  query,
+}: {
+  accounts: ChannelAccount[];
+  channelTypes: ChannelTypeInfo[];
+  statusFilter: ChannelStatusFilter;
+  query: string;
+}): ChannelAccount[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return accounts.filter((account) => {
+    const matchesStatus = statusFilter === 'all' || account.status === statusFilter;
+    const matchesQuery =
+      !normalizedQuery ||
+      account.name.toLowerCase().includes(normalizedQuery) ||
+      account.type.toLowerCase().includes(normalizedQuery) ||
+      getChannelTypeLabel(account.type, channelTypes).toLowerCase().includes(normalizedQuery) ||
+      account.status.toLowerCase().includes(normalizedQuery);
+
+    return matchesStatus && matchesQuery;
+  });
+}
+
+const ChannelFilterButton: React.FC<{
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}> = ({ active, children, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`h-7 rounded-md px-2.5 text-xs transition-colors ${
+      active
+        ? 'bg-zinc-200 text-zinc-950'
+        : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+    }`}
+  >
+    {children}
+  </button>
+);
+
+const ChannelSummaryTile: React.FC<{
+  label: string;
+  value: number;
+  tone?: 'default' | 'success' | 'warning' | 'danger';
+}> = ({ label, value, tone = 'default' }) => {
+  const toneClass =
+    tone === 'success'
+      ? 'text-emerald-300'
+      : tone === 'warning'
+        ? 'text-amber-300'
+        : tone === 'danger'
+          ? 'text-red-300'
+          : 'text-zinc-200';
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2">
+      <div className={`text-lg font-semibold ${toneClass}`}>{value}</div>
+      <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
+    </div>
+  );
+};
 
 // ============================================================================
 // Add/Edit Modal
@@ -433,6 +548,8 @@ export const ChannelsSettings: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | undefined>();
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<ChannelStatusFilter>('all');
+  const [query, setQuery] = useState('');
 
   // 自动清除成功消息
   useEffect(() => {
@@ -512,7 +629,7 @@ export const ChannelsSettings: React.FC = () => {
       }
       setShowModal(false);
       await loadData();
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '操作失败' });
     }
   };
@@ -524,7 +641,7 @@ export const ChannelsSettings: React.FC = () => {
       await ipcService.invoke(IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT, accountId);
       setMessage({ type: 'success', text: '通道已删除' });
       await loadData();
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '删除失败' });
     }
   };
@@ -537,7 +654,7 @@ export const ChannelsSettings: React.FC = () => {
       } else {
         await ipcService.invoke(IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT, account.id);
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '操作失败' });
       setConnectingId(null);
     }
@@ -582,6 +699,14 @@ export const ChannelsSettings: React.FC = () => {
     }
   };
 
+  const statusSummary = getChannelStatusSummary(accounts);
+  const filteredAccounts = filterChannelAccounts({
+    accounts,
+    channelTypes,
+    statusFilter,
+    query,
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -601,113 +726,185 @@ export const ChannelsSettings: React.FC = () => {
         title="通道账号"
         actions={(
           <Button
+            size="sm"
             disabled={isWebMode()}
             onClick={handleAdd}
             variant="primary"
-            leftIcon={<Plus className="w-4 h-4" />}
+            leftIcon={<Plus className="w-3 h-3" />}
           >
             添加通道
           </Button>
         )}
       >
         <div className="space-y-3">
-        {accounts.length === 0 ? (
-          <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
-            还没有配置任何通道
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <ChannelSummaryTile label="全部账号" value={statusSummary.total} />
+            <ChannelSummaryTile label="已连接" value={statusSummary.connected} tone="success" />
+            <ChannelSummaryTile label="连接中" value={statusSummary.connecting} tone="warning" />
+            <ChannelSummaryTile label="异常" value={statusSummary.error} tone="danger" />
+            <ChannelSummaryTile label="未连接" value={statusSummary.disconnected} />
           </div>
-        ) : (
-          accounts.map((account) => (
-            <div
-              key={account.id}
-              className="bg-zinc-800 rounded-lg p-4"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {getTypeIcon(account.type)}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-zinc-200">{account.name}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">
-                        {channelTypes.find(t => t.type === account.type)?.name || account.type}
+
+          <div className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative w-full lg:max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索账号、类型或状态"
+                  className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-950/70 pl-8 pr-3 text-sm text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 focus:border-zinc-600"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {CHANNEL_STATUS_FILTERS.map((filter) => (
+                  <ChannelFilterButton
+                    key={filter.value}
+                    active={statusFilter === filter.value}
+                    onClick={() => setStatusFilter(filter.value)}
+                  >
+                    {filter.label}
+                  </ChannelFilterButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-xs text-zinc-500">
+              当前显示 {filteredAccounts.length} / {accounts.length} 个账号
+            </div>
+          </div>
+
+          {accounts.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-700 bg-zinc-900/60 p-8 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-400">
+                <MessageSquare className="h-5 w-5" />
+              </div>
+              <div className="mt-3 text-sm font-medium text-zinc-200">还没有通道账号</div>
+              <div className="mt-1 text-xs text-zinc-500">
+                添加 HTTP API、飞书或 Telegram 账号后，可以在这里统一查看连接状态和执行启停操作。
+              </div>
+              <Button
+                className="mt-4"
+                size="sm"
+                disabled={isWebMode()}
+                onClick={handleAdd}
+                variant="primary"
+                leftIcon={<Plus className="w-3 h-3" />}
+              >
+                添加通道
+              </Button>
+            </div>
+          ) : filteredAccounts.length === 0 ? (
+            <div className="rounded-lg bg-zinc-800 p-6 text-center text-sm text-zinc-400">
+              没有匹配的通道账号
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-zinc-800">
+              <div className="min-w-[760px]">
+                <div className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-500">
+                  <div>账号</div>
+                  <div>类型</div>
+                  <div>状态</div>
+                  <div>配置</div>
+                  <div className="text-right">操作</div>
+                </div>
+
+                {filteredAccounts.map((account) => (
+                  <div
+                    key={account.id}
+                    className="grid grid-cols-[minmax(220px,1.5fr)_120px_150px_minmax(160px,1fr)_210px] items-center border-b border-zinc-800 bg-zinc-900/30 px-3 py-3 last:border-b-0 hover:bg-zinc-800/50"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      {getTypeIcon(account.type)}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-zinc-200">{account.name}</div>
+                        <div className="mt-1 truncate text-xs text-zinc-500">{account.id}</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="inline-flex h-6 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-300">
+                        {getChannelTypeLabel(account.type, channelTypes)}
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs">
-                      <span className={getStatusColor(account.status)}>
+
+                    <div className="min-w-0">
+                      <div className={`text-sm font-medium ${getStatusColor(account.status)}`}>
                         {getStatusText(account.status)}
-                      </span>
+                      </div>
+                      {account.errorMessage && (
+                        <div className="mt-1 truncate text-xs text-red-400" title={account.errorMessage}>
+                          {account.errorMessage}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 text-xs text-zinc-400">
+                      <div className="truncate">{getChannelConfigSummary(account)}</div>
                       {account.type === 'http-api' && (
-                        <>
-                          <span className="text-zinc-400">
-                            端口: {(account.config as HttpApiChannelConfig).port}
-                          </span>
-                          <span className="text-zinc-500 font-mono">
-                            Key: {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="truncate font-mono text-zinc-500">
+                            Key {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
                           </span>
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            onClick={(event) => {
+                              event.stopPropagation();
                               const key = (account.config as HttpApiChannelConfig).apiKey;
                               if (key) {
                                 navigator.clipboard.writeText(key);
                                 setMessage({ type: 'success', text: 'API Key 已复制到剪贴板' });
                               }
                             }}
-                            className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                            className="shrink-0 text-indigo-400 transition-colors hover:text-indigo-300"
                             title="复制 API Key"
                           >
-                            复制Key
+                            复制
                           </button>
-                        </>
-                      )}
-                      {account.errorMessage && (
-                        <span className="text-red-400 truncate max-w-[200px]" title={account.errorMessage}>
-                          {account.errorMessage}
-                        </span>
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={isWebMode()}
-                    onClick={() => handleToggleConnection(account)}
-                    loading={connectingId === account.id}
-                    leftIcon={
-                      account.status === 'connected' ? (
-                        <PowerOff className="w-3 h-3" />
-                      ) : (
-                        <Power className="w-3 h-3" />
-                      )
-                    }
-                  >
-                    {account.status === 'connected' ? '断开' : '连接'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={isWebMode()}
-                    onClick={() => handleEdit(account)}
-                    leftIcon={<Edit className="w-3 h-3" />}
-                  >
-                    编辑
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={isWebMode()}
-                    onClick={() => handleDelete(account.id)}
-                    leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
-                  >
-                    删除
-                  </Button>
-                </div>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={isWebMode()}
+                        onClick={() => handleToggleConnection(account)}
+                        loading={connectingId === account.id}
+                        leftIcon={
+                          account.status === 'connected' ? (
+                            <PowerOff className="w-3 h-3" />
+                          ) : (
+                            <Power className="w-3 h-3" />
+                          )
+                        }
+                      >
+                        {account.status === 'connected' ? '断开' : '连接'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={isWebMode()}
+                        onClick={() => handleEdit(account)}
+                        leftIcon={<Edit className="w-3 h-3" />}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={isWebMode()}
+                        onClick={() => handleDelete(account.id)}
+                        leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))
-        )}
+          )}
         </div>
       </SettingsSection>
 

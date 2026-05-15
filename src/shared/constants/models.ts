@@ -45,6 +45,7 @@ export interface ProviderModelEntry {
   id: string;
   label: string;
   group?: string; // optgroup label（同一 provider 内分组）
+  desc?: string;
   /** 是否进入评测候选（默认 true）。false：搜索特化 / legacy / 视觉 / 中转重复等不该跑代码评测的模型 */
   evalEligible?: boolean;
 }
@@ -65,6 +66,7 @@ const SUPPORTED_PROVIDERS = new Set<string>([
   'openai', 'claude', 'gemini', 'deepseek', 'zhipu',
   'qwen', 'moonshot', 'minimax', 'openrouter', 'perplexity',
   'xiaomi',     // 小米 MiMo（Token Plan 包月）
+  'custom',     // 自定义 OpenAI-compatible provider
   'local',      // Ollama 本地模型（toy provider + 评测 baseline）
   'volcengine', // 火山引擎 (豆包) — QUICK_SWITCH 已暴露但 SUPPORTED 漏加，被 provider-symmetry guardrail 抓出
   'grok',       // xAI Grok    — catalog 元数据齐备但未暴露至 SUPPORTED
@@ -79,6 +81,7 @@ export const PROVIDER_MODELS: ProviderInfo[] = catalog.providers
     models: p.models.map((m) => ({
       id: m.id,
       label: m.label,
+      ...('desc' in m && m.desc ? { desc: m.desc } : {}),
       ...('group' in m && m.group ? { group: m.group } : {}),
       ...('evalEligible' in m && m.evalEligible === false ? { evalEligible: false as const } : {}),
     })),

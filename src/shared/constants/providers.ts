@@ -41,6 +41,8 @@ export const MODEL_API_ENDPOINTS = {
   volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
   /** 小米 MiMo Token Plan (新加坡节点，OpenAI 兼容) */
   xiaomi: 'https://token-plan-sgp.xiaomimimo.com/v1',
+  /** Custom OpenAI-compatible provider */
+  custom: 'https://api.example.com/v1',
   /** Local Ollama */
   ollama: 'http://localhost:11434/v1',
 } as const;
@@ -162,6 +164,13 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
     endpoint: MODEL_API_ENDPOINTS.xiaomi,
     cloudProxySupported: false,
     displayName: '小米 MiMo',
+  },
+  custom: {
+    aliases: ['custom'],
+    defaultModel: 'custom-model',
+    endpoint: MODEL_API_ENDPOINTS.custom,
+    cloudProxySupported: false,
+    displayName: 'Custom Provider',
   },
 };
 

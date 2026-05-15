@@ -662,7 +662,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const hasImageAttachments = attachments.some((attachment) => (
     attachment.type === 'image' || attachment.category === 'image'
   ));
-  const selectedModelHasVision = (MODEL_FEATURES[modelConfig.model] ?? []).includes('vision');
+  const selectedModelHasVision =
+    (modelConfig.capabilities ?? []).includes('vision') ||
+    (MODEL_FEATURES[modelConfig.model] ?? []).includes('vision');
   const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision;
 
   return (

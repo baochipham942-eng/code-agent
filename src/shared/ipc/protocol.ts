@@ -88,7 +88,7 @@ export type McpAction =
 /**
  * Capability Center 通道 actions
  */
-export type CapabilityAction = 'list' | 'setEnabled';
+export type CapabilityAction = 'list' | 'setEnabled' | 'installDraft';
 
 /**
  * Memory 通道 actions

@@ -2,7 +2,7 @@
 // SkillsSettings - Skill 库管理 Tab
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Package,
   RefreshCw,
@@ -13,8 +13,6 @@ import {
   Loader2,
   AlertCircle,
   BookOpen,
-  ChevronDown,
-  ChevronUp,
   Search,
   Star,
   X,
@@ -64,8 +62,11 @@ const logger = createLogger('SkillsSettings');
  
 const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ipcService.invoke 的 channel 联合类型不包含 skill:* 通道，应该把 SKILL_CHANNELS 加进 IpcChannel 联合或提供 unsafeInvoke 入口
-    return await (ipcService.invoke as any)(channel, ...args) as T;
+    const invoke = ipcService.invoke as unknown as (
+      ipcChannel: string,
+      ...ipcArgs: unknown[]
+    ) => Promise<T>;
+    return await invoke(channel, ...args);
   } catch (err) {
     logger.error(`IPC invoke failed for ${channel}`, err);
     return undefined;
@@ -91,6 +92,92 @@ const formatTime = (timestamp: number): string => {
   const months = Math.floor(days / 30);
   return `${months} 个月前`;
 };
+
+export interface SkillLibraryManagementRow {
+  repoId: string;
+  repoName: string;
+  localPath: string;
+  version?: string;
+  totalSkills: number;
+  enabledSkills: number;
+  disabledSkills: number;
+  missingDependencySkills: number;
+  lastUpdatedLabel: string;
+  selected: boolean;
+}
+
+export interface SkillLibraryManagementSummary {
+  libraryCount: number;
+  totalSkills: number;
+  enabledSkills: number;
+  disabledSkills: number;
+  missingDependencySkills: number;
+}
+
+export function resolveSelectedSkillLibraryId(
+  libraries: LocalSkillLibrary[],
+  selectedRepoId: string | null,
+): string | null {
+  if (selectedRepoId && libraries.some((library) => library.repoId === selectedRepoId)) {
+    return selectedRepoId;
+  }
+  return libraries[0]?.repoId || null;
+}
+
+export function buildSkillLibraryManagementSummary(
+  libraries: LocalSkillLibrary[],
+): SkillLibraryManagementSummary {
+  return libraries.reduce<SkillLibraryManagementSummary>((summary, library) => {
+    const enabledSkills = library.skills.filter((skill) => skill.enabled).length;
+    const missingDependencySkills = library.skills.filter((skill) =>
+      skill.dependencyStatus && !skill.dependencyStatus.satisfied
+    ).length;
+
+    return {
+      libraryCount: summary.libraryCount + 1,
+      totalSkills: summary.totalSkills + library.skills.length,
+      enabledSkills: summary.enabledSkills + enabledSkills,
+      disabledSkills: summary.disabledSkills + (library.skills.length - enabledSkills),
+      missingDependencySkills: summary.missingDependencySkills + missingDependencySkills,
+    };
+  }, {
+    libraryCount: 0,
+    totalSkills: 0,
+    enabledSkills: 0,
+    disabledSkills: 0,
+    missingDependencySkills: 0,
+  });
+}
+
+export function buildSkillLibraryManagementRows({
+  libraries,
+  selectedRepoId,
+}: {
+  libraries: LocalSkillLibrary[];
+  selectedRepoId: string | null;
+}): SkillLibraryManagementRow[] {
+  const resolvedSelectedRepoId = resolveSelectedSkillLibraryId(libraries, selectedRepoId);
+
+  return libraries.map((library) => {
+    const enabledSkills = library.skills.filter((skill) => skill.enabled).length;
+    const missingDependencySkills = library.skills.filter((skill) =>
+      skill.dependencyStatus && !skill.dependencyStatus.satisfied
+    ).length;
+
+    return {
+      repoId: library.repoId,
+      repoName: library.repoName,
+      localPath: library.localPath,
+      version: library.version,
+      totalSkills: library.skills.length,
+      enabledSkills,
+      disabledSkills: library.skills.length - enabledSkills,
+      missingDependencySkills,
+      lastUpdatedLabel: formatTime(library.lastUpdated),
+      selected: library.repoId === resolvedSelectedRepoId,
+    };
+  });
+}
 
 // ============================================================================
 // Sub Components
@@ -161,110 +248,6 @@ const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled
         <AlertTriangle className="w-3 h-3 ml-0.5" />
       )}
     </label>
-  );
-};
-
-interface LibraryCardProps {
-  library: LocalSkillLibrary;
-  onUpdate: (repoId: string) => void;
-  onRemove: (repoId: string) => void;
-  onToggleSkill: (skillName: string, enabled: boolean) => void;
-  isUpdating: boolean;
-  isRemoving: boolean;
-}
-
-const LibraryCard: React.FC<LibraryCardProps> = ({
-  library,
-  onUpdate,
-  onRemove,
-  onToggleSkill,
-  isUpdating,
-  isRemoving,
-}) => {
-  const [expanded, setExpanded] = useState(false);
-  const enabledCount = library.skills.filter((s) => s.enabled).length;
-  const visibleSkills = expanded ? library.skills : library.skills.slice(0, 5);
-  const hasMore = library.skills.length > 5;
-
-  return (
-    <div className="bg-zinc-800 rounded-lg border border-zinc-700 overflow-hidden">
-      {/* Header */}
-      <div className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <BookOpen className="w-5 h-5 text-amber-400 shrink-0" />
-            <div>
-              <h4 className="text-sm font-medium text-zinc-200">{library.repoName}</h4>
-              <div className="flex items-center gap-2 mt-1 text-xs text-zinc-400">
-                <span>{library.skills.length} skills</span>
-                <span>·</span>
-                <span>上次更新: {formatTime(library.lastUpdated)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Skills */}
-        <div className="mt-4">
-          <div className="text-xs text-zinc-400 mb-2">
-            启用的 Skills ({enabledCount}/{library.skills.length}):
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {visibleSkills.map((skill) => (
-              <SkillCheckbox
-                key={skill.name}
-                skill={skill}
-                onToggle={onToggleSkill}
-                disabled={isUpdating || isRemoving}
-              />
-            ))}
-            {hasMore && !expanded && (
-              <button
-                onClick={() => setExpanded(true)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-zinc-700 text-zinc-400 hover:bg-zinc-600 transition-colors"
-              >
-                +{library.skills.length - 5} 更多
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            )}
-            {hasMore && expanded && (
-              <button
-                onClick={() => setExpanded(false)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-zinc-700 text-zinc-400 hover:bg-zinc-600 transition-colors"
-              >
-                收起
-                <ChevronUp className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="px-4 py-3 bg-zinc-800 border-t border-zinc-700 flex justify-end gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onUpdate(library.repoId)}
-          loading={isUpdating}
-          leftIcon={!isUpdating ? <RefreshCw className="w-3 h-3" /> : undefined}
-          disabled={isRemoving}
-        >
-          更新
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onRemove(library.repoId)}
-          loading={isRemoving}
-          leftIcon={!isRemoving ? <Trash2 className="w-3 h-3" /> : undefined}
-          disabled={isUpdating}
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-        >
-          删除
-        </Button>
-      </div>
-    </div>
   );
 };
 
@@ -350,20 +333,31 @@ const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
             <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{skill.description}</p>
           )}
         </div>
-        <a
-          href={skill.githubUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0"
-        >
+        <div className="flex shrink-0 items-center gap-2">
+          <a
+            href={skill.githubUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<ExternalLink className="w-3 h-3" />}
+            >
+              查看
+            </Button>
+          </a>
           <Button
             size="sm"
-            variant="secondary"
-            leftIcon={<ExternalLink className="w-3 h-3" />}
+            variant="primary"
+            onClick={() => onInstall(skill)}
+            loading={isInstalling}
+            disabled={isWebMode()}
+            leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
           >
-            查看
+            安装
           </Button>
-        </a>
+        </div>
       </div>
     </div>
   );
@@ -381,6 +375,8 @@ export const SkillsSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
+  const [skillFilter, setSkillFilter] = useState('');
 
   // SkillsMP Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -410,6 +406,10 @@ export const SkillsSettings: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setSelectedLibraryId((current) => resolveSelectedSkillLibraryId(libraries, current));
+  }, [libraries]);
 
   // Clear message after delay
   useEffect(() => {
@@ -621,6 +621,33 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  const resolvedSelectedLibraryId = resolveSelectedSkillLibraryId(libraries, selectedLibraryId);
+  const selectedLibrary = useMemo(
+    () => libraries.find((library) => library.repoId === resolvedSelectedLibraryId) || null,
+    [libraries, resolvedSelectedLibraryId],
+  );
+  const librarySummary = useMemo(
+    () => buildSkillLibraryManagementSummary(libraries),
+    [libraries],
+  );
+  const libraryRows = useMemo(
+    () => buildSkillLibraryManagementRows({
+      libraries,
+      selectedRepoId: resolvedSelectedLibraryId,
+    }),
+    [libraries, resolvedSelectedLibraryId],
+  );
+  const filteredSelectedSkills = useMemo(() => {
+    if (!selectedLibrary) return [];
+    const query = skillFilter.trim().toLowerCase();
+    if (!query) return selectedLibrary.skills;
+    return selectedLibrary.skills.filter((skill) =>
+      skill.name.toLowerCase().includes(query)
+      || skill.description.toLowerCase().includes(query)
+      || skill.localPath.toLowerCase().includes(query)
+    );
+  }, [selectedLibrary, skillFilter]);
+
   // Loading state
   if (loading) {
     return (
@@ -655,29 +682,274 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      <SettingsSection title={`已安装的 Skill 库 (${libraries.length})`}>
-        {libraries.length === 0 ? (
-          <div className="bg-zinc-800 rounded-lg p-6 text-center">
-            <Package className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
-            <p className="text-sm text-zinc-400">还没有安装任何 Skill 库</p>
-            <p className="text-xs text-zinc-500 mt-1">
-              从下方推荐列表安装，或添加自定义仓库
-            </p>
-          </div>
-        ) : (
-          libraries.map((library) => (
-            <LibraryCard
-              key={library.repoId}
-              library={library}
-              onUpdate={handleUpdate}
-              onRemove={handleRemove}
-              onToggleSkill={handleToggleSkill}
-              isUpdating={actionLoading === library.repoId}
-              isRemoving={actionLoading === `remove-${library.repoId}`}
-            />
-          ))
+      <SettingsSection
+        title="Skill 库管理"
+        description="按仓库查看全局启用状态、依赖健康和更新状态。会话级挂载仍在右侧 Skills 面板里处理。"
+        actions={(
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={loadData}
+            disabled={loading}
+            leftIcon={<RefreshCw className="w-3 h-3" />}
+          >
+            刷新
+          </Button>
         )}
+      >
+        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
+          <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
+            {[
+              ['Skill 库', String(librarySummary.libraryCount), '已安装仓库'],
+              ['Skills', String(librarySummary.totalSkills), '本地可用数量'],
+              ['已启用', String(librarySummary.enabledSkills), `${librarySummary.disabledSkills} 个未启用`],
+              ['依赖缺口', String(librarySummary.missingDependencySkills), '需要补命令或环境变量'],
+            ].map(([label, value, caption]) => (
+              <div key={label} className="bg-zinc-900/80 px-3 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
+                <div className="mt-1 truncate text-lg font-semibold text-zinc-100">{value}</div>
+                <div className="mt-0.5 truncate text-[11px] text-zinc-500">{caption}</div>
+              </div>
+            ))}
+          </div>
+
+          {libraries.length === 0 ? (
+            <div className="p-8 text-center">
+              <Package className="mx-auto mb-2 h-8 w-8 text-zinc-500" />
+              <p className="text-sm text-zinc-400">还没有安装任何 Skill 库</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                从下方推荐列表安装，或添加自定义仓库
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-left text-xs">
+                <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Skill 库</th>
+                    <th className="px-3 py-2 font-medium">状态</th>
+                    <th className="px-3 py-2 font-medium">Skills</th>
+                    <th className="px-3 py-2 font-medium">依赖</th>
+                    <th className="px-3 py-2 font-medium">更新</th>
+                    <th className="px-3 py-2 text-right font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/80">
+                  {libraryRows.map((row) => {
+                    const isUpdating = actionLoading === row.repoId;
+                    const isRemoving = actionLoading === `remove-${row.repoId}`;
+                    return (
+                      <tr
+                        key={row.repoId}
+                        className={row.selected ? 'bg-blue-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
+                      >
+                        <td className="px-3 py-3 align-middle">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLibraryId(row.repoId)}
+                            className="block min-w-0 text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <BookOpen className="h-4 w-4 shrink-0 text-amber-300" />
+                              <span className="truncate text-sm font-medium text-zinc-200">{row.repoName}</span>
+                              <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+                                {row.repoId}
+                              </span>
+                            </div>
+                            <div className="mt-1 max-w-[300px] truncate font-mono text-[11px] text-zinc-500" title={row.localPath}>
+                              {row.localPath}
+                            </div>
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          {row.selected ? (
+                            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+                              <Check className="h-3 w-3" />
+                              当前查看
+                            </span>
+                          ) : (
+                            <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                              可查看
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 align-middle text-zinc-300">
+                          <div>{row.totalSkills} 个 Skill</div>
+                          <div className="mt-0.5 text-[11px] text-zinc-500">
+                            {row.enabledSkills} 启用 / {row.disabledSkills} 关闭
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          <span className={row.missingDependencySkills > 0 ? 'text-amber-300' : 'text-emerald-300'}>
+                            {row.missingDependencySkills > 0 ? `${row.missingDependencySkills} 个缺依赖` : '依赖就绪'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-middle text-zinc-400">
+                          <div>{row.lastUpdatedLabel}</div>
+                          <div className="mt-0.5 max-w-[150px] truncate font-mono text-[11px] text-zinc-600" title={row.version}>
+                            {row.version || '未记录版本'}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-middle">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleUpdate(row.repoId)}
+                              loading={isUpdating}
+                              leftIcon={!isUpdating ? <RefreshCw className="w-3 h-3" /> : undefined}
+                              disabled={isRemoving || isWebMode()}
+                            >
+                              更新
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleRemove(row.repoId)}
+                              loading={isRemoving}
+                              leftIcon={!isRemoving ? <Trash2 className="w-3 h-3" /> : undefined}
+                              disabled={isUpdating || isWebMode()}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                            >
+                              删除
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </SettingsSection>
+
+      {selectedLibrary && (
+        <SettingsSection
+          title="当前库详情"
+          description={`${selectedLibrary.repoName} · ${selectedLibrary.skills.length} 个 Skills`}
+        >
+          <div className="grid gap-4 rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    value={skillFilter}
+                    onChange={(event) => setSkillFilter(event.target.value)}
+                    placeholder="筛选 Skill 名称、描述或路径"
+                    inputSize="sm"
+                    leftIcon={<Search className="w-3 h-3" />}
+                  />
+                  {skillFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSkillFilter('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="max-h-[360px] overflow-auto rounded-lg border border-zinc-800">
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Skill</th>
+                      <th className="px-3 py-2 font-medium">依赖</th>
+                      <th className="px-3 py-2 text-right font-medium">启用</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/80">
+                    {filteredSelectedSkills.map((skill) => {
+                      const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
+                      return (
+                        <tr key={skill.name} className="bg-zinc-950/30 hover:bg-zinc-800/50">
+                          <td className="px-3 py-3 align-top">
+                            <div className="font-medium text-zinc-200">{skill.name}</div>
+                            <div className="mt-1 line-clamp-2 text-zinc-500">{skill.description}</div>
+                            <div className="mt-1 max-w-[360px] truncate font-mono text-[11px] text-zinc-600" title={skill.localPath}>
+                              {skill.localPath}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            {hasMissingDeps ? (
+                              <div className="space-y-1 text-amber-300">
+                                <div className="inline-flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  需要补依赖
+                                </div>
+                                <div className="max-w-[220px] text-[11px] text-amber-300/80">
+                                  {[
+                                    ...(skill.dependencyStatus?.missingBins || []),
+                                    ...(skill.dependencyStatus?.missingEnvVars || []),
+                                    ...(skill.dependencyStatus?.missingReferences || []),
+                                  ].join(', ') || '依赖未满足'}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-emerald-300">依赖就绪</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right align-top">
+                            <SkillCheckbox
+                              skill={skill}
+                              onToggle={handleToggleSkill}
+                              disabled={Boolean(actionLoading)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredSelectedSkills.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-3 py-8 text-center text-zinc-500">
+                          没有匹配的 Skill
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                <BookOpen className="h-4 w-4 text-amber-300" />
+                库摘要
+              </div>
+              <dl className="mt-3 space-y-2 text-xs">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Repo</dt>
+                  <dd className="truncate text-zinc-300">{selectedLibrary.repoName}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Skills</dt>
+                  <dd className="text-zinc-300">{selectedLibrary.skills.length}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Updated</dt>
+                  <dd className="text-zinc-300">{formatTime(selectedLibrary.lastUpdated)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Version</dt>
+                  <dd className="max-w-[150px] truncate font-mono text-zinc-400" title={selectedLibrary.version}>
+                    {selectedLibrary.version || '-'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Path</dt>
+                  <dd className="mt-1 break-all font-mono text-[11px] text-zinc-500">
+                    {selectedLibrary.localPath}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+        </SettingsSection>
+      )}
 
       <SettingsDetails
         title="发现与安装"
@@ -814,25 +1086,6 @@ export const SkillsSettings: React.FC = () => {
       </div>
       </SettingsDetails>
 
-      <SettingsDetails
-        title="关于 Skills"
-        description="Skill 的用途和创建入口。"
-      >
-        <p className="text-xs text-zinc-400 leading-relaxed">
-          Skills 是预定义的工作流，可以帮助 Agent 更高效地完成特定任务。
-          启用的 Skills 会在相关场景下自动推荐使用。
-          你可以从官方仓库安装 Skills，也可以添加社区或自定义的 Skill 库。
-        </p>
-        <a
-          href="https://github.com/anthropics/claude-code/tree/main/skills"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 mt-2 text-xs text-blue-400 hover:text-blue-300"
-        >
-          了解如何创建 Skill
-          <ExternalLink className="w-3 h-3" />
-        </a>
-      </SettingsDetails>
     </SettingsPage>
   );
 };

@@ -8,6 +8,7 @@ import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 // extractStructuredReplay loaded dynamically — excluded from production bundle
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { createLogger } from '../services/infra/logger';
+import type { TelemetryHealth } from '../../shared/contract/telemetry';
 
 const logger = createLogger('TelemetryIPC');
 
@@ -112,6 +113,19 @@ export function registerTelemetryHandlers(
     async (_event, sessionId: string) => {
       storage.deleteSession(sessionId);
       return { success: true };
+    }
+  );
+
+  // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.HEALTH,
+    async (): Promise<TelemetryHealth> => {
+      return {
+        enabled: storage.dbAvailable,
+        sessionCount: storage.getSessionCount(),
+        storageBytes: storage.getStorageBytes(),
+        lastEventAt: storage.getLastEventAt(),
+      };
     }
   );
 

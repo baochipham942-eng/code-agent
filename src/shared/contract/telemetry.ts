@@ -298,3 +298,19 @@ export interface TelemetryPushEvent {
   sessionId: string;
   data: unknown;
 }
+
+/**
+ * Telemetry 健康摘要（telemetry:health IPC 返回值）。
+ * 用于 DataSettings 在不展开完整 session 列表的情况下回答
+ * "现在采集还在跑吗 / 占了多少 / 最近一条几时" 三个问题。
+ */
+export interface TelemetryHealth {
+  /** DB 是否可达（CLI / DB 未初始化时为 false） */
+  enabled: boolean;
+  /** telemetry_sessions 总数 */
+  sessionCount: number;
+  /** 所有 telemetry 表的存储占用（字节） */
+  storageBytes: number;
+  /** 最近一次 telemetry 事件/turn/session 的时间戳（ms），无数据为 null */
+  lastEventAt: number | null;
+}

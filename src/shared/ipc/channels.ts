@@ -338,6 +338,8 @@ export const TELEMETRY_CHANNELS = {
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
   /** 实时事件推送（主进程 -> 渲染进程） */
   EVENT: 'telemetry:event',
+  /** 健康摘要：采集状态 + session 数 + 存储占用 + 最近事件时间 */
+  HEALTH: 'telemetry:health',
 } as const;
 
 /**

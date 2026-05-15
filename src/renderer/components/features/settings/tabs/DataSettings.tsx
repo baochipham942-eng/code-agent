@@ -19,6 +19,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { TELEMETRY_CHANNELS } from '@shared/ipc/channels';
 import { Button } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -200,9 +201,25 @@ function getStatusClass(tone: DataManagementRow['statusTone']): string {
 }
 
 interface TelemetryHealthSummary {
+  /** IPC 是否成功（true 表示 telemetry:health 返回了数据） */
   available: boolean;
+  /** 后端是否在采集（DB 可达即视为在跑） */
+  enabled: boolean;
   sessionCount: number | null;
+  /** telemetry 表占用（字节）；null 表示未拿到 */
+  storageBytes: number | null;
+  /** 最近事件时间戳（ms）；null 表示无数据 */
+  lastEventAt: number | null;
   error?: string;
+}
+
+function formatLastEventAt(ts: number | null): string {
+  if (!ts) return '暂无事件';
+  const delta = Date.now() - ts;
+  if (delta < 60_000) return '刚刚';
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} 分钟前`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} 小时前`;
+  return new Date(ts).toLocaleString();
 }
 
 export const DataSettings: React.FC = () => {
@@ -212,7 +229,10 @@ export const DataSettings: React.FC = () => {
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
   const [telemetrySummary, setTelemetrySummary] = useState<TelemetryHealthSummary>({
     available: false,
+    enabled: false,
     sessionCount: null,
+    storageBytes: null,
+    lastEventAt: null,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
@@ -233,19 +253,24 @@ export const DataSettings: React.FC = () => {
       setIsLoading(false);
     }
 
-    // Telemetry 健康摘要：currently 无 dedicated health IPC，用 list-sessions 数量
-    // 当 "采集是否在跑" 的间接信号；若 IPC 缺失则降级显示 TODO。
+    // Telemetry 健康摘要：直接调用 telemetry:health 拿 enabled / sessionCount /
+    // storageBytes / lastEventAt 四个字段（main 侧 telemetry.ipc.ts 注册）。
     try {
-      const sessions = await ipcService.invoke(
-        'telemetry:list-sessions',
-        { limit: 1 },
-      );
-      const count = Array.isArray(sessions) ? sessions.length : 0;
-      setTelemetrySummary({ available: true, sessionCount: count });
+      const health = await ipcService.invoke(TELEMETRY_CHANNELS.HEALTH);
+      setTelemetrySummary({
+        available: true,
+        enabled: !!health?.enabled,
+        sessionCount: typeof health?.sessionCount === 'number' ? health.sessionCount : 0,
+        storageBytes: typeof health?.storageBytes === 'number' ? health.storageBytes : 0,
+        lastEventAt: typeof health?.lastEventAt === 'number' ? health.lastEventAt : null,
+      });
     } catch (error) {
       setTelemetrySummary({
         available: false,
+        enabled: false,
         sessionCount: null,
+        storageBytes: null,
+        lastEventAt: null,
         error: error instanceof Error ? error.message : '未知错误',
       });
     }
@@ -428,14 +453,26 @@ export const DataSettings: React.FC = () => {
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
           {telemetrySummary.available ? (
             <div className="flex flex-wrap items-center gap-3 text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
-                <Activity className="h-3.5 w-3.5" />
-                采集开启
+              {telemetrySummary.enabled ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+                  <Activity className="h-3.5 w-3.5" />
+                  采集运行中
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-300">
+                  <Activity className="h-3.5 w-3.5" />
+                  采集已暂停
+                </span>
+              )}
+              <span className="text-zinc-300">
+                session：{(telemetrySummary.sessionCount ?? 0).toLocaleString()} 条
               </span>
               <span className="text-zinc-300">
-                最近 telemetry session：{telemetrySummary.sessionCount ?? 0} 条（最新 1 条）
+                占用：{telemetrySummary.storageBytes !== null ? formatDataSize(telemetrySummary.storageBytes) : '未知'}
               </span>
-              <span className="text-zinc-500">TODO：占用大小依赖 telemetry:health IPC（未实现）。</span>
+              <span className="text-zinc-400">
+                最近事件：{formatLastEventAt(telemetrySummary.lastEventAt)}
+              </span>
               <div className="ml-auto">
                 <Button
                   size="sm"
@@ -458,7 +495,7 @@ export const DataSettings: React.FC = () => {
                 采集状态未知
               </span>
               <span className="text-zinc-500">
-                TODO：telemetry IPC 不可达（{telemetrySummary.error || '未连接'}）。
+                telemetry:health 调用失败（{telemetrySummary.error || '未连接'}）。
               </span>
             </div>
           )}

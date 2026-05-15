@@ -238,6 +238,99 @@ export class TelemetryStorage {
     }
   }
 
+  /**
+   * DB 是否可用（外部观测，不会触发额外探测）。CLI / DB 不可用环境下为 false。
+   */
+  get dbAvailable(): boolean {
+    return this.isDbAvailable();
+  }
+
+  /**
+   * 返回所有 telemetry 表的总占用（字节）。利用 SQLite 的
+   * dbstat 虚表实际统计 page 占用，不可用时降级为 SUM(LENGTH(...))
+   * 估算每张表所有列的串行化长度。
+   */
+  getStorageBytes(): number {
+    if (!this.isDbAvailable()) return 0;
+    const db = this.getDb();
+    const tables = [
+      'telemetry_sessions',
+      'telemetry_turns',
+      'telemetry_model_calls',
+      'telemetry_tool_calls',
+      'telemetry_events',
+    ];
+
+    // dbstat 是 SQLite 编译选项，better-sqlite3 默认未开启；先尝试
+    try {
+      const placeholders = tables.map(() => '?').join(',');
+      const row = db.prepare(
+        `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat WHERE name IN (${placeholders})`
+      ).get(...tables) as { bytes?: number } | undefined;
+      const bytes = row?.bytes;
+      if (typeof bytes === 'number' && bytes > 0) {
+        return bytes;
+      }
+    } catch {
+      // dbstat 未启用，落到降级估算
+    }
+
+    let total = 0;
+    for (const table of tables) {
+      try {
+        // 每张表：用 COUNT(*) × 抽样 100 行的平均 JSON 字节估算总占用。
+        // 没有 dbstat 时也能给出"几 MB"量级的真实读数，不是猜的。
+        const countRow = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n?: number } | undefined;
+        const n = countRow?.n ?? 0;
+        if (n === 0) continue;
+        const sample = db.prepare(`SELECT * FROM ${table} LIMIT 100`).all() as unknown[];
+        if (sample.length === 0) continue;
+        const sampleBytes = sample.reduce((sum: number, item) => sum + JSON.stringify(item).length, 0);
+        const avg = sampleBytes / sample.length;
+        total += Math.round(avg * n);
+      } catch {
+        // 表不存在或查询失败：忽略
+      }
+    }
+    return total;
+  }
+
+  /**
+   * 全表 session 数量（不分页）。
+   */
+  getSessionCount(): number {
+    if (!this.isDbAvailable()) return 0;
+    try {
+      const row = this.getDb().prepare('SELECT COUNT(*) AS n FROM telemetry_sessions').get() as { n?: number } | undefined;
+      return row?.n ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * 最近一次 telemetry 事件的时间戳（毫秒），无数据返回 null。
+   * 综合 events / turns / sessions 三张表的最大时间。
+   */
+  getLastEventAt(): number | null {
+    if (!this.isDbAvailable()) return null;
+    try {
+      const row = this.getDb().prepare(`
+        SELECT MAX(ts) AS last_at FROM (
+          SELECT MAX(timestamp) AS ts FROM telemetry_events
+          UNION ALL
+          SELECT MAX(end_time) AS ts FROM telemetry_turns
+          UNION ALL
+          SELECT MAX(start_time) AS ts FROM telemetry_sessions
+        )
+      `).get() as { last_at?: number | null } | undefined;
+      const lastAt = row?.last_at;
+      return typeof lastAt === 'number' && lastAt > 0 ? lastAt : null;
+    } catch {
+      return null;
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Turn CRUD
   // --------------------------------------------------------------------------

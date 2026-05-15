@@ -23,7 +23,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Conversation
   { tab: 'conversation', tabLabel: '对话', label: '模型路由策略', keywords: ['routing', 'route', '模型路由', '路由', 'auto', 'direct', 'parallel'] },
-  { tab: 'conversation', tabLabel: '对话', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
+
+  // Workspace
+  { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
+  { tab: 'workspace', tabLabel: '工作区', label: '最近目录', keywords: ['recent', '最近', 'recent directories', '历史', '切换'] },
+  { tab: 'workspace', tabLabel: '工作区', label: '本地桥', keywords: ['bridge', 'local', '桥接', '本地', 'ipc'] },
+  { tab: 'workspace', tabLabel: '工作区', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
 
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },

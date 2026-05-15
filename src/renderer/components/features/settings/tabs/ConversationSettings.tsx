@@ -6,12 +6,9 @@
 // Live Preview 已挪到 TitleBar 顶栏（跟工作目录绑定）。
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, FileCheck2, GitBranch, Globe, Info, Monitor, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, FileCheck2, GitBranch, Info, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type {
-  BrowserSessionMode,
-  ConversationRoutingMode,
-} from '@shared/contract/conversationEnvelope';
+import type { ConversationRoutingMode } from '@shared/contract/conversationEnvelope';
 import type {
   ContextCompressionChannelState,
   ContextCompressionConfigPatch,
@@ -21,23 +18,11 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
-import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
-import {
-  buildBrowserWorkbenchStatusRows,
-  getBrowserWorkbenchOperationalHint,
-  type BrowserWorkbenchStatusTone,
-} from '../../../../utils/workbenchPresentation';
 
 const ROUTING_OPTIONS: Array<{ value: ConversationRoutingMode; label: string; hint: string }> = [
   { value: 'auto', label: 'Auto', hint: '路由器按任务复杂度自动选模型（默认）' },
   { value: 'direct', label: 'Direct', hint: '直接用当前选中的模型，不走路由' },
   { value: 'parallel', label: 'Parallel', hint: '并行调多个模型，交叉验证产物' },
-];
-
-const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode; label: string; hint: string }> = [
-  { value: 'none', label: 'Off', hint: '禁用浏览器工具（默认）' },
-  { value: 'managed', label: 'Managed', hint: '使用 in-app managed browser；默认 System Chrome via CDP，应用隔离 profile' },
-  { value: 'desktop', label: 'Desktop', hint: '读取当前桌面/前台浏览器上下文 + Computer Surface；前台动作需人工确认' },
 ];
 
 const DEFAULT_COMPRESSION_STATE: ContextCompressionChannelState = {
@@ -84,18 +69,9 @@ function featureLabel(value: 'enabled' | 'disabled' | 'available'): string {
   return '开启';
 }
 
-function browserStatusToneClass(tone?: BrowserWorkbenchStatusTone): string {
-  if (tone === 'ready') return 'text-emerald-300';
-  if (tone === 'blocked') return 'text-amber-300';
-  return 'text-zinc-300';
-}
-
 export const ConversationSettings: React.FC = () => {
   const routingMode = useComposerStore((s) => s.routingMode);
   const setRoutingMode = useComposerStore((s) => s.setRoutingMode);
-  const browserSessionMode = useComposerStore((s) => s.browserSessionMode);
-  const setBrowserSessionMode = useComposerStore((s) => s.setBrowserSessionMode);
-  const browserSession = useWorkbenchBrowserSession();
   const [compressionState, setCompressionState] = useState<ContextCompressionChannelState>(DEFAULT_COMPRESSION_STATE);
   const [compressionLoading, setCompressionLoading] = useState(true);
   const [savingCompression, setSavingCompression] = useState(false);
@@ -105,14 +81,6 @@ export const ConversationSettings: React.FC = () => {
     (provider) => provider.id === compressionState.config.compactProvider,
   ) ?? providerOptions.find((provider) => provider.id === 'moonshot') ?? providerOptions[0];
   const modelOptions = selectedProvider?.models ?? [];
-  const browserStatusRows = useMemo(() => buildBrowserWorkbenchStatusRows({
-    mode: browserSessionMode,
-    browserSession,
-  }), [browserSession, browserSessionMode]);
-  const browserOperationalHint = useMemo(() => getBrowserWorkbenchOperationalHint({
-    mode: browserSessionMode,
-    browserSession,
-  }), [browserSession, browserSessionMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,101 +153,6 @@ export const ConversationSettings: React.FC = () => {
             );
           })}
         </div>
-      </SettingsSection>
-
-      <SettingsSection title="Browser" description="浏览器工具集成模式，决定 agent 怎么操作浏览器。">
-        <div className="flex items-center gap-2 mb-3">
-          <Globe className="w-4 h-4 text-zinc-400" />
-          <span className="text-xs text-zinc-500">运行状态在任务面板和顶栏呈现</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {BROWSER_OPTIONS.map((opt) => {
-            const selected = browserSessionMode === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setBrowserSessionMode(opt.value)}
-                className={`flex flex-col items-start gap-1 px-3 py-2 rounded-lg border transition-colors text-left ${
-                  selected
-                    ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
-                    : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
-                }`}
-              >
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-[11px] text-zinc-500 leading-relaxed">{opt.hint}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {browserSessionMode !== 'none' && (
-          <div
-            className="mt-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3"
-            data-testid="conversation-settings-browser-inspector"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <Monitor className="h-4 w-4 flex-shrink-0 text-zinc-400" />
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-zinc-200">Session Inspector</div>
-                  <div className="text-[11px] text-zinc-500">
-                    {browserSessionMode === 'managed' ? 'Managed browser 状态摘要' : 'Desktop / Computer Surface 状态摘要'}
-                  </div>
-                </div>
-              </div>
-              <span className={`text-xs ${browserSession.blocked ? 'text-amber-300' : 'text-emerald-300'}`}>
-                {browserSession.blocked ? 'Blocked' : 'Ready'}
-              </span>
-            </div>
-
-            {browserStatusRows.length > 0 ? (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                {browserStatusRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className="grid min-w-0 grid-cols-[72px,minmax(0,1fr)] gap-2 text-[11px]"
-                  >
-                    <span className="text-zinc-500">{row.label}</span>
-                    <span
-                      className={`truncate ${browserStatusToneClass(row.tone)}`}
-                      title={row.title || row.value}
-                    >
-                      {row.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-[11px] text-zinc-500">还没有 browser session 状态。</div>
-            )}
-
-            {browserOperationalHint && (
-              <div className={`mt-2 text-[11px] leading-relaxed ${browserSession.blocked ? 'text-amber-300' : 'text-zinc-500'}`}>
-                {browserOperationalHint}
-              </div>
-            )}
-
-            {browserSession.repairActions.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/[0.06] pt-2">
-                {browserSession.repairActions.map((action) => {
-                  const busy = browserSession.busyActionKind === action.kind;
-                  return (
-                    <button
-                      key={action.kind}
-                      type="button"
-                      onClick={() => void browserSession.runRepairAction(action)}
-                      disabled={busy}
-                      className="rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-white/[0.16] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {busy ? '处理中...' : action.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </SettingsSection>
 
       <SettingsSection title="上下文整理" description="长对话接近上限时，自动把旧内容整理成可追溯摘要，保留最近对话继续工作。">
@@ -452,8 +325,8 @@ export const ConversationSettings: React.FC = () => {
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/40 border border-white/[0.06]">
         <Info className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 mt-0.5" />
         <p className="text-[11px] text-zinc-500 leading-relaxed">
-          这两组设置是会话级配置，多数人配一次后无需再调。Browser readiness 状态、修复入口、
-          Live Preview 已挪到顶栏 / 任务面板 / 命令面板，不再占 ChatInput 工具栏视觉。
+          路由策略和上下文整理是会话级配置，多数人配一次后无需再调。Browser 模式已迁移到「工作区」tab，
+          运行状态依旧在顶栏和任务面板呈现。
         </p>
       </div>
     </SettingsPage>

@@ -8,6 +8,8 @@ export const SETTINGS_TAB_IDS = [
   'conversation',
   'model',
   'appearance',
+  'workspace',
+  'automation',
   'cache',
   'capabilities',
   'mcp',
@@ -24,20 +26,30 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'general';
 
-export type SettingsTabGroupId = 'basics' | 'connections' | 'memory' | 'system';
+export type SettingsTabGroupId =
+  | 'basics'
+  | 'connections'
+  | 'workspace'
+  | 'memory'
+  | 'system'
+  | 'advanced';
 
 export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
   basics: '基础偏好',
   connections: '能力与连接',
+  workspace: '工作区与自动化',
   memory: '记忆与隐私',
   system: '系统',
+  advanced: '高级',
 };
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'basics',
   'connections',
+  'workspace',
   'memory',
   'system',
+  'advanced',
 ];
 
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
@@ -49,7 +61,9 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   capabilities: 'connections',
   skills: 'connections',
   channels: 'connections',
-  hooks: 'connections',
+  hooks: 'advanced',
+  workspace: 'workspace',
+  automation: 'workspace',
   memory: 'memory',
   openchronicle: 'memory',
   cache: 'system',

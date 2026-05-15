@@ -21,6 +21,7 @@ import {
   MessageSquare,
   Webhook,
   Boxes,
+  FolderOpen,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -53,11 +54,13 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'hooks',
   'memory',
   'openchronicle',
+  'workspace',
 ]);
 
 // Tab Components
 import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
+import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { DataSettings } from './tabs/DataSettings';
@@ -103,6 +106,7 @@ export function buildSettingsTabGroups({
     { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
     { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
@@ -325,6 +329,7 @@ export const SettingsModal: React.FC = () => {
 
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
+            {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

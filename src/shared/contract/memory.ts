@@ -108,6 +108,31 @@ export interface MemoryMirrorRebuildResult {
   skipped: Array<{ filename: string; reason: string }>;
 }
 
+export interface MemoryEntryUpdateRequest {
+  entryId: string;
+  title?: string;
+  summary?: string;
+  content?: string;
+  status?: MemoryEntryStatus;
+  kind?: MemoryEntryKind;
+  scope?: MemoryEntryScope;
+}
+
+export interface MemoryEntryUpdateResult {
+  entry: MemoryEntry;
+  mirrorRebuild?: MemoryMirrorRebuildResult;
+}
+
+export interface MemoryEntryDeleteRequest {
+  entryId: string;
+}
+
+export interface MemoryEntryDeleteResult {
+  deleted: boolean;
+  sourceOfTruth?: MemoryEntrySourceOfTruth;
+  mirrorRebuild?: MemoryMirrorRebuildResult;
+}
+
 export interface MemoryPackRequest {
   query?: string;
   projectPath?: string | null;

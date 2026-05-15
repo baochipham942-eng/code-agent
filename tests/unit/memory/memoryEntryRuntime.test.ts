@@ -24,9 +24,11 @@ import {
   buildActiveMemoryEntryFromInbox,
   dryRunImportMemoryBundleV2,
   exportMemoryBundleV2,
+  deleteMemoryEntry,
   listUnifiedMemoryEntries,
   packMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
+  updateMemoryEntry,
   writeActiveEntryToLightMemory,
 } from '../../../src/main/memory/memoryEntryRuntime';
 
@@ -151,6 +153,191 @@ Use current project patterns.
     const listed = await listUnifiedMemoryEntries(db);
     expect(listed.entries.map((entry) => entry.id)).toEqual(['mem_entry_project']);
     expect(listed.sourceCounts).toEqual({ light_file: 1, db_memory: 0 });
+  });
+
+  it('updates Light Memory entries and refreshes the DB mirror', async () => {
+    await fs.writeFile(path.join(memDir, 'project-rule.md'), `---
+name: Project Rule
+description: Follow current project patterns
+type: project
+entry_id: mem_entry_project
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+Use current project patterns.
+`, 'utf-8');
+
+    const mirror = record({
+      id: 'mem-mirror',
+      content: 'Use current project patterns.',
+      summary: 'Project Rule',
+      metadata: {
+        memoryEntry: {
+          schemaVersion: 2,
+          id: 'mem_entry_project',
+          status: 'active',
+          kind: 'project',
+          scope: 'project',
+          sourceOfTruth: 'light_file',
+          filePath: 'project-rule.md',
+          evidence: [{ filePath: 'project-rule.md' }],
+        },
+      },
+    });
+    const db = {
+      listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
+        ...mirror,
+        id,
+        ...updates,
+        updatedAt: 1778667000000,
+      })),
+    };
+
+    const result = await updateMemoryEntry(db, {
+      entryId: 'mem_entry_project',
+      title: 'Updated Rule',
+      summary: 'Updated summary',
+      content: 'Updated memory body.',
+      status: 'archived',
+      kind: 'feedback',
+    });
+
+    expect(result.entry).toMatchObject({
+      id: 'mem_entry_project',
+      title: 'Updated Rule',
+      status: 'archived',
+      kind: 'feedback',
+    });
+    expect(result.mirrorRebuild).toMatchObject({ mirrored: 1, updated: 1 });
+    const raw = await fs.readFile(path.join(memDir, 'project-rule.md'), 'utf-8');
+    expect(raw).toContain('name: Updated Rule');
+    expect(raw).toContain('type: feedback');
+    expect(raw).toContain('status: archived');
+    expect(raw).toContain('Updated memory body.');
+    expect(db.updateMemory).toHaveBeenCalledWith('mem-mirror', expect.objectContaining({
+      content: 'Updated memory body.',
+      summary: 'Updated Rule',
+      category: 'user_requirement',
+      metadata: expect.objectContaining({
+        memoryEntry: expect.objectContaining({
+          id: 'mem_entry_project',
+          sourceOfTruth: 'light_file',
+          status: 'archived',
+          kind: 'feedback',
+        }),
+      }),
+    }));
+  });
+
+  it('updates DB memory entries without creating Light Memory files', async () => {
+    const dbRecord = record({
+      id: 'mem-db',
+      content: 'Original DB content.',
+      summary: 'Original DB memory',
+      metadata: {
+        memoryEntry: {
+          schemaVersion: 2,
+          id: 'mem_entry_db',
+          status: 'active',
+          kind: 'project',
+          scope: 'project',
+          sourceOfTruth: 'db_memory',
+          evidence: [{ memoryId: 'mem-db' }],
+        },
+      },
+    });
+    const db = {
+      listMemories: vi.fn(() => [dbRecord] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
+        ...dbRecord,
+        id,
+        ...updates,
+        updatedAt: 1778667100000,
+      })),
+    };
+
+    const result = await updateMemoryEntry(db, {
+      entryId: 'mem_entry_db',
+      title: 'Updated DB Rule',
+      content: 'Updated DB content.',
+      status: 'archived',
+      kind: 'pattern',
+    });
+
+    expect(result.entry).toMatchObject({
+      id: 'mem_entry_db',
+      status: 'archived',
+      kind: 'pattern',
+      content: 'Updated DB content.',
+      source: expect.objectContaining({ sourceOfTruth: 'db_memory', memoryId: 'mem-db' }),
+    });
+    expect(db.updateMemory).toHaveBeenCalledWith('mem-db', expect.objectContaining({
+      category: 'pattern',
+      content: 'Updated DB content.',
+      summary: 'Updated DB Rule',
+      metadata: expect.objectContaining({
+        memoryEntry: expect.objectContaining({
+          id: 'mem_entry_db',
+          sourceOfTruth: 'db_memory',
+          status: 'archived',
+          kind: 'pattern',
+        }),
+      }),
+    }));
+    await expect(fs.readdir(memDir)).resolves.not.toContain('memory-db.md');
+  });
+
+  it('deletes Light Memory entries and removes their DB mirror', async () => {
+    await fs.writeFile(path.join(memDir, 'project-rule.md'), `---
+name: Project Rule
+description: Follow current project patterns
+type: project
+entry_id: mem_entry_project
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+Use current project patterns.
+`, 'utf-8');
+    await fs.writeFile(path.join(memDir, 'INDEX.md'), '# Memory Index\n\n- [project-rule.md](project-rule.md) — Project Rule\n', 'utf-8');
+
+    const mirror = record({
+      id: 'mem-mirror',
+      metadata: {
+        memoryEntry: {
+          schemaVersion: 2,
+          id: 'mem_entry_project',
+          status: 'active',
+          kind: 'project',
+          scope: 'project',
+          sourceOfTruth: 'light_file',
+          filePath: 'project-rule.md',
+          evidence: [{ filePath: 'project-rule.md' }],
+        },
+      },
+    });
+    const db = {
+      listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+      deleteMemory: vi.fn(() => true),
+    };
+
+    const result = await deleteMemoryEntry(db, { entryId: 'mem_entry_project' });
+
+    expect(result).toMatchObject({
+      deleted: true,
+      sourceOfTruth: 'light_file',
+      mirrorRebuild: expect.objectContaining({ totalLightFiles: 0 }),
+    });
+    await expect(fs.stat(path.join(memDir, 'project-rule.md'))).rejects.toThrow();
+    expect(db.deleteMemory).toHaveBeenCalledWith('mem-mirror');
   });
 
   it('packs query-aware memory without vectors and keeps top evidence at the edges', async () => {

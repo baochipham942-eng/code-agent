@@ -1,10 +1,14 @@
 import type {
   MemoryEntry,
   MemoryEntryEvidence,
+  MemoryEntryDeleteRequest,
+  MemoryEntryDeleteResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntryScope,
   MemoryEntryStatus,
+  MemoryEntryUpdateRequest,
+  MemoryEntryUpdateResult,
   MemoryImportV2ApplyResult,
   MemoryExportV2Bundle,
   MemoryImportV2DryRunResult,
@@ -17,6 +21,7 @@ import * as fs from 'fs/promises';
 import type { MemoryRecord } from '../services/core/repositories';
 import { getMemoryIndexPath } from '../lightMemory/indexLoader';
 import {
+  deleteMemoryFile,
   listMemoryFiles,
   rebuildLightMemoryIndex,
   writeLightMemoryFile,
@@ -39,6 +44,7 @@ interface MemoryEntryDatabase {
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
+  deleteMemory?(id: string): boolean;
 }
 
 export interface BuildActiveMemoryEntryInput {
@@ -253,6 +259,41 @@ function sanitizePackedMemoryText(value: string): string {
     .split('\n')
     .map((line) => sanitizeMemoryContent(line))
     .join('\n');
+}
+
+const VALID_ENTRY_STATUSES = new Set<MemoryEntryStatus>([
+  'candidate',
+  'active',
+  'rejected',
+  'stale',
+  'archived',
+]);
+
+const VALID_ENTRY_KINDS = new Set<MemoryEntryKind>([
+  'user',
+  'feedback',
+  'project',
+  'reference',
+  'session',
+  'pattern',
+]);
+
+const VALID_ENTRY_SCOPES = new Set<MemoryEntryScope>([
+  'global',
+  'project',
+  'session',
+]);
+
+function normalizeEntryStatus(value: MemoryEntryStatus | undefined, fallback: MemoryEntryStatus): MemoryEntryStatus {
+  return value && VALID_ENTRY_STATUSES.has(value) ? value : fallback;
+}
+
+function normalizeEntryKind(value: MemoryEntryKind | undefined, fallback: MemoryEntryKind): MemoryEntryKind {
+  return value && VALID_ENTRY_KINDS.has(value) ? value : fallback;
+}
+
+function normalizeEntryScope(value: MemoryEntryScope | undefined, fallback: MemoryEntryScope): MemoryEntryScope {
+  return value && VALID_ENTRY_SCOPES.has(value) ? value : fallback;
 }
 
 function memoryEntryIdForLightFile(file: LightMemoryFile): string {
@@ -733,6 +774,136 @@ function memoryRecordsByEntryId(db: MemoryEntryDatabase): Map<string, MemoryReco
     }
   }
   return map;
+}
+
+function findMemoryRecordForEntry(db: MemoryEntryDatabase, entry: MemoryEntry): MemoryRecord | null {
+  const records = db.listMemories({ limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
+  const memoryId = entry.source.memoryId || (entry.id.startsWith('db:') ? entry.id.slice(3) : null);
+  return records.find((record) => memoryEntryMetadata(record)?.id === entry.id)
+    || records.find((record) => Boolean(memoryId) && record.id === memoryId)
+    || null;
+}
+
+function buildUpdatedMemoryEntry(current: MemoryEntry, request: MemoryEntryUpdateRequest): MemoryEntry {
+  const title = request.title !== undefined
+    ? compactText(request.title, 120) || current.title
+    : current.title;
+  const content = request.content !== undefined
+    ? request.content.trim() || current.content
+    : current.content;
+  const summary = request.summary !== undefined
+    ? compactText(request.summary, 180) || compactText(content, 180)
+    : current.summary;
+  const kind = normalizeEntryKind(request.kind, current.kind);
+  return {
+    ...current,
+    status: normalizeEntryStatus(request.status, current.status),
+    kind,
+    scope: normalizeEntryScope(request.scope, current.scope),
+    title,
+    summary,
+    content,
+    updatedAt: Date.now(),
+  };
+}
+
+export async function updateMemoryEntry(
+  db: MemoryEntryDatabase,
+  request: MemoryEntryUpdateRequest,
+): Promise<MemoryEntryUpdateResult> {
+  const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
+  if (!current) throw new Error(`Memory entry not found: ${request.entryId}`);
+
+  const next = buildUpdatedMemoryEntry(current, request);
+  if (current.source.sourceOfTruth === 'light_file') {
+    const file = await writeLightMemoryFile({
+      filename: current.source.filePath || memoryEntryFilenameForId(current.id),
+      name: next.title,
+      description: next.summary,
+      type: lightTypeForMemoryEntryKind(next.kind),
+      content: next.content,
+      entryId: next.id,
+      status: next.status,
+      source: current.source.kind,
+      schemaVersion: next.schemaVersion,
+    });
+    await rebuildLightMemoryIndex();
+    const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
+    return {
+      entry: {
+        ...lightMemoryFileToEntry(file),
+        evidence: current.evidence,
+        projectPath: current.projectPath,
+        sessionId: current.sessionId,
+        confidence: current.confidence,
+        createdAt: current.createdAt,
+      },
+      mirrorRebuild,
+    };
+  }
+
+  const record = findMemoryRecordForEntry(db, current);
+  if (!record) throw new Error(`Memory record not found for entry: ${request.entryId}`);
+  const updated = db.updateMemory(record.id, {
+    category: categoryForMemoryEntryKind(next.kind),
+    content: next.content,
+    summary: next.title || next.summary,
+    confidence: next.confidence,
+    metadata: {
+      ...record.metadata,
+      ...metadataForImportedEntry({
+        ...next,
+        source: {
+          ...next.source,
+          sourceOfTruth: 'db_memory',
+          memoryId: record.id,
+        },
+      }, 'db_memory'),
+    },
+  });
+  if (!updated) throw new Error(`Memory record update failed: ${record.id}`);
+
+  return {
+    entry: storedMemoryToEntry(updated),
+  };
+}
+
+export async function deleteMemoryEntry(
+  db: MemoryEntryDatabase,
+  request: MemoryEntryDeleteRequest,
+): Promise<MemoryEntryDeleteResult> {
+  const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
+  if (!current) return { deleted: false };
+
+  if (current.source.sourceOfTruth === 'light_file') {
+    const filename = current.source.filePath;
+    if (!filename) throw new Error(`Light memory filename missing for entry: ${request.entryId}`);
+    const deleted = await deleteMemoryFile(filename);
+    const mirrorRecord = findMemoryRecordForEntry(db, current);
+    if (mirrorRecord && db.deleteMemory) {
+      db.deleteMemory(mirrorRecord.id);
+    }
+    await rebuildLightMemoryIndex();
+    const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
+    return {
+      deleted,
+      sourceOfTruth: 'light_file',
+      mirrorRebuild,
+    };
+  }
+
+  const record = findMemoryRecordForEntry(db, current);
+  if (!record || !db.deleteMemory) {
+    return {
+      deleted: false,
+      sourceOfTruth: 'db_memory',
+    };
+  }
+
+  return {
+    deleted: db.deleteMemory(record.id),
+    sourceOfTruth: 'db_memory',
+  };
 }
 
 async function writeImportedLightEntry(entry: MemoryEntry): Promise<string> {

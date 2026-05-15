@@ -34,7 +34,9 @@ import type {
   MemoryLearnedEvent,
   MemoryConfirmRequest,
   MemoryExportV2Bundle,
+  MemoryEntryDeleteResult,
   MemoryEntryListResult,
+  MemoryEntryUpdateResult,
   MemoryImportV2ApplyResult,
   MemoryImportV2DryRunResult,
   MemoryMirrorRebuildResult,
@@ -343,7 +345,7 @@ export interface IpcInvokeHandlers {
 
   // Memory (Phase 2/3)
   [IPC_CHANNELS.MEMORY]: (payload: {
-    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply';
+    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply';
     category?: MemoryCategory;
     id?: string;
     content?: string;
@@ -363,9 +365,10 @@ export interface IpcInvokeHandlers {
     projectPath?: string | null;
     sessionId?: string | null;
     limit?: number;
+    entryId?: string;
   }) => Promise<{
     success: boolean;
-    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
+    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
     error?: string;
   }>;
   [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (payload: { id: string; confirmed: boolean }) => Promise<void>;

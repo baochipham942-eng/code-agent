@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     listMemories: vi.fn(),
     createMemory: vi.fn(),
     updateMemory: vi.fn(),
+    deleteMemory: vi.fn(),
   },
   getDatabase: vi.fn(),
   getSessionManager: vi.fn(),
@@ -107,6 +108,7 @@ describe('memory.ipc memoryAudit', () => {
       createdAt: 1778666000000,
       updatedAt: 1778666000001,
     }));
+    mocks.database.deleteMemory.mockReturnValue(true);
     mocks.listMemoryFiles.mockResolvedValue([
       {
         filename: 'project_rules.md',
@@ -137,6 +139,7 @@ describe('memory.ipc memoryAudit', () => {
       duplicateNames: [],
       duplicateDescriptions: [],
     });
+    mocks.deleteMemoryFile.mockResolvedValue(true);
     mocks.rebuildLightMemoryIndex.mockResolvedValue({
       indexPath: '/tmp/memory/INDEX.md',
       totalFiles: 1,
@@ -545,6 +548,115 @@ describe('memory.ipc memoryAudit', () => {
         }),
       }),
     }));
+  });
+
+  it('routes unified memory entry update and delete through the simple memory channel', async () => {
+    const mirror = memory({
+      id: 'mem-mirror',
+      content: 'Memory audit should explain why a rule was injected.',
+      summary: 'Project Rules',
+      metadata: {
+        memoryEntry: {
+          schemaVersion: 2,
+          id: 'mem_entry_rules',
+          status: 'active',
+          kind: 'project',
+          scope: 'project',
+          sourceOfTruth: 'light_file',
+          filePath: 'project_rules.md',
+          evidence: [{ filePath: 'project_rules.md' }],
+        },
+      },
+    });
+    mocks.database.listMemories.mockReturnValue([mirror]);
+    const oldFile = {
+      filename: 'project_rules.md',
+      name: 'Project Rules',
+      description: 'Follow project rules',
+      type: 'project',
+      content: 'Memory audit should explain why a rule was injected.',
+      entryId: 'mem_entry_rules',
+      status: 'active',
+      source: 'knowledge_inbox',
+      schemaVersion: 2,
+      updatedAt: '2026-05-13T12:00:00.000Z',
+    };
+    let currentFile = oldFile;
+    mocks.listMemoryFiles.mockImplementation(async () => [currentFile]);
+    mocks.writeLightMemoryFile.mockImplementation(async (input: {
+      filename: string;
+      name: string;
+      description: string;
+      type: string;
+      content: string;
+      entryId?: string;
+      status?: string;
+      source?: string;
+      schemaVersion?: number;
+    }) => {
+      currentFile = {
+        filename: input.filename,
+        name: input.name,
+        description: input.description,
+        type: input.type,
+        content: input.content,
+        entryId: input.entryId,
+        status: input.status,
+        source: input.source,
+        schemaVersion: input.schemaVersion,
+        updatedAt: '2026-05-13T12:30:00.000Z',
+      };
+      return currentFile;
+    });
+
+    const ipc = createMockIpcMain();
+    registerMemoryHandlers(ipc.ipcMain as never);
+
+    const updateResponse = await ipc.invoke<{ success: boolean; data: unknown }>(IPC_CHANNELS.MEMORY, {
+      action: 'memoryEntryUpdate',
+      entryId: 'mem_entry_rules',
+      title: 'Archived Rules',
+      content: 'Archived memory content.',
+      status: 'archived',
+      kind: 'feedback',
+    });
+
+    expect(updateResponse).toMatchObject({
+      success: true,
+      data: {
+        entry: {
+          id: 'mem_entry_rules',
+          status: 'archived',
+          kind: 'feedback',
+        },
+      },
+    });
+    expect(mocks.writeLightMemoryFile).toHaveBeenCalledWith(expect.objectContaining({
+      filename: 'project_rules.md',
+      name: 'Archived Rules',
+      type: 'feedback',
+      status: 'archived',
+      content: 'Archived memory content.',
+    }));
+    expect(mocks.database.updateMemory).toHaveBeenCalledWith('mem-mirror', expect.objectContaining({
+      content: 'Archived memory content.',
+      category: 'user_requirement',
+    }));
+
+    const deleteResponse = await ipc.invoke<IPCResponse>(IPC_CHANNELS.MEMORY, {
+      action: 'memoryEntryDelete',
+      entryId: 'mem_entry_rules',
+    });
+
+    expect(deleteResponse).toMatchObject({
+      success: true,
+      data: {
+        deleted: true,
+        sourceOfTruth: 'light_file',
+      },
+    });
+    expect(mocks.deleteMemoryFile).toHaveBeenCalledWith('project_rules.md');
+    expect(mocks.database.deleteMemory).toHaveBeenCalledWith('mem-mirror');
   });
 
   it('resolves a Knowledge Inbox approval into a seedable project memory and audit tombstone', async () => {

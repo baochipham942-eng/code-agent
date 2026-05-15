@@ -33,6 +33,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
+import { MemoryEntriesManager } from './MemoryEntriesManager';
 
 // ============================================================================
 // Types
@@ -563,6 +564,8 @@ export const MemoryTab: React.FC = () => {
           <span>{message.text}</span>
         </div>
       )}
+
+      <MemoryEntriesManager onChanged={loadData} />
 
       <SettingsSection
         title="导入预检"

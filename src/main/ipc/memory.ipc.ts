@@ -21,6 +21,7 @@ import {
   buildActiveMemoryEntryFromInbox,
   applyImportMemoryBundleV2,
   createMemoryMirrorRecord,
+  deleteMemoryEntry,
   dryRunImportMemoryBundleV2,
   exportMemoryBundleV2,
   lightMemoryFileToEntry,
@@ -28,6 +29,7 @@ import {
   packMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
   storedMemoryToEntry,
+  updateMemoryEntry,
   writeActiveEntryToLightMemory,
 } from '../memory/memoryEntryRuntime';
 import {
@@ -40,6 +42,8 @@ import {
 } from '../memory/knowledgeInboxDecision';
 import type {
   MemoryEntry,
+  MemoryEntryDeleteRequest,
+  MemoryEntryUpdateRequest,
   MemoryExportV2Bundle,
   MemoryImportV2ApplyRequest,
   MemoryMirrorRebuildResult,
@@ -518,6 +522,16 @@ async function handleRebuildMemoryMirror(): Promise<MemoryMirrorRebuildResult> {
   return rebuildMemoryMirrorFromLightFiles(getDatabase());
 }
 
+async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promise<Awaited<ReturnType<typeof updateMemoryEntry>>> {
+  if (!payload?.entryId) throw new Error('memory entry update requires entryId');
+  return updateMemoryEntry(getDatabase(), payload);
+}
+
+async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
+  if (!payload?.entryId) throw new Error('memory entry delete requires entryId');
+  return deleteMemoryEntry(getDatabase(), payload);
+}
+
 async function handleMemoryPack(payload: MemoryPackRequest): Promise<Awaited<ReturnType<typeof packMemoryEntries>>> {
   try {
     return await packMemoryEntries(payload || {}, getDatabase());
@@ -541,7 +555,7 @@ async function handleMemoryExportV2(): Promise<MemoryExportV2Bundle> {
 }
 
 async function handleMemoryImportV2DryRun(payload: { bundle?: MemoryExportV2Bundle }): Promise<Awaited<ReturnType<typeof dryRunImportMemoryBundleV2>>> {
-  if (!payload?.bundle || payload.bundle.schemaVersion !== 2) {
+  if (payload?.bundle?.schemaVersion !== 2) {
     throw new Error('memory import v2 requires a schemaVersion 2 bundle');
   }
   try {
@@ -555,7 +569,7 @@ async function handleMemoryImportV2DryRun(payload: { bundle?: MemoryExportV2Bund
 }
 
 async function handleMemoryImportV2Apply(payload: MemoryImportV2ApplyRequest): Promise<Awaited<ReturnType<typeof applyImportMemoryBundleV2>>> {
-  if (!payload?.bundle || payload.bundle.schemaVersion !== 2) {
+  if (payload?.bundle?.schemaVersion !== 2) {
     throw new Error('memory import v2 apply requires a schemaVersion 2 bundle');
   }
   return applyImportMemoryBundleV2(payload.bundle, getDatabase(), {
@@ -819,6 +833,12 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'memoryRebuildMirror':
           data = await handleRebuildMemoryMirror();
           break;
+        case 'memoryEntryUpdate':
+          data = await handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest);
+          break;
+        case 'memoryEntryDelete':
+          data = await handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest);
+          break;
         case 'memoryPack':
           data = await handleMemoryPack(payload as MemoryPackRequest);
           break;
@@ -900,6 +920,12 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryRebuildMirror':
           data = await handleRebuildMemoryMirror();
+          break;
+        case 'memoryEntryUpdate':
+          data = await handleMemoryEntryUpdate(request as unknown as MemoryEntryUpdateRequest);
+          break;
+        case 'memoryEntryDelete':
+          data = await handleMemoryEntryDelete(request as unknown as MemoryEntryDeleteRequest);
           break;
         case 'memoryPack':
           data = await handleMemoryPack(request as MemoryPackRequest);

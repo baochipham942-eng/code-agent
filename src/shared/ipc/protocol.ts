@@ -114,6 +114,8 @@ export type MemoryAction =
   | 'memoryInboxResolve'
   | 'memoryEntries'
   | 'memoryRebuildMirror'
+  | 'memoryEntryUpdate'
+  | 'memoryEntryDelete'
   | 'memoryPack'
   | 'memoryExportV2'
   | 'memoryImportV2DryRun'

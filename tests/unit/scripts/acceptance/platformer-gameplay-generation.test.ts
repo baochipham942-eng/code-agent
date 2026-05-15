@@ -20,6 +20,9 @@ import {
   runBestOfN,
   runAcceptanceLoop,
   diffRegressedChecks,
+  buildGenerationPrompt,
+  buildRepairPrompt,
+  prioritizeFailures,
   type ValidationSummary,
   type GenerateCandidateFn,
   type RoundResult,
@@ -437,5 +440,152 @@ describe('diffRegressedChecks', () => {
       },
     };
     expect(diffRegressedChecks(previous, current)).toEqual(['runtime:stomp']);
+  });
+});
+
+describe('P3 monotonic repair — buildRepairPrompt + prioritizeFailures', () => {
+  it('buildGenerationPrompt is unchanged for round 0 (regression guard)', () => {
+    const p = buildGenerationPrompt('/tmp/x.html');
+    expect(p).toContain('Create a complete single-file browser platformer game');
+    expect(p).toContain('/tmp/x.html');
+    expect(p).not.toContain('Validation failures to fix');
+  });
+
+  it('buildRepairPrompt references the baseline path and instructs minimal Edit, not Write', () => {
+    const prompt = buildRepairPrompt('/tmp/x.html', [
+      'runSmokeTest 未通过',
+      'gameplayMechanics 缺少 runtime 证据：stomp',
+    ]);
+    expect(prompt).toContain('/tmp/x.html');
+    expect(prompt).toContain('failed acceptance validation');
+    expect(prompt).toContain('minimal Edits');
+    expect(prompt).toContain('Do NOT replace the whole file');
+    // Both failures should land in the body.
+    expect(prompt).toContain('runSmokeTest 未通过');
+    expect(prompt).toContain('gameplayMechanics 缺少 runtime 证据：stomp');
+  });
+
+  it('buildRepairPrompt trims a long failure list to 10 entries by priority', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `static-issue-${i}`);
+    const runtimeFailures = [
+      'runSmokeTest 未通过',
+      'gameplayMechanics stomp_enemy: enemiesDefeated did not change',
+      'gameplayMechanics 缺少 runtime 证据: bump_block',
+    ];
+    const prompt = buildRepairPrompt('/tmp/x.html', [...many, ...runtimeFailures]);
+    // The top-N should bring runtime failures forward — even though they were last in input order.
+    expect(prompt).toContain('runSmokeTest 未通过');
+    expect(prompt).toContain('stomp_enemy');
+    expect(prompt).toContain('bump_block');
+    // Header should reflect that we only kept 10.
+    expect(prompt).toContain('top 10 by priority');
+  });
+
+  it('prioritizeFailures sorts runtime mechanic failures ahead of metadata and browser failures', () => {
+    const inputs = [
+      'browser visual smoke: canvas not nonblank in desktop viewport',
+      '__GAME_META__.controls missing key Space',
+      'runSmokeTest stomp_enemy failed: enemiesDefeated did not change',
+      'visual smoke: mobile canvas crop',
+      'gameplayMechanics gate without reachability evidence',
+    ];
+    const sorted = prioritizeFailures(inputs);
+    expect(sorted[0]).toContain('stomp_enemy');
+    expect(sorted[1]).toContain('gate without reachability');
+    // Browser/visual failures land last.
+    const lastTwo = sorted.slice(-2).join(' ');
+    expect(lastTwo).toMatch(/canvas|visual/);
+  });
+});
+
+describe('P3 monotonic repair — runAcceptanceLoop forwards previousFailures', () => {
+  it('round 0 calls generate without previousFailures; round 1 forwards baseline failures', async () => {
+    const artifactPath = await makeArtifactStub();
+    const calls: Array<{ round: number; previousFailures?: string[] }> = [];
+    const generate: GenerateCandidateFn = vi.fn(async ({ round, previousFailures }) => {
+      calls.push({ round, previousFailures });
+      return {
+        generation: { responses: ['ok'], toolCount: 1, errors: [] },
+        artifactPath,
+      };
+    });
+
+    // Round 0 fails with a runtime failure, then round 1 also fails.
+    let n = 0;
+    const validate = async (p: string): Promise<ValidationSummary> => {
+      n += 1;
+      return makeSummary({
+        artifactPath: p,
+        passed: false,
+        runtimePassed: false,
+        browserPassed: true,
+        runtimeChecks: n === 1 ? ['movement'] : ['movement', 'stomp'],
+        runtimeFailures: n === 1 ? ['stomp_enemy: no change', 'bump_block: no change'] : ['bump_block: no change'],
+        browserChecks: ['desktop'],
+        failures: n === 1
+          ? ['runSmokeTest: stomp_enemy failed', 'runSmokeTest: bump_block failed']
+          : ['runSmokeTest: bump_block failed'],
+      });
+    };
+
+    const result = await runAcceptanceLoop({
+      bonN: 1,
+      repairCap: 1,
+      monotonicMode: 'warn',
+      baseArtifactPath: artifactPath,
+      runtimeTimeoutMs: 5000,
+      generate,
+      validate,
+      log: noopLog,
+    });
+
+    expect(result.rounds).toHaveLength(2);
+    expect(calls[0].round).toBe(0);
+    expect(calls[0].previousFailures).toBeUndefined();
+    expect(calls[1].round).toBe(1);
+    // Round 1 should receive round 0's failures so the agent can patch instead of regenerating.
+    expect(calls[1].previousFailures).toEqual([
+      'runSmokeTest: stomp_enemy failed',
+      'runSmokeTest: bump_block failed',
+    ]);
+  });
+
+  it('round 1 falls back to fresh generation when baseline has zero passing checks (unrepairable)', async () => {
+    const artifactPath = await makeArtifactStub();
+    const calls: Array<{ round: number; previousFailures?: string[] }> = [];
+    const generate: GenerateCandidateFn = vi.fn(async ({ round, previousFailures }) => {
+      calls.push({ round, previousFailures });
+      return {
+        generation: { responses: ['ok'], toolCount: 1, errors: [] },
+        artifactPath,
+      };
+    });
+
+    const validate = async (p: string): Promise<ValidationSummary> =>
+      makeSummary({
+        artifactPath: p,
+        passed: false,
+        // No passing checks anywhere → not worth preserving as baseline.
+        runtimeChecks: [],
+        runtimeFailures: ['everything broken'],
+        browserChecks: [],
+        browserFailures: ['canvas blank'],
+        failures: ['Artifact was not written; generation failed: foo'],
+      });
+
+    await runAcceptanceLoop({
+      bonN: 1,
+      repairCap: 1,
+      monotonicMode: 'warn',
+      baseArtifactPath: artifactPath,
+      runtimeTimeoutMs: 5000,
+      generate,
+      validate,
+      log: noopLog,
+    });
+
+    expect(calls[0].previousFailures).toBeUndefined();
+    // Round 1 must NOT inherit a useless baseline — fall back to fresh regeneration.
+    expect(calls[1].previousFailures).toBeUndefined();
   });
 });

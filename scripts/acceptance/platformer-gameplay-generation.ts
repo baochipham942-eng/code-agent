@@ -168,7 +168,7 @@ function resolveReportPath(artifactPath: string, rawPath: string | undefined): s
   return path.isAbsolute(candidate) ? candidate : path.join(projectRoot, candidate);
 }
 
-function buildPrompt(artifactPath: string): string {
+export function buildGenerationPrompt(artifactPath: string): string {
   return [
     `Create a complete single-file browser platformer game at this exact path: ${artifactPath}`,
     '',
@@ -187,15 +187,74 @@ function buildPrompt(artifactPath: string): string {
   ].join('\n');
 }
 
+/**
+ * P3 monotonic-repair prompt. Used for round 1+ when a baseline artifact and
+ * its validation failures are available — instead of regenerating from scratch
+ * (which forfeits anything the baseline already got right to model randomness),
+ * we feed the baseline back and ask for a minimal-diff fix.
+ *
+ * Failure list is trimmed to the top N by priority — runtime mechanic failures
+ * first, then static/metadata, then browser visual — to stay well inside the
+ * system prompt budget.
+ */
+export function buildRepairPrompt(artifactPath: string, failures: string[]): string {
+  const trimmed = prioritizeFailures(failures).slice(0, 10);
+  const failureLines = trimmed.map((f) => `- ${f}`).join('\n');
+  return [
+    `The platformer artifact at this exact path was generated previously but failed acceptance validation:`,
+    `  ${artifactPath}`,
+    '',
+    'Read it first to understand the current state, then fix ONLY the failures listed below by issuing minimal Edits.',
+    '',
+    'Editing rules (non-negotiable):',
+    '- Prefer one Edit per failure, with the narrowest possible old_string.',
+    '- Do NOT rewrite working parts of the file.',
+    '- Do NOT replace the whole file with Write unless the existing file is fundamentally broken (e.g. unparsable HTML).',
+    '- After your Edits the file will be validated again; aim to fix every listed failure without introducing new ones.',
+    '',
+    `Validation failures to fix (top ${trimmed.length} by priority):`,
+    failureLines,
+  ].join('\n');
+}
+
+/**
+ * Order failures so the highest-signal repair targets come first when the list
+ * is trimmed. Runtime mechanic gaps are the load-bearing failures for
+ * `passed: true`; metadata/contract issues are next; browser visual smoke is
+ * usually downstream of those and least worth a slot when the list is full.
+ */
+export function prioritizeFailures(failures: string[]): string[] {
+  const score = (f: string): number => {
+    const lower = f.toLowerCase();
+    if (/runtime|runsmoketest|gameplaymechanics|reachability|stomp|bump|ability|gate|combo/.test(lower)) return 0;
+    if (/metadata|contract|progressplan|qualityplan|__game_meta__|__game_test__|snapshot|step\(/.test(lower)) return 1;
+    if (/browser|visual|canvas|viewport|nonblank|crop|overlap/.test(lower)) return 2;
+    return 3;
+  };
+  return [...failures].sort((a, b) => score(a) - score(b));
+}
+
 async function runAgentGeneration(options: {
   artifactPath: string;
   provider: string;
   model: string;
   apiKey: string;
   generation: string;
+  /**
+   * When provided, switches into P3 monotonic-repair mode: the existing
+   * artifact at `artifactPath` is preserved (not deleted) and the agent gets
+   * a repair prompt that points at the baseline + failure list instead of a
+   * fresh "create from scratch" prompt.
+   */
+  previousFailures?: string[];
 }): Promise<GenerationOutcome> {
   await fs.mkdir(path.dirname(options.artifactPath), { recursive: true });
-  await fs.rm(options.artifactPath, { force: true });
+  const isRepairRound = Array.isArray(options.previousFailures) && options.previousFailures.length > 0;
+  if (!isRepairRound) {
+    // Round 0 / fresh fallback: nuke any stale artifact so the generation
+    // is unambiguous about producing a brand-new file.
+    await fs.rm(options.artifactPath, { force: true });
+  }
 
   const agent = new StandaloneAgentAdapter({
     workingDirectory: projectRoot,
@@ -208,7 +267,10 @@ async function runAgentGeneration(options: {
     toolMode: 'deferred',
   });
 
-  const result = await agent.sendMessage(buildPrompt(options.artifactPath));
+  const prompt = isRepairRound
+    ? buildRepairPrompt(options.artifactPath, options.previousFailures!)
+    : buildGenerationPrompt(options.artifactPath);
+  const result = await agent.sendMessage(prompt);
   await agent.finalizeSession();
   return {
     responses: result.responses,
@@ -314,6 +376,13 @@ export type GenerateCandidateFn = (params: {
   candidateIndex: number;
   artifactPath: string;
   round: number;
+  /**
+   * P3 monotonic repair: when present, the candidate should be produced by
+   * patching the existing artifact at `artifactPath` to fix these failures,
+   * not by regenerating from scratch. Only set for round 1+ where a
+   * non-empty baseline exists.
+   */
+  previousFailures?: string[];
 }) => Promise<{
   generation: GenerationOutcome | null;
   generationError?: string;
@@ -332,6 +401,12 @@ export async function runBestOfN(params: {
   runtimeTimeoutMs: number;
   generate: GenerateCandidateFn;
   validate?: (artifactPath: string, timeoutMs: number) => Promise<ValidationSummary>;
+  /**
+   * P3 monotonic repair: when non-empty, candidates will be produced as
+   * minimal-edit patches of the existing baseline targeting these failures
+   * instead of fresh regenerations.
+   */
+  previousFailures?: string[];
 }): Promise<RoundResult> {
   const validate = params.validate ?? validateArtifact;
   const candidates: CandidateResult[] = [];
@@ -347,6 +422,7 @@ export async function runBestOfN(params: {
         candidateIndex: i,
         artifactPath: params.baseArtifactPath,
         round: params.round,
+        previousFailures: params.previousFailures,
       });
       generation = result.generation;
       generationError = result.generationError;
@@ -475,6 +551,20 @@ export async function runAcceptanceLoop(params: {
   // Repair rounds
   let baselineRound = round0;
   for (let attempt = 1; attempt <= params.repairCap; attempt += 1) {
+    // P3 monotonic repair: hand the baseline's failure list to the next round
+    // so generate() can do a minimal-edit patch instead of a fresh rewrite.
+    // Fallback to fresh regeneration when baseline is too broken to repair from
+    // — empty failure list, only the "artifact missing" sentinel, or zero
+    // passing checks (nothing worth preserving). We still consume a repair
+    // budget slot, but Round 1 then gets a clean shot rather than being forced
+    // to patch a near-empty baseline.
+    const baselineFailures = baselineRound.selected.validation.failures ?? [];
+    const baselineNotRepairable =
+      baselineRound.passCount === 0
+      || baselineFailures.length === 0
+      || baselineFailures.some((f) => /Artifact was not written|does not exist/i.test(f));
+    const previousFailures = baselineNotRepairable ? undefined : baselineFailures;
+
     const round = await runBestOfN({
       bonN: params.bonN,
       round: attempt,
@@ -482,6 +572,7 @@ export async function runAcceptanceLoop(params: {
       runtimeTimeoutMs: params.runtimeTimeoutMs,
       generate: params.generate,
       validate: params.validate,
+      previousFailures,
     });
 
     const regressed = diffRegressedChecks(baselineRound, round);
@@ -755,10 +846,10 @@ async function main(): Promise<void> {
       );
     }
 
-    const generate: GenerateCandidateFn = async () => {
+    const generate: GenerateCandidateFn = async ({ previousFailures }) => {
       try {
         const result = await withTimeout(
-          runAgentGeneration({ artifactPath, provider, model, apiKey, generation }),
+          runAgentGeneration({ artifactPath, provider, model, apiKey, generation, previousFailures }),
           generationTimeoutMs,
           `Agent generation timed out after ${generationTimeoutMs}ms`,
         );

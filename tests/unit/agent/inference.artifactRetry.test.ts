@@ -161,8 +161,6 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
       },
     });
 
@@ -280,7 +278,8 @@ describe('contextAssembly inference artifact retry', () => {
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
-    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: false });
+    // Route A: repair mode is always write-priority — the goal is to patch.
+    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: true });
   });
 
   it('allows validation Bash during artifact repair after a patch exists', async () => {
@@ -298,7 +297,8 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Write', 'Append', 'Bash']);
+    // Route A: post-patch keeps Read alongside the mutation tools and adds Bash.
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
   });
 
   it('seeds artifact repair guard before the first inference from a repair request', async () => {
@@ -323,7 +323,6 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.artifactRepairGuard).toMatchObject({
       targetFile: '/tmp/game.html',
       phase: 'initial_repair',
-      targetReadCount: 0,
       patched: false,
     });
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
@@ -425,7 +424,8 @@ describe('contextAssembly inference artifact retry', () => {
     expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(config.maxTokens).toBe(4096);
     expect(options?.artifactRepairActive).toBe(true);
-    expect(options?.artifactRepairWritePriority).toBe(false);
+    // Route A: repair mode is always write-priority.
+    expect(options?.artifactRepairWritePriority).toBe(true);
   });
 
   it('seeds playability repair mode from user-visible interaction failures', async () => {
@@ -450,7 +450,6 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.artifactRepairGuard).toMatchObject({
       targetFile: '/tmp/game.html',
       phase: 'playability_repair',
-      targetReadCount: 0,
       patched: false,
     });
   });
@@ -461,7 +460,6 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'targeted_repair',
-        blockedToolCount: 1,
       },
     });
 
@@ -473,33 +471,12 @@ describe('contextAssembly inference artifact retry', () => {
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
   });
 
-  it('forces mutation-only tools after repeated repair-guard blocks', async () => {
+  it('keeps the full repair tool set available regardless of attempt count (Route A)', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 3,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        blockedToolCount: 2,
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-  });
-
-  it('keeps Read available after repeated blocks if the target file was never read', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 3,
-        phase: 'targeted_repair',
-        targetReadCount: 0,
-        blockedToolCount: 2,
       },
     });
 
@@ -511,228 +488,12 @@ describe('contextAssembly inference artifact retry', () => {
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
-      artifactRepairWritePriority: false,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('removes Read once the repair read budget is exhausted', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 10,
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    const [, , , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
       artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
+      artifactRepairFullRewritePriority: true,
     });
   });
 
-  it('keeps one ranged Read visible for targeted contract repair after the full target read', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 0,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
-    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: false });
-  });
-
-  it('keeps a second ranged Read visible for coverage evidence repairs', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
-    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: false });
-  });
-
-  it('removes Read after the second targeted ranged anchor read is exhausted', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 4,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('keeps metadata repairs on targeted Edit after the anchor read is exhausted', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 3,
-        activeIssueCodes: ['missing_quality_metadata'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('uses write-priority artifact repair inference once a ranged target read is exhausted', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'targeted_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 1,
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('uses write-priority after targeted issue reads are exhausted', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'targeted_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 4,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('exposes a targeted Read after validation failure seeds the full read budget', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 0,
-        blockedToolCount: 2,
-        noOpPatchCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: false,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('uses write-priority artifact repair inference after repeated repair-guard blocks', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 2,
-        phase: 'targeted_repair',
-        targetReadCount: 10,
-        blockedToolCount: 2,
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('caps artifact repair recovery max tokens before write-priority is needed', async () => {
+  it('caps artifact repair max tokens to the full-rewrite ceiling (Route A)', async () => {
     const ctx = buildCtx({
       modelConfig: {
         provider: 'mock',
@@ -745,7 +506,6 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 0,
         phase: 'playability_repair',
-        targetReadCount: 0,
       },
     } as any);
 
@@ -753,118 +513,10 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, , config, , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(config.maxTokens).toBe(16384);
-    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: false });
-  });
-
-  it('caps targeted artifact repair edit-priority max tokens below full rewrite size', async () => {
-    const ctx = buildCtx({
-      modelConfig: {
-        provider: 'mock',
-        model: 'test-model',
-        apiKey: 'mock-key',
-        temperature: 0,
-        maxTokens: 131072,
-      },
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
-      },
-    } as any);
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, , config, , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(config.maxTokens).toBe(32768);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('removes reads after a no-op repair patch while keeping mutation tools', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    const [, , , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('exposes a targeted Read after an Edit anchor failure so the next patch can use exact context', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 1,
-        blockedToolCount: 2,
-        editAnchorFailureCount: 1,
-        preferTargetedEdit: true,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: false,
-      artifactRepairFullRewritePriority: false,
-    });
-  });
-
-  it('switches to mutation priority after an Edit anchor failure once the ranged read is spent', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 2,
-        phase: 'targeted_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 3,
-        blockedToolCount: 3,
-        editAnchorFailureCount: 1,
-        preferTargetedEdit: true,
-        activeIssueCodes: ['missing_reachability_metadata', 'run_smoke_failed'],
-      },
-    });
-
-    await inference(ctx);
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Edit', 'Append']);
-    expect(options).toMatchObject({
-      artifactRepairActive: true,
-      artifactRepairWritePriority: true,
-      artifactRepairFullRewritePriority: false,
-    });
+    // Route A: repair is always write-priority, so an oversized maxTokens is capped
+    // to the full-rewrite ceiling (the model may need to Write a whole HTML file).
+    expect(config.maxTokens).toBe(65536);
+    expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: true });
   });
 
   it('keeps Read visible after soft-blocks when the target file has not been read successfully', async () => {
@@ -873,11 +525,6 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'initial_repair',
-        targetReadCount: 0,
-        targetRangedReadCount: 1,
-        blockedToolCount: 1,
-        noOpPatchCount: 1,
-        preferTargetedEdit: true,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
     });
@@ -890,8 +537,8 @@ describe('contextAssembly inference artifact retry', () => {
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
-      artifactRepairWritePriority: false,
-      artifactRepairFullRewritePriority: false,
+      artifactRepairWritePriority: true,
+      artifactRepairFullRewritePriority: true,
     });
   });
 
@@ -917,25 +564,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime._networkRetryCount).toBe(0);
   });
 
-  it('does not retry slow provider request timeouts during artifact repair', async () => {
-    const ctx = buildCtx({
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 2,
-        phase: 'targeted_repair',
-      },
-    });
-    ctx.runtime.modelRouter.inference = vi.fn()
-      .mockRejectedValueOnce(new Error('xiaomi request timeout after 90000ms'));
-    ctx.inference = vi.fn(() => inference(ctx));
-
-    await expect(inference(ctx)).rejects.toThrow('xiaomi request timeout after 90000ms');
-
-    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
-    expect(ctx.inference).not.toHaveBeenCalled();
-  });
-
-  it('retries artifact repair write-priority timeout once with compact mutation-only context', async () => {
+  it('retries artifact repair write-priority timeout once with compact repair context', async () => {
     const ctx = buildCtx({
       modelConfig: {
         provider: 'mock',
@@ -948,10 +577,6 @@ describe('contextAssembly inference artifact retry', () => {
         targetFile: '/tmp/game.html',
         attempts: 2,
         phase: 'initial_repair',
-        targetReadCount: 10,
-        targetRangedReadCount: 4,
-        noOpPatchCount: 1,
-        preferTargetedEdit: true,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
     } as any);
@@ -989,7 +614,8 @@ describe('contextAssembly inference artifact retry', () => {
     });
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
     const [, retryTools, retryConfig, retryStream, , retryOptions] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
-    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Edit', 'Append']);
+    // Route A: the repair tool set stays full (Read/Edit/Write/Append) on the retry too.
+    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(retryConfig.maxTokens).toBe(8192);
     expect(retryStream).toBeUndefined();
     expect(retryOptions).toMatchObject({

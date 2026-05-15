@@ -133,18 +133,13 @@ export interface RuntimeContext {
     targetFile: string;
     attempts: number;
     phase: string;
-    blockedToolCount?: number;
+    // Route A loop guard: repair turns since the last successful target-file
+    // mutation. Reaching ARTIFACT_REPAIR_MAX_ATTEMPTS force-stops the repair turn.
+    repairTurnsWithoutProgress?: number;
     lastBlockedTool?: string;
-    targetReadCount?: number;
-    targetRangedReadCount?: number;
     patched?: boolean;
-    noOpPatchCount?: number;
-    editAnchorFailureCount?: number;
-    preferTargetedEdit?: boolean;
     lastFailedPatchFingerprint?: string;
     activeIssueCodes?: string[];
-    lastSuggestedRangedReadWindows?: string[];
-    freshArtifactFullRewrite?: boolean;
   };
 
   // --- Turn tracking ---

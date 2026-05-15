@@ -4,10 +4,6 @@ import { ToolExecutionEngine } from '../../../src/main/agent/runtime/toolExecuti
 import { AntiPatternDetector } from '../../../src/main/agent/antiPattern/detector';
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
 import { fileReadTracker } from '../../../src/main/tools/fileReadTracker';
-import {
-  getArtifactRepairTargetReadBudget,
-  getArtifactRepairTargetRangedReadBudget,
-} from '../../../src/main/agent/runtime/artifactRepairGuard';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -779,8 +775,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'initial_repair',
-        targetReadCount: 0,
-        targetRangedReadCount: 0,
         patched: false,
       },
       antiPatternDetector: {
@@ -852,8 +846,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 0,
         patched: false,
       },
       antiPatternDetector: {
@@ -940,11 +932,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 3,
         phase: 'read_then_patch',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
         patched: false,
-        blockedToolCount: 4,
-        preferTargetedEdit: true,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
       antiPatternDetector: {
@@ -1036,9 +1024,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 4,
         phase: 'read_then_patch',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        blockedToolCount: 4,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
     });
@@ -1118,8 +1103,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 2,
         phase: 'read_then_patch',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
       antiPatternDetector: {
@@ -1777,7 +1760,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 0,
         phase: 'initial_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -1819,8 +1801,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('only changes comments or banner text');
-    expect(blocked.error).toContain('one ranged Read around the contract or metadata block');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
+    expect(blocked.error).toContain('rewrite the full artifact with Write');
     expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -1844,7 +1825,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 0,
         phase: 'read_then_patch',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -1886,7 +1866,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('source probe');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
@@ -1923,7 +1902,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -1965,7 +1943,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('placeholder or probe markers');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
     expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -1989,7 +1966,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2031,7 +2007,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('only adds or changes comments');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
@@ -2054,7 +2029,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2093,7 +2067,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('placeholder text');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
     expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -2149,8 +2122,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
     expect(firstBlocked.success).toBe(false);
     expect(ctx.needsReinference).toBe(true);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(2);
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBeUndefined();
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
     );
@@ -2161,12 +2132,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
     expect(secondBlocked.success).toBe(false);
     expect(ctx.needsReinference).toBe(true);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(3);
+    // Route A: a non-target read stays blocked every time, with the same recovery
+    // guidance — there is no blocked-tool counter that escalates the message.
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenLastCalledWith(
-      expect.stringContaining('Your next action must be Edit or Append on the target HTML file now'),
-    );
-    expect(contextAssembly.pushPersistentSystemContext).toHaveBeenLastCalledWith(
-      expect.stringContaining('duplicate orphaned `start/reset/snapshot/step/runSmokeTest` methods'),
+      expect.stringContaining('Your next action must be Edit, Append, or a complete Write on the target HTML file now'),
     );
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -2309,7 +2278,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
-  it('keeps artifact repair in targeted edit mode after an ambiguous target Edit failure', async () => {
+  it('flags an ambiguous target Edit failure and pushes recovery guidance', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-edit-anchor-failure-'));
     const targetFile = path.join(dir, 'game.html');
     await writeFile(targetFile, '<!doctype html><html><body><script>function step(){} function step(){}</script></body></html>', 'utf-8');
@@ -2328,7 +2297,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
@@ -2367,28 +2335,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(result.success).toBe(false);
     expect(ctx.needsReinference).toBe(true);
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBeUndefined();
-    expect(ctx.artifactRepairGuard?.editAnchorFailureCount).toBe(1);
-    expect(ctx.artifactRepairGuard?.preferTargetedEdit).toBe(true);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(2);
+    // Route A: the edit-anchor failure is still detected and surfaced, it just no
+    // longer escalates guard counters or flips into a "targeted edit" mode.
     expect(result.metadata?.artifactRepairGuard?.editAnchorFailure).toBe(true);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-edit-anchor-failed>'),
     );
-    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('Do not use Write to replace the complete target HTML just because an Edit anchor was ambiguous.'),
-    );
-    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('replace the enclosing `window.__GAME_TEST__ = { ... }` block'),
-    );
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
-    );
-    expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
-      expect.stringContaining('replace a larger unique region'),
-    );
-    expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
-      expect.stringContaining('For coverage_without_runtime_evidence'),
     );
   });
 
@@ -2663,7 +2617,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.artifactRepairGuard).toMatchObject({
       targetFile,
       phase: 'playability_repair',
-      targetReadCount: 1,
     });
     expect(ctx.forceFinalResponseReason).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
@@ -2727,7 +2680,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       targetFile,
       attempts: 0,
       phase: 'initial_repair',
-      targetReadCount: 1,
       patched: false,
     });
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
@@ -2739,860 +2691,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blockedValidatorRead.success).toBe(false);
     expect(blockedValidatorRead.error).toContain('Read is limited to the target artifact file during repair');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('exhausts target-file read budget during artifact repair and then forces patching', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-read-budget-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, '<!doctype html><html><body></body></html>', 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const initialGuard = {
-      targetFile,
-      attempts: 0,
-      phase: 'initial_repair',
-      blockedToolCount: 1,
-    };
-    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        ...initialGuard,
-        targetReadCount: readBudget - 1,
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [allowedRead] = await engine.executeToolsWithHooks([
-      makeToolCall('repair-read-target-1', targetFile),
-    ]);
-    expect(allowedRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
-
-    vi.mocked(toolExecutor.execute).mockClear();
-    const [blockedRead] = await engine.executeToolsWithHooks([
-      makeToolCall('repair-read-target-2', targetFile),
-    ]);
-    expect(blockedRead.success).toBe(false);
-    expect(blockedRead.error).toContain('Target-file read budget is exhausted');
-    expect(blockedRead.error).toContain('ranged target read');
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(2);
-    expect(ctx.needsReinference).toBe(true);
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('blocks ranged target-file reads after the configured artifact repair ranged-read budget is exhausted', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-ranged-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, '<!doctype html><html><body></body></html>', 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const initialGuard = {
-      targetFile,
-      attempts: 0,
-      phase: 'read_then_patch',
-      blockedToolCount: 2,
-    };
-    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
-    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        ...initialGuard,
-        targetReadCount: readBudget,
-        targetRangedReadCount: rangedReadBudget - 1,
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [allowedRangeRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-read-target-range',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 820,
-          limit: 120,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(allowedRangeRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
-
-    vi.mocked(toolExecutor.execute).mockClear();
-    const [blockedSecondRangeRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-read-target-range-2',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 960,
-          limit: 120,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedSecondRangeRead.success).toBe(false);
-    expect(blockedSecondRangeRead.error).toContain('Target-file ranged read budget is exhausted');
-    expect(blockedSecondRangeRead.error).toContain('patch the target file now');
-    expect(blockedSecondRangeRead.error).toContain('Do not read level definitions or validator code');
-    expect(blockedSecondRangeRead.error).toContain('remove any duplicate orphaned contract methods');
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('counts embedded lines target-file reads against the ranged read budget', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-lines-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, '<!doctype html><html><body></body></html>', 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const initialGuard = {
-      targetFile,
-      attempts: 0,
-      phase: 'read_then_patch',
-      blockedToolCount: 2,
-    };
-    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
-    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        ...initialGuard,
-        targetReadCount: readBudget,
-        targetRangedReadCount: rangedReadBudget - 1,
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [allowedLinesRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-read-target-lines',
-        name: 'Read',
-        arguments: {
-          file_path: `${targetFile} lines 820-940`,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(allowedLinesRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetReadCount).toBe(readBudget);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
-
-    vi.mocked(toolExecutor.execute).mockClear();
-    const [blockedSecondLinesRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-read-target-lines-2',
-        name: 'Read',
-        arguments: {
-          file_path: `${targetFile} lines 940-1080`,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedSecondLinesRead.success).toBe(false);
-    expect(blockedSecondLinesRead.error).toContain('Target-file ranged read budget is exhausted');
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('blocks coverage evidence ranged reads after the configured repair ranged-read budget is exhausted', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-coverage-ranged-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, [
-      '<!doctype html><html><body><script>',
-      ...Array.from({ length: 40 }, (_, index) => `const filler${index} = ${index};`),
-      'const State = { abilities: { dash: false }, collectedTreats: 0 };',
-      'function update() {',
-      '  for (const t of treats) {',
-      '    if (t.ability) State.abilities[t.ability] = true;',
-      '  }',
-      '}',
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { for (let i = 0; i < frames; i += 1) update(); return this.snapshot(); },',
-      '  snapshot() { return { abilities: { ...State.abilities }, collectedTreats: State.collectedTreats }; },',
-      '  runSmokeTest() { return { passed: false, failures: [], coverage: {} }; }',
-      '};',
-      '</script></body></html>',
-    ].join('\n'), 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const initialGuard = {
-      targetFile,
-      attempts: 0,
-      phase: 'initial_repair',
-      activeIssueCodes: ['coverage_without_runtime_evidence'],
-    };
-    const readBudget = getArtifactRepairTargetReadBudget(initialGuard);
-    const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(initialGuard);
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        ...initialGuard,
-        targetReadCount: readBudget,
-        targetRangedReadCount: rangedReadBudget - 1,
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [allowedSecondRangeRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-read-target-range-2',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 42,
-          limit: 20,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(allowedSecondRangeRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(rangedReadBudget);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
-
-    vi.mocked(toolExecutor.execute).mockClear();
-    const [blockedThirdRangeRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-read-target-range-3',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 70,
-          limit: 100,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedThirdRangeRead.success).toBe(false);
-    expect(blockedThirdRangeRead.error).toContain('Target-file ranged read budget is exhausted');
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('blocks unrelated ranged target-file reads during coverage evidence repair', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-unrelated-ranged-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, [
-      '<!doctype html><html><body><script>',
-      'const title = "Corgi Platformer";',
-      'const State = {',
-      '  mode: "menu", // menu | playing | won | levelComplete',
-      '  abilities: { dash: false },',
-      '};',
-      'const Player = {',
-      '  update(dt, platforms) {',
-      '    for (const p of platforms) {',
-      '      if (this.overlaps(p)) this.y = p.y;',
-      '    }',
-      '  },',
-      '  overlaps(other) { return Boolean(other); },',
-      '};',
-      ...Array.from({ length: 80 }, (_, index) => `const headerFiller${index} = ${index};`),
-      'function update() {',
-      '  for (const t of treats) {',
-      '    if (t.ability) State.abilities[t.ability] = true;',
-      '  }',
-      '}',
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { for (let i = 0; i < frames; i += 1) update(); return this.snapshot(); },',
-      '  snapshot() { return { abilities: { ...State.abilities }, collectedTreats: State.collectedTreats }; },',
-      '  runSmokeTest() { return { passed: false, failures: [], coverage: {} }; }',
-      '};',
-      '</script></body></html>',
-    ].join('\n'), 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [blockedHeaderRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-read-target-header',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 1,
-          limit: 5,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedHeaderRead.success).toBe(false);
-    expect(blockedHeaderRead.error).toContain('does not overlap the active validation failure scope');
-    expect(blockedHeaderRead.error).toContain('runtime update / collision evidence');
-    expect(blockedHeaderRead.error).toContain('patch the target file with Edit or Append');
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(1);
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('blocks header reads after a contract read even when early object methods look executable', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-header-method-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, [
-      '<!doctype html><html><body><script>',
-      'const State = {',
-      '  mode: "menu", // menu | playing | won | levelComplete',
-      '  abilities: { dash: false },',
-      '};',
-      'const Player = {',
-      '  update(dt, platforms) {',
-      '    for (const p of platforms) {',
-      '      if (this.overlaps(p)) this.y = p.y;',
-      '    }',
-      '  },',
-      '  overlaps(other) { return Boolean(other); },',
-      '};',
-      ...Array.from({ length: 120 }, (_, index) => `const headerFiller${index} = ${index};`),
-      'function update() {',
-      '  for (const t of treats) {',
-      '    if (Player.overlaps(t)) {',
-      '      t.collected = true;',
-      '      State.score += 10;',
-      '      if (t.ability) State.abilities[t.ability] = true;',
-      '    }',
-      '  }',
-      '}',
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { for (let i = 0; i < frames; i += 1) update(); return this.snapshot(); },',
-      '  snapshot() { return { abilities: { ...State.abilities }, score: State.score }; },',
-      '  runSmokeTest() { return { passed: false, failures: [], coverage: {} }; }',
-      '};',
-      '</script></body></html>',
-    ].join('\n'), 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [blockedHeaderRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-read-target-header-after-contract',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 1,
-          limit: 100,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedHeaderRead.success).toBe(false);
-    expect(blockedHeaderRead.error).toContain('does not overlap the active validation failure scope');
-    expect(blockedHeaderRead.error).toContain('runtime update / collision evidence');
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(1);
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-
-    const [allowedRuntimeRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-read-runtime-after-blocked-header',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 130,
-          limit: 40,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(allowedRuntimeRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(2);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not spend the second coverage ranged read on static level definitions', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-static-level-read-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, [
-      '<!doctype html><html><body><script>',
-      ...Array.from({ length: 80 }, (_, index) => `const headerFiller${index} = ${index};`),
-      'const Levels = [{',
-      '  name: "Green Meadow",',
-      '  treats: [{ x: 230, y: 190, ability: "doubleJump" }],',
-      '  enemies: [{ x: 360, y: 370 }],',
-      '  door: { x: 740, y: 228 }',
-      '}];',
-      ...Array.from({ length: 120 }, (_, index) => `const midFiller${index} = ${index};`),
-      'function update() {',
-      '  for (const t of treats) {',
-      '    if (Player.overlaps(t)) {',
-      '      t.collected = true;',
-      '      State.score += 10;',
-      '      if (t.ability) State.abilities[t.ability] = true;',
-      '    }',
-      '  }',
-      '}',
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { for (let i = 0; i < frames; i += 1) update(); return this.snapshot(); },',
-      '  snapshot() { return { abilities: { ...State.abilities }, score: State.score }; },',
-      '  runSmokeTest() { return { passed: false, failures: [], coverage: {} }; }',
-      '};',
-      '</script></body></html>',
-    ].join('\n'), 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [blockedLevelRead] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-coverage-static-level-read',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 82,
-          limit: 20,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(blockedLevelRead.success).toBe(false);
-    expect(blockedLevelRead.error).toContain('does not overlap the active validation failure scope');
-    expect(blockedLevelRead.error).toContain('runtime update / collision evidence');
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(1);
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it('blocks static level reads without starving a later runtime read in the same repair turn', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-read-priority-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, [
-      '<!doctype html><html><body><script>',
-      ...Array.from({ length: 80 }, (_, index) => `const headerFiller${index} = ${index};`),
-      'const Levels = [{',
-      '  name: "Green Meadow",',
-      '  treats: [{ x: 230, y: 190, ability: "doubleJump" }],',
-      '  enemies: [{ x: 360, y: 370 }],',
-      '  door: { x: 740, y: 228 }',
-      '}];',
-      ...Array.from({ length: 120 }, (_, index) => `const midFiller${index} = ${index};`),
-      'function update() {',
-      '  for (const t of treats) {',
-      '    if (Player.overlaps(t)) {',
-      '      t.collected = true;',
-      '      State.score += 10;',
-      '      if (t.ability) State.abilities[t.ability] = true;',
-      '    }',
-      '  }',
-      '}',
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { for (let i = 0; i < frames; i += 1) update(); return this.snapshot(); },',
-      '  snapshot() { return { abilities: { ...State.abilities }, score: State.score }; },',
-      '  runSmokeTest() { return { passed: false, failures: [], coverage: {} }; }',
-      '};',
-      '</script></body></html>',
-    ].join('\n'), 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: `${name} ok`,
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 0,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const results = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-contract-read',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 218,
-          limit: 30,
-        },
-      } as ToolCall,
-      {
-        id: 'repair-static-level-read',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 82,
-          limit: 20,
-        },
-      } as ToolCall,
-      {
-        id: 'repair-runtime-read',
-        name: 'Read',
-        arguments: {
-          file_path: targetFile,
-          offset: 202,
-          limit: 30,
-        },
-      } as ToolCall,
-    ]);
-
-    expect(results).toHaveLength(3);
-    expect(results[0].success).toBe(true);
-    expect(results[1].success).toBe(false);
-    expect(results[1].error).toContain('does not overlap the active validation failure scope');
-    expect(results[2].success).toBe(true);
-    expect(ctx.artifactRepairGuard?.targetRangedReadCount).toBe(2);
-    expect(ctx.artifactRepairGuard?.preferTargetedEdit).toBe(true);
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
-    expect(toolExecutor.execute).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps repair read budget exhausted after failed artifact validation', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-budget-carry-'));
-    const targetFile = path.join(dir, 'game.html');
-    const originalContent = `
-      <!doctype html>
-      <html><body><canvas id="game"></canvas><script>
-      window.__GAME_META__ = { domain: 'game', controls: { right: 'ArrowRight' }, levels: [{ id: 1 }], progressPlan: [{ input: 'ArrowRight', metric: 'progress', expect: 'increase' }] };
-      window.__GAME_TEST__ = {
-        start() { return {}; },
-        snapshot() { return { progress: 0 }; },
-        runSmokeTest() { return { passed: false, failures: ['still broken'], checks: [] }; }
-      };
-      </script></body></html>
-    `;
-    await writeFile(targetFile, originalContent, 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: 'write ok',
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 0,
-        phase: 'initial_repair',
-        targetReadCount: 1,
-        blockedToolCount: 2,
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [result] = await engine.executeToolsWithHooks([
-      {
-        id: 'repair-real-edit-still-fails',
-        name: 'Edit',
-        arguments: {
-          file_path: targetFile,
-          edits: [{
-            old_text: 'snapshot() { return { progress: 0 }; }',
-            new_text: 'snapshot() { return { progress: 1 }; }',
-          }],
-        },
-      } as ToolCall,
-    ]);
-    const exhaustedReadBudget = getArtifactRepairTargetReadBudget({
-      targetFile,
-      attempts: 1,
-      phase: 'baseline_repair',
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Artifact validation failed');
-    expect(ctx.artifactRepairGuard).toMatchObject({
-      targetFile,
-      targetReadCount: exhaustedReadBudget,
-      blockedToolCount: 2,
-      noOpPatchCount: 1,
-      patched: false,
-    });
-    expect(result.metadata).toMatchObject({
-      artifactRepairRollback: {
-        attempted: true,
-        applied: true,
-        targetFile,
-      },
-    });
-    expect(result.error).toContain('rolled back');
-    expect(await import('fs/promises').then((fs) => fs.readFile(targetFile, 'utf-8'))).toBe(originalContent);
-    expect(fileReadTracker.hasBeenRead(targetFile)).toBe(true);
-    const trackedRecord = fileReadTracker.getReadRecord(targetFile);
-    const stats = await import('fs/promises').then((fs) => fs.stat(targetFile));
-    expect(trackedRecord?.mtime).toBe(stats.mtimeMs);
-    expect(trackedRecord?.size).toBe(stats.size);
   });
 
   it('blocks repeating the same failed artifact repair Edit after rollback', async () => {
@@ -3636,9 +2734,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        blockedToolCount: 1,
-        noOpPatchCount: 0,
         lastFailedPatchFingerprint: 'placeholder',
       },
       antiPatternDetector: {
@@ -3687,8 +2782,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('repeats the same target-file patch');
     expect(result.metadata?.artifactRepairGuard?.repeatedFailedPatch).toBe(true);
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(2);
     expect(ctx.needsReinference).toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -3743,9 +2836,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        blockedToolCount: 2,
-        noOpPatchCount: 1,
         activeIssueCodes: ['malformed_test_contract'],
       },
       antiPatternDetector: {
@@ -3818,9 +2908,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        blockedToolCount: 1,
-        noOpPatchCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
       antiPatternDetector: {
@@ -3864,78 +2951,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('coverage_without_runtime_evidence');
     expect(result.error).toContain('Do not spend a repair attempt changing unrelated start/reset/UI code');
-    expect(ctx.artifactRepairGuard?.noOpPatchCount).toBe(1);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(3);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
     );
-  });
-
-  it('blocks full artifact Write during targeted contract repair', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-targeted-write-'));
-    const targetFile = path.join(dir, 'game.html');
-    await writeFile(targetFile, `
-      <!doctype html>
-      <html><body><canvas id="game"></canvas><script>
-      window.__GAME_TEST__ = {
-        start() { return { mode: 'playing' }; },
-        snapshot() { return { playerX: 0, mode: 'playing' }; },
-        runSmokeTest() { return { passed: false, checks: [], failures: ['coverage'], coverage: {} }; }
-      };
-      </script></body></html>
-    `, 'utf-8');
-
-    const toolExecutor = {
-      execute: vi.fn(async (): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: 'written',
-      })),
-    };
-    const ctx = makeRuntimeContext({
-      toolExecutor: toolExecutor as never,
-      workingDirectory: dir,
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-      },
-      antiPatternDetector: {
-        trackToolFailure: vi.fn(),
-        clearToolFailure: vi.fn(),
-        trackDuplicateCall: vi.fn(),
-        trackFileReread: vi.fn(),
-        trackToolExecution: vi.fn().mockReturnValue(null),
-        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
-        generateHardLimitError: vi.fn(),
-      } as never,
-    });
-    const contextAssembly = {
-      injectSystemMessage: vi.fn(),
-      pushPersistentSystemContext: vi.fn(),
-      getCurrentAttachments: vi.fn().mockReturnValue([]),
-    };
-    const runFinalizer = { emitTaskProgress: vi.fn() };
-    const conversationRuntime = {
-      setPlanMode: vi.fn(),
-      isPlanMode: vi.fn().mockReturnValue(false),
-      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
-    };
-    const engine = new ToolExecutionEngine(ctx);
-    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
-
-    const [result] = await engine.executeToolsWithHooks([
-      makeCompleteHtmlWriteToolCall('repair-targeted-write', targetFile),
-    ]);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Write would replace the complete artifact during a targeted contract/metadata repair');
-    expect(ctx.artifactRepairGuard?.preferTargetedEdit).toBe(true);
-    expect(ctx.artifactRepairGuard?.blockedToolCount).toBe(3);
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
   it('allows complete artifact Write for structural platformer gameplay repair', async () => {
@@ -3977,9 +2996,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
           targetFile,
           attempts: 1,
           phase: 'targeted_repair',
-          targetReadCount: 1,
-          blockedToolCount: 2,
-          noOpPatchCount: 1,
           activeIssueCodes: ['gameplay_mechanics_without_runtime_evidence'],
         },
         antiPatternDetector: {
@@ -4012,7 +3028,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
       expect(toolExecutor.execute).toHaveBeenCalled();
       expect(result.error || '').not.toContain('Write would replace the complete artifact during a targeted contract/metadata repair');
-      expect(ctx.artifactRepairGuard?.preferTargetedEdit).not.toBe(true);
     } finally {
       if (typeof oldChromePath === 'undefined') delete process.env.CHROME_PATH;
       else process.env.CHROME_PATH = oldChromePath;
@@ -4056,8 +3071,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
       antiPatternDetector: {
@@ -4137,8 +3150,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
         activeIssueCodes: ['malformed_test_contract'],
       },
       antiPatternDetector: {
@@ -4211,8 +3222,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
       antiPatternDetector: {
@@ -4298,7 +3307,6 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
       },
       antiPatternDetector: {
         trackToolFailure: vi.fn(),

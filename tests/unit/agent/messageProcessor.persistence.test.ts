@@ -350,8 +350,6 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        blockedToolCount: 0,
-        targetReadCount: 1,
         patched: false,
       },
       nudgeManager: {
@@ -718,8 +716,6 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'playability_repair',
-        blockedToolCount: 0,
-        targetReadCount: 1,
         patched: false,
       },
       nudgeManager: {
@@ -906,8 +902,6 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        blockedToolCount: 0,
-        targetReadCount: 1,
         patched: false,
       },
       nudgeManager: {
@@ -967,9 +961,8 @@ describe('MessageProcessor persistence', () => {
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
     );
-    expect(ctx.artifactRepairGuard.blockedToolCount).toBe(1);
+    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(1);
     expect(ctx.artifactRepairGuard.lastBlockedTool).toBe('Read');
-    expect(ctx.artifactRepairGuard.noOpPatchCount).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toHaveLength(2);
     expect(ctx.messages[0]).toMatchObject({
@@ -986,7 +979,7 @@ describe('MessageProcessor persistence', () => {
             blocked: true,
             unavailableTool: true,
             targetFile: '/tmp/game.html',
-            blockedToolCount: 1,
+            repairTurnsWithoutProgress: 1,
           }),
         },
       }],
@@ -1037,8 +1030,6 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        blockedToolCount: 2,
-        targetReadCount: 1,
         patched: false,
       },
       nudgeManager: {
@@ -1141,8 +1132,6 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        blockedToolCount: 2,
-        targetReadCount: 1,
         patched: false,
       },
       nudgeManager: {
@@ -1226,8 +1215,7 @@ describe('MessageProcessor persistence', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        blockedToolCount: 1,
-        targetReadCount: 1,
+        repairTurnsWithoutProgress: 1,
         patched: false,
       },
       nudgeManager: {
@@ -1277,9 +1265,10 @@ describe('MessageProcessor persistence', () => {
       { endSpan: vi.fn() },
     );
 
+    // Route A: an unavailable-tool turn bumps repairTurnsWithoutProgress, but the
+    // hard stop only fires once it reaches ARTIFACT_REPAIR_MAX_ATTEMPTS (4).
     expect(action).toBe('continue');
-    expect(ctx.artifactRepairGuard.blockedToolCount).toBe(2);
-    expect(ctx.artifactRepairGuard.noOpPatchCount).toBe(1);
+    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(2);
     expect(ctx.forceFinalResponseReason).toBeUndefined();
     expect(ctx.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
@@ -1294,12 +1283,100 @@ describe('MessageProcessor persistence', () => {
             blocked: true,
             unavailableTool: true,
             targetFile: '/tmp/game.html',
-            blockedToolCount: 2,
-            noOpPatchCount: 1,
+            repairTurnsWithoutProgress: 2,
           }),
         },
       }],
     });
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
+
+  it('force-stops the artifact repair attempt once the no-progress counter hits the limit', async () => {
+    const ctx = {
+      sessionId: 'runtime-session-stop',
+      messages: [] as never[],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined as string | undefined,
+      forceFinalResponsePrompt: undefined as string | undefined,
+      needsReinference: false,
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      antiScrapingHitsInRun: 0,
+      toolsUsedInTurn: [],
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 1,
+        phase: 'baseline_repair',
+        repairTurnsWithoutProgress: 3,
+        patched: false,
+      },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1')
+        .mockReturnValueOnce('final-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => []),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: 'read the validator again',
+        toolCalls: [{ id: 'tool-1', name: 'Read', arguments: { file_path: '/tmp/validator.ts' } }],
+        runtimeDiagnostics: {
+          visibleToolNames: ['Edit', 'Write', 'Append'],
+        },
+      } as ModelResponse,
+      false,
+      4,
+      { endSpan: vi.fn() },
+    );
+
+    // repairTurnsWithoutProgress 3 -> 4 reaches ARTIFACT_REPAIR_MAX_ATTEMPTS, so the
+    // turn is force-stopped instead of re-inferred.
+    expect(action).toBe('break');
+    expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(4);
+    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({ code: 'artifact_repair_admission_stop' }),
+      }),
+    );
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
 });

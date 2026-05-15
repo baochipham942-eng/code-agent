@@ -101,12 +101,11 @@ import type { ConversationRuntime } from './conversationRuntime';
 import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './artifactRepairSpec';
 import type { ArtifactRepairIssueCode } from './artifactRepairSpec';
 import {
-  getArtifactRepairTargetReadBudget,
-  getArtifactRepairTargetRangedReadBudget,
   isSameArtifactRepairPath,
   seedArtifactRepairGuardFromContext,
-  shouldAllowFullArtifactRewriteDuringRepair,
 } from './artifactRepairGuard';
+import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { detectStructuredToolFailure } from './toolResultNormalization';
 import { validateGameArtifact } from './gameArtifactValidator';
 import type { BrowserVisualSmokeSummary } from './browser/types';
@@ -194,24 +193,6 @@ function parseNumericReadArg(value: unknown): number | null {
     return Number.isFinite(parsed) ? Math.max(1, parsed) : null;
   }
   return null;
-}
-
-function extractReadLineRange(toolCall: Pick<ToolCall, 'arguments'>): { start: number; end: number } | null {
-  const offset = parseNumericReadArg(toolCall.arguments?.offset);
-  const limit = parseNumericReadArg(toolCall.arguments?.limit);
-  if (offset !== null || limit !== null) {
-    const start = offset ?? 1;
-    const end = limit !== null ? start + Math.max(1, limit) - 1 : start + 199;
-    return { start, end };
-  }
-
-  const rawPath = toolCall.arguments?.file_path || toolCall.arguments?.path;
-  if (typeof rawPath !== 'string') return null;
-  const linesMatch = rawPath.match(/\slines?\s+(\d+)(?:-(\d+))?$/i);
-  if (!linesMatch) return null;
-  const start = Math.max(1, Number.parseInt(linesMatch[1] || '1', 10));
-  const end = Math.max(start, Number.parseInt(linesMatch[2] || String(start + 199), 10));
-  return { start, end };
 }
 
 function stripEmbeddedReadParams(rawPath: string): string {
@@ -902,194 +883,9 @@ function detectArtifactRepairContractStructureRisk(
   return null;
 }
 
-type ArtifactRepairReadWindow = {
-  label: string;
-  start: number;
-  end: number;
-  required: boolean;
-  kind: 'contract' | 'runtime' | 'mutation' | 'metadata';
-};
-
-function lineMatchesArtifactRepairWindow(line: string, pattern: RegExp): boolean {
-  pattern.lastIndex = 0;
-  return pattern.test(line);
-}
-
-function findArtifactRepairReadWindowsForPattern(
-  lines: string[],
-  label: string,
-  pattern: RegExp,
-  before: number,
-  after: number,
-  required: boolean,
-  kind: ArtifactRepairReadWindow['kind'],
-): ArtifactRepairReadWindow[] {
-  const windows: ArtifactRepairReadWindow[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!lineMatchesArtifactRepairWindow(lines[index] || '', pattern)) continue;
-    windows.push({
-      label,
-      start: Math.max(1, index + 1 - before),
-      end: Math.min(lines.length, index + 1 + after),
-      required,
-      kind,
-    });
-  }
-  return windows;
-}
-
-function mergeArtifactRepairReadWindows(windows: ArtifactRepairReadWindow[]): ArtifactRepairReadWindow[] {
-  const sorted = [...windows].sort((a, b) => a.start - b.start || a.end - b.end);
-  const merged: ArtifactRepairReadWindow[] = [];
-
-  for (const window of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous?.kind !== window.kind || window.start > previous.end + 30) {
-      merged.push({ ...window });
-      continue;
-    }
-    previous.end = Math.max(previous.end, window.end);
-    previous.required = previous.required || window.required;
-    if (!previous.label.includes(window.label)) {
-      previous.label = `${previous.label}, ${window.label}`;
-    }
-  }
-
-  return merged;
-}
-
-function getArtifactRepairRelevantReadWindows(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
-): ArtifactRepairReadWindow[] {
-  const issueCodes = guard.activeIssueCodes || [];
-  if (issueCodes.length === 0 || !existsSync(guard.targetFile)) return [];
-
-  let content = '';
-  try {
-    content = readFileSync(guard.targetFile, 'utf-8');
-  } catch {
-    return [];
-  }
-  const lines = content.split('\n');
-  const windows: ArtifactRepairReadWindow[] = [];
-
-  if (
-    issueCodes.includes('coverage_without_runtime_evidence')
-    || issueCodes.includes('shortcut_state_mutation')
-    || issueCodes.includes('missing_test_contract')
-  ) {
-    windows.push(
-      ...findArtifactRepairReadWindowsForPattern(
-        lines,
-        'test contract / runSmokeTest',
-        /window\.__(?:GAME|INTERACTIVE)_TEST__|runSmokeTest\s*\(|step\s*\(/,
-        20,
-        220,
-        true,
-        'contract',
-      ),
-    );
-  }
-
-  if (
-    issueCodes.includes('coverage_without_runtime_evidence')
-    || issueCodes.includes('shortcut_state_mutation')
-    || issueCodes.includes('malformed_test_contract')
-  ) {
-    windows.push(
-      ...findArtifactRepairReadWindowsForPattern(
-        lines,
-        'runtime update / collision evidence',
-        /(?:^|[;{}\n]\s*)function\s+(?:update|updateGame|updatePlayer|check\w*Collision|handle\w*Collision|collect\w*|complete\w*Level|stomp\w*)\b|\b(?:requestAnimationFrame|setInterval)\s*\(|\bPlayer\.update\s*\(/i,
-        24,
-        140,
-        false,
-        'runtime',
-      ),
-      ...findArtifactRepairReadWindowsForPattern(
-        lines,
-        'runtime reward / ability / hazard mutation evidence',
-        /^\s*(?!\/\/|\/\*|\*|<!--)(?:State\.(?:abilities|currentAbility|collectedTreats|score|lives|mode)\b[^;]*(?:=|\+\+|--)|(?:\w+\.)?collected\s*=|if\s*\([^)]*\boverlaps\s*\(|(?:this|\w+)\.(?:die|hurt|stomp\w*|complete\w*Level)\s*\(|\bcomplete\w*Level\s*\()/i,
-        18,
-        90,
-        false,
-        'mutation',
-      ),
-    );
-  }
-
-  if (
-    issueCodes.includes('missing_controls_metadata')
-    || issueCodes.includes('missing_coverage_metadata')
-    || issueCodes.includes('missing_reachability_metadata')
-    || issueCodes.includes('missing_quality_metadata')
-  ) {
-    windows.push(
-      ...findArtifactRepairReadWindowsForPattern(
-        lines,
-        'metadata / acceptance contract',
-        /window\.__(?:GAME|INTERACTIVE)_META__|controls\s*:|progressPlan\s*:|reachability\s*:|qualityPlan\s*:|acceptance\s*:/i,
-        28,
-        120,
-        true,
-        'metadata',
-      ),
-    );
-  }
-
-  return mergeArtifactRepairReadWindows(windows);
-}
-
-function formatArtifactRepairReadWindows(windows: ArtifactRepairReadWindow[]): string[] {
-  return windows.slice(0, 6).map((window) => {
-    const limit = Math.max(1, Math.min(220, window.end - window.start + 1));
-    return `- ${window.label}: Read offset ${window.start} limit ${limit}`;
-  });
-}
-
-function validateArtifactRepairRangedReadScope(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
-  toolCall: Pick<ToolCall, 'arguments'>,
-): string | null {
-  const range = extractReadLineRange(toolCall);
-  if (!range) return null;
-  const windows = getArtifactRepairRelevantReadWindows(guard);
-  if (windows.length === 0) return null;
-
-  const issueCodes = guard.activeIssueCodes || [];
-  const preferRuntimeWindows =
-    (guard.targetRangedReadCount ?? 0) > 0
-    && (
-      issueCodes.includes('coverage_without_runtime_evidence')
-      || issueCodes.includes('shortcut_state_mutation')
-    );
-  const preferredWindows = preferRuntimeWindows
-    ? windows.filter((window) => window.kind === 'runtime')
-    : windows.filter((window) => window.required);
-  const activeWindows = preferredWindows.length > 0 ? preferredWindows : windows;
-  const overlaps = activeWindows.some((window) => range.end >= window.start && range.start <= window.end);
-  if (overlaps) {
-    guard.lastSuggestedRangedReadWindows = formatArtifactRepairReadWindows(activeWindows);
-    return null;
-  }
-
-  const suggestedWindows = activeWindows;
-  const suggestions = formatArtifactRepairReadWindows(suggestedWindows);
-  guard.lastSuggestedRangedReadWindows = suggestions;
-  return [
-    `Artifact repair mode is active for ${guard.targetFile}.`,
-    '<soft-block reason="artifact_repair_unrelated_ranged_read">',
-    `The requested ranged Read (${range.start}-${range.end}) does not overlap the active validation failure scope (${(guard.activeIssueCodes || []).join(', ') || 'unknown'}).`,
-    'Use the target-file evidence already in context, or read one of these relevant windows:',
-    ...suggestions,
-    'Then patch the target file with Edit or Append. Do not spend the repair pass reading file headers, unrelated level definitions, or validator code.',
-    '</soft-block>',
-  ].join('\n');
-}
-
-function isSoftArtifactRepairToolBlock(blockMessage: string): boolean {
-  return /<soft-block\b[^>]*reason=["']artifact_repair_unrelated_ranged_read["']/i.test(blockMessage);
-}
+// Route A: the ranged-read scope/window machinery is gone — the target artifact
+// is fully readable during repair, so there is no need to compute "relevant
+// windows" or soft-block unrelated ranged reads.
 
 function isWriteTool(toolName: string): boolean {
   return toolName === 'write_file' || toolName === 'Write';
@@ -1123,22 +919,6 @@ function looksLikeCompleteHtmlArtifact(content: string): boolean {
 
 function exposesInteractiveArtifactContract(content: string): boolean {
   return /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=/i.test(content);
-}
-
-function isTargetedEditPreferredArtifactRepair(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
-): boolean {
-  if (shouldAllowFullArtifactRewriteDuringRepair(guard)) return false;
-  if (guard.preferTargetedEdit) return true;
-  const issueCodes = guard.activeIssueCodes || [];
-  return issueCodes.some((code) =>
-    code === 'coverage_without_runtime_evidence'
-    || code === 'shortcut_state_mutation'
-    || code === 'missing_controls_metadata'
-    || code === 'missing_coverage_metadata'
-    || code === 'missing_reachability_metadata'
-    || code === 'missing_quality_metadata',
-  );
 }
 
 function detectArtifactRepairNoOpPatch(toolCall: Pick<ToolCall, 'name' | 'arguments'>): string | null {
@@ -1484,79 +1264,35 @@ function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCall): st
   const readPath = extractReadFilePath(toolCall);
   if (readPath) {
     if (isSameArtifactRepairPath(ctx, readPath, guard.targetFile)) {
-      if (isRangedReadToolCall(toolCall)) {
-        const rangedReadBudget = getArtifactRepairTargetRangedReadBudget(guard);
-        const rangedReadCount = guard.targetRangedReadCount ?? 0;
-        if (rangedReadCount >= rangedReadBudget) {
-          return [
-            `Artifact repair mode is active for ${guard.targetFile}.`,
-            `Target-file ranged read budget is exhausted for this ${guard.phase} pass (${rangedReadCount}/${rangedReadBudget}).`,
-            'Use the exact contract snippet already in context, then patch the target file now with Edit or Append.',
-            ...(guard.lastSuggestedRangedReadWindows?.length
-              ? [
-                  'Previously suggested relevant target windows were:',
-                  ...guard.lastSuggestedRangedReadWindows,
-                ]
-              : []),
-            'Do not read level definitions or validator code; replace the full window.__GAME_TEST__ block if needed, and remove any duplicate orphaned contract methods after it.',
-          ].join(' ');
-        }
-        const scopeMismatch = validateArtifactRepairRangedReadScope(guard, toolCall);
-        if (scopeMismatch) {
-          guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 1);
-          guard.lastBlockedTool = toolCall.name;
-          return scopeMismatch;
-        }
-        guard.targetRangedReadCount = rangedReadCount + 1;
-        return null;
-      }
-      const readBudget = getArtifactRepairTargetReadBudget(guard);
-      const targetReadCount = guard.targetReadCount ?? 0;
-      if (targetReadCount >= readBudget) {
-        return [
-          `Artifact repair mode is active for ${guard.targetFile}.`,
-          `Target-file read budget is exhausted for this ${guard.phase} pass (${targetReadCount}/${readBudget}).`,
-          'Use the repair preview and prior target-file evidence already in context, or at most one ranged target read for exact anchors when still available, then patch with Edit or Append and run validation.',
-        ].join(' ');
-      }
-      guard.targetReadCount = targetReadCount + 1;
+      // Route A: the target artifact is always fully readable during repair —
+      // no read budgets, no ranged-read scope gating. The model needs the full
+      // file to anchor an Edit or to do a complete Write.
       return null;
     }
     return [
       `Artifact repair mode is active for ${guard.targetFile}.`,
       'Read is limited to the target artifact file during repair.',
-      'Use Edit or Append on the target file, then run validation.',
+      'Use Edit, Append, or Write on the target file, then run validation.',
     ].join(' ');
   }
 
   if (isFileMutationTool(toolCall.name)) {
     const modifiedPath = getModifiedFilePath(toolCall);
     if (modifiedPath && isSameArtifactRepairPath(ctx, modifiedPath, guard.targetFile)) {
-      if (isWriteTool(toolCall.name) && isTargetedEditPreferredArtifactRepair(guard)) {
-        guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
-        guard.preferTargetedEdit = true;
-        return [
-          `Artifact repair mode is active for ${guard.targetFile}.`,
-          'Write would replace the complete artifact during a targeted contract/metadata repair.',
-          'Use Edit with exact surrounding context, or one ranged Read around window.__GAME_TEST__/window.__INTERACTIVE_TEST__/window.__GAME_META__ to get anchors before editing.',
-          'Keep the existing playable game intact and patch only the failing contract or metadata scope.',
-        ].join(' ');
-      }
+      // Route A: Write is a first-class repair action. Edit/Append/Write on the
+      // target file are all allowed — the checks below only return soft guidance
+      // text for genuinely broken patches; they no longer escalate guard state.
       const noOpReason = detectArtifactRepairNoOpPatch(toolCall);
       if (noOpReason) {
-        guard.noOpPatchCount = (guard.noOpPatchCount ?? 0) + 1;
-        guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
         return [
           `Artifact repair mode is active for ${guard.targetFile}.`,
           noOpReason,
           'Patch must change gameplay state, __GAME_TEST__/__INTERACTIVE_TEST__, progressPlan, snapshot, step, reset, or runSmokeTest.',
-          'If exact old_text is missing, use one ranged Read around the contract or metadata block, then retry Edit with more surrounding context.',
+          'If a focused Edit cannot anchor cleanly, rewrite the full artifact with Write instead.',
         ].join(' ');
       }
       const issueScopeMismatch = detectArtifactRepairIssueScopeMismatch(guard, toolCall);
       if (issueScopeMismatch) {
-        guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
-        guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
         return [
           `Artifact repair mode is active for ${guard.targetFile}.`,
           issueScopeMismatch,
@@ -1565,8 +1301,6 @@ function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCall): st
       }
       const contractStructureRisk = detectArtifactRepairContractStructureRisk(guard, toolCall);
       if (contractStructureRisk) {
-        guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
-        guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
         return [
           `Artifact repair mode is active for ${guard.targetFile}.`,
           contractStructureRisk,
@@ -1610,10 +1344,8 @@ function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCall): st
 
 function buildArtifactRepairRecoveryPrompt(
   targetFile: string,
-  blockedToolCount: number,
   issueCodes: readonly string[] = [],
 ): string {
-  const repeated = blockedToolCount >= 2;
   const platformerStructuralRepair = isPlatformerStructuralGameplayRepair(issueCodes);
   return [
     '<artifact-repair-recovery>',
@@ -1621,17 +1353,10 @@ function buildArtifactRepairRecoveryPrompt(
     'Do not read validator/runtime source files again.',
     'Do not use Grep, Glob, ToolSearch, Task, or any source-exploration tool.',
     'Use only the target HTML file plus the validator failure summary already in context.',
-    'When the target is a game artifact, the repair preview includes gameplay, level, metadata, and test-contract anchors; do not spend another read on authored level definitions after reading the contract.',
-    blockedToolCount >= 2
-      ? 'Read budget is exhausted for this repair pass. Do not read more files now.'
-      : blockedToolCount >= 1
-        ? 'Bash is unavailable until after you edit the target HTML file.'
-        : 'If you need one more lookup, read only the target HTML file.',
-    repeated
-      ? platformerStructuralRepair
-        ? 'Your next action must be Edit, Append, or a complete Write on the target HTML file now. Because this is a platformer gameplay-structure repair, a complete Write is allowed when the existing level layout, collision code, and smoke path are coupled.'
-        : 'Your next action must be Edit or Append on the target HTML file now; replace a larger unique region such as the full `window.__GAME_TEST__ = { ... }` block. If duplicate orphaned `start/reset/snapshot/step/runSmokeTest` methods appear after the contract closes, remove that orphaned tail in the same edit.'
-      : 'Your next action should be Edit or Append on the target HTML file. Do not make comment-only, version-only, dummy, or placeholder edits.',
+    'You may Read the target HTML file as needed for exact anchors before patching.',
+    platformerStructuralRepair
+      ? 'Your next action must be Edit, Append, or a complete Write on the target HTML file now. Because this is a platformer gameplay-structure repair, a complete Write is preferred when the existing level layout, collision code, and smoke path are coupled.'
+      : 'Your next action must be Edit, Append, or a complete Write on the target HTML file now. Prefer one complete Write of the whole self-contained HTML; a focused Edit/Append is fine when it anchors cleanly. Do not make comment-only, version-only, dummy, or placeholder edits.',
     'If the active issue is malformed_test_contract, do not patch an inner method. Replace the full balanced `window.__GAME_TEST__ = { ... }` / `window.__INTERACTIVE_TEST__ = { ... }` region and remove any duplicate orphaned contract methods that follow it.',
     ...(platformerStructuralRepair
       ? [
@@ -2097,12 +1822,7 @@ export class ToolExecutionEngine {
     const artifactRepairBlock = enforceArtifactRepairGuard(this.ctx, toolCall);
     if (artifactRepairBlock) {
       const guard = this.ctx.artifactRepairGuard;
-      const blockedToolCount = (guard?.blockedToolCount ?? 0) + 1;
-      const softBlock = isSoftArtifactRepairToolBlock(artifactRepairBlock);
       if (guard) {
-        guard.blockedToolCount = softBlock
-          ? Math.max(guard.blockedToolCount ?? 0, blockedToolCount)
-          : Math.max(blockedToolCount, 2);
         guard.lastBlockedTool = toolCall.name;
       }
       const toolResult: ToolResult = {
@@ -2112,43 +1832,28 @@ export class ToolExecutionEngine {
         duration: Date.now() - startTime,
         metadata: {
           artifactRepairGuard: {
-              blocked: true,
-              softBlocked: softBlock,
-              targetFile: guard?.targetFile,
-              phase: guard?.phase,
-              attempts: guard?.attempts,
-              blockedToolCount: guard?.blockedToolCount ?? blockedToolCount,
-              lastBlockedTool: toolCall.name,
-              targetReadCount: guard?.targetReadCount,
-              targetRangedReadCount: guard?.targetRangedReadCount,
-            },
+            blocked: true,
+            targetFile: guard?.targetFile,
+            phase: guard?.phase,
+            attempts: guard?.attempts,
+            lastBlockedTool: toolCall.name,
           },
+        },
       };
       this.contextAssembly.injectSystemMessage(
         [
           '<artifact-repair-tool-blocked>',
           artifactRepairBlock,
-          softBlock
-            ? 'This blocked read should not consume the rest of the current repair turn; continue with any remaining relevant target-file tools.'
-            : 'The next action should patch the target artifact or run validation.',
+          'The next action should patch the target artifact or run validation.',
           '</artifact-repair-tool-blocked>',
         ].join('\n'),
       );
       if (guard?.targetFile) {
         const alreadyValid = await maybeFinishArtifactRepairIfAlreadyValid(this.ctx, this.contextAssembly, guard);
-        const recoveryPrompt = buildArtifactRepairRecoveryPrompt(
-          guard.targetFile,
-          guard.blockedToolCount ?? blockedToolCount,
-          guard.activeIssueCodes,
-        );
         if (!alreadyValid) {
-          if (softBlock && guard) {
-            guard.preferTargetedEdit = true;
-            guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
-          }
-        }
-        if (!alreadyValid && !softBlock) {
-          this.contextAssembly.pushPersistentSystemContext(recoveryPrompt);
+          this.contextAssembly.pushPersistentSystemContext(
+            buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
+          );
           this.ctx.needsReinference = true;
         }
       }
@@ -2161,11 +1866,8 @@ export class ToolExecutionEngine {
     const repeatedArtifactRepairPatchBlock = enforceArtifactRepairRepeatedPatchGuard(this.ctx, toolCall);
     if (repeatedArtifactRepairPatchBlock) {
       const guard = this.ctx.artifactRepairGuard;
-      const blockedToolCount = Math.max((guard?.blockedToolCount ?? 0) + 1, 2);
       if (guard) {
-        guard.blockedToolCount = blockedToolCount;
         guard.lastBlockedTool = toolCall.name;
-        guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
       }
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
@@ -2178,11 +1880,7 @@ export class ToolExecutionEngine {
             targetFile: guard?.targetFile,
             phase: guard?.phase,
             attempts: guard?.attempts,
-            blockedToolCount,
             lastBlockedTool: toolCall.name,
-            targetReadCount: guard?.targetReadCount,
-            targetRangedReadCount: guard?.targetRangedReadCount,
-            noOpPatchCount: guard?.noOpPatchCount,
             repeatedFailedPatch: true,
           },
         },
@@ -2190,7 +1888,7 @@ export class ToolExecutionEngine {
       this.contextAssembly.injectSystemMessage(repeatedArtifactRepairPatchBlock);
       if (guard?.targetFile) {
         this.contextAssembly.pushPersistentSystemContext(
-          buildArtifactRepairRecoveryPrompt(guard.targetFile, blockedToolCount, guard.activeIssueCodes),
+          buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
         );
         this.ctx.needsReinference = true;
       }
@@ -2451,12 +2149,9 @@ export class ToolExecutionEngine {
 
       if (isArtifactRepairEditAnchorFailure(this.ctx, toolCall, toolResult)) {
         const guard = this.ctx.artifactRepairGuard;
-      if (guard) {
-        guard.blockedToolCount = Math.max(guard.blockedToolCount ?? 0, 2);
-        guard.lastBlockedTool = toolCall.name;
-        guard.editAnchorFailureCount = (guard.editAnchorFailureCount ?? 0) + 1;
-        guard.preferTargetedEdit = !shouldAllowFullArtifactRewriteDuringRepair(guard);
-      }
+        if (guard) {
+          guard.lastBlockedTool = toolCall.name;
+        }
         toolResult.metadata = {
           ...toolResult.metadata,
           artifactRepairGuard: {
@@ -2464,13 +2159,7 @@ export class ToolExecutionEngine {
             targetFile: guard?.targetFile,
             phase: guard?.phase,
             attempts: guard?.attempts,
-            blockedToolCount: guard?.blockedToolCount,
             lastBlockedTool: toolCall.name,
-            targetReadCount: guard?.targetReadCount,
-            targetRangedReadCount: guard?.targetRangedReadCount,
-            noOpPatchCount: guard?.noOpPatchCount,
-            editAnchorFailureCount: guard?.editAnchorFailureCount,
-            preferTargetedEdit: guard?.preferTargetedEdit,
             editAnchorFailure: true,
           },
         };
@@ -2479,7 +2168,7 @@ export class ToolExecutionEngine {
             buildArtifactRepairEditAnchorFailurePrompt(guard.targetFile, toolResult.error, guard.activeIssueCodes),
           );
           this.contextAssembly.pushPersistentSystemContext(
-            buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.blockedToolCount ?? 1, guard.activeIssueCodes),
+            buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
           );
         }
         this.ctx.needsReinference = true;
@@ -2765,10 +2454,6 @@ export class ToolExecutionEngine {
                   ? this.ctx.artifactRepairGuard
                   : undefined;
                 const attempts = (previousFailure?.attempts || 0) + 1;
-                const freshArtifactFirstFailure =
-                  !previousGuard &&
-                  attempts === 1 &&
-                  (isWriteTool(toolCall.name) || isAppendTool(toolCall.name));
                 const phase: ArtifactRepairPhase = attempts >= 3
                   ? 'read_then_patch'
                   : attempts >= 2
@@ -2779,14 +2464,10 @@ export class ToolExecutionEngine {
                   targetFile: absolutePath,
                   attempts,
                   phase,
-                  targetReadCount: Math.max(previousGuard?.targetReadCount ?? 0, getArtifactRepairTargetReadBudget({ targetFile: absolutePath, attempts, phase })),
-                  targetRangedReadCount: previousGuard?.targetRangedReadCount ?? 0,
                   patched: false,
-                  blockedToolCount: Math.max(previousGuard?.blockedToolCount ?? 0, 2),
+                  repairTurnsWithoutProgress: previousGuard?.repairTurnsWithoutProgress,
                   lastBlockedTool: previousGuard?.lastBlockedTool,
-                  noOpPatchCount: Math.max(previousGuard?.noOpPatchCount ?? 0, 1),
                   lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? previousGuard?.lastFailedPatchFingerprint,
-                  freshArtifactFullRewrite: freshArtifactFirstFailure,
                   activeIssueCodes: [
                     ...new Set([
                       ...(
@@ -2807,6 +2488,18 @@ export class ToolExecutionEngine {
                     ]),
                   ],
                 };
+                // Route A hard stop: bound the failing-patch loop. After
+                // ARTIFACT_REPAIR_MAX_ATTEMPTS failed validation passes, force-stop
+                // this turn instead of spending another model request on a patch
+                // loop that is not converging.
+                if (attempts >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
+                  activateArtifactRepairAdmissionStop(
+                    this.ctx,
+                    absolutePath,
+                    `${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} attempts`,
+                    'attempts-exhausted',
+                  );
+                }
                 const validationError = [
                   `Artifact validation failed for ${absolutePath}.`,
                   repairSpec.summary,

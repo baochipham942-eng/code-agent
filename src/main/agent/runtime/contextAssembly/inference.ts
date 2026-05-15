@@ -198,7 +198,6 @@ function buildCompactArtifactRepairWriteRetryMessages(
 ): ModelMessage[] {
   const guard = ctx.runtime.artifactRepairGuard;
   const targetFile = guard?.targetFile || 'target artifact';
-  const fullRewriteAllowed = getArtifactRepairToolPolicy(guard)?.writeAllowed ?? false;
   const activeIssueCodes = guard?.activeIssueCodes?.length
     ? guard.activeIssueCodes.join(', ')
     : 'unknown';
@@ -211,9 +210,7 @@ function buildCompactArtifactRepairWriteRetryMessages(
       `Timeout: ${errorMessage.split('\n')[0]?.slice(0, 240) || 'provider timeout'}`,
       `Target file: ${targetFile}`,
       `Active issue codes: ${activeIssueCodes}`,
-      fullRewriteAllowed
-        ? 'Available action: call exactly one mutation tool. Prefer Edit when it is safe; Write is allowed only for one complete self-contained HTML artifact. Do not call Read, Bash, Task, or validator tools.'
-        : 'Available action: call exactly one mutation tool, preferably Edit. Do not call Read, Bash, Write, Task, or validator tools.',
+      'Available action: call exactly one mutation tool. Prefer one complete Write of the whole self-contained HTML artifact; a focused Edit is fine when it anchors cleanly. Do not call Read, Bash, Task, or validator tools.',
       'Use the target evidence below. If replacing an interactive test contract, a short old_text anchor around `window.__GAME_TEST__ = {` or `window.__INTERACTIVE_TEST__ = {` is acceptable; the runtime can expand the anchor to the balanced contract region.',
       'For malformed_test_contract, replace the full active test-contract region in one balanced Edit and remove duplicate orphaned start/reset/snapshot/step/runSmokeTest methods after the contract closes.',
       'Contract shape: assign exactly one direct plain object literal, `window.__GAME_TEST__ = { start() { ... }, reset(levelOrScenario) { ... }, snapshot() { return {...}; }, step(inputState = {}, frames = 1) { ...; return this.snapshot(); }, runSmokeTest() { return { passed, checks, failures, coverage }; } };`, or the same shape on `window.__INTERACTIVE_TEST__`.',
@@ -275,10 +272,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
-    const blockedToolCount = ctx.runtime.artifactRepairGuard?.blockedToolCount ?? 0;
+    const phase = ctx.runtime.artifactRepairGuard?.phase ?? 'initial_repair';
     tools = filterToolsForArtifactRepair(tools, ctx);
     logger.info(
-      `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (blockedToolCount=${blockedToolCount})`,
+      `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (phase=${phase})`,
     );
   }
   tools = dedupeToolDefinitions(tools);
@@ -602,13 +599,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
             targetFile: ctx.runtime.artifactRepairGuard.targetFile,
             attempts: ctx.runtime.artifactRepairGuard.attempts,
             phase: ctx.runtime.artifactRepairGuard.phase,
-            blockedToolCount: ctx.runtime.artifactRepairGuard.blockedToolCount,
-            targetReadCount: ctx.runtime.artifactRepairGuard.targetReadCount,
-            targetRangedReadCount: ctx.runtime.artifactRepairGuard.targetRangedReadCount,
             patched: ctx.runtime.artifactRepairGuard.patched,
-            noOpPatchCount: ctx.runtime.artifactRepairGuard.noOpPatchCount,
-            editAnchorFailureCount: ctx.runtime.artifactRepairGuard.editAnchorFailureCount,
-            preferTargetedEdit: ctx.runtime.artifactRepairGuard.preferTargetedEdit,
+            repairTurnsWithoutProgress: ctx.runtime.artifactRepairGuard.repairTurnsWithoutProgress,
             activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
         }
         : undefined,
@@ -795,13 +787,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
                 targetFile: ctx.runtime.artifactRepairGuard.targetFile,
                 attempts: ctx.runtime.artifactRepairGuard.attempts,
                 phase: ctx.runtime.artifactRepairGuard.phase,
-                blockedToolCount: ctx.runtime.artifactRepairGuard.blockedToolCount,
-                targetReadCount: ctx.runtime.artifactRepairGuard.targetReadCount,
-                targetRangedReadCount: ctx.runtime.artifactRepairGuard.targetRangedReadCount,
                 patched: ctx.runtime.artifactRepairGuard.patched,
-                noOpPatchCount: ctx.runtime.artifactRepairGuard.noOpPatchCount,
-                editAnchorFailureCount: ctx.runtime.artifactRepairGuard.editAnchorFailureCount,
-                preferTargetedEdit: ctx.runtime.artifactRepairGuard.preferTargetedEdit,
+                repairTurnsWithoutProgress: ctx.runtime.artifactRepairGuard.repairTurnsWithoutProgress,
                 activeIssueCodes: ctx.runtime.artifactRepairGuard.activeIssueCodes,
               }
             : undefined,

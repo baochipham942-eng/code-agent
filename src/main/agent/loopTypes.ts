@@ -120,14 +120,8 @@ export interface ModelResponse {
       targetFile?: string;
       attempts?: number;
       phase?: string;
-      blockedToolCount?: number;
-      targetReadCount?: number;
-      targetRangedReadCount?: number;
       patched?: boolean;
-      noOpPatchCount?: number;
-      editAnchorFailureCount?: number;
-      preferTargetedEdit?: boolean;
-      freshArtifactFullRewrite?: boolean;
+      repairTurnsWithoutProgress?: number;
       activeIssueCodes?: string[];
     };
   };

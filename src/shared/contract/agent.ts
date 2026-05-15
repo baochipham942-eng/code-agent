@@ -260,12 +260,9 @@ export type AgentEvent =
           targetFile?: string;
           attempts?: number;
           phase?: string;
-          blockedToolCount?: number;
-          targetReadCount?: number;
-          targetRangedReadCount?: number;
           patched?: boolean;
-          noOpPatchCount?: number;
-          freshArtifactFullRewrite?: boolean;
+          repairTurnsWithoutProgress?: number;
+          activeIssueCodes?: string[];
         };
       };
     } }

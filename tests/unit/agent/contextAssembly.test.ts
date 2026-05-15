@@ -279,6 +279,10 @@ import { buildRecentConversationsBlock } from '../../../src/main/lightMemory/rec
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/main/lightMemory/skillLoader';
 import { getRepoMap } from '../../../src/main/context/repoMap';
 import { getDeferredToolsSummary } from '../../../src/main/tools/dispatch/toolDefinitions';
+import {
+  clearMemoryInjectionTracesForTest,
+  listMemoryInjectionTraces,
+} from '../../../src/main/memory/memoryInjectionTrace';
 
 function buildMessage(id: string, role: Message['role'], content: string): Message {
   return {
@@ -408,6 +412,7 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  clearMemoryInjectionTracesForTest();
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.addMessageToSession.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
@@ -590,6 +595,82 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(visibleContents).toContain('retained content');
     expect(visibleContents).toContain('base content');
     expect(visibleContents).not.toContain('excluded content');
+  });
+
+  it('records memory_index injection trace when memory intent matches', async () => {
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Keep memory audit visible');
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-memory-index',
+      messages: [
+        buildMessage('user-memory-index', 'user', '记得之前的 memory 规则吗'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].content).toContain('<memory_index>');
+    expect(listMemoryInjectionTraces({ sessionId: 'session-memory-index' })).toContainEqual(
+      expect.objectContaining({
+        blockType: 'memory_index',
+        trigger: 'memory_intent',
+        chars: '- [Project]: Keep memory audit visible'.length,
+        injected: true,
+        source: 'light-memory-index',
+        count: 1,
+        sessionId: 'session-memory-index',
+      }),
+    );
+  });
+
+  it('records memory_hint injection trace when memory intent does not match', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-memory-hint',
+      messages: [
+        buildMessage('user-memory-hint', 'user', 'fix repo code bug'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].content).toContain('<memory_hint>');
+    expect(listMemoryInjectionTraces({ sessionId: 'session-memory-hint' })).toEqual([
+      expect.objectContaining({
+        blockType: 'memory_hint',
+        trigger: 'default_memory_hint',
+        injected: true,
+        source: 'light-memory-tool-hint',
+        count: 1,
+        sessionId: 'session-memory-hint',
+      }),
+    ]);
+  });
+
+  it('records recent_conversations injection trace when recent intent matches', async () => {
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- Previous task: memory audit');
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-recent-conversations',
+      messages: [
+        buildMessage('user-recent-conversations', 'user', 'continue recent context'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    expect(modelMessages[0].content).toContain('- Previous task: memory audit');
+    expect(listMemoryInjectionTraces({ sessionId: 'session-recent-conversations' })).toContainEqual(
+      expect.objectContaining({
+        blockType: 'recent_conversations',
+        trigger: 'recent_conversations_intent',
+        chars: '- Previous task: memory audit'.length,
+        injected: true,
+        source: 'recent-conversations',
+        count: 1,
+        sessionId: 'session-recent-conversations',
+      }),
+    );
   });
 
   it('does not append runtime-only prompt blocks past the system prompt budget', async () => {
@@ -837,10 +918,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        noOpPatchCount: 1,
-        blockedToolCount: 2,
         activeIssueCodes: [
           'coverage_without_runtime_evidence',
           'missing_contract_start',
@@ -879,37 +956,20 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(systemPrompt).toContain('`levels`, `segments`, `scenarios`');
     expect(systemPrompt).toContain('smoke_missing_coverage: make `runSmokeTest()` return structured input-driven coverage');
     expect(systemPrompt).toContain('reachability_evidence: every `progressPlan` / `reachability` step');
-    expect(systemPrompt).toContain('Edit or Append the target file now');
+    expect(systemPrompt).toContain('Edit, Append, or Write the target file now');
     expect(systemPrompt).toContain('Do not use Grep, Glob, Task, ToolSearch');
-    expect(systemPrompt).toContain(`Patch ${targetFile} directly`);
+    expect(systemPrompt).toContain(`Repair ${targetFile} directly`);
     expect(systemPrompt).toContain('Keep the interactive contract tied to live gameplay state');
   });
 
-  it('compresses large target file read history during artifact repair mode', async () => {
+  it('keeps the full target file read history during artifact repair mode (Route A — no compression)', async () => {
     const largeHtml = [
       '<!doctype html>',
       '<html>',
-      '<head><title>Corgi</title></head>',
       '<body>',
       '<script>',
       'const filler = `' + 'x'.repeat(14000) + '`;',
-      'const levels = [{ id: "1-1", treats: [{ x: 120, y: 200 }], enemies: [{ x: 220, y: 250 }], door: { x: 420, y: 200 } }];',
-      'function updatePlayer() { player.vx += Keys.ArrowRight ? 1 : 0; player.vy += 1; }',
-      'function update() { updatePlayer(); collectTreats(); stompEnemies(); completeLevel(); }',
-      'function gameLoop() { update(); requestAnimationFrame(gameLoop); }',
-      'function collectTreats() { State.score += 1; State.abilities.doubleJump = true; }',
-      'function stompEnemies() { State.stomps = (State.stomps || 0) + 1; }',
-      'function completeLevel() { State.level += 1; }',
-      'window.__GAME_META__ = {',
-      "  progressPlan: [{ step: 1, input: ['ArrowRight'], metric: 'score', expect: 'increase' }],",
-      '};',
-      'window.__GAME_TEST__ = {',
-      '  start() { return true; },',
-      '  reset() { return true; },',
-      '  snapshot() { return { score: 0 }; },',
-      '  step() { return { score: 1 }; },',
-      '  runSmokeTest() { return { passed: false, failures: ["score"], coverage: {} }; },',
-      '};',
+      'window.__GAME_TEST__ = { runSmokeTest() { return { passed: false }; } };',
       '</script>',
       '</body>',
       '</html>',
@@ -953,7 +1013,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
-        targetReadCount: 1,
       },
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
@@ -964,95 +1023,10 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
     const toolMessage = modelMessages.find((message) => message.role === 'tool');
 
-    expect(toolMessage?.content).toContain('<artifact-repair-file-read>');
-    expect(toolMessage?.content).toContain('Target file already read: /tmp/game.html');
-    expect(toolMessage?.content).toContain('Runtime structure index:');
-    expect(toolMessage?.content).toContain('game-update-loop: line');
-    expect(toolMessage?.content).toContain('player-physics: line');
-    expect(toolMessage?.content).toContain('Runtime anchor excerpts:');
-    expect(toolMessage?.content).toContain('Anchor player-physics around line');
-    expect(toolMessage?.content).toContain('window.__GAME_META__');
-    expect(toolMessage?.content).toContain('window.__GAME_TEST__');
-    expect(toolMessage?.content).toContain('function gameLoop()');
-    expect(toolMessage?.content).toContain('function update()');
-    expect(toolMessage?.content).toContain('function updatePlayer()');
-    expect(toolMessage?.content).toContain('Patch strategy:');
-    expect(toolMessage?.content).toContain('Do not use Read/Edit as a probe');
-    expect(toolMessage?.content).toContain('write the patch now');
-    expect(toolMessage?.content).not.toContain('x'.repeat(4000));
-  });
-
-  it('adds focused mutation hints for duplicate or shortcut-heavy artifact contracts', async () => {
-    const largeHtml = [
-      '<!doctype html>',
-      '<html>',
-      '<body>',
-      '<script>',
-      'const filler = `' + 'x'.repeat(14000) + '`;',
-      'window.__GAME_TEST__ = {',
-      '  step() { State.abilities.dash = true; return {}; },',
-      '  runSmokeTest() { mechanics.add(\"enemy_stomp\"); return { passed: true, checks: [], failures: [], coverage: {} }; },',
-      '};',
-      'window.__GAME_TEST__ = { runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; } };',
-      '</script>',
-      '</body>',
-      '</html>',
-    ].join('\n');
-
-    const targetFile = '/tmp/game.html';
-    const ctx = buildRuntimeContext({
-      messages: [
-        buildMessage('user-repair-shortcut', 'user', `修复 ${targetFile}`),
-        {
-          id: 'tool-message-shortcut',
-          role: 'tool',
-          content: JSON.stringify([
-            {
-              toolCallId: 'read-target',
-              success: true,
-              output: largeHtml,
-              metadata: {
-                preserveObservation: true,
-                evidenceKind: 'file_read',
-                filePath: targetFile,
-              },
-            },
-          ]),
-          timestamp: Date.now(),
-          toolResults: [
-            {
-              toolCallId: 'read-target',
-              success: true,
-              output: largeHtml,
-              metadata: {
-                preserveObservation: true,
-                evidenceKind: 'file_read',
-                filePath: targetFile,
-              },
-            },
-          ],
-        } as Message,
-      ],
-      artifactRepairGuard: {
-        targetFile,
-        attempts: 2,
-        phase: 'targeted_repair',
-        targetReadCount: 1,
-      },
-      persistentSystemContext: [
-        '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
-      ],
-    });
-
-    const assembly = new ContextAssembly(ctx as never);
-    const modelMessages = await assembly.buildModelMessages();
-    const toolMessage = modelMessages.find((message) => message.role === 'tool');
-
-    expect(toolMessage?.content).toContain('Multiple interactive contract anchors found');
-    expect(toolMessage?.content).toContain('direct state grants or test-mode shortcuts');
-    expect(toolMessage?.content).toContain('existence/registration as evidence');
-    expect(toolMessage?.content).toContain('write the patch now');
-    expect((toolMessage?.content || '').length).toBeLessThan(12_000);
+    // Route A: the artifact under repair is never compressed — the model gets the full file.
+    expect(toolMessage?.content).toContain(largeHtml);
+    expect(toolMessage?.content).not.toContain('<artifact-repair-file-read>');
+    expect(toolMessage?.content).not.toContain('History preview compressed');
   });
 
   it('filters stale assistant tool history to the current artifact-repair allowlist', async () => {
@@ -1074,7 +1048,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
         patched: false,
       },
       persistentSystemContext: [
@@ -1085,7 +1058,8 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
     const assistantMessage = modelMessages.find((message) => message.role === 'assistant');
-    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Edit']);
+    // Route A: pre-patch allowlist is Read/Edit/Write/Append — stale Bash is dropped, Read stays.
+    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Read', 'Edit']);
   });
 
   it('filters stale tool results to match the current artifact-repair allowlist', async () => {
@@ -1125,8 +1099,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
         patched: false,
       },
       persistentSystemContext: [
@@ -1139,11 +1111,10 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assistantMessage = modelMessages.find((message) => message.role === 'assistant');
     const toolMessages = modelMessages.filter((message) => message.role === 'tool');
 
-    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Write']);
-    expect(toolMessages).toHaveLength(1);
-    expect(toolMessages[0].toolCallId).toBe('tc-write');
-    expect(toolMessages[0].content).toContain('Artifact validation failed');
-    expect(toolMessages[0].content).not.toContain('old read result should be filtered');
+    // Route A: pre-patch allowlist keeps Read + mutation tool calls; the failed
+    // validation result stays in history so the model sees what it must fix.
+    expect(assistantMessage?.toolCalls?.map((toolCall: any) => toolCall.name)).toEqual(['Read', 'Write']);
+    expect(toolMessages.some((message) => JSON.stringify(message.content).includes('Artifact validation failed'))).toBe(true);
   });
 
   it('compresses failed artifact validation history instead of replaying the full repair spec', async () => {
@@ -1213,8 +1184,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        noOpPatchCount: 1,
         patched: false,
       },
       persistentSystemContext: [
@@ -1284,8 +1253,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
         patched: false,
       },
@@ -1302,85 +1269,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(toolMessage?.content).toContain("coverage.mechanics.push('movement')");
     expect(toolMessage?.content).not.toContain('<artifact-repair-file-read>');
     expect(toolMessage?.content).not.toContain('History preview compressed for repair mode');
-  });
-
-  it('compresses large ranged target-file reads once artifact repair is write-priority', async () => {
-    const largeRangedContract = [
-      'window.__GAME_TEST__ = {',
-      '  step(input, frames) { return this.snapshot(); },',
-      '  runSmokeTest() {',
-      '    const before = this.snapshot();',
-      '    const after = this.step({ ArrowRight: true }, 80);',
-      "    if (after.playerX > before.playerX) coverage.mechanics.push('movement');",
-      '    return { passed: true, checks: [], failures: [], coverage: {} };',
-      '  }',
-      '};',
-      'start() { return this.snapshot(); },',
-      'reset() { return this.snapshot(); },',
-      'FILLER '.repeat(3_000),
-    ].join('\n');
-    const ctx = buildRuntimeContext({
-      messages: [
-        buildMessage('user-repair-ranged-large', 'user', 'fix the game contract'),
-        {
-          id: 'assistant-read-range-large',
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          toolCalls: [
-            {
-              id: 'tc-read-range-large',
-              name: 'Read',
-              arguments: { file_path: '/tmp/game.html', offset: 1040, limit: 600 },
-            },
-          ],
-        } as Message,
-        {
-          id: 'tool-read-range-large',
-          role: 'tool',
-          content: '',
-          timestamp: Date.now(),
-          toolResults: [
-            {
-              toolCallId: 'tc-read-range-large',
-              success: true,
-              output: largeRangedContract,
-              metadata: {
-                preserveObservation: true,
-                evidenceKind: 'file_read',
-                filePath: '/tmp/game.html',
-                rangedRead: true,
-              },
-            },
-          ],
-        } as Message,
-      ],
-      artifactRepairGuard: {
-        targetFile: '/tmp/game.html',
-        attempts: 1,
-        phase: 'baseline_repair',
-        targetReadCount: 1,
-        targetRangedReadCount: 1,
-        preferTargetedEdit: true,
-        noOpPatchCount: 1,
-        activeIssueCodes: ['coverage_without_runtime_evidence'],
-        patched: false,
-      },
-      persistentSystemContext: [
-        '<artifact-validation-failed kind="interactive_artifact">\ncoverage_without_runtime_evidence\n</artifact-validation-failed>',
-      ],
-    });
-
-    const assembly = new ContextAssembly(ctx as never);
-    const modelMessages = await assembly.buildModelMessages();
-    const toolMessage = modelMessages.find((message) => message.role === 'tool');
-
-    expect(toolMessage?.content).toContain('<artifact-repair-file-read>');
-    expect(toolMessage?.content).toContain('History preview compressed for repair mode');
-    expect(toolMessage?.content).toContain('write the patch now');
-    expect(toolMessage?.content).toContain('repair runtime can expand it to the balanced contract region');
-    expect(toolMessage?.content).not.toContain('FILLER '.repeat(500));
-    expect((toolMessage?.content || '').length).toBeLessThan(12_000);
   });
 
   it('keeps normal code task prompt block injection unchanged', async () => {

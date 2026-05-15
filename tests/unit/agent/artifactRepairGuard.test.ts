@@ -66,6 +66,22 @@ describe('artifactRepairGuard', () => {
     });
   });
 
+  it('does not mis-extract a mid-token slash from a bare relative path', () => {
+    // Regression: a bare relative path like `games/game.html` (no `target file:`
+    // prefix, no `./` prefix) must not be matched by the no-prefix branch, which
+    // used to latch onto the mid-token `/` and seed the guard with `/game.html`.
+    const ctx = makeRuntimeContext(
+      '修复 games/game.html 这个 HTML 游戏，artifact validation failed: runSmokeTest 未通过。',
+    );
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    // No clear path prefix → guard is not seeded from this free text (the proper
+    // triggers are an absolute/`./` path, a `target file:` label, or the
+    // validation-failure path in toolExecutionEngine).
+    expect(ctx.artifactRepairGuard).toBeUndefined();
+  });
+
   it('seeds repair mode when an actual artifact validation failure names a target file', () => {
     const ctx = makeRuntimeContext(
       'Artifact validation failed for /tmp/code-agent/games/game.html. Please fix the missing runSmokeTest evidence.',
@@ -79,7 +95,7 @@ describe('artifactRepairGuard', () => {
     });
   });
 
-  it('treats malformed contract and mobile canvas crop failures as targeted repairs', () => {
+  it('still detects targeted issue codes but never narrows the repair tool set (Route A)', () => {
     const ctx = makeRuntimeContext([
       'Artifact validation failed for /tmp/code-agent/games/game.html.',
       '交互测试合约没有形成可平衡解析的对象字面量；请修复 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 的结构。',
@@ -93,26 +109,31 @@ describe('artifactRepairGuard', () => {
       activeIssueCodes: expect.arrayContaining(['malformed_test_contract', 'canvas_not_responsive']),
     });
 
-    ctx.artifactRepairGuard.targetReadCount = 10;
-    ctx.artifactRepairGuard.targetRangedReadCount = 0;
-
+    // Route A: issue-code detection is kept, but the tool set never collapses to a
+    // targeted/mutation-only subset — pre-patch always exposes Read/Edit/Write/Append.
     const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
-    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Append']);
-    expect(policy?.writePriority).toBe(false);
+    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(policy?.writeAllowed).toBe(true);
   });
 
-  it('allows one complete Write for a fresh generated artifact repair turn', () => {
+  it('allows one complete Write during a pre-patch repair turn', () => {
     const ctx = makeRuntimeContext('Artifact validation failed for /tmp/code-agent/games/game.html. Please fix runSmokeTest.');
 
     seedArtifactRepairGuardFromContext(ctx);
-    ctx.artifactRepairGuard.freshArtifactFullRewrite = true;
-    ctx.artifactRepairGuard.targetReadCount = 10;
-    ctx.artifactRepairGuard.noOpPatchCount = 1;
-    ctx.artifactRepairGuard.blockedToolCount = 2;
 
     const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
     expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
     expect(policy?.writeAllowed).toBe(true);
-    expect(policy?.fullRewritePriority).toBe(true);
+  });
+
+  it('adds Bash to the repair tool set once the artifact is patched', () => {
+    const ctx = makeRuntimeContext('Artifact validation failed for /tmp/code-agent/games/game.html. Please fix runSmokeTest.');
+
+    seedArtifactRepairGuardFromContext(ctx);
+    ctx.artifactRepairGuard.patched = true;
+
+    const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(policy?.bashAllowed).toBe(true);
   });
 });

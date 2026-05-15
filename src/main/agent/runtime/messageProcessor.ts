@@ -46,7 +46,12 @@ import {
   getArtifactRepairToolPolicy,
   type ArtifactRepairToolPolicy,
 } from './artifactRepairGuard';
-import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
+import {
+  maybeClearCompletedArtifactRepairGuardBeforeAdmission,
+  activateArtifactRepairAdmissionStop,
+  ARTIFACT_REPAIR_STOP_PREFIXES,
+} from './artifactRepairAdmission';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
@@ -99,7 +104,6 @@ function buildArtifactRepairAdmissionRecoveryPrompt(
   targetFile: string,
   requestedNames: string,
   allowedNames: string,
-  blockedToolCount: number,
   policy: ArtifactRepairToolPolicy | null = null,
 ): string {
   const mutationTools = policy?.mutationToolPrompt || 'currently available file mutation tools';
@@ -109,31 +113,10 @@ function buildArtifactRepairAdmissionRecoveryPrompt(
     `Your previous tool call requested unavailable tools: ${requestedNames}.`,
     `Only these tools are currently available: ${allowedNames}.`,
     'Do not repeat the unavailable tool call.',
-    blockedToolCount >= 2
-      ? `The read/source-exploration budget is exhausted. Your next action must use ${mutationTools} on the target artifact.`
-      : 'Your next action must patch the target artifact using the currently available file mutation tools.',
+    `Your next action must patch the target artifact with ${mutationTools} — prefer one complete Write of the whole self-contained HTML.`,
     'Use the target HTML file and validator failure summary already in context. Do not inspect validator/runtime sources.',
     '</artifact-repair-admission-blocked>',
   ].join('\n');
-}
-
-function activateArtifactRepairAdmissionStop(
-  ctx: RuntimeContext,
-  targetFile: string,
-  requestedNames: string,
-): void {
-  ctx.forceFinalResponseReason = `artifact repair unavailable tool repeated: ${requestedNames}`;
-  ctx.forceFinalResponsePrompt = [
-    '<force-final-response reason="artifact-repair-tool-admission">',
-    `Artifact repair mode is active for ${targetFile}.`,
-    `The model repeatedly requested unavailable tool(s): ${requestedNames}.`,
-    'Stop this attempt now instead of spending another model request on the same blocked action.',
-    'Report that the target artifact still needs a mutation patch and that no target file change was applied.',
-    '</force-final-response>',
-  ].join('\n');
-  // 注:UI 端的 error event emit 在 forceFinalResponse 处理路径里(messageProcessor.ts forceFinalResponse 分支),
-  // 必须在 final assistant message push 之后 emit,这样 useSessionLifecycleEffects 的 lastMessage 检查
-  // 能命中 assistant 把 errorContent 合并进去显示。如果在这里 emit, lastMessage 还是上一轮的 tool 消息,UI 不显示。
 }
 
 function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: ToolResult): boolean {
@@ -193,6 +176,38 @@ export class MessageProcessor {
     const currentMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
     const providerRecommendedMax = getModelMaxOutputTokens(this.ctx.modelConfig.model);
     return Math.max(currentMaxTokens, providerRecommendedMax);
+  }
+
+  // Route A: surface an artifact-repair force-stop to the UI as an error event so
+  // the user sees why the turn ended. Handles both stop kinds (unavailable-tool
+  // spam and attempt-limit exhaustion).
+  private maybeEmitArtifactRepairStopError(stopReason: string): void {
+    const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
+    const unavailablePrefix = ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool'];
+    const attemptsPrefix = ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'];
+    if (stopReason.startsWith(unavailablePrefix)) {
+      const detail = stopReason.slice(unavailablePrefix.length).trim();
+      this.ctx.onEvent({
+        type: 'error',
+        data: {
+          message: `产物修复终止:模型反复请求不可用工具 ${detail},已停止本轮尝试`,
+          code: 'artifact_repair_admission_stop',
+          suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
+          details: { targetFile, blockedTool: detail },
+        },
+      });
+    } else if (stopReason.startsWith(attemptsPrefix)) {
+      const detail = stopReason.slice(attemptsPrefix.length).trim();
+      this.ctx.onEvent({
+        type: 'error',
+        data: {
+          message: `产物修复终止:修复尝试达到上限(${detail}),已停止本轮尝试`,
+          code: 'artifact_repair_admission_stop',
+          suggestion: `目标文件 ${targetFile} 仍未通过校验。建议重新发起任务,或检查目标文件当前状态后再继续。`,
+          details: { targetFile, attempts: detail },
+        },
+      });
+    }
   }
 
   private buildAssistantMessageFromResponse(response: ModelResponse, content: string): Message {
@@ -523,17 +538,15 @@ export class MessageProcessor {
       const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
       const allowedNames = [...visibleToolNames].join(', ') || 'none';
       const guard = this.ctx.artifactRepairGuard;
-      const blockedToolCount = (guard?.blockedToolCount ?? 0) + 1;
+      const repairTurnsWithoutProgress = (guard?.repairTurnsWithoutProgress ?? 0) + 1;
       if (guard) {
-        guard.blockedToolCount = blockedToolCount;
+        guard.repairTurnsWithoutProgress = repairTurnsWithoutProgress;
         guard.lastBlockedTool = requestedNames;
-        if (blockedToolCount >= 2) {
-          guard.noOpPatchCount = Math.max(guard.noOpPatchCount ?? 0, 1);
-        }
       }
       const repairPolicy = getArtifactRepairToolPolicy(guard);
-      // 死循环逃生门：连续 3 次拦截同一类不可用工具调用，强制收尾，避免无限重试
-      if (guard?.targetFile && blockedToolCount >= 3) {
+      // Route A 死循环逃生门：连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 个修复回合没有任何
+      // 成功的目标文件改动（反复请求不可用工具），强制收尾，避免无限重试。
+      if (guard?.targetFile && repairTurnsWithoutProgress >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
         activateArtifactRepairAdmissionStop(this.ctx, guard.targetFile, requestedNames);
       }
       const recoveryPrompt = guard?.targetFile
@@ -541,7 +554,6 @@ export class MessageProcessor {
             guard.targetFile,
             requestedNames,
             allowedNames,
-            blockedToolCount,
             repairPolicy,
           )
         : null;
@@ -592,11 +604,8 @@ export class MessageProcessor {
               targetFile: guard?.targetFile,
               phase: guard?.phase,
               attempts: guard?.attempts,
-              blockedToolCount: guard?.blockedToolCount ?? blockedToolCount,
+              repairTurnsWithoutProgress: guard?.repairTurnsWithoutProgress,
               lastBlockedTool: requestedNames,
-              targetReadCount: guard?.targetReadCount,
-              targetRangedReadCount: guard?.targetRangedReadCount,
-              noOpPatchCount: guard?.noOpPatchCount,
             },
           },
         };
@@ -635,20 +644,7 @@ export class MessageProcessor {
         await this.contextAssembly.addAndPersistMessage(finalMessage);
         this.ctx.onEvent({ type: 'message', data: finalMessage });
 
-        const ADMISSION_PREFIX = 'artifact repair unavailable tool repeated:';
-        if (this.ctx.forceFinalResponseReason.startsWith(ADMISSION_PREFIX)) {
-          const reqNames = this.ctx.forceFinalResponseReason.slice(ADMISSION_PREFIX.length).trim();
-          const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
-          this.ctx.onEvent({
-            type: 'error',
-            data: {
-              message: `产物修复终止:模型反复请求不可用工具 ${reqNames},已停止本轮尝试`,
-              code: 'artifact_repair_admission_stop',
-              suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
-              details: { targetFile, blockedTool: reqNames },
-            },
-          });
-        }
+        this.maybeEmitArtifactRepairStopError(this.ctx.forceFinalResponseReason);
 
         this.ctx.forceFinalResponseReason = undefined;
         this.ctx.forceFinalResponsePrompt = undefined;
@@ -660,6 +656,12 @@ export class MessageProcessor {
     }
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
+
+    // Route A: the model picked available tools this turn, so it is no longer
+    // stuck on the unavailable-tool loop — clear the no-progress counter.
+    if (this.ctx.artifactRepairGuard) {
+      this.ctx.artifactRepairGuard.repairTurnsWithoutProgress = 0;
+    }
 
     this.ctx.totalToolCallCount += toolCalls.length;
     this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
@@ -945,21 +947,7 @@ export class MessageProcessor {
 
       // admission_stop:在 final assistant message push 后 emit error,
       // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
-      const stopReason = this.ctx.forceFinalResponseReason;
-      const ADMISSION_PREFIX = 'artifact repair unavailable tool repeated:';
-      if (stopReason.startsWith(ADMISSION_PREFIX)) {
-        const requestedNames = stopReason.slice(ADMISSION_PREFIX.length).trim();
-        const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
-        this.ctx.onEvent({
-          type: 'error',
-          data: {
-            message: `产物修复终止:模型反复请求不可用工具 ${requestedNames},已停止本轮尝试`,
-            code: 'artifact_repair_admission_stop',
-            suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
-            details: { targetFile, blockedTool: requestedNames },
-          },
-        });
-      }
+      this.maybeEmitArtifactRepairStopError(this.ctx.forceFinalResponseReason);
 
       this.ctx.forceFinalResponseReason = undefined;
       this.ctx.forceFinalResponsePrompt = undefined;

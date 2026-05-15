@@ -126,6 +126,13 @@ export interface InferenceOptions {
   requestTimeoutMs?: number;
   firstByteTimeoutMs?: number;
   inactivityTimeoutMs?: number;
+  /**
+   * Caller-level reasoning intensity for thinking-mode models. modelRouter
+   * defaults this to 'low' on artifact generation/repair turns so reasoning
+   * tokens don't crowd out content output. Mirrored onto ModelConfig before
+   * the provider runs so buildRequestBody can read config.reasoningEffort.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 // ----------------------------------------------------------------------------

@@ -119,6 +119,20 @@ export abstract class BaseOpenAIProvider implements Provider {
     }
 
     const requestBody = this.buildRequestBody(messages, tools, config);
+    // Cross-provider reasoning_effort plug: read either from caller-supplied
+    // options (the modelRouter artifact-path default of 'low') or from
+    // config.reasoningEffort, and surface it as the OpenAI-compatible
+    // `reasoning_effort` request field on thinking-mode providers. Providers
+    // that already populated it inside buildRequestBody (e.g. deepseek's
+    // existing thinkingBudget→effort map) keep their own value.
+    const reasoningEffort = options?.reasoningEffort ?? config.reasoningEffort;
+    if (
+      this.isThinkingMode(config)
+      && reasoningEffort
+      && requestBody.reasoning_effort === undefined
+    ) {
+      requestBody.reasoning_effort = reasoningEffort;
+    }
     const forceNonStreaming = options?.forceNonStreaming === true;
 
     if (forceNonStreaming) {

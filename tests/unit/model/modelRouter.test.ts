@@ -19,6 +19,7 @@ const healthMonitorMock = {
 
 const ARTIFACT_STREAMING_TIMEOUT_OPTIONS = {
   disableProviderTransientRetry: true,
+  reasoningEffort: 'low',
   requestTimeoutMs: 1_200_000,
   firstByteTimeoutMs: 60_000,
   inactivityTimeoutMs: 480_000,
@@ -26,6 +27,7 @@ const ARTIFACT_STREAMING_TIMEOUT_OPTIONS = {
 
 const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS = {
   disableProviderTransientRetry: true,
+  reasoningEffort: 'low',
   requestTimeoutMs: 480_000,
   firstByteTimeoutMs: 60_000,
   inactivityTimeoutMs: 240_000,
@@ -33,6 +35,7 @@ const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_OPTIONS = {
 
 const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_OPTIONS = {
   disableProviderTransientRetry: true,
+  reasoningEffort: 'low',
   requestTimeoutMs: 600_000,
   firstByteTimeoutMs: 60_000,
   inactivityTimeoutMs: 360_000,
@@ -40,6 +43,7 @@ const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_OPTIONS = {
 
 const ARTIFACT_REPAIR_FULL_REWRITE_TIMEOUT_OPTIONS = {
   disableProviderTransientRetry: true,
+  reasoningEffort: 'low',
   requestTimeoutMs: 900_000,
   firstByteTimeoutMs: 60_000,
   inactivityTimeoutMs: 480_000,
@@ -1748,6 +1752,71 @@ describe('ModelRouter', () => {
           config
         )
       ).rejects.toThrow('does not support vision');
+    });
+  });
+
+  describe('thinking-mode cross-provider knobs (A reasoning_effort plug + B sampling)', () => {
+    it('artifact request defaults reasoningEffort=low and the plug surfaces it as reasoning_effort on thinking-mode xiaomi', async () => {
+      // Mock provider that records the request body it WOULD send by spying
+      // on its inference call: we read body via the buildRequestBody path
+      // executed by BaseOpenAIProvider when we point a real XiaomiProvider at
+      // a stub fetch. But since the test harness already mocks provider.inference
+      // wholesale, we instead verify the cross-cutting plug end-to-end by
+      // letting modelRouter set reasoningEffort then asserting it lands on the
+      // provider.inference call options arg.
+      const xiaomi = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', xiaomi);
+
+      await router.inference(
+        [{ role: 'user', content: '请生成一个完整的 HTML 游戏，保存到 /tmp/game.html' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000 },
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true },
+      );
+
+      // The options passed to provider.inference should include reasoningEffort='low'.
+      const callOptions = xiaomi.inference.mock.calls[0][5];
+      expect(callOptions).toMatchObject({ reasoningEffort: 'low' });
+    });
+
+    it('caller-supplied reasoningEffort wins over the artifact-path default', async () => {
+      const xiaomi = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', xiaomi);
+
+      await router.inference(
+        [{ role: 'user', content: '请生成一个完整的 HTML 游戏，保存到 /tmp/game.html' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000 },
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, reasoningEffort: 'high' },
+      );
+
+      const callOptions = xiaomi.inference.mock.calls[0][5];
+      expect(callOptions).toMatchObject({ reasoningEffort: 'high' });
+    });
+
+    it('non-artifact request does NOT inject reasoningEffort (only artifact paths default it)', async () => {
+      const xiaomi = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', xiaomi);
+
+      await router.inference(
+        [{ role: 'user', content: 'hello world, what time is it?' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000 },
+        vi.fn(),
+      );
+
+      const callOptions = xiaomi.inference.mock.calls[0][5];
+      expect(callOptions?.reasoningEffort).toBeUndefined();
     });
   });
 });

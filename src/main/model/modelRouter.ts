@@ -876,6 +876,10 @@ export class ModelRouter {
         ...options,
         forceNonStreaming: true,
         disableProviderTransientRetry: true,
+        // Artifact generation/repair = long content, short reasoning. Default
+        // thinking-mode models to 'low' reasoning_effort so they don't burn
+        // the output budget on internal deliberation.
+        reasoningEffort: options?.reasoningEffort ?? 'low',
         requestTimeoutMs: options?.requestTimeoutMs ?? (
           fullRewritePriority
             ? ARTIFACT_REPAIR_WRITE_TIMEOUT_MS
@@ -905,6 +909,7 @@ export class ModelRouter {
       return {
         ...options,
         disableProviderTransientRetry: true,
+        reasoningEffort: options?.reasoningEffort ?? 'low',
         requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
         firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
         inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
@@ -917,6 +922,7 @@ export class ModelRouter {
         ...options,
         forceNonStreaming: true,
         disableProviderTransientRetry: true,
+        reasoningEffort: options?.reasoningEffort ?? 'low',
         requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
         firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
         inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
@@ -929,6 +935,7 @@ export class ModelRouter {
         ...options,
         forceNonStreaming: true,
         disableProviderTransientRetry: true,
+        reasoningEffort: options?.reasoningEffort ?? 'low',
         requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
         firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
         inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
@@ -942,6 +949,7 @@ export class ModelRouter {
       return {
         ...options,
         disableProviderTransientRetry: true,
+        reasoningEffort: options?.reasoningEffort ?? 'low',
         requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
         firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
         inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,
@@ -958,6 +966,7 @@ export class ModelRouter {
         ? {
             ...options,
             disableProviderTransientRetry: true,
+            reasoningEffort: options?.reasoningEffort ?? 'low',
             requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
             firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
             inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,
@@ -970,6 +979,7 @@ export class ModelRouter {
     return {
       ...options,
       disableProviderTransientRetry: true,
+      reasoningEffort: options?.reasoningEffort ?? 'low',
       requestTimeoutMs: options?.requestTimeoutMs ?? ARTIFACT_PROVIDER_TIMEOUT_MS,
       firstByteTimeoutMs: options?.firstByteTimeoutMs ?? ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
       inactivityTimeoutMs: options?.inactivityTimeoutMs ?? ARTIFACT_INACTIVITY_TIMEOUT_MS,

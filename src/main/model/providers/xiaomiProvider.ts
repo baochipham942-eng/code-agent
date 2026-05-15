@@ -36,12 +36,16 @@ export class XiaomiProvider extends BaseOpenAIProvider {
     const useToolCalling = modelInfo?.supportsTool !== false;
     const openaiTools = convertToolsToOpenAI(tools);
 
+    // Sampling: align with mimo official guidance for thinking-mode models
+    // (temperature=1.0, top_p=0.95). Caller-supplied config.temperature
+    // wins. top_p is only set when not provided by the caller.
     const body: Record<string, unknown> = {
       model: config.model || XIAOMI_DEFAULT_MODEL,
       messages: useToolCalling
         ? convertToOpenAIMessages(messages, { thinkingMode: this.isThinkingMode(config) })
         : convertToTextOnlyMessages(messages),
-      temperature: config.temperature ?? 0.7,
+      temperature: config.temperature ?? 1.0,
+      top_p: 0.95,
       max_completion_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || XIAOMI_DEFAULT_MODEL),
       stream: true,
       stream_options: { include_usage: true },

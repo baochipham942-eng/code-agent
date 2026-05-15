@@ -61,7 +61,11 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
       body.tool_choice = 'auto';
     }
 
-    // Reasoner models: map thinkingBudget to reasoning_effort
+    // Reasoner models: keep the existing thinkingBudget → reasoning_effort
+    // back-compat path for callers that set thinkingBudget directly. When
+    // they don't, BaseOpenAIProvider.inference will surface
+    // options.reasoningEffort (cross-provider hint) automatically because we
+    // intentionally leave body.reasoning_effort unset here.
     if (config.model?.includes('reasoner') && config.thinkingBudget) {
       const effort = config.thinkingBudget <= 4096 ? 'low' : config.thinkingBudget <= 16384 ? 'medium' : 'high';
       body.reasoning_effort = effort;

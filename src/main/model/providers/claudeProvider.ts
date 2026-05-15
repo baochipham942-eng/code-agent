@@ -7,7 +7,7 @@ import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
-import type { ModelMessage, ModelResponse, StreamCallback, ResponseContentPart, Provider } from '../types';
+import type { ModelMessage, ModelResponse, StreamCallback, ResponseContentPart, Provider, InferenceOptions } from '../types';
 import {
   logger,
   httpsAgent,
@@ -362,7 +362,8 @@ export class ClaudeProvider implements Provider {
     tools: ToolDefinition[],
     config: ModelConfig,
     onStream?: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     // Auto-enable prompt caching if not explicitly configured
     const effectiveConfig = config.promptCaching
@@ -423,14 +424,23 @@ export class ClaudeProvider implements Provider {
       requestBody.tools = claudeTools;
     }
 
-    // Thinking support
-    if (config.thinkingBudget) {
-      if ((requestBody.max_tokens as number) <= config.thinkingBudget) {
-        requestBody.max_tokens = config.thinkingBudget + 16384;
+    // Thinking support. Caller-supplied thinkingBudget wins; otherwise map
+    // the cross-provider reasoningEffort hint (from options or config) into a
+    // numeric budget so callers — e.g. modelRouter's artifact-path default of
+    // reasoningEffort='low' — also get extended thinking on claude without
+    // having to set thinkingBudget explicitly.
+    const reasoningEffort = options?.reasoningEffort ?? config.reasoningEffort;
+    const thinkingBudget = config.thinkingBudget
+      ?? (reasoningEffort
+        ? (reasoningEffort === 'low' ? 4096 : reasoningEffort === 'medium' ? 16384 : 32768)
+        : undefined);
+    if (thinkingBudget) {
+      if ((requestBody.max_tokens as number) <= thinkingBudget) {
+        requestBody.max_tokens = thinkingBudget + 16384;
       }
       requestBody.thinking = {
         type: 'enabled',
-        budget_tokens: config.thinkingBudget,
+        budget_tokens: thinkingBudget,
       };
     }
 

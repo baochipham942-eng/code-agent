@@ -5,19 +5,28 @@ import type {
   CapabilityCenterItem,
   CapabilityKind,
   CapabilityInstallDraftRequest,
+  CapabilityRemoveDraftRequest,
   CapabilityToggleRequest,
 } from '@shared/contract/capability';
 import ipcService from '../services/ipcService';
+
+export interface CapabilityActionResult {
+  type: 'success';
+  text: string;
+}
 
 export interface UseCapabilityInventoryResult {
   inventory: CapabilityCenterInventory | null;
   items: CapabilityCenterItem[];
   loading: boolean;
   error: string | null;
+  actionResult: CapabilityActionResult | null;
   actionKey: string | null;
   reload: () => Promise<void>;
+  clearActionResult: () => void;
   setEnabled: (item: CapabilityCenterItem, enabled: boolean) => Promise<void>;
-  installDraft: (item: CapabilityCenterItem) => Promise<void>;
+  installDraft: (item: CapabilityCenterItem, inputs?: Record<string, string>) => Promise<void>;
+  removeDraft: (item: CapabilityCenterItem) => Promise<void>;
 }
 
 function getToggleKind(kind: CapabilityKind): CapabilityToggleRequest['kind'] {
@@ -28,11 +37,13 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
   const [inventory, setInventory] = useState<CapabilityCenterInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<CapabilityActionResult | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setActionResult(null);
     try {
       const next = await ipcService.invokeDomain<CapabilityCenterInventory>(
         IPC_DOMAINS.CAPABILITY,
@@ -50,6 +61,7 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
   const setEnabled = useCallback(async (item: CapabilityCenterItem, enabled: boolean) => {
     setActionKey(item.id);
     setError(null);
+    setActionResult(null);
     try {
       const next = await ipcService.invokeDomain<CapabilityCenterInventory>(
         IPC_DOMAINS.CAPABILITY,
@@ -61,6 +73,10 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
         } satisfies CapabilityToggleRequest,
       );
       setInventory(next);
+      setActionResult({
+        type: 'success',
+        text: `${item.name} 已${enabled ? '启用' : '禁用'}`,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,9 +84,14 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
     }
   }, []);
 
-  const installDraft = useCallback(async (item: CapabilityCenterItem) => {
+  const clearActionResult = useCallback(() => {
+    setActionResult(null);
+  }, []);
+
+  const installDraft = useCallback(async (item: CapabilityCenterItem, inputs?: Record<string, string>) => {
     setActionKey(item.id);
     setError(null);
+    setActionResult(null);
     try {
       const next = await ipcService.invokeDomain<CapabilityCenterInventory>(
         IPC_DOMAINS.CAPABILITY,
@@ -78,9 +99,39 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
         {
           id: item.id,
           kind: item.kind,
+          ...(inputs ? { inputs } : {}),
         } satisfies CapabilityInstallDraftRequest,
       );
       setInventory(next);
+      setActionResult({
+        type: 'success',
+        text: `${item.name} 草稿已生成`,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionKey(null);
+    }
+  }, []);
+
+  const removeDraft = useCallback(async (item: CapabilityCenterItem) => {
+    setActionKey(item.id);
+    setError(null);
+    setActionResult(null);
+    try {
+      const next = await ipcService.invokeDomain<CapabilityCenterInventory>(
+        IPC_DOMAINS.CAPABILITY,
+        'removeDraft',
+        {
+          id: item.id,
+          kind: item.kind,
+        } satisfies CapabilityRemoveDraftRequest,
+      );
+      setInventory(next);
+      setActionResult({
+        type: 'success',
+        text: `${item.name} 草稿已删除`,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -97,9 +148,12 @@ export function useCapabilityInventory(): UseCapabilityInventoryResult {
     items: inventory?.items || [],
     loading,
     error,
+    actionResult,
     actionKey,
     reload,
+    clearActionResult,
     setEnabled,
     installDraft,
+    removeDraft,
   };
 }

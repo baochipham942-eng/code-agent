@@ -20,6 +20,13 @@ import type { ToolDefinition, ToolResult } from '../../shared/contract';
  */
 export type MCPConfigScope = 'builtin' | 'cloud' | 'user' | 'project' | 'local' | 'runtime';
 
+export interface MCPCapabilityDraftMetadata {
+  origin: 'capability_center';
+  capabilityId: string;
+  capabilityKind: 'mcp_template';
+  installedAt: number;
+}
+
 /**
  * Stdio 服务器配置 (本地命令行)
  */
@@ -38,6 +45,7 @@ export interface MCPStdioServerConfig {
   lazyLoad?: boolean;
   /** 配置来源 scope（由加载层填充，业务代码不应手写） */
   scope?: MCPConfigScope;
+  capabilityDraft?: MCPCapabilityDraftMetadata;
 }
 
 /**
@@ -52,6 +60,7 @@ export interface MCPSSEServerConfig {
   headers?: Record<string, string>;
   /** 配置来源 scope（由加载层填充，业务代码不应手写） */
   scope?: MCPConfigScope;
+  capabilityDraft?: MCPCapabilityDraftMetadata;
 }
 
 /**
@@ -69,6 +78,7 @@ export interface MCPHttpStreamableServerConfig {
   requiredEnvVars?: string[];
   /** 配置来源 scope（由加载层填充，业务代码不应手写） */
   scope?: MCPConfigScope;
+  capabilityDraft?: MCPCapabilityDraftMetadata;
 }
 
 /**
@@ -86,6 +96,7 @@ export interface MCPInProcessServerConfig {
   serverFactory?: () => InProcessMCPServerInterface;
   /** 配置来源 scope（由加载层填充，业务代码不应手写） */
   scope?: MCPConfigScope;
+  capabilityDraft?: MCPCapabilityDraftMetadata;
 }
 
 /**

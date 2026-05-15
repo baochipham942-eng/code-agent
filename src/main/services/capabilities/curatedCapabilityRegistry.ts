@@ -9,6 +9,7 @@ import type {
   CapabilityCenterDiagnostic,
   CapabilityCenterItem,
   CapabilityInstallDraftSpec,
+  CapabilityInstallDraftParameter,
   CapabilityInstallPlan,
   CapabilityKind,
   CapabilityPermission,
@@ -201,13 +202,69 @@ function containsTemplatePlaceholder(value: unknown): boolean {
   return false;
 }
 
+function extractTemplatePlaceholders(value: unknown): string[] {
+  const placeholders = new Set<string>();
+  const visit = (entry: unknown): void => {
+    if (typeof entry === 'string') {
+      for (const match of entry.matchAll(/\{\{([^}]+)\}\}/g)) {
+        const key = match[1]?.trim();
+        if (key) placeholders.add(key);
+      }
+      return;
+    }
+    if (Array.isArray(entry)) {
+      entry.forEach(visit);
+      return;
+    }
+    if (entry && typeof entry === 'object') {
+      Object.values(entry as Record<string, unknown>).forEach(visit);
+    }
+  };
+  visit(value);
+  return Array.from(placeholders).sort();
+}
+
 function isSafeMcpServerName(value: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(value);
+}
+
+function isSafeTemplateParameterKey(value: string): boolean {
+  return /^[a-zA-Z0-9_.-]+$/.test(value);
+}
+
+function buildDraftParameters(
+  placeholderKeys: string[],
+  requirements: CapabilityRequirement[],
+): CapabilityInstallDraftParameter[] | null {
+  const requirementByLabel = new Map(requirements.map((entry) => [entry.label, entry]));
+  const parameters: CapabilityInstallDraftParameter[] = [];
+  for (const key of placeholderKeys) {
+    if (!isSafeTemplateParameterKey(key)) {
+      return null;
+    }
+    const requirement = requirementByLabel.get(key);
+    if (!requirement) {
+      return null;
+    }
+    const kind = requirement?.kind || 'config';
+    if (requirement?.sensitive || kind === 'secret' || kind === 'env') {
+      return null;
+    }
+    parameters.push({
+      key,
+      label: requirement?.label || key,
+      kind,
+      required: true,
+      placeholder: `{{${key}}}`,
+    });
+  }
+  return parameters;
 }
 
 function parseMcpDraftSpec(
   rawInstall: unknown,
   fallbackName: string,
+  requirements: CapabilityRequirement[],
 ): CapabilityInstallDraftSpec | null {
   const install = asRecord(rawInstall);
   const mcpServer = asRecord(install.mcpServer);
@@ -226,6 +283,9 @@ function parseMcpDraftSpec(
   if (!isSafeMcpServerName(name) || !command || mcpServer.env !== undefined) {
     return null;
   }
+  if (containsTemplatePlaceholder(name) || containsTemplatePlaceholder(command)) {
+    return null;
+  }
 
   const config = {
     name,
@@ -233,8 +293,9 @@ function parseMcpDraftSpec(
     command,
     args,
   };
-
-  if (containsTemplatePlaceholder(config)) {
+  const placeholderKeys = extractTemplatePlaceholders(args);
+  const parameters = buildDraftParameters(placeholderKeys, requirements);
+  if (!parameters) {
     return null;
   }
 
@@ -243,6 +304,7 @@ function parseMcpDraftSpec(
     target: 'project_mcp_json',
     name,
     config,
+    ...(parameters.length > 0 ? { parameters } : {}),
   };
 }
 
@@ -492,7 +554,7 @@ function parseCuratedRegistryItem(
     ? raw.permissions.map((entry) => parseCuratedPermission(asRecord(entry))).filter((entry): entry is CapabilityPermission => Boolean(entry))
     : [];
   const draft = kind === 'mcp_template'
-    ? parseMcpDraftSpec(raw.install, id)
+    ? parseMcpDraftSpec(raw.install, id, [...config, ...dependencies])
     : null;
 
   return {

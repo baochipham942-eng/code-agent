@@ -5,7 +5,7 @@ The Capability Center can read local curated registry files from:
 - `docs/capabilities/*.json` in this repository, excluding `*.schema.json`
 - `<workspace>/.code-agent/capabilities/*.json` for project-local templates, excluding `*.schema.json`
 
-This registry is intentionally local. It makes capability templates browsable and auditable. P0.8 allows one narrow install path: a curated MCP template may generate a disabled local draft when the registry contains a complete non-secret stdio spec. It must not install packages, run commands, connect MCP servers, create channel accounts, or enable workflow recipes.
+This registry is intentionally local. It makes capability templates browsable and auditable. P0.9 allows one narrow install path: a curated MCP template may generate a disabled local draft when the registry contains a non-secret stdio spec and all required template parameters are provided by the user. It must not install packages, run commands, connect MCP servers, create channel accounts, or enable workflow recipes.
 
 ## Supported item kinds
 
@@ -55,7 +55,7 @@ Every accepted template is normalized before it reaches the UI:
 - `state.enable` is always `not_applicable`
 - `state.runtime` is always `not_configured`
 - `actions.canEnable` and `actions.canDisable` are always `false`
-- `actions.canInstallDraft` is only `true` for MCP templates with a complete safe draft spec
+- `actions.canInstallDraft` is only `true` for MCP templates with a safe draft spec; unresolved placeholders become required UI parameters
 - `source.kind` is always `curated`
 - sensitive requirement values are discarded even if a registry file includes them
 - `source.registryFileHash` is computed locally from the registry file
@@ -86,12 +86,22 @@ For P0:
 - registry-supplied runtime state and actions are ignored
 - secret values are never surfaced from registry metadata
 - registry files get a local canonical `sha256` hash; if file-level `source.contentHash` is declared, it must match the canonical hash
-- install previews do not write files or configs; `draft_config` writes only a disabled MCP server draft
-- MCP draft install rejects registry env values, placeholder strings, unsupported transports, and missing stdio command metadata
+- install previews do not write files or configs; `draft_config` writes only a disabled MCP server draft after required parameters are filled
+- MCP draft install rejects registry env values, unsupported transports, missing stdio command metadata, and unresolved placeholders
 - no remote registry is fetched
 - no package, command, or server is executed
 
 Future team or remote registries should add signed source metadata, stronger provenance, explicit permission prompts, enable/disable lifecycle records, and rollback metadata before any install path exists.
+
+## Draft lifecycle
+
+P0.10 tracks Capability Center generated MCP drafts with local metadata on the MCP server config:
+
+- generated drafts include `capabilityDraft.origin:"capability_center"` and the source capability id
+- the matching curated card changes from `available` to `draft`
+- the card shows the written MCP config scope and the generated server name in audit notes
+- rollback only removes disabled MCP configs with matching `capabilityDraft` metadata
+- manual MCP servers, enabled servers, and configs without Capability Center metadata are not removed by this rollback path
 
 ## Hash check
 
@@ -109,10 +119,11 @@ P0 install preview is generated from accepted template kind:
 
 Preview mode does not write config, start commands, open ingress, inject workflow context, or grant new permissions.
 
-P0.8 draft install is stricter:
+P0.9 draft install is stricter:
 
 - Only `mcp_template` supports draft install.
 - The registry item must include `install.mcpServer` with `type:"stdio"`, a safe server `name`, a `command`, and optional string `args`.
-- Registry `env` values and `{{placeholder}}` strings are rejected, so secrets and unresolved user choices stay outside the install path.
+- `{{placeholder}}` values are allowed only in `args`; they are surfaced as required parameters and substituted only from user input.
+- Registry `env` values are rejected, so secrets stay outside the install path.
 - The generated MCP config is always normalized by the existing MCP settings path to `enabled:false` and `lazyLoad:true`.
 - The draft is registered in runtime only as a disabled server so the user can inspect it in MCP settings; it does not connect or discover tools until explicitly enabled.

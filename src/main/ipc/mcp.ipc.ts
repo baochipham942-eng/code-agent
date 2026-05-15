@@ -198,6 +198,51 @@ export async function persistMcpSettingsServerConfig(
   return { filePath: configPath };
 }
 
+export async function removeMcpSettingsServerDraftConfig(
+  workingDirectory: string,
+  serverName: string,
+  capabilityId: string,
+): Promise<{ filePath: string }> {
+  const mcpPaths = getMcpConfigPath(workingDirectory);
+  const candidates: Array<{ filePath: string; configKey: 'servers' | 'mcpServers' }> = [
+    { filePath: mcpPaths.new, configKey: 'servers' },
+    { filePath: mcpPaths.legacy, configKey: 'mcpServers' },
+  ];
+
+  for (const candidate of candidates) {
+    if (!await pathExists(candidate.filePath)) {
+      continue;
+    }
+
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(await fs.readFile(candidate.filePath, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const servers = Array.isArray(config[candidate.configKey])
+      ? [...(config[candidate.configKey] as MCPServerConfig[])]
+      : [];
+    const index = servers.findIndex((server) => {
+      return server.name === serverName
+        && server.enabled === false
+        && server.capabilityDraft?.origin === 'capability_center'
+        && server.capabilityDraft.capabilityId === capabilityId;
+    });
+    if (index < 0) {
+      continue;
+    }
+
+    servers.splice(index, 1);
+    config[candidate.configKey] = servers;
+    await fs.writeFile(candidate.filePath, JSON.stringify(config, null, 2));
+    return { filePath: candidate.filePath };
+  }
+
+  throw new Error(`Disabled MCP draft "${serverName}" was not found in MCP config`);
+}
+
 async function handleAddServer(payload: unknown, workingDirectory: string): Promise<unknown> {
   const payloadRecord = asRecord(payload, 'payload');
   const serverConfig = normalizeMcpSettingsServerConfig(payloadRecord.config ?? payloadRecord);

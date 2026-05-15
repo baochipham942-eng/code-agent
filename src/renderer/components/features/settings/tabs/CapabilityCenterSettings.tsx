@@ -2,7 +2,7 @@
 // CapabilityCenterSettings - local capability inventory and audit surface
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -17,6 +17,7 @@ import {
   Sparkles,
   ToggleLeft,
   ToggleRight,
+  Trash2,
   Wrench,
   Workflow,
   X,
@@ -221,6 +222,7 @@ interface CapabilityActionPresentation {
   nextEnabled: boolean | null;
   settingsTab: SettingsTab | null;
   installDraft: boolean;
+  removeDraft: boolean;
 }
 
 function getCapabilitySettingsTab(item: CapabilityCenterItem): SettingsTab | null {
@@ -247,6 +249,20 @@ function getCapabilityActionPresentation(
   item: CapabilityCenterItem,
   canNavigateSettings: boolean,
 ): CapabilityActionPresentation {
+  if (item.actions.canRemoveDraft) {
+    return {
+      label: '删除草稿',
+      variant: 'ghost',
+      disabled: false,
+      title: item.actions.reason,
+      leftIcon: <Trash2 className="h-3.5 w-3.5" />,
+      nextEnabled: null,
+      settingsTab: null,
+      installDraft: false,
+      removeDraft: true,
+    };
+  }
+
   if (item.installPlan && item.state.install === 'available') {
     if (item.actions.canInstallDraft) {
       return {
@@ -258,6 +274,7 @@ function getCapabilityActionPresentation(
         nextEnabled: null,
         settingsTab: null,
         installDraft: true,
+        removeDraft: false,
       };
     }
     return {
@@ -269,6 +286,7 @@ function getCapabilityActionPresentation(
       nextEnabled: null,
       settingsTab: null,
       installDraft: false,
+      removeDraft: false,
     };
   }
 
@@ -283,6 +301,7 @@ function getCapabilityActionPresentation(
       nextEnabled: null,
       settingsTab,
       installDraft: false,
+      removeDraft: false,
     };
   }
 
@@ -299,6 +318,7 @@ function getCapabilityActionPresentation(
       nextEnabled: null,
       settingsTab,
       installDraft: false,
+      removeDraft: false,
     };
   }
 
@@ -311,6 +331,7 @@ function getCapabilityActionPresentation(
     nextEnabled: !isEnabled,
     settingsTab: null,
     installDraft: false,
+    removeDraft: false,
   };
 }
 
@@ -318,13 +339,29 @@ interface CapabilityCardProps {
   item: CapabilityCenterItem;
   actionLoading: boolean;
   onToggle: (item: CapabilityCenterItem, enabled: boolean) => void;
-  onInstallDraft: (item: CapabilityCenterItem) => void;
+  onInstallDraft: (item: CapabilityCenterItem, inputs?: Record<string, string>) => void;
+  onRemoveDraft: (item: CapabilityCenterItem) => void;
   onNavigateSettings?: (tab: SettingsTab) => void;
 }
 
-const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, onToggle, onInstallDraft, onNavigateSettings }) => {
-  const missingConfig = missingRequirements([...item.config, ...item.dependencies]);
+const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, onToggle, onInstallDraft, onRemoveDraft, onNavigateSettings }) => {
+  const draftParameters = item.installPlan?.draft?.parameters || [];
+  const [draftInputs, setDraftInputs] = useState<Record<string, string>>({});
+  const missingDraftParameters = draftParameters.filter((parameter) => {
+    return parameter.required && !draftInputs[parameter.key]?.trim();
+  });
+  const draftParameterKeyByLabel = new Map(draftParameters.map((parameter) => [parameter.label, parameter.key]));
+  const missingConfig = missingRequirements([...item.config, ...item.dependencies]).filter((requirement) => {
+    const draftKey = draftParameterKeyByLabel.get(requirement.label);
+    return !draftKey || !draftInputs[draftKey]?.trim();
+  });
   const action = getCapabilityActionPresentation(item, Boolean(onNavigateSettings));
+  const draftSettingsTab = item.actions.canRemoveDraft ? getCapabilitySettingsTab(item) : null;
+  const showDraftManageAction = Boolean(draftSettingsTab && onNavigateSettings);
+  const actionDisabled = action.disabled || (action.installDraft && missingDraftParameters.length > 0);
+  const actionTitle = action.installDraft && missingDraftParameters.length > 0
+    ? `缺少 ${missingDraftParameters.map((parameter) => parameter.label).join(', ')}`
+    : action.title;
 
   return (
     <article className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3">
@@ -356,26 +393,68 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
           </div>
         </div>
 
-        <Button
-          size="sm"
-          variant={action.variant}
-          loading={actionLoading}
-          disabled={action.disabled}
-          title={action.title}
-          leftIcon={action.leftIcon}
-          onClick={() => {
-            if (action.settingsTab) {
-              onNavigateSettings?.(action.settingsTab);
-            } else if (action.installDraft) {
-              onInstallDraft(item);
-            } else if (action.nextEnabled !== null) {
-              onToggle(item, action.nextEnabled);
-            }
-          }}
-        >
-          {action.label}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {showDraftManageAction ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<FileCog className="h-3.5 w-3.5" />}
+              onClick={() => {
+                if (draftSettingsTab) {
+                  onNavigateSettings?.(draftSettingsTab);
+                }
+              }}
+            >
+              去管理
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant={action.variant}
+            loading={actionLoading}
+            disabled={actionDisabled}
+            title={actionTitle}
+            leftIcon={action.leftIcon}
+            onClick={() => {
+              if (action.settingsTab) {
+                onNavigateSettings?.(action.settingsTab);
+              } else if (action.installDraft) {
+                onInstallDraft(item, draftInputs);
+              } else if (action.removeDraft) {
+                onRemoveDraft(item);
+              } else if (action.nextEnabled !== null) {
+                onToggle(item, action.nextEnabled);
+              }
+            }}
+          >
+            {action.label}
+          </Button>
+        </div>
       </div>
+
+      {draftParameters.length > 0 && item.actions.canInstallDraft ? (
+        <div className="mt-3 grid gap-2 rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3 sm:grid-cols-2">
+          {draftParameters.map((parameter) => (
+            <label key={parameter.key} className="min-w-0 text-xs">
+              <span className="mb-1 block text-[11px] font-medium text-zinc-500">
+                {parameter.label}
+              </span>
+              <Input
+                value={draftInputs[parameter.key] || ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDraftInputs((current) => ({
+                    ...current,
+                    [parameter.key]: value,
+                  }));
+                }}
+                placeholder={parameter.kind === 'path' ? '/path/to/folder' : parameter.key}
+                inputSize="sm"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       {(missingConfig.length > 0 || item.state.error) && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -487,10 +566,13 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
     items,
     loading,
     error,
+    actionResult,
     actionKey,
     reload,
+    clearActionResult,
     setEnabled,
     installDraft,
+    removeDraft,
   } = useCapabilityInventory();
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState<'all' | CapabilityKind>('all');
@@ -511,6 +593,14 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
     () => (inventory?.diagnostics || []).filter((diagnostic) => diagnostic.source === 'registry'),
     [inventory],
   );
+
+  useEffect(() => {
+    if (!actionResult) return undefined;
+    const timeout = window.setTimeout(() => {
+      clearActionResult();
+    }, 3000);
+    return () => window.clearTimeout(timeout);
+  }, [actionResult, clearActionResult]);
 
   return (
     <SettingsPage
@@ -620,6 +710,13 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
             </div>
           </div>
 
+          {actionResult ? (
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{actionResult.text}</span>
+            </div>
+          ) : null}
+
           {error ? (
             <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -643,7 +740,8 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                   item={item}
                   actionLoading={actionKey === item.id}
                   onToggle={(target, enabled) => void setEnabled(target, enabled)}
-                  onInstallDraft={(target) => void installDraft(target)}
+                  onInstallDraft={(target, inputs) => void installDraft(target, inputs)}
+                  onRemoveDraft={(target) => void removeDraft(target)}
                   onNavigateSettings={onNavigateSettings}
                 />
               ))}

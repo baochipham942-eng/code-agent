@@ -51,7 +51,11 @@ function makeItem(overrides: Partial<CapabilityCenterItem>): CapabilityCenterIte
   };
 }
 
-function mockInventory(items: CapabilityCenterItem[], diagnostics: CapabilityCenterDiagnostic[] = []): void {
+function mockInventory(
+  items: CapabilityCenterItem[],
+  diagnostics: CapabilityCenterDiagnostic[] = [],
+  overrides: Record<string, unknown> = {},
+): void {
   const inventory: CapabilityCenterInventory = {
     generatedAt: 1,
     summary: {
@@ -70,10 +74,14 @@ function mockInventory(items: CapabilityCenterItem[], diagnostics: CapabilityCen
     items,
     loading: false,
     error: null,
+    actionResult: null,
     actionKey: null,
     reload: vi.fn(),
+    clearActionResult: vi.fn(),
     setEnabled: vi.fn(),
     installDraft: vi.fn(),
+    removeDraft: vi.fn(),
+    ...overrides,
   });
 }
 
@@ -272,6 +280,13 @@ describe('CapabilityCenterSettings', () => {
           canInstallDraft: true,
           reason: '可生成 disabled MCP server 草稿',
         },
+        config: [
+          {
+            kind: 'path',
+            label: 'allowedRoot',
+            status: 'missing',
+          },
+        ],
         installPlan: {
           mode: 'draft_config',
           title: '生成草稿: Installable MCP template',
@@ -290,11 +305,20 @@ describe('CapabilityCenterSettings', () => {
             kind: 'mcp_server',
             target: 'project_mcp_json',
             name: 'installable_mcp',
+            parameters: [
+              {
+                key: 'allowedRoot',
+                label: 'allowedRoot',
+                kind: 'path',
+                required: true,
+                placeholder: '{{allowedRoot}}',
+              },
+            ],
             config: {
               name: 'installable_mcp',
               type: 'stdio',
               command: 'node',
-              args: ['server.js'],
+              args: ['server.js', '{{allowedRoot}}'],
             },
           },
         },
@@ -307,8 +331,93 @@ describe('CapabilityCenterSettings', () => {
 
     expect(html).toContain('生成草稿');
     expect(html).toContain('draft_config');
+    expect(html).toContain('allowedRoot');
+    expect(html).toContain('/path/to/folder');
+    expect(html).toContain('缺少 allowedRoot');
     expect(html).toContain('No package install or command execution during draft install.');
     expect(html).not.toContain('安装预览</span></button>');
+  });
+
+  it('shows rollback action for generated capability drafts', () => {
+    mockInventory([
+      makeItem({
+        id: 'curated:mcp_template%3Aparameterized-mcp',
+        kind: 'mcp_template',
+        name: 'Parameterized MCP template',
+        source: {
+          kind: 'curated',
+          label: '本地 curated registry',
+        },
+        state: {
+          install: 'draft',
+          enable: 'disabled',
+          runtime: 'not_configured',
+          mount: 'not_applicable',
+          statusLabel: 'draft',
+        },
+        actions: {
+          canEnable: false,
+          canDisable: false,
+          canInstallDraft: false,
+          canRemoveDraft: true,
+          reason: '已生成 disabled MCP draft，可删除草稿或到 MCP 设置中管理',
+        },
+        audit: {
+          configFiles: ['project:mcp.json'],
+          notes: ['Draft generated as disabled MCP server "parameterized_mcp".'],
+        },
+        relatedIds: ['mcp:parameterized_mcp'],
+        installPlan: {
+          mode: 'draft_config',
+          title: '生成草稿: Parameterized MCP template',
+          summary: '写入 disabled MCP server 草稿；不会启动进程、不会连接 server、不会启用工具。',
+          writes: [],
+          steps: [],
+          safety: [],
+          rollback: ['Remove the generated disabled MCP server draft from .code-agent/mcp.json.'],
+        },
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(
+      React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
+    );
+
+    expect(html).toContain('删除草稿');
+    expect(html).toContain('去管理');
+    expect(html).toContain('draft');
+    expect(html).toContain('project:mcp.json');
+    expect(html).toContain('Draft generated as disabled MCP server');
+    expect(html).not.toContain('生成草稿</span></button>');
+  });
+
+  it('shows successful capability action feedback', () => {
+    mockInventory(
+      [
+        makeItem({
+          id: 'curated:mcp_template%3Aparameterized-mcp',
+          kind: 'mcp_template',
+          name: 'Parameterized MCP template',
+          source: {
+            kind: 'curated',
+            label: '本地 curated registry',
+          },
+        }),
+      ],
+      [],
+      {
+        actionResult: {
+          type: 'success',
+          text: 'Parameterized MCP template 草稿已生成',
+        },
+      },
+    );
+
+    const html = renderToStaticMarkup(
+      React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
+    );
+
+    expect(html).toContain('Parameterized MCP template 草稿已生成');
   });
 
   it('shows registry diagnostics without turning them into install actions', () => {

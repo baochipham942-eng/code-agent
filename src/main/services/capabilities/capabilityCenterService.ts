@@ -17,6 +17,7 @@ import type {
   CapabilitySourceKind,
   CapabilityStateInfo,
   CapabilityInstallDraftRequest,
+  CapabilityRemoveDraftRequest,
   CapabilityToggleRequest,
 } from '../../../shared/contract/capability';
 import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
@@ -51,7 +52,9 @@ import { readCuratedRegistry } from './curatedCapabilityRegistry';
 import {
   normalizeMcpSettingsServerConfig,
   persistMcpSettingsServerConfig,
+  removeMcpSettingsServerDraftConfig,
 } from '../../ipc/mcp.ipc';
+import { resolveInstallDraftConfig } from './capabilityDraftResolver';
 
 const logger = createLogger('CapabilityCenterService');
 
@@ -473,6 +476,7 @@ function summarize(items: CapabilityCenterItem[]): CapabilityCenterSummary {
 class CapabilityCenterService {
   async listCapabilities(options: CapabilityListOptions = {}): Promise<CapabilityCenterInventory> {
     const curatedRegistry = await readCuratedRegistry(options.workingDirectory);
+    const curatedItems = this.applyCuratedDraftState(curatedRegistry.items);
     const items = [
       ...await this.listSkills(options.workingDirectory),
       ...this.listMcpServers(),
@@ -480,7 +484,7 @@ class CapabilityCenterService {
       ...await this.listConnectors(options.configService),
       ...this.listChannels(),
       ...await readWorkflowRecipes(),
-      ...curatedRegistry.items,
+      ...curatedItems,
     ].sort((left, right) => {
       const byKind = CAPABILITY_KIND_ORDER[left.kind] - CAPABILITY_KIND_ORDER[right.kind];
       if (byKind !== 0) return byKind;
@@ -550,13 +554,24 @@ class CapabilityCenterService {
 
     switch (draft.kind) {
       case 'mcp_server': {
-        const serverConfig = normalizeMcpSettingsServerConfig(draft.config);
+        const serverConfig = normalizeMcpSettingsServerConfig(
+          resolveInstallDraftConfig(draft, request.inputs),
+        );
         const existing = getMCPClient().getServerState(serverConfig.name);
         if (existing) {
           throw new Error(`MCP server "${serverConfig.name}" already exists`);
         }
-        await persistMcpSettingsServerConfig(options.workingDirectory, serverConfig);
-        getMCPClient().addServer({ ...serverConfig, scope: 'runtime' });
+        const draftServerConfig: MCPServerConfig = {
+          ...serverConfig,
+          capabilityDraft: {
+            origin: 'capability_center',
+            capabilityId: request.id,
+            capabilityKind: 'mcp_template',
+            installedAt: Date.now(),
+          },
+        };
+        await persistMcpSettingsServerConfig(options.workingDirectory, draftServerConfig);
+        getMCPClient().addServer({ ...draftServerConfig, scope: 'project' });
         break;
       }
       default:
@@ -564,6 +579,93 @@ class CapabilityCenterService {
     }
 
     return this.listCapabilities(options);
+  }
+
+  async removeDraft(
+    request: CapabilityRemoveDraftRequest,
+    options: CapabilityInstallDraftOptions = {},
+  ): Promise<CapabilityCenterInventory> {
+    if (!options.workingDirectory) {
+      throw new Error('Working directory is required to remove capability drafts');
+    }
+
+    const currentInventory = await this.listCapabilities(options);
+    const currentItem = currentInventory.items.find((item) => item.id === request.id && item.kind === request.kind);
+    if (!currentItem) {
+      throw new Error(`Capability not found: ${request.kind}:${request.id}`);
+    }
+    if (!currentItem.actions.canRemoveDraft) {
+      throw new Error(currentItem.actions.reason || `Capability ${request.id} does not have a removable draft`);
+    }
+
+    const draftState = this.findMcpDraftStateForCapability(request.id);
+    if (!draftState) {
+      throw new Error(`Capability draft not found: ${request.id}`);
+    }
+    if (draftState.config.enabled) {
+      throw new Error(`MCP draft "${draftState.config.name}" must be disabled before removal`);
+    }
+
+    await removeMcpSettingsServerDraftConfig(
+      options.workingDirectory,
+      draftState.config.name,
+      request.id,
+    );
+    await getMCPClient().removeServer(draftState.config.name);
+    getContextHealthService().clearMcpServerAcrossSessions(draftState.config.name);
+
+    return this.listCapabilities(options);
+  }
+
+  private findMcpDraftStateForCapability(capabilityId: string): MCPServerState | undefined {
+    return getMCPClient().getServerStates().find((state) => {
+      const draft = state.config.capabilityDraft;
+      return draft?.origin === 'capability_center'
+        && draft.capabilityId === capabilityId
+        && state.config.enabled === false;
+    });
+  }
+
+  private applyCuratedDraftState(items: CapabilityCenterItem[]): CapabilityCenterItem[] {
+    return items.map((item) => {
+      if (item.source.kind !== 'curated' || item.kind !== 'mcp_template') {
+        return item;
+      }
+      const draftState = this.findMcpDraftStateForCapability(item.id);
+      if (!draftState) {
+        return item;
+      }
+
+      const serverName = draftState.config.name;
+      const configFile = draftState.config.scope
+        ? `${draftState.config.scope}:mcp.json`
+        : 'runtime MCP config';
+      return {
+        ...item,
+        state: buildState({
+          install: 'draft',
+          enable: 'disabled',
+          runtime: 'not_configured',
+          statusLabel: 'draft',
+        }),
+        audit: {
+          ...item.audit,
+          configFiles: unique([...(item.audit.configFiles || []), configFile]),
+          notes: [
+            ...(item.audit.notes || []),
+            `Draft generated as disabled MCP server "${serverName}".`,
+          ],
+        },
+        actions: {
+          canEnable: false,
+          canDisable: false,
+          canInstallDraft: false,
+          canRemoveDraft: true,
+          reason: '已生成 disabled MCP draft，可删除草稿或到 MCP 设置中管理',
+        },
+        relatedIds: unique([...(item.relatedIds || []), encodeCapabilityId('mcp', serverName)]),
+      } satisfies CapabilityCenterItem;
+    });
   }
 
   private async listSkills(workingDirectory?: string): Promise<CapabilityCenterItem[]> {

@@ -10,6 +10,7 @@ const skillDisable = vi.fn();
 const skillRefresh = vi.fn();
 const mcpSetEnabled = vi.fn();
 const mcpAddServer = vi.fn();
+const mcpRemoveServer = vi.fn();
 const clearMcpContext = vi.fn();
 const connectorConfigure = vi.fn();
 const channelUpdateAccount = vi.fn();
@@ -129,6 +130,7 @@ vi.mock('../../../../src/main/mcp/mcpClient', () => ({
     getServerStates: () => mcpStates,
     getServerState: (serverName: string) => mcpStates.find((state) => state.config.name === serverName),
     addServer: mcpAddServer,
+    removeServer: mcpRemoveServer,
     setServerEnabled: mcpSetEnabled,
   }),
   isStdioConfig: (config: { type?: string }) => !config.type || config.type === 'stdio',
@@ -205,6 +207,9 @@ describe('CapabilityCenterService', () => {
         resourceCount: 0,
       } as typeof githubMcpState);
     });
+    mcpRemoveServer.mockImplementation((serverName: string) => {
+      mcpStates = mcpStates.filter((state) => state.config.name !== serverName);
+    });
     channelUpdateAccount.mockResolvedValue(httpAccount);
   });
 
@@ -254,12 +259,24 @@ describe('CapabilityCenterService', () => {
       actions: {
         canEnable: false,
         canDisable: false,
+        canInstallDraft: true,
       },
       installPlan: {
-        mode: 'preview_only',
+        mode: 'draft_config',
+        draft: {
+          kind: 'mcp_server',
+          parameters: [
+            {
+              key: 'allowedRoot',
+              label: 'allowedRoot',
+              kind: 'path',
+              required: true,
+            },
+          ],
+        },
         writes: [
           {
-            target: 'project or user mcp.json',
+            target: 'project .code-agent/mcp.json',
           },
         ],
       },
@@ -324,6 +341,13 @@ describe('CapabilityCenterService', () => {
           kind: 'mcp_template',
           name: 'Placeholder MCP',
           summary: 'A fixture with unresolved template placeholders.',
+          config: [
+            {
+              kind: 'path',
+              label: 'allowedRoot',
+              status: 'missing',
+            },
+          ],
           install: {
             mcpServer: {
               name: 'placeholder_mcp',
@@ -405,8 +429,20 @@ describe('CapabilityCenterService', () => {
       },
     });
     expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Aplaceholder-mcp')).toMatchObject({
-      actions: { canInstallDraft: false },
-      installPlan: { mode: 'preview_only' },
+      actions: { canInstallDraft: true },
+      installPlan: {
+        mode: 'draft_config',
+        draft: {
+          parameters: [
+            {
+              key: 'allowedRoot',
+              label: 'allowedRoot',
+              kind: 'path',
+              required: true,
+            },
+          ],
+        },
+      },
     });
     expect(inventory.items.find((item) => item.id === 'curated:skill%3Aignored-skill')).toBeUndefined();
     expect(inventory.items.find((item) => item.id === 'curated:workflow_recipe%3Amissing-summary')).toBeUndefined();
@@ -461,16 +497,23 @@ describe('CapabilityCenterService', () => {
       },
       items: [
         {
-          id: 'installable-mcp',
+          id: 'parameterized-mcp',
           kind: 'mcp_template',
-          name: 'Installable MCP',
-          summary: 'A fixture with a complete local stdio draft spec.',
+          name: 'Parameterized MCP',
+          summary: 'A fixture with a required user-provided path.',
+          config: [
+            {
+              kind: 'path',
+              label: 'allowedRoot',
+              status: 'missing',
+            },
+          ],
           install: {
             mcpServer: {
-              name: 'installable_mcp',
+              name: 'parameterized_mcp',
               type: 'stdio',
               command: 'node',
-              args: ['server.js'],
+              args: ['server.js', '{{allowedRoot}}'],
             },
           },
         },
@@ -483,8 +526,13 @@ describe('CapabilityCenterService', () => {
       updateSettings: configUpdateSettings,
     } as never;
 
-    await service.installDraft(
-      { id: 'curated:mcp_template%3Ainstallable-mcp', kind: 'mcp_template' },
+    await expect(service.installDraft(
+      { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template' },
+      { workingDirectory: workspace, configService },
+    )).rejects.toThrow('allowedRoot');
+
+    const afterInstall = await service.installDraft(
+      { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template', inputs: { allowedRoot: '/tmp/capability-root' } },
       { workingDirectory: workspace, configService },
     );
 
@@ -493,21 +541,55 @@ describe('CapabilityCenterService', () => {
     ) as { servers: Array<Record<string, unknown>> };
     expect(persisted.servers).toEqual([
       expect.objectContaining({
-        name: 'installable_mcp',
+        name: 'parameterized_mcp',
         type: 'stdio',
         command: 'node',
-        args: ['server.js'],
+        args: ['server.js', '/tmp/capability-root'],
         enabled: false,
         lazyLoad: true,
+        capabilityDraft: expect.objectContaining({
+          origin: 'capability_center',
+          capabilityId: 'curated:mcp_template%3Aparameterized-mcp',
+          capabilityKind: 'mcp_template',
+          installedAt: expect.any(Number),
+        }),
       }),
     ]);
     expect(mcpAddServer).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'installable_mcp',
+      name: 'parameterized_mcp',
       enabled: false,
       lazyLoad: true,
-      scope: 'runtime',
+      scope: 'project',
+      capabilityDraft: expect.objectContaining({
+        capabilityId: 'curated:mcp_template%3Aparameterized-mcp',
+      }),
     }));
     expect(mcpSetEnabled).not.toHaveBeenCalled();
+
+    expect(afterInstall.items.find((item) => item.id === 'curated:mcp_template%3Aparameterized-mcp')).toMatchObject({
+      state: {
+        install: 'draft',
+        enable: 'disabled',
+        runtime: 'not_configured',
+        statusLabel: 'draft',
+      },
+      actions: {
+        canInstallDraft: false,
+        canRemoveDraft: true,
+      },
+      relatedIds: ['mcp:parameterized_mcp'],
+    });
+
+    await service.removeDraft(
+      { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template' },
+      { workingDirectory: workspace, configService },
+    );
+    const rolledBack = JSON.parse(
+      await fs.readFile(path.join(workspace, '.code-agent', 'mcp.json'), 'utf8'),
+    ) as { servers: Array<Record<string, unknown>> };
+    expect(rolledBack.servers).toEqual([]);
+    expect(mcpRemoveServer).toHaveBeenCalledWith('parameterized_mcp');
+    expect(clearMcpContext).toHaveBeenCalledWith('parameterized_mcp');
 
     await fs.rm(workspace, { recursive: true, force: true });
   });
@@ -534,7 +616,7 @@ describe('CapabilityCenterService', () => {
     await expect(service.setEnabled(
       { id: 'curated:mcp_template%3Amcp-filesystem-readonly', kind: 'mcp_template', enabled: true },
       { configService },
-    )).rejects.toThrow('MCP 设置');
+    )).rejects.toThrow('disabled MCP');
 
     expect(skillDisable).not.toHaveBeenCalled();
     expect(channelUpdateAccount).not.toHaveBeenCalled();

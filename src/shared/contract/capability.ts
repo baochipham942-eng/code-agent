@@ -117,6 +117,7 @@ export interface CapabilityActionInfo {
   canEnable: boolean;
   canDisable: boolean;
   canInstallDraft?: boolean;
+  canRemoveDraft?: boolean;
   reason?: string;
 }
 
@@ -155,6 +156,16 @@ export interface CapabilityInstallDraftSpec {
   target: 'project_mcp_json';
   name: string;
   config: Record<string, unknown>;
+  parameters?: CapabilityInstallDraftParameter[];
+}
+
+export interface CapabilityInstallDraftParameter {
+  key: string;
+  label: string;
+  kind: CapabilityRequirementKind;
+  required: boolean;
+  sensitive?: boolean;
+  placeholder?: string;
 }
 
 export interface CapabilityCenterItem {
@@ -212,6 +223,12 @@ export interface CapabilityToggleRequest {
 }
 
 export interface CapabilityInstallDraftRequest {
+  id: string;
+  kind: CapabilityKind;
+  inputs?: Record<string, string>;
+}
+
+export interface CapabilityRemoveDraftRequest {
   id: string;
   kind: CapabilityKind;
 }

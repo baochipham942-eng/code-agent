@@ -53,8 +53,20 @@
       ],
       "audit": {
         "notes": [
-          "Template only. Capability Center must not write mcp.json or connect this server."
+          "Capability Center may generate a disabled draft only after the user provides allowedRoot."
         ]
+      },
+      "install": {
+        "mcpServer": {
+          "name": "filesystem_readonly",
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "{{allowedRoot}}"
+          ]
+        }
       }
     },
     {

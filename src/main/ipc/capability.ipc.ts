@@ -6,6 +6,7 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type {
   CapabilityInstallDraftRequest,
+  CapabilityRemoveDraftRequest,
   CapabilityToggleRequest,
 } from '../../shared/contract/capability';
 import type { ConfigService } from '../services/core/configService';
@@ -53,6 +54,15 @@ export function registerCapabilityHandlers(
         case 'installDraft':
           data = await service.installDraft(
             request.payload as CapabilityInstallDraftRequest,
+            {
+              workingDirectory: getWorkingDirectory(deps.getAppService),
+              configService: deps.getConfigService(),
+            },
+          );
+          break;
+        case 'removeDraft':
+          data = await service.removeDraft(
+            request.payload as CapabilityRemoveDraftRequest,
             {
               workingDirectory: getWorkingDirectory(deps.getAppService),
               configService: deps.getConfigService(),

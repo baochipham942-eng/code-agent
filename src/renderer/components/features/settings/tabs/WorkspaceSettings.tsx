@@ -4,7 +4,9 @@
 //
 // P1 IA：把"当前工作区 / 最近目录 / 本地桥 / Browser 默认模式"集中到一个 tab。
 // Browser 模式从 ConversationSettings 迁移过来，复用 composerStore.browserSessionMode。
-// 最近目录依赖 settings.workspace.recentDirectories IPC，IPC 缺失时显示空状态 + TODO。
+// 最近目录通过 workspace:listRecent IPC 拉取，切换/选择目录时会回写
+// settings.workspace.recentDirectories（main 侧 setCurrent/selectDirectory 走
+// configService.addRecentDirectory），表格行的"移除"调用 removeRecent。
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -21,7 +23,6 @@ import {
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings } from '@shared/contract';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import { Button } from '../../../primitives';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -99,12 +100,12 @@ export const WorkspaceSettings: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [dir, settings] = await Promise.all([
+      const [dir, recent] = await Promise.all([
         ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent'),
-        ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
+        ipcService.invokeDomain<string[]>(IPC_DOMAINS.WORKSPACE, 'listRecent'),
       ]);
       setCurrentDir(dir ?? null);
-      setRecentDirs(settings?.workspace?.recentDirectories ?? []);
+      setRecentDirs(Array.isArray(recent) ? recent : []);
     } catch (error) {
       logger.error('Failed to load workspace settings', error);
     } finally {
@@ -146,6 +147,15 @@ export const WorkspaceSettings: React.FC = () => {
       logger.error('Failed to switch workspace', error);
     }
   }, [load]);
+
+  const handleRemoveRecent = useCallback(async (path: string) => {
+    try {
+      const next = await ipcService.invokeDomain<string[]>(IPC_DOMAINS.WORKSPACE, 'removeRecent', { dir: path });
+      setRecentDirs(Array.isArray(next) ? next : []);
+    } catch (error) {
+      logger.error('Failed to remove recent directory', error);
+    }
+  }, []);
 
   return (
     <SettingsPage
@@ -336,7 +346,7 @@ export const WorkspaceSettings: React.FC = () => {
                         <Clock className="h-5 w-5 text-zinc-600" />
                         <div>暂无最近目录</div>
                         <div className="text-[11px] text-zinc-600">
-                          TODO：等待 workspace.recentDirectories 写入路径，或新增 listRecent IPC
+                          切换或选择一个目录后会自动出现在这里。
                         </div>
                       </div>
                     </td>
@@ -387,14 +397,25 @@ export const WorkspaceSettings: React.FC = () => {
                             打开
                           </Button>
                           {!row.active && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={isWebMode()}
-                              onClick={() => handleSwitchTo(row.path)}
-                            >
-                              切换
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={isWebMode()}
+                                onClick={() => handleSwitchTo(row.path)}
+                              >
+                                切换
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={isWebMode()}
+                                onClick={() => handleRemoveRecent(row.path)}
+                                leftIcon={<X className="h-3.5 w-3.5" />}
+                              >
+                                移除
+                              </Button>
+                            </>
                           )}
                         </div>
                       </td>

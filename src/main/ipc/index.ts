@@ -98,7 +98,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerSyncHandlers(ipcMain);
 
   // Workspace handlers
-  registerWorkspaceHandlers(ipcMain, getMainWindow, getAppService);
+  registerWorkspaceHandlers(ipcMain, getMainWindow, getAppService, getConfigService);
 
   // Settings handlers
   registerSettingsHandlers(ipcMain, getConfigService);

@@ -8,6 +8,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import type { FileInfo } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 
 // ----------------------------------------------------------------------------
@@ -16,7 +17,8 @@ import { readDesignMdSummary } from '../../design/design-md-loader';
 
 async function handleSelectDirectory(
   getMainWindow: () => BrowserWindow | null,
-  getAppService: () => AgentApplicationService | null
+  getAppService: () => AgentApplicationService | null,
+  getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
   const mainWindow = getMainWindow();
   if (!mainWindow) return null;
@@ -32,6 +34,10 @@ async function handleSelectDirectory(
   const appService = getAppService();
   if (appService) appService.setWorkingDirectory(selectedPath);
 
+  // Selecting a directory through the picker counts as actually entering it —
+  // record it in workspace.recentDirectories so the Settings page surfaces it.
+  await getConfigService()?.addRecentDirectory(selectedPath);
+
   return selectedPath;
 }
 
@@ -43,6 +49,7 @@ async function handleSetCurrent(
   payload: { dir: string | null | undefined },
   getAppService: () => AgentApplicationService | null,
   getMainWindow: () => BrowserWindow | null,
+  getConfigService: () => ConfigService | null,
 ): Promise<string | null> {
   const nextDir = payload.dir?.trim();
   if (!nextDir) {
@@ -54,6 +61,10 @@ async function handleSetCurrent(
     appService.setWorkingDirectory(nextDir);
   }
 
+  // 持久化到 settings.workspace.recentDirectories：configService 内部去重 +
+  // 上限 10 条。让 WorkspaceSettings 表格直接拿到刚切过的目录。
+  await getConfigService()?.addRecentDirectory(nextDir);
+
   // 广播给所有 renderer 订阅者（appStore），让渲染进程 workingDirectory 跟上
   // main 侧的变更。不依赖调用方 dual-write response.data，避免直调 domainAPI
   // 时 renderer store 落空（LivePreviewFrame.resolveSourceLocation 会 fallback
@@ -61,6 +72,38 @@ async function handleSetCurrent(
   getMainWindow()?.webContents.send(IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED, { dir: nextDir });
 
   return nextDir;
+}
+
+async function handleListRecent(
+  getConfigService: () => ConfigService | null,
+): Promise<string[]> {
+  const settings = getConfigService()?.getSettings();
+  return settings?.workspace?.recentDirectories ?? [];
+}
+
+async function handleRemoveRecent(
+  payload: { dir: string | null | undefined },
+  getConfigService: () => ConfigService | null,
+): Promise<string[]> {
+  const target = payload.dir?.trim();
+  const configService = getConfigService();
+  if (!target || !configService) {
+    return configService?.getSettings().workspace?.recentDirectories ?? [];
+  }
+
+  const current = configService.getSettings().workspace?.recentDirectories ?? [];
+  const next = current.filter((entry) => entry !== target);
+  if (next.length === current.length) {
+    return current;
+  }
+
+  await configService.updateSettings({
+    workspace: {
+      ...configService.getSettings().workspace,
+      recentDirectories: next,
+    },
+  });
+  return next;
 }
 
 async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]> {
@@ -239,7 +282,8 @@ async function handleGetDesignMdSummary(payload: { cwd?: string | null }): Promi
 export function registerWorkspaceHandlers(
   ipcMain: IpcMain,
   getMainWindow: () => BrowserWindow | null,
-  getAppService: () => AgentApplicationService | null
+  getAppService: () => AgentApplicationService | null,
+  getConfigService: () => ConfigService | null,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -250,13 +294,19 @@ export function registerWorkspaceHandlers(
 
       switch (action) {
         case 'selectDirectory':
-          data = await handleSelectDirectory(getMainWindow, getAppService);
+          data = await handleSelectDirectory(getMainWindow, getAppService, getConfigService);
           break;
         case 'getCurrent':
           data = await handleGetCurrent(getAppService);
           break;
         case 'setCurrent':
-          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow);
+          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow, getConfigService);
+          break;
+        case 'listRecent':
+          data = await handleListRecent(getConfigService);
+          break;
+        case 'removeRecent':
+          data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);
           break;
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });

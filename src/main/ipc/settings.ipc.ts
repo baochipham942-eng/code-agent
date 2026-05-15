@@ -144,15 +144,6 @@ async function handleGetAllServiceKeys(
   return result;
 }
 
-async function handleSyncApiKeysFromCloud(
-  getConfigService: () => ConfigService | null,
-  payload: { authToken: string }
-): Promise<{ success: boolean; syncedKeys: string[]; error?: string }> {
-  const configService = getConfigService();
-  if (!configService) throw new Error('Config service not initialized');
-  return configService.syncApiKeysFromCloud(payload.authToken);
-}
-
 async function handleGetIntegration(
   getConfigService: () => ConfigService | null,
   integration: string
@@ -209,9 +200,6 @@ export function registerSettingsHandlers(
           break;
         case 'checkApiKeyConfigured':
           data = await handleCheckApiKeyConfigured();
-          break;
-        case 'syncApiKeysFromCloud':
-          data = await handleSyncApiKeysFromCloud(getConfigService, payload as { authToken: string });
           break;
         case 'setServiceApiKey':
           await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });

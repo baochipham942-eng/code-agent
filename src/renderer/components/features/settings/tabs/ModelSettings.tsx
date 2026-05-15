@@ -55,7 +55,6 @@ export interface ProviderManagementRow {
   evalEligibleCount: number;
   defaultModel: string;
   endpoint: string;
-  cloudProxySupported: boolean;
   selected: boolean;
   selectedModelLabel: string;
   enabledModelCount: number;
@@ -169,7 +168,6 @@ export function buildProviderManagementRows({
       enabledModelCount: enabledModels.length,
       defaultModel: registryInfo?.defaultModel || runtimeModels[0]?.id || '-',
       endpoint: providerConfigs?.[provider.id]?.baseUrl || registryInfo?.endpoint || '-',
-      cloudProxySupported: Boolean(registryInfo?.cloudProxySupported),
       selected: config.provider === provider.id,
       selectedModelLabel: config.provider === provider.id
         ? getModelLabel(runtimeModels, config.model)
@@ -629,9 +627,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                       <div className="max-w-[240px] truncate font-mono text-[11px] text-zinc-500" title={provider.endpoint}>
                         {provider.endpoint}
                       </div>
-                      <div className="mt-0.5 text-[11px] text-zinc-600">
-                        {provider.cloudProxySupported ? '支持云端代理' : '本地直连'}
-                      </div>
+                      <div className="mt-0.5 text-[11px] text-zinc-600">本地直连</div>
                     </td>
                     <td className="px-3 py-3 align-middle">
                       <div className="flex justify-end">

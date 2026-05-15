@@ -1,8 +1,7 @@
 // ============================================================================
 // read_pdf (P0-6.3 Batch 8 — network: native ToolModule rewrite)
 //
-// 使用视觉模型（Gemini 2.0）解析 PDF。
-// 优先走云端代理（服务端注入 API Key），本地 Key 作为备用。
+// 使用视觉模型（Gemini 2.0）解析 PDF。需要本地 OpenRouter API Key。
 // ============================================================================
 
 import fs from 'fs/promises';
@@ -16,30 +15,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
-
-/**
- * 通过云端代理调用模型 API（服务端注入 API Key）
- */
-async function callViaCloudProxy(
-  provider: string,
-  endpoint: string,
-  body: unknown,
-): Promise<Response> {
-  return fetch(CLOUD_ENDPOINTS.modelProxy, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      provider,
-      endpoint,
-      body,
-    }),
-  });
-}
 
 /**
  * 直接调用 OpenRouter API（需要本地 API Key）
@@ -58,8 +36,7 @@ async function callDirectOpenRouter(apiKey: string, body: unknown): Promise<Resp
 }
 
 /**
- * 调用视觉模型处理 PDF
- * 优先级：OpenRouter 本地 Key > 云端代理
+ * 调用视觉模型处理 PDF（需要本地 OpenRouter API Key）
  * 注意：智谱 GLM-4.6V 不支持 PDF，只能用 Gemini
  */
 async function processWithVisionModel(
@@ -67,6 +44,12 @@ async function processWithVisionModel(
   prompt: string,
   ctx: ToolContext,
 ): Promise<{ content: string }> {
+  const configService = getConfigService();
+  const apiKey = configService.getApiKey('openrouter');
+  if (!apiKey) {
+    throw new Error('PDF 解析失败：未配置 OpenRouter API Key。请在设置中配置后重试。');
+  }
+
   // 读取 PDF 并转换为 base64
   const pdfData = await fs.readFile(filePath);
   const base64Pdf = pdfData.toString('base64');
@@ -91,42 +74,15 @@ async function processWithVisionModel(
     max_tokens: 8192,
   };
 
-  const configService = getConfigService();
-
-  // 1. 优先使用本地 OpenRouter API Key（避免云端代理限制）
-  const apiKey = configService.getApiKey('openrouter');
-  if (apiKey) {
-    try {
-      ctx.logger.info('[PDF解析] 使用 OpenRouter Gemini (本地 Key)');
-      const directResponse = await callDirectOpenRouter(apiKey, requestBody);
-      if (directResponse.ok) {
-        const result = await directResponse.json();
-        return { content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容' };
-      }
-      const errorText = await directResponse.text();
-      ctx.logger.warn('[PDF解析] OpenRouter 失败', { status: directResponse.status, error: errorText });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      ctx.logger.warn('[PDF解析] OpenRouter 错误', { error: message });
-    }
+  ctx.logger.info('[PDF解析] 使用 OpenRouter Gemini');
+  const directResponse = await callDirectOpenRouter(apiKey, requestBody);
+  if (directResponse.ok) {
+    const result = await directResponse.json();
+    return { content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容' };
   }
-
-  // 2. 回退到云端代理
-  try {
-    ctx.logger.info('[PDF解析] 使用云端代理');
-    const cloudResponse = await callViaCloudProxy('openrouter', '/chat/completions', requestBody);
-    if (cloudResponse.ok) {
-      const result = await cloudResponse.json();
-      return { content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容' };
-    }
-    const errorText = await cloudResponse.text();
-    ctx.logger.warn('[PDF解析] 云端代理失败', { status: cloudResponse.status, error: errorText });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    ctx.logger.warn('[PDF解析] 云端代理错误', { error: message });
-  }
-
-  throw new Error('PDF 解析失败。请配置 OpenRouter API Key 或检查网络连接。');
+  const errorText = await directResponse.text();
+  ctx.logger.warn('[PDF解析] OpenRouter 失败', { status: directResponse.status, error: errorText });
+  throw new Error(`PDF 解析失败: OpenRouter ${directResponse.status} ${errorText.substring(0, 200)}`);
 }
 
 export async function executeReadPdf(

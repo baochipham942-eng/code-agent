@@ -17,9 +17,6 @@ export { ClaudeProvider } from './claudeProvider';
 export { GeminiProvider } from './geminiProvider';
 export { XiaomiProvider } from './xiaomiProvider';
 
-// Cloud Proxy (special case, called before provider dispatch)
-export { callViaCloudProxy } from './cloud-proxy';
-
 // Shared utilities
 export {
   logger,

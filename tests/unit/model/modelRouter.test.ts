@@ -62,11 +62,6 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-// Mock all provider call functions
-vi.mock('../../../src/main/model/providers', () => ({
-  callViaCloudProxy: vi.fn().mockResolvedValue({ type: 'text', content: 'cloud proxy response', finishReason: 'stop' }),
-}));
-
 // Mock MoonshotProvider
 vi.mock('../../../src/main/model/providers/moonshotProvider', () => ({
   MoonshotProvider: class MockMoonshotProvider {
@@ -354,29 +349,6 @@ describe('ModelRouter', () => {
       await expect(
         router.inference([{ role: 'user', content: 'test' }], [], config, undefined, controller.signal)
       ).rejects.toThrow('cancelled');
-    });
-
-    it('should route to cloud proxy with inference options when useCloudProxy is enabled', async () => {
-      const { callViaCloudProxy } = await import('../../../src/main/model/providers');
-      const config: ModelConfig = {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        apiKey: 'test-key',
-        maxTokens: 1000,
-        useCloudProxy: true,
-      };
-      const options = { onSnapshot: vi.fn(), snapshotIntervalMs: 0 };
-
-      await router.inference([{ role: 'user', content: 'test' }], [], config, undefined, undefined, options);
-      expect(callViaCloudProxy).toHaveBeenCalledWith(
-        expect.any(Array),
-        [],
-        config,
-        expect.any(Object),
-        undefined,
-        undefined,
-        options,
-      );
     });
 
     it('should pass forceNonStreaming inference options to provider', async () => {

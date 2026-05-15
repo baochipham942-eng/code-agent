@@ -1,17 +1,9 @@
 // ============================================================================
 // image_generate (P1 Wave 4 D2c — network/media: native ToolModule)
 //
-// 把 legacy ImageGenerateTool 迁移到 native：CogView-4（智谱中文原生）+
-// FLUX.2（OpenRouter）+ 云端代理三引擎 routing；prompt 双策略扩写（中文
-// COGVIEW4_EXPAND_PROMPT / 英文 FLUX2_EXPAND_PROMPT）；URL → base64 下载；
-// 文件保存可选；CLI 模式自动 open。
-//
-// abort signal 走 race-and-abandon：每个 fetch 都监听 outerSignal。
-//
-// 行为保真：legacy 中文文案、emoji（🎨 ✨ 🖼️ 📥）、prompt 模板、
-// FLUX/CogView 映射 size、CLI 模式自动打开（safeExecDetached）、
-// metadata 形状（model/engine/originalPrompt/expandedPrompt/imagePath/
-// imageBase64/aspectRatio/isAdmin）1:1 复刻。
+// CogView-4（智谱中文原生）+ FLUX.2（OpenRouter）双引擎 routing；
+// prompt 双策略扩写；URL → base64 下载；文件保存可选；CLI 模式自动 open。
+// 需要本地配置智谱或 OpenRouter API Key。
 // ============================================================================
 
 import * as fs from 'fs';
@@ -27,14 +19,13 @@ import type {
 import { safeExecDetached } from '../../../utils/safeShell';
 import { getConfigService } from '../../../services';
 import { getAuthService } from '../../../services/auth/authService';
-import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
 
-export type ImageEngine = 'cogview' | 'flux' | 'cloud';
+export type ImageEngine = 'cogview' | 'flux';
 
 const TIMEOUT_MS = {
-  CLOUD_PROXY: 60000,
   DIRECT_API: 90000,
   PROMPT_EXPAND: 15000,
   IMAGE_DOWNLOAD: 30000,
@@ -143,7 +134,7 @@ export function determineImageEngine(): ImageEngine {
   if (getZhipuOfficialApiKey()) return 'cogview';
   const configService = getConfigService();
   if (configService.getApiKey('openrouter')) return 'flux';
-  return 'cloud';
+  throw new Error('图片生成需要本地 API Key：请在设置中配置智谱（CogView-4）或 OpenRouter（FLUX）API Key。');
 }
 
 function addStyleSuffix(prompt: string, style: string): string {
@@ -259,41 +250,8 @@ export async function generateImage(
     return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
   }
 
-  if (engine === 'flux') {
-    const openrouterApiKey = configService.getApiKey('openrouter')!;
-    const requestBody = {
-      model: fluxModel,
-      messages: [{ role: 'user', content: safePrompt }],
-      modalities: ['image'],
-      image_config: { aspect_ratio: aspectRatio },
-    };
-
-    const response = await fetchWithAbort(
-      `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${openrouterApiKey}`,
-          'HTTP-Referer': 'https://code-agent.app',
-          'X-Title': 'Code Agent',
-        },
-        body: JSON.stringify(requestBody),
-      },
-      TIMEOUT_MS.DIRECT_API,
-      outerSignal,
-    );
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenRouter API 调用失败: ${error}`);
-    }
-    const result = await response.json();
-    const imageData = extractImageFromResponse(result);
-    return { imageData, actualModel: fluxModel };
-  }
-
-  // cloud
+  // engine === 'flux'
+  const openrouterApiKey = configService.getApiKey('openrouter')!;
   const requestBody = {
     model: fluxModel,
     messages: [{ role: 'user', content: safePrompt }],
@@ -301,30 +259,29 @@ export async function generateImage(
     image_config: { aspect_ratio: aspectRatio },
   };
 
-  const cloudResponse = await fetchWithAbort(
-    CLOUD_ENDPOINTS.modelProxy,
+  const response = await fetchWithAbort(
+    `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'openrouter',
-        endpoint: '/chat/completions',
-        body: requestBody,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openrouterApiKey}`,
+        'HTTP-Referer': 'https://code-agent.app',
+        'X-Title': 'Code Agent',
+      },
+      body: JSON.stringify(requestBody),
     },
-    TIMEOUT_MS.CLOUD_PROXY,
+    TIMEOUT_MS.DIRECT_API,
     outerSignal,
   );
 
-  if (cloudResponse.ok) {
-    const result = await cloudResponse.json();
-    return { imageData: extractImageFromResponse(result), actualModel: fluxModel };
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter API 调用失败: ${error}`);
   }
-
-  const errorText = await cloudResponse.text();
-  throw new Error(
-    `云端代理失败: ${errorText}\n建议：配置智谱 API Key（CogView-4）或 OpenRouter API Key（FLUX）。`,
-  );
+  const result = await response.json();
+  const imageData = extractImageFromResponse(result);
+  return { imageData, actualModel: fluxModel };
 }
 
 async function expandPromptWithLLM(
@@ -376,7 +333,7 @@ async function expandPromptWithLLM(
     return style ? addStyleSuffix(prompt, style) : prompt;
   }
 
-  // FLUX/Cloud 生态：DeepSeek 英文扩写
+  // engine === 'flux': OpenRouter 英文扩写
   const userPrompt = style ? `Style: ${style}\nDescription: ${prompt}` : prompt;
   const fluxRequestBody = {
     model: PROMPT_EXPAND_MODEL,
@@ -387,32 +344,8 @@ async function expandPromptWithLLM(
     max_tokens: 500,
   };
 
-  try {
-    const cloudResponse = await fetchWithAbort(
-      CLOUD_ENDPOINTS.modelProxy,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'openrouter',
-          endpoint: '/chat/completions',
-          body: fluxRequestBody,
-        }),
-      },
-      TIMEOUT_MS.PROMPT_EXPAND,
-      outerSignal,
-    );
-    if (cloudResponse.ok) {
-      const result = await cloudResponse.json();
-      const expanded = result.choices?.[0]?.message?.content?.trim();
-      if (expanded) return expanded;
-    }
-  } catch {
-    if (outerSignal.aborted) throw new Error('aborted');
-  }
-
-  if (engine === 'flux') {
-    const openrouterApiKey = configService.getApiKey('openrouter')!;
+  const openrouterApiKey = configService.getApiKey('openrouter');
+  if (openrouterApiKey) {
     try {
       const response = await fetchWithAbort(
         `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
@@ -434,8 +367,11 @@ async function expandPromptWithLLM(
         const expanded = result.choices?.[0]?.message?.content?.trim();
         if (expanded) return expanded;
       }
-    } catch {
-      if (outerSignal.aborted) throw new Error('aborted');
+    } catch (e: unknown) {
+      if (outerSignal.aborted) throw e;
+      logger.warn('image_generate flux prompt expand failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -484,9 +420,7 @@ export async function executeImageGenerate(
     const engineLabel =
       engine === 'cogview'
         ? 'CogView-4 (智谱)'
-        : engine === 'flux'
-          ? `FLUX (${isAdmin ? 'Pro' : 'Schnell'})`
-          : 'FLUX (云端代理)';
+        : `FLUX (${isAdmin ? 'Pro' : 'Schnell'})`;
 
     ctx.emit({
       type: 'tool_output',

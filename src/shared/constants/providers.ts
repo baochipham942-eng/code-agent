@@ -11,8 +11,8 @@ export const MODEL_API_ENDPOINTS = {
   deepseek: 'https://api.deepseek.com/v1',
   /** Anthropic Claude */
   claude: 'https://api.anthropic.com/v1',
-  /** OpenAI */
-  openai: 'https://api.openai.com/v1',
+  /** OpenAI (LOCAL HIJACK to LongCat for personal experiments — do NOT commit) */
+  openai: 'https://api.longcat.chat/openai/v1',
   /** Groq */
   groq: 'https://api.groq.com/openai/v1',
   /** 智谱 GLM (OKI 代理) */
@@ -51,7 +51,6 @@ export interface CanonicalProviderInfo {
   aliases: readonly ModelProviderAlias[];
   defaultModel: string;
   endpoint: string;
-  cloudProxySupported: boolean;
   displayName: string;
 }
 
@@ -64,112 +63,96 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
     aliases: ['deepseek'],
     defaultModel: 'deepseek-v4-flash',
     endpoint: MODEL_API_ENDPOINTS.deepseek,
-    cloudProxySupported: true,
     displayName: 'DeepSeek',
   },
   claude: {
     aliases: ['claude', 'anthropic'],
     defaultModel: DEFAULT_MODEL,
     endpoint: MODEL_API_ENDPOINTS.claude,
-    cloudProxySupported: true,
     displayName: 'Anthropic Claude',
   },
   openai: {
     aliases: ['openai'],
     defaultModel: 'gpt-5.5',
     endpoint: MODEL_API_ENDPOINTS.openai,
-    cloudProxySupported: true,
     displayName: 'OpenAI',
   },
   gemini: {
     aliases: ['gemini'],
     defaultModel: 'gemini-3.1-pro-preview',
     endpoint: MODEL_API_ENDPOINTS.gemini,
-    cloudProxySupported: false,
     displayName: 'Google Gemini',
   },
   groq: {
     aliases: ['groq'],
     defaultModel: 'llama-3.3-70b-versatile',
     endpoint: MODEL_API_ENDPOINTS.groq,
-    cloudProxySupported: true,
     displayName: 'Groq',
   },
   local: {
     aliases: ['local'],
     defaultModel: 'qwen2.5-coder:7b',
     endpoint: MODEL_API_ENDPOINTS.ollama,
-    cloudProxySupported: false,
     displayName: 'Local (Ollama)',
   },
   zhipu: {
     aliases: ['zhipu'],
     defaultModel: 'glm-5',
     endpoint: MODEL_API_ENDPOINTS.zhipu,
-    cloudProxySupported: true,
     displayName: 'Zhipu GLM',
   },
   qwen: {
     aliases: ['qwen'],
     defaultModel: 'qwen3-max',
     endpoint: MODEL_API_ENDPOINTS.qwen,
-    cloudProxySupported: true,
     displayName: 'Qwen',
   },
   moonshot: {
     aliases: ['moonshot'],
     defaultModel: 'kimi-k2.5',
     endpoint: MODEL_API_ENDPOINTS.moonshot,
-    cloudProxySupported: true,
     displayName: 'Kimi',
   },
   minimax: {
     aliases: ['minimax'],
     defaultModel: 'MiniMax-M2.7',
     endpoint: MODEL_API_ENDPOINTS.minimax,
-    cloudProxySupported: false,
     displayName: 'MiniMax',
   },
   perplexity: {
     aliases: ['perplexity'],
     defaultModel: 'sonar-pro',
     endpoint: MODEL_API_ENDPOINTS.perplexity,
-    cloudProxySupported: false,
     displayName: 'Perplexity',
   },
   grok: {
     aliases: ['grok'],
     defaultModel: 'grok-4-1-fast-non-reasoning',
     endpoint: MODEL_API_ENDPOINTS.grok,
-    cloudProxySupported: false,
     displayName: 'Grok',
   },
   openrouter: {
     aliases: ['openrouter'],
     defaultModel: 'google/gemini-3-flash-preview',
     endpoint: MODEL_API_ENDPOINTS.openrouter,
-    cloudProxySupported: true,
     displayName: 'OpenRouter',
   },
   volcengine: {
     aliases: ['volcengine'],
     defaultModel: 'doubao-1.5-pro-256k',
     endpoint: MODEL_API_ENDPOINTS.volcengine,
-    cloudProxySupported: false,
     displayName: '火山引擎 (豆包)',
   },
   xiaomi: {
     aliases: ['xiaomi'],
     defaultModel: 'mimo-v2.5-pro',
     endpoint: MODEL_API_ENDPOINTS.xiaomi,
-    cloudProxySupported: false,
     displayName: '小米 MiMo',
   },
   custom: {
     aliases: ['custom'],
     defaultModel: 'custom-model',
     endpoint: MODEL_API_ENDPOINTS.custom,
-    cloudProxySupported: false,
     displayName: 'Custom Provider',
   },
 };

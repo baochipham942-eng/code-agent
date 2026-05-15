@@ -56,7 +56,6 @@ export interface ModelConfig {
   // 扩展配置
   capabilities?: ModelCapability[];
   computerUse?: boolean; // Claude Computer Use 支持
-  useCloudProxy?: boolean; // 使用云端代理（管理员专用）
   // T6: Structured output support
   responseFormat?: ResponseFormat; // OpenAI-compatible response_format
   // Prompt caching (Anthropic)

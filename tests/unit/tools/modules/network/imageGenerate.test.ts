@@ -97,9 +97,9 @@ describe('image_generate — engine routing', () => {
     expect(determineImageEngine()).toBe('flux');
   });
 
-  it('cloud when nothing configured', () => {
+  it('throws when no API key configured', () => {
     getConfigServiceMock.mockReturnValue({ getApiKey: vi.fn().mockReturnValue(undefined) });
-    expect(determineImageEngine()).toBe('cloud');
+    expect(() => determineImageEngine()).toThrow(/API Key/);
   });
 });
 

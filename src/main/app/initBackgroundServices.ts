@@ -18,7 +18,6 @@ import { initUpdateService, getUpdateService } from '../services/cloud/updateSer
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
 import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
-import { initUnifiedOrchestrator } from '../services/cloud/orchestratorConfig';
 import { initDesktopActivityUnderstandingService } from '../desktop/desktopActivityUnderstandingService';
 import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
 import { logBridge } from '../mcp/logBridge.js';
@@ -35,7 +34,7 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { SYNC, UPDATE, CLOUD, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
+import { SYNC, UPDATE, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../services/eventing';
 // Event channel constants (post-IPC_CHANNELS deprecation)
@@ -185,16 +184,15 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 }
 
 /**
- * Initialize Supabase-dependent services: auth, sync, cloud orchestrator, cloud tasks
+ * Initialize Supabase-dependent services: auth and sync
  */
-function initializeSupabaseServices(configService: ConfigService, mainWindow: BrowserWindow | null): void {
+function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
   if (!isSupabaseInitialized()) {
     logger.info('Supabase not configured (offline mode)');
     return;
   }
 
   logger.info('Supabase initialized');
-  const settings = configService.getSettings();
 
   // Set up auth change callback
   const authService = getAuthService();
@@ -212,20 +210,6 @@ function initializeSupabaseServices(configService: ConfigService, mainWindow: Br
         syncService.startAutoSync(SYNC.SYNC_INTERVAL);
         logger.info('Auto-sync started');
       });
-
-      if (user.isAdmin) {
-        authService.getAccessToken().then((token) => {
-          if (token && configService) {
-            configService.syncApiKeysFromCloud(token).then((result) => {
-              if (result.success) {
-                logger.info(`Admin API keys synced: ${result.syncedKeys.join(', ')}`);
-              } else {
-                logger.warn(`Failed to sync admin API keys: ${result.error}`);
-              }
-            });
-          }
-        });
-      }
     } else {
       syncService.stopAutoSync();
       logger.info('Auto-sync stopped');
@@ -236,23 +220,6 @@ function initializeSupabaseServices(configService: ConfigService, mainWindow: Br
   authService.initialize()
     .then(() => logger.info('Auth service initialized'))
     .catch((error) => logger.error('Failed to initialize auth (non-blocking)', error));
-
-  // Initialize unified orchestrator (cloud task execution)
-  try {
-    const updateServerUrl = settings.cloudApi?.url || getCloudApiUrl();
-    initUnifiedOrchestrator({
-      cloudExecutor: {
-        maxConcurrent: 3,
-        defaultTimeout: CLOUD.CLOUD_EXECUTION_TIMEOUT,
-        maxIterations: 20,
-        apiEndpoint: updateServerUrl,
-      },
-    });
-    logger.info('Unified orchestrator initialized');
-  } catch (error: unknown) {
-    logger.error('Failed to initialize unified orchestrator', error);
-  }
-
 }
 
 /**
@@ -596,7 +563,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   await setupLogBridge();
 
   // Supabase-dependent services
-  initializeSupabaseServices(configService, mainWindow);
+  initializeSupabaseServices(mainWindow);
 
   // Langfuse (analytics)
   const langfusePublicKey = configService.getServiceApiKey('langfuse_public') || settings.langfuse?.publicKey;

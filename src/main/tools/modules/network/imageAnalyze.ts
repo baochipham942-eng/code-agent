@@ -2,13 +2,10 @@
 // image_analyze (P1 Wave 4 D2c — network/media: native ToolModule)
 //
 // 把 legacy ImageAnalyzeTool 迁移到 native：单图分析 + 批量 glob 筛选两种
-// 模式 + 三层视觉模型 fallback（智谱 GLM-4.6V > OpenRouter Gemini > 云端代理）。
+// 模式 + 视觉模型 fallback（智谱 GLM-4.6V > OpenRouter Gemini）。
 //
 // abort signal 走 race-and-abandon：每个 fetch 都有内置 AbortController 与
 // outerSignal 联动；批量并行处理时每批前检查 abort。
-//
-// 行为保真：legacy 中文文案、emoji（🔍 ⏳ ✅ 📷）、glob 展开过滤、API
-// fallback 顺序、metadata 形状 1:1 复刻。
 // ============================================================================
 
 import fsPromises from 'fs/promises';
@@ -24,7 +21,6 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import {
-  CLOUD_ENDPOINTS,
   MODEL_API_ENDPOINTS,
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
@@ -84,26 +80,6 @@ async function fetchWithAbort(
     clearTimeout(timeoutId);
     outerSignal.removeEventListener('abort', onOuterAbort);
   }
-}
-
-async function callViaCloudProxy(
-  body: unknown,
-  outerSignal: AbortSignal,
-): Promise<Response> {
-  return fetchWithAbort(
-    CLOUD_ENDPOINTS.modelProxy,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'openrouter',
-        endpoint: '/chat/completions',
-        body,
-      }),
-    },
-    CONFIG.TIMEOUT_MS,
-    outerSignal,
-  );
 }
 
 async function callDirectOpenRouter(
@@ -235,46 +211,13 @@ async function analyzeImage(
       }
     } catch (error: unknown) {
       if (outerSignal.aborted) throw error;
-      logger.warn('image_analyze openrouter failed, fallback', {
+      logger.warn('image_analyze openrouter failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
-  const requestBody = {
-    model: CONFIG.OPENROUTER_MODEL,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${base64Image}`,
-              detail,
-            },
-          },
-        ],
-      },
-    ],
-    max_tokens: 1024,
-  };
-
-  try {
-    const cloudResponse = await callViaCloudProxy(requestBody, outerSignal);
-    if (cloudResponse.ok) {
-      const result = await cloudResponse.json();
-      return result.choices?.[0]?.message?.content || '';
-    }
-  } catch (error: unknown) {
-    if (outerSignal.aborted) throw error;
-    logger.warn('image_analyze cloud proxy failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  throw new Error('所有视觉 API 均不可用。请配置智谱或 OpenRouter API Key。');
+  throw new Error('所有视觉 API 均不可用。请在设置中配置智谱或 OpenRouter API Key。');
 }
 
 async function checkImageMatch(

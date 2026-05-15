@@ -66,7 +66,6 @@ describe('ModelSettings management helpers', () => {
       evalEligibleCount: 1,
       defaultModel: 'gpt-5.5',
       selectedModelLabel: 'GPT-5.4 Mini',
-      cloudProxySupported: true,
     });
     expect(rows[1]).toMatchObject({
       id: 'moonshot',

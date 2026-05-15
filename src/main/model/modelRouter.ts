@@ -10,7 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
+import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -26,7 +26,6 @@ import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Mes
 export { ContextLengthExceededError } from './types';
 
 // Import provider implementations
-import { callViaCloudProxy } from './providers';
 import type { Provider } from './types';
 import { MoonshotProvider } from './providers/moonshotProvider';
 import { GroqProvider } from './providers/groqProvider';
@@ -453,12 +452,6 @@ export class ModelRouter {
       throw new Error('Request was cancelled before starting');
     }
 
-    // 如果启用云端代理，走云端 model-proxy
-    if (config.useCloudProxy) {
-      const modelInfo = this.getModelInfo(config.provider, config.model);
-      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal, normalizedOptions);
-    }
-
     // Inference cache (non-streaming only)
     if (!onStream) {
       const cache = getInferenceCache();
@@ -473,7 +466,7 @@ export class ModelRouter {
     // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
     const adaptiveRouter = getAdaptiveRouter();
     const complexity = adaptiveRouter.estimateComplexity(messages);
-    if (config.adaptive === true && complexity.level === 'simple' && !config.useCloudProxy) {
+    if (config.adaptive === true && complexity.level === 'simple') {
       const adaptedConfig = adaptiveRouter.selectModel(complexity, config);
       if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
         // 切换 provider 时需要获取对应的 apiKey

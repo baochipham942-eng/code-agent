@@ -1,7 +1,7 @@
 // ContextAssembly - Inference orchestration and model fallback.
 import type { AgentEvent } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
-import { getConfigService, getAuthService, getLangfuseService } from '../../../services';
+import { getConfigService, getLangfuseService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
@@ -371,13 +371,9 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           const fallbackConfig = ctx.runtime.modelRouter.getFallbackConfig(capability, ctx.runtime.modelConfig);
           if (fallbackConfig) {
             const configService = getConfigService();
-            const authService = getAuthService();
-            const currentUser = authService.getCurrentUser();
-            const isAdmin = currentUser?.isAdmin === true;
-
             const fallbackApiKey = configService.getApiKey(fallbackConfig.provider)
               || fallbackConfig.apiKey;
-            logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
+            logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}`);
 
             if (fallbackApiKey) {
               fallbackConfig.apiKey = fallbackApiKey;
@@ -395,24 +391,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
                 visionFallbackSucceeded = true;
               }
               break;
-            } else if (isAdmin) {
-              fallbackConfig.useCloudProxy = true;
-              logger.info(`[Fallback] 本地无 ${fallbackConfig.provider} Key，管理员使用云端代理 ${fallbackConfig.model}`);
-              ctx.runtime.onEvent({
-                type: 'model_fallback',
-                data: {
-                  reason: capability,
-                  from: ctx.runtime.modelConfig.model,
-                  to: `${fallbackConfig.model} (云端)`,
-                },
-              });
-              effectiveConfig = fallbackConfig;
-              if (capability === 'vision') {
-                visionFallbackSucceeded = true;
-              }
-              break;
             } else {
-              logger.info(`[Fallback] 非管理员，${fallbackConfig.provider} 未配置 Key，无法切换`);
+              logger.info(`[Fallback] ${fallbackConfig.provider} 未配置本地 Key，无法切换`);
               ctx.runtime.onEvent({
                 type: 'api_key_required',
                 data: {

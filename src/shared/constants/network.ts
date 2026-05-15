@@ -127,10 +127,6 @@ export const CLOUD_ENDPOINTS = {
   get prompts() {
     return `${getCloudApiUrl()}/api/prompts`;
   },
-  /** 模型代理 */
-  get modelProxy() {
-    return `${getCloudApiUrl()}/api/model-proxy`;
-  },
   /** 云端工具（搜索/抓取等） */
   get tools() {
     return `${getCloudApiUrl()}/api/tools`;
@@ -142,10 +138,6 @@ export const CLOUD_ENDPOINTS = {
   /** 云端配置 */
   get config() {
     return `${getCloudApiUrl()}/api/v1/config`;
-  },
-  /** 用户 API Key 管理 */
-  get userKeys() {
-    return `${getCloudApiUrl()}/api/user-keys`;
   },
   /** WebSocket 端点 */
   get websocket() {

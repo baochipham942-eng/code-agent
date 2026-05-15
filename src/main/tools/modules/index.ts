@@ -122,6 +122,7 @@ import { computerSchema } from './vision/computer.schema';
 import { browserActionSchema } from './vision/browserAction.schema';
 import { browserNavigateSchema } from './vision/browserNavigate.schema';
 import { computerUseSchema } from './vision/computerUse.schema';
+import { validateHtmlInAppSchema } from './vision/validateHtmlInApp.schema';
 import { screenshotSchema } from './vision/screenshot.schema';
 import { guiAgentSchema } from './vision/guiAgent.schema';
 // exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
@@ -245,6 +246,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     computerUseSchema,
     async () => (await import('./vision/computerUse')).computerUseModule,
+  );
+  registry.register(
+    validateHtmlInAppSchema,
+    async () => (await import('./vision/validateHtmlInApp')).validateHtmlInAppModule,
   );
   registry.register(
     screenshotSchema,

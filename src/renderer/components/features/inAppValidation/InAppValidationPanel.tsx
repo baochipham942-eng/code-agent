@@ -78,16 +78,16 @@ export function InAppValidationPanel(): React.ReactElement {
   const [results, setResults] = useState<BrowserInteractionStepResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [iframeReady, setIframeReady] = useState(false);
+  const [manualReloadKey, setManualReloadKey] = useState(0);
   const activeIpcRequestRef = useRef<{ requestId: string } | null>(null);
 
   const pendingRequest = useAppStore((s) => s.pendingInAppValidationRequest);
   const setPendingRequest = useAppStore((s) => s.setPendingInAppValidationRequest);
 
   const reloadIframe = useCallback(() => {
-    if (!iframeRef.current) return;
     setIframeReady(false);
-    iframeRef.current.srcdoc = htmlSource;
-  }, [htmlSource]);
+    setManualReloadKey((k) => k + 1);
+  }, []);
 
   const runScript = useCallback(async () => {
     if (!iframeRef.current) return;
@@ -120,7 +120,8 @@ export function InAppValidationPanel(): React.ReactElement {
     }
   }, []);
 
-  // IPC 入口：main 端发来 request → 注入 HTML+steps，等 iframe ready 后自动跑并回传
+  // IPC 入口：main 端发来 request → 注入 HTML+steps；iframe 通过 key={requestId} 强制
+  // 重 mount，加载完后 onLoad 把 iframeReady 翻 true，下一个 effect 自动跑并回传。
   useEffect(() => {
     if (!pendingRequest) return;
     activeIpcRequestRef.current = { requestId: pendingRequest.requestId };
@@ -129,9 +130,6 @@ export function InAppValidationPanel(): React.ReactElement {
     setResults([]);
     setError(null);
     setIframeReady(false);
-    if (iframeRef.current) {
-      iframeRef.current.srcdoc = pendingRequest.html;
-    }
   }, [pendingRequest]);
 
   useEffect(() => {
@@ -228,6 +226,7 @@ export function InAppValidationPanel(): React.ReactElement {
         <div className="flex flex-1 flex-col border-r border-slate-800">
           <div className="border-b border-slate-800 px-3 py-1 text-xs text-slate-400">iframe 预览（沙箱）</div>
           <iframe
+            key={pendingRequest?.requestId || `manual-${manualReloadKey}`}
             ref={iframeRef}
             title="in-app-validation-preview"
             srcDoc={htmlSource}

@@ -33,7 +33,7 @@ import {
   getBrowserWorkbenchOperationalHint,
   type BrowserWorkbenchStatusTone,
 } from '../../../../utils/workbenchPresentation';
-import { isWebMode } from '../../../../utils/platform';
+import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
@@ -257,7 +257,7 @@ export const WorkspaceSettings: React.FC = () => {
             {[
               ['当前 cwd', currentDir ?? '未设置', '所有 agent 操作的默认根目录'],
               ['默认打开目标', describeOpenTarget(defaultOpenTarget), '启动时如何挑选 working dir'],
-              ['本地桥', '内置 IPC', '当前由 Tauri/Web 自带通道承载（TODO：暴露状态）'],
+              ['本地桥', getDesktopShellLabel(), isWebMode() ? 'Web 模式：通过 HTTP API 连后端' : '应用内 IPC 通道（renderer ↔ main）'],
               ['最近目录数', String(rows.length), '含当前 cwd'],
             ].map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">

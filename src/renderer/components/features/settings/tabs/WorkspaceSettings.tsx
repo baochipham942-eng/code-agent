@@ -342,9 +342,6 @@ export const WorkspaceSettings: React.FC = () => {
                 )}
               </div>
             )}
-            <p className="mt-2 text-[11px] text-zinc-500">
-              TODO：启动期 bootstrap 还没读这个偏好，目前只持久化设置；下一 slice 接到 initBackgroundServices 的 cwd 解析逻辑。
-            </p>
           </div>
         </div>
       </SettingsSection>

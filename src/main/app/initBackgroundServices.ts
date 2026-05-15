@@ -4,6 +4,7 @@
 
 import { app, BrowserWindow } from '../platform';
 import path from 'path';
+import fs from 'fs';
 import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,
@@ -46,10 +47,36 @@ const EVENT_CHANNELS = {
 
 const logger = createLogger('Bootstrap:Background');
 
-function getDesktopBootstrapWorkingDirectory(): string {
+function resolveDirIfUsable(dir: string | undefined): string | null {
+  if (!dir) return null;
+  const trimmed = dir.trim();
+  if (!trimmed) return null;
+  try {
+    return fs.statSync(trimmed).isDirectory() ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDesktopBootstrapWorkingDirectory(configService?: ConfigService): string {
   const configured = process.env.CODE_AGENT_WORKING_DIR?.trim();
   if (configured) {
     return configured;
+  }
+
+  const workspacePref = configService?.getSettings().workspace;
+  if (workspacePref) {
+    const target = workspacePref.defaultOpenTarget ?? 'lastDirectory';
+    if (target === 'fixedDirectory') {
+      const pinned = resolveDirIfUsable(workspacePref.pinnedDirectory);
+      if (pinned) return pinned;
+    } else if (target === 'lastDirectory') {
+      const recent = workspacePref.recentDirectories?.find((d) => resolveDirIfUsable(d));
+      if (recent) return recent;
+      const fallback = resolveDirIfUsable(workspacePref.defaultDirectory);
+      if (fallback) return fallback;
+    }
+    // 'askEachTime' or unresolved → fall through
   }
 
   const cwd = process.cwd();
@@ -90,7 +117,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 
   // Initialize SkillDiscoveryService AFTER CloudConfig and SkillRepositoryService are ready
   try {
-    const workingDir = getDesktopBootstrapWorkingDirectory();
+    const workingDir = getDesktopBootstrapWorkingDirectory(configService);
     const skillDiscovery = getSkillDiscoveryService();
     await skillDiscovery.initialize(workingDir);
     const stats = skillDiscovery.getStats();
@@ -126,7 +153,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
 
   // Now initialize MCP client AFTER CloudConfig is ready
   logger.info('Initializing MCP servers...', { customCount: mcpConfigs.length });
-  await initMCPClient(mcpConfigs, getDesktopBootstrapWorkingDirectory());
+  await initMCPClient(mcpConfigs, getDesktopBootstrapWorkingDirectory(configService));
 
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
@@ -532,7 +559,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   // Initialize HeartbeatTaskLoader
   initCronService()
     .then(async () => {
-      const workingDir = getDesktopBootstrapWorkingDirectory();
+      const workingDir = getDesktopBootstrapWorkingDirectory(configService);
       const heartbeatLoader = new HeartbeatTaskLoader({ workingDirectory: workingDir, cronService: getCronService() });
       await heartbeatLoader.loadFromFile();
       heartbeatLoader.watchFile();
@@ -588,7 +615,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
 
   // Load soul/profile personality
   try {
-    const workingDir = getDesktopBootstrapWorkingDirectory();
+    const workingDir = getDesktopBootstrapWorkingDirectory(configService);
     loadSoul(workingDir);
     watchSoulFiles(workingDir);
     logger.info('Soul/Profile loader initialized');
@@ -598,7 +625,7 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
 
   // Initialize Agent Registry (custom agents from .code-agent/agents/*.md)
   try {
-    const workingDir = getDesktopBootstrapWorkingDirectory();
+    const workingDir = getDesktopBootstrapWorkingDirectory(configService);
     await initAgentRegistry(workingDir);
     logger.info('Agent registry initialized');
   } catch (error) {

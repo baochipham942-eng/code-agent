@@ -1,12 +1,17 @@
 // ============================================================================
 // ConversationSettings — 对话相关全局设置 tab
 // ============================================================================
-// B+ IA 调整：Routing / Browser 这种"配一次跑一年"的设置从 ChatInput 工具栏
-// 移除，归到 Settings 这里。每个用户在第一次需要时配一次，后面默认值就走。
-// Live Preview 已挪到 TitleBar 顶栏（跟工作目录绑定）。
+// P1 IA 收敛：
+//   1. Routing 策略 — 保留
+//   2. 自动整理开关 — 第一层
+//   3. 摘要模型 — 只读引用 + 跳转到模型设置（在 model tab 真正配置）
+//   4. 上下文整理阈值（preserve / warning / critical / triggerTokens / audit）
+//      下沉到 SettingsDetails 折叠区
+// Browser 模式已在 Step 1 迁移到工作区 tab。
+// ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, FileCheck2, GitBranch, Info, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, FileCheck2, GitBranch, Info, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { ConversationRoutingMode } from '@shared/contract/conversationEnvelope';
 import type {
@@ -14,10 +19,11 @@ import type {
   ContextCompressionConfigPatch,
 } from '@shared/contract/contextHealth';
 import { PROVIDER_MODELS } from '@shared/constants/models';
+import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
-import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 
 const ROUTING_OPTIONS: Array<{ value: ConversationRoutingMode; label: string; hint: string }> = [
   { value: 'auto', label: 'Auto', hint: '路由器按任务复杂度自动选模型（默认）' },
@@ -72,6 +78,7 @@ function featureLabel(value: 'enabled' | 'disabled' | 'available'): string {
 export const ConversationSettings: React.FC = () => {
   const routingMode = useComposerStore((s) => s.routingMode);
   const setRoutingMode = useComposerStore((s) => s.setRoutingMode);
+  const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const [compressionState, setCompressionState] = useState<ContextCompressionChannelState>(DEFAULT_COMPRESSION_STATE);
   const [compressionLoading, setCompressionLoading] = useState(true);
   const [savingCompression, setSavingCompression] = useState(false);
@@ -80,7 +87,11 @@ export const ConversationSettings: React.FC = () => {
   const selectedProvider = providerOptions.find(
     (provider) => provider.id === compressionState.config.compactProvider,
   ) ?? providerOptions.find((provider) => provider.id === 'moonshot') ?? providerOptions[0];
-  const modelOptions = selectedProvider?.models ?? [];
+  const selectedModelLabel = useMemo(() => {
+    const modelId = compressionState.compactModel.model || compressionState.config.compactModel;
+    const found = selectedProvider?.models.find((m) => m.id === modelId);
+    return found?.label || modelId || '未设置';
+  }, [compressionState.compactModel.model, compressionState.config.compactModel, selectedProvider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,7 +137,7 @@ export const ConversationSettings: React.FC = () => {
   return (
     <SettingsPage
       title="对话"
-      description="配置会话默认的模型路由、浏览器工具和长对话整理方式。"
+      description="配置会话默认的模型路由和长对话整理方式；摘要模型在「模型」tab 真正配置。"
     >
       <SettingsSection title="Routing" description="模型路由策略，决定每条消息怎么被分发给后端模型。">
         <div className="flex items-center gap-2 mb-3">
@@ -186,138 +197,128 @@ export const ConversationSettings: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <div className="text-[11px] text-zinc-500">最近保留</div>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={2}
-                    max={50}
-                    value={compressionState.config.preserveRecentCount}
-                    onChange={(event) => updateCompression({ preserveRecentCount: Number(event.target.value) })}
-                    className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
-                  />
-                  <span className="text-xs text-zinc-500">条消息</span>
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">摘要模型</div>
+                  <div className="mt-1 text-sm text-zinc-200">
+                    {compressionState.compactModel.provider || compressionState.config.compactProvider}
+                    {' / '}
+                    {selectedModelLabel}
+                  </div>
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    实际可用模型与 API Key 配置在「模型」tab，本页只显示当前生效值。
+                  </div>
                 </div>
-              </div>
-
-              <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                  <span>开始提醒</span>
-                  <span>{percentLabel(compressionState.config.warningThreshold)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={50}
-                  max={90}
-                  step={5}
-                  value={Math.round(compressionState.config.warningThreshold * 100)}
-                  onChange={(event) => updateCompression({ warningThreshold: Number(event.target.value) / 100 })}
-                  className="mt-2 w-full accent-primary-500"
-                />
-              </div>
-
-              <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                  <span>主动整理</span>
-                  <span>{percentLabel(compressionState.config.criticalThreshold)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={60}
-                  max={95}
-                  step={5}
-                  value={Math.round(compressionState.config.criticalThreshold * 100)}
-                  onChange={(event) => updateCompression({ criticalThreshold: Number(event.target.value) / 100 })}
-                  className="mt-2 w-full accent-primary-500"
-                />
+                <button
+                  type="button"
+                  onClick={() => openSettingsTab('model')}
+                  className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] text-zinc-300 hover:border-white/[0.16] hover:text-zinc-100"
+                >
+                  在模型设置中管理
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <label className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <span className="text-[11px] text-zinc-500">摘要服务</span>
-                <select
-                  value={compressionState.config.compactProvider}
-                  onChange={(event) => {
-                    const provider = providerOptions.find((item) => item.id === event.target.value);
-                    updateCompression({
-                      compactProvider: provider?.id,
-                      compactModel: provider?.models[0]?.id,
-                    });
-                  }}
-                  className="mt-2 w-full rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
-                >
-                  {providerOptions.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <span className="text-[11px] text-zinc-500">摘要模型</span>
-                <select
-                  value={compressionState.config.compactModel}
-                  onChange={(event) => updateCompression({ compactModel: event.target.value })}
-                  className="mt-2 w-full rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
-                >
-                  {modelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                <span className="text-[11px] text-zinc-500">强制整理点</span>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={16}
-                    max={1000}
-                    value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
-                    onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
-                    className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
-                  />
-                  <span className="text-xs text-zinc-500">K tokens</span>
-                </div>
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => updateCompression({ auditEnabled: !compressionState.config.auditEnabled })}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
-                  compressionState.config.auditEnabled
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-white/[0.08] bg-white/[0.02] text-zinc-400'
-                }`}
-              >
-                <FileCheck2 className="w-3.5 h-3.5" />
-                整理留痕 {featureLabel(compressionState.features.audit)}
-              </button>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 保留清单 {featureLabel(compressionState.features.manifest)}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-sky-300">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-sky-300">
                 <RotateCcw className="w-3.5 h-3.5" />
                 压缩前后动作 {featureLabel(compressionState.features.hooks)}
               </span>
-              <span className="text-[11px] text-zinc-500">
-                模型: {compressionState.compactModel.provider || compressionState.config.compactProvider}/{compressionState.compactModel.model || compressionState.config.compactModel}
-                {' · '}
-                已整理 {compressionState.runtime.compressionCount} 次
-                {' · '}
-                释放 {tokensLabel(compressionState.runtime.totalSavedTokens)} tokens
-              </span>
-              {savingCompression && <span className="text-[11px] text-zinc-500">保存中...</span>}
+              <span>已整理 {compressionState.runtime.compressionCount} 次 · 释放 {tokensLabel(compressionState.runtime.totalSavedTokens)} tokens</span>
+              {savingCompression && <span>保存中...</span>}
             </div>
+
+            <SettingsDetails
+              title="整理阈值与留痕"
+              description="多数人不需要调，进阶用户可在这里精细调度触发点和留痕策略。"
+            >
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                    <div className="text-[11px] text-zinc-500">最近保留</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={2}
+                        max={50}
+                        value={compressionState.config.preserveRecentCount}
+                        onChange={(event) => updateCompression({ preserveRecentCount: Number(event.target.value) })}
+                        className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
+                      />
+                      <span className="text-xs text-zinc-500">条消息</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                      <span>开始提醒</span>
+                      <span>{percentLabel(compressionState.config.warningThreshold)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={90}
+                      step={5}
+                      value={Math.round(compressionState.config.warningThreshold * 100)}
+                      onChange={(event) => updateCompression({ warningThreshold: Number(event.target.value) / 100 })}
+                      className="mt-2 w-full accent-primary-500"
+                    />
+                  </div>
+
+                  <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                      <span>主动整理</span>
+                      <span>{percentLabel(compressionState.config.criticalThreshold)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={60}
+                      max={95}
+                      step={5}
+                      value={Math.round(compressionState.config.criticalThreshold * 100)}
+                      onChange={(event) => updateCompression({ criticalThreshold: Number(event.target.value) / 100 })}
+                      className="mt-2 w-full accent-primary-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                    <span className="text-[11px] text-zinc-500">强制整理点</span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={16}
+                        max={1000}
+                        value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
+                        onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
+                        className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
+                      />
+                      <span className="text-xs text-zinc-500">K tokens</span>
+                    </div>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => updateCompression({ auditEnabled: !compressionState.config.auditEnabled })}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition-colors ${
+                      compressionState.config.auditEnabled
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                        : 'border-white/[0.08] bg-white/[0.02] text-zinc-400'
+                    }`}
+                  >
+                    <FileCheck2 className="w-3.5 h-3.5" />
+                    整理留痕 {featureLabel(compressionState.features.audit)}
+                  </button>
+                </div>
+              </div>
+            </SettingsDetails>
           </div>
         )}
       </SettingsSection>
@@ -326,7 +327,7 @@ export const ConversationSettings: React.FC = () => {
         <Info className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 mt-0.5" />
         <p className="text-[11px] text-zinc-500 leading-relaxed">
           路由策略和上下文整理是会话级配置，多数人配一次后无需再调。Browser 模式已迁移到「工作区」tab，
-          运行状态依旧在顶栏和任务面板呈现。
+          摘要模型的真正配置在「模型」tab。
         </p>
       </div>
     </SettingsPage>

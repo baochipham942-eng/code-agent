@@ -35,6 +35,168 @@ export interface MemoryItem {
   projectPath?: string;
 }
 
+export type MemoryEntryStatus = 'candidate' | 'active' | 'rejected' | 'stale' | 'archived';
+
+export type MemoryEntryKind =
+  | 'user'
+  | 'feedback'
+  | 'project'
+  | 'reference'
+  | 'session'
+  | 'pattern';
+
+export type MemoryEntryScope = 'global' | 'project' | 'session';
+
+export type MemoryEntrySourceOfTruth = 'light_file' | 'db_memory';
+
+export type MemoryEntrySourceKind =
+  | 'light_file'
+  | 'db_memory'
+  | 'knowledge_inbox'
+  | 'recent_conversation'
+  | 'precompact_flush'
+  | 'import';
+
+export interface MemoryEntryEvidence {
+  sessionId?: string | null;
+  messageId?: string | null;
+  filePath?: string | null;
+  toolCallId?: string | null;
+  flushHash?: string | null;
+  candidateId?: string | null;
+  memoryId?: string | null;
+  contentHash?: string | null;
+  source?: string | null;
+}
+
+export interface MemoryEntrySourceRef {
+  kind: MemoryEntrySourceKind;
+  sourceOfTruth: MemoryEntrySourceOfTruth;
+  filePath?: string | null;
+  memoryId?: string | null;
+  label?: string | null;
+}
+
+export interface MemoryEntry {
+  id: string;
+  schemaVersion: 2;
+  status: MemoryEntryStatus;
+  kind: MemoryEntryKind;
+  scope: MemoryEntryScope;
+  title: string;
+  summary: string;
+  content: string;
+  source: MemoryEntrySourceRef;
+  evidence: MemoryEntryEvidence[];
+  projectPath?: string | null;
+  sessionId?: string | null;
+  confidence: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryEntryListResult {
+  entries: MemoryEntry[];
+  sourceCounts: Record<MemoryEntrySourceOfTruth, number>;
+}
+
+export interface MemoryMirrorRebuildResult {
+  totalLightFiles: number;
+  mirrored: number;
+  created: number;
+  updated: number;
+  skipped: Array<{ filename: string; reason: string }>;
+}
+
+export interface MemoryPackRequest {
+  query?: string;
+  projectPath?: string | null;
+  sessionId?: string | null;
+  kinds?: MemoryEntryKind[];
+  statuses?: MemoryEntryStatus[];
+  maxItems?: number;
+  perItemCharLimit?: number;
+  totalCharBudget?: number;
+}
+
+export interface PackedMemoryItem {
+  entryId: string;
+  title: string;
+  kind: MemoryEntryKind;
+  scope: MemoryEntryScope;
+  status: MemoryEntryStatus;
+  score: number;
+  scoreReasons: string[];
+  source: MemoryEntrySourceRef;
+  evidence: MemoryEntryEvidence[];
+  content: string;
+  originalChars: number;
+  packedChars: number;
+  truncated: boolean;
+}
+
+export interface MemoryPackResult {
+  query: string;
+  totalCandidates: number;
+  selectedCount: number;
+  totalChars: number;
+  budget: number;
+  items: PackedMemoryItem[];
+  block: string;
+}
+
+export interface MemoryExportV2Bundle {
+  schemaVersion: 2;
+  exportedAt: number;
+  entries: MemoryEntry[];
+  index: {
+    path: string;
+    content: string | null;
+  };
+  evidenceManifest: Array<{
+    entryId: string;
+    evidence: MemoryEntryEvidence[];
+    source: MemoryEntrySourceRef;
+  }>;
+  sourceCounts: Record<MemoryEntrySourceOfTruth, number>;
+}
+
+export type MemoryImportV2DiffStatus = 'add' | 'update' | 'conflict' | 'skip';
+
+export interface MemoryImportV2DiffItem {
+  entryId: string;
+  status: MemoryImportV2DiffStatus;
+  reason: string;
+  incomingTitle?: string;
+  existingTitle?: string;
+  sourceOfTruth?: MemoryEntrySourceOfTruth;
+}
+
+export interface MemoryImportV2DryRunResult {
+  schemaVersion: 2;
+  incomingCount: number;
+  existingCount: number;
+  added: number;
+  updated: number;
+  conflicted: number;
+  skipped: number;
+  items: MemoryImportV2DiffItem[];
+}
+
+export interface MemoryImportV2ApplyRequest {
+  bundle: MemoryExportV2Bundle;
+  allowConflicts?: boolean;
+}
+
+export interface MemoryImportV2ApplyResult extends MemoryImportV2DryRunResult {
+  applied: number;
+  created: number;
+  updatedApplied: number;
+  skippedApply: number;
+  writtenFiles: string[];
+  mirrorRebuild?: MemoryMirrorRebuildResult;
+}
+
 /**
  * 记忆统计
  */

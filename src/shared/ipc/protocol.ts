@@ -80,14 +80,44 @@ export type McpAction =
   | 'readResource'
   | 'getStatus'
   | 'getServerStates'
+  | 'addServer'
   | 'setServerEnabled'
   | 'reconnectServer'
   | 'refreshFromCloud';
 
 /**
+ * Capability Center 通道 actions
+ */
+export type CapabilityAction = 'list' | 'setEnabled';
+
+/**
  * Memory 通道 actions
  */
-export type MemoryAction = 'store' | 'search' | 'getContext' | 'getStats' | 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'memoryAudit';
+export type MemoryAction =
+  | 'store'
+  | 'search'
+  | 'getContext'
+  | 'getStats'
+  | 'list'
+  | 'update'
+  | 'delete'
+  | 'deleteByCategory'
+  | 'export'
+  | 'import'
+  | 'lightList'
+  | 'lightRead'
+  | 'lightDelete'
+  | 'lightStats'
+  | 'lightHealth'
+  | 'lightRebuildIndex'
+  | 'memoryAudit'
+  | 'memoryInboxResolve'
+  | 'memoryEntries'
+  | 'memoryRebuildMirror'
+  | 'memoryPack'
+  | 'memoryExportV2'
+  | 'memoryImportV2DryRun'
+  | 'memoryImportV2Apply';
 
 /**
  * Planning 通道 actions
@@ -131,6 +161,7 @@ export interface IPCChannelActions {
   settings: SettingsAction;
   update: UpdateAction;
   mcp: McpAction;
+  capability: CapabilityAction;
   memory: MemoryAction;
   planning: PlanningAction;
   window: WindowAction;

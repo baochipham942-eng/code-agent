@@ -2,14 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertCircle,
+  Ban,
   Brain,
   ChevronDown,
   ChevronUp,
+  Check,
   Clock3,
   Database,
   FileText,
   Inbox,
   MessageSquareText,
+  PencilLine,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -43,6 +46,26 @@ interface LightMemoryStats {
   recentConversations: string[];
 }
 
+interface LightMemoryHealthReport {
+  totalFiles: number;
+  indexExists: boolean;
+  indexLineCount: number;
+  indexTooLong: boolean;
+  missingInIndex: string[];
+  orphanInIndex: string[];
+  invalidFrontmatter: Array<{ filename: string; reason: string }>;
+  unreadableFiles: Array<{ filename: string; reason: string }>;
+  duplicateNames: Array<{ value: string; filenames: string[] }>;
+  duplicateDescriptions: Array<{ value: string; filenames: string[] }>;
+}
+
+interface LightMemoryRebuildResult {
+  indexPath: string;
+  totalFiles: number;
+  indexedFiles: number;
+  skippedFiles: Array<{ filename: string; reason: string }>;
+}
+
 interface StoredMemory {
   id: string;
   type:
@@ -74,6 +97,31 @@ interface MemoryAuditPayload {
   lightStats: LightMemoryStats;
   databaseMemories: StoredMemory[];
   seedCandidates: StoredMemory[];
+  inboxDecisions?: Array<{
+    candidateId: string;
+    decision: 'approve' | 'reject';
+    contentHash: string;
+    title: string;
+    kind: string;
+    source: string;
+    reason: string;
+    decidedAt: number;
+    memoryId: string | null;
+    decisionMemoryId: string;
+  }>;
+  injectionTraces?: MemoryInjectionTrace[];
+}
+
+interface MemoryInjectionTrace {
+  id: string;
+  blockType: 'seed-memory' | 'memory_index' | 'memory_hint' | 'recent_conversations';
+  trigger: string;
+  chars: number;
+  injected: boolean;
+  source: string;
+  count: number;
+  timestamp: number;
+  sessionId: string;
 }
 
 interface MemoryResponse<T> {
@@ -112,13 +160,31 @@ interface AuditItem {
 
 interface InboxItem {
   id: string;
+  contentHash: string;
   kind: '候选项目知识' | '会话结论' | '失败复盘' | '可沉淀经验';
   title: string;
   summary: string;
+  content: string;
   source: string;
   reason: string;
   updatedAt: number | null;
 }
+
+type InboxDecision = 'approve' | 'reject';
+
+interface MemoryInboxResolvePayload {
+  candidateId: string;
+  decision: InboxDecision;
+  content: string;
+  title: string;
+  source: string;
+  reason: string;
+  kind: InboxItem['kind'];
+  projectPath?: string | null;
+  sessionId?: string | null;
+}
+
+type InboxStatus = 'approving' | 'rejecting' | 'approved' | 'rejected';
 
 const CATEGORY_META: Record<MemoryCategory, CategoryMeta> = {
   user_preferences: { label: '用户偏好', tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', Icon: Brain },
@@ -169,10 +235,97 @@ async function invokeMemoryAudit(payload: {
   );
 }
 
+async function invokeMemoryCommand<T>(
+  action: 'lightHealth' | 'lightRebuildIndex',
+  payload: Record<string, unknown> = {},
+): Promise<T> {
+  const request = { action, ...payload };
+  const commandResult = ipcService.isAvailable()
+    ? await ipcService.invoke(IPC_CHANNELS.MEMORY, request) as unknown
+    : undefined;
+
+  if (commandResult !== undefined) {
+    if (!isMemoryResponse<T>(commandResult)) {
+      return commandResult as T;
+    }
+    if (commandResult.success && commandResult.data !== undefined) {
+      return commandResult.data;
+    }
+    if (!isWebMode()) {
+      const error = commandResult.error;
+      throw new Error(typeof error === 'string' ? error : error?.message || `${action} failed`);
+    }
+  }
+
+  return ipcService.invokeDomain<T>(
+    IPC_DOMAINS.MEMORY,
+    action,
+    payload,
+  );
+}
+
+async function invokeMemoryInboxResolve(payload: MemoryInboxResolvePayload): Promise<void> {
+  const request = { action: 'memoryInboxResolve' as const, ...payload };
+  const commandResult = ipcService.isAvailable()
+    ? await ipcService.invoke(IPC_CHANNELS.MEMORY, request) as unknown
+    : undefined;
+
+  if (commandResult !== undefined) {
+    if (!isMemoryResponse<unknown>(commandResult)) {
+      return;
+    }
+    if (commandResult.success) {
+      return;
+    }
+    if (!isWebMode()) {
+      const error = commandResult.error;
+      throw new Error(typeof error === 'string' ? error : error?.message || 'memoryInboxResolve failed');
+    }
+  }
+
+  await ipcService.invokeDomain(
+    IPC_DOMAINS.MEMORY,
+    'memoryInboxResolve',
+    payload,
+  );
+}
+
+export function buildMemoryInboxResolvePayload(
+  item: InboxItem,
+  decision: InboxDecision,
+  options: {
+    content?: string;
+    projectPath?: string | null;
+    sessionId?: string | null;
+  } = {},
+): MemoryInboxResolvePayload {
+  return {
+    candidateId: item.id,
+    decision,
+    content: options.content ?? item.content,
+    title: item.title,
+    source: item.source,
+    reason: item.reason,
+    kind: item.kind,
+    projectPath: options.projectPath ?? null,
+    sessionId: options.sessionId ?? null,
+  };
+}
+
 function compactText(value: string | undefined, limit = 180): string {
   const text = (value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
   return text.length > limit ? `${text.slice(0, limit - 1)}...` : text;
+}
+
+export function hashInboxContent(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i++) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function formatTime(value: number | null): string {
@@ -314,14 +467,25 @@ function parseRecentTitle(line: string): string | null {
 }
 
 export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
+  const resolvedCandidateIds = new Set((data.inboxDecisions ?? []).map((decision) => decision.candidateId));
+  const resolvedContentHashes = new Set((data.inboxDecisions ?? []).map((decision) => decision.contentHash).filter(Boolean));
+  const isResolvedInboxMemory = (memory: StoredMemory): boolean => {
+    const value = memory.metadata?.knowledgeInbox;
+    if (!value || typeof value !== 'object') return false;
+    const decision = (value as Record<string, unknown>).decision;
+    return decision === 'approve' || decision === 'reject';
+  };
+
   const fromSessionExtracted = data.databaseMemories
-    .filter((memory) => memory.source === 'session_extracted')
+    .filter((memory) => memory.source === 'session_extracted' && !isResolvedInboxMemory(memory))
     .slice(0, 8)
     .map((memory): InboxItem => ({
       id: `flush:${memory.id}`,
+      contentHash: hashInboxContent(memory.content),
       kind: memory.category === 'flush_decision' ? '候选项目知识' : '会话结论',
       title: compactText(memory.summary || memory.content, 80) || memory.category,
       summary: compactText(memory.content, 180) || '(空)',
+      content: memory.content,
       source: sourceLabelForStored(memory),
       reason: memory.category === 'flush_decision'
         ? '压缩前识别为关键决策，需要用户后续确认是否沉淀成稳定项目知识。'
@@ -331,22 +495,27 @@ export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
 
   const fromRecentConversations = data.lightStats.recentConversations.slice(0, 6).map((line, index): InboxItem => ({
     id: `conversation:${index}`,
+    contentHash: hashInboxContent(line.replace(/^- /, '').trim()),
     kind: '会话结论',
     title: parseRecentTitle(line) || `最近会话 ${index + 1}`,
     summary: compactText(line.replace(/^- /, ''), 180) || '(空)',
+    content: line.replace(/^- /, '').trim(),
     source: '~/.code-agent/memory/recent-conversations.md',
     reason: '已有最近会话摘要，但当前没有自动确认/写入项目知识的闭环。',
     updatedAt: null,
   }));
 
   const fromFailurePatterns = data.databaseMemories
+    .filter((memory) => !isResolvedInboxMemory(memory))
     .filter((memory) => /error|failure|solution|pattern|复盘|失败/i.test(`${memory.category} ${memory.content}`))
     .slice(0, 6)
     .map((memory): InboxItem => ({
       id: `pattern:${memory.id}`,
+      contentHash: hashInboxContent(memory.content),
       kind: memory.category.includes('error') ? '失败复盘' : '可沉淀经验',
       title: compactText(memory.summary || memory.content, 80) || memory.category,
       summary: compactText(memory.content, 180) || '(空)',
+      content: memory.content,
       source: sourceLabelForStored(memory),
       reason: '识别到经验或失败信号，第一版只展示，不自动写入新的知识库条目。',
       updatedAt: memory.updatedAt || memory.createdAt || null,
@@ -357,6 +526,8 @@ export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
     .filter((item) => {
       const key = `${item.kind}:${item.title}:${item.summary}`;
       if (seen.has(key)) return false;
+      if (resolvedCandidateIds.has(item.id)) return false;
+      if (resolvedContentHashes.has(item.contentHash)) return false;
       seen.add(key);
       return true;
     })
@@ -368,22 +539,34 @@ export const KnowledgeMemoryPanel: React.FC = () => {
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [data, setData] = useState<MemoryAuditPayload | null>(null);
+  const [lightHealth, setLightHealth] = useState<LightMemoryHealthReport | null>(null);
+  const [rebuildResult, setRebuildResult] = useState<LightMemoryRebuildResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [editingInboxId, setEditingInboxId] = useState<string | null>(null);
+  const [draftByInboxId, setDraftByInboxId] = useState<Record<string, string>>({});
+  const [inboxStatusById, setInboxStatusById] = useState<Record<string, InboxStatus>>({});
+  const [inboxErrorById, setInboxErrorById] = useState<Record<string, string>>({});
 
   const loadAudit = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await invokeMemoryAudit({
-        projectPath: workingDirectory,
-        sessionId: currentSessionId,
-      });
+      const [result, health] = await Promise.all([
+        invokeMemoryAudit({
+          projectPath: workingDirectory,
+          sessionId: currentSessionId,
+        }),
+        invokeMemoryCommand<LightMemoryHealthReport>('lightHealth'),
+      ]);
       setData(result);
+      setLightHealth(health);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setData(null);
+      setLightHealth(null);
     } finally {
       setIsLoading(false);
     }
@@ -391,6 +574,64 @@ export const KnowledgeMemoryPanel: React.FC = () => {
 
   useEffect(() => {
     void loadAudit();
+  }, [loadAudit]);
+
+  const handleResolveInboxItem = useCallback(async (
+    item: InboxItem,
+    decision: InboxDecision,
+    content?: string,
+  ) => {
+    const runningStatus: InboxStatus = decision === 'approve' ? 'approving' : 'rejecting';
+    const doneStatus: InboxStatus = decision === 'approve' ? 'approved' : 'rejected';
+    setInboxStatusById((prev) => ({ ...prev, [item.id]: runningStatus }));
+    setInboxErrorById((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    setError(null);
+
+    try {
+      await invokeMemoryInboxResolve(buildMemoryInboxResolvePayload(item, decision, {
+        content,
+        projectPath: workingDirectory,
+        sessionId: currentSessionId,
+      }));
+      setInboxStatusById((prev) => ({ ...prev, [item.id]: doneStatus }));
+      setEditingInboxId((current) => current === item.id ? null : current);
+      await loadAudit();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setInboxStatusById((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+      setInboxErrorById((prev) => ({ ...prev, [item.id]: message }));
+      setError(`Knowledge Inbox 处理失败：${message}`);
+    }
+  }, [currentSessionId, loadAudit, workingDirectory]);
+
+  const handleStartEditInboxItem = useCallback((item: InboxItem) => {
+    setEditingInboxId(item.id);
+    setDraftByInboxId((prev) => ({
+      ...prev,
+      [item.id]: prev[item.id] ?? item.content,
+    }));
+  }, []);
+
+  const handleRebuildLightIndex = useCallback(async () => {
+    setIsRebuildingIndex(true);
+    setError(null);
+    try {
+      const result = await invokeMemoryCommand<LightMemoryRebuildResult>('lightRebuildIndex');
+      setRebuildResult(result);
+      await loadAudit();
+    } catch (err) {
+      setError(`Light Memory 重建失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsRebuildingIndex(false);
+    }
   }, [loadAudit]);
 
   const auditItems = useMemo(() => data ? buildAuditItems(data) : [], [data]);
@@ -477,52 +718,51 @@ export const KnowledgeMemoryPanel: React.FC = () => {
       )}
 
       <div className="grid flex-1 min-h-0 grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)] gap-4 overflow-hidden p-5">
-        <section className="flex min-h-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/60">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Inbox className="h-4 w-4 text-amber-300" />
-              <h3 className="text-sm font-semibold text-zinc-100">Knowledge Inbox</h3>
-            </div>
-            <span className="text-xs text-zinc-500">{inboxItems.length} 条</span>
-          </div>
+        <div className="flex min-h-0 flex-col gap-4">
+          <LightMemoryHealthPanel
+            health={lightHealth}
+            rebuildResult={rebuildResult}
+            isLoading={isLoading}
+            isRebuilding={isRebuildingIndex}
+            onRebuild={() => void handleRebuildLightIndex()}
+          />
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {isLoading ? (
-              <LoadingRows />
-            ) : inboxItems.length === 0 ? (
-              <EmptyState
-                icon={Inbox}
-                title="暂无待确认知识"
-                text="没有发现可直接复用的候选链路；刷新会重新读取 Light Memory 和最近会话。"
-              />
-            ) : (
-              <div className="space-y-2">
-                {inboxItems.map((item) => (
-                  <article key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-medium text-amber-300">{item.kind}</div>
-                        <h4 className="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
-                      </div>
-                      <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
-                    </div>
-                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
-                    <dl className="mt-3 space-y-1 text-[11px] leading-4 text-zinc-500">
-                      <div>
-                        <dt className="inline text-zinc-400">来源: </dt>
-                        <dd className="inline">{item.source}</dd>
-                      </div>
-                      <div>
-                        <dt className="inline text-zinc-400">用途: </dt>
-                        <dd className="inline">{item.reason}</dd>
-                      </div>
-                    </dl>
-                  </article>
-                ))}
+          <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-zinc-800 bg-zinc-900/60">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Inbox className="h-4 w-4 text-amber-300" />
+                <h3 className="text-sm font-semibold text-zinc-100">Knowledge Inbox</h3>
               </div>
-            )}
-          </div>
-        </section>
+              <span className="text-xs text-zinc-500">{inboxItems.length} 条</span>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {isLoading ? (
+                <LoadingRows />
+              ) : inboxItems.length === 0 ? (
+                <EmptyState
+                  icon={Inbox}
+                  title="暂无待确认知识"
+                  text="没有发现可直接复用的候选链路；刷新会重新读取 Light Memory 和最近会话。"
+                />
+              ) : (
+                <KnowledgeInboxList
+                  items={inboxItems}
+                  editingId={editingInboxId}
+                  draftById={draftByInboxId}
+                  statusById={inboxStatusById}
+                  errorById={inboxErrorById}
+                  onApprove={(item) => void handleResolveInboxItem(item, 'approve')}
+                  onReject={(item) => void handleResolveInboxItem(item, 'reject')}
+                  onEdit={handleStartEditInboxItem}
+                  onDraftChange={(id, value) => setDraftByInboxId((prev) => ({ ...prev, [id]: value }))}
+                  onCancelEdit={() => setEditingInboxId(null)}
+                  onApproveEdit={(item, value) => void handleResolveInboxItem(item, 'approve', value)}
+                />
+              )}
+            </div>
+          </section>
+        </div>
 
         <section className="flex min-h-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/60">
           <div className="border-b border-zinc-800 px-4 py-3">
@@ -556,6 +796,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                 );
               })}
             </div>
+            <MemoryInjectionTraceList traces={data?.injectionTraces ?? []} />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -596,6 +837,302 @@ export const KnowledgeMemoryPanel: React.FC = () => {
     </div>
   );
 };
+
+export function countLightMemoryHealthIssues(health: LightMemoryHealthReport | null): number {
+  if (!health) return 0;
+  return [
+    health.indexTooLong,
+    !health.indexExists && health.totalFiles > 0,
+    ...health.missingInIndex,
+    ...health.orphanInIndex,
+    ...health.invalidFrontmatter,
+    ...health.unreadableFiles,
+    ...health.duplicateNames,
+    ...health.duplicateDescriptions,
+  ].filter(Boolean).length;
+}
+
+function buildLightMemoryIssuePreview(health: LightMemoryHealthReport): string[] {
+  const issues: string[] = [];
+  if (!health.indexExists && health.totalFiles > 0) issues.push('INDEX.md 缺失');
+  if (health.indexTooLong) issues.push(`INDEX.md ${health.indexLineCount} 行`);
+  for (const filename of health.missingInIndex.slice(0, 3)) issues.push(`未进索引: ${filename}`);
+  for (const filename of health.orphanInIndex.slice(0, 3)) issues.push(`孤儿索引: ${filename}`);
+  for (const item of health.invalidFrontmatter.slice(0, 3)) issues.push(`${item.filename}: ${item.reason}`);
+  for (const item of health.unreadableFiles.slice(0, 2)) issues.push(`${item.filename}: ${item.reason}`);
+  for (const item of health.duplicateNames.slice(0, 2)) issues.push(`重复名称: ${item.value}`);
+  for (const item of health.duplicateDescriptions.slice(0, 2)) issues.push(`重复描述: ${item.value}`);
+  return issues.slice(0, 5);
+}
+
+export function LightMemoryHealthPanel({
+  health,
+  rebuildResult,
+  isLoading,
+  isRebuilding,
+  onRebuild,
+}: {
+  health: LightMemoryHealthReport | null;
+  rebuildResult: LightMemoryRebuildResult | null;
+  isLoading: boolean;
+  isRebuilding: boolean;
+  onRebuild: () => void;
+}) {
+  const issueCount = countLightMemoryHealthIssues(health);
+  const issuePreview = health ? buildLightMemoryIssuePreview(health) : [];
+  const statusLabel = !health || isLoading
+    ? '检查中'
+    : issueCount === 0
+      ? '健康'
+      : `${issueCount} 项`;
+  const statusTone = !health || isLoading
+    ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
+    : issueCount === 0
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60" data-testid="light-memory-health-panel">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-300" />
+          <h3 className="text-sm font-semibold text-zinc-100">Light Memory</h3>
+          <span className={`rounded border px-1.5 py-0.5 text-[11px] ${statusTone}`}>{statusLabel}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onRebuild}
+          disabled={isLoading || isRebuilding}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isRebuilding ? 'animate-spin' : ''}`} />
+          重建索引
+        </button>
+      </div>
+      <div className="space-y-3 p-3">
+        <div className="grid grid-cols-3 gap-2">
+          <HealthMetric label="文件" value={health?.totalFiles ?? '-'} />
+          <HealthMetric label="索引行" value={health?.indexLineCount ?? '-'} />
+          <HealthMetric label="缺口" value={issueCount} />
+        </div>
+        {issuePreview.length > 0 ? (
+          <div className="space-y-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
+            {issuePreview.map((item) => (
+              <div key={item} className="flex gap-1.5">
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span className="break-all">{item}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-[11px] text-zinc-500">
+            INDEX.md 与 Light Memory 文件一致。
+          </div>
+        )}
+        {rebuildResult ? (
+          <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-[11px] leading-4 text-zinc-400">
+            已索引 {rebuildResult.indexedFiles}/{rebuildResult.totalFiles}
+            {rebuildResult.skippedFiles.length > 0 ? `，跳过 ${rebuildResult.skippedFiles.length}` : ''}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function HealthMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2">
+      <div className="text-[11px] text-zinc-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold leading-none text-zinc-100">{value}</div>
+    </div>
+  );
+}
+
+export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTrace[] }) {
+  const recentTraces = traces.slice(0, 5);
+  return (
+    <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5" data-testid="memory-injection-traces">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Zap className="h-3.5 w-3.5 text-emerald-300" />
+          <span className="text-[11px] font-medium text-zinc-300">Injection Trace</span>
+        </div>
+        <span className="text-[11px] text-zinc-600">{traces.length} 条</span>
+      </div>
+      {recentTraces.length === 0 ? (
+        <div className="text-[11px] text-zinc-500">暂无本进程注入记录。</div>
+      ) : (
+        <div className="grid gap-1.5">
+          {recentTraces.map((trace) => (
+            <div key={trace.id} className="flex min-w-0 items-center gap-2 text-[11px] leading-4">
+              <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
+                {trace.injected ? '已注入' : '未注入'}
+              </span>
+              <span className="shrink-0 font-medium text-zinc-300">{trace.blockType}</span>
+              <span className="min-w-0 truncate text-zinc-500">{trace.trigger} · {trace.count} 项 · {trace.chars} chars</span>
+              <span className="ml-auto shrink-0 text-zinc-600">{formatTraceTime(trace.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTraceTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '未知';
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+export function KnowledgeInboxList({
+  items,
+  editingId,
+  draftById,
+  statusById,
+  errorById,
+  onApprove,
+  onReject,
+  onEdit,
+  onDraftChange,
+  onCancelEdit,
+  onApproveEdit,
+}: {
+  items: InboxItem[];
+  editingId: string | null;
+  draftById: Record<string, string>;
+  statusById: Record<string, InboxStatus>;
+  errorById: Record<string, string>;
+  onApprove: (item: InboxItem) => void;
+  onReject: (item: InboxItem) => void;
+  onEdit: (item: InboxItem) => void;
+  onDraftChange: (id: string, value: string) => void;
+  onCancelEdit: () => void;
+  onApproveEdit: (item: InboxItem, value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {items.map((item) => {
+        const status = statusById[item.id];
+        const isBusy = status === 'approving' || status === 'rejecting';
+        const isEditing = editingId === item.id;
+        const draft = draftById[item.id] ?? item.content;
+        return (
+          <article key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-medium text-amber-300">{item.kind}</span>
+                  {status ? <InboxStatusBadge status={status} /> : null}
+                </div>
+                <h4 className="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
+              </div>
+              <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
+            </div>
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
+            <dl className="mt-3 space-y-1 text-[11px] leading-4 text-zinc-500">
+              <div>
+                <dt className="inline text-zinc-400">来源: </dt>
+                <dd className="inline">{item.source}</dd>
+              </div>
+              <div>
+                <dt className="inline text-zinc-400">用途: </dt>
+                <dd className="inline">{item.reason}</dd>
+              </div>
+            </dl>
+
+            {isEditing ? (
+              <div className="mt-3 space-y-2">
+                <textarea
+                  value={draft}
+                  onChange={(event) => onDraftChange(item.id, event.target.value)}
+                  className="min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-200 outline-none focus:border-emerald-500/70"
+                  aria-label={`编辑 ${item.title}`}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onApproveEdit(item, draft)}
+                    disabled={isBusy || !draft.trim()}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    保存采纳
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancelEdit}
+                    disabled={isBusy}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onApprove(item)}
+                  disabled={isBusy}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  采纳
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEdit(item)}
+                  disabled={isBusy}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 text-[11px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+                >
+                  <PencilLine className="h-3.5 w-3.5" />
+                  编辑采纳
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReject(item)}
+                  disabled={isBusy}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                  忽略
+                </button>
+              </div>
+            )}
+
+            {errorById[item.id] ? (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] leading-4 text-red-200">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{errorById[item.id]}</span>
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function InboxStatusBadge({ status }: { status: InboxStatus }) {
+  const label: Record<InboxStatus, string> = {
+    approving: '采纳中',
+    rejecting: '忽略中',
+    approved: '已采纳',
+    rejected: '已忽略',
+  };
+  const tone = status === 'approved'
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    : status === 'rejected'
+      ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+  return (
+    <span className={`rounded border px-1.5 py-0.5 text-[11px] ${tone}`}>
+      {label[status]}
+    </span>
+  );
+}
 
 function AuditRow({ item }: { item: AuditItem }) {
   const confidence = formatConfidence(item.confidence);

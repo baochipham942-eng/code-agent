@@ -9,6 +9,13 @@
 import { getDatabase, type MemoryRecord } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { sanitizeMemoryContent } from './sanitizeMemoryContent';
+import {
+  KNOWLEDGE_INBOX_DECISION_CATEGORY,
+  parseKnowledgeInboxDecision,
+  shouldSuppressMemoryByInboxDecision,
+  type KnowledgeInboxDecisionRecord,
+} from '../memory/knowledgeInboxDecision';
+import { packMemoryEntries } from '../memory/memoryEntryRuntime';
 
 const logger = createLogger('SeedMemoryInjector');
 
@@ -72,12 +79,24 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
     }
 
     // Query recent memories, preferring high-confidence ones
+    const decisions = (db.listMemories({
+      category: KNOWLEDGE_INBOX_DECISION_CATEGORY,
+      projectPath,
+      limit: 100,
+      orderBy: 'updated_at',
+      orderDir: 'DESC',
+    }) || [])
+      .map(parseKnowledgeInboxDecision)
+      .filter((decision): decision is KnowledgeInboxDecisionRecord => Boolean(decision));
+
     const memories = db.listMemories({
       projectPath,
       limit: MAX_SEED_MEMORIES,
       orderBy: 'updated_at',
       orderDir: 'DESC',
-    }).filter((memory) => memory.type !== 'desktop_activity');
+    })
+      .filter((memory) => memory.type !== 'desktop_activity')
+      .filter((memory) => !shouldSuppressMemoryByInboxDecision(memory, decisions));
 
     if (!memories || memories.length === 0) {
       logger.debug('[SeedMemory] No memories found, skipping injection');
@@ -123,6 +142,39 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
   } catch (error) {
     // Memory failures must never block the agent loop
     logger.warn('[SeedMemory] Failed to build seed memory block, skipping', { error: String(error) });
+    return null;
+  }
+}
+
+export async function buildPackedSeedMemoryBlock(options: {
+  projectPath?: string;
+  sessionId?: string;
+  query?: string;
+}): Promise<string | null> {
+  try {
+    const db = getDatabase();
+    if (!db?.isReady) {
+      return null;
+    }
+
+    const packed = await packMemoryEntries({
+      query: options.query,
+      projectPath: options.projectPath,
+      sessionId: options.sessionId,
+      statuses: ['active'],
+      maxItems: MAX_SEED_MEMORIES,
+      perItemCharLimit: MAX_ENTRY_CHARS,
+      totalCharBudget: MAX_SEED_CHARS,
+    }, db);
+
+    if (packed.items.length === 0 || !packed.block.trim()) {
+      return null;
+    }
+
+    logger.info(`[SeedMemory] Injecting ${packed.items.length} packed memories (~${Math.ceil(packed.totalChars / CHARS_PER_TOKEN)} tokens)`);
+    return `## Packed Memories\n${packed.block}`;
+  } catch (error) {
+    logger.warn('[SeedMemory] Failed to build packed seed memory block, falling back', { error: String(error) });
     return null;
   }
 }

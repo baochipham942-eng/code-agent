@@ -8,7 +8,43 @@ import { getSessionManager, getDatabase } from '../services';
 import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
-import { listMemoryFiles, readMemoryFile, deleteMemoryFile, getLightMemoryStats } from '../lightMemory/lightMemoryIpc';
+import {
+  listMemoryFiles,
+  readMemoryFile,
+  deleteMemoryFile,
+  getLightMemoryStats,
+  getLightMemoryHealth,
+  rebuildLightMemoryIndex,
+} from '../lightMemory/lightMemoryIpc';
+import { listMemoryInjectionTraces, type MemoryInjectionTrace } from '../memory/memoryInjectionTrace';
+import {
+  buildActiveMemoryEntryFromInbox,
+  applyImportMemoryBundleV2,
+  createMemoryMirrorRecord,
+  dryRunImportMemoryBundleV2,
+  exportMemoryBundleV2,
+  lightMemoryFileToEntry,
+  listUnifiedMemoryEntries,
+  packMemoryEntries,
+  rebuildMemoryMirrorFromLightFiles,
+  storedMemoryToEntry,
+  writeActiveEntryToLightMemory,
+} from '../memory/memoryEntryRuntime';
+import {
+  KNOWLEDGE_INBOX_DECISION_CATEGORY,
+  hashInboxContent,
+  parseKnowledgeInboxDecision,
+  shouldSuppressMemoryByInboxDecision,
+  type KnowledgeInboxDecisionRecord,
+  type KnowledgeInboxDecisionValue,
+} from '../memory/knowledgeInboxDecision';
+import type {
+  MemoryEntry,
+  MemoryExportV2Bundle,
+  MemoryImportV2ApplyRequest,
+  MemoryMirrorRebuildResult,
+  MemoryPackRequest,
+} from '../../shared/contract/memory';
 
 const logger = createLogger('MemoryIPC');
 
@@ -16,6 +52,18 @@ interface MemoryAuditRequest {
   projectPath?: string | null;
   sessionId?: string | null;
   limit?: number;
+}
+
+interface MemoryInboxResolveRequest {
+  candidateId?: string;
+  decision?: KnowledgeInboxDecisionValue;
+  content?: string;
+  title?: string;
+  source?: string;
+  reason?: string;
+  kind?: string;
+  projectPath?: string | null;
+  sessionId?: string | null;
 }
 
 interface SerializedAuditMemory {
@@ -341,6 +389,31 @@ function serializeAuditMemory(memory: StoredMemoryRecord): SerializedAuditMemory
   };
 }
 
+function compactOneLine(value: string | undefined, limit: number): string {
+  const text = (value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+}
+
+function normalizeNullableText(value: string | null | undefined): string | undefined {
+  const text = value?.trim();
+  return text || undefined;
+}
+
+function categoryForInboxKind(kind: string | undefined): string {
+  switch (kind) {
+    case '候选项目知识':
+      return 'flush_decision';
+    case '失败复盘':
+      return 'error_solution';
+    case '可沉淀经验':
+      return 'pattern';
+    case '会话结论':
+    default:
+      return 'user_requirement';
+  }
+}
+
 function isAuditableMemory(memory: StoredMemoryRecord): boolean {
   return memory.type !== 'desktop_activity';
 }
@@ -357,6 +430,9 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
   lightStats: Awaited<ReturnType<typeof getLightMemoryStats>>;
   databaseMemories: SerializedAuditMemory[];
   seedCandidates: SerializedAuditMemory[];
+  inboxDecisions: KnowledgeInboxDecisionRecord[];
+  injectionTraces: MemoryInjectionTrace[];
+  memoryEntries: MemoryEntry[];
 }> {
   const projectPath = payload.projectPath?.trim() || null;
   const sessionId = payload.sessionId?.trim() || null;
@@ -368,6 +444,8 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
 
   let databaseMemories: StoredMemoryRecord[] = [];
   let seedCandidates: StoredMemoryRecord[] = [];
+  let inboxDecisions: KnowledgeInboxDecisionRecord[] = [];
+  let memoryEntries: MemoryEntry[] = [];
 
   try {
     const db = getDatabase();
@@ -377,6 +455,17 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
       orderDir: 'DESC',
     }).filter(isAuditableMemory);
 
+    const decisionRecords = db.listMemories({
+      category: KNOWLEDGE_INBOX_DECISION_CATEGORY,
+      ...(projectPath ? { projectPath } : {}),
+      limit: 100,
+      orderBy: 'updated_at',
+      orderDir: 'DESC',
+    }) || [];
+    inboxDecisions = decisionRecords
+      .map(parseKnowledgeInboxDecision)
+      .filter((decision): decision is KnowledgeInboxDecisionRecord => Boolean(decision));
+
     seedCandidates = db.listMemories({
       ...(projectPath ? { projectPath } : {}),
       limit: 30,
@@ -384,12 +473,21 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
       orderDir: 'DESC',
     })
       .filter(isAuditableMemory)
+      .filter((memory) => !shouldSuppressMemoryByInboxDecision(memory, inboxDecisions))
       .sort(sortSeedCandidates)
       .slice(0, 10);
+    const lightEntryIds = new Set(lightFiles.map((file) => file.entryId || `light:${file.filename}`));
+    memoryEntries = [
+      ...lightFiles.map(lightMemoryFileToEntry),
+      ...databaseMemories
+        .map(storedMemoryToEntry)
+        .filter((entry) => !(entry.source.sourceOfTruth === 'light_file' && lightEntryIds.has(entry.id))),
+    ].sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     logger.warn('Memory audit database read skipped', {
       error: error instanceof Error ? error.message : String(error),
     });
+    memoryEntries = (await listUnifiedMemoryEntries()).entries;
   }
 
   return {
@@ -399,6 +497,164 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
     lightStats,
     databaseMemories: databaseMemories.map(serializeAuditMemory),
     seedCandidates: seedCandidates.map(serializeAuditMemory),
+    inboxDecisions,
+    injectionTraces: listMemoryInjectionTraces({ sessionId, limit }),
+    memoryEntries,
+  };
+}
+
+async function handleListMemoryEntries(): Promise<Awaited<ReturnType<typeof listUnifiedMemoryEntries>>> {
+  try {
+    return await listUnifiedMemoryEntries(getDatabase());
+  } catch (error) {
+    logger.warn('Memory entry DB mirror read skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return listUnifiedMemoryEntries();
+  }
+}
+
+async function handleRebuildMemoryMirror(): Promise<MemoryMirrorRebuildResult> {
+  return rebuildMemoryMirrorFromLightFiles(getDatabase());
+}
+
+async function handleMemoryPack(payload: MemoryPackRequest): Promise<Awaited<ReturnType<typeof packMemoryEntries>>> {
+  try {
+    return await packMemoryEntries(payload || {}, getDatabase());
+  } catch (error) {
+    logger.warn('Memory pack DB read skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return packMemoryEntries(payload || {});
+  }
+}
+
+async function handleMemoryExportV2(): Promise<MemoryExportV2Bundle> {
+  try {
+    return await exportMemoryBundleV2(getDatabase());
+  } catch (error) {
+    logger.warn('Memory export v2 DB read skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return exportMemoryBundleV2();
+  }
+}
+
+async function handleMemoryImportV2DryRun(payload: { bundle?: MemoryExportV2Bundle }): Promise<Awaited<ReturnType<typeof dryRunImportMemoryBundleV2>>> {
+  if (!payload?.bundle || payload.bundle.schemaVersion !== 2) {
+    throw new Error('memory import v2 requires a schemaVersion 2 bundle');
+  }
+  try {
+    return await dryRunImportMemoryBundleV2(payload.bundle, getDatabase());
+  } catch (error) {
+    logger.warn('Memory import v2 dry-run DB read skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return dryRunImportMemoryBundleV2(payload.bundle);
+  }
+}
+
+async function handleMemoryImportV2Apply(payload: MemoryImportV2ApplyRequest): Promise<Awaited<ReturnType<typeof applyImportMemoryBundleV2>>> {
+  if (!payload?.bundle || payload.bundle.schemaVersion !== 2) {
+    throw new Error('memory import v2 apply requires a schemaVersion 2 bundle');
+  }
+  return applyImportMemoryBundleV2(payload.bundle, getDatabase(), {
+    allowConflicts: payload.allowConflicts,
+  });
+}
+
+async function handleMemoryInboxResolve(payload: MemoryInboxResolveRequest): Promise<{
+  candidateId: string;
+  decision: KnowledgeInboxDecisionValue;
+  contentHash: string;
+  memory: SerializedAuditMemory | null;
+  decisionMemoryId: string;
+}> {
+  const candidateId = payload.candidateId?.trim();
+  if (!candidateId) {
+    throw new Error('candidateId is required');
+  }
+  const decision = payload.decision;
+  if (decision !== 'approve' && decision !== 'reject') {
+    throw new Error('decision must be approve or reject');
+  }
+
+  const content = (payload.content || '').trim();
+  if (decision === 'approve' && !content) {
+    throw new Error('content is required when approving an inbox item');
+  }
+
+  const db = getDatabase();
+  const projectPath = normalizeNullableText(payload.projectPath);
+  const sessionId = normalizeNullableText(payload.sessionId);
+  const title = compactOneLine(payload.title || content || candidateId, 180);
+  const decidedAt = Date.now();
+  const contentHash = hashInboxContent(content);
+  const decisionMetadata = {
+    knowledgeInbox: {
+      candidateId,
+      decision,
+      contentHash,
+      title,
+      kind: payload.kind || '',
+      source: payload.source || '',
+      reason: payload.reason || '',
+      decidedAt,
+    },
+  };
+
+  let approvedMemory: StoredMemoryRecord | null = null;
+  if (decision === 'approve') {
+    const activeEntry = buildActiveMemoryEntryFromInbox({
+      candidateId,
+      content,
+      title,
+      source: payload.source || '',
+      reason: payload.reason || '',
+      kind: payload.kind,
+      projectPath,
+      sessionId,
+      contentHash,
+    });
+    const writtenFile = await writeActiveEntryToLightMemory(activeEntry);
+    const mirroredEntry: MemoryEntry = {
+      ...activeEntry,
+      source: {
+        ...activeEntry.source,
+        filePath: writtenFile.filename,
+        label: `~/.code-agent/memory/${writtenFile.filename}`,
+      },
+      updatedAt: Date.parse(writtenFile.updatedAt) || activeEntry.updatedAt,
+    };
+    approvedMemory = createMemoryMirrorRecord(db, mirroredEntry, {
+      category: categoryForInboxKind(payload.kind),
+      metadata: decisionMetadata,
+    });
+  }
+
+  const decisionMemory = db.createMemory({
+    type: 'desktop_activity',
+    category: KNOWLEDGE_INBOX_DECISION_CATEGORY,
+    content: `${decision === 'approve' ? 'Approved' : 'Rejected'} Knowledge Inbox candidate: ${title || candidateId}`,
+    summary: `${decision === 'approve' ? '采纳' : '忽略'}: ${title || candidateId}`,
+    source: 'user_defined',
+    projectPath,
+    sessionId,
+    confidence: 1,
+    metadata: {
+      knowledgeInbox: {
+        ...decisionMetadata.knowledgeInbox,
+        memoryId: approvedMemory?.id ?? null,
+      },
+    },
+  });
+
+  return {
+    candidateId,
+    decision,
+    contentHash,
+    memory: approvedMemory ? serializeAuditMemory(approvedMemory) : null,
+    decisionMemoryId: decisionMemory.id,
   };
 }
 
@@ -545,8 +801,35 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'lightStats':
           data = await getLightMemoryStats();
           break;
+        case 'lightHealth':
+          data = await getLightMemoryHealth();
+          break;
+        case 'lightRebuildIndex':
+          data = await rebuildLightMemoryIndex();
+          break;
         case 'memoryAudit':
           data = await handleMemoryAudit(payload as MemoryAuditRequest);
+          break;
+        case 'memoryInboxResolve':
+          data = await handleMemoryInboxResolve(payload as MemoryInboxResolveRequest);
+          break;
+        case 'memoryEntries':
+          data = await handleListMemoryEntries();
+          break;
+        case 'memoryRebuildMirror':
+          data = await handleRebuildMemoryMirror();
+          break;
+        case 'memoryPack':
+          data = await handleMemoryPack(payload as MemoryPackRequest);
+          break;
+        case 'memoryExportV2':
+          data = await handleMemoryExportV2();
+          break;
+        case 'memoryImportV2DryRun':
+          data = await handleMemoryImportV2DryRun(payload as { bundle?: MemoryExportV2Bundle });
+          break;
+        case 'memoryImportV2Apply':
+          data = await handleMemoryImportV2Apply(payload as MemoryImportV2ApplyRequest);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
@@ -600,8 +883,35 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'lightStats':
           data = await getLightMemoryStats();
           break;
+        case 'lightHealth':
+          data = await getLightMemoryHealth();
+          break;
+        case 'lightRebuildIndex':
+          data = await rebuildLightMemoryIndex();
+          break;
         case 'memoryAudit':
           data = await handleMemoryAudit(request as MemoryAuditRequest);
+          break;
+        case 'memoryInboxResolve':
+          data = await handleMemoryInboxResolve(request as MemoryInboxResolveRequest);
+          break;
+        case 'memoryEntries':
+          data = await handleListMemoryEntries();
+          break;
+        case 'memoryRebuildMirror':
+          data = await handleRebuildMemoryMirror();
+          break;
+        case 'memoryPack':
+          data = await handleMemoryPack(request as MemoryPackRequest);
+          break;
+        case 'memoryExportV2':
+          data = await handleMemoryExportV2();
+          break;
+        case 'memoryImportV2DryRun':
+          data = await handleMemoryImportV2DryRun(request as { bundle?: MemoryExportV2Bundle });
+          break;
+        case 'memoryImportV2Apply':
+          data = await handleMemoryImportV2Apply(request as unknown as MemoryImportV2ApplyRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

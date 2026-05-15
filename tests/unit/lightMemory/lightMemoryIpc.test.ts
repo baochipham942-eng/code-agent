@@ -30,6 +30,9 @@ import {
   readMemoryFile,
   deleteMemoryFile,
   getLightMemoryStats,
+  getLightMemoryHealth,
+  rebuildLightMemoryIndex,
+  writeLightMemoryFile,
 } from '../../../src/main/lightMemory/lightMemoryIpc';
 
 describe('lightMemoryIpc', () => {
@@ -188,6 +191,39 @@ ${body}
     });
   });
 
+  describe('writeLightMemoryFile', () => {
+    it('writes an active MemoryEntry-compatible Light Memory file', async () => {
+      const written = await writeLightMemoryFile({
+        filename: 'Inbox Memory.md',
+        name: 'Inbox Memory',
+        description: 'Approved from Knowledge Inbox',
+        type: 'project',
+        content: 'Persist this as active memory.',
+        entryId: 'mem_entry_abc123',
+        status: 'active',
+        source: 'knowledge_inbox',
+        schemaVersion: 2,
+      });
+
+      expect(written).toMatchObject({
+        filename: 'inbox-memory.md',
+        name: 'Inbox Memory',
+        description: 'Approved from Knowledge Inbox',
+        type: 'project',
+        content: 'Persist this as active memory.',
+        entryId: 'mem_entry_abc123',
+        status: 'active',
+        source: 'knowledge_inbox',
+        schemaVersion: 2,
+      });
+
+      const raw = await fs.readFile(path.join(memDir, 'inbox-memory.md'), 'utf-8');
+      expect(raw).toContain('entry_id: mem_entry_abc123');
+      expect(raw).toContain('status: active');
+      expect(raw).toContain('schema_version: 2');
+    });
+  });
+
   // --------------------------------------------------------------------------
   // deleteMemoryFile
   // --------------------------------------------------------------------------
@@ -288,6 +324,76 @@ ${body}
       expect(stats.recentConversations.length).toBe(2);
       expect(stats.recentConversations[0]).toContain('Chatbot dev');
       expect(stats.recentConversations[1]).toContain('Testing');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // health / rebuild
+  // --------------------------------------------------------------------------
+
+  describe('getLightMemoryHealth', () => {
+    it('reports missing source files and orphan index entries', async () => {
+      await writeMemoryFile('kept.md', {
+        name: 'Kept',
+        description: 'Still indexed',
+        type: 'project',
+      }, 'content');
+      await writeMemoryFile('missing_from_index.md', {
+        name: 'Missing',
+        description: 'Valid but not indexed',
+        type: 'project',
+      }, 'content');
+      await fs.writeFile(path.join(memDir, 'invalid.md'), 'Just plain markdown', 'utf-8');
+      await fs.writeFile(
+        path.join(memDir, 'INDEX.md'),
+        '# Memory Index\n\n- [kept.md](kept.md) — Still indexed\n- [gone.md](gone.md) — Deleted file\n- [escape.md](../escape.md) — Bad path\n',
+        'utf-8'
+      );
+
+      const health = await getLightMemoryHealth();
+
+      expect(health.totalFiles).toBe(3);
+      expect(health.indexExists).toBe(true);
+      expect(health.indexTooLong).toBe(false);
+      expect(health.missingInIndex).toEqual(['missing_from_index.md']);
+      expect(health.orphanInIndex).toEqual(['../escape.md', 'gone.md']);
+      expect(health.invalidFrontmatter).toEqual([
+        { filename: 'invalid.md', reason: 'missing frontmatter' },
+      ]);
+      expect(health.unreadableFiles).toEqual([]);
+    });
+  });
+
+  describe('rebuildLightMemoryIndex', () => {
+    it('rebuilds INDEX.md from valid file frontmatter', async () => {
+      await writeMemoryFile('b.md', {
+        name: 'B',
+        description: 'Second memory',
+        type: 'project',
+      }, 'content');
+      await writeMemoryFile('a.md', {
+        name: 'A',
+        description: 'First memory',
+        type: 'user',
+      }, 'content');
+      await fs.writeFile(path.join(memDir, 'broken.md'), 'No frontmatter', 'utf-8');
+      await fs.writeFile(
+        path.join(memDir, 'INDEX.md'),
+        '# Memory Index\n\n- [stale.md](stale.md) — Stale\n',
+        'utf-8'
+      );
+
+      const result = await rebuildLightMemoryIndex();
+      const indexContent = await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8');
+
+      expect(result).toMatchObject({
+        totalFiles: 3,
+        indexedFiles: 2,
+        skippedFiles: [{ filename: 'broken.md', reason: 'missing frontmatter' }],
+      });
+      expect(indexContent).toBe(
+        '# Memory Index\n\n- [a.md](a.md) — First memory\n- [b.md](b.md) — Second memory\n'
+      );
     });
   });
 });

@@ -30,7 +30,8 @@ import { buildRecoveredWorkOrchestrationHint, isContinuationLikeRequest, recover
 import { syncDesktopTasksToPlanningService } from '../../desktop/desktopActivityPlanningBridge';
 import { getDesktopActivityUnderstandingService } from '../../desktop/desktopActivityUnderstandingService';
 import { buildWorkspaceActivityContextBlock } from '../../desktop/workspaceActivitySearchService';
-import { buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
+import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
+import { countTraceEntries, recordMemoryInjectionTrace } from '../../memory/memoryInjectionTrace';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getCurrentActivityContext } from '../../services/activity/activityContextProvider';
 import { formatActivityPromptContext } from '../../services/activity/activityPromptFormatter';
@@ -1098,12 +1099,49 @@ export class ConversationRuntime {
 
     // Seed Memory Injection
     try {
-      const seedMemoryBlock = buildSeedMemoryBlock(this.ctx.workingDirectory);
+      let seedMemorySource = 'memory-packer';
+      let seedMemoryBlock = await buildPackedSeedMemoryBlock({
+        projectPath: this.ctx.workingDirectory,
+        sessionId: this.ctx.sessionId,
+        query: userMessage,
+      });
+      if (!seedMemoryBlock) {
+        seedMemorySource = 'database-seed';
+        seedMemoryBlock = buildSeedMemoryBlock(this.ctx.workingDirectory);
+      }
       if (seedMemoryBlock) {
         this.contextAssembly.injectSystemMessage(`<seed-memory>\n${seedMemoryBlock}\n</seed-memory>`);
+        recordMemoryInjectionTrace({
+          blockType: 'seed-memory',
+          trigger: 'session_start',
+          chars: seedMemoryBlock.length,
+          injected: true,
+          source: seedMemorySource,
+          count: countTraceEntries(seedMemoryBlock),
+          sessionId: this.ctx.sessionId,
+        });
         logger.info('[AgentLoop] Seed memory injected at session start');
+      } else {
+        recordMemoryInjectionTrace({
+          blockType: 'seed-memory',
+          trigger: 'session_start',
+          chars: 0,
+          injected: false,
+          source: seedMemorySource,
+          count: 0,
+          sessionId: this.ctx.sessionId,
+        });
       }
     } catch {
+      recordMemoryInjectionTrace({
+        blockType: 'seed-memory',
+        trigger: 'session_start_error',
+        chars: 0,
+        injected: false,
+        source: 'memory-packer',
+        count: 0,
+        sessionId: this.ctx.sessionId,
+      });
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
     }
 

@@ -60,6 +60,15 @@ const ARTIFACT_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_INACTIVITY_TIMEOUT
 const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS', 480_000);
 const ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS', 60_000);
 const ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS', 240_000);
+// Selected-provider retry uses a shorter first-byte timeout than the primary
+// call. Rationale: when a provider has just returned provider_unavailable, the
+// retry is essentially a probe — if it accepts the TCP connection but never
+// emits a byte (mimo's observed failure mode), the original first-byte timeout
+// (60s) plus per-call inactivity (240s+) can stack across both retry attempts
+// and stall the loop for >10 minutes before cross-provider fallback gets a
+// turn. A 30s probe timeout fails fast enough to yield to the fallback chain
+// while still leaving room for legitimate transient slowness.
+const ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS', 30_000);
 const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS', 600_000);
 const ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS', 60_000);
 const ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS', 360_000);
@@ -785,17 +794,45 @@ export class ModelRouter {
     if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory, options)) return null;
     if (signal?.aborted) return null;
 
+    // P0: skip retry when the provider was just marked unavailable by the
+    // health monitor. The primary failure that landed us here is exactly what
+    // tripped UNAVAILABLE_THRESHOLD; retrying the same provider against a
+    // backend that's already known-bad is what wedges the loop (mimo's TCP-
+    // accept-then-hang pattern). Yielding to cross-provider fallback is the
+    // correct decision, and the health monitor will let mimo recover later
+    // once it serves successful requests again.
+    const selectedHealth = getProviderHealthMonitor().getHealth(config.provider);
+    if (selectedHealth?.status === 'unavailable') {
+      logger.warn(
+        `[ModelRouter] Skipping selected artifact provider retry for ${config.provider}/${config.model}: health monitor status=unavailable (errorRate=${(selectedHealth.errorRate * 100).toFixed(1)}%); allowing cross-provider fallback`
+      );
+      return null;
+    }
+
+    // P1: cap first-byte timeout on retry probes so an "accept-then-hang"
+    // provider fails fast instead of stalling each retry slot for minutes.
+    // Only narrow the bound (Math.min) — never extend a tighter caller-supplied
+    // budget — and only touch firstByteTimeoutMs, leaving request/inactivity
+    // bounds intact so legitimately slow-but-progressing retries can complete.
+    const retryOptions: InferenceOptions = {
+      ...options,
+      firstByteTimeoutMs: Math.min(
+        options?.firstByteTimeoutMs ?? ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS,
+        ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS,
+      ),
+    };
+
     for (let attempt = 0; attempt < ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length; attempt++) {
       const delay = ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS[attempt];
       logger.warn(
-        `[ModelRouter] Retrying selected artifact provider ${config.provider}/${config.model} after transient ${fallbackCategory} (${attempt + 1}/${ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length})`
+        `[ModelRouter] Retrying selected artifact provider ${config.provider}/${config.model} after transient ${fallbackCategory} (${attempt + 1}/${ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length}, firstByteTimeout=${retryOptions.firstByteTimeoutMs}ms)`
       );
 
       await new Promise((resolve) => setTimeout(resolve, delay));
       if (signal?.aborted) return null;
 
       try {
-        return await this._callProviderWithArtifactFallback(messages, tools, config, onStream, signal, options);
+        return await this._callProviderWithArtifactFallback(messages, tools, config, onStream, signal, retryOptions);
       } catch (retryErr) {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
         const retryCode = (retryErr as NodeJS.ErrnoException).code;
@@ -805,6 +842,16 @@ export class ModelRouter {
         );
         if (!this.shouldRetrySelectedArtifactProvider(retryCategory, options)) {
           throw retryErr;
+        }
+
+        // Re-check health after each retry failure — if this attempt pushed
+        // the provider over UNAVAILABLE_THRESHOLD, stop retrying immediately.
+        const postRetryHealth = getProviderHealthMonitor().getHealth(config.provider);
+        if (postRetryHealth?.status === 'unavailable') {
+          logger.warn(
+            `[ModelRouter] Selected artifact provider ${config.provider}/${config.model} became unavailable mid-retry (errorRate=${(postRetryHealth.errorRate * 100).toFixed(1)}%); allowing cross-provider fallback`
+          );
+          return null;
         }
       }
     }

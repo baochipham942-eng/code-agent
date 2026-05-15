@@ -1516,6 +1516,99 @@ describe('ModelRouter', () => {
       expect(broadcastToRendererMock).not.toHaveBeenCalled();
     });
 
+    it('skips selected-provider artifact retry when health monitor flagged provider unavailable', async () => {
+      // Reproduces the run #5 sequence:
+      //   1. mimo returns 503 → ProviderHealthMonitor marks xiaomi unavailable
+      //   2. ModelRouter would normally retry the same provider — but the
+      //      monitor already knows it's down, and retrying re-hits the same
+      //      overloaded backend (the empirical "accept-then-hang" failure).
+      // With the P0 fix the retry function checks the monitor first and
+      // returns null immediately, yielding to cross-provider fallback.
+      healthMonitorMock.getHealth.mockImplementation((provider: string) =>
+        provider === 'xiaomi'
+          ? {
+              provider: 'xiaomi',
+              status: 'unavailable',
+              latencyP50: 0,
+              latencyP95: 0,
+              errorRate: 1.0,
+              lastSuccessAt: 0,
+              lastErrorAt: Date.now(),
+              consecutiveErrors: 3,
+            }
+          : null,
+      );
+
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 503 service unavailable')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'cross-provider fallback ran', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+        },
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true },
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'cross-provider fallback ran' });
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+      // Only the primary call ran — no retry because health was already unavailable.
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('narrows first-byte timeout on selected-provider artifact retry so accept-then-hang fails fast', async () => {
+      // P1: a retry probe inherits the caller's write-priority timeouts unless we
+      // explicitly narrow them. mimo's TCP-accept-then-hang pattern needs the
+      // first-byte timeout to be small enough that a stuck retry doesn't burn
+      // minutes per attempt. Health monitor stays healthy here so the retry
+      // does run — we want to observe what it requests.
+      const primaryProvider = {
+        inference: vi.fn()
+          .mockRejectedValueOnce(new Error('Xiaomi API error: 502 bad gateway'))
+          .mockResolvedValueOnce({ type: 'text', content: 'retry succeeded fast', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '修复 /tmp/game.html 这个单文件 HTML 游戏，并通过 validator' }],
+        [],
+        {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+        },
+        vi.fn(),
+        undefined,
+        { artifactRepairActive: true, firstByteTimeoutMs: 60_000 },
+      );
+
+      expect(result).toMatchObject({ type: 'text', content: 'retry succeeded fast' });
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
+
+      // Provider.inference signature: (messages, tools, config, onStream?, signal?, options?).
+      // The retry call's options must carry a first-byte timeout <= 30s, even though
+      // the original artifactRepair options requested 60s.
+      const retryCallArgs = primaryProvider.inference.mock.calls[1];
+      const retryOptions = retryCallArgs[5] as { firstByteTimeoutMs?: number } | undefined;
+      expect(retryOptions?.firstByteTimeoutMs).toBeDefined();
+      expect(retryOptions!.firstByteTimeoutMs!).toBeLessThanOrEqual(30_000);
+    });
+
     it('reorders persistent artifact fallback chain to prefer deepseek before moonshot', async () => {
       const primaryProvider = {
         inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),

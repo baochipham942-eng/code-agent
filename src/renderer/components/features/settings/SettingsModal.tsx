@@ -6,6 +6,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   X,
   Cpu,
   Palette,
@@ -23,6 +25,8 @@ import {
   Boxes,
   FolderOpen,
   Clock,
+  Activity,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -170,6 +174,7 @@ function getErrorMessage(error: unknown): string {
 export const SettingsModal: React.FC = () => {
   const {
     setShowSettings,
+    setShowEvalCenter,
     modelConfig,
     setModelConfig,
     settingsInitialTab,
@@ -183,6 +188,9 @@ export const SettingsModal: React.FC = () => {
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
   }, []);
+
+  // 高级组默认折叠，但当 activeTab 落在 advanced 组时自动展开
+  const [advancedCollapsed, setAdvancedCollapsed] = useState(true);
 
   const handleClose = useCallback(() => {
     setShowSettings(false);
@@ -277,35 +285,90 @@ export const SettingsModal: React.FC = () => {
           </div>
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
-            {tabGroups.map((group) => (
-              <div key={group.id} className="space-y-1">
-                <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500">
-                  {group.label}
+            {tabGroups.map((group) => {
+              const isAdvanced = group.id === 'advanced';
+              const containsActive = group.tabs.some((tab) => tab.id === activeTab);
+              const collapsed = isAdvanced && advancedCollapsed && !containsActive;
+              return (
+                <div key={group.id} className="space-y-1">
+                  {isAdvanced ? (
+                    <button
+                      type="button"
+                      onClick={() => setAdvancedCollapsed((prev) => !prev)}
+                      className="flex w-full items-center gap-1 px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500 hover:text-zinc-300"
+                    >
+                      {collapsed ? (
+                        <ChevronRight className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                      <span>{group.label}</span>
+                    </button>
+                  ) : (
+                    <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-wide text-zinc-500">
+                      {group.label}
+                    </div>
+                  )}
+                  {!collapsed && group.tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                        activeTab === tab.id
+                          ? 'bg-zinc-800 text-zinc-100'
+                          : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                        {tab.icon}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {tab.label}
+                      </span>
+                      {tab.badge && (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500 animate-pulse" />
+                      )}
+                    </button>
+                  ))}
+                  {/* Advanced 组追加两条跳转入口（不是 SettingsTab，而是直接调 store action） */}
+                  {isAdvanced && !collapsed && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSettings(false);
+                          setShowEvalCenter(true, 'telemetry');
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          <Activity className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          调试（Telemetry）
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSettings(false);
+                          setShowEvalCenter(true, 'analysis');
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          <ClipboardCheck className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          内部评测
+                        </span>
+                      </button>
+                    </>
+                  )}
                 </div>
-                {group.tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-zinc-800 text-zinc-100'
-                        : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
-                    }`}
-                  >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                      {tab.icon}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {tab.label}
-                    </span>
-                    {tab.badge && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500 animate-pulse" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            ))}
+              );
+            })}
           </nav>
         </aside>
 

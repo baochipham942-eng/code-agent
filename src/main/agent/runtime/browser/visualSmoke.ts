@@ -8,18 +8,48 @@ import {
   findAvailablePort,
   resolveBrowserProvider,
 } from '../../../services/infra/browserProvider';
-import type { BrowserVisualSmokeSummary, BrowserVisualSmokeDiagnostics } from './types';
+import type {
+  BrowserVisualSmokeSummary,
+  BrowserVisualSmokeDiagnostics,
+  BrowserVisualSmokeOptions,
+  BrowserInteractionStep,
+  BrowserInteractionStepResult,
+} from './types';
 import { waitForCdpEndpoint, stopChromeProcess } from './chromeProcess';
 import { loadPlaywrightChromium } from './playwrightRuntime';
 import { runComputerUseVisualFallback } from './computerUseVisualFallback';
 import { acquireLaunchSlot, type LaunchSlot } from '../../../services/infra/playwrightLaunchSemaphore';
 
 export const DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS = 10000;
+const DEFAULT_BROWSER_INTERACTION_EXPECT_TIMEOUT_MS = 5000;
+const INTERACTION_POST_ACTION_SETTLE_MS = 200;
 
 const BROWSER_VISUAL_SMOKE_VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 720 },
   { name: 'mobile', width: 390, height: 780 },
 ] as const;
+
+type BrowserViewportName = (typeof BROWSER_VISUAL_SMOKE_VIEWPORTS)[number]['name'];
+
+function normalizeVisualSmokeOptions(
+  optionsOrTimeout: number | BrowserVisualSmokeOptions | undefined,
+): { timeoutMs: number; interactions: BrowserInteractionStep[] } {
+  if (typeof optionsOrTimeout === 'number') {
+    return { timeoutMs: optionsOrTimeout, interactions: [] };
+  }
+  if (!optionsOrTimeout) {
+    return { timeoutMs: DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS, interactions: [] };
+  }
+  return {
+    timeoutMs: optionsOrTimeout.timeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
+    interactions: optionsOrTimeout.interactions ?? [],
+  };
+}
+
+function stepAppliesToViewport(step: BrowserInteractionStep, viewport: BrowserViewportName): boolean {
+  const target = step.viewport ?? 'both';
+  return target === 'both' || target === viewport;
+}
 
 function roundMetric(value: number): number {
   return Math.round(value * 100) / 100;
@@ -68,26 +98,179 @@ export function cloneBrowserVisualSmoke(summary: BrowserVisualSmokeSummary): Bro
           viewports: summary.diagnostics.viewports
             ? summary.diagnostics.viewports.map((viewport) => ({ ...viewport }))
             : undefined,
+          interactions: summary.diagnostics.interactions
+            ? summary.diagnostics.interactions.map((step) => ({
+                ...step,
+                action: { ...step.action } as BrowserInteractionStepResult['action'],
+                failures: [...step.failures],
+                checks: [...step.checks],
+              }))
+            : undefined,
         }
       : undefined,
+  };
+}
+
+async function runInteractionStep(
+  page: import('playwright').Page,
+  step: BrowserInteractionStep,
+  viewport: BrowserViewportName,
+): Promise<BrowserInteractionStepResult> {
+  const startedAt = Date.now();
+  const failures: string[] = [];
+  const checks: string[] = [];
+  const expectTimeout = step.expect?.timeoutMs ?? DEFAULT_BROWSER_INTERACTION_EXPECT_TIMEOUT_MS;
+  const labelPrefix = `[${viewport}${step.label ? ` · ${step.label}` : ''}]`;
+
+  try {
+    switch (step.action.type) {
+      case 'click':
+        await page.mouse.click(step.action.x, step.action.y);
+        checks.push(`${labelPrefix} clicked at (${step.action.x}, ${step.action.y})`);
+        break;
+      case 'click-selector':
+        await page.locator(step.action.selector).first().click({ timeout: expectTimeout });
+        checks.push(`${labelPrefix} clicked selector ${step.action.selector}`);
+        break;
+      case 'hover':
+        await page.mouse.move(step.action.x, step.action.y);
+        checks.push(`${labelPrefix} hovered at (${step.action.x}, ${step.action.y})`);
+        break;
+      case 'type':
+        await page.keyboard.type(step.action.text);
+        checks.push(`${labelPrefix} typed ${step.action.text.length} char(s)`);
+        break;
+      case 'press':
+        await page.keyboard.press(step.action.key);
+        checks.push(`${labelPrefix} pressed ${step.action.key}`);
+        break;
+      case 'wait':
+        await page.waitForTimeout(step.action.ms);
+        checks.push(`${labelPrefix} waited ${step.action.ms}ms`);
+        break;
+    }
+
+    await page.waitForTimeout(INTERACTION_POST_ACTION_SETTLE_MS);
+
+    if (step.expect) {
+      if (step.expect.textVisible) {
+        try {
+          await page.getByText(step.expect.textVisible, { exact: false }).first().waitFor({
+            state: 'visible',
+            timeout: expectTimeout,
+          });
+          checks.push(`${labelPrefix} text visible: ${step.expect.textVisible}`);
+        } catch (error) {
+          failures.push(
+            `${labelPrefix} expected text "${step.expect.textVisible}" not visible within ${expectTimeout}ms (${error instanceof Error ? error.message : String(error)})`,
+          );
+        }
+      }
+      if (step.expect.textHidden) {
+        try {
+          await page.getByText(step.expect.textHidden, { exact: false }).first().waitFor({
+            state: 'hidden',
+            timeout: expectTimeout,
+          });
+          checks.push(`${labelPrefix} text hidden: ${step.expect.textHidden}`);
+        } catch (error) {
+          failures.push(
+            `${labelPrefix} expected text "${step.expect.textHidden}" not hidden within ${expectTimeout}ms (${error instanceof Error ? error.message : String(error)})`,
+          );
+        }
+      }
+      if (step.expect.selectorVisible) {
+        try {
+          await page.locator(step.expect.selectorVisible).first().waitFor({
+            state: 'visible',
+            timeout: expectTimeout,
+          });
+          checks.push(`${labelPrefix} selector visible: ${step.expect.selectorVisible}`);
+        } catch (error) {
+          failures.push(
+            `${labelPrefix} expected selector "${step.expect.selectorVisible}" not visible within ${expectTimeout}ms (${error instanceof Error ? error.message : String(error)})`,
+          );
+        }
+      }
+      if (step.expect.selectorHidden) {
+        try {
+          await page.locator(step.expect.selectorHidden).first().waitFor({
+            state: 'hidden',
+            timeout: expectTimeout,
+          });
+          checks.push(`${labelPrefix} selector hidden: ${step.expect.selectorHidden}`);
+        } catch (error) {
+          failures.push(
+            `${labelPrefix} expected selector "${step.expect.selectorHidden}" not hidden within ${expectTimeout}ms (${error instanceof Error ? error.message : String(error)})`,
+          );
+        }
+      }
+      if (step.expect.nonblankCanvasMin && step.expect.nonblankCanvasMin > 0) {
+        const min = step.expect.nonblankCanvasMin;
+        const nonblank = await page.evaluate(() => {
+          let count = 0;
+          for (const canvas of Array.from(document.querySelectorAll('canvas'))) {
+            try {
+              const context = canvas.getContext('2d', { willReadFrequently: true });
+              if (!context || canvas.width <= 0 || canvas.height <= 0) continue;
+              const x = Math.floor(canvas.width / 2);
+              const y = Math.floor(canvas.height / 2);
+              const pixel = context.getImageData(x, y, 1, 1).data;
+              if (pixel[3] > 8 && pixel[0] + pixel[1] + pixel[2] > 28) count += 1;
+            } catch {
+              // ignore tainted canvas
+            }
+          }
+          return count;
+        });
+        if (nonblank >= min) {
+          checks.push(`${labelPrefix} nonblank canvas ${nonblank} ≥ ${min}`);
+        } else {
+          failures.push(`${labelPrefix} nonblank canvas count ${nonblank} < required ${min}`);
+        }
+      }
+    }
+  } catch (error) {
+    failures.push(`${labelPrefix} action ${step.action.type} threw: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return {
+    label: step.label,
+    viewport,
+    action: step.action,
+    passed: failures.length === 0,
+    durationMs: Date.now() - startedAt,
+    failures,
+    checks,
   };
 }
 
 export async function runBrowserVisualSmoke(
   filePath: string,
   timeoutMs: number,
+): Promise<BrowserVisualSmokeSummary>;
+export async function runBrowserVisualSmoke(
+  filePath: string,
+  options: BrowserVisualSmokeOptions,
+): Promise<BrowserVisualSmokeSummary>;
+export async function runBrowserVisualSmoke(
+  filePath: string,
+  optionsOrTimeout: number | BrowserVisualSmokeOptions = DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
 ): Promise<BrowserVisualSmokeSummary> {
+  const { timeoutMs, interactions } = normalizeVisualSmokeOptions(optionsOrTimeout);
   const resolution = resolveBrowserProvider();
   if (resolution.provider === 'system-chrome-cdp' && (resolution.missingExecutable || !resolution.systemExecutable)) {
     return runComputerUseVisualFallback(
       filePath,
       resolution.recommendedAction || 'System Chrome executable is missing.',
+      interactions,
     );
   }
 
   const checks: string[] = [];
   const failures: string[] = [];
   const viewportDiagnostics: NonNullable<BrowserVisualSmokeDiagnostics['viewports']> = [];
+  const interactionResults: BrowserInteractionStepResult[] = [];
   let latestTitle = '';
   let latestBodyTextLength = 0;
   let latestVisibleElements = 0;
@@ -107,6 +290,7 @@ export async function runBrowserVisualSmoke(
       return runComputerUseVisualFallback(
         filePath,
         playwright.error || 'Playwright package unavailable.',
+        interactions,
       );
     }
     launchSlot = await acquireLaunchSlot();
@@ -331,6 +515,18 @@ export async function runBrowserVisualSmoke(
       } else {
         checks.push(`${viewport.name} visual smoke detected no horizontal canvas cropping`);
       }
+
+      const applicableSteps = interactions.filter((step) => stepAppliesToViewport(step, viewport.name));
+      for (const step of applicableSteps) {
+        const stepResult = await runInteractionStep(page, step, viewport.name);
+        interactionResults.push(stepResult);
+        for (const check of stepResult.checks) {
+          checks.push(`interaction ${check}`);
+        }
+        for (const failure of stepResult.failures) {
+          failures.push(`interaction ${failure}`);
+        }
+      }
     }
 
     if (pageErrors.length > 0) {
@@ -364,6 +560,7 @@ export async function runBrowserVisualSmoke(
         consoleErrors: consoleErrors.slice(0, 5),
         pageErrors: pageErrors.slice(0, 5),
         viewports: viewportDiagnostics,
+        interactions: interactionResults.length > 0 ? interactionResults : undefined,
       },
     };
   } catch (error) {

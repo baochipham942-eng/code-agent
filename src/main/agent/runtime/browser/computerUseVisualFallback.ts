@@ -2,7 +2,11 @@ import { execFile } from 'child_process';
 import { stat } from 'fs/promises';
 import { promisify } from 'util';
 import { getComputerSurface } from '../../../services/desktop/computerSurface';
-import type { BrowserVisualSmokeSummary } from './types';
+import type {
+  BrowserVisualSmokeSummary,
+  BrowserInteractionStep,
+  BrowserInteractionStepResult,
+} from './types';
 
 const execFileAsync = promisify(execFile);
 const DESKTOP_VISUAL_FALLBACK_MIN_SCREENSHOT_BYTES = 2048;
@@ -11,13 +15,14 @@ const DESKTOP_VISUAL_FALLBACK_WAIT_MS = 1200;
 export async function runComputerUseVisualFallback(
   filePath: string,
   reason: string,
+  interactions: BrowserInteractionStep[] = [],
 ): Promise<BrowserVisualSmokeSummary> {
   if (process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK === '0') {
-    return skippedComputerUseFallback('Computer Use visual fallback disabled by CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK=0.', reason);
+    return skippedComputerUseFallback('Computer Use visual fallback disabled by CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK=0.', reason, interactions);
   }
 
   if (process.platform !== 'darwin') {
-    return skippedComputerUseFallback('Computer Use visual fallback is only available on macOS desktop builds.', reason);
+    return skippedComputerUseFallback('Computer Use visual fallback is only available on macOS desktop builds.', reason, interactions);
   }
 
   const browserApp = process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_APP || 'Safari';
@@ -62,6 +67,13 @@ export async function runComputerUseVisualFallback(
     unavailableReasons.push(`Computer Use visual fallback failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   const skipped = unavailableReasons.length > 0;
+  const interactionResults = buildSkippedInteractionResults(
+    interactions,
+    'desktop fallback path does not yet drive interactions (Playwright unavailable)',
+  );
+  if (interactionResults.length > 0) {
+    checks.push(`interactions skipped: ${interactionResults.length} step(s) deferred — desktop fallback cannot drive interaction yet`);
+  }
 
   return {
     attempted: true,
@@ -83,8 +95,25 @@ export async function runComputerUseVisualFallback(
         windowTitle,
         reason,
       },
+      interactions: interactionResults.length > 0 ? interactionResults : undefined,
     },
   };
+}
+
+function buildSkippedInteractionResults(
+  interactions: BrowserInteractionStep[],
+  reason: string,
+): BrowserInteractionStepResult[] {
+  return interactions.map((step) => ({
+    label: step.label,
+    viewport: step.viewport ?? 'both',
+    action: step.action,
+    passed: true,
+    skipped: true,
+    durationMs: 0,
+    failures: [],
+    checks: [`skipped: ${reason}`],
+  }));
 }
 
 async function openArtifactInDesktopBrowser(browserApp: string, filePath: string): Promise<string> {
@@ -97,7 +126,15 @@ async function openArtifactInDesktopBrowser(browserApp: string, filePath: string
   }
 }
 
-function skippedComputerUseFallback(message: string, reason: string): BrowserVisualSmokeSummary {
+function skippedComputerUseFallback(
+  message: string,
+  reason: string,
+  interactions: BrowserInteractionStep[] = [],
+): BrowserVisualSmokeSummary {
+  const interactionResults = buildSkippedInteractionResults(
+    interactions,
+    'visual smoke skipped before interactions could run',
+  );
   return {
     attempted: false,
     skipped: true,
@@ -106,6 +143,7 @@ function skippedComputerUseFallback(message: string, reason: string): BrowserVis
     checks: [`browser visual smoke skipped: ${message}`, `Playwright/browser reason: ${reason}`],
     diagnostics: {
       computerUseFallback: { reason },
+      interactions: interactionResults.length > 0 ? interactionResults : undefined,
     },
   };
 }

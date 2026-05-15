@@ -4,8 +4,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertCircle,
   Archive,
+  ArrowUpRight,
   Bug,
   CheckCircle,
   Clock,
@@ -22,6 +24,7 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
+import { useAppStore } from '../../../../stores/appStore';
 import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('DataSettings');
@@ -196,9 +199,21 @@ function getStatusClass(tone: DataManagementRow['statusTone']): string {
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 }
 
+interface TelemetryHealthSummary {
+  available: boolean;
+  sessionCount: number | null;
+  error?: string;
+}
+
 export const DataSettings: React.FC = () => {
+  const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
+  const [telemetrySummary, setTelemetrySummary] = useState<TelemetryHealthSummary>({
+    available: false,
+    sessionCount: null,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [isClearingSnapshots, setIsClearingSnapshots] = useState(false);
@@ -216,6 +231,23 @@ export const DataSettings: React.FC = () => {
       logger.error('Failed to load data stats', error);
     } finally {
       setIsLoading(false);
+    }
+
+    // Telemetry 健康摘要：currently 无 dedicated health IPC，用 list-sessions 数量
+    // 当 "采集是否在跑" 的间接信号；若 IPC 缺失则降级显示 TODO。
+    try {
+      const sessions = await ipcService.invoke(
+        'telemetry:list-sessions',
+        { limit: 1 },
+      );
+      const count = Array.isArray(sessions) ? sessions.length : 0;
+      setTelemetrySummary({ available: true, sessionCount: count });
+    } catch (error) {
+      setTelemetrySummary({
+        available: false,
+        sessionCount: null,
+        error: error instanceof Error ? error.message : '未知错误',
+      });
     }
   }, []);
 
@@ -386,6 +418,50 @@ export const DataSettings: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Telemetry 健康"
+        description="Agent 内部遥测的采集状态摘要。详细分析请进入「内部评测」面板。"
+      >
+        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
+          {telemetrySummary.available ? (
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+                <Activity className="h-3.5 w-3.5" />
+                采集开启
+              </span>
+              <span className="text-zinc-300">
+                最近 telemetry session：{telemetrySummary.sessionCount ?? 0} 条（最新 1 条）
+              </span>
+              <span className="text-zinc-500">TODO：占用大小依赖 telemetry:health IPC（未实现）。</span>
+              <div className="ml-auto">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isWebMode()}
+                  onClick={() => {
+                    setShowSettings(false);
+                    setShowEvalCenter(true, 'telemetry');
+                  }}
+                  leftIcon={<ArrowUpRight className="h-3.5 w-3.5" />}
+                >
+                  打开 Telemetry 面板清理
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                <Activity className="h-3.5 w-3.5" />
+                采集状态未知
+              </span>
+              <span className="text-zinc-500">
+                TODO：telemetry IPC 不可达（{telemetrySummary.error || '未连接'}）。
+              </span>
+            </div>
+          )}
         </div>
       </SettingsSection>
 

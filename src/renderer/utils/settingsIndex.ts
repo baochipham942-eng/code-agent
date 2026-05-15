@@ -30,6 +30,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'workspace', tabLabel: '工作区', label: '本地桥', keywords: ['bridge', 'local', '桥接', '本地', 'ipc'] },
   { tab: 'workspace', tabLabel: '工作区', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
 
+  // Automation
+  { tab: 'automation', tabLabel: '自动化', label: '定时任务', keywords: ['cron', '定时', 'schedule', '任务', '自动化', 'automation'] },
+  { tab: 'automation', tabLabel: '自动化', label: '新建任务', keywords: ['new task', 'create', '新建', '任务', 'cron', '自动化向导'] },
+  { tab: 'automation', tabLabel: '自动化', label: '执行历史', keywords: ['history', 'execution', '执行', '历史', '运行', '日志'] },
+
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
   { tab: 'model', tabLabel: '模型', label: 'API Key', keywords: ['apikey', '密钥', 'key', '认证'] },

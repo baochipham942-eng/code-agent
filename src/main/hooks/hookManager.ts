@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Message } from '../../shared/contract';
+import type { HookActivitySource, HookActivityType } from '../../shared/contract/agent';
 import type {
   HookEvent,
   AnyHookContext,
@@ -67,12 +68,47 @@ export interface TriggerHistoryEntry {
   durationMs: number;
   hookCount: number;
   modified: boolean;
+  sources: HookActivitySource[];
+  hookType: HookActivityType;
   errorCount?: number;
   message?: string;
   toolName?: string;
+  matcher?: string;
 }
 
 const MAX_TRIGGER_HISTORY = 50;
+
+interface HookActivityMetadata {
+  sources: HookActivitySource[];
+  hookType: HookActivityType;
+  matcher?: string;
+  toolName?: string;
+}
+
+function matcherLabel(config: MergedHookConfig): string | undefined {
+  if (config.mcpServer) {
+    return `mcp:${config.mcpServer}`;
+  }
+
+  const source = config.matcher?.source;
+  if (!source) {
+    return undefined;
+  }
+
+  return source === '.*' ? '*' : source;
+}
+
+function summarizeHookActivity(configs: MergedHookConfig[]): HookActivityMetadata {
+  const sourceSet = new Set(configs.flatMap((config) => config.sources));
+  const sources = (['global', 'project'] as const).filter((source) => sourceSet.has(source));
+  const matchers = Array.from(new Set(configs.map(matcherLabel).filter((value): value is string => Boolean(value))));
+
+  return {
+    sources,
+    hookType: configs.some((config) => config.hookType === 'decision') ? 'decision' : 'observer',
+    ...(matchers.length > 0 ? { matcher: matchers.join(', ') } : {}),
+  };
+}
 
 
 // ----------------------------------------------------------------------------
@@ -582,7 +618,7 @@ export class HookManager {
   private recordTrigger(
     event: HookEvent,
     result: HookTriggerResult,
-    metadata?: { toolName?: string },
+    metadata?: HookActivityMetadata,
   ): void {
     const errorCount = result.results.filter((entry) => entry.action === 'error' || entry.error).length;
     const entry: TriggerHistoryEntry = {
@@ -592,9 +628,12 @@ export class HookManager {
       durationMs: result.totalDuration,
       hookCount: result.results.length,
       modified: !!result.modifiedInput,
+      sources: metadata?.sources || [],
+      hookType: metadata?.hookType || 'observer',
       ...(errorCount > 0 ? { errorCount } : {}),
       ...(result.message ? { message: result.message } : {}),
       ...(metadata?.toolName ? { toolName: metadata.toolName } : {}),
+      ...(metadata?.matcher ? { matcher: metadata.matcher } : {}),
     };
 
     this.triggerHistory.push(entry);
@@ -629,7 +668,7 @@ export class HookManager {
 
     const matchingHooks = getHooksForTool(this.hooks, event, toolName);
     const result = await runHooks(matchingHooks, context, this.engineEnv());
-    this.recordTrigger(event, result, { toolName });
+    this.recordTrigger(event, result, { ...summarizeHookActivity(matchingHooks), toolName });
     return result;
   }
 
@@ -646,7 +685,7 @@ export class HookManager {
 
     const matchingHooks = getHooksForEvent(this.hooks, event);
     const result = await runHooks(matchingHooks, context, this.engineEnv());
-    this.recordTrigger(event, result);
+    this.recordTrigger(event, result, summarizeHookActivity(matchingHooks));
     return result;
   }
 

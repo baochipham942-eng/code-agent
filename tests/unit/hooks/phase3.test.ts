@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { HookManager } from '../../../src/main/hooks/hookManager';
+import type { MergedHookConfig } from '../../../src/main/hooks/merger';
 
 
 // Mock dependencies
@@ -51,8 +52,32 @@ describe('Trigger History', () => {
     expect(history[0].action).toBe('allow');
     expect(history[0].hookCount).toBe(0);
     expect(history[0].modified).toBe(false);
+    expect(history[0].sources).toEqual([]);
+    expect(history[0].hookType).toBe('observer');
     expect(history[0].durationMs).toBeGreaterThanOrEqual(0);
     expect(history[0].timestamp).toBeGreaterThan(0);
+  });
+
+  it('records hook sources, type, and matcher in trigger history', async () => {
+    const { getHooksForTool } = await import('../../../src/main/hooks/merger');
+    const matchingConfig: MergedHookConfig = {
+      event: 'PreToolUse',
+      matcher: /Bash/,
+      hooks: [{ type: 'command', command: 'printf ok' }],
+      sources: ['global', 'project'],
+      parallel: false,
+      hookType: 'decision',
+    };
+    vi.mocked(getHooksForTool).mockReturnValueOnce([matchingConfig]);
+
+    await manager.triggerPreToolUse('Bash', 'echo test', 'session-1');
+
+    const history = manager.getTriggerHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0].sources).toEqual(['global', 'project']);
+    expect(history[0].hookType).toBe('decision');
+    expect(history[0].matcher).toBe('Bash');
+    expect(history[0].toolName).toBe('Bash');
   });
 
   it('should record multiple triggers in order', async () => {

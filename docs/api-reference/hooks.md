@@ -11,7 +11,7 @@ Hooks let users run command, prompt, agent, or HTTP automation around agent life
 | `decision` | Can block or modify the current action when the event supports it |
 | `observer` | Runs for logging/notification/analytics; block or modify results are ignored |
 
-Trigger history is kept in memory for the latest 50 entries. Chat turn timeline consumes that history as `hook_activity`, so the user can see which hooks ran, whether any blocked, whether input was modified, and how long they took.
+Trigger history is kept in memory for the latest 50 entries. Chat turn timeline consumes that history as `hook_activity`, so the user can see which hooks ran, where the matching config came from, whether it was a decision or observer hook, whether any blocked, whether input was modified, and how long they took.
 
 ## Configuration
 
@@ -119,6 +119,29 @@ interface HookTriggerResult {
   totalDuration: number;
 }
 ```
+
+Runtime activity fields:
+
+```ts
+interface HookTriggerEventData {
+  timestamp: number;
+  event: string;
+  action: 'allow' | 'block';
+  durationMs: number;
+  hookCount: number;
+  modified: boolean;
+  sources: Array<'global' | 'project'>;
+  hookType: 'decision' | 'observer';
+  matcher?: string;
+  errorCount?: number;
+  message?: string;
+  sessionId?: string;
+  turnId?: string;
+  toolName?: string;
+}
+```
+
+`sources` is the merged config scope that matched the trigger. `hookType` reports whether any matched config can affect execution (`decision`) or all matched configs are observation-only (`observer`). `matcher` is present for tool matchers and MCP server matchers; events without a matcher omit it.
 
 ## Environment Variables
 

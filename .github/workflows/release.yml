@@ -5,9 +5,11 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  # 构建 macOS 版本
-  build-mac:
+  release-mac:
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -17,176 +19,66 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
-        run: npm run build
-
-      - name: Package macOS app
+      - name: Build signed Tauri updater bundle
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS 代码签名（可选）
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # Apple 公证（可选）
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run dist:mac
+        run: npm run tauri:release:bundle
 
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-mac
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/latest-mac.yml
-
-  # 构建 Windows 版本
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
-
-      - name: Package Windows app
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-win
-          path: |
-            release/*.exe
-            release/*.zip
-            release/latest.yml
-
-  # 构建 Linux 版本
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
-
-      - name: Package Linux app
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-linux
-          path: |
-            release/*.AppImage
-            release/*.deb
-            release/latest-linux.yml
-
-  # 发布到 GitHub Releases
-  publish:
-    needs: [build-mac, build-windows, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release
-          merge-multiple: true
-
-      - name: List artifacts
-        run: ls -la release/
+      - name: Generate updater manifest
+        run: |
+          ARTIFACT_BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          npm run tauri:update-manifest -- --base-url "${ARTIFACT_BASE_URL}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/release/bundle/latest.json
           generate_release_notes: true
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 通知云端 API 发布新版本
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Publish to Cloud API (macOS)
+      - name: Publish optional update metadata to Cloud API
         env:
           CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
           CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
           REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
-            -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"version\": \"${VERSION}\",
-              \"platform\": \"darwin\",
-              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}.dmg\",
-              \"releaseNotes\": \"See release notes on GitHub\"
-            }"
+          if [[ -z "${CLOUD_API_URL}" || -z "${CI_PUBLISH_TOKEN}" ]]; then
+            echo "Cloud update publish skipped: CLOUD_API_URL or CI_PUBLISH_TOKEN is not set"
+            exit 0
+          fi
 
-      - name: Publish to Cloud API (Windows)
-        env:
-          CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
-          CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-          REPO: ${{ github.repository }}
-        run: |
-          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
-            -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"version\": \"${VERSION}\",
-              \"platform\": \"win32\",
-              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}-Setup.exe\",
-              \"releaseNotes\": \"See release notes on GitHub\"
-            }"
+          export VERSION="${TAG#v}"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('src-tauri/target/release/bundle/latest.json', 'utf8'));
+          const payload = {
+            version: process.env.VERSION,
+            platform: 'darwin',
+            downloadUrl: `https://github.com/${process.env.REPO}/releases/tag/${process.env.TAG}`,
+            releaseNotes: manifest.notes,
+          };
+          fs.writeFileSync('/tmp/code-agent-update-payload.json', JSON.stringify(payload));
+          NODE
 
-      - name: Publish to Cloud API (Linux)
-        env:
-          CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
-          CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-          REPO: ${{ github.repository }}
-        run: |
-          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
+          curl -X POST "${CLOUD_API_URL%/}/api/update/publish" \
             -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"version\": \"${VERSION}\",
-              \"platform\": \"linux\",
-              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}.AppImage\",
-              \"releaseNotes\": \"See release notes on GitHub\"
-            }"
+            --data-binary @/tmp/code-agent-update-payload.json

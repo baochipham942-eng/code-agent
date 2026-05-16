@@ -110,6 +110,7 @@ export const App: React.FC = () => {
     setShowBrowserSurfacePanel,
     setShowSettings,
     setLanguage,
+    setOptionalUpdateInfo,
     workbenchTabs,
     activeWorkbenchTab,
     openWorkbenchTab,
@@ -289,11 +290,13 @@ export const App: React.FC = () => {
         if (!isTauriMode() && updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
           logger.info('Force update required', { latestVersion: updateInfo.latestVersion });
           setForceUpdateInfo(updateInfo);
+          setOptionalUpdateInfo(null);
         } else if (updateInfo?.hasUpdate) {
           logger.info('Optional update available', { latestVersion: updateInfo.latestVersion });
-          // 可选更新不弹窗，用户可以在设置中查看
+          setOptionalUpdateInfo(updateInfo);
         } else {
           logger.info('App is up to date');
+          setOptionalUpdateInfo(null);
           // 启动时给一个轻量"已是最新版"反馈，2s 自动消失。只在本次冷启动触发一次。
           const v = updateInfo?.currentVersion;
           if (v) {
@@ -308,7 +311,7 @@ export const App: React.FC = () => {
     // 延迟检查，等待应用完全加载
     const timer = setTimeout(checkForUpdates, UI.STARTUP_UPDATE_CHECK_DELAY);
     return () => clearTimeout(timer);
-  }, []);
+  }, [setOptionalUpdateInfo]);
 
   // 首次启动检测 API Key 是否配置
   useEffect(() => {

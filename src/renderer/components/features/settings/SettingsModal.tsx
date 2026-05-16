@@ -179,6 +179,8 @@ export const SettingsModal: React.FC = () => {
     setModelConfig,
     settingsInitialTab,
     clearSettingsInitialTab,
+    optionalUpdateInfo,
+    setOptionalUpdateInfo,
   } = useAppStore();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
@@ -187,7 +189,7 @@ export const SettingsModal: React.FC = () => {
 
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
-  }, []);
+  }, [setOptionalUpdateInfo]);
 
   // 高级组默认折叠，但当 activeTab 落在 advanced 组时自动展开
   const [advancedCollapsed, setAdvancedCollapsed] = useState(true);
@@ -196,8 +198,6 @@ export const SettingsModal: React.FC = () => {
     setShowSettings(false);
   }, [setShowSettings]);
 
-  // Optional update state
-  const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   // Check for updates on mount (for badge display)

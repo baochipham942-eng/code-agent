@@ -102,10 +102,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     setIsInstalling(true);
     setError(null);
     try {
-      if (updateInfo?.downloadUrl) {
-        await tauriOpenUpdateUrl(updateInfo.downloadUrl);
-      } else {
+      try {
         await tauriInstallUpdate();
+      } catch (installError) {
+        if (!updateInfo?.downloadUrl) {
+          throw installError;
+        }
+        logger.debug('Native updater install failed, opening release page fallback', {
+          error: installError instanceof Error ? installError.message : String(installError),
+        });
+        await tauriOpenUpdateUrl(updateInfo.downloadUrl);
       }
       setIsInstalling(false);
     } catch (err) {

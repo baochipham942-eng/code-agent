@@ -18,6 +18,7 @@ describe('appStore', () => {
       showEvalCenter: false,
       evalCenterSessionId: null,
       showKnowledgeMemoryPanel: false,
+      optionalUpdateInfo: null,
     });
   });
 
@@ -72,5 +73,25 @@ describe('appStore', () => {
       showEvalCenter: false,
       evalCenterSessionId: null,
     });
+  });
+
+  it('stores optional update info for the title bar and settings badge', () => {
+    useAppStore.getState().setOptionalUpdateInfo({
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+      releaseNotes: 'Bug fixes',
+    });
+
+    expect(useAppStore.getState().optionalUpdateInfo).toMatchObject({
+      hasUpdate: true,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+    });
+
+    useAppStore.getState().setOptionalUpdateInfo(null);
+
+    expect(useAppStore.getState().optionalUpdateInfo).toBeNull();
   });
 });

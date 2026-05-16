@@ -68,8 +68,10 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups.map((group) => group.label)).toEqual([
       '基础偏好',
       '能力与连接',
+      '工作区与自动化',
       '记忆与隐私',
       '系统',
+      '高级',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
       'general',
@@ -78,12 +80,12 @@ describe('SettingsModal screen memory tab visibility', () => {
       'appearance',
     ]);
     expect(groups[0].tabs[0].label).toBe('权限与安全');
-    expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
+    expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'cache',
       'update',
       'about',
     ]);
-    expect(groups[3].tabs[0].label).toBe('数据与存储');
+    expect(groups[4].tabs[0].label).toBe('数据与存储');
   });
 });
 

@@ -72,9 +72,9 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/anthropics/code-agent/releases/latest/download/latest.json"
+        "https://github.com/baochipham942-eng/code-agent/releases/latest/download/latest.json"
       ],
-      "pubkey": "DISABLED_2026-04-28_NO_KEY_PAIR_GENERATED_SEE_COMMIT"
+      "pubkey": "DISABLED_LOCAL_BUILD_USE_TAURI_RELEASE_BUNDLE"
     }
   }
 }

@@ -5,7 +5,7 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ListChecks } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -56,20 +56,20 @@ export const WorkbenchTabs: React.FC = () => {
     };
   }, [addOpen]);
 
-  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个
+  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个。
+  // 'master-tasks' (任务看板) 跨 session 概念产品方向已弃，popover 不再暴露入口；
+  // 后端 master_task IPC/Repository 保留作死代码，不动 schema。
   const hasTask = workbenchTabs.includes('task');
   const hasSkills = workbenchTabs.includes('skills');
   const hasFiles = workbenchTabs.includes('files');
   const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
   const hasContext = workbenchTabs.includes('context');
-  const hasMasterTasks = workbenchTabs.includes('master-tasks');
   const canAddAny =
     !hasTask ||
     (!hasSkills && isStandard) ||
     !hasFiles ||
     !hasWorkspacePreview ||
-    !hasContext ||
-    !hasMasterTasks;
+    !hasContext;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'task') {
@@ -210,17 +210,6 @@ export const WorkbenchTabs: React.FC = () => {
                 >
                   <Activity className="w-3.5 h-3.5 text-emerald-400/80" />
                   上下文
-                </button>
-              )}
-              {!hasMasterTasks && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('master-tasks'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                  title="跨 workspace 工作单元，session 之上的层级"
-                >
-                  <ListChecks className="w-3.5 h-3.5 text-sky-400/80" />
-                  任务看板
                 </button>
               )}
             </div>

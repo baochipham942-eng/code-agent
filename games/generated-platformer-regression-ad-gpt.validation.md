@@ -1,10 +1,10 @@
 # Platformer Gameplay Acceptance Report
 
-- startedAt: 2026-05-15T06:43:32.349Z
-- finishedAt: 2026-05-15T06:51:47.515Z
-- durationMs: 495166
+- startedAt: 2026-05-15T14:02:24.731Z
+- finishedAt: 2026-05-15T14:23:53.245Z
+- durationMs: 1288514
 - mode: generate-and-validate
-- artifactPath: /Users/linchen/Downloads/ai/code-agent/games/generated-platformer-regression.html
+- artifactPath: /Users/linchen/Downloads/ai/code-agent/games/generated-platformer-regression-ad-gpt.html
 - provider: openai
 - model: gpt-5.4
 - generation: gen8
@@ -23,25 +23,26 @@
 
 | round | candidates | selected | PASS | FAIL | fullPass | regressed |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0 | 1 | r0c0 | 0 | 1 | false | 0 |
-| 1 | 1 | r1c0 | 10 | 26 | false | 0 |
-| 2 | 1 | r2c0 | 13 | 20 | false | 9 |
-| 3 | 1 | r3c0 | 9 | 22 | false | 9 |
+| 0 | 1 | r0c0 | 21 | 16 | false | 0 |
+| 1 | 1 | r1c0 | 21 | 16 | false | 0 |
+| 2 | 1 | r2c0 | 21 | 16 | false | 0 |
+| 3 | 1 | r3c0 | 21 | 16 | false | 0 |
 
 ## Generation (selected candidate)
 
-- toolCount: N/A
-- responseCount: N/A
-- errorCount: 1
-- generationError: Agent generation timed out after 120000ms
+- toolCount: 0
+- responseCount: 0
+- errorCount: 2
+- generationError: Agent generation reported errors: OpenAI API error: 403 - {"error":{"message":"insufficient balance","type":"billing_error"}}; OpenAI API error: 403 - {"error":{"message":"insufficient balance","type":"billing_error"}}
+
+Generation errors:
+- OpenAI API error: 403 - {"error":{"message":"insufficient balance","type":"billing_error"}}
+- OpenAI API error: 403 - {"error":{"message":"insufficient balance","type":"billing_error"}}
 
 ## Validation Failures
 
-- gate unlock route did not remain open
-- combo challenge missing prerequisite evidence
-- default start state 的 reachability step 3 没有让 blocksUsed 满足 1。 input=ArrowRight+Space, frames=48, before=0, after=0。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 blocksUsed。
-- default start state 的 reachability step 4 没有让 abilities.doubleJump 满足 true。 input=ArrowRight, frames=45, before=false, after=false。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 abilities.doubleJump。
-- default start state 的 reachability step 5 没有让 gatesUnlocked.skyGate 满足 true。 input=ArrowRight+Space, frames=30, before=false, after=false。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 gatesUnlocked.skyGate。
+- combo step 3: stomp enemy failed
+- combo step 4: gate unlock or combo completion failed
 - runSmokeTest 未通过。
 - platformer gameplayMechanics 缺少 runtime 证据：stompable enemy 必须通过 step/runSmokeTest 让 enemy defeated 或 enemiesDefeated 增加，并证明 player bounce/vy 变化。
 - platformer gameplayMechanics 缺少 runtime 证据：bumpable/question block 必须通过 step/runSmokeTest 变成 used/broken/bumped，或产生 spawnedReward。
@@ -55,11 +56,8 @@
 
 Runtime failures:
 
-- gate unlock route did not remain open
-- combo challenge missing prerequisite evidence
-- default start state 的 reachability step 3 没有让 blocksUsed 满足 1。 input=ArrowRight+Space, frames=48, before=0, after=0。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 blocksUsed。
-- default start state 的 reachability step 4 没有让 abilities.doubleJump 满足 true。 input=ArrowRight, frames=45, before=false, after=false。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 abilities.doubleJump。
-- default start state 的 reachability step 5 没有让 gatesUnlocked.skyGate 满足 true。 input=ArrowRight+Space, frames=30, before=false, after=false。如果这是长链路目标，请让 runSmokeTest 真正驱动该链路，并在 coverage.stateChanges 中包含 gatesUnlocked.skyGate。
+- combo step 3: stomp enemy failed
+- combo step 4: gate unlock or combo completion failed
 - runSmokeTest 未通过。
 - platformer gameplayMechanics 缺少 runtime 证据：stompable enemy 必须通过 step/runSmokeTest 让 enemy defeated 或 enemiesDefeated 增加，并证明 player bounce/vy 变化。
 - platformer gameplayMechanics 缺少 runtime 证据：bumpable/question block 必须通过 step/runSmokeTest 变成 used/broken/bumped，或产生 spawnedReward。
@@ -74,14 +72,23 @@ Runtime checks:
 - snapshot changed after declared controls for default start state: ArrowRight
 - default start state passed reachability step 1 for player.x
 - default start state passed reachability step 2 for player.y
-- stomp enemy
-- bump block
-- gain ability
-- risk damage
-- coverage included mechanics: stompEnemy, bumpBlock, gainDoubleJump
-- coverage included rewards: scoreFromEnemy, spawnCoinReward
-- coverage included risks: playerCanTakeDamage
-- coverage included state changes: enemiesDefeated, blocksUsed, abilities.doubleJump, healthDecrease
+- default start state passed reachability step 3 for player.x
+- default start state passed reachability step 4 for player.y
+- default start state passed reachability step 5 for player.x
+- default start state passed reachability step 6 for player.y
+- move right increases player.x
+- jump input changes player.y
+- stomp defeats enemy and bounces player
+- bump block marks used state and spawns reward
+- ability pickup grants double jump
+- ability unlocks gate route
+- combo step 1: bump block
+- combo step 2: collect ability
+- risk path remains live in authored level
+- coverage included mechanics: horizontalMovement, jumpArc, enemyStomp, bumpBlock, abilityPickup, gateUnlock
+- coverage included rewards: stompScore, blockReward, abilityReward
+- coverage included risks: enemyContact, hazardRisk
+- coverage included state changes: player.x, player.y, enemiesDefeated, player.vy, blocksUsed, rewardsSpawned, abilities.doubleJump, pickupsCollected, gatesUnlocked, gateOpen, blocksUsed, abilities.doubleJump, pickupsCollected, hazardsTouched
 
 ## Browser Visual Smoke
 

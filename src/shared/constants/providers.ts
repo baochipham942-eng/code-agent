@@ -11,8 +11,8 @@ export const MODEL_API_ENDPOINTS = {
   deepseek: 'https://api.deepseek.com/v1',
   /** Anthropic Claude */
   claude: 'https://api.anthropic.com/v1',
-  /** OpenAI (LOCAL HIJACK to LongCat for personal experiments — do NOT commit) */
-  openai: 'https://api.longcat.chat/openai/v1',
+  /** OpenAI */
+  openai: 'https://api.openai.com/v1',
   /** Groq */
   groq: 'https://api.groq.com/openai/v1',
   /** 智谱 GLM (OKI 代理) */

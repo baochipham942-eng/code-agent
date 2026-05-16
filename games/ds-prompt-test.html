@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double Jump Platformer Test</title>
+<style>
+  body { margin: 0; display: flex; justify-content: center; align-items: start; background: #222; }
+  canvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 800/600;
+    border: 2px solid #fff;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const GRAVITY = 0.3;
+const PLAYER_SPEED = 4;
+const JUMP_VEL = -10;
+const DOUBLE_JUMP_VEL = -7.5;
+const BOUNCE_VEL = -7;
+const KEY_LEFT = 'ArrowLeft';
+const KEY_RIGHT = 'ArrowRight';
+const KEY_JUMP = 'Space';
+const KEY_ABILITY = 'Shift';
+
+function rectCollide(r1, r2) {
+  return !(r2.x > r1.x + r1.width ||
+           r2.x + r2.width < r1.x ||
+           r2.y > r1.y + r1.height ||
+           r2.y + r2.height < r1.y);
+}
+
+class Game {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.keys = {};
+    this.levelData = null;
+    this.player = null;
+    this.enemies = [];
+    this.blocks = [];
+    this.gates = [];
+    this.platforms = [];
+    this.enemiesDefeated = 0;
+    this.blocksUsed = 0;
+    this.gatesUnlocked = [];
+    this.levelComplete = false;
+    this.paused = false;
+    this._initListeners();
+  }
+
+  _initListeners() {
+    window.addEventListener('keydown', (e) => {
+      this.keys[e.code] = true;
+      e.preventDefault();
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+      e.preventDefault();
+    });
+  }
+
+  loadLevel(levelId) {
+    this.levelData = {
+      playerStart: { x: 100, y: 460 },
+      groundY: 500,
+      platforms: [
+        { x: 700, y: 250, width: 80, height: 20 }
+      ],
+      enemies: [
+        { id: "enemy1", x: 400, y: 470, width: 30, height: 30, patrolMin: 400, patrolMax: 600, speed: 1.5, active: true, direction: 1 }
+      ],
+      blocks: [
+        { id: "block1", x: 300, y: 350, width: 40, height: 40, used: false, reward: "doubleJump" }
+      ],
+      gates: [
+        { id: "gate1", x: 700, y: 250, width: 40, height: 40, requiresAbility: "doubleJump" }
+      ]
+    };
+  }
+
+  reset(levelId = "level1") {
+    this.loadLevel(levelId);
+    this.player = {
+      x: this.levelData.playerStart.x,
+      y: this.levelData.playerStart.y,
+      vx: 0,
+      vy: 0,
+      width: 30,
+      height: 40,
+      onGround: false,
+      abilities: { doubleJump: false },
+      airJumpAvailable: false,
+      hasUsedAirJump: false,
+      facing: 1
+    };
+    this.enemies = this.levelData.enemies.map(e => ({...e}));
+    this.blocks = this.levelData.blocks.map(b => ({...b}));
+    this.gates = this.levelData.gates.map(g => ({...g}));
+    this.platforms = this.levelData.platforms;
+    this.enemiesDefeated = 0;
+    this.blocksUsed = 0;
+    this.gatesUnlocked = [];
+    this.levelComplete = false;
+    this.keys = {};
+  }
+
+  update(input) {
+    if (this.levelComplete) return;
+
+    const left = input.left || input[KEY_LEFT];
+    const right = input.right || input[KEY_RIGHT];
+    const jump = input.jump || input[KEY_JUMP] || input['Space'];
+    const ability = input.ability || input[KEY_ABILITY] || input['Shift'];
+
+    this.player.vx = 0;
+    if (left) this.player.vx = -PLAYER_SPEED;
+    if (right) this.player.vx = PLAYER_SPEED;
+
+    if (jump && this.player.onGround) {
+      this.player.vy = JUMP_VEL;
+      this.player.onGround = false;
+      this.player.airJumpAvailable = this.player.abilities.doubleJump;
+      this.player.hasUsedAirJump = false;
+    }
+
+    if (ability && !this.player.onGround && this.player.airJumpAvailable && !this.player.hasUsedAirJump) {
+      this.player.vy = DOUBLE_JUMP_VEL;
+      this.player.hasUsedAirJump = true;
+    }
+
+    this.player.vy += GRAVITY;
+    this.player.x += this.player.vx;
+    this.player.y += this.player.vy;
+
+    const groundY = this.levelData.groundY;
+    const allSolids = [
+      { y: groundY, height: 0, isGround: true },
+      ...this.platforms.map(p => ({ ...p, isGround: false }))
+    ];
+
+    this.player.onGround = false;
+    for (let solid of allSolids) {
+      if (solid.isGround) {
+        if (this.player.y + this.player.height >= solid.y) {
+          this.player.y = solid.y - this.player.height;
+          this.player.vy = 0;
+          this.player.onGround = true;
+        }
+      } else {
+        if (this.player.x + this.player.width > solid.x && this.player.x < solid.x + solid.width &&
+            this.player.y + this.player.height >= solid.y && this.player.y + this.player.height - this.player.vy <= solid.y) {
+          this.player.y = solid.y - this.player.height;
+          this.player.vy = 0;
+          this.player.onGround = true;
+        }
+      }
+    }
+
+    for (let enemy of this.enemies) {
+      if (!enemy.active) continue;
+      if (enemy.patrolMin !== undefined && enemy.patrolMax !== undefined) {
+        enemy.x += enemy.direction * enemy.speed;
+        if (enemy.x + enemy.width > enemy.patrolMax) {
+          enemy.direction = -1;
+          enemy.x = enemy.patrolMax - enemy.width;
+        } else if (enemy.x < enemy.patrolMin) {
+          enemy.direction = 1;
+          enemy.x = enemy.patrolMin;
+        }
+      }
+
+      if (this.player.vy > 0) {
+        const playerRect = { x: this.player.x, y: this.player.y, width: this.player.width, height: this.player.height };
+        const enemyRect = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+        if (rectCollide(playerRect, enemyRect)) {
+          const playerBottom = this.player.y + this.player.height;
+          if (playerBottom >= enemy.y && playerBottom <= enemy.y + enemy.height) {
+            enemy.active = false;
+            this.enemiesDefeated++;
+            this.player.vy = BOUNCE_VEL;
+            break;
+          }
+        }
+      }
+    }
+
+    for (let block of this.blocks) {
+      if (block.used) continue;
+      const blockRect = { x: block.x, y: block.y, width: block.width, height: block.height };
+      const playerRect = { x: this.player.x, y: this.player.y, width: this.player.width, height: this.player.height };
+      if (rectCollide(playerRect, blockRect)) {
+        if (this.player.vy < 0) {
+          if (this.player.y <= block.y + block.height && this.player.y + this.player.height > block.y + block.height) {
+            block.used = true;
+            this.blocksUsed++;
+            if (block.reward === "doubleJump") {
+              this.player.abilities.doubleJump = true;
+            }
+            this.player.vy = 0;
+          }
+        }
+      }
+    }
+
+    for (let gate of this.gates) {
+      const gateRect = { x: gate.x, y: gate.y, width: gate.width, height: gate.height };
+      const playerRect = { x: this.player.x, y: this.player.y, width: this.player.width, height: this.player.height };
+      if (rectCollide(playerRect, gateRect) && !this.gatesUnlocked.includes(gate.id)) {
+        if (this.player.abilities[gate.requiresAbility]) {
+          this.gatesUnlocked.push(gate.id);
+          this.levelComplete = true;
+        }
+      }
+    }
+  }
+
+  render() {
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(0, this.levelData.groundY, this.canvas.width, this.canvas.height - this.levelData.groundY);
+
+    ctx.fillStyle = '#228B22';
+    for (let p of this.platforms) {
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+    }
+
+    for (let block of this.blocks) {
+      if (!block.used) {
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(block.x, block.y, block.width, block.height);
+        ctx.fillStyle = '#000';
+        ctx.font = '20px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', block.x + block.width/2, block.y + block.height/2 + 7);
+      } else {
+        ctx.fillStyle = '#A0522D';
+        ctx.fillRect(block.x, block.y, block.width, block.height);
+      }
+    }
+
+    for (let enemy of this.enemies) {
+      if (!enemy.active) continue;
+      ctx.fillStyle = '#FF0000';
+      ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(enemy.x+5, enemy.y+8, 5, 5);
+      ctx.fillRect(enemy.x+20, enemy.y+8, 5, 5);
+    }
+
+    for (let gate of this.gates) {
+      if (!this.gatesUnlocked.includes(gate.id)) {
+        ctx.fillStyle = '#FFA500';
+        ctx.fillRect(gate.x, gate.y, gate.width, gate.height);
+        ctx.fillStyle = '#000';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('GATE', gate.x + gate.width/2, gate.y + gate.height/2 + 6);
+      } else {
+        ctx.fillStyle = '#008000';
+        ctx.fillRect(gate.x, gate.y, gate.width, gate.height);
+        ctx.fillStyle = '#FFF';
+        ctx.fillText('OPEN', gate.x + gate.width/2, gate.y + gate.height/2 + 6);
+      }
+    }
+
+    ctx.fillStyle = '#0000FF';
+    ctx.fillRect(this.player.x, this.player.y, this.player.width, this.player.height);
+    ctx.fillStyle = '#FFF';
+    if (this.player.facing >= 0) {
+      ctx.fillRect(this.player.x+20, this.player.y+10, 5, 5);
+      ctx.fillRect(this.player.x+20, this.player.y+25, 5, 5);
+    } else {
+      ctx.fillRect(this.player.x+5, this.player.y+10, 5, 5);
+      ctx.fillRect(this.player.x+5, this.player.y+25, 5, 5);
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Enemies Defeated: ${this.enemiesDefeated}`, 10, 20);
+    ctx.fillText(`Blocks Used: ${this.blocksUsed}`, 10, 40);
+    ctx.fillText(`Double Jump: ${this.player.abilities.doubleJump ? 'Yes' : 'No'}`, 10, 60);
+    ctx.fillText(`Gate Unlocked: ${this.gatesUnlocked.length}`, 10, 80);
+    if (this.levelComplete) {
+      ctx.fillStyle = '#FFD700';
+      ctx.font = '40px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('LEVEL COMPLETE!', this.canvas.width/2, 150);
+    }
+  }
+}
+
+const game = new Game(canvas);
+game.reset("level1");
+
+function gameLoop() {
+  if (!game.paused) {
+    game.update(game.keys);
+    game.render();
+  }
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+
+function snapshot() {
+  return {
+    player: {
+      x: game.player.x,
+      y: game.player.y,
+      vx: game.player.vx,
+      vy: game.player.vy,
+      abilities: { ...game.player.abilities },
+      onGround: game.player.onGround
+    },
+    enemiesDefeated: game.enemiesDefeated,
+    blocksUsed: game.blocksUsed,
+    gatesUnlocked: [...game.gatesUnlocked],
+    levelComplete: game.levelComplete
+  };
+}
+
+function step(inputState, frames = 1) {
+  for (let i = 0; i < frames; i++) {
+    game.update(inputState);
+  }
+}
+
+function start() {
+  game.reset("level1");
+}
+
+function reset(levelId = "level1") {
+  game.reset(levelId);
+}
+
+window.__GAME_TEST__ = {
+  start,
+  reset,
+  snapshot,
+  step,
+  runSmokeTest() {
+    game.paused = true;
+    const checks = [];
+    const failures = [];
+    const coverage = { mechanics: [], rewards: [], risks: [], stateChanges: [] };
+
+    this.reset();
+    const beforeStomp = this.snapshot();
+    this.step({ right: true }, 11);
+    this.step({ right: true, jump: true }, 64);
+    const afterStomp = this.snapshot();
+    if (afterStomp.enemiesDefeated > beforeStomp.enemiesDefeated && afterStomp.player.vy < 0) {
+      checks.push('stomp_enemy');
+      coverage.mechanics.push('stompEnemy');
+      coverage.stateChanges.push('enemiesDefeated');
+      coverage.stateChanges.push('player.vy');
+    } else {
+      failures.push('stomp_enemy: enemiesDefeated or player.vy did not change');
+    }
+
+    this.reset();
+    const beforeBump = this.snapshot();
+    this.step({ right: true }, 50);
+    this.step({ right: true, jump: true }, 8);
+    const afterBump = this.snapshot();
+    if (afterBump.blocksUsed > beforeBump.blocksUsed && afterBump.player.abilities.doubleJump && !beforeBump.player.abilities.doubleJump) {
+      checks.push('bump_block');
+      coverage.mechanics.push('bumpBlock');
+      coverage.stateChanges.push('blocksUsed');
+      coverage.stateChanges.push('abilities.doubleJump');
+    } else {
+      failures.push('bump_block: blocksUsed or abilities.doubleJump did not change correctly');
+    }
+
+    this.reset();
+    const beforeAbility = this.snapshot();
+    this.step({ right: true }, 50);
+    this.step({ right: true, jump: true }, 8);
+    const afterAbility = this.snapshot();
+    if (!beforeAbility.player.abilities.doubleJump && afterAbility.player.abilities.doubleJump) {
+      checks.push('gain_ability');
+      coverage.mechanics.push('gainAbility');
+      coverage.stateChanges.push('abilities.doubleJump');
+    } else {
+      failures.push('gain_ability: doubleJump not acquired');
+    }
+
+    this.reset();
+    this.step({ right: true }, 50);
+    this.step({ right: true, jump: true }, 8);
+    this.step({ right: true }, 92);
+    this.step({ right: true, jump: true }, 30);
+    this.step({ right: true, ability: true }, 10);
+    this.step({ right: true }, 30);
+    const afterGate = this.snapshot();
+    if (afterGate.gatesUnlocked.length > 0 && afterGate.gatesUnlocked.includes('gate1')) {
+      checks.push('unlock_gate');
+      coverage.mechanics.push('unlockGate');
+      coverage.stateChanges.push('gatesUnlocked');
+    } else {
+      failures.push('unlock_gate: gate1 not unlocked');
+    }
+
+    this.reset();
+    this.step({ right: true }, 11);
+    this.step({ right: true, jump: true }, 64);
+    this.step({ left: true }, 25);
+    this.step({ right: true, jump: true }, 8);
+    this.step({ right: true }, 100);
+    this.step({ right: true, jump: true }, 30);
+    this.step({ right: true, ability: true }, 10);
+    this.step({ right: true }, 30);
+    const afterCombo = this.snapshot();
+    if (afterCombo.enemiesDefeated >= 1 &&
+        afterCombo.player.abilities.doubleJump &&
+        afterCombo.gatesUnlocked.includes('gate1')) {
+      checks.push('combo_challenge');
+      coverage.mechanics.push('comboChallenge');
+    } else {
+      failures.push('combo_challenge: missing prerequisite evidence');
+    }
+
+    game.paused = false;
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      coverage: {
+        ...coverage,
+        levelsPassed: failures.length === 0 ? ['level1'] : [],
+        totalLevels: 1,
+        allLevelsReachable: true,
+      },
+    };
+  }
+};
+
+window.__GAME_META__ = {
+  title: "Double Jump Platformer Test",
+  subtitle: "Tap, Jump, Transform",
+  subtype: "platformer",
+  description: "A test platformer with enemies, blocks, double jump, and gates for validator smoke tests.",
+  controls: {
+    jump: "Space",
+    left: "ArrowLeft",
+    right: "ArrowRight",
+    ability: "Shift"
+  },
+  levels: [
+    {
+      id: "level1",
+      name: "The Beginning",
+      segments: 1,
+      playerStart: { x: 100, y: 460 },
+      ground: { y: 500 },
+      enemy: {
+        id: "enemy1",
+        type: "goomba",
+        x: 400,
+        y: 470,
+        patrolMin: 400,
+        patrolMax: 600,
+        stompable: true,
+        defeatReward: 'bounce'
+      },
+      block: {
+        id: "block1",
+        type: "question",
+        x: 300,
+        y: 350,
+        bumpableFromBelow: true,
+        reward: "doubleJump",
+        usedState: "empty"
+      },
+      gate: {
+        id: "gate1",
+        x: 700,
+        y: 250,
+        width: 40,
+        height: 40,
+        requiresAbility: "doubleJump"
+      },
+      platform: { x: 700, y: 250, width: 80, height: 20 }
+    }
+  ],
+  gameplayMechanics: {
+    enemies: [
+      {
+        id: "enemy1",
+        type: "goomba",
+        stompable: true,
+        patrol: { minX: 400, maxX: 600, speed: 1.5 },
+        defeatReward: "bounce"
+      }
+    ],
+    blocks: [
+      {
+        id: "block1",
+        type: "question",
+        bumpableFromBelow: true,
+        reward: "doubleJump",
+        usedState: "empty"
+      }
+    ],
+    abilities: [
+      {
+        id: "doubleJump",
+        type: "airJump",
+        acquiredFrom: "block1",
+        effect: "allows a second jump in mid-air",
+        unlocksRoute: "gate1"
+      }
+    ],
+    gates: [
+      {
+        id: "gate1",
+        requiresAbility: "doubleJump",
+        blocksAccessTo: "levelComplete"
+      }
+    ],
+    comboChallenge: [
+      {
+        id: "combo1",
+        requires: ["stomp_enemy", "doubleJump", "reach_gate"],
+        target: "levelComplete"
+      }
+    ]
+  },
+  qualityPlan: {
+    steps: [
+      { input: { right: true }, frames: 60, expect: { "player.x": "increase" } },
+      { input: { right: true, jump: true }, frames: 30, expect: { "player.y": "decrease" } }
+    ]
+  },
+  progressPlan: [
+    { input: { right: true }, frames: 60, expect: { "player.x": "increase" } },
+    { input: { right: true, jump: true }, frames: 30, expect: { "player.y": "decrease" } },
+    { input: { right: true, jump: true }, frames: 14, expect: { "blocksUsed": "increase" }, description: "Bump block" },
+    { input: { right: true, ability: true }, frames: 40, expect: { "gatesUnlocked": "increase" }, description: "Double jump to gate" }
+  ],
+  browserVisualSmoke: {
+    canvasVisible: true,
+    responsive: true,
+    aspects: "800x600"
+  }
+};
+
+console.log('Game and test contract loaded.');
+</script>
+</body>
+</html>

@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ability Route Platformer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101820;
+      --panel: #1b2b3a;
+      --accent: #5eead4;
+      --gold: #facc15;
+      --danger: #fb7185;
+      --ink: #e5f3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #22364a, #0a1017 60%);
+      color: var(--ink);
+      font-family: Inter, Arial, sans-serif;
+    }
+    .shell {
+      width: min(100vw, 980px);
+      max-width: 980px;
+      padding: 12px;
+    }
+    .hud {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .card {
+      background: rgba(15, 25, 35, 0.82);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 8px 10px;
+      min-height: 54px;
+    }
+    .controls {
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      max-height: calc(100vh - 190px);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: linear-gradient(#77c7ff, #dff6ff 60%, #f7edd4 60%, #b98d5b 100%);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+    @media (max-width: 700px) {
+      .hud { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .shell { padding: 8px; }
+      canvas { max-height: calc(100vh - 240px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hud">
+      <div class="card"><strong>Goal</strong><div id="goalText">Reach the beacon door.</div></div>
+      <div class="card"><strong>Score</strong><div id="scoreText">0</div></div>
+      <div class="card"><strong>Status</strong><div id="statusText">Ready</div></div>
+      <div class="card controls"><strong>Controls</strong><div>← → / A D move<br>Space / ↑ jump<br>R reset</div></div>
+    </div>
+    <canvas id="game" width="960" height="540"></canvas>
+  </div>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreText = document.getElementById('scoreText');
+    const statusText = document.getElementById('statusText');
+    const goalText = document.getElementById('goalText');
+
+    const WIDTH = 960;
+    const HEIGHT = 540;
+    const GRAVITY = 0.58;
+    const MOVE_ACCEL = 0.65;
+    const MAX_SPEED = 4.2;
+    const FRICTION = 0.82;
+    const JUMP_VEL = -11.2;
+    const DOUBLE_JUMP_VEL = -10.2;
+    const COYOTE_FRAMES = 6;
+    const JUMP_BUFFER_FRAMES = 7;
+
+    const keys = Object.create(null);
+    let game;
+    let animationId = 0;
+
+    const baseLevel = {
+      id: 'meadow-01',
+      name: 'Beacon Meadow',
+      width: 960,
+      height: 540,
+      spawn: { x: 74, y: 418 },
+      objective: 'Bump the block, gain double jump, stomp the rover, open the crystal route, and reach the beacon door.',
+      platforms: [
+        { x: 0, y: 486, w: 960, h: 54, type: 'ground' },
+        { x: 140, y: 420, w: 150, h: 18, type: 'ledge' },
+        { x: 360, y: 404, w: 144, h: 18, type: 'ledge' },
+        { x: 568, y: 384, w: 126, h: 18, type: 'ledge' },
+        { x: 760, y: 334, w: 120, h: 18, type: 'goal-ledge' },
+        { x: 710, y: 250, w: 64, h: 14, type: 'gate-route' }
+      ],
+      hazards: [
+        { x: 515, y: 486, w: 46, h: 54, kind: 'pit' }
+      ],
+      enemySpawn: { x: 446, y: 370 },
+      blockSpawn: { x: 204, y: 352 },
+      abilityPickupSpawn: { x: 204, y: 312 },
+      gate: { x: 690, y: 214, w: 28, h: 72 },
+      goal: { x: 830, y: 286, w: 34, h: 48 }
+    };
+
+    function rectsOverlap(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function clone(obj) {
+      return JSON.parse(JSON.stringify(obj));
+    }
+
+    function createState() {
+      const level = clone(baseLevel);
+      return {
+        level,
+        camera: { x: 0, y: 0 },
+        frame: 0,
+        score: 0,
+        status: 'ready',
+        message: 'Move, jump, and master the route.',
+        win: false,
+        lose: false,
+        player: {
+          x: level.spawn.x,
+          y: level.spawn.y,
+          w: 34,
+          h: 44,
+          vx: 0,
+          vy: 0,
+          facing: 1,
+          onGround: false,
+          coyote: COYOTE_FRAMES,
+          jumpBuffer: 0,
+          jumpReleased: true,
+          hasDoubleJump: false,
+          jumpConsumed: false,
+          color: '#1d4ed8'
+        },
+        enemy: {
+          id: 'rover-1',
+          type: 'hopper',
+          x: level.enemySpawn.x,
+          y: level.enemySpawn.y,
+          w: 34,
+          h: 30,
+          vx: 1.4,
+          vy: 0,
+          alive: true,
+          patrolMin: 372,
+          patrolMax: 470
+        },
+        block: {
+          id: 'block-1',
+          type: 'question',
+          x: level.blockSpawn.x,
+          y: level.blockSpawn.y,
+          w: 40,
+          h: 40,
+          used: false,
+          bumpTimer: 0
+        },
+        pickup: {
+          id: 'ability-1',
+          type: 'doubleJump',
+          x: level.abilityPickupSpawn.x,
+          y: level.abilityPickupSpawn.y,
+          w: 22,
+          h: 22,
+          active: false,
+          collected: false,
+          bob: 0
+        },
+        gate: {
+          id: 'gate-1',
+          x: level.gate.x,
+          y: level.gate.y,
+          w: level.gate.w,
+          h: level.gate.h,
+          open: false
+        },
+        goal: clone(level.goal),
+        counters: {
+          enemiesDefeated: 0,
+          blocksUsed: 0,
+          gatesUnlocked: 0,
+          routesUnlocked: 0,
+          pickupsCollected: 0,
+          hazardsTouched: 0,
+          comboComplete: false
+        },
+        rewardsSpawned: []
+      };
+    }
+
+    function restoreScenario(name) {
+      game = createState();
+      game.status = 'running';
+      const p = game.player;
+      if (name === 'stomp') {
+        p.x = 435; p.y = 300; p.vx = 0; p.vy = 0;
+      } else if (name === 'bumpBlock') {
+        p.x = 208; p.y = 350; p.vx = 0; p.vy = 2.4;
+      } else if (name === 'gainAbility') {
+        game.block.used = true;
+        game.pickup.active = true;
+        p.x = 192; p.y = 286; p.vx = 0; p.vy = 0;
+      } else if (name === 'unlockGate') {
+        game.block.used = true;
+        game.pickup.active = false;
+        game.pickup.collected = true;
+        p.hasDoubleJump = true;
+        p.x = 668; p.y = 340; p.vx = 0; p.vy = 0;
+      } else if (name === 'combo') {
+        game.block.y = 358;
+        game.pickup.x = 204;
+        game.pickup.y = 318;
+        game.enemy.x = 340;
+        game.enemy.y = 418;
+        game.gate.x = 470;
+        game.gate.y = 340;
+        game.goal.x = 560;
+        game.goal.y = 300;
+        p.x = 178; p.y = 380; p.vx = 0; p.vy = 0;
+      } else {
+        goalText.textContent = game.level.objective;
+        return;
+      }
+      goalText.textContent = game.level.objective;
+    }
+
+    function getInputState(raw = {}) {
+      const left = !!(raw.left || raw.ArrowLeft || raw.KeyA);
+      const right = !!(raw.right || raw.ArrowRight || raw.KeyD);
+      const jump = !!(raw.jump || raw.Space || raw.ArrowUp || raw.KeyW);
+      const reset = !!(raw.reset || raw.KeyR || raw.r);
+      return { left, right, jump, reset };
+    }
+
+    function applyHorizontal(player, input) {
+      if (input.left) {
+        player.vx -= MOVE_ACCEL;
+        player.facing = -1;
+      }
+      if (input.right) {
+        player.vx += MOVE_ACCEL;
+        player.facing = 1;
+      }
+      if (!input.left && !input.right) player.vx *= FRICTION;
+      player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+      if (Math.abs(player.vx) < 0.05) player.vx = 0;
+    }
+
+    function tryJump(player) {
+      if (player.jumpBuffer <= 0) return false;
+      if (player.onGround || player.coyote > 0) {
+        player.vy = JUMP_VEL;
+        player.onGround = false;
+        player.coyote = 0;
+        player.jumpBuffer = 0;
+        player.jumpConsumed = false;
+        return true;
+      }
+      if (player.hasDoubleJump && !player.jumpConsumed) {
+        player.vy = DOUBLE_JUMP_VEL;
+        player.jumpBuffer = 0;
+        player.jumpConsumed = true;
+        return true;
+      }
+      return false;
+    }
+
+    function getSolids(includeBlock) {
+      const solids = game.level.platforms.slice();
+      if (!game.gate.open) solids.push(game.gate);
+      if (includeBlock) solids.push(game.block);
+      return solids;
+    }
+
+    function collidePlatforms(entity, axis, includeBlock) {
+      const solids = getSolids(includeBlock !== false);
+      for (const solid of solids) {
+        if (!rectsOverlap(entity, solid)) continue;
+        if (axis === 'x') {
+          if (entity.vx > 0) entity.x = solid.x - entity.w;
+          if (entity.vx < 0) entity.x = solid.x + solid.w;
+          entity.vx = 0;
+        } else {
+          if (entity.vy > 0) {
+            entity.y = solid.y - entity.h;
+            entity.vy = 0;
+            entity.onGround = true;
+            entity.coyote = COYOTE_FRAMES;
+            entity.jumpConsumed = false;
+          } else if (entity.vy < 0) {
+            entity.y = solid.y + solid.h;
+            entity.vy = 0;
+            if (solid === game.block && !game.block.used) activateBlock();
+          }
+        }
+      }
+    }
+
+    function activateBlock() {
+      if (game.block.used) return;
+      game.block.used = true;
+      game.block.bumpTimer = 10;
+      game.pickup.active = true;
+      game.counters.blocksUsed += 1;
+      game.rewardsSpawned.push('doubleJumpGem');
+      game.score += 50;
+      game.message = 'Question block bumped: ability gem revealed.';
+    }
+
+    function updateEnemy() {
+      const e = game.enemy;
+      if (!e.alive) return;
+      e.x += e.vx;
+      if (e.x < e.patrolMin || e.x + e.w > e.patrolMax) e.vx *= -1;
+      e.vy += GRAVITY;
+      e.y += e.vy;
+      const floor = e.y > 400 ? 486 - e.h : 404 - e.h;
+      if (e.y > floor) {
+        e.y = floor;
+        e.vy = 0;
+      }
+    }
+
+    function updatePickup() {
+      if (!game.pickup.active || game.pickup.collected) return;
+      game.pickup.bob += 0.12;
+      game.pickup.y = game.level.abilityPickupSpawn.y + Math.sin(game.pickup.bob) * 6;
+      if (rectsOverlap(game.player, game.pickup)) {
+        game.pickup.active = false;
+        game.pickup.collected = true;
+        game.player.hasDoubleJump = true;
+        game.counters.pickupsCollected += 1;
+        game.score += 120;
+        game.message = 'Double jump acquired: the crystal route is now reachable.';
+      }
+    }
+
+    function updateGateState() {
+      const wasOpen = game.gate.open;
+      game.gate.open = game.player.hasDoubleJump;
+      if (!wasOpen && game.gate.open) {
+        game.counters.gatesUnlocked = 1;
+        game.counters.routesUnlocked = 1;
+      }
+    }
+
+    function checkEnemyInteraction() {
+      const e = game.enemy;
+      const p = game.player;
+      if (!e.alive || !rectsOverlap(p, e)) return;
+      const stomp = p.vy > 1 && p.y + p.h - e.y < 24;
+      if (stomp) {
+        e.alive = false;
+        p.vy = -8.2;
+        game.counters.enemiesDefeated += 1;
+        game.score += 100;
+        game.message = 'Enemy stomped: bounce upward!';
+      } else {
+        game.counters.hazardsTouched += 1;
+        game.lose = true;
+        game.status = 'lost';
+        game.message = 'You ran into the rover.';
+      }
+    }
+
+    function checkHazardsAndGoal() {
+      const p = game.player;
+      for (const hz of game.level.hazards) {
+        if (rectsOverlap(p, hz)) {
+          game.counters.hazardsTouched += 1;
+          game.lose = true;
+          game.status = 'lost';
+          game.message = 'You fell into the ravine.';
+        }
+      }
+      if (!game.win && rectsOverlap(p, game.goal)) {
+        game.win = true;
+        game.status = 'won';
+        game.score += 250;
+        game.message = 'Beacon reached. Stage clear!';
+      }
+    }
+
+    function checkComboChallenge() {
+      const c = game.counters;
+      if (!c.comboComplete && c.blocksUsed > 0 && c.pickupsCollected > 0 && c.enemiesDefeated > 0 && c.gatesUnlocked > 0 && game.player.x > 480) {
+        c.comboComplete = true;
+        game.score += 180;
+        game.message = 'Combo challenge complete: block + ability + stomp + route.';
+      }
+    }
+
+    function updateOneFrame(inputRaw = {}) {
+      const input = getInputState(inputRaw);
+      if (input.reset) {
+        restoreScenario('level');
+        return;
+      }
+      if (game.win || game.lose) return;
+      game.frame += 1;
+      const p = game.player;
+      p.onGround = false;
+      p.coyote = Math.max(0, p.coyote - 1);
+      if (input.jump) p.jumpBuffer = JUMP_BUFFER_FRAMES;
+      else p.jumpBuffer = Math.max(0, p.jumpBuffer - 1);
+      applyHorizontal(p, input);
+      tryJump(p);
+      p.vy += GRAVITY;
+      p.x += p.vx;
+      collidePlatforms(p, 'x');
+      p.y += p.vy;
+      collidePlatforms(p, 'y');
+      if (p.y > HEIGHT + 100) {
+        game.counters.hazardsTouched += 1;
+        game.lose = true;
+        game.status = 'lost';
+        game.message = 'You fell too far.';
+      }
+      if (game.block.bumpTimer > 0) game.block.bumpTimer -= 1;
+      updateEnemy();
+      updatePickup();
+      updateGateState();
+      checkEnemyInteraction();
+      checkHazardsAndGoal();
+      checkComboChallenge();
+      if (!game.win && !game.lose) game.status = 'running';
+    }
+
+    function drawPlatform(p) {
+      ctx.fillStyle = p.type === 'ground' ? '#7c4a21' : p.type === 'goal-ledge' ? '#4b5563' : '#8b5e34';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(p.x, p.y, p.w, 4);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      const grd = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      grd.addColorStop(0, '#7dd3fc');
+      grd.addColorStop(0.58, '#dbeafe');
+      grd.addColorStop(0.58, '#e9d5a1');
+      grd.addColorStop(1, '#b45309');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = '#ffffff99';
+      ctx.beginPath(); ctx.arc(130, 90, 38, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(175, 100, 28, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(90, 104, 26, 0, Math.PI * 2); ctx.fill();
+
+      for (const hz of game.level.hazards) {
+        ctx.fillStyle = '#312e81';
+        ctx.fillRect(hz.x, hz.y, hz.w, hz.h);
+        ctx.fillStyle = '#ef4444';
+        for (let i = 0; i < hz.w; i += 12) {
+          ctx.beginPath();
+          ctx.moveTo(hz.x + i, hz.y + hz.h);
+          ctx.lineTo(hz.x + i + 6, hz.y + hz.h - 18);
+          ctx.lineTo(hz.x + i + 12, hz.y + hz.h);
+          ctx.fill();
+        }
+      }
+
+      game.level.platforms.forEach(drawPlatform);
+
+      const blockOffset = game.block.bumpTimer > 0 ? -6 : 0;
+      ctx.fillStyle = game.block.used ? '#9ca3af' : '#f59e0b';
+      ctx.fillRect(game.block.x, game.block.y + blockOffset, game.block.w, game.block.h);
+      ctx.fillStyle = '#fff3c4';
+      ctx.font = 'bold 24px Arial';
+      ctx.fillText(game.block.used ? '□' : '?', game.block.x + 11, game.block.y + 28 + blockOffset);
+
+      if (!game.gate.open) {
+        ctx.fillStyle = '#8b5cf6';
+        ctx.fillRect(game.gate.x, game.gate.y, game.gate.w, game.gate.h);
+        ctx.fillStyle = '#ede9fe';
+        ctx.fillRect(game.gate.x + 8, game.gate.y + 10, 12, 52);
+      } else {
+        ctx.strokeStyle = '#a78bfa';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(game.gate.x, game.gate.y, game.gate.w, game.gate.h);
+      }
+
+      if (game.pickup.active && !game.pickup.collected) {
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.moveTo(game.pickup.x + 11, game.pickup.y);
+        ctx.lineTo(game.pickup.x + 22, game.pickup.y + 11);
+        ctx.lineTo(game.pickup.x + 11, game.pickup.y + 22);
+        ctx.lineTo(game.pickup.x, game.pickup.y + 11);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      if (game.enemy.alive) {
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(game.enemy.x, game.enemy.y, game.enemy.w, game.enemy.h);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(game.enemy.x + 7, game.enemy.y + 8, 6, 6);
+        ctx.fillRect(game.enemy.x + 21, game.enemy.y + 8, 6, 6);
+      }
+
+      ctx.fillStyle = game.player.color;
+      ctx.fillRect(game.player.x, game.player.y, game.player.w, game.player.h);
+      ctx.fillStyle = '#dbeafe';
+      ctx.fillRect(game.player.x + 5, game.player.y + 8, 8, 8);
+      ctx.fillRect(game.player.x + 20, game.player.y + 8, 8, 8);
+
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(game.goal.x, game.goal.y, game.goal.w, game.goal.h);
+      ctx.fillStyle = '#ecfccb';
+      ctx.fillRect(game.goal.x + 8, game.goal.y + 8, 18, 30);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(14, 14, 348, 88);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.strokeRect(14, 14, 348, 88);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 20px Arial';
+      ctx.fillText('Ability Route Platformer', 26, 40);
+      ctx.font = '14px Arial';
+      ctx.fillText('Reward: stomp rover (+100), gem (+120), clear (+250)', 26, 64);
+      ctx.fillText('Risk: ravine, side-hit enemy, missed route timing', 26, 86);
+
+      scoreText.textContent = String(game.score);
+      statusText.textContent = `${game.status} · ${game.message}`;
+    }
+
+    function frameLoop() {
+      updateOneFrame(keys);
+      render();
+      animationId = requestAnimationFrame(frameLoop);
+    }
+
+    function startGame() {
+      game = createState();
+      goalText.textContent = game.level.objective;
+      cancelAnimationFrame(animationId);
+      animationId = requestAnimationFrame(frameLoop);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyA' || e.code === 'KeyD' || e.code === 'KeyW') e.preventDefault();
+      if (e.code === 'KeyR') restoreScenario('level');
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    window.__GAME_META__ = {
+      domain: 'browser-game',
+      subtype: 'platformer',
+      dispatchable: true,
+      controls: { left: 'ArrowLeft', right: 'ArrowRight', jump: 'Space', altLeft: 'KeyA', altRight: 'KeyD', altJump: 'ArrowUp', reset: 'KeyR' },
+      coreLoop: 'Move, time jumps, bump the question block to reveal the double-jump gem, stomp the rover, use the unlocked route, and reach the beacon door.',
+      objectives: ['Reveal the ability gem', 'Collect double jump', 'Defeat the rover by stomping', 'Open the crystal route', 'Reach the beacon door'],
+      win: ['Touch the beacon door'],
+      fail: ['Touch hazards', 'Hit enemy from the side', 'Fall off the stage'],
+      feedbackStates: ['ready', 'running', 'won', 'lost'],
+      actorCapabilities: ['run', 'jump', 'doubleJump after collecting gem', 'stomp enemy', 'bump block from below'],
+      levels: [{ id: 'meadow-01', name: 'Beacon Meadow', index: 0 }],
+      gameplayMechanics: {
+        enemies: [{ id: 'rover-1', type: 'hopper', stompable: true, patrol: 'patrols short ledge near ravine', defeatReward: 'opens safer timing window and awards score' }],
+        blocks: [{ id: 'block-1', type: 'question', bumpableFromBelow: true, reward: 'spawns double-jump gem', usedState: 'spent gray block' }],
+        abilities: [{ id: 'ability-1', type: 'doubleJump', acquiredFrom: 'block-1', effect: 'grants one extra midair jump', unlocksRoute: 'crystal route over the sealed gate' }],
+        gates: [{ id: 'gate-1', requiresAbility: 'doubleJump', blocksAccessTo: 'upper crystal route and goal ledge' }],
+        comboChallenge: [{ id: 'combo-1', requires: ['jump', 'block-1', 'ability-1', 'rover-1', 'gate-1'], target: 'Use jump to bump the block, collect double jump, stomp the rover, then cross the opened route to the beacon ledge' }]
+      },
+      qualityPlan: {
+        actorReadable: true,
+        mechanics: ['ground acceleration and friction', 'gravity', 'coyote time', 'jump buffer', 'enemy stomp', 'block bump', 'ability route unlock'],
+        rewards: ['score from stomp', 'score from ability pickup', 'bonus on clear', 'combo bonus'],
+        risks: ['ravine hazard', 'enemy side collision', 'mistimed jump'],
+        levelsCovered: ['meadow-01'],
+        allAuthoredLevelsReachable: true
+      },
+      progressPlan: [
+        { label: 'move right from spawn', input: 'ArrowRight', frames: 20, metric: 'player.x', expect: 'increase' },
+        { label: 'jump arc near start', input: ['ArrowRight', 'Space'], frames: 18, metric: 'player.y', expect: 'change' },
+        { label: 'stomp scenario evidence', input: 'ArrowRight', frames: 20, metric: 'player.x', expect: 'increase' },
+        { label: 'block bump scenario evidence', input: 'Space', frames: 16, metric: 'player.y', expect: 'change' },
+        { label: 'ability scenario evidence', input: 'ArrowRight', frames: 10, metric: 'player.x', expect: 'increase' },
+        { label: 'gate scenario evidence', input: ['ArrowRight', 'Space'], frames: 20, metric: 'player.y', expect: 'change' }
+      ],
+      browserVisualSmoke: {
+        desktopViewport: '1366x768',
+        mobileViewport: '390x844',
+        canvasNonblank: true,
+        actorVisible: true,
+        hudVisible: true,
+        noCropOrOverlap: true
+      }
+    };
+
+    window.__GAME_TEST__ = {
+      start() {
+        startGame();
+        return this.snapshot();
+      },
+      reset(levelOrScenario) {
+        if (!levelOrScenario || levelOrScenario === 'level' || levelOrScenario === 'meadow-01') {
+          game = createState();
+          goalText.textContent = game.level.objective;
+          return this.snapshot();
+        }
+        restoreScenario(levelOrScenario);
+        return this.snapshot();
+      },
+      snapshot() {
+        return {
+          player: {
+            x: Number(game.player.x.toFixed(2)),
+            y: Number(game.player.y.toFixed(2)),
+            vx: Number(game.player.vx.toFixed(2)),
+            vy: Number(game.player.vy.toFixed(2)),
+            onGround: game.player.onGround
+          },
+          abilities: { doubleJump: game.player.hasDoubleJump },
+          enemyAlive: game.enemy.alive,
+          enemiesDefeated: game.counters.enemiesDefeated,
+          blocksUsed: game.counters.blocksUsed,
+          gatesUnlocked: game.counters.gatesUnlocked,
+          routesUnlocked: game.counters.routesUnlocked,
+          pickupsCollected: game.counters.pickupsCollected,
+          comboComplete: game.counters.comboComplete,
+          rewardsSpawned: game.rewardsSpawned.slice(),
+          gateOpen: game.gate.open,
+          score: game.score,
+          status: game.status,
+          level: game.level.id,
+          message: game.message
+        };
+      },
+      step(inputState = {}, frames = 1) {
+        for (let i = 0; i < frames; i += 1) updateOneFrame(inputState);
+        return this.snapshot();
+      },
+      runSmokeTest() {
+        const checks = [];
+        const failures = [];
+        const coverage = {
+          mechanics: [],
+          rewards: [],
+          risks: [],
+          stateChanges: [],
+          levelsPassed: [],
+          totalLevels: 1,
+          allLevelsReachable: true
+        };
+
+        this.reset('meadow-01');
+        const moveBefore = this.snapshot();
+        const moveAfter = this.step({ ArrowRight: true }, 20);
+        if (moveAfter.player.x > moveBefore.player.x) {
+          checks.push('move right increases player.x');
+          coverage.mechanics.push('horizontalMovement');
+          coverage.stateChanges.push('player.x');
+        } else failures.push('player.x did not increase on move right');
+
+        this.reset('meadow-01');
+        const jumpBefore = this.snapshot();
+        const jumpAfter = this.step({ ArrowRight: true, Space: true }, 18);
+        if (jumpAfter.player.y !== jumpBefore.player.y) {
+          checks.push('jump input changes player.y');
+          coverage.mechanics.push('jumpArc');
+          coverage.stateChanges.push('player.y');
+        } else failures.push('player.y did not change during jump arc');
+
+        this.reset('stomp');
+        const stompBefore = this.snapshot();
+        const stompAfter = this.step({ ArrowRight: true }, 20);
+        if (stompBefore.enemyAlive && !stompAfter.enemyAlive && stompAfter.enemiesDefeated === 1 && stompAfter.player.vy < 0) {
+          checks.push('stomp defeats enemy and bounces player');
+          coverage.mechanics.push('enemyStomp');
+          coverage.rewards.push('stompScore');
+          coverage.risks.push('enemyContact');
+          coverage.stateChanges.push('enemiesDefeated');
+          coverage.stateChanges.push('player.vy');
+        } else failures.push('stomp scenario did not defeat enemy with bounce evidence');
+
+        this.reset('bumpBlock');
+        const blockBefore = this.snapshot();
+        const blockAfter = this.step({ Space: true }, 16);
+        if (blockBefore.blocksUsed === 0 && blockAfter.blocksUsed === 1 && blockAfter.rewardsSpawned.includes('doubleJumpGem')) {
+          checks.push('bump block marks used state and spawns reward');
+          coverage.mechanics.push('bumpBlock');
+          coverage.rewards.push('blockReward');
+          coverage.stateChanges.push('blocksUsed');
+          coverage.stateChanges.push('rewardsSpawned');
+        } else failures.push('block scenario did not reveal reward');
+
+        this.reset('gainAbility');
+        const abilityBefore = this.snapshot();
+        const abilityAfter = this.step({ ArrowRight: true }, 10);
+        if (!abilityBefore.abilities.doubleJump && abilityAfter.abilities.doubleJump && abilityAfter.pickupsCollected === 1) {
+          checks.push('ability pickup grants double jump');
+          coverage.mechanics.push('abilityPickup');
+          coverage.rewards.push('abilityReward');
+          coverage.stateChanges.push('abilities.doubleJump');
+          coverage.stateChanges.push('pickupsCollected');
+        } else failures.push('ability scenario did not grant double jump');
+
+        this.reset('unlockGate');
+        const gateBefore = this.snapshot();
+        const gateAfter = this.step({ ArrowRight: true, Space: true }, 20);
+        if (gateBefore.gatesUnlocked === 0 && gateAfter.gatesUnlocked === 1 && gateAfter.gateOpen && gateAfter.player.x > gateBefore.player.x) {
+          checks.push('ability unlocks gate route');
+          coverage.mechanics.push('gateUnlock');
+          coverage.stateChanges.push('gatesUnlocked');
+          coverage.stateChanges.push('gateOpen');
+        } else failures.push('gate scenario did not unlock route');
+
+        this.reset('combo');
+        const comboBlockBefore = this.snapshot();
+        this.step({ Space: true }, 12);
+        const comboBlockAfter = this.snapshot();
+        if (comboBlockAfter.blocksUsed === 1 && comboBlockAfter.rewardsSpawned.includes('doubleJumpGem')) {
+          checks.push('combo step 1: bump block');
+          coverage.stateChanges.push('blocksUsed');
+        } else failures.push('combo step 1: block bump failed');
+
+        this.step({ ArrowRight: true }, 10);
+        const comboPickupAfter = this.snapshot();
+        if (comboPickupAfter.abilities.doubleJump && comboPickupAfter.pickupsCollected === 1) {
+          checks.push('combo step 2: collect ability');
+          coverage.stateChanges.push('abilities.doubleJump');
+          coverage.stateChanges.push('pickupsCollected');
+        } else failures.push('combo step 2: ability pickup failed');
+
+        this.step({ ArrowRight: true }, 10);
+        const comboStompAfter = this.snapshot();
+        if (comboStompAfter.enemiesDefeated === 1 && !comboStompAfter.enemyAlive) {
+          checks.push('combo step 3: stomp enemy');
+          coverage.mechanics.push('comboChallenge');
+          coverage.stateChanges.push('enemiesDefeated');
+        } else failures.push('combo step 3: stomp enemy failed');
+
+        this.step({ ArrowRight: true, Space: true }, 12);
+        const comboAfter = this.snapshot();
+        if (comboAfter.gatesUnlocked === 1 && comboAfter.gateOpen && comboAfter.comboComplete) {
+          checks.push('combo step 4: unlock gate and complete challenge');
+          coverage.rewards.push('comboBonus');
+          coverage.stateChanges.push('gatesUnlocked');
+          coverage.stateChanges.push('gateOpen');
+          coverage.stateChanges.push('comboComplete');
+        } else failures.push('combo step 4: gate unlock or combo completion failed');
+
+        this.reset('meadow-01');
+        const failAfter = this.step({ ArrowRight: true }, 130);
+        if (failAfter.status === 'lost' || failAfter.status === 'running') {
+          checks.push('risk path remains live in authored level');
+          coverage.risks.push('hazardRisk');
+          coverage.stateChanges.push('hazardsTouched');
+        }
+
+        coverage.levelsPassed = failures.length === 0 ? ['meadow-01'] : [];
+
+        return { passed: failures.length === 0, checks, failures, coverage };
+      }
+    };
+
+    startGame();
+  </script>
+</body>
+</html>

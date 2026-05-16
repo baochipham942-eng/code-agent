@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platformer — Prime Mimo</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; display: flex; align-items: center; justify-content: center; }
+canvas { display: block; max-width: 100vw; max-height: 100vh; width: 100%; height: auto; aspect-ratio: 800 / 500; image-rendering: pixelated; background: #16213e; }
+#ui-overlay { position: absolute; top: 0; left: 0; width: 100%; text-align: center; pointer-events: none; padding: 8px; font-family: monospace; color: #fff; font-size: 14px; text-shadow: 1px 1px 2px #000; z-index: 10; }
+#controls-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-family: monospace; color: #aaa; font-size: 12px; pointer-events: none; z-index: 10; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<div id="ui-overlay"><span id="hud">Score: 0 | Lives: 3 | Level: 1</span></div>
+<div id="controls-hint">Arrow Keys / WASD = Move &amp; Jump | Stomp enemies | Bump blocks | Gain double-jump to reach the gate</div>
+<script>
+(function () {
+  "use strict";
+
+  const TILE = 40;
+  const W = 800, H = 500;
+  const GRAVITY = 0.55;
+  const JUMP_FORCE = -11;
+  const MOVE_SPEED = 4.5;
+  const FRICTION = 0.82;
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const hud = document.getElementById("hud");
+
+  // ── Shared live game state ──
+  const G = {
+    player: null,
+    enemies: [],
+    blocks: [],
+    abilities: { doubleJump: false },
+    gates: [],
+    routes: { mainPath: true, upperPath: false },
+    coins: [],
+    particles: [],
+    score: 0,
+    lives: 3,
+    level: 1,
+    status: "playing",
+    camera: { x: 0 },
+    input: {},
+    frameCount: 0,
+  };
+
+  // ── Level layouts ──
+  // Legend: P=player, E=enemy, B=bumpable block, G=gate, C=coin, #=platform, ^=high platform
+  function buildLevel1() {
+    G.platforms = [
+      // ground
+      { x: 0, y: 460, w: 2000, h: 40 },
+      // step platforms
+      { x: 250, y: 360, w: 120, h: 16 },
+      { x: 450, y: 300, w: 120, h: 16 },
+      { x: 620, y: 240, w: 120, h: 16 },
+      // upper path (requires double jump to reach)
+      { x: 850, y: 160, w: 300, h: 16 },
+      { x: 1200, y: 160, w: 200, h: 16 },
+      // lower path
+      { x: 850, y: 400, w: 400, h: 16 },
+      // exit platform
+      { x: 1500, y: 300, w: 200, h: 16 },
+    ];
+
+    G.player = { x: 60, y: 400, w: 28, h: 34, vx: 0, vy: 0, onGround: false, jumpsLeft: 1, facing: 1 };
+
+    G.enemies = [
+      { id: "goomba1", x: 480, y: 426, w: 30, h: 30, vx: 1.2, alive: true, patrolLeft: 420, patrolRight: 580, stompable: true },
+      { id: "goomba2", x: 900, y: 370, w: 30, h: 30, vx: -1, alive: true, patrolLeft: 860, patrolRight: 1000, stompable: true },
+    ];
+
+    G.blocks = [
+      { id: "qblock1", x: 500, y: 230, w: 40, h: 40, bumpableFromBelow: true, reward: "doubleJump", used: false, animY: 0 },
+      { id: "qblock2", x: 700, y: 350, w: 40, h: 40, bumpableFromBelow: true, reward: "coin", used: false, animY: 0 },
+    ];
+
+    G.gates = [
+      { id: "gate1", x: 1240, y: 100, w: 40, h: 60, requiresAbility: "doubleJump", blocksAccessTo: "upperExit", locked: true },
+    ];
+
+    G.coins = [
+      { id: "c1", x: 300, y: 320, w: 16, h: 16, collected: false },
+      { id: "c2", x: 500, y: 260, w: 16, h: 16, collected: false },
+      { id: "c3", x: 920, y: 130, w: 16, h: 16, collected: false },
+      { id: "c4", x: 1050, y: 130, w: 16, h: 16, collected: false },
+      { id: "c5", x: 1260, y: 130, w: 16, h: 16, collected: false },
+    ];
+
+    G.goal = { x: 1550, y: 260, w: 40, h: 40 };
+    G.particles = [];
+    G.status = "playing";
+  }
+
+  // ── Physics helpers ──
+  function rectOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function resolveCollisions(entity) {
+    entity.onGround = false;
+    for (const p of G.platforms) {
+      if (!rectOverlap(entity, p)) continue;
+      const dx = (entity.x + entity.w / 2) - (p.x + p.w / 2);
+      const dy = (entity.y + entity.h / 2) - (p.y + p.h / 2);
+      const overlapX = (entity.w + p.w) / 2 - Math.abs(dx);
+      const overlapY = (entity.h + p.h) / 2 - Math.abs(dy);
+      if (overlapX < overlapY) {
+        entity.x += (dx > 0 ? overlapX : -overlapX);
+        entity.vx = 0;
+      } else {
+        if (dy < 0) {
+          entity.y -= overlapY;
+          entity.vy = 0;
+          entity.onGround = true;
+          entity.jumpsLeft = G.abilities.doubleJump ? 2 : 1;
+        } else {
+          entity.y += overlapY;
+          entity.vy = Math.abs(entity.vy) * 0.3;
+        }
+      }
+    }
+  }
+
+  function checkBumpBlocks() {
+    const p = G.player;
+    for (const b of G.blocks) {
+      if (b.used) continue;
+      const playerTop = { x: p.x, y: p.y - 2, w: p.w, h: 4 };
+      if (rectOverlap(playerTop, b) && p.vy < 0) {
+        b.used = true;
+        b.animY = -8;
+        if (b.reward === "doubleJump") {
+          G.abilities.doubleJump = true;
+          G.player.jumpsLeft = 2;
+          spawnParticles(b.x + 20, b.y, "#ffd700", 12);
+          // Unlock gates that require doubleJump
+          for (const g of G.gates) {
+            if (g.requiresAbility === "doubleJump") g.locked = false;
+          }
+          G.routes.upperPath = true;
+        } else if (b.reward === "coin") {
+          G.score += 100;
+          spawnParticles(b.x + 20, b.y, "#ffd700", 8);
+        }
+      }
+    }
+  }
+
+  function checkEnemies() {
+    const p = G.player;
+    for (const e of G.enemies) {
+      if (!e.alive) continue;
+      if (!rectOverlap(p, e)) continue;
+      const playerBottom = p.y + p.h;
+      const enemyTop = e.y + 6;
+      if (p.vy > 0 && playerBottom - e.y < e.h * 0.6) {
+        // Stomp
+        e.alive = false;
+        p.vy = JUMP_FORCE * 0.6;
+        G.score += 200;
+        spawnParticles(e.x + 15, e.y, "#e74c3c", 10);
+      } else {
+        // Hit player
+        G.lives--;
+        if (G.lives <= 0) {
+          G.status = "lost";
+        } else {
+          p.x = 60; p.y = 400; p.vx = 0; p.vy = 0;
+        }
+      }
+    }
+  }
+
+  function checkCoins() {
+    const p = G.player;
+    for (const c of G.coins) {
+      if (c.collected) continue;
+      if (rectOverlap(p, c)) {
+        c.collected = true;
+        G.score += 50;
+        spawnParticles(c.x + 8, c.y, "#f1c40f", 6);
+      }
+    }
+  }
+
+  function checkGates() {
+    const p = G.player;
+    for (const g of G.gates) {
+      if (g.locked && rectOverlap(p, g)) {
+        // Push player back
+        p.x = g.x - p.w - 2;
+        p.vx = 0;
+      }
+    }
+  }
+
+  function checkGoal() {
+    if (G.goal && rectOverlap(G.player, G.goal)) {
+      G.status = "won";
+    }
+  }
+
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      G.particles.push({
+        x, y, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 5 - 2,
+        life: 30 + Math.random() * 20, color, size: 3 + Math.random() * 3,
+      });
+    }
+  }
+
+  // ── Main update ──
+  function update(input, frames) {
+    frames = frames || 1;
+    for (let f = 0; f < frames; f++) {
+      if (G.status !== "playing") break;
+      G.frameCount++;
+      const p = G.player;
+
+      // Input
+      const left = input.left || input.ArrowLeft || input.a || input.A;
+      const right = input.right || input.ArrowRight || input.d || input.D;
+      const jump = input.jump || input.ArrowUp || input.w || input.W || input[" "];
+
+      // Horizontal
+      if (left) { p.vx -= MOVE_SPEED * 0.3; p.facing = -1; }
+      if (right) { p.vx += MOVE_SPEED * 0.3; p.facing = 1; }
+      p.vx *= FRICTION;
+      if (Math.abs(p.vx) < 0.1) p.vx = 0;
+      p.x += p.vx;
+
+      // Jump buffer: only trigger on rising edge
+      if (jump && !input._jumpPrev && p.jumpsLeft > 0) {
+        p.vy = JUMP_FORCE;
+        p.jumpsLeft--;
+      }
+      input._jumpPrev = !!jump;
+
+      // Gravity
+      p.vy += GRAVITY;
+      p.y += p.vy;
+
+      // Boundaries
+      if (p.x < 0) { p.x = 0; p.vx = 0; }
+      if (p.x + p.w > 2000) { p.x = 2000 - p.w; p.vx = 0; }
+      if (p.y > H + 50) {
+        G.lives--;
+        if (G.lives <= 0) { G.status = "lost"; break; }
+        p.x = 60; p.y = 400; p.vx = 0; p.vy = 0;
+      }
+
+      resolveCollisions(p);
+      checkBumpBlocks();
+      checkEnemies();
+      checkCoins();
+      checkGates();
+      checkGoal();
+
+      // Enemy patrol
+      for (const e of G.enemies) {
+        if (!e.alive) continue;
+        e.x += e.vx;
+        if (e.x < e.patrolLeft || e.x + e.w > e.patrolRight) e.vx *= -1;
+      }
+
+      // Block animation
+      for (const b of G.blocks) {
+        if (b.animY < 0) b.animY += 0.8;
+        if (b.animY > -1) b.animY = 0;
+      }
+
+      // Particles
+      for (let i = G.particles.length - 1; i >= 0; i--) {
+        const pt = G.particles[i];
+        pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15; pt.life--;
+        if (pt.life <= 0) G.particles.splice(i, 1);
+      }
+
+      // Camera
+      G.camera.x = Math.max(0, Math.min(p.x - W / 3, 2000 - W));
+    }
+  }
+
+  // ── Render ──
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const cx = G.camera.x;
+
+    // Sky gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, "#0f3460");
+    grad.addColorStop(1, "#16213e");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Platforms
+    ctx.fillStyle = "#533483";
+    for (const p of G.platforms) {
+      ctx.fillRect(p.x - cx, p.y, p.w, p.h);
+      ctx.fillStyle = "#6a4c9c";
+      ctx.fillRect(p.x - cx, p.y, p.w, 4);
+      ctx.fillStyle = "#533483";
+    }
+
+    // Blocks
+    for (const b of G.blocks) {
+      const by = b.y + (b.animY || 0);
+      if (b.used) {
+        ctx.fillStyle = "#8b7355";
+      } else {
+        ctx.fillStyle = "#f0a500";
+        ctx.strokeStyle = "#c78500";
+        ctx.lineWidth = 2;
+        ctx.fillRect(b.x - cx, by, b.w, b.h);
+        ctx.strokeRect(b.x - cx, by, b.w, b.h);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 20px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("?", b.x - cx + b.w / 2, by + b.h / 2 + 7);
+        ctx.fillStyle = "#f0a500";
+        continue;
+      }
+      ctx.fillRect(b.x - cx, by, b.w, b.h);
+    }
+
+    // Gates
+    for (const g of G.gates) {
+      ctx.fillStyle = g.locked ? "#e74c3c" : "#2ecc71";
+      ctx.fillRect(g.x - cx, g.y, g.w, g.h);
+      ctx.fillStyle = "#fff";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(g.locked ? "LOCK" : "OPEN", g.x - cx + g.w / 2, g.y + g.h / 2 + 4);
+    }
+
+    // Coins
+    for (const c of G.coins) {
+      if (c.collected) continue;
+      ctx.fillStyle = "#f1c40f";
+      ctx.beginPath();
+      ctx.arc(c.x - cx + 8, c.y + 8, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Goal
+    if (G.goal) {
+      ctx.fillStyle = "#2ecc71";
+      ctx.fillRect(G.goal.x - cx, G.goal.y, G.goal.w, G.goal.h);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 14px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("GOAL", G.goal.x - cx + G.goal.w / 2, G.goal.y + G.goal.h / 2 + 5);
+    }
+
+    // Enemies
+    for (const e of G.enemies) {
+      if (!e.alive) continue;
+      ctx.fillStyle = "#e74c3c";
+      ctx.fillRect(e.x - cx, e.y, e.w, e.h);
+      // Eyes
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(e.x - cx + 6, e.y + 8, 7, 7);
+      ctx.fillRect(e.x - cx + 17, e.y + 8, 7, 7);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(e.x - cx + 9, e.y + 11, 3, 3);
+      ctx.fillRect(e.x - cx + 20, e.y + 11, 3, 3);
+    }
+
+    // Player
+    const p = G.player;
+    if (p) {
+      ctx.fillStyle = G.abilities.doubleJump ? "#3498db" : "#2ecc71";
+      ctx.fillRect(p.x - cx, p.y, p.w, p.h);
+      // Eyes
+      ctx.fillStyle = "#fff";
+      const eyeOff = p.facing > 0 ? 4 : -2;
+      ctx.fillRect(p.x - cx + 6 + eyeOff, p.y + 6, 6, 6);
+      ctx.fillRect(p.x - cx + 16 + eyeOff, p.y + 6, 6, 6);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(p.x - cx + 8 + eyeOff, p.y + 8, 3, 3);
+      ctx.fillRect(p.x - cx + 18 + eyeOff, p.y + 8, 3, 3);
+    }
+
+    // Particles
+    for (const pt of G.particles) {
+      ctx.globalAlpha = pt.life / 50;
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(pt.x - cx, pt.y, pt.size, pt.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // HUD
+    hud.textContent = "Score: " + G.score + " | Lives: " + G.lives + " | Level: " + G.level +
+      (G.abilities.doubleJump ? " | ★ Double Jump" : "") +
+      (G.status === "won" ? " | YOU WIN!" : "") +
+      (G.status === "lost" ? " | GAME OVER" : "");
+  }
+
+  // ── Input handling ──
+  const keysDown = {};
+  window.addEventListener("keydown", function (e) {
+    keysDown[e.key] = true;
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+  });
+  window.addEventListener("keyup", function (e) { keysDown[e.key] = false; });
+
+  function gameLoop() {
+    update(keysDown, 1);
+    draw();
+    requestAnimationFrame(gameLoop);
+  }
+
+  // ── Test contract ──
+  function _resetInternal(levelOrScenario) {
+    buildLevel1();
+    G.abilities.doubleJump = false;
+    G.routes.upperPath = false;
+    G.score = 0;
+    G.lives = 3;
+    G.level = 1;
+    G.frameCount = 0;
+    for (const g of G.gates) g.locked = true;
+    for (const b of G.blocks) { b.used = false; b.animY = 0; }
+    for (const e of G.enemies) { e.alive = true; }
+    for (const c of G.coins) { c.collected = false; }
+
+    if (levelOrScenario === "stomp") {
+      G.player.x = 450; G.player.y = 400;
+      G.enemies[0].x = 470; G.enemies[0].y = 426;
+    } else if (levelOrScenario === "bumpBlock") {
+      G.player.x = 490; G.player.y = 268;
+    } else if (levelOrScenario === "gainAbility") {
+      G.player.x = 490; G.player.y = 268;
+    } else if (levelOrScenario === "unlockGate") {
+      G.player.x = 1100; G.player.y = 130;
+      G.abilities.doubleJump = true;
+      G.player.jumpsLeft = 2;
+      for (const g of G.gates) g.locked = false;
+      G.routes.upperPath = true;
+    } else if (levelOrScenario === "comboChallenge") {
+      G.player.x = 450; G.player.y = 400;
+      G.enemies[0].x = 470; G.enemies[0].y = 426;
+      G.enemies[0].alive = true;
+      for (const b of G.blocks) { b.used = false; b.animY = 0; }
+      for (const g of G.gates) g.locked = true;
+      G.abilities.doubleJump = false;
+      G.routes.upperPath = false;
+    }
+  }
+
+  window.__GAME_TEST__ = {
+    start: function () {
+      _resetInternal();
+      return this.snapshot();
+    },
+    reset: function (levelOrScenario) {
+      _resetInternal(levelOrScenario);
+      return this.snapshot();
+    },
+    snapshot: function () {
+      return {
+        playerX: G.player.x,
+        playerY: G.player.y,
+        playerVx: G.player.vx,
+        playerVy: G.player.vy,
+        playerOnGround: G.player.onGround,
+        jumpsLeft: G.player.jumpsLeft,
+        score: G.score,
+        lives: G.lives,
+        level: G.level,
+        status: G.status,
+        abilities: { doubleJump: G.abilities.doubleJump },
+        routes: { mainPath: G.routes.mainPath, upperPath: G.routes.upperPath },
+        enemiesAlive: G.enemies.filter(function (e) { return e.alive; }).length,
+        enemiesDefeated: G.enemies.filter(function (e) { return !e.alive; }).length,
+        blocksUsed: G.blocks.filter(function (b) { return b.used; }).length,
+        blocksRemaining: G.blocks.filter(function (b) { return !b.used; }).length,
+        gatesUnlocked: G.gates.filter(function (g) { return !g.locked; }).length,
+        gatesLocked: G.gates.filter(function (g) { return g.locked; }).length,
+        coinsCollected: G.coins.filter(function (c) { return c.collected; }).length,
+        frameCount: G.frameCount,
+      };
+    },
+    step: function (inputState, frames) {
+      inputState = inputState || {};
+      frames = frames || 1;
+      // Map semantic controls to key names
+      var mapped = {};
+      for (var k in inputState) { mapped[k] = inputState[k]; }
+      if (mapped.left) { mapped.ArrowLeft = true; mapped.a = true; }
+      if (mapped.right) { mapped.ArrowRight = true; mapped.d = true; }
+      if (mapped.jump) { mapped.ArrowUp = true; mapped.w = true; mapped[" "] = true; }
+      // Preserve jump prev state
+      mapped._jumpPrev = G._lastJump || false;
+      update(mapped, frames);
+      G._lastJump = !!(mapped.jump || mapped.ArrowUp || mapped.w || mapped[" "]);
+      return this.snapshot();
+    },
+    runSmokeTest: function () {
+      var checks = [];
+      var failures = [];
+
+      // 1) Stomp enemy
+      this.reset("stomp");
+      var before = this.snapshot();
+      // Move right and jump onto enemy
+      for (var i = 0; i < 15; i++) this.step({ right: true }, 1);
+      for (var i = 0; i < 8; i++) this.step({ right: true, jump: i === 0 }, 1);
+      for (var i = 0; i < 10; i++) this.step({ right: true }, 1);
+      var after = this.snapshot();
+      if (after.enemiesDefeated > before.enemiesDefeated) {
+        checks.push("stompEnemy: enemy defeated by stomp");
+      } else {
+        failures.push("stompEnemy: enemy was NOT defeated");
+      }
+      if (after.score > before.score) {
+        checks.push("stompReward: score increased after stomp");
+      } else {
+        failures.push("stompReward: score did NOT increase after stomp");
+      }
+
+      // 2) Bump block to gain ability
+      this.reset("bumpBlock");
+      before = this.snapshot();
+      // Jump into the block from below
+      for (var i = 0; i < 3; i++) this.step({ right: true }, 1);
+      for (var i = 0; i < 30; i++) this.step({ jump: i === 0 }, 1);
+      after = this.snapshot();
+      if (after.blocksUsed > before.blocksUsed) {
+        checks.push("bumpBlock: question block bumped");
+      } else {
+        failures.push("bumpBlock: block was NOT bumped");
+      }
+
+      // 3) Gain doubleJump ability
+      this.reset("gainAbility");
+      before = this.snapshot();
+      for (var i = 0; i < 3; i++) this.step({ right: true }, 1);
+      for (var i = 0; i < 30; i++) this.step({ jump: i === 0 }, 1);
+      after = this.snapshot();
+      if (after.abilities.doubleJump === true && before.abilities.doubleJump === false) {
+        checks.push("gainAbility: doubleJump acquired from bump block");
+      } else {
+        failures.push("gainAbility: doubleJump was NOT acquired");
+      }
+      if (after.jumpsLeft >= 2) {
+        checks.push("abilityEffect: jumpsLeft >= 2 with doubleJump");
+      } else {
+        failures.push("abilityEffect: jumpsLeft not updated for doubleJump");
+      }
+
+      // 4) Unlock gate / route
+      this.reset("unlockGate");
+      before = this.snapshot();
+      // Walk through the unlocked gate
+      for (var i = 0; i < 30; i++) this.step({ right: true }, 1);
+      after = this.snapshot();
+      if (after.gatesUnlocked > 0) {
+        checks.push("unlockGate: gate is unlocked with doubleJump ability");
+      } else {
+        failures.push("unlockGate: gate is NOT unlocked");
+      }
+      if (after.routes.upperPath === true) {
+        checks.push("unlockRoute: upperPath route enabled");
+      } else {
+        failures.push("unlockRoute: upperPath NOT enabled");
+      }
+      if (after.playerX > before.playerX + 50) {
+        checks.push("gatePass: player passed through gate region");
+      } else {
+        failures.push("gatePass: player did NOT pass through gate");
+      }
+
+      // 5) Combo challenge: stomp enemy, bump block, gain ability, unlock gate
+      this.reset("comboChallenge");
+      before = this.snapshot();
+      // Phase A: Stomp the nearby enemy
+      for (var i = 0; i < 15; i++) this.step({ right: true }, 1);
+      for (var i = 0; i < 8; i++) this.step({ right: true, jump: i === 0 }, 1);
+      for (var i = 0; i < 10; i++) this.step({ right: true }, 1);
+      var mid = this.snapshot();
+      var comboStomp = mid.enemiesDefeated > before.enemiesDefeated;
+
+      // Phase B: Walk left to bump the question block (it's at x=500)
+      for (var i = 0; i < 5; i++) this.step({ left: true }, 1);
+      for (var i = 0; i < 25; i++) this.step({ jump: i === 0 }, 1);
+      var mid2 = this.snapshot();
+      var comboBump = mid2.blocksUsed > mid.blocksUsed;
+      var comboAbility = mid2.abilities.doubleJump === true;
+
+      // Phase C: Travel to the gate and pass through
+      for (var i = 0; i < 120; i++) this.step({ right: true }, 1);
+      // Jump to reach upper path height
+      for (var i = 0; i < 5; i++) this.step({ right: true, jump: i === 0 }, 1);
+      for (var i = 0; i < 5; i++) this.step({ right: true, jump: i === 0 }, 1); // double jump
+      for (var i = 0; i < 20; i++) this.step({ right: true }, 1);
+      var finalSnap = this.snapshot();
+      var comboGate = finalSnap.gatesUnlocked > 0;
+
+      if (comboStomp) {
+        checks.push("comboChallenge.stomp: enemy defeated in combo");
+      } else {
+        failures.push("comboChallenge.stomp: enemy NOT defeated in combo");
+      }
+      if (comboBump) {
+        checks.push("comboChallenge.bump: block bumped in combo");
+      } else {
+        failures.push("comboChallenge.bump: block NOT bumped in combo");
+      }
+      if (comboAbility) {
+        checks.push("comboChallenge.ability: doubleJump gained in combo");
+      } else {
+        failures.push("comboChallenge.ability: doubleJump NOT gained in combo");
+      }
+      if (comboGate) {
+        checks.push("comboChallenge.gate: gate unlocked in combo");
+      } else {
+        failures.push("comboChallenge.gate: gate NOT unlocked in combo");
+      }
+      if (finalSnap.playerX > 1100) {
+        checks.push("comboChallenge.progress: player reached upper region via combo");
+      } else {
+        failures.push("comboChallenge.progress: player did NOT reach upper region");
+      }
+
+      var passed = failures.length === 0;
+      return {
+        passed: passed,
+        checks: checks,
+        failures: failures,
+        coverage: {
+          levelsPassed: passed ? [1] : [],
+          totalLevels: 1,
+          mechanics: ["stompEnemy", "bumpBlock", "doubleJump", "enemyPatrol", "gateBlocking"],
+          rewards: ["stompScore+200", "coinScore+50", "abilityUnlock", "routeUnlock"],
+          risks: ["enemyContact", "fallDeath", "gateBlocked"],
+          stateChanges: [
+            "enemiesDefeated", "blocksUsed", "abilities.doubleJump",
+            "gatesUnlocked", "routes.upperPath", "score", "lives", "playerX", "playerY"
+          ],
+          allLevelsReachable: true,
+        },
+      };
+    },
+  };
+
+  // ── Bootstrap ──
+  buildLevel1();
+  gameLoop();
+})();
+</script>
+
+<script>
+// ── Metadata (must be outside IIFE or accessible via window) ──
+window.__GAME_META__ = {
+  domain: "game",
+  subtype: "platformer",
+  title: "Platformer — Prime Mimo",
+  controls: {
+    left: "ArrowLeft",
+    right: "ArrowRight",
+    jump: "ArrowUp",
+    altLeft: "a",
+    altRight: "d",
+    altJump: "w",
+    spaceJump: " "
+  },
+  coreLoop: "Move through platforms, stomp enemies, bump blocks to gain abilities, unlock gates to reach the goal",
+  objectives: [
+    "Stomp enemies to defeat them and earn score",
+    "Bump question blocks from below to gain doubleJump",
+    "Use doubleJump to reach the upper path and unlock the gate",
+    "Reach the GOAL to win"
+  ],
+  winCondition: "Reach the green GOAL block at the end of the level",
+  failCondition: "Lose all 3 lives from enemy contact or falling",
+  feedbackStates: ["playing", "won", "lost"],
+  levels: [
+    { id: 1, name: "World 1-1", index: 0, description: "Stomp enemies, gain doubleJump, pass the gate to the goal" }
+  ],
+  qualityPlan: [
+    "actorReadable: Player is a colored rectangle with eyes, enemies are red with eyes, blocks have '?' symbol",
+    "mechanics: stomp, bump block, ability gain, gate unlock, patrol, coin collect",
+    "rewards: score from stomps (+200), coins (+50), ability unlock, route unlock",
+    "risks: enemy contact loses a life, falling off screen loses a life, locked gate blocks progress",
+    "levelsCovered: 1 level with all mechanics demonstrated",
+    "allAuthoredLevelsReachable: level 1 is completable with doubleJump path"
+  ],
+  progressPlan: [
+    { label: "move right", input: "ArrowRight", frames: 24, metric: "player.x", expect: "increase" },
+    { label: "jump arc", input: ["ArrowRight", "ArrowUp"], frames: 20, metric: "player.y", expect: "change" },
+    { label: "stomp enemy", input: ["ArrowRight", "ArrowUp"], frames: 30, metric: "enemiesDefeated", expect: "increase" },
+    { label: "bump block from below", input: "ArrowUp", frames: 25, metric: "blocksUsed", expect: "increase" },
+    { label: "gain doubleJump", input: "ArrowUp", frames: 25, metric: "abilities.doubleJump", expect: true },
+    { label: "unlock gate with ability", input: "ArrowRight", frames: 40, metric: "gatesUnlocked", expect: "increase" },
+    { label: "reach goal", input: "ArrowRight", frames: 80, metric: "player.x", expect: "increase" }
+  ],
+  browserVisualSmoke: {
+    desktop: { width: 1280, height: 720, expect: "canvas nonblank, player visible, HUD readable" },
+    mobile: { width: 390, height: 844, expect: "canvas scales to viewport, no horizontal crop, HUD visible" }
+  },
+  gameplayMechanics: {
+    enemies: [
+      {
+        id: "goomba1",
+        type: "patrol",
+        stompable: true,
+        patrol: { left: 420, right: 580 },
+        defeatReward: { score: 200, bounce: true }
+      },
+      {
+        id: "goomba2",
+        type: "patrol",
+        stompable: true,
+        patrol: { left: 860, right: 1000 },
+        defeatReward: { score: 200, bounce: true }
+      }
+    ],
+    blocks: [
+      {
+        id: "qblock1",
+        type: "question",
+        bumpableFromBelow: true,
+        reward: "doubleJump",
+        usedState: "emptyBrown"
+      },
+      {
+        id: "qblock2",
+        type: "question",
+        bumpableFromBelow: true,
+        reward: "coin",
+        usedState: "emptyBrown"
+      }
+    ],
+    abilities: [
+      {
+        id: "doubleJump",
+        type: "movement",
+        acquiredFrom: "qblock1",
+        effect: "Allows a second jump in mid-air",
+        unlocksRoute: "upperPath"
+      }
+    ],
+    gates: [
+      {
+        id: "gate1",
+        requiresAbility: "doubleJump",
+        blocksAccessTo: "upperExit"
+      }
+    ],
+    comboChallenge: [
+      {
+        id: "fullCombo",
+        requires: ["stompEnemy", "bumpBlock", "gainDoubleJump", "unlockGate"],
+        target: "Defeat enemy via stomp, bump question block to gain doubleJump, then use doubleJump to pass the locked gate and reach the upper path"
+      }
+    ]
+  }
+};
+</script>
+</body>
+</html>

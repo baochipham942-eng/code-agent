@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platformer - Mimo Regression Test</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #1a1a2e; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+canvas { display: block; max-width: 100vw; max-height: 100vh; width: 100%; height: auto; aspect-ratio: 800/600; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<canvas id="gc"></canvas>
+<script>
+(function() {
+'use strict';
+
+const W = 800, H = 600;
+const TILE = 40;
+const GRAVITY = 0.6;
+const FRICTION = 0.8;
+const canvas = document.getElementById('gc');
+const ctx = canvas.getContext('2d');
+canvas.width = W;
+canvas.height = H;
+
+// ─── Level Data ───
+// Legend: 0=air, 1=ground, 2=question block, 3=platform, 4=wall, 5=goal, 6=gate wall, 7=high platform (needs doubleJump)
+const LEVELS = [
+  {
+    id: 'level1',
+    name: 'Grassland Intro',
+    width: 60,
+    height: 15,
+    playerStart: { x: 2 * TILE, y: 12 * TILE },
+    enemyPositions: [
+      { x: 12 * TILE, y: 13 * TILE, patrolLeft: 10 * TILE, patrolRight: 16 * TILE },
+      { x: 30 * TILE, y: 13 * TILE, patrolLeft: 28 * TILE, patrolRight: 34 * TILE }
+    ],
+    questionBlocks: [
+      { x: 8 * TILE, y: 9 * TILE, reward: 'coin' },
+      { x: 20 * TILE, y: 9 * TILE, reward: 'doubleJump' },
+      { x: 44 * TILE, y: 7 * TILE, reward: 'coin' }
+    ],
+    // gates block access to the high goal area
+    gates: [
+      { x: 50 * TILE, y: 5 * TILE, w: TILE, h: 10 * TILE, requiresAbility: 'doubleJump', blocksAccessTo: 'highGoalArea' }
+    ],
+    tiles: null // generated below
+  }
+];
+
+function generateTiles(level) {
+  const map = [];
+  for (let y = 0; y < level.height; y++) {
+    map[y] = [];
+    for (let x = 0; x < level.width; x++) {
+      // ground floor
+      if (y === level.height - 1 || y === level.height - 2) {
+        map[y][x] = 1;
+      }
+      // some platforms
+      else if (y === 10 && x >= 6 && x <= 10) {
+        map[y][x] = 3;
+      }
+      else if (y === 10 && x >= 18 && x <= 22) {
+        map[y][x] = 3;
+      }
+      else if (y === 8 && x >= 42 && x <= 48) {
+        map[y][x] = 3;
+      }
+      // high platform (needs doubleJump)
+      else if (y === 4 && x >= 52 && x <= 58) {
+        map[y][x] = 7;
+      }
+      // wall sections
+      else if (y >= 8 && y <= 13 && x === 38) {
+        map[y][x] = 4;
+      }
+      // gate wall at x=50
+      else if (y >= 5 && y <= 13 && x === 50) {
+        map[y][x] = 6;
+      }
+      // goal
+      else if (y === 3 && x >= 55 && x <= 56) {
+        map[y][x] = 5;
+      }
+      else {
+        map[y][x] = 0;
+      }
+    }
+  }
+  return map;
+}
+
+LEVELS[0].tiles = generateTiles(LEVELS[0]);
+
+// ─── Game State ───
+let state = null;
+
+function createLevelState(levelDef) {
+  const p = levelDef.playerStart;
+  return {
+    status: 'playing',
+    level: levelDef.id,
+    levelIndex: 0,
+    player: {
+      x: p.x, y: p.y, w: 24, h: 32,
+      vx: 0, vy: 0,
+      grounded: false,
+      facing: 1,
+      abilities: { doubleJump: false },
+      jumpsUsed: 0,
+      maxJumps: 1,
+      health: 3,
+      invulnTimer: 0,
+      coins: 0
+    },
+    enemies: levelDef.enemyPositions.map((ep, i) => ({
+      id: 'enemy_' + i,
+      x: ep.x, y: ep.y, w: 28, h: 28,
+      vx: 1.2, vy: 0,
+      patrolLeft: ep.patrolLeft,
+      patrolRight: ep.patrolRight,
+      alive: true,
+      grounded: false
+    })),
+    questionBlocks: levelDef.questionBlocks.map((qb, i) => ({
+      id: 'qblock_' + i,
+      x: qb.x, y: qb.y, w: TILE, h: TILE,
+      reward: qb.reward,
+      used: false,
+      bumpAnim: 0
+    })),
+    gates: levelDef.gates.map((g, i) => ({
+      id: 'gate_' + i,
+      x: g.x, y: g.y, w: g.w, h: g.h,
+      requiresAbility: g.requiresAbility,
+      blocksAccessTo: g.blocksAccessTo,
+      unlocked: false
+    })),
+    tiles: JSON.parse(JSON.stringify(levelDef.tiles)),
+    levelDef: levelDef,
+    camera: { x: 0, y: 0 },
+    enemiesDefeated: 0,
+    blocksUsed: 0,
+    gatesUnlocked: 0,
+    routesUnlocked: [],
+    score: 0,
+    time: 0
+  };
+}
+
+function initState() {
+  state = createLevelState(LEVELS[0]);
+  // check gate initial unlock
+  checkGateUnlock();
+}
+
+function checkGateUnlock() {
+  for (const gate of state.gates) {
+    if (!gate.unlocked && state.player.abilities[gate.requiresAbility]) {
+      gate.unlocked = true;
+      state.gatesUnlocked++;
+      if (!state.routesUnlocked.includes(gate.blocksAccessTo)) {
+        state.routesUnlocked.push(gate.blocksAccessTo);
+      }
+    }
+  }
+}
+
+// ─── Input ───
+const keys = {};
+const KEY_MAP = {
+  'ArrowLeft': 'left', 'ArrowRight': 'right', 'ArrowUp': 'up',
+  'KeyA': 'left', 'KeyD': 'right', 'KeyW': 'up',
+  'Space': 'jump', 'ArrowDown': 'down'
+};
+
+// ─── Physics & Collision ───
+function getTile(tx, ty) {
+  if (ty < 0 || ty >= state.levelDef.height || tx < 0 || tx >= state.levelDef.width) return 1;
+  return state.tiles[ty][tx];
+}
+
+function isSolid(tileType) {
+  return tileType === 1 || tileType === 4 || tileType === 6 || tileType === 3 || tileType === 7;
+}
+
+function isGateTile(tileType) {
+  return tileType === 6;
+}
+
+function rectOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function moveEntity(ent, levelTiles, levelDef, checkGates) {
+  // Horizontal
+  ent.x += ent.vx;
+  const left = Math.floor(ent.x / TILE);
+  const right = Math.floor((ent.x + ent.w - 1) / TILE);
+  const top = Math.floor(ent.y / TILE);
+  const bot = Math.floor((ent.y + ent.h - 1) / TILE);
+
+  for (let ty = top; ty <= bot; ty++) {
+    for (let tx = left; tx <= right; tx++) {
+      const t = getTile(tx, ty);
+      const solid = isSolid(t);
+      // gate check: if gate is unlocked, gate tiles become passable
+      const isBlockedGate = isGateTile(t) && checkGates &&
+        state.gates.some(g => g.x === tx * TILE && g.y === ty * TILE && !g.unlocked);
+      if (solid || isBlockedGate) {
+        if (ent.vx > 0) {
+          ent.x = tx * TILE - ent.w;
+        } else if (ent.vx < 0) {
+          ent.x = (tx + 1) * TILE;
+        }
+        ent.vx = 0;
+      }
+    }
+  }
+
+  // Vertical
+  ent.y += ent.vy;
+  ent.grounded = false;
+  const left2 = Math.floor(ent.x / TILE);
+  const right2 = Math.floor((ent.x + ent.w - 1) / TILE);
+  const top2 = Math.floor(ent.y / TILE);
+  const bot2 = Math.floor((ent.y + ent.h - 1) / TILE);
+
+  for (let ty = top2; ty <= bot2; ty++) {
+    for (let tx = left2; tx <= right2; tx++) {
+      const t = getTile(tx, ty);
+      const solid = isSolid(t);
+      const isBlockedGate = isGateTile(t) && checkGates &&
+        state.gates.some(g => g.x === tx * TILE && g.y === ty * TILE && !g.unlocked);
+      if (solid || isBlockedGate) {
+        if (ent.vy > 0) {
+          ent.y = ty * TILE - ent.h;
+          ent.vy = 0;
+          ent.grounded = true;
+        } else if (ent.vy < 0) {
+          ent.y = (ty + 1) * TILE;
+          ent.vy = 0;
+          // hit ceiling - check question block
+          if (ent === state.player) {
+            checkQuestionBlockHit(tx, ty);
+          }
+        }
+      }
+    }
+  }
+}
+
+function checkQuestionBlockHit(tx, ty) {
+  for (const qb of state.questionBlocks) {
+    if (Math.floor(qb.x / TILE) === tx && Math.floor(qb.y / TILE) === ty && !qb.used) {
+      qb.used = true;
+      qb.bumpAnim = 10;
+      state.blocksUsed++;
+      if (qb.reward === 'doubleJump') {
+        state.player.abilities.doubleJump = true;
+        state.player.maxJumps = 2;
+        checkGateUnlock();
+      } else if (qb.reward === 'coin') {
+        state.player.coins++;
+        state.score += 100;
+      }
+    }
+  }
+}
+
+// ─── Update ───
+function updatePlayer(input) {
+  const p = state.player;
+  if (state.status !== 'playing') return;
+
+  const moveLeft = input.left || false;
+  const moveRight = input.right || false;
+  const jumpPress = input.jump || false;
+
+  // Horizontal
+  if (moveLeft) { p.vx -= 1.5; p.facing = -1; }
+  if (moveRight) { p.vx += 1.5; p.facing = 1; }
+  p.vx *= FRICTION;
+  if (Math.abs(p.vx) < 0.1) p.vx = 0;
+  p.vx = Math.max(-6, Math.min(6, p.vx));
+
+  // Jump
+  if (jumpPress && p.jumpsUsed < p.maxJumps) {
+    p.vy = -12;
+    p.jumpsUsed++;
+    p.grounded = false;
+  }
+  if (!jumpPress && p.vy < -4) {
+    p.vy *= 0.85; // variable jump height
+  }
+
+  // Gravity
+  p.vy += GRAVITY;
+  p.vy = Math.min(p.vy, 15);
+
+  // Reset jumps on ground
+  if (p.grounded) {
+    p.jumpsUsed = 0;
+  }
+
+  // Invulnerability
+  if (p.invulnTimer > 0) p.invulnTimer--;
+
+  // Move with tile collision (player checks gates)
+  moveEntity(p, state.tiles, state.levelDef, true);
+
+  // World bounds
+  if (p.x < 0) p.x = 0;
+  if (p.x + p.w > state.levelDef.width * TILE) p.x = state.levelDef.width * TILE - p.w;
+  if (p.y > state.levelDef.height * TILE) {
+    // fell off
+    p.health = 0;
+    state.status = 'lost';
+  }
+
+  // Check goal
+  const goalTile = getTile(Math.floor((p.x + p.w/2) / TILE), Math.floor((p.y + p.h/2) / TILE));
+  if (goalTile === 5) {
+    state.status = 'won';
+    state.score += 1000;
+  }
+}
+
+function updateEnemies() {
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+
+    // patrol movement
+    e.x += e.vx;
+    if (e.x <= e.patrolLeft) { e.x = e.patrolLeft; e.vx = Math.abs(e.vx); }
+    if (e.x + e.w >= e.patrolRight) { e.x = e.patrolRight - e.w; e.vx = -Math.abs(e.vx); }
+
+    e.vy += GRAVITY;
+    e.vy = Math.min(e.vy, 12);
+    moveEntity(e, state.tiles, state.levelDef, false);
+  }
+}
+
+function checkEnemyCollisions() {
+  const p = state.player;
+  if (p.invulnTimer > 0) return;
+
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    if (!rectOverlap(p, e)) continue;
+
+    // Check if stomping (player falling, feet above enemy center)
+    const pFeet = p.y + p.h;
+    const eCenter = e.y + e.h / 2;
+    if (p.vy > 0 && pFeet - eCenter < 10) {
+      // Stomp!
+      e.alive = false;
+      state.enemiesDefeated++;
+      state.score += 200;
+      p.vy = -10; // bounce
+    } else {
+      // Take damage
+      p.health--;
+      p.invulnTimer = 60;
+      p.vy = -8;
+      p.vx = (p.x < e.x) ? -4 : 4;
+      if (p.health <= 0) {
+        state.status = 'lost';
+      }
+    }
+  }
+}
+
+function updateAnimations() {
+  for (const qb of state.questionBlocks) {
+    if (qb.bumpAnim > 0) qb.bumpAnim--;
+  }
+}
+
+function update(input) {
+  if (state.status !== 'playing') return;
+  state.time++;
+  updatePlayer(input);
+  updateEnemies();
+  checkEnemyCollisions();
+  updateAnimations();
+}
+
+// ─── Rendering ───
+const COLORS = {
+  sky: '#5c94fc',
+  ground: '#8b5e3c',
+  groundTop: '#6abf4b',
+  platform: '#a08050',
+  questionBlock: '#f0c030',
+  questionBlockUsed: '#806020',
+  wall: '#606060',
+  gate: '#c04040',
+  gateUnlocked: '#40c040',
+  highPlatform: '#7060a0',
+  goal: '#ffdd00',
+  player: '#3090ff',
+  playerEye: '#ffffff',
+  enemy: '#e04040',
+  enemyEye: '#000000'
+};
+
+function draw() {
+  // Camera follow player
+  const camX = Math.max(0, Math.min(state.player.x - W / 3, state.levelDef.width * TILE - W));
+  const camY = Math.max(0, Math.min(state.player.y - H / 2, state.levelDef.height * TILE - H));
+  state.camera.x = camX;
+  state.camera.y = camY;
+
+  ctx.save();
+  ctx.translate(-camX, -camY);
+
+  // Sky
+  ctx.fillStyle = COLORS.sky;
+  ctx.fillRect(camX, camY, W, H);
+
+  // Tiles
+  for (let y = 0; y < state.levelDef.height; y++) {
+    for (let x = 0; x < state.levelDef.width; x++) {
+      const t = state.tiles[y][x];
+      const px = x * TILE, py = y * TILE;
+      if (px + TILE < camX || px > camX + W || py + TILE < camY || py > camY + H) continue;
+
+      switch (t) {
+        case 1:
+          ctx.fillStyle = (y === state.levelDef.height - 2) ? COLORS.groundTop : COLORS.ground;
+          ctx.fillRect(px, py, TILE, TILE);
+          break;
+        case 3:
+          ctx.fillStyle = COLORS.platform;
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#b09060';
+          ctx.fillRect(px, py, TILE, 4);
+          break;
+        case 4:
+          ctx.fillStyle = COLORS.wall;
+          ctx.fillRect(px, py, TILE, TILE);
+          break;
+        case 5:
+          ctx.fillStyle = COLORS.goal;
+          ctx.fillRect(px + 8, py + 4, TILE - 16, TILE - 4);
+          ctx.fillStyle = '#ffaa00';
+          ctx.font = '20px sans-serif';
+          ctx.fillText('★', px + 10, py + 30);
+          break;
+        case 6: {
+          const gateObj = state.gates.find(g => g.x === px && g.y === py);
+          ctx.fillStyle = (gateObj && gateObj.unlocked) ? COLORS.gateUnlocked : COLORS.gate;
+          ctx.fillRect(px, py, TILE, TILE);
+          if (gateObj && !gateObj.unlocked) {
+            ctx.fillStyle = '#800000';
+            ctx.fillRect(px + 14, py + 10, 12, 20);
+          }
+          break;
+        }
+        case 7:
+          ctx.fillStyle = COLORS.highPlatform;
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#8070b0';
+          ctx.fillRect(px, py, TILE, 4);
+          break;
+      }
+    }
+  }
+
+  // Question blocks
+  for (const qb of state.questionBlocks) {
+    const bumpOff = qb.bumpAnim > 5 ? -6 : (qb.bumpAnim > 0 ? -3 : 0);
+    ctx.fillStyle = qb.used ? COLORS.questionBlockUsed : COLORS.questionBlock;
+    ctx.fillRect(qb.x, qb.y + bumpOff, TILE, TILE);
+    ctx.fillStyle = qb.used ? '#504010' : '#805000';
+    ctx.fillRect(qb.x + 4, qb.y + bumpOff + 4, TILE - 8, TILE - 8);
+    if (!qb.used) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('?', qb.x + 12, qb.y + bumpOff + 28);
+    }
+  }
+
+  // Enemies
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    ctx.fillStyle = COLORS.enemy;
+    ctx.fillRect(e.x, e.y, e.w, e.h);
+    ctx.fillStyle = COLORS.enemyEye;
+    const ex = e.vx > 0 ? e.x + 16 : e.x + 6;
+    ctx.fillRect(ex, e.y + 6, 6, 6);
+    ctx.fillRect(ex + 8, e.y + 6, 6, 6);
+    // feet
+    ctx.fillStyle = '#a02020';
+    ctx.fillRect(e.x + 2, e.y + e.h - 4, 10, 4);
+    ctx.fillRect(e.x + e.w - 12, e.y + e.h - 4, 10, 4);
+  }
+
+  // Player
+  const p = state.player;
+  if (p.invulnTimer <= 0 || p.invulnTimer % 4 < 2) {
+    ctx.fillStyle = COLORS.player;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    // face
+    ctx.fillStyle = COLORS.playerEye;
+    const eyeX = p.facing > 0 ? p.x + 14 : p.x + 4;
+    ctx.fillRect(eyeX, p.y + 6, 5, 5);
+    // body line
+    ctx.fillStyle = '#2070cc';
+    ctx.fillRect(p.x + 4, p.y + 18, p.w - 8, 2);
+  }
+
+  ctx.restore();
+
+  // HUD
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, 36);
+  ctx.fillStyle = '#fff';
+  ctx.font = '16px monospace';
+  ctx.fillText('HP: ' + p.health + '  Coins: ' + p.coins + '  Score: ' + state.score, 10, 24);
+  ctx.fillText('Defeated: ' + state.enemiesDefeated + '  Blocks: ' + state.blocksUsed, 340, 24);
+  if (p.abilities.doubleJump) {
+    ctx.fillStyle = '#40ff40';
+    ctx.fillText('⬆⬆ DoubleJump', 620, 24);
+  }
+
+  // Status overlay
+  if (state.status === 'won') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#40ff40';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('YOU WIN!', W/2 - 120, H/2);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Score: ' + state.score, W/2 - 60, H/2 + 40);
+  } else if (state.status === 'lost') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ff4040';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('GAME OVER', W/2 - 140, H/2);
+  }
+}
+
+// ─── Input handling ───
+const activeKeys = {};
+window.addEventListener('keydown', e => { activeKeys[e.code] = true; });
+window.addEventListener('keyup', e => { activeKeys[e.code] = false; });
+
+function readInput() {
+  return {
+    left: activeKeys['ArrowLeft'] || activeKeys['KeyA'] || false,
+    right: activeKeys['ArrowRight'] || activeKeys['KeyD'] || false,
+    jump: activeKeys['Space'] || activeKeys['ArrowUp'] || activeKeys['KeyW'] || false,
+    down: activeKeys['ArrowDown'] || activeKeys['KeyS'] || false
+  };
+}
+
+// ─── Game Loop ───
+function gameLoop() {
+  update(readInput());
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── Start ───
+initState();
+gameLoop();
+
+// ─── Test Contract ───
+window.__GAME_META__ = {
+  title: 'Platformer Mimo Regression',
+  domain: 'game',
+  subtype: 'platformer',
+  controls: {
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    jump: 'Space',
+    up: 'ArrowUp',
+    down: 'ArrowDown'
+  },
+  coreLoop: 'Move through level, stomp enemies, hit blocks to gain abilities, unlock gates, reach goal',
+  objectives: ['Defeat enemies by stomping', 'Hit question blocks for powerups', 'Unlock gate with doubleJump ability', 'Reach the goal star'],
+  winCondition: 'Reach goal tile (★)',
+  failCondition: 'Health reaches 0 or fall off map',
+  feedbackStates: ['playing', 'won', 'lost'],
+  actorCapabilities: ['move', 'jump', 'doubleJump', 'stomp', 'bumpBlock'],
+  levels: [
+    { id: 'level1', name: 'Grassland Intro', index: 0 }
+  ],
+  qualityPlan: {
+    actorReadable: true,
+    mechanics: true,
+    rewards: true,
+    risks: true,
+    levelsCovered: true,
+    allAuthoredLevelsReachable: true
+  },
+  progressPlan: [
+    { label: 'move right', input: 'ArrowRight', frames: 24, metric: 'player.x', expect: 'increase' },
+    { label: 'jump arc', input: ['ArrowRight', 'Space'], frames: 20, metric: 'player.y', expect: 'change' },
+    { label: 'approach enemy', input: 'ArrowRight', frames: 60, metric: 'player.x', expect: 'increase' },
+    { label: 'stomp enemy', input: ['ArrowRight', 'Space'], frames: 30, metric: 'enemiesDefeated', expect: 'increase' },
+    { label: 'reach question block', input: 'ArrowRight', frames: 120, metric: 'player.x', expect: 'increase' },
+    { label: 'bump block from below', input: ['Space'], frames: 30, metric: 'blocksUsed', expect: 'increase' },
+    { label: 'gain doubleJump', input: ['ArrowRight', 'Space'], frames: 40, metric: 'abilities.doubleJump', expect: 'true' },
+    { label: 'approach gate', input: 'ArrowRight', frames: 120, metric: 'player.x', expect: 'increase' },
+    { label: 'gate unlocks', input: 'ArrowRight', frames: 10, metric: 'gatesUnlocked', expect: 'increase' },
+    { label: 'jump over gate', input: ['ArrowRight', 'Space'], frames: 30, metric: 'player.x', expect: 'increase' },
+    { label: 'use doubleJump to reach high platform', input: ['ArrowRight', 'Space', 'Space'], frames: 40, metric: 'player.y', expect: 'decrease' },
+    { label: 'reach goal', input: 'ArrowRight', frames: 60, metric: 'score', expect: 'increase' }
+  ],
+  browserVisualSmoke: {
+    desktopViewport: { width: 800, height: 600 },
+    mobileViewport: { width: 390, height: 844 },
+    canvasNonblank: true,
+    actorVisible: true,
+    hudVisible: true,
+    noCrop: true,
+    noOverlap: true
+  },
+  gameplayMechanics: {
+    enemies: [
+      { id: 'enemy_0', type: 'walker', stompable: true, patrol: { left: 400, right: 640 }, defeatReward: { score: 200 } },
+      { id: 'enemy_1', type: 'walker', stompable: true, patrol: { left: 1120, right: 1360 }, defeatReward: { score: 200 } }
+    ],
+    blocks: [
+      { id: 'qblock_0', type: 'question', bumpableFromBelow: true, reward: 'coin', usedState: 'used' },
+      { id: 'qblock_1', type: 'question', bumpableFromBelow: true, reward: 'doubleJump', usedState: 'used' },
+      { id: 'qblock_2', type: 'question', bumpableFromBelow: true, reward: 'coin', usedState: 'used' }
+    ],
+    abilities: [
+      { id: 'doubleJump', type: 'movement', acquiredFrom: 'qblock_1', effect: 'allows second jump in air', unlocksRoute: 'highGoalArea' }
+    ],
+    gates: [
+      { id: 'gate_0', requiresAbility: 'doubleJump', blocksAccessTo: 'highGoalArea' }
+    ],
+    comboChallenge: [
+      { id: 'combo_full_run', requires: ['stompEnemy', 'bumpBlock', 'gainAbility', 'unlockGate', 'doubleJumpReachHighPlatform', 'reachGoal'], target: 'complete the level by combining all mechanics in sequence' }
+    ]
+  }
+};
+
+window.__GAME_TEST__ = {
+  start() {
+    initState();
+    return this.snapshot();
+  },
+
+  reset(levelOrScenario) {
+    initState();
+
+    if (levelOrScenario === 'stomp') {
+      // Position player above enemy_0 for stomp
+      state.player.x = 12 * TILE;
+      state.player.y = 10 * TILE;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    } else if (levelOrScenario === 'bumpBlock') {
+      // Position player below qblock_1 (the doubleJump one at y=9*TILE)
+      state.player.x = 20 * TILE;
+      state.player.y = 12 * TILE;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    } else if (levelOrScenario === 'gainAbility') {
+      // Position near qblock_1 to bump it
+      state.player.x = 20 * TILE;
+      state.player.y = 12 * TILE;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    } else if (levelOrScenario === 'unlockGate') {
+      // Give doubleJump and position near gate
+      state.player.abilities.doubleJump = true;
+      state.player.maxJumps = 2;
+      state.player.x = 48 * TILE;
+      state.player.y = 12 * TILE;
+      checkGateUnlock();
+    } else if (levelOrScenario === 'comboChallenge') {
+      // Position near first enemy for full combo run
+      state.player.x = 10 * TILE;
+      state.player.y = 12 * TILE;
+      state.player.vx = 0;
+      state.player.vy = 0;
+    }
+
+    return this.snapshot();
+  },
+
+  snapshot() {
+    const p = state.player;
+    return {
+      status: state.status,
+      level: state.level,
+      time: state.time,
+      player: {
+        x: p.x, y: p.y, vx: p.vx, vy: p.vy,
+        grounded: p.grounded,
+        health: p.health,
+        coins: p.coins,
+        abilities: { doubleJump: p.abilities.doubleJump },
+        maxJumps: p.maxJumps
+      },
+      enemiesDefeated: state.enemiesDefeated,
+      blocksUsed: state.blocksUsed,
+      gatesUnlocked: state.gatesUnlocked,
+      routesUnlocked: [...state.routesUnlocked],
+      score: state.score,
+      enemyAlive: state.enemies.map(e => e.alive),
+      blockUsed: state.questionBlocks.map(b => b.used),
+      gateUnlocked: state.gates.map(g => g.unlocked)
+    };
+  },
+
+  step(inputState = {}, frames = 1) {
+    for (let i = 0; i < frames; i++) {
+      update(inputState);
+    }
+    return this.snapshot();
+  },
+
+  runSmokeTest() {
+    const checks = [];
+    const failures = [];
+
+    // === Test 1: Move right ===
+    this.reset();
+    const s0 = this.snapshot();
+    const s1 = this.step({ right: true }, 24);
+    if (s1.player.x > s0.player.x) {
+      checks.push('move_right: player.x increased');
+    } else {
+      failures.push('move_right: player.x did not increase');
+    }
+
+    // === Test 2: Jump ===
+    this.reset();
+    const s2 = this.snapshot();
+    const s3 = this.step({ jump: true }, 1);
+    if (s3.player.vy < s2.player.vy || s3.player.y < s2.player.y) {
+      checks.push('jump: player.y changed / vy negative');
+    } else {
+      failures.push('jump: no vertical change detected');
+    }
+
+    // === Test 3: Stomp enemy ===
+    this.reset('stomp');
+    // Move player down onto enemy by applying gravity + right movement
+    const sBeforeStomp = this.snapshot();
+    // Apply steps: right + jump to land on enemy
+    let sStomp;
+    for (let f = 0; f < 60; f++) {
+      sStomp = this.step({ right: true }, 1);
+      if (sStomp.enemiesDefeated > sBeforeStomp.enemiesDefeated) break;
+    }
+    if (sStomp && sStomp.enemiesDefeated > sBeforeStomp.enemiesDefeated) {
+      checks.push('stomp_enemy: enemiesDefeated increased (' + sBeforeStomp.enemiesDefeated + ' -> ' + sStomp.enemiesDefeated + ')');
+    } else {
+      failures.push('stomp_enemy: enemiesDefeated did not increase');
+    }
+
+    // === Test 4: Bump question block ===
+    this.reset('bumpBlock');
+    const sBeforeBump = this.snapshot();
+    // Jump up to hit the block at y=9*TILE from below (block at x=20*TILE, y=9*TILE)
+    let sBump;
+    for (let f = 0; f < 60; f++) {
+      sBump = this.step({ jump: true }, 1);
+      if (sBump.blocksUsed > sBeforeBump.blocksUsed) break;
+    }
+    if (sBump && sBump.blocksUsed > sBeforeBump.blocksUsed) {
+      checks.push('bump_block: blocksUsed increased (' + sBeforeBump.blocksUsed + ' -> ' + sBump.blocksUsed + ')');
+    } else {
+      failures.push('bump_block: blocksUsed did not increase');
+    }
+
+    // === Test 5: Gain doubleJump ability ===
+    this.reset('gainAbility');
+    const sBeforeAbility = this.snapshot();
+    let sAbility;
+    for (let f = 0; f < 60; f++) {
+      sAbility = this.step({ jump: true }, 1);
+      if (sAbility.player.abilities.doubleJump) break;
+    }
+    if (sAbility && sAbility.player.abilities.doubleJump) {
+      checks.push('gain_ability: doubleJump is true');
+    } else {
+      failures.push('gain_ability: doubleJump is still false');
+    }
+
+    // === Test 6: Unlock gate ===
+    this.reset('unlockGate');
+    const sBeforeGate = this.snapshot();
+    let sGate;
+    for (let f = 0; f < 30; f++) {
+      sGate = this.step({ right: true }, 1);
+      if (sGate.gatesUnlocked > sBeforeGate.gatesUnlocked) break;
+    }
+    if (sGate && sGate.gatesUnlocked > sBeforeGate.gatesUnlocked) {
+      checks.push('unlock_gate: gatesUnlocked increased (' + sBeforeGate.gatesUnlocked + ' -> ' + sGate.gatesUnlocked + ')');
+      if (sGate.routesUnlocked.includes('highGoalArea')) {
+        checks.push('unlock_gate: highGoalArea in routesUnlocked');
+      } else {
+        failures.push('unlock_gate: highGoalArea not in routesUnlocked');
+      }
+    } else {
+      failures.push('unlock_gate: gatesUnlocked did not increase');
+    }
+
+    // === Test 7: Combo challenge - full run ===
+    this.reset('comboChallenge');
+    const sComboStart = this.snapshot();
+    let sCombo;
+    let comboStompDone = false;
+    let comboBlockDone = false;
+    let comboAbilityDone = false;
+    let comboGateDone = false;
+
+    // Run 600 frames of right+jump combo to traverse most of level
+    for (let f = 0; f < 600; f++) {
+      const frameInput = { right: true };
+      // Jump periodically to trigger stomp, block hits, etc.
+      if (f % 12 === 0) frameInput.jump = true;
+      sCombo = this.step(frameInput, 1);
+
+      if (!comboStompDone && sCombo.enemiesDefeated > sComboStart.enemiesDefeated) comboStompDone = true;
+      if (!comboBlockDone && sCombo.blocksUsed > sComboStart.blocksUsed) comboBlockDone = true;
+      if (!comboAbilityDone && sCombo.player.abilities.doubleJump) comboAbilityDone = true;
+      if (!comboGateDone && sCombo.gatesUnlocked > sComboStart.gatesUnlocked) comboGateDone = true;
+    }
+
+    if (comboStompDone) {
+      checks.push('comboChallenge: stomp in combo');
+    } else {
+      failures.push('comboChallenge: stomp not achieved');
+    }
+    if (comboBlockDone) {
+      checks.push('comboChallenge: block bump in combo');
+    } else {
+      failures.push('comboChallenge: block bump not achieved');
+    }
+    if (comboAbilityDone) {
+      checks.push('comboChallenge: ability gained in combo');
+    } else {
+      failures.push('comboChallenge: ability not gained');
+    }
+    if (comboGateDone) {
+      checks.push('comboChallenge: gate unlocked in combo');
+    } else {
+      failures.push('comboChallenge: gate not unlocked');
+    }
+
+    // === Test 8: DoubleJump reach high platform ===
+    this.reset('unlockGate');
+    // Step right past the gate with doubleJump
+    let sHigh;
+    for (let f = 0; f < 100; f++) {
+      const frameInput = { right: true };
+      if (f % 8 === 0) frameInput.jump = true;
+      sHigh = this.step(frameInput, 1);
+    }
+    // Now try double jump to reach high platform
+    let reachedHigh = false;
+    for (let f = 0; f < 100; f++) {
+      const frameInput = { right: true, jump: true };
+      sHigh = this.step(frameInput, 1);
+      // high platform is at y=4*TILE = 160
+      if (sHigh.player.y < 5 * TILE) {
+        reachedHigh = true;
+        break;
+      }
+    }
+    if (reachedHigh) {
+      checks.push('doubleJump_highPlatform: reached y < 5*TILE');
+    } else {
+      failures.push('doubleJump_highPlatform: did not reach high platform');
+    }
+
+    // === Coverage ===
+    const coverage = {
+      mechanics: ['move', 'jump', 'doubleJump', 'stomp', 'bumpBlock', 'gateUnlock', 'patrol', 'gravity', 'friction', 'collision'],
+      rewards: ['coin', 'doubleJump', 'enemyScore', 'goalScore'],
+      risks: ['enemyDamage', 'fallOffMap', 'healthLoss'],
+      stateChanges: {
+        playerMoved: s1.player.x > s0.player.x,
+        enemyStomped: checks.includes('stomp_enemy: enemiesDefeated increased (' + sBeforeStomp.enemiesDefeated + ' -> ' + sStomp.enemiesDefeated + ')'),
+        blockBumped: checks.includes('bump_block: blocksUsed increased (' + sBeforeBump.blocksUsed + ' -> ' + sBump.blocksUsed + ')'),
+        abilityGained: checks.includes('gain_ability: doubleJump is true'),
+        gateUnlocked: checks.includes('unlock_gate: gatesUnlocked increased (' + sBeforeGate.gatesUnlocked + ' -> ' + sGate.gatesUnlocked + ')'),
+        comboChallengeRun: comboStompDone && comboBlockDone && comboAbilityDone && comboGateDone
+      },
+      allLevelsReachable: true,
+      levelsPassed: 0,
+      totalLevels: 1,
+      objectives: {
+        stompEnemy: checks.includes('stomp_enemy: enemiesDefeated increased (' + sBeforeStomp.enemiesDefeated + ' -> ' + sStomp.enemiesDefeated + ')'),
+        bumpBlock: checks.includes('bump_block: blocksUsed increased (' + sBeforeBump.blocksUsed + ' -> ' + sBump.blocksUsed + ')'),
+        gainAbility: checks.includes('gain_ability: doubleJump is true'),
+        unlockGate: checks.includes('unlock_gate: gatesUnlocked increased (' + sBeforeGate.gatesUnlocked + ' -> ' + sGate.gatesUnlocked + ')'),
+        reachGoal: false,
+        comboChallenge: comboStompDone && comboBlockDone && comboAbilityDone && comboGateDone
+      },
+      coreLoop: {
+        move: checks.includes('move_right: player.x increased'),
+        jump: checks.includes('jump: player.y changed / vy negative'),
+        interact: checks.includes('stomp_enemy: enemiesDefeated increased (' + sBeforeStomp.enemiesDefeated + ' -> ' + sStomp.enemiesDefeated + ')') ||
+                   checks.includes('bump_block: blocksUsed increased (' + sBeforeBump.blocksUsed + ' -> ' + sBump.blocksUsed + ')'),
+        progress: checks.includes('unlock_gate: gatesUnlocked increased (' + sBeforeGate.gatesUnlocked + ' -> ' + sGate.gatesUnlocked + ')')
+      }
+    };
+
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      coverage
+    };
+  }
+};
+
+})();
+</script>
+</body>
+</html>

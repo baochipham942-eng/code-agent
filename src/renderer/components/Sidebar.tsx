@@ -49,11 +49,7 @@ import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
 import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
-import {
-  getSessionTypeLabel,
-  SessionTypeFilterBar,
-  type SidebarSessionTypeFilter,
-} from './features/sidebar/SessionTypeFilterBar';
+import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { copyPathToClipboard } from '../utils/platform';
@@ -212,7 +208,6 @@ export const Sidebar: React.FC = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
-  const [sessionTypeFilter, setSessionTypeFilter] = useState<SidebarSessionTypeFilter>('all');
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // 右键菜单状态
@@ -275,10 +270,6 @@ export const Sidebar: React.FC = () => {
       if (sessionStatusFilter === 'background' && status.kind !== 'background') {
         return false;
       }
-      const sessionType = session.type || 'chat';
-      if (sessionTypeFilter !== 'all' && sessionType !== sessionTypeFilter) {
-        return false;
-      }
 
       if (!q) {
         return true;
@@ -290,7 +281,7 @@ export const Sidebar: React.FC = () => {
         status,
       }).includes(q);
     });
-  }, [backgroundTaskMap, searchQuery, sessionRuntimes, sessionStatusFilter, sessionTypeFilter, sessions, sessionStates]);
+  }, [backgroundTaskMap, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
 
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a
@@ -587,7 +578,7 @@ export const Sidebar: React.FC = () => {
   }, [handleRenameSubmit]);
 
   const hasAnySessions = sessions.length > 0;
-  const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all' || sessionTypeFilter !== 'all';
+  const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
   const isBackgroundOnly = sessionStatusFilter === 'background';
 
   // 渲染单个会话项
@@ -774,8 +765,6 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
       </div>
-
-      <SessionTypeFilterBar value={sessionTypeFilter} onChange={setSessionTypeFilter} />
 
       {/* Session List - Project Grouped */}
       <div className="flex-1 overflow-y-auto px-2 min-h-0">

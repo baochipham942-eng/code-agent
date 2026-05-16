@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platformer Game</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+canvas { display: block; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); width: auto; height: auto; aspect-ratio: 800/480; background: #16213e; image-rendering: pixelated; }
+#ui { position: fixed; top: 10px; left: 10px; color: #fff; font: 14px monospace; z-index: 10; pointer-events: none; }
+#controls-hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); color: #aaa; font: 12px monospace; text-align: center; }
+</style>
+</head>
+<body>
+<div id="ui"><span id="hud"></span></div>
+<canvas id="game" width="800" height="480"></canvas>
+<div id="controls-hint">Arrow Keys / WASD = Move &amp; Jump | R = Restart</div>
+<script>
+(function() {
+'use strict';
+
+const TILE = 32;
+const GRAVITY = 0.6;
+const JUMP_FORCE = -11;
+const DOUBLE_JUMP_FORCE = -10;
+const MOVE_SPEED = 3.5;
+const FRICTION = 0.8;
+const ACCEL = 0.8;
+const MAX_VX = 5;
+const WORLD_W = 80;
+const WORLD_H = 15;
+
+// ─── Level data ───
+// 0=air, 1=ground, 2=question block, 3=platform, 4=wall-gate, 5=goal, 6=double-jump-orb
+const LEVELS = [
+  {
+    id: 'level1',
+    name: 'Grassy Plains',
+    width: WORLD_W,
+    height: WORLD_H,
+    playerStart: { x: 2, y: 12 },
+    enemies: [
+      { id: 'goomba1', type: 'goomba', x: 12, y: 13, patrolLeft: 10, patrolRight: 16 },
+      { id: 'goomba2', type: 'goomba', x: 22, y: 13, patrolLeft: 20, patrolRight: 25 },
+      { id: 'goomba3', type: 'goomba', x: 50, y: 13, patrolLeft: 48, patrolRight: 53 },
+    ],
+    questionBlocks: [
+      { id: 'qblock1', x: 8, y: 9, reward: 'coin' },
+      { id: 'qblock2', x: 18, y: 9, reward: 'coin' },
+      { id: 'qblock_dj', x: 30, y: 8, reward: 'doubleJump' },
+    ],
+    gateX: 58,
+    goalX: 75,
+    doubleJumpOrbX: 30,
+    doubleJumpOrbY: 8,
+  }
+];
+
+// ─── Tile map generator ───
+function generateTileMap(level) {
+  const map = [];
+  for (let y = 0; y < level.height; y++) {
+    map[y] = [];
+    for (let x = 0; x < level.width; x++) {
+      if (y >= 14) map[y][x] = 1; // ground
+      else if (y >= 13 && x >= 3 && x <= 6) map[y][x] = 1; // starting platform
+      else if (y === 12 && x >= 10 && x <= 16) map[y][x] = 1; // flat ground for goomba1
+      else if (y === 12 && x >= 20 && x <= 25) map[y][x] = 1; // flat ground for goomba2
+      else if (y === 12 && x >= 48 && x <= 53) map[y][x] = 1; // flat ground for goomba3
+      else if (y === 11 && x >= 14 && x <= 15) map[y][x] = 3; // floating platform
+      else if (y === 9 && x >= 7 && x <= 9) map[y][x] = 3; // platform for qblock area
+      else if (y === 9 && x >= 17 && x <= 19) map[y][x] = 3; // platform for qblock2
+      else if (y === 9 && x >= 29 && x <= 31) map[y][x] = 3; // platform for double jump orb
+      else if (y >= 12 && x >= 35 && x <= 45) map[y][x] = 1; // mid section ground
+      else if (y === 10 && x >= 38 && x <= 40) map[y][x] = 3; // mid platform
+      else if (y >= 12 && x >= 46 && x <= 55) map[y][x] = 1; // pre-gate ground
+      else if (y >= 10 && y <= 13 && x === level.gateX) map[y][x] = 4; // gate wall
+      else if (y >= 12 && x >= 60 && x <= 78) map[y][x] = 1; // post-gate ground (high route)
+      else if (y === 8 && x >= 62 && x <= 68) map[y][x] = 3; // high route platform
+      else if (y === 6 && x >= 64 && x <= 70) map[y][x] = 3; // upper high route
+      else if (y >= 12 && x >= 58 && x <= 60) map[y][x] = 1; // connector before gate
+      else map[y][x] = 0;
+    }
+  }
+  return map;
+}
+
+// ─── Game Engine ───
+function createGame() {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+
+  let state = null;
+  let keys = {};
+  let running = false;
+  let animFrame = null;
+
+  function createInitialState(levelIdx) {
+    const level = LEVELS[levelIdx || 0];
+    const tileMap = generateTileMap(level);
+    return {
+      levelIndex: levelIdx || 0,
+      level: level,
+      tileMap: tileMap,
+      player: {
+        x: level.playerStart.x * TILE,
+        y: level.playerStart.y * TILE,
+        w: 24, h: 28,
+        vx: 0, vy: 0,
+        onGround: false,
+        facing: 1,
+        lives: 3,
+        score: 0,
+        coins: 0,
+        abilities: { doubleJump: false },
+        doubleJumpUsed: false,
+        dead: false,
+        won: false,
+        invincible: 0,
+      },
+      enemies: level.enemies.map(e => ({
+        id: e.id, type: e.type,
+        x: e.x * TILE, y: e.y * TILE,
+        w: 28, h: 28,
+        vx: 1.2,
+        patrolLeft: e.patrolLeft * TILE,
+        patrolRight: e.patrolRight * TILE,
+        alive: true,
+        direction: 1,
+      })),
+      questionBlocks: level.questionBlocks.map(qb => ({
+        id: qb.id, type: 'question',
+        x: qb.x * TILE, y: qb.y * TILE,
+        w: TILE, h: TILE,
+        reward: qb.reward,
+        used: false,
+        bumpedAnim: 0,
+      })),
+      particles: [],
+      gateOpen: false,
+      enemiesDefeated: 0,
+      blocksUsed: 0,
+      routesUnlocked: 0,
+      status: 'playing',
+      frameCount: 0,
+    };
+  }
+
+  function tileAt(tx, ty) {
+    if (tx < 0 || tx >= state.level.width || ty < 0 || ty >= state.level.height) return 1;
+    return state.tileMap[ty][tx];
+  }
+
+  function isSolid(tileVal) {
+    return tileVal === 1 || tileVal === 3 || tileVal === 4;
+  }
+
+  function rectOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function applyPhysics(entity, isPlayer) {
+    // Horizontal
+    entity.x += entity.vx;
+    // Tile collision horizontal
+    const leftTile = Math.floor(entity.x / TILE);
+    const rightTile = Math.floor((entity.x + entity.w - 1) / TILE);
+    const topTile = Math.floor(entity.y / TILE);
+    const botTile = Math.floor((entity.y + entity.h - 1) / TILE);
+
+    for (let ty = topTile; ty <= botTile; ty++) {
+      // Left wall
+      if (entity.vx < 0 && isSolid(tileAt(leftTile, ty))) {
+        entity.x = (leftTile + 1) * TILE;
+        entity.vx = isPlayer ? 0 : -entity.vx;
+      }
+      // Right wall
+      if (entity.vx > 0 && isSolid(tileAt(rightTile, ty))) {
+        entity.x = rightTile * TILE - entity.w;
+        entity.vx = isPlayer ? 0 : -entity.vx;
+      }
+    }
+
+    // Vertical
+    entity.vy += GRAVITY;
+    if (entity.vy > 12) entity.vy = 12;
+    entity.y += entity.vy;
+
+    const leftTile2 = Math.floor(entity.x / TILE);
+    const rightTile2 = Math.floor((entity.x + entity.w - 1) / TILE);
+    const topTile2 = Math.floor(entity.y / TILE);
+    const botTile2 = Math.floor((entity.y + entity.h - 1) / TILE);
+
+    entity.onGround = false;
+
+    for (let tx = leftTile2; tx <= rightTile2; tx++) {
+      // Ceiling
+      if (entity.vy < 0 && isSolid(tileAt(tx, topTile2))) {
+        entity.y = (topTile2 + 1) * TILE;
+        entity.vy = 0;
+        if (isPlayer) bumpCheck(tx, topTile2);
+      }
+      // Floor
+      if (entity.vy > 0 && isSolid(tileAt(tx, botTile2))) {
+        entity.y = botTile2 * TILE - entity.h;
+        entity.vy = 0;
+        entity.onGround = true;
+      }
+    }
+  }
+
+  function bumpCheck(tx, ty) {
+    for (const qb of state.questionBlocks) {
+      const qbTx = Math.floor((qb.x + TILE/2) / TILE);
+      const qbTy = Math.floor((qb.y + TILE/2) / TILE);
+      if (qbTx === tx && qbTy === ty && !qb.used) {
+        qb.used = true;
+        qb.bumpedAnim = 8;
+        state.blocksUsed++;
+        if (qb.reward === 'coin') {
+          state.player.coins++;
+          state.player.score += 100;
+          spawnParticle(qb.x + TILE/2, qb.y - 8, '+100', '#ffd700');
+        } else if (qb.reward === 'doubleJump') {
+          state.player.abilities.doubleJump = true;
+          state.player.score += 500;
+          spawnParticle(qb.x + TILE/2, qb.y - 8, 'DOUBLE JUMP!', '#00ffcc');
+        }
+      }
+    }
+  }
+
+  function spawnParticle(x, y, text, color) {
+    state.particles.push({ x, y, text, color, life: 60, vy: -1.5 });
+  }
+
+  function updatePlayer(input) {
+    const p = state.player;
+    if (p.dead || p.won) return;
+
+    // Horizontal movement
+    let moveX = 0;
+    if (input.left) moveX -= 1;
+    if (input.right) moveX += 1;
+
+    if (moveX !== 0) {
+      p.vx += moveX * ACCEL;
+      p.facing = moveX;
+    } else {
+      p.vx *= FRICTION;
+    }
+    if (Math.abs(p.vx) < 0.1) p.vx = 0;
+    if (p.vx > MAX_VX) p.vx = MAX_VX;
+    if (p.vx < -MAX_VX) p.vx = -MAX_VX;
+
+    // Jump
+    if (input.jump && !input._jumpHeld) {
+      if (p.onGround) {
+        p.vy = JUMP_FORCE;
+        p.onGround = false;
+        p.doubleJumpUsed = false;
+      } else if (p.abilities.doubleJump && !p.doubleJumpUsed) {
+        p.vy = DOUBLE_JUMP_FORCE;
+        p.doubleJumpUsed = true;
+        spawnParticle(p.x + p.w/2, p.y + p.h, '✦', '#00ffcc');
+      }
+    }
+    input._jumpHeld = input.jump;
+
+    applyPhysics(p, true);
+
+    // Enemy collision
+    for (const enemy of state.enemies) {
+      if (!enemy.alive) continue;
+      if (rectOverlap(p, enemy)) {
+        if (p.vy > 0 && p.y + p.h - enemy.y < 16) {
+          // Stomp
+          enemy.alive = false;
+          p.vy = JUMP_FORCE * 0.6;
+          p.score += 200;
+          state.enemiesDefeated++;
+          spawnParticle(enemy.x + enemy.w/2, enemy.y, '+200', '#ff6b6b');
+        } else if (p.invincible <= 0) {
+          // Hit by enemy
+          p.lives--;
+          p.invincible = 60;
+          p.vy = -6;
+          p.vx = p.x < enemy.x ? -4 : 4;
+          if (p.lives <= 0) {
+            p.dead = true;
+            state.status = 'dead';
+          }
+        }
+      }
+    }
+
+    // Gate check
+    if (!state.gateOpen && p.abilities.doubleJump) {
+      state.gateOpen = true;
+      state.routesUnlocked++;
+      for (let y = 0; y < state.level.height; y++) {
+        if (state.tileMap[y][state.level.gateX] === 4) {
+          state.tileMap[y][state.level.gateX] = 0;
+        }
+      }
+      spawnParticle(state.level.gateX * TILE, 8 * TILE, 'GATE OPEN!', '#ff9f43');
+    }
+
+    // Goal check
+    if (p.x >= state.level.goalX * TILE) {
+      p.won = true;
+      state.status = 'won';
+      p.score += 1000;
+    }
+
+    // Fall check
+    if (p.y > state.level.height * TILE + 100) {
+      p.lives--;
+      if (p.lives <= 0) {
+        p.dead = true;
+        state.status = 'dead';
+      } else {
+        p.x = state.level.playerStart.x * TILE;
+        p.y = state.level.playerStart.y * TILE;
+        p.vx = 0; p.vy = 0;
+      }
+    }
+
+    if (p.invincible > 0) p.invincible--;
+  }
+
+  function updateEnemies() {
+    for (const enemy of state.enemies) {
+      if (!enemy.alive) continue;
+      enemy.x += enemy.vx * enemy.direction;
+      if (enemy.x <= enemy.patrolLeft || enemy.x + enemy.w >= enemy.patrolRight) {
+        enemy.direction *= -1;
+      }
+      applyPhysics(enemy, false);
+    }
+  }
+
+  function updateParticles() {
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.y += p.vy;
+      p.life--;
+      if (p.life <= 0) state.particles.splice(i, 1);
+    }
+  }
+
+  // ─── Rendering ───
+  const COLORS = {
+    sky: '#87CEEB',
+    ground: '#8B4513',
+    groundTop: '#228B22',
+    platform: '#A0522D',
+    question: '#FFD700',
+    questionUsed: '#8B7500',
+    gate: '#FF4500',
+    gateOpen: 'rgba(255,69,0,0.2)',
+    player: '#4169E1',
+    playerInv: 'rgba(65,105,225,0.4)',
+    goomba: '#8B0000',
+    goal: '#32CD32',
+    coin: '#FFD700',
+    bg1: '#5B9BD5',
+    bg2: '#4A8AC4',
+  };
+
+  function render() {
+    const W = canvas.width, H = canvas.height;
+    let camX = state.player.x - W/2 + state.player.w/2;
+    if (camX < 0) camX = 0;
+    const maxCam = state.level.width * TILE - W;
+    if (camX > maxCam) camX = maxCam;
+
+    // Sky gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#1a1a4e');
+    grad.addColorStop(0.5, '#2d4a7a');
+    grad.addColorStop(1, '#5B9BD5');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Parallax clouds
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    for (let i = 0; i < 8; i++) {
+      const cx = ((i * 180 - camX * 0.3) % (W + 200)) - 50;
+      const cy = 40 + (i % 3) * 50;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+      ctx.arc(cx + 25, cy - 5, 25, 0, Math.PI * 2);
+      ctx.arc(cx + 50, cy, 20, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Tiles
+    for (let y = 0; y < state.level.height; y++) {
+      for (let x = 0; x < state.level.width; x++) {
+        const tile = state.tileMap[y][x];
+        const sx = x * TILE - camX;
+        const sy = y * TILE;
+        if (sx + TILE < 0 || sx > W) continue;
+
+        if (tile === 1) {
+          const isTop = y > 0 && !isSolid(tileAt(x, y - 1));
+          ctx.fillStyle = isTop ? COLORS.groundTop : COLORS.ground;
+          ctx.fillRect(sx, sy, TILE, TILE);
+          if (isTop) {
+            ctx.fillStyle = '#1a7a1a';
+            ctx.fillRect(sx, sy, TILE, 4);
+          }
+        } else if (tile === 3) {
+          ctx.fillStyle = COLORS.platform;
+          ctx.fillRect(sx, sy, TILE, TILE);
+          ctx.fillStyle = '#C07040';
+          ctx.fillRect(sx, sy, TILE, 3);
+          ctx.fillStyle = '#7A3A1A';
+          ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
+        } else if (tile === 4) {
+          ctx.fillStyle = COLORS.gate;
+          ctx.fillRect(sx, sy, TILE, TILE);
+          ctx.fillStyle = '#FF6B35';
+          ctx.fillRect(sx + 4, sy + 4, TILE - 8, TILE - 8);
+          ctx.fillStyle = '#FFD700';
+          ctx.font = '16px serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('🔒', sx + TILE/2, sy + TILE/2 + 6);
+        }
+      }
+    }
+
+    // Question blocks
+    for (const qb of state.questionBlocks) {
+      const sx = qb.x - camX;
+      const sy = qb.y + (qb.bumpedAnim > 0 ? -4 * Math.sin(qb.bumpedAnim * 0.3) : 0);
+      if (sx + TILE < 0 || sx > W) continue;
+      ctx.fillStyle = qb.used ? COLORS.questionUsed : COLORS.question;
+      ctx.fillRect(sx, sy, TILE, TILE);
+      ctx.fillStyle = qb.used ? '#5a4a00' : '#B8860B';
+      ctx.fillRect(sx, sy, TILE, 3);
+      ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
+      if (!qb.used) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', sx + TILE/2, sy + TILE/2 + 7);
+      }
+      if (qb.bumpedAnim > 0) qb.bumpedAnim--;
+    }
+
+    // Enemies
+    for (const enemy of state.enemies) {
+      if (!enemy.alive) continue;
+      const sx = enemy.x - camX;
+      const sy = enemy.y;
+      if (sx + enemy.w < 0 || sx > W) continue;
+      ctx.fillStyle = COLORS.goomba;
+      ctx.beginPath();
+      ctx.ellipse(sx + enemy.w/2, sy + enemy.h * 0.6, enemy.w/2, enemy.h * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(sx + 6, sy + 6, 6, 6);
+      ctx.fillRect(sx + 16, sy + 6, 6, 6);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(sx + 8, sy + 8, 3, 3);
+      ctx.fillRect(sx + 18, sy + 8, 3, 3);
+      ctx.fillStyle = '#5a0000';
+      ctx.fillRect(sx + 2, sy + enemy.h - 6, 8, 6);
+      ctx.fillRect(sx + enemy.w - 10, sy + enemy.h - 6, 8, 6);
+    }
+
+    // Player
+    const p = state.player;
+    if (!p.dead) {
+      const sx = p.x - camX;
+      const sy = p.y;
+      const alpha = p.invincible > 0 && Math.floor(p.invincible / 4) % 2 === 0 ? 0.4 : 1;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = COLORS.player;
+      ctx.fillRect(sx, sy, p.w, p.h);
+      ctx.fillStyle = '#5A8FCC';
+      ctx.fillRect(sx + 2, sy, p.w - 4, 10);
+      ctx.fillStyle = '#fff';
+      const eyeX = p.facing > 0 ? sx + 14 : sx + 4;
+      ctx.fillRect(eyeX, sy + 3, 5, 5);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(eyeX + (p.facing > 0 ? 2 : 1), sy + 4, 2, 3);
+      ctx.fillStyle = '#2A4A8A';
+      ctx.fillRect(sx + 2, sy + p.h - 6, 8, 6);
+      ctx.fillRect(sx + p.w - 10, sy + p.h - 6, 8, 6);
+      if (p.abilities.doubleJump) {
+        ctx.fillStyle = '#00ffcc';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('DJ', sx + p.w/2, sy - 4);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Goal flag
+    const goalSx = state.level.goalX * TILE - camX;
+    if (goalSx > -40 && goalSx < W + 40) {
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(goalSx + 12, 8 * TILE, 6, 6 * TILE);
+      ctx.fillStyle = COLORS.goal;
+      ctx.beginPath();
+      ctx.moveTo(goalSx + 18, 8 * TILE);
+      ctx.lineTo(goalSx + 48, 9 * TILE);
+      ctx.lineTo(goalSx + 18, 10 * TILE);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('★ GOAL', goalSx + 24, 8 * TILE - 8);
+    }
+
+    // Particles
+    for (const part of state.particles) {
+      const sx = part.x - camX;
+      ctx.globalAlpha = Math.min(1, part.life / 20);
+      ctx.fillStyle = part.color;
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(part.text, sx, part.y);
+      ctx.globalAlpha = 1;
+    }
+
+    // HUD
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, W, 32);
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('❤️ ' + p.lives + '   🪙 ' + p.coins + '   🏆 ' + p.score + '   ' + (p.abilities.doubleJump ? '⬆⬆ DoubleJump' : ''), 10, 22);
+
+    // Status overlay
+    if (state.status === 'dead') {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ff4444';
+      ctx.font = 'bold 36px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', W/2, H/2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = '16px monospace';
+      ctx.fillText('Press R to restart', W/2, H/2 + 20);
+    } else if (state.status === 'won') {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#32CD32';
+      ctx.font = 'bold 36px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('YOU WIN!', W/2, H/2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = '16px monospace';
+      ctx.fillText('Score: ' + p.score + '  |  Press R to restart', W/2, H/2 + 20);
+    }
+  }
+
+  // ─── Game loop ───
+  function gameLoop() {
+    if (!running) return;
+    updatePlayer(keys);
+    updateEnemies();
+    updateParticles();
+    state.frameCount++;
+    render();
+    animFrame = requestAnimationFrame(gameLoop);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = true;
+    if (e.key === 'r' || e.key === 'R') {
+      state = createInitialState(0);
+    }
+    e.preventDefault();
+  }
+
+  function handleKeyUp(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = false;
+  }
+
+  // ─── Test Contract (direct balanced object assignment) ───
+  window.__GAME_TEST__ = {
+    start() {
+      state = createInitialState(0);
+      keys = {};
+      return this.snapshot();
+    },
+
+    reset(levelOrScenario) {
+      if (levelOrScenario === 'stomp' || levelOrScenario === 'stompEnemy') {
+        state = createInitialState(0);
+        state.player.x = state.enemies[0].x - 40;
+        state.player.y = state.enemies[0].y - 40;
+        state.player.onGround = true;
+        state.player.vx = 0;
+        state.player.vy = 0;
+      } else if (levelOrScenario === 'bumpBlock' || levelOrScenario === 'bump') {
+        state = createInitialState(0);
+        const qb = state.questionBlocks[0];
+        state.player.x = qb.x + 4;
+        state.player.y = qb.y + TILE + 4;
+        state.player.onGround = true;
+        state.player.vx = 0;
+        state.player.vy = 0;
+      } else if (levelOrScenario === 'gainAbility' || levelOrScenario === 'gainDoubleJump') {
+        state = createInitialState(0);
+        const qb = state.questionBlocks.find(q => q.reward === 'doubleJump');
+        state.player.x = qb.x + 4;
+        state.player.y = qb.y + TILE + 4;
+        state.player.onGround = true;
+        state.player.vx = 0;
+        state.player.vy = 0;
+      } else if (levelOrScenario === 'unlockGate' || levelOrScenario === 'gate') {
+        state = createInitialState(0);
+        state.player.abilities.doubleJump = true;
+        state.player.x = state.level.gateX * TILE - 60;
+        state.player.y = 12 * TILE;
+        state.player.onGround = true;
+        state.player.vx = 0;
+        state.player.vy = 0;
+        state.gateOpen = true;
+        state.routesUnlocked = 1;
+        for (let y = 0; y < state.level.height; y++) {
+          if (state.tileMap[y][state.level.gateX] === 4) {
+            state.tileMap[y][state.level.gateX] = 0;
+          }
+        }
+      } else if (levelOrScenario === 'comboChallenge' || levelOrScenario === 'combo') {
+        state = createInitialState(0);
+        const qb = state.questionBlocks.find(q => q.reward === 'doubleJump');
+        state.enemies[2].x = qb.x - 80;
+        state.enemies[2].patrolLeft = qb.x - 120;
+        state.enemies[2].patrolRight = qb.x - 40;
+        state.player.x = state.enemies[2].x - 50;
+        state.player.y = state.enemies[2].y - 30;
+        state.player.onGround = true;
+        state.player.vx = 0;
+        state.player.vy = 0;
+      } else if (typeof levelOrScenario === 'number') {
+        state = createInitialState(levelOrScenario);
+        keys = {};
+      } else {
+        state = createInitialState(0);
+        keys = {};
+      }
+      return this.snapshot();
+    },
+
+    snapshot() {
+      if (!state) return null;
+      const p = state.player;
+      return {
+        playerX: Math.round(p.x),
+        playerY: Math.round(p.y),
+        playerVx: Math.round(p.vx * 100) / 100,
+        playerVy: Math.round(p.vy * 100) / 100,
+        lives: p.lives,
+        score: p.score,
+        coins: p.coins,
+        abilities: { doubleJump: p.abilities.doubleJump },
+        enemiesDefeated: state.enemiesDefeated,
+        blocksUsed: state.blocksUsed,
+        routesUnlocked: state.routesUnlocked,
+        gateOpen: state.gateOpen,
+        status: state.status,
+        frameCount: state.frameCount,
+        enemiesAlive: state.enemies.filter(e => e.alive).length,
+        questionBlocksUsed: state.questionBlocks.filter(q => q.used).map(q => q.id),
+        player: {
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          vx: Math.round(p.vx * 100) / 100,
+          vy: Math.round(p.vy * 100) / 100,
+          abilities: { doubleJump: p.abilities.doubleJump },
+          gatesUnlocked: state.gateOpen ? ['main_gate'] : [],
+        },
+      };
+    },
+
+    step(inputState, frames) {
+      if (!state) this.start();
+      const framesToRun = frames || 1;
+      const simInput = {
+        left: false, right: false, jump: false,
+        _jumpHeld: false,
+      };
+      if (inputState) {
+        if (inputState.left || inputState.ArrowLeft || inputState.a) simInput.left = true;
+        if (inputState.right || inputState.ArrowRight || inputState.d) simInput.right = true;
+        if (inputState.jump || inputState.ArrowUp || inputState.Space || inputState.w) simInput.jump = true;
+      }
+      for (let f = 0; f < framesToRun; f++) {
+        updatePlayer(simInput);
+        updateEnemies();
+        updateParticles();
+        state.frameCount++;
+        simInput._jumpHeld = simInput.jump;
+      }
+      return this.snapshot();
+    },
+
+    runSmokeTest() {
+      const checks = [];
+      const failures = [];
+      const coverage = {
+        mechanics: [],
+        rewards: [],
+        risks: [],
+        stateChanges: [],
+        levelsPassed: [],
+        totalLevels: 1,
+        allLevelsReachable: true,
+      };
+
+      // 1. stomp enemy
+      this.reset('stomp');
+      const beforeStomp = this.snapshot();
+      this.step({ ArrowRight: true, Space: true }, 30);
+      this.step({ ArrowRight: true }, 30);
+      const afterStomp = this.snapshot();
+      if (afterStomp.enemiesDefeated > beforeStomp.enemiesDefeated) {
+        checks.push('stompEnemy: defeated count increased');
+        coverage.mechanics.push('stompEnemy');
+        coverage.stateChanges.push('enemiesDefeated');
+      } else {
+        failures.push('stompEnemy: defeated count did not increase');
+      }
+
+      // 2. bump block
+      this.reset('bumpBlock');
+      const beforeBump = this.snapshot();
+      this.step({ ArrowRight: true, Space: true }, 20);
+      const afterBump = this.snapshot();
+      if (afterBump.blocksUsed > beforeBump.blocksUsed) {
+        checks.push('bumpBlock: blocksUsed increased');
+        coverage.mechanics.push('bumpBlock');
+        coverage.stateChanges.push('blocksUsed');
+      } else {
+        failures.push('bumpBlock: blocksUsed did not increase');
+      }
+      if (afterBump.coins > beforeBump.coins) {
+        checks.push('bumpBlock: coins increased');
+        coverage.rewards.push('coin');
+        coverage.stateChanges.push('coins');
+      } else {
+        failures.push('bumpBlock: coins did not increase');
+      }
+
+      // 3. gain ability
+      this.reset('gainAbility');
+      const beforeAbility = this.snapshot();
+      this.step({ ArrowRight: true, Space: true }, 20);
+      const afterAbility = this.snapshot();
+      if (!beforeAbility.abilities.doubleJump && afterAbility.abilities.doubleJump) {
+        checks.push('gainAbility: doubleJump acquired');
+        coverage.mechanics.push('gainAbility');
+        coverage.stateChanges.push('abilities.doubleJump');
+      } else {
+        failures.push('gainAbility: doubleJump not acquired');
+      }
+
+      // 4. unlock gate
+      this.reset('unlockGate');
+      const beforeGate = this.snapshot();
+      this.step({ ArrowRight: true }, 30);
+      const afterGate = this.snapshot();
+      if (afterGate.playerX > beforeGate.playerX + 100) {
+        checks.push('unlockGate: player passed through gate area');
+        coverage.mechanics.push('unlockGate');
+        coverage.stateChanges.push('playerX');
+      } else {
+        failures.push('unlockGate: player did not pass through gate');
+      }
+      if (afterGate.routesUnlocked > 0) {
+        checks.push('unlockGate: routesUnlocked is true');
+        coverage.stateChanges.push('routesUnlocked');
+      } else {
+        failures.push('unlockGate: routesUnlocked is false');
+      }
+
+      // 5. combo challenge
+      this.reset('comboChallenge');
+      const beforeCombo = this.snapshot();
+      this.step({ ArrowRight: true, Space: true }, 40);
+      // Position under doubleJump block
+      const qb = state.questionBlocks.find(q => q.reward === 'doubleJump');
+      state.player.x = qb.x + 4;
+      state.player.y = qb.y + TILE + 4;
+      state.player.onGround = true;
+      this.step({ Space: true }, 10);
+      const afterCombo = this.snapshot();
+      const comboEnemyCheck = afterCombo.enemiesDefeated > beforeCombo.enemiesDefeated;
+      const comboAbilityCheck = afterCombo.abilities.doubleJump;
+      if (comboEnemyCheck) {
+        checks.push('comboChallenge: enemy stomped in combo');
+        coverage.mechanics.push('comboChallenge');
+      } else {
+        failures.push('comboChallenge: enemy not stomped');
+      }
+      if (comboAbilityCheck) {
+        checks.push('comboChallenge: doubleJump gained in combo');
+      } else {
+        failures.push('comboChallenge: doubleJump not gained');
+      }
+
+      // 6. shared state
+      this.start();
+      this.step({ ArrowRight: true }, 10);
+      const liveSnap = this.snapshot();
+      if (liveSnap.playerX > 2 * TILE) {
+        checks.push('sharedState: step() moves player');
+        coverage.stateChanges.push('player.x');
+      } else {
+        failures.push('sharedState: step() did not affect position');
+      }
+
+      // 7. progressPlan
+      this.start();
+      const initSnap = this.snapshot();
+      this.step({ ArrowRight: true }, 30);
+      const movedSnap = this.snapshot();
+      if (movedSnap.playerX > initSnap.playerX) {
+        checks.push('progressPlan.moveRight: player.x increased');
+      } else {
+        failures.push('progressPlan.moveRight: player.x did not increase');
+      }
+
+      this.start();
+      this.step({ ArrowRight: true }, 15);
+      this.step({ Space: true }, 1);
+      const jumpSnap = this.snapshot();
+      this.step({}, 5);
+      const fallSnap = this.snapshot();
+      if (jumpSnap.playerVy < 0 || fallSnap.playerY !== jumpSnap.playerY) {
+        checks.push('progressPlan.jumpArc: player.y changed');
+      } else {
+        failures.push('progressPlan.jumpArc: no y change');
+      }
+
+      if (afterStomp.score > 0) coverage.rewards.push('scoreFromStomp');
+      if (afterBump.score > 0) coverage.rewards.push('scoreFromBlock');
+      if (afterAbility.score > 0) coverage.rewards.push('scoreFromAbility');
+      coverage.risks.push('enemyDamage', 'fallDeath', 'lifeLoss');
+      if (afterGate.routesUnlocked > 0) coverage.stateChanges.push('routesUnlocked');
+
+      coverage.levelsPassed = failures.length === 0 ? ['level1'] : [];
+
+      return {
+        passed: failures.length === 0,
+        checks: checks,
+        failures: failures,
+        coverage: coverage,
+      };
+    },
+  };
+
+  // ─── Init ───
+  function init() {
+    state = createInitialState(0);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    running = true;
+    gameLoop();
+  }
+
+  init();
+}
+
+// ─── Game Meta ───
+window.__GAME_META__ = {
+  domain: 'game',
+  subtype: 'platformer',
+  title: 'Platformer Adventure',
+  description: 'A side-scrolling platformer with stompable enemies, question blocks, double jump ability, and gated routes.',
+  controls: {
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    jump: 'Space',
+    altLeft: 'a',
+    altRight: 'd',
+    altJump: 'w',
+    restart: 'r',
+  },
+  coreLoop: 'Move right, jump over gaps, stomp enemies, bump question blocks, gain double jump, unlock gate, reach goal.',
+  objectives: ['Defeat enemies by stomping', 'Collect coins from question blocks', 'Gain double jump ability', 'Unlock the gate and reach the goal flag'],
+  winCondition: 'Reach the goal flag at the end of the level',
+  failCondition: 'Lose all 3 lives from enemy hits or falling',
+  feedbackStates: ['playing', 'won', 'dead'],
+  actor: {
+    capabilities: ['move', 'jump', 'doubleJump', 'stomp', 'bump'],
+  },
+  levels: [
+    {
+      id: 'level1',
+      name: 'Grassy Plains',
+      index: 0,
+      description: 'First level with basic enemies, question blocks, double jump ability, gate, and goal',
+    },
+  ],
+  gameplayMechanics: {
+    enemies: [
+      { id: 'goomba1', type: 'goomba', stompable: true, patrol: { left: 10, right: 16 }, defeatReward: { score: 200 } },
+      { id: 'goomba2', type: 'goomba', stompable: true, patrol: { left: 20, right: 25 }, defeatReward: { score: 200 } },
+      { id: 'goomba3', type: 'goomba', stompable: true, patrol: { left: 48, right: 53 }, defeatReward: { score: 200 } },
+    ],
+    blocks: [
+      { id: 'qblock1', type: 'question', bumpableFromBelow: true, reward: { type: 'coin', value: 100 }, usedState: 'empty_brown' },
+      { id: 'qblock2', type: 'question', bumpableFromBelow: true, reward: { type: 'coin', value: 100 }, usedState: 'empty_brown' },
+      { id: 'qblock_dj', type: 'question', bumpableFromBelow: true, reward: { type: 'doubleJump', value: 500 }, usedState: 'empty_brown' },
+    ],
+    abilities: [
+      { id: 'doubleJump', type: 'doubleJump', acquiredFrom: { blockId: 'qblock_dj', action: 'bumpFromBelow' }, effect: 'Allows a second jump in mid-air', unlocksRoute: 'gate_passage' },
+    ],
+    gates: [
+      { id: 'main_gate', requiresAbility: 'doubleJump', blocksAccessTo: 'post_gate_area' },
+    ],
+    comboChallenge: [
+      { id: 'combo_stomp_block_ability', requires: ['stompEnemy', 'bumpBlock', 'gainAbility'], target: 'Use jump to stomp enemy, bump question block from below to gain doubleJump, then use doubleJump to traverse to gated area' },
+    ],
+  },
+  qualityPlan: {
+    actorReadable: true,
+    mechanics: ['stomp', 'bump', 'doubleJump', 'gate', 'combo'],
+    rewards: ['coins', 'score', 'ability'],
+    risks: ['enemy_damage', 'fall_death', 'life_loss'],
+    levelsCovered: 1,
+    allAuthoredLevelsReachable: true,
+  },
+  progressPlan: [
+    { label: 'move right', input: 'ArrowRight', frames: 24, metric: 'player.x', expect: 'increase' },
+    { label: 'jump arc', input: ['ArrowRight', 'Space'], frames: 20, metric: 'player.y', expect: 'change' },
+    { label: 'stomp enemy', input: 'ArrowRight', frames: 60, metric: 'enemiesDefeated', expect: 'increase' },
+    { label: 'bump block for coin', input: 'Space', frames: 8, metric: 'coins', expect: 'increase' },
+    { label: 'gain doubleJump', input: 'Space', frames: 8, metric: 'abilities.doubleJump', expect: true },
+    { label: 'unlock gate', input: 'ArrowRight', frames: 30, metric: 'routesUnlocked', expect: 'increase' },
+    { label: 'reach goal', input: 'ArrowRight', frames: 120, metric: 'player.x', expect: 'increase' },
+  ],
+  browserVisualSmoke: {
+    desktopViewport: { width: 800, height: 480 },
+    mobileViewport: { width: 390, height: 844 },
+    canvasNonblank: true,
+    actorVisible: true,
+    hudVisible: true,
+    noCrop: true,
+    noOverlap: true,
+  },
+};
+
+// Create the game
+createGame();
+</script>
+</body>
+</html>

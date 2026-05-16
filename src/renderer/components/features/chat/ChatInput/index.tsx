@@ -22,7 +22,6 @@ import { CostDisplay } from '../../../StatusBar/CostDisplay';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
-import { AgentChip } from './AgentChip';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
@@ -924,8 +923,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
-
-            <AgentChip onOpenAgentCommand={openAgentCommand} />
 
             {/* 模型选择器 */}
             <div className="text-xs">

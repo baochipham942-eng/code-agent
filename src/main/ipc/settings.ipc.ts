@@ -8,6 +8,7 @@ import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '..
 import type { AppSettings } from '../../shared/contract';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
+import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -19,15 +20,91 @@ async function handleGet(getConfigService: () => ConfigService | null): Promise<
   return configService.getSettings();
 }
 
+function cloneSettings(settings: AppSettings): AppSettings {
+  return JSON.parse(JSON.stringify(settings)) as AppSettings;
+}
+
+function sanitizeSettingsForUser(settings: AppSettings): AppSettings {
+  const sanitized = cloneSettings(settings);
+
+  if (sanitized.models?.providers) {
+    for (const providerConfig of Object.values(sanitized.models.providers)) {
+      delete providerConfig.apiKey;
+    }
+  }
+
+  if (sanitized.cloud) {
+    delete sanitized.cloud.apiKey;
+  }
+  if (sanitized.langfuse) {
+    delete (sanitized.langfuse as Partial<NonNullable<AppSettings['langfuse']>>).secretKey;
+  }
+
+  delete sanitized.mcp;
+  delete sanitized.budget;
+  delete sanitized.sanitization;
+  delete sanitized.confirmationGate;
+
+  if (sanitized.permissions) {
+    sanitized.permissions.devModeAutoApprove = false;
+    if (sanitized.permissions.permissionMode === 'bypassPermissions') {
+      sanitized.permissions.permissionMode = 'default';
+    }
+    sanitized.permissions.blockedCommands = [];
+    delete sanitized.permissions.deny;
+    delete sanitized.permissions.ask;
+    delete sanitized.permissions.allow;
+    delete sanitized.permissions._legacyPermissions;
+  }
+
+  return sanitized;
+}
+
+function extractSettingsUpdate(
+  payload: { settings?: Partial<AppSettings> } | Partial<AppSettings> | unknown,
+): Partial<AppSettings> {
+  if (payload && typeof payload === 'object' && 'settings' in payload) {
+    return ((payload as { settings?: Partial<AppSettings> }).settings ?? {}) as Partial<AppSettings>;
+  }
+  return ((payload ?? {}) as Partial<AppSettings>);
+}
+
+function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
+  const adminOnlyKeys: Array<keyof AppSettings> = [
+    'models',
+    'permissions',
+    'cloud',
+    'mcp',
+    'supabase',
+    'cloudApi',
+    'langfuse',
+    'sanitization',
+    'confirmationGate',
+    'budget',
+  ];
+
+  return adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key));
+}
+
+function settingsActionRequiresAdmin(action: string, payload: unknown): boolean {
+  if (action === 'set') {
+    return settingsUpdateRequiresAdmin(extractSettingsUpdate(payload));
+  }
+
+  return action === 'getDevMode'
+    || action === 'setDevMode'
+    || action === 'setServiceApiKey'
+    || action === 'getServiceApiKey'
+    || action === 'getAllServiceKeys';
+}
+
 async function handleSet(
   getConfigService: () => ConfigService | null,
   payload: { settings?: Partial<AppSettings> } | Partial<AppSettings>
 ): Promise<void> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  const updates = payload && typeof payload === 'object' && 'settings' in payload
-    ? payload.settings
-    : payload;
+  const updates = extractSettingsUpdate(payload);
   await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
 }
 
@@ -178,11 +255,19 @@ export function registerSettingsHandlers(
     const { action, payload } = request;
 
     try {
+      if (settingsActionRequiresAdmin(action, payload)) {
+        const accessError = getAdminAccessIpcError('Settings');
+        if (accessError) return accessError;
+      }
+
       let data: unknown;
 
       switch (action) {
         case 'get':
           data = await handleGet(getConfigService);
+          if (!isCurrentUserAdmin()) {
+            data = sanitizeSettingsForUser(data as AppSettings);
+          }
           break;
         case 'set':
           await handleSet(getConfigService, payload as { settings: Partial<AppSettings> });
@@ -251,13 +336,15 @@ export function registerSettingsHandlers(
   // ========== Legacy Handlers (Deprecated) ==========
 
   /** Integration config handlers */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, async (_, integration: string) =>
-    handleGetIntegration(getConfigService, integration)
-  );
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, async (_, integration: string) => {
+    assertAdminAccess('Integration settings');
+    return handleGetIntegration(getConfigService, integration);
+  });
 
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, async (_, payload: { integration: string; config: Record<string, string> }) =>
-    handleSetIntegration(getConfigService, payload)
-  );
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, async (_, payload: { integration: string; config: Record<string, string> }) => {
+    assertAdminAccess('Integration settings');
+    return handleSetIntegration(getConfigService, payload);
+  });
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
@@ -442,11 +529,13 @@ export function registerSettingsHandlers(
 
   // Permission mode handlers
   ipcMain.handle(IPC_CHANNELS.PERMISSION_GET_MODE, async () => {
+    assertAdminAccess('Permission mode');
     const { getPermissionModeManager } = await import('../permissions/modes');
     return getPermissionModeManager().getMode();
   });
 
   ipcMain.handle(IPC_CHANNELS.PERMISSION_SET_MODE, async (_, mode: string) => {
+    assertAdminAccess('Permission mode');
     const { getPermissionModeManager } = await import('../permissions/modes');
     const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
     if (!validModes.includes(mode)) {

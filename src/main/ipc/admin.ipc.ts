@@ -9,25 +9,12 @@ import type {
   AdminUpdateInviteCodeInput,
 } from '../../shared/contract';
 import { getAdminService } from '../services/admin';
-import { getAuthService } from '../services/auth';
-
-function getAdminAccessError(): IPCResponse | null {
-  const user = getAuthService().getCurrentUser();
-  if (user?.isAdmin === true) return null;
-
-  return {
-    success: false,
-    error: {
-      code: 'FORBIDDEN',
-      message: 'Admin permission required',
-    },
-  };
-}
+import { getAdminAccessIpcError } from './adminGuard';
 
 export function registerAdminHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.ADMIN, async (_, request: IPCRequest): Promise<IPCResponse> => {
     try {
-      const accessError = getAdminAccessError();
+      const accessError = getAdminAccessIpcError('Admin');
       if (accessError) return accessError;
 
       let data: unknown;

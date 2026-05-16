@@ -29,11 +29,21 @@ import type {
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
+import { assertAdminAccess } from './adminGuard';
 import { getReviewQueueService } from '../evaluation/reviewQueueService';
 import { getDeliveryReviewService } from '../evaluation/deliveryReviewService';
 import { getPreviewFeedbackService } from '../evaluation/previewFeedbackService';
 
 const logger = createLogger('EvaluationIPC');
+
+function adminOnly<T extends unknown[], R>(
+  handler: (...args: T) => R | Promise<R>,
+): (...args: T) => R | Promise<R> {
+  return (...args: T) => {
+    assertAdminAccess('Evaluation');
+    return handler(...args);
+  };
+}
 
 /**
  * Classify a failure into a funnel stage.
@@ -141,32 +151,32 @@ export function registerEvaluationHandlers(): void {
   // 执行评测
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_RUN,
-    async (_event, payload: { sessionId: string; save?: boolean }) => {
+    adminOnly(async (_event, payload: { sessionId: string; save?: boolean }) => {
       logger.info(`Running evaluation for session: ${payload.sessionId}`);
       return service.evaluateSession(payload.sessionId, { save: payload.save });
-    }
+    })
   );
 
   // 获取评测结果
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_GET_RESULT,
-    async (_event, evaluationId: string) => {
+    adminOnly(async (_event, evaluationId: string) => {
       return service.getResult(evaluationId);
-    }
+    })
   );
 
   // 获取评测历史
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_LIST_HISTORY,
-    async (_event, payload?: { sessionId?: string; limit?: number }) => {
+    adminOnly(async (_event, payload?: { sessionId?: string; limit?: number }) => {
       return service.listHistory(payload?.sessionId, payload?.limit);
-    }
+    })
   );
 
   // 导出评测报告
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_EXPORT,
-    async (
+    adminOnly(async (
       _event,
       payload: {
         result: Parameters<typeof service.exportReport>[0];
@@ -174,15 +184,15 @@ export function registerEvaluationHandlers(): void {
       }
     ) => {
       return service.exportReport(payload.result, payload.format);
-    }
+    })
   );
 
   // 删除评测记录
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_DELETE,
-    async (_event, evaluationId: string) => {
+    adminOnly(async (_event, evaluationId: string) => {
       return service.deleteResult(evaluationId);
-    }
+    })
   );
 
   // ------------------------------------------------------------------------
@@ -194,25 +204,25 @@ export function registerEvaluationHandlers(): void {
   // 获取客观指标（立即返回，不需要 LLM）
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_GET_OBJECTIVE_METRICS,
-    async (_event, sessionId: string) => {
+    adminOnly(async (_event, sessionId: string) => {
       logger.info(`Getting objective metrics for session: ${sessionId}`);
       return analyticsService.calculateObjectiveMetrics(sessionId);
-    }
+    })
   );
 
   // 获取完整会话分析（客观指标 + 历史评测）
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_GET_SESSION_ANALYSIS,
-    async (_event, sessionId: string) => {
+    adminOnly(async (_event, sessionId: string) => {
       logger.info(`Getting session analysis for: ${sessionId}`);
       return analyticsService.getSessionAnalysis(sessionId);
-    }
+    })
   );
 
   // 执行主观评测（v3: 瑞士奶酪 + Transcript 分析）
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE,
-    async (_event, payload: { sessionId: string; save?: boolean }) => {
+    adminOnly(async (_event, payload: { sessionId: string; save?: boolean }) => {
       logger.info(`Running subjective evaluation for session: ${payload.sessionId}`);
 
       // 获取客观指标
@@ -307,99 +317,99 @@ export function registerEvaluationHandlers(): void {
         aggregatedMetrics: result.aggregatedMetrics,
         transcriptMetrics: result.transcriptMetrics,
       };
-    }
+    })
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.REVIEW_QUEUE_LIST,
-    async () => {
+    adminOnly(async () => {
       return reviewQueueService.listItems();
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.REVIEW_QUEUE_ENQUEUE,
-    async (_event, payload: EnqueueReviewItemInput) => {
+    adminOnly(async (_event, payload: EnqueueReviewItemInput) => {
       logger.info(`Enqueue session review: ${payload.sessionId}`);
       return reviewQueueService.enqueueSession(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.REVIEW_QUEUE_UPDATE_FAILURE_ASSET,
-    async (_event, payload: UpdateReviewQueueFailureCapabilityAssetInput) => {
+    adminOnly(async (_event, payload: UpdateReviewQueueFailureCapabilityAssetInput) => {
       logger.info(`Update review failure asset: ${payload.reviewItemId} -> ${payload.status}`);
       return reviewQueueService.updateFailureAssetStatus(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.SCENARIO_SKILLS_LIST,
-    async () => {
+    adminOnly(async () => {
       return deliveryReviewService.listScenarioSkills();
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.DELIVERY_REVIEW_RUN,
-    async (_event, payload: RunDeliveryReviewInput) => {
+    adminOnly(async (_event, payload: RunDeliveryReviewInput) => {
       logger.info(`Run delivery review for session: ${payload.sessionId}`);
       return deliveryReviewService.run(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.PREVIEW_FEEDBACK_LIST,
-    async (_event, payload: ListPreviewFeedbackInput) => {
+    adminOnly(async (_event, payload: ListPreviewFeedbackInput) => {
       return previewFeedbackService.list(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.PREVIEW_FEEDBACK_CREATE,
-    async (_event, payload: CreatePreviewFeedbackInput) => {
+    adminOnly(async (_event, payload: CreatePreviewFeedbackInput) => {
       return previewFeedbackService.create(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS,
-    async (_event, payload: UpdatePreviewFeedbackStatusInput) => {
+    adminOnly(async (_event, payload: UpdatePreviewFeedbackStatusInput) => {
       return previewFeedbackService.updateStatus(payload);
-    },
+    }),
   );
 
   ipcMain.handle(
     EVALUATION_CHANNELS.PREVIEW_FEEDBACK_SEND_TO_CHAT,
-    async (_event, payload: SendPreviewFeedbackToChatInput) => {
+    adminOnly(async (_event, payload: SendPreviewFeedbackToChatInput) => {
       return previewFeedbackService.buildChatContext(payload);
-    },
+    }),
   );
 
   // @deprecated — Use LIST_EXPERIMENTS + LOAD_EXPERIMENT instead. Kept for backward compatibility.
-  ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_REPORTS, async () => {
+  ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_REPORTS, adminOnly(async () => {
     return service.listTestReports();
-  });
+  }));
 
   // @deprecated — Use LOAD_EXPERIMENT instead. Kept for backward compatibility.
-  ipcMain.handle(EVALUATION_CHANNELS.LOAD_TEST_REPORT, async (_event, filePath: string) => {
+  ipcMain.handle(EVALUATION_CHANNELS.LOAD_TEST_REPORT, adminOnly(async (_event, filePath: string) => {
     return service.loadTestReport(filePath);
-  });
+  }));
 
   // Annotation store handlers (eval-harness)
-  ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, async (_event, annotation) => {
+  ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, adminOnly(async (_event, annotation) => {
     const proxy = AnnotationProxy.getInstance();
     return proxy.saveAnnotation(annotation);
-  });
+  }));
 
-  ipcMain.handle(EVALUATION_CHANNELS.GET_AXIAL_CODING, async () => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_AXIAL_CODING, adminOnly(async () => {
     const proxy = AnnotationProxy.getInstance();
     return proxy.getAxialCoding();
-  });
+  }));
 
 
   // List test cases from YAML files
-  ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_CASES, async () => {
+  ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_CASES, adminOnly(async () => {
     try {
       const { loadAllTestSuites } = await import('../testing/testCaseLoader');
       const path = await import('path');
@@ -429,7 +439,7 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to list test cases:', error);
       return [];
     }
-  });
+  }));
 
 
   // Scoring config handlers
@@ -437,7 +447,7 @@ export function registerEvaluationHandlers(): void {
     app.getPath('userData'), 'scoring-config.json'
   );
 
-  ipcMain.handle(EVALUATION_CHANNELS.GET_SCORING_CONFIG, async () => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_SCORING_CONFIG, adminOnly(async () => {
     try {
       if (fs.existsSync(scoringConfigPath)) {
         const data = fs.readFileSync(scoringConfigPath, 'utf-8');
@@ -448,10 +458,10 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to load scoring config:', error);
       return [];
     }
-  });
+  }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ipcMain.handle 回调首参 _event 应该是 Electron.IpcMainInvokeEvent，被忽略时也应保持类型；统一改成 IpcMainInvokeEvent
-  ipcMain.handle(EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG, async (_event: any, config: ScoringConfigEntry[]) => {
+  ipcMain.handle(EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG, adminOnly(async (_event: any, config: ScoringConfigEntry[]) => {
     try {
       fs.writeFileSync(scoringConfigPath, JSON.stringify(config, null, 2), 'utf-8');
       return { success: true };
@@ -459,14 +469,14 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to save scoring config:', error);
       throw error;
     }
-  });
+  }));
 
   // ------------------------------------------------------------------------
   // ExcelMaster - Experiment CRUD (Layer 2)
   // ------------------------------------------------------------------------
 
   // List experiments
-  ipcMain.handle(EVALUATION_CHANNELS.LIST_EXPERIMENTS, async (_event, limit?: number) => {
+  ipcMain.handle(EVALUATION_CHANNELS.LIST_EXPERIMENTS, adminOnly(async (_event, limit?: number) => {
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
@@ -475,10 +485,10 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to list experiments:', error);
       return [];
     }
-  });
+  }));
 
   // Load single experiment by ID
-  ipcMain.handle(EVALUATION_CHANNELS.LOAD_EXPERIMENT, async (_event, id: string) => {
+  ipcMain.handle(EVALUATION_CHANNELS.LOAD_EXPERIMENT, adminOnly(async (_event, id: string) => {
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
@@ -487,10 +497,10 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to load experiment:', error);
       return null;
     }
-  });
+  }));
 
   // Failure funnel - derive funnel stages from stored experiment cases
-  ipcMain.handle(EVALUATION_CHANNELS.GET_FAILURE_FUNNEL, async (_event, experimentId: string) => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_FAILURE_FUNNEL, adminOnly(async (_event, experimentId: string) => {
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
@@ -545,10 +555,10 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to get failure funnel:', error);
       return null;
     }
-  });
+  }));
 
   // Cross-experiment comparison - load multiple experiments
-  ipcMain.handle(EVALUATION_CHANNELS.GET_CROSS_EXPERIMENT, async (_event, experimentIds: string[]) => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_CROSS_EXPERIMENT, adminOnly(async (_event, experimentIds: string[]) => {
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
@@ -564,11 +574,11 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to get cross-experiment data:', error);
       return [];
     }
-  });
+  }));
 
 
   // Create experiment — wire the "Start Experiment" button to actual execution
-  ipcMain.handle(EVALUATION_CHANNELS.CREATE_EXPERIMENT, async (
+  ipcMain.handle(EVALUATION_CHANNELS.CREATE_EXPERIMENT, adminOnly(async (
     _event,
     config: { name: string; model: string; provider?: string; testSetId: string; trialsPerCase: number; gitCommit: string }
   ) => {
@@ -819,11 +829,11 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to create experiment', { error: msg });
       throw new Error(`Failed to create experiment: ${msg}`);
     }
-  });
+  }));
 
 
   // Snapshot handlers
-  ipcMain.handle(EVALUATION_CHANNELS.GET_SNAPSHOT, async (_event, sessionId: string) => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_SNAPSHOT, adminOnly(async (_event, sessionId: string) => {
     try {
       const { getOrBuildSnapshot } = await import('../evaluation/snapshotBuilder');
       return getOrBuildSnapshot(sessionId);
@@ -831,9 +841,9 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to get snapshot:', error);
       return null;
     }
-  });
+  }));
 
-  ipcMain.handle(EVALUATION_CHANNELS.BUILD_SNAPSHOT, async (_event, sessionId: string) => {
+  ipcMain.handle(EVALUATION_CHANNELS.BUILD_SNAPSHOT, adminOnly(async (_event, sessionId: string) => {
     try {
       const { buildSnapshot } = await import('../evaluation/snapshotBuilder');
       return buildSnapshot(sessionId);
@@ -841,10 +851,10 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to build snapshot:', error);
       return null;
     }
-  });
+  }));
 
   // Case detail handler (for CaseDetailPage)
-  ipcMain.handle(EVALUATION_CHANNELS.GET_CASE_DETAIL, async (_event, payload: { experimentId: string; caseId: string }) => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_CASE_DETAIL, adminOnly(async (_event, payload: { experimentId: string; caseId: string }) => {
     try {
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
@@ -868,17 +878,17 @@ export function registerEvaluationHandlers(): void {
       logger.error('Failed to get case detail:', error);
       return null;
     }
-  });
+  }));
 
   // Get current git commit hash
-  ipcMain.handle(EVALUATION_CHANNELS.GET_GIT_COMMIT, async () => {
+  ipcMain.handle(EVALUATION_CHANNELS.GET_GIT_COMMIT, adminOnly(async () => {
     try {
       const hash = execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim();
       return { hash, short: hash.slice(0, 7) };
     } catch {
       return { hash: 'unknown', short: 'unknown' };
     }
-  });
+  }));
 
   logger.info('Evaluation IPC handlers registered');
 }
@@ -904,7 +914,7 @@ export function registerSubsetHandlers(): void {
   };
 
   // Save a test subset
-  ipcMain.handle(SUBSET_CHANNELS.SAVE, async (
+  ipcMain.handle(SUBSET_CHANNELS.SAVE, adminOnly(async (
     _event,
     subset: { name: string; description?: string; caseIds: string[] }
   ) => {
@@ -928,10 +938,10 @@ export function registerSubsetHandlers(): void {
       subsetLogger.error('Failed to save subset:', error);
       throw error;
     }
-  });
+  }));
 
   // List all saved subsets
-  ipcMain.handle(SUBSET_CHANNELS.LIST, async () => {
+  ipcMain.handle(SUBSET_CHANNELS.LIST, adminOnly(async () => {
     try {
       const dir = getSubsetDir();
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
@@ -957,10 +967,10 @@ export function registerSubsetHandlers(): void {
       subsetLogger.error('Failed to list subsets:', error);
       return [];
     }
-  });
+  }));
 
   // Load a specific subset
-  ipcMain.handle(SUBSET_CHANNELS.LOAD, async (_event, fileName: string) => {
+  ipcMain.handle(SUBSET_CHANNELS.LOAD, adminOnly(async (_event, fileName: string) => {
     try {
       const filePath = path.join(getSubsetDir(), fileName);
       if (!fs.existsSync(filePath)) return null;
@@ -976,10 +986,10 @@ export function registerSubsetHandlers(): void {
       subsetLogger.error('Failed to load subset:', error);
       return null;
     }
-  });
+  }));
 
   // Delete a subset
-  ipcMain.handle(SUBSET_CHANNELS.DELETE, async (_event, fileName: string) => {
+  ipcMain.handle(SUBSET_CHANNELS.DELETE, adminOnly(async (_event, fileName: string) => {
     try {
       const filePath = path.join(getSubsetDir(), fileName);
       if (fs.existsSync(filePath)) {
@@ -992,7 +1002,7 @@ export function registerSubsetHandlers(): void {
       subsetLogger.error('Failed to delete subset:', error);
       return false;
     }
-  });
+  }));
 
   subsetLogger.info('Test subset IPC handlers registered');
 }

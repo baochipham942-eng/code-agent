@@ -3,6 +3,12 @@
 // Shared tab ids and group placement for settings navigation/search/store.
 // ============================================================================
 
+import {
+  canAccessFeature,
+  type AccessControlledFeature,
+  type AccessSubject,
+} from './accessControl';
+
 export const SETTINGS_TAB_IDS = [
   'general',
   'conversation',
@@ -84,15 +90,23 @@ export function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === 'string' && SETTINGS_TAB_ID_SET.has(value);
 }
 
-export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites'] as const satisfies readonly SettingsTab[];
+export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'capabilities', 'hooks'] as const satisfies readonly SettingsTab[];
 
 const ADMIN_ONLY_SETTINGS_TAB_SET = new Set<SettingsTab>(ADMIN_ONLY_SETTINGS_TABS);
+
+const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
+  users: 'settings.users',
+  invites: 'settings.invites',
+  capabilities: 'settings.capabilities',
+  hooks: 'settings.hooks',
+};
 
 export function isAdminOnlySettingsTab(tab: SettingsTab): boolean {
   return ADMIN_ONLY_SETTINGS_TAB_SET.has(tab);
 }
 
-export function canAccessSettingsTab(tab: SettingsTab, options?: { isAdmin?: boolean }): boolean {
-  if (!isAdminOnlySettingsTab(tab)) return true;
-  return options?.isAdmin === true;
+export function canAccessSettingsTab(tab: SettingsTab, subject?: AccessSubject | null): boolean {
+  const feature = SETTINGS_TAB_ACCESS_FEATURES[tab];
+  if (!feature) return true;
+  return canAccessFeature(feature, subject);
 }

@@ -63,7 +63,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       showScreenMemoryTab: true,
       showUpdateTab: true,
       hasOptionalUpdate: true,
-      isAdmin: true,
+      access: { isAdmin: true },
     });
 
     expect(groups.map((group) => group.label)).toEqual([
@@ -100,12 +100,34 @@ describe('SettingsModal screen memory tab visibility', () => {
       showScreenMemoryTab: true,
       showUpdateTab: true,
       hasOptionalUpdate: false,
-      isAdmin: false,
+      access: { isAdmin: false },
     });
 
     expect(groups.map((group) => group.label)).not.toContain('用户管理');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('users');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('invites');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('capabilities');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('hooks');
+  });
+
+  it('keeps personal settings tabs visible for non-admin users', () => {
+    const groups = buildSettingsTabGroups({
+      t,
+      showScreenMemoryTab: true,
+      showUpdateTab: true,
+      hasOptionalUpdate: false,
+      access: { isAdmin: false },
+    });
+
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toEqual(expect.arrayContaining([
+      'model',
+      'mcp',
+      'skills',
+      'channels',
+      'memory',
+      'automation',
+      'workspace',
+    ]));
   });
 });
 

@@ -4,6 +4,8 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
+import { useAuthStore } from '../../../stores/authStore';
+import { canAccessFeature } from '../../../utils/accessControl';
 import { TestResultsDashboard } from './testResults/TestResultsDashboard';
 import { TestCaseManager } from './pages/TestCaseManager';
 import { ScoringConfigPage } from './pages/ScoringConfigPage';
@@ -31,6 +33,8 @@ export const EvalCenterPanel: React.FC = () => {
     setShowEvalCenter,
     evalCenterSessionId,
   } = useAppStore();
+  const isAuthLoading = useAuthStore((s) => s.isLoading);
+  const canOpenEvalCenter = useAuthStore((s) => canAccessFeature('eval.center', s.user));
   const [activeNav, setActiveNav] = useState<NavItem>('sessions');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
@@ -51,6 +55,11 @@ export const EvalCenterPanel: React.FC = () => {
   };
 
   React.useEffect(() => {
+    if (showEvalCenter && !isAuthLoading && !canOpenEvalCenter) {
+      setShowEvalCenter(false);
+      return;
+    }
+
     if (!showEvalCenter) {
       return;
     }
@@ -62,9 +71,10 @@ export const EvalCenterPanel: React.FC = () => {
     }
 
     setSelectedSessionId(null);
-  }, [showEvalCenter, evalCenterSessionId]);
+  }, [showEvalCenter, evalCenterSessionId, isAuthLoading, canOpenEvalCenter, setShowEvalCenter]);
 
   if (!showEvalCenter) return null;
+  if (!canOpenEvalCenter) return null;
 
   return (
     <div className="w-full h-full flex flex-col bg-zinc-900">

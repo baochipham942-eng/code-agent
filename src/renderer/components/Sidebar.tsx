@@ -54,6 +54,7 @@ import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { copyPathToClipboard } from '../utils/platform';
+import { canAccessFeature } from '../utils/accessControl';
 import {
   createWorkbenchRecipeMergedContext,
   getDefaultWorkbenchPresetName,
@@ -231,6 +232,7 @@ export const Sidebar: React.FC = () => {
   } = useSessionUIStore();
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
+  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -980,11 +982,13 @@ export const Sidebar: React.FC = () => {
                   icon={<Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
                   label="知识与记忆"
                 />
-                <AccountMenuItem
-                  onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
-                  icon={<CheeseIcon className="w-4 h-4 text-amber-400/80" />}
-                  label="评测中心"
-                />
+                {canOpenEvalCenter && (
+                  <AccountMenuItem
+                    onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
+                    icon={<CheeseIcon className="w-4 h-4 text-amber-400/80" />}
+                    label="评测中心"
+                  />
+                )}
                 <AccountMenuItem
                   onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}
                   icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}

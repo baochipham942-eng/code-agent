@@ -12,6 +12,7 @@ import type {
 import type { ConfigService } from '../services/core/configService';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import { getCapabilityCenterService } from '../services/capabilities/capabilityCenterService';
+import { getAdminAccessIpcError } from './adminGuard';
 
 export interface CapabilityIpcDependencies {
   getConfigService: () => ConfigService | null;
@@ -34,6 +35,11 @@ export function registerCapabilityHandlers(
     const service = getCapabilityCenterService();
 
     try {
+      if (request.action !== 'list') {
+        const accessError = getAdminAccessIpcError('Capability Center');
+        if (accessError) return accessError;
+      }
+
       let data: unknown;
       switch (request.action) {
         case 'list':

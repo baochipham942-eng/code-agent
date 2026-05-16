@@ -4,6 +4,8 @@
 
 import React from 'react';
 import { useAppStore } from '../../../stores/appStore';
+import { useAuthStore } from '../../../stores/authStore';
+import { canAccessFeature } from '../../../utils/accessControl';
 
 interface EvaluationTriggerProps {
   sessionId: string | null;
@@ -11,8 +13,9 @@ interface EvaluationTriggerProps {
 
 export function EvaluationTrigger({ sessionId }: EvaluationTriggerProps) {
   const setShowEvalCenter = useAppStore(s => s.setShowEvalCenter);
+  const canOpenEvalCenter = useAuthStore(s => canAccessFeature('eval.center', s.user));
 
-  if (!sessionId) {
+  if (!sessionId || !canOpenEvalCenter) {
     return null;
   }
 

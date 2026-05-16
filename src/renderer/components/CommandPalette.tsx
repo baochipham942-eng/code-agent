@@ -6,7 +6,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Search, X, Settings, FileText, Trash2, FolderOpen, RotateCcw, Plus, Archive, Moon, Sun, Keyboard, HelpCircle, BarChart2 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { canAccessFeature } from '../utils/accessControl';
 
 // ============================================================================
 // Types
@@ -55,6 +57,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     archiveSession,
     currentSessionId,
   } = useSessionStore();
+  const canOpenEvalCenter = useAuthStore((s) => canAccessFeature('eval.center', s.user));
 
   // 定义所有可用命令
   const allCommands: Command[] = useMemo(() => [
@@ -118,14 +121,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       category: 'view',
       action: () => setShowWorkspace(!showWorkspace),
     },
-    {
+    ...(canOpenEvalCenter ? [{
       id: 'show-eval-center',
       label: '打开评测中心',
       description: '评测和遥测分析',
       icon: <BarChart2 className="w-4 h-4" />,
-      category: 'view',
+      category: 'view' as const,
       action: () => setShowEvalCenter(true),
-    },
+    }] : []),
 
     // Settings commands
     {
@@ -173,6 +176,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     setSidebarCollapsed,
     sidebarCollapsed,
     setShowEvalCenter,
+    canOpenEvalCenter,
   ]);
 
   // 过滤命令

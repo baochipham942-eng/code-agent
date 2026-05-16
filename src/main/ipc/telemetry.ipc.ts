@@ -9,6 +9,7 @@ import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { createLogger } from '../services/infra/logger';
 import type { TelemetryHealth } from '../../shared/contract/telemetry';
+import { assertAdminAccess, isCurrentUserAdmin } from './adminGuard';
 
 const logger = createLogger('TelemetryIPC');
 
@@ -24,6 +25,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_SESSION,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getSession(sessionId);
     }
   );
@@ -32,6 +34,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.LIST_SESSIONS,
     async (_event, payload?: { limit?: number; offset?: number }) => {
+      assertAdminAccess('Telemetry');
       return storage.listSessions(payload?.limit, payload?.offset);
     }
   );
@@ -40,6 +43,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_TURNS,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getTurnsBySession(sessionId, 'main');
     }
   );
@@ -48,6 +52,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_TURN_DETAIL,
     async (_event, turnId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getTurnDetail(turnId);
     }
   );
@@ -56,6 +61,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_TOOL_STATS,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getToolUsageStats(sessionId);
     }
   );
@@ -64,6 +70,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_COMPUTER_SURFACE_SUMMARY,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getComputerSurfaceReliabilitySummary(sessionId);
     }
   );
@@ -72,6 +79,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_INTENT_DIST,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getIntentDistribution(sessionId);
     }
   );
@@ -80,6 +88,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_EVENTS,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       return storage.getEventsBySession(sessionId);
     }
   );
@@ -88,6 +97,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
     async (_event, hash: string) => {
+      assertAdminAccess('Telemetry');
       try {
         const { getSystemPromptCache } = await import('../telemetry/systemPromptCache');
         return getSystemPromptCache().get(hash);
@@ -101,6 +111,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       if (process.env.EVAL_DISABLED === 'true') return null;
       const { extractStructuredReplay } = await import('../evaluation/replayService');
       return extractStructuredReplay(sessionId);
@@ -111,6 +122,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.DELETE_SESSION,
     async (_event, sessionId: string) => {
+      assertAdminAccess('Telemetry');
       storage.deleteSession(sessionId);
       return { success: true };
     }
@@ -120,6 +132,7 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.HEALTH,
     async (): Promise<TelemetryHealth> => {
+      assertAdminAccess('Telemetry');
       return {
         enabled: storage.dbAvailable,
         sessionCount: storage.getSessionCount(),
@@ -132,6 +145,7 @@ export function registerTelemetryHandlers(
   // 订阅实时事件推送
   const collector = getTelemetryCollector();
   collector.addEventListener((event) => {
+    if (!isCurrentUserAdmin()) return;
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(TELEMETRY_CHANNELS.EVENT, event);

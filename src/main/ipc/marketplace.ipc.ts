@@ -26,6 +26,7 @@ import type {
   PluginInstallResult,
 } from '../skills/marketplace';
 import { createLogger } from '../services/infra/logger';
+import { isCurrentUserAdmin } from './adminGuard';
 
 const logger = createLogger('MarketplaceIPC');
 
@@ -52,8 +53,25 @@ function errorResult<T>(error: unknown): MarketplaceResult<T> {
  * Register Marketplace IPC handlers
  */
 export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
+  type MarketplaceHandler<TArgs extends unknown[], TResult> = (event: unknown, ...args: TArgs) => Promise<TResult>;
+
+  const handleMarketplace = <TArgs extends unknown[], TResult>(
+    channel: string,
+    handler: MarketplaceHandler<TArgs, TResult>,
+  ): void => {
+    ipcMain.handle(channel, async (event, ...args: unknown[]): Promise<TResult> => {
+      if (!isCurrentUserAdmin()) {
+        return {
+          success: false,
+          error: 'Marketplace: Admin permission required',
+        } as TResult;
+      }
+      return handler(event, ...(args as TArgs));
+    });
+  };
+
   // List all known marketplaces
-  ipcMain.handle(IPC_CHANNELS.MARKETPLACE_LIST, async (): Promise<MarketplaceResult<MarketplaceInfo[]>> => {
+  handleMarketplace(IPC_CHANNELS.MARKETPLACE_LIST, async (): Promise<MarketplaceResult<MarketplaceInfo[]>> => {
     try {
       const config = await listMarketplaces();
       const results: MarketplaceInfo[] = [];
@@ -91,7 +109,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   });
 
   // Add a new marketplace
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_ADD,
     async (_, source: string): Promise<MarketplaceResult<MarketplaceInfo>> => {
       try {
@@ -117,7 +135,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Remove a marketplace
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_REMOVE,
     async (_, name: string): Promise<MarketplaceResult<void>> => {
       try {
@@ -131,7 +149,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Refresh a marketplace
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_REFRESH,
     async (_, name?: string): Promise<MarketplaceResult<void>> => {
       try {
@@ -157,7 +175,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Get marketplace info
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_INFO,
     async (_, name: string): Promise<MarketplaceResult<MarketplaceInfo>> => {
       try {
@@ -182,7 +200,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // List all plugins from all marketplaces
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS,
     async (_, marketplaceId?: string): Promise<MarketplaceResult<MarketplacePluginEntry[]>> => {
       try {
@@ -220,7 +238,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Search plugins
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_SEARCH_PLUGINS,
     async (_, query: string): Promise<MarketplaceResult<MarketplacePluginEntry[]>> => {
       try {
@@ -253,7 +271,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Install a plugin
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN,
     async (_, pluginSpec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }): Promise<PluginInstallResult> => {
       try {
@@ -288,7 +306,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Uninstall a plugin
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN,
     async (_, pluginSpec: string, scope?: 'user' | 'project'): Promise<MarketplaceResult<void>> => {
       try {
@@ -302,7 +320,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // List installed plugins
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED,
     async (_, scope?: 'user' | 'project' | 'all'): Promise<MarketplaceResult<InstalledPlugin[]>> => {
       try {
@@ -337,7 +355,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Enable a plugin
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN,
     async (_, pluginSpec: string): Promise<MarketplaceResult<void>> => {
       try {
@@ -351,7 +369,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   );
 
   // Disable a plugin
-  ipcMain.handle(
+  handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN,
     async (_, pluginSpec: string): Promise<MarketplaceResult<void>> => {
       try {

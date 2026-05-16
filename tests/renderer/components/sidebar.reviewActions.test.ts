@@ -35,7 +35,7 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 6) {
+      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 7) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),

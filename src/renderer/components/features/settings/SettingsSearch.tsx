@@ -4,19 +4,21 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
+import type { AccessSubject } from '../../../utils/accessControl';
 import { searchSettings, type SettingsTab, type SettingsEntry } from '../../../utils/settingsIndex';
 
 interface SettingsSearchProps {
   onNavigate: (tab: SettingsTab) => void;
+  access?: AccessSubject | null;
 }
 
-export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate }) => {
+export const SettingsSearch: React.FC<SettingsSearchProps> = ({ onNavigate, access = null }) => {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const results = useMemo(() => searchSettings(query), [query]);
+  const results = useMemo(() => searchSettings(query, access ?? undefined), [access, query]);
 
   // Deduplicate results by tab — show one entry per tab with all matching labels
   const groupedResults = useMemo(() => {

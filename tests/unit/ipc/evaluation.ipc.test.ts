@@ -15,6 +15,12 @@ vi.mock('../../../src/main/platform/windowBridge', () => ({
   broadcastToRenderer: vi.fn(),
 }));
 
+vi.mock('../../../src/main/services/auth', () => ({
+  getAuthService: () => ({
+    getCurrentUser: () => ({ id: 'admin-1', email: 'admin@example.com', isAdmin: true }),
+  }),
+}));
+
 vi.mock('../../../src/main/evaluation/EvaluationService', () => ({
   EvaluationService: {
     getInstance: () => ({

@@ -39,6 +39,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { isDesktopShellMode, isTauriMode } from '../../../utils/platform';
+import { canAccessFeature, createAccessSubject, type AccessSubject } from '../../../utils/accessControl';
 import { SettingsSearch } from './SettingsSearch';
 import {
   DEFAULT_SETTINGS_TAB,
@@ -108,7 +109,7 @@ interface BuildSettingsTabsOptions {
   showScreenMemoryTab: boolean;
   showUpdateTab: boolean;
   hasOptionalUpdate: boolean;
-  isAdmin?: boolean;
+  access?: AccessSubject | null;
 }
 
 export function buildSettingsTabGroups({
@@ -116,8 +117,9 @@ export function buildSettingsTabGroups({
   showScreenMemoryTab,
   showUpdateTab,
   hasOptionalUpdate,
-  isAdmin = false,
+  access,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
+  const accessSubject = createAccessSubject(access);
   const tabs: SettingsTabConfig[] = [
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
     { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
@@ -143,7 +145,7 @@ export function buildSettingsTabGroups({
   for (const groupId of SETTINGS_TAB_GROUP_ORDER) {
     groups.set(groupId, []);
   }
-  for (const tab of tabs.filter((tab) => canAccessSettingsTab(tab.id, { isAdmin }))) {
+  for (const tab of tabs.filter((tab) => canAccessSettingsTab(tab.id, accessSubject))) {
     groups.get(SETTINGS_TAB_GROUP_BY_TAB[tab.id])?.push(tab);
   }
 
@@ -194,7 +196,12 @@ export const SettingsModal: React.FC = () => {
     optionalUpdateInfo,
     setOptionalUpdateInfo,
   } = useAppStore();
-  const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
+  const currentUser = useAuthStore((state) => state.user);
+  const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
+  const canOpenTelemetry = canAccessFeature('eval.telemetry', accessSubject);
+  const canOpenInternalEvaluation = canAccessFeature('eval.center', accessSubject);
+  const canViewUsers = canAccessSettingsTab('users', accessSubject);
+  const canViewInvites = canAccessSettingsTab('invites', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -248,9 +255,9 @@ export const SettingsModal: React.FC = () => {
       showScreenMemoryTab: isDesktopShellMode(),
       showUpdateTab,
       hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
-      isAdmin,
+      access: accessSubject,
     }),
-    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, isAdmin]
+    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, accessSubject]
   );
   const tabs = useMemo(
     () => tabGroups.flatMap((group) => group.tabs),
@@ -295,7 +302,7 @@ export const SettingsModal: React.FC = () => {
               <ChevronLeft className="h-4 w-4" />
               <span>返回应用</span>
             </button>
-            <SettingsSearch onNavigate={handleSearchNavigate} isAdmin={isAdmin} />
+            <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
           </div>
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
@@ -346,38 +353,42 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   ))}
                   {/* Advanced 组追加两条跳转入口（不是 SettingsTab，而是直接调 store action） */}
-                  {isAdmin && isAdvanced && !collapsed && (
+                  {(canOpenTelemetry || canOpenInternalEvaluation) && isAdvanced && !collapsed && (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSettings(false);
-                          setShowEvalCenter(true, 'telemetry');
-                        }}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
-                      >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                          <Activity className="w-4 h-4" />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          调试（Telemetry）
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSettings(false);
-                          setShowEvalCenter(true, 'analysis');
-                        }}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
-                      >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                          <ClipboardCheck className="w-4 h-4" />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          内部评测
-                        </span>
-                      </button>
+                      {canOpenTelemetry && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSettings(false);
+                            setShowEvalCenter(true, 'telemetry');
+                          }}
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                            <Activity className="w-4 h-4" />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            调试（Telemetry）
+                          </span>
+                        </button>
+                      )}
+                      {canOpenInternalEvaluation && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSettings(false);
+                            setShowEvalCenter(true, 'analysis');
+                          }}
+                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200"
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                            <ClipboardCheck className="w-4 h-4" />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            内部评测
+                          </span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -412,8 +423,8 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'automation' && <AutomationSettings />}
-            {isAdmin && activeTab === 'users' && <UserDashboardSettings />}
-            {isAdmin && activeTab === 'invites' && <InviteCodesSettings />}
+            {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
+            {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

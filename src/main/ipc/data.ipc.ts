@@ -6,6 +6,7 @@ import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
+import { getAdminAccessIpcError } from './adminGuard';
 
 const logger = createLogger('DataIPC');
 
@@ -113,6 +114,13 @@ async function handleDataSetSnapshotRetention(req: { days: number }): Promise<vo
   db.setPreference('debugSnapshotRetentionDays', days);
 }
 
+function requiresAdmin(action: string): boolean {
+  return action === 'getSnapshotStats'
+    || action === 'clearSnapshots'
+    || action === 'setSnapshotRetention'
+    || action === 'clearToolCache';
+}
+
 async function handleDataClearToolCache(): Promise<number> {
   const { getToolCache } = await import('../services/infra/toolCache');
   const { getDatabase } = await import('../services/core/databaseService');
@@ -157,6 +165,11 @@ export function registerDataHandlers(ipcMain: IpcMain): void {
     const { action, payload } = request;
 
     try {
+      if (requiresAdmin(action)) {
+        const accessError = getAdminAccessIpcError('Debug snapshots');
+        if (accessError) return accessError;
+      }
+
       let data: unknown;
 
       switch (action) {

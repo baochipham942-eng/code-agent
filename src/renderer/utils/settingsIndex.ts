@@ -3,7 +3,8 @@
 // Static index of all settings entries for fuzzy search
 // ============================================================================
 
-import type { SettingsTab } from './settingsTabs';
+import type { AccessSubject } from './accessControl';
+import { canAccessSettingsTab, type SettingsTab } from './settingsTabs';
 export type { SettingsTab } from './settingsTabs';
 
 export interface SettingsEntry {
@@ -12,6 +13,8 @@ export interface SettingsEntry {
   label: string;
   keywords: string[];
 }
+
+export type SearchSettingsOptions = AccessSubject;
 
 /**
  * Static index of all settings items across tabs.
@@ -26,6 +29,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Workspace
   { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
+  { tab: 'workspace', tabLabel: '工作区', label: '配置作用域', keywords: ['personalization', 'config scope', 'scope', '配置作用域', '全局配置', '项目配置', '本地配置', '个性化', 'user config', 'project config', 'local config'] },
   { tab: 'workspace', tabLabel: '工作区', label: '最近目录', keywords: ['recent', '最近', 'recent directories', '历史', '切换'] },
   { tab: 'workspace', tabLabel: '工作区', label: '本地桥', keywords: ['bridge', 'local', '桥接', '本地', 'ipc'] },
   { tab: 'workspace', tabLabel: '工作区', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
@@ -100,11 +104,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
  * Search settings entries by query string.
  * Matches against label and keywords using simple substring matching.
  */
-export function searchSettings(query: string): SettingsEntry[] {
+export function searchSettings(query: string, options?: SearchSettingsOptions): SettingsEntry[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
 
   return SETTINGS_INDEX.filter((entry) => {
+    if (!canAccessSettingsTab(entry.tab, options)) return false;
     if (entry.label.toLowerCase().includes(q)) return true;
     if (entry.tabLabel.toLowerCase().includes(q)) return true;
     return entry.keywords.some((kw) => kw.toLowerCase().includes(q));

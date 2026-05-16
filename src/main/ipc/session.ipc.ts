@@ -138,6 +138,17 @@ export function registerSessionHandlers(
   ipcMain.handle(IPC_CHANNELS.SESSION_SEARCH, async (_, payload: { query: string; options?: CrossSessionSearchOptions }) => {
     return performCrossSessionSearch(payload.query, payload.options, requireAppService);
   });
+
+  // Plan title — agent 用 ## Plan: ... 在 markdown 里声明的会话标题，UI 顶部大字号显示
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_PLAN_TITLE, async (_, sessionId: string): Promise<string | null> => {
+    try {
+      const db = (await import('../services/core/databaseService')).getDatabase();
+      if (!db.isReady) return null;
+      return db.getSessionPlanTitle(sessionId);
+    } catch {
+      return null;
+    }
+  });
 }
 
 // ----------------------------------------------------------------------------

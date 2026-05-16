@@ -220,6 +220,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_UNARCHIVE]: (sessionId: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES]: (payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => Promise<{ messages: Message[]; hasMore: boolean }>;
   [IPC_CHANNELS.SESSION_SEARCH]: (payload: { query: string; options?: CrossSessionSearchOptions }) => Promise<CrossSessionSearchResults>;
+  [IPC_CHANNELS.SESSION_GET_PLAN_TITLE]: (sessionId: string) => Promise<string | null>;
 
   // Memory (legacy - kept for compatibility)
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;

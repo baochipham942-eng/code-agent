@@ -1,7 +1,7 @@
 {
   "name": "code-agent",
   "version": "0.16.75",
-  "description": "AI Coding Assistant with Generation Comparison",
+  "description": "Local AI cowork workspace with multi-agent orchestration",
   "type": "module",
   "main": "dist/web/webServer.cjs",
   "bin": {

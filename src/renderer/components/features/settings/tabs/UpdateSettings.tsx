@@ -141,7 +141,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   return (
     <SettingsPage
       title={t.update?.title || '版本更新'}
-      description={t.update?.description || '检查并下载最新版本的 Code Agent'}
+      description={t.update?.description || '检查并下载最新版本的 Agent Neo'}
     >
       <WebModeBanner />
 

@@ -338,7 +338,7 @@ fn update_api_url(current_version: &str) -> String {
 fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
-        .user_agent(format!("Code Agent Tauri/{}", current_version))
+        .user_agent(format!("Agent Neo Tauri/{}", current_version))
         .build()
         .map_err(|error| format!("Failed to build update HTTP client: {error}"))?;
 
@@ -644,7 +644,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let _tray = TrayIconBuilder::new()
         .icon(TRAY_ICON)
         .icon_as_template(true)
-        .tooltip("Code Agent")
+        .tooltip("Agent Neo")
         .menu(&menu)
         .on_menu_event(move |app_handle, event| {
             let activate_window = |handle: &tauri::AppHandle| {

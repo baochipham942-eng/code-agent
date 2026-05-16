@@ -54,7 +54,7 @@ export const en: Translations = {
   // Update Settings
   update: {
     title: 'Version Update',
-    description: 'Check and download the latest version of Code Agent',
+    description: 'Check and download the latest version of Agent Neo',
     currentVersion: 'Current Version',
     checking: 'Checking...',
     checkNow: 'Check for Updates',
@@ -207,7 +207,7 @@ export const en: Translations = {
     title: 'About',
     version: 'Version',
     description:
-      'Code Agent is an AI-powered coding assistant that demonstrates the evolution of AI agent capabilities across different generations. Built for learning and research purposes.',
+      'Agent Neo is a local AI cowork workspace for handling materials, moving tasks forward, orchestrating multiple agents, and keeping execution, validation, and delivery in one shared context.',
     technologies: 'Technologies',
     madeWith: 'Made with AI assistance',
   },

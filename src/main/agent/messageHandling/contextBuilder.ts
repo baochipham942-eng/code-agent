@@ -73,7 +73,7 @@ When built-in tools (WebFetch / Glob / Grep / Read / Edit / Write) don't fit you
  * and provides self-awareness about the app itself (name, version, source location).
  * This prevents the model from:
  * 1. Thinking in CLI terms when inside a desktop app
- * 2. Not knowing it IS code-agent when asked to fix its own bugs
+ * 2. Not knowing it IS Agent Neo when asked to fix its own bugs
  */
 export function buildRuntimeModeBlock(): string {
   const isCLIOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
@@ -83,7 +83,7 @@ export function buildRuntimeModeBlock(): string {
   // Self-awareness: app identity and source code location
   let appIdentity = '';
   try {
-    const appName = getAppName() || 'Code Agent';
+    const appName = getAppName() || 'Agent Neo';
     const appVersion = getAppVersion() || 'unknown';
     const packed = isPackaged();
     // In dev mode: source = process.cwd(); packaged: source = app.getAppPath()
@@ -106,7 +106,7 @@ GUI features (screenshot, browser_action) are unavailable.${appIdentity}
 
   if (isWebMode) {
     return `\n\n<runtime_mode>
-You are running in the Code Agent app-host web runtime.
+You are running in the Agent Neo app-host web runtime.
 Users interact through a visual chat interface, not a terminal.
 CODE_AGENT_CLI_MODE may be true here for Node/native-module compatibility; do not infer from it that browser, screenshot, or Computer Use tools are unavailable.
 Browser and Computer Use capabilities depend on loaded tool definitions and runtime readiness.${appIdentity}

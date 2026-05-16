@@ -96,7 +96,7 @@ export const TitleBar: React.FC = () => {
         {showUpdateButton && (
           <IconButton
             icon={<Download className="w-4 h-4" />}
-            aria-label="查看 Code Agent 更新"
+            aria-label="查看 Agent Neo 更新"
             title={updateButtonTitle}
             onClick={handleOpenUpdateSettings}
             variant="ghost"

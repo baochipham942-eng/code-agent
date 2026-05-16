@@ -1,5 +1,5 @@
 /**
- * Constitution - Code Agent 宪法
+ * Constitution - Agent Neo 宪法
  * 汇总导出所有宪法组件
  */
 
@@ -11,11 +11,11 @@ import { SAFETY } from './safety';
 import { JUDGMENT } from './judgment';
 
 /**
- * 完整的 Code Agent 宪法
+ * 完整的 Agent Neo 宪法
  * 所有代际共享，定义 Agent 的身份、价值观和行为准则
  */
 export const CONSTITUTION = `
-# Code Agent 宪法
+# Agent Neo 宪法
 
 ${SOUL}
 

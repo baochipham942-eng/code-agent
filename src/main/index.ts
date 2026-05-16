@@ -127,7 +127,7 @@ if (!gotTheLock) {
 app.whenReady().then(async () => {
   try {
     const appVersion = app.getVersion();
-    logger.info(`Code Agent v${appVersion} starting...`);
+    logger.info(`Agent Neo v${appVersion} starting...`);
 
     // 1. Initialize core services
     await initializeCoreServices();

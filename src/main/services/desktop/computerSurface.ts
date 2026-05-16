@@ -93,8 +93,8 @@ interface ComputerSurfacePreflightBlock {
   recommendedAction: string;
 }
 
-// Code Agent 自身的 app 名（与 src-tauri/tauri.conf.json 的 productName 一致）。
-const SELF_APP_NAME = 'Code Agent';
+// Agent Neo 自身的 app 名（与 src-tauri/tauri.conf.json 的 productName 一致）。
+const SELF_APP_NAME = 'Agent Neo';
 
 const DEFAULT_DENIED_APPS = [
   'Terminal',
@@ -1219,14 +1219,14 @@ class DesktopComputerSurface {
     return this.deniedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase());
   }
 
-  // 目标是否为 Code Agent 自身。
+  // 目标是否为 Agent Neo 自身。
   private isSelfApp(targetApp: string): boolean {
     return targetApp.trim().toLowerCase() === SELF_APP_NAME.toLowerCase();
   }
 
   /**
    * 只读 Computer Surface 操作（observe / get_ax_elements / get_windows /
-   * diagnose_app）的门禁：被保护的 app 一律拦，但 Code Agent 自身豁免。
+   * diagnose_app）的门禁：被保护的 app 一律拦，但 Agent Neo 自身豁免。
    *
    * 自操作真正该拦的是 reentrancy —— agent loop 通过 computer-use 驱动自己的
    * 输入/run 入口形成递归咬尾。而读自己的 UI 状态（设置页 / 会话列表 / AX 树）

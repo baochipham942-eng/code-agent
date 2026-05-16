@@ -24,7 +24,7 @@ const program = new Command();
 
 program
   .name('code-agent')
-  .description('AI 编程助手命令行工具')
+  .description('Agent Neo AI cowork 命令行工具')
   .version(version, '-v, --version', '显示版本号');
 
 // Global options

@@ -63,7 +63,7 @@ export const initSoulCommand = new Command('init-soul')
       }
 
       process.stdout.write(
-        '\n修改后会自动热重载，无需重启 Code Agent。\n' +
+        '\n修改后会自动热重载，无需重启 Agent Neo。\n' +
           '• SOUL.md 控制跨项目的"我是谁"\n' +
           '• PROFILE.md 控制当前项目的上下文约束\n',
       );

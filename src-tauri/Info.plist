@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Code Agent 需要麦克风权限来录制会议音频并生成会议纪要。</string>
+	<string>Agent Neo 需要麦克风权限来录制会议音频并生成会议纪要。</string>
 </dict>
 </plist>

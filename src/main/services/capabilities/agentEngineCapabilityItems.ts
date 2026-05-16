@@ -27,7 +27,7 @@ export function buildAgentEngineCapabilityItem(descriptor: AgentEngineDescriptor
     : descriptor.cwdPolicy;
   const detectedAt = new Date(descriptor.detectedAt).toISOString();
   const riskReasons = isNative
-    ? ['使用 Code Agent 现有 provider、tools、permissions、trace 和 review queue']
+    ? ['使用 Agent Neo 现有 provider、tools、permissions、trace 和 review queue']
     : [
         '外部 engine 只允许在当前 workspace cwd 内运行',
         ...(descriptor.auditNotes ?? []),
@@ -67,14 +67,14 @@ export function buildAgentEngineCapabilityItem(descriptor: AgentEngineDescriptor
       error: descriptor.lastError,
     }),
     risk: buildRisk(descriptor.riskTier, riskReasons, isNative
-      ? ['Code Agent runtime']
+      ? ['Agent Neo runtime']
       : ['当前 workspace cwd', '外部 CLI stdout/stderr/event stream']),
     permissions: [
       permission(
         isNative ? 'Native permission stack' : 'Read-only default',
         isNative ? 'medium' : 'low',
         isNative
-          ? '使用 Code Agent 现有 provider、tools 和权限栈'
+          ? '使用 Agent Neo 现有 provider、tools 和权限栈'
           : '当前版本外部 engine 手动选择后默认使用 read_only profile',
       ),
       permission('Workspace cwd guard', 'medium', '外部 engine 运行前会校验 cwd 必须落在当前 workspace 内'),

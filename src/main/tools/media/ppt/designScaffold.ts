@@ -87,7 +87,7 @@ ${ds}
 // ── pptxgenjs instance ──
 const pptx = new PptxGenJS();
 pptx.layout = 'LAYOUT_WIDE';
-pptx.author = 'Code Agent (Design Mode)';
+pptx.author = 'Agent Neo (Design Mode)';
 
 // ── Color Utilities ──
 

@@ -52,7 +52,7 @@ export const zh = {
   // Update Settings
   update: {
     title: '版本更新',
-    description: '检查并下载最新版本的 Code Agent',
+    description: '检查并下载最新版本的 Agent Neo',
     currentVersion: '当前版本',
     checking: '检查中...',
     checkNow: '检查更新',
@@ -189,7 +189,7 @@ export const zh = {
     title: '关于',
     version: '版本',
     description:
-      'Code Agent 是一个 AI 驱动的编程助手，展示了 AI Agent 能力在不同代际间的演进。专为学习和研究目的而构建。',
+      'Agent Neo 是一个本地 AI cowork 工作台，帮助你处理资料、推进任务、编排多模型 Agent，并把执行、验证和交付留在同一条协作上下文里。',
     technologies: '技术栈',
     madeWith: '由 AI 辅助制作',
   },

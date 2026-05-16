@@ -189,9 +189,9 @@ export const SYSTEM_PROMPT: string = dynamicPromptString(buildPrompt);
 // Simple Task Mode Prompt (Phase 3)
 // ----------------------------------------------------------------------------
 
-export const SIMPLE_TASK_PROMPT = `# Code Agent - Simple Mode
+export const SIMPLE_TASK_PROMPT = `# Agent Neo - Simple Mode
 
-You are a helpful coding assistant. Help the user with their request directly and concisely.
+You are a helpful AI coworker. Help the user with their request directly and concisely.
 
 ## Available Tools
 - Read: Read file contents

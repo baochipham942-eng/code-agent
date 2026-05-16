@@ -38,7 +38,7 @@ interface UseVoiceInputReturn {
 /**
  * 语音输入 Hook
  *
- * 使用 MediaRecorder API 录音，通过 Code Agent 桥调用主进程
+ * 使用 MediaRecorder API 录音，通过 Agent Neo 桥调用主进程
  * Groq Whisper API 进行语音转文字
  *
  * @example

@@ -203,7 +203,7 @@ function execSetTextStyle(xml: string, op: Extract<DocxEditOperation, { action: 
 // ---------------------------------------------------------------------------
 
 function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: 'track_insert' }>, zip: JSZipLike): { xml: string; desc: string } {
-  const author = op.author || 'Code Agent';
+  const author = op.author || 'Agent Neo';
   const insertion = wrapInsertion(op.text, author, op.date);
 
   const paragraphs = xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) || [];
@@ -231,7 +231,7 @@ function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: '
 }
 
 function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: 'track_delete' }>, zip: JSZipLike): { xml: string; desc: string } {
-  const author = op.author || 'Code Agent';
+  const author = op.author || 'Agent Neo';
   const searchEscaped = escapeXml(op.search);
   let count = 0;
 
@@ -251,7 +251,7 @@ function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: '
 }
 
 function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action: 'suggest_replace' }>, zip: JSZipLike): { xml: string; desc: string } {
-  const author = op.author || 'Code Agent';
+  const author = op.author || 'Agent Neo';
   const searchEscaped = escapeXml(op.search);
   let count = 0;
 

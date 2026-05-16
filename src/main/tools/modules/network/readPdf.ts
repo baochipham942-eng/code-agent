@@ -29,7 +29,7 @@ async function callDirectOpenRouter(apiKey: string, body: unknown): Promise<Resp
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://code-agent.app',
-      'X-Title': 'Code Agent',
+      'X-Title': 'Agent Neo',
     },
     body: JSON.stringify(body),
   });

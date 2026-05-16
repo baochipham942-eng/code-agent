@@ -247,7 +247,7 @@ export async function executeExcelGenerate(
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Code Agent';
+    workbook.creator = 'Agent Neo';
     workbook.created = new Date();
 
     const worksheet = workbook.addWorksheet(sheet_name);

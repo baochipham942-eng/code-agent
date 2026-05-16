@@ -208,13 +208,13 @@ const UserNode: React.FC<{
                 <span>已引导对话</span>
               </div>
             )}
-            <div className="flex items-start gap-1.5">
+            <div className="group/user-prompt flex items-start gap-1.5">
               {onRewind && (
                 <button
                   type="button"
                   onClick={() => onRewind(messageId, content)}
                   disabled={rewindDisabled}
-                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
                   title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
                   aria-label="回到这条提示词"
                 >

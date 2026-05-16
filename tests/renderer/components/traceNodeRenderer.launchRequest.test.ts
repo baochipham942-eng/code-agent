@@ -172,6 +172,9 @@ describe('TraceNodeRenderer launch request', () => {
 
     expect(html).toContain('aria-label="回到这条提示词"');
     expect(html).toContain('title="回到这条提示词"');
+    expect(html).toContain('group/user-prompt');
+    expect(html).toContain('opacity-0');
+    expect(html).toContain('group-hover/user-prompt:opacity-100');
   });
 
   it('keeps user prompt selection on the text content instead of the bubble chrome', () => {

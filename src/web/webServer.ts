@@ -31,6 +31,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
 import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse } from '../shared/contract';
+import type { MCPServerConfig } from '../main/mcp/mcpClient';
 
 const logger = createLogger('WebServer');
 
@@ -57,6 +58,9 @@ type WorkspaceSettingsForBootstrap = {
 
 type ConfigServiceForBootstrap = {
   getSettings: () => {
+    mcp?: {
+      servers?: MCPServerConfig[];
+    };
     workspace?: WorkspaceSettingsForBootstrap;
   };
 };
@@ -154,6 +158,53 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
       .catch((preloadError) => logger.warn('Failed to preload recommended repositories', { error: String(preloadError) }));
   } catch (error) {
     logger.warn('Skill services initialization failed (non-blocking):', (error as Error).message);
+  }
+}
+
+async function initializeWebMcpServices(configService: ConfigServiceForBootstrap): Promise<void> {
+  const workingDir = getWebBootstrapWorkingDirectory(configService);
+
+  try {
+    const { initMCPClient, getMCPClient } = await import('../main/mcp/mcpClient');
+    const mcpConfigs = configService.getSettings().mcp?.servers || [];
+
+    logger.info('Initializing MCP servers...', {
+      customCount: mcpConfigs.length,
+      workingDir,
+    });
+
+    await initMCPClient(mcpConfigs, workingDir);
+
+    const mcpClient = getMCPClient();
+    const status = mcpClient.getStatus();
+    const serverStates = mcpClient.getServerStates();
+    const errorServers = serverStates.filter((server) => server.status === 'error');
+
+    logger.info('MCP initialized', {
+      total: serverStates.length,
+      connected: status.connectedServers.join(', ') || 'none',
+      inProcess: status.inProcessServers.join(', ') || 'none',
+      toolCount: status.toolCount,
+      errors: errorServers.map((server) => `${server.config.name}: ${server.error}`).join('; ') || 'none',
+    });
+
+    if (errorServers.length > 0) {
+      broadcastSSE('mcp:event', {
+        type: 'connection_errors',
+        data: errorServers.map((server) => ({ server: server.config.name, error: server.error })),
+      });
+    }
+
+    mcpClient.removeAllListeners('capabilities-changed');
+    mcpClient.on('capabilities-changed', (payload: { serverName: string; kind: string; count: number }) => {
+      logger.info('MCP capabilities changed', payload);
+      broadcastSSE('mcp:event', {
+        type: 'capabilities_changed',
+        data: [{ server: payload.serverName }],
+      });
+    });
+  } catch (error) {
+    logger.warn('MCP initialization failed (non-blocking):', (error as Error).message);
   }
 }
 
@@ -355,6 +406,7 @@ async function initializeServices(): Promise<void> {
   // Memory service removed — Light Memory (file-based) is used instead
 
   await initializeWebSkillServices(configService);
+  await initializeWebMcpServices(configService);
 
   // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞初始化）
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块

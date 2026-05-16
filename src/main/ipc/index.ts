@@ -42,6 +42,7 @@ import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
+import { registerMasterTaskHandlers } from '../agent/masterTask.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
@@ -186,6 +187,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // TaskList handlers (任务列表可视化与管理)
   registerTaskListHandlers();
+
+  // MasterTask handlers (用户级工作单元 - P1-c3 wiring 补丁)
+  registerMasterTaskHandlers();
 
   // Telemetry handlers (会话遥测)
   registerTelemetryHandlers(getMainWindow);

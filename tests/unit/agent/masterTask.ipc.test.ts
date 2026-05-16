@@ -79,8 +79,20 @@ vi.mock('../../../src/main/platform', () => {
         platformState.handlers.delete(channel);
       },
     },
+    // P3-c1/c4 wiring 补丁后 ipc.ts import getDatabase → 间接链上需要 app；
+    // test 不用 app 真正功能，最小 mock 即可
+    app: {
+      getAppPath: () => '/tmp/test-app',
+      getPath: () => '/tmp/test-userdata',
+    },
   };
 });
+
+// getDatabase 在 ipc.ts 被 inline 调用作为 fallback；test 走 helper mock 路径
+// 时 getDatabase 不应被调用，但 import 链上要确保 module 不 throw。
+vi.mock('../../../src/main/services/core/databaseService', () => ({
+  getDatabase: () => null,
+}));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({

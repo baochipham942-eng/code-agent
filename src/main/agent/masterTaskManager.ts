@@ -33,6 +33,7 @@ import {
 } from './masterTask';
 import { AgentTask } from './agentTask';
 import type { TaskHookCallback } from './taskKernel';
+import { getDatabase } from '../services/core/databaseService';
 import {
   MasterTaskRepository,
   getMasterTaskDb,
@@ -126,7 +127,13 @@ export class MasterTaskManager extends EventEmitter {
    * db 为 null 时返回 null，调用方负责 warn + 跳过持久化。
    */
   private getRepository(): MasterTaskRepository | null {
-    const db = getMasterTaskDb();
+    // 先试 helper（test mock 走这路径）；helper 在 dev/cjs 下因 module
+    // duplication 拿不到 isReady DB，fallback 到 singleton getDatabase。
+    let db = getMasterTaskDb();
+    if (!db) {
+      const svc = getDatabase();
+      db = svc?.isReady ? svc.getDb() : null;
+    }
     if (!db) return null;
     return new MasterTaskRepository(db);
   }

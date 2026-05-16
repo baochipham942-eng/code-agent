@@ -27,6 +27,7 @@ import {
   getMasterTaskManager,
   type MasterTaskManagerEvent,
 } from './masterTaskManager';
+import { getDatabase } from '../services/core/databaseService';
 import {
   MasterTaskRepository,
   getMasterTaskDb,
@@ -180,9 +181,15 @@ export function registerMasterTaskHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.MASTER_TASK_LIST,
     (_e, filter?: MasterTaskListFilter): MasterTaskDTO[] => {
-      const db = getMasterTaskDb();
+      // 先试 helper（test mock 走这路径）；helper 在 dev/cjs 下因
+      // module duplication 拿不到 isReady DB，fallback 到 singleton getDatabase。
+      let db = getMasterTaskDb();
       if (!db) {
-        logger.warn('master-task:list — master task db unavailable');
+        const svc = getDatabase();
+        db = svc?.isReady ? svc.getDb() : null;
+      }
+      if (!db) {
+        logger.warn('master-task:list — DB unavailable');
         return [];
       }
       const repo = new MasterTaskRepository(db);

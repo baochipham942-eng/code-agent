@@ -17,6 +17,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import type { MasterTaskStatus } from '../../../../shared/contract/task';
 import { MASTER_TASK_TERMINAL_STATUSES } from '../../../../shared/contract/task';
+import { getDatabase } from '../databaseService';
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
@@ -395,18 +396,17 @@ export function getMasterTaskDb(): BetterSqlite3.Database | null {
     return null;
   }
 
-  // 主进程：动态 require 服务单例，避免循环依赖
+  // 主进程：静态 import getDatabase（避免 dev/cjs 模式下 require 路径解析失败）
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const services = require('../../../services') as {
-      getDatabase?: () => RawDbProvider & { isReady: boolean };
-    };
-    const db = services.getDatabase?.();
+    const db = getDatabase();
     if (db?.isReady) {
       return db.getDb();
     }
-  } catch {
-    // ignore
+     
+    console.warn('[getMasterTaskDb] DatabaseService not ready (isReady=false)');
+  } catch (err) {
+     
+    console.warn('[getMasterTaskDb] getDatabase() threw:', err);
   }
   return null;
 }

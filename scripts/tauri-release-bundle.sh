@@ -46,3 +46,8 @@ fs.writeFileSync(configFile, JSON.stringify({
 
 cd "${ROOT_DIR}"
 cargo tauri build --config "${CONFIG_FILE}" --ci "$@"
+
+for app_path in "${ROOT_DIR}"/src-tauri/target/release/bundle/macos/*.app; do
+  [[ -d "${app_path}" ]] || continue
+  node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${app_path}/Contents/Resources/_up_"
+done

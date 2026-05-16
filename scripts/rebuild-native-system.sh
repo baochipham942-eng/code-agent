@@ -39,10 +39,11 @@ echo "Rebuilding better-sqlite3@$BETTER_SQLITE3_VERSION for system Node.js ($NOD
 # 在临时目录编译，避免污染 node_modules（那里是 Electron 版本）
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
+NPM_CACHE_DIR="$TEMP_DIR/npm-cache"
 
 cd "$TEMP_DIR"
 npm init -y --silent > /dev/null 2>&1
-npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --build-from-source --silent 2>&1 | tail -1
+npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --build-from-source --cache "$NPM_CACHE_DIR" --silent 2>&1 | tail -1
 
 # 复制编译产物到 dist/native/
 rm -rf "$NATIVE_DIR"

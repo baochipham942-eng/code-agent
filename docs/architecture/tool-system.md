@@ -70,6 +70,23 @@ FOR EACH toolCall:
 
 ---
 
+## 2026-05-15 In-App HTML Validation Tool
+
+`validate_html_in_app` 把 HTML artifact 验收从外部脚本带回 Agent Neo 右侧工作面板。它是 vision 类 native ToolModule，执行时通过 main↔renderer IPC 请求 `InAppValidationPanel` 打开 sandboxed iframe，加载 HTML 后跑交互脚本和断言。
+
+| 层 | 职责 | 文件 |
+|----|------|------|
+| Tool schema | 暴露 `html / htmlPath / steps / timeoutMs`；steps 支持 click、click-selector、hover、type、press、wait；expect 支持 text/selector/canvas 断言 | `src/main/tools/modules/vision/validateHtmlInApp.schema.ts` |
+| Tool handler | 读取 inline HTML 或本地 HTML 文件，生成 requestId，调用 in-app validation service，返回逐步 pass/fail 汇总 | `src/main/tools/modules/vision/validateHtmlInApp.ts` |
+| Shared DSL | main 的 `visualSmoke` 和 renderer 的 In-App panel 共用 `BrowserInteractionStep` / `BrowserInteractionExpect` | `src/shared/contract/browserInteraction.ts` |
+| IPC / service | main 向 renderer 发验证请求，renderer 回传结果或错误 | `src/main/ipc/inAppValidation.ipc.ts`、`src/main/services/inAppValidationService.ts` |
+| Renderer panel | 右侧 iframe 面板展示 HTML、步骤状态、失败原因和用户可见的验证过程 | `src/renderer/components/features/inAppValidation/InAppValidationPanel.tsx` |
+
+当前边界：
+- 面向自己生成或本地可控的 HTML artifact；公开网站会受 cross-origin、X-Frame-Options 和 `event.isTrusted=false` 限制。
+- 适合 UI 状态、文本可见性、selector 和 canvas nonblank 检查；原生菜单、真实 hover 复杂样式、drag-and-drop 仍走 Playwright/CDP 或人工接管。
+- `permissionLevel` 是 `execute`，Plan mode 不直接运行，避免把交互验证误当只读观察。
+
 ## 2026-04-27 工具执行与搜索加固
 
 这轮修的是工具系统里最容易造成产品误导的几条链路：看得见但跑不了、审批结果不一致、搜索结果像工具但不可调用、Skill 配置自动扩权。
@@ -236,7 +253,7 @@ LSP 不再只是“有 diagnostics 工具”。当前实现把语言识别、ser
 
 ## 工具分类总览（108 个 native ToolModule）
 
-当前 registry 注册 108 个 native ToolModule，schema 文件 107 个。数量是运行时口径，文档长期只维护分类和代表能力。
+当前 registry 注册 108 个 native ToolModule，schema 文件 108 个。数量是运行时口径，文档长期只维护分类和代表能力。
 
 | 分类 | 代表工具 |
 |------|----------|

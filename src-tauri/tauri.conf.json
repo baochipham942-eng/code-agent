@@ -43,7 +43,6 @@
     ],
     "resources": [
       "../dist/web/webServer.cjs",
-      "../dist/web/webServer.cjs.map",
       "../dist/native/**/*",
       "../dist/renderer/**/*",
       "../resources/browser-relay-extension/**/*",

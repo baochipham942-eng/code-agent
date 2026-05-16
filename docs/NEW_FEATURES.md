@@ -1,8 +1,8 @@
-# Code Agent 新功能说明
+# Agent Neo / Code Agent 新功能说明
 
 ## 概览
 
-截至 2026-05-14，当前主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context、native tool protocol、artifact acceptance、quality gates、prompt/hook 管理、prompt rewind、自定义 Agent / 权限继承 / Doctor 诊断，以及最新一轮的 Context Health 溯源 / 取消级联 / Computer-use MCP 入口归位 / 工作台诊断面板群：
+截至 2026-05-17，当前产品品牌已经切到 **Agent Neo**，代码仓库仍名为 `code-agent`。主线新增能力已经从早期“多模型 / 云端 / GUI Agent”推进到 agent runtime hardening、workbench、live preview、browser/computer、activity context、native tool protocol、artifact acceptance、quality gates、prompt/hook 管理、prompt rewind、自定义 Agent / 权限继承 / Doctor 诊断、Context Health 溯源，以及最近两天的 Agent Neo 品牌层、设置与管理面、外部 Agent Engine、In-App 验证和本地能力货架：
 
 1. **Agent Runtime Capability Hardening** - run lifecycle、run-level abort、Tool/MCP 权限合同、durable runtime state、multiagent reliability、real-agent-run eval gate
 2. **Chat-Native Workbench B+** - ChatInput 极简化、右侧 WorkbenchTabs、Settings 对话 tab、Sidebar User Menu、semantic tool UI
@@ -15,6 +15,14 @@
 9. **Quality Gates** - typed IPC、zod provider wrappers、provider symmetry、async correctness、god-file split、dead code retirement
 10. **Prompt / Hook 管理** - Prompt Manager 实时 override、Hook Settings tab、CLI hooks 默认启用、聊天 TurnCard 展示 Hook Activity
 11. **Prompt Rewind** - 回到历史用户提示词、恢复文件 checkpoint、隐藏旧 active 消息、保留 `session_rewinds` 审计
+12. **Agent Neo 品牌与 onboarding** - App、Tauri bundle、站点、icon、About/Update 文案切到 Agent Neo，新用户模型配置引导本地 API Key
+13. **本地模型配置** - server-side cloud proxy 退场，Provider API Key 由本机配置；reasoning effort / thinking-mode 在 provider wrapper 间对齐
+14. **Agent Engine** - Native Agent Neo / Codex CLI / Claude Code 进入同一 engine 选择器；外部 engine 默认 read-only、workspace-only，输出回到 task ledger
+15. **Capability Center** - 本地 curated registry 汇总 skill、MCP template、tool bundle、channel adapter、workflow recipe、connector、agent engine；MCP draft 默认 disabled
+16. **Memory Management** - 记忆导入、条目管理、候选决策、注入 trace 和 Knowledge Memory Audit 进入设置与工作台
+17. **In-App HTML Validation / Browser Surface** - HTML artifact 可在 app 内 iframe 里跑交互脚本和断言，Browser Surface 进入右侧面板
+18. **Admin / Update / Invite** - 管理员用户 dashboard、邀请码管理、admin guard、Tauri 可选更新和 update settings 接入
+19. **Distribution Hardening** - release 包关闭第一方 sourcemap，新增安全扫描，避免 docs/src/tests/.env/私钥进入客户端 bundle
 
 早期更新增加了以下核心功能：
 
@@ -22,6 +30,67 @@
 2. **云端 Agent（历史，已退役）** - 早期 Vercel Serverless 方案，当前 active path 已迁回本地 / Web runtime
 3. **GUI Agent** - 基于 Claude Computer Use 的屏幕控制能力
 4. **macOS 签名打包** - 完整的代码签名和公证配置
+
+---
+
+## 2026-05-15 ~ 2026-05-17 当前新增能力
+
+### Agent Neo 品牌与新用户配置
+
+| 能力 | 说明 |
+|------|------|
+| Agent Neo 品牌层 | App 名称、Tauri bundle、icon、MCP server、terminal、About/Update 和 landing page 已切到 Agent Neo；代码仓库和包名继续使用 `code-agent` |
+| Landing page | `public/code-agent/index.html` 更新为 Agent Neo 站点，并补 WebP hero 资源 |
+| 模型配置 onboarding | 登录/注册后引导用户设置本地 Provider API Key，避免首次进入聊天时因无模型配置卡住 |
+| 本地 Key 模型策略 | 删除 server-side `cloud-proxy` provider，ModelSettings 负责 Provider 配置、连通性测试和模型目录发现 |
+| Reasoning 对齐 | `reasoning_effort` 和 thinking-mode sampling 对齐到 OpenAI、Claude、DeepSeek、Moonshot、小米等 provider wrapper |
+
+### Agent Engine / 接力运行
+
+| 能力 | 说明 |
+|------|------|
+| Engine 种类 | `native / codex_cli / claude_code` 三类 engine 共享 session metadata |
+| Native label | Native engine 在 UI 和能力卡里显示为 Agent Neo |
+| Codex CLI | 通过 `codex exec --json` 运行，事件流归一后进入 session 和 task ledger |
+| Claude Code | 通过 `claude -p --output-format stream-json --permission-mode plan` 运行，默认 plan/read-only 路径 |
+| 安全边界 | 外部 engine 只允许 manual chat session、read-only profile、workspace-only cwd；无 workspace、read-only session、import session 会被拒绝 |
+| UI 入口 | ModelSwitcher 合并模型、reasoning effort 和 engine 选择；TaskPanel 展示外部 engine 的 ledger 状态与 output refs |
+| 历史导入 | Codex / Claude 历史 jsonl 可扫描、预览和标准化，用于接力、复盘和 review |
+
+### 能力中心 / 记忆 / 设置管理
+
+| 能力 | 说明 |
+|------|------|
+| Capability Center | 本地 registry 汇总 skill、MCP template、tool bundle、channel adapter、workflow recipe、connector、agent engine |
+| Disabled MCP draft | MCP template 安装先写项目 `.code-agent/mcp.json` 的 disabled server；draft 带 `capabilityDraft` 元数据，可安全删除 |
+| 记忆管理 | 记忆导入、条目 CRUD、候选决策、注入 trace、seed injector 与 Settings Memory / Knowledge Memory Panel 打通 |
+| Workspace 设置 | recent directories、default open target、bridge/shell 状态进入 WorkspaceSettings |
+| Automation / Data 设置 | 自动化入口收进 Settings；DataSettings 展示 telemetry storage 与 collector health |
+| Hooks advanced | Hooks 从普通高频设置降为 advanced/collapsible，聊天 turn 继续展示 hook activity |
+
+### 验收、浏览器与交付
+
+| 能力 | 说明 |
+|------|------|
+| In-App Validation panel | 右侧面板加载 HTML artifact，执行 click/hover/type/press/wait + expect 脚本，用户可看见验证过程 |
+| `validate_html_in_app` tool | 模型可直接调工具验证自己生成的 HTML，输出逐步 pass/fail 汇总 |
+| Browser Surface | Browser relay extension、BrowserRelayService 和 BrowserSurfacePanel 让 managed browser 状态进入右侧工作区 |
+| visualSmoke interaction loop | browser visual smoke 支持 click/hover/type/press/wait + expect，为 app 内验证提供同一套 interaction DSL |
+| Artifact repair Route A | repair 改成 full-rewrite-first；repair round 继承 baseline 和 failures，并用 monotonic gate 限制越修越差 |
+| Game A/B 资产 | 平台游戏生成 A/B 测试产物、原始推理、截图和 report 已落盘，作为 artifact acceptance / prompt 对照材料 |
+
+### 任务、接力与管理后台
+
+| 能力 | 说明 |
+|------|------|
+| Background task ledger | Shell/background task 与 PTY session 进入统一 `Task / TaskEvent / TaskNotification / TaskOutputRef` 合同 |
+| 终态通知 | completed/failed 通知和 output refs 能回到当前 session，TaskPanel 保留完成态 details |
+| Handoff proposal | 长任务尾部可生成 handoff proposal，TaskPanel 用 HandoffCard 展示 |
+| Hook source metadata | Hook trigger source 进入 hook history 与 turn timeline，聊天卡片展示来源、事件、状态、耗时和错误数 |
+| Admin user dashboard | 管理员可查看用户、设备、session、message、活跃状态和 signup source |
+| Invite management | 管理员可创建、更新、停用邀请码；Supabase RPC 统一走 `require_code_agent_admin()` |
+| Optional updater | release workflow、update manifest、Tauri updater、UpdateSettings 和启动提示接入；up-to-date 不再弹 toast |
+| Distribution hardening | 生产 renderer/web server 关闭 sourcemap，Tauri resources 移除 webServer map，`release:security-scan` 接入 `tauri:bundle`、`tauri:release:bundle` 和安装脚本 |
 
 ---
 

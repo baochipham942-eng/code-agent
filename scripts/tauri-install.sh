@@ -7,7 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUNDLE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle"
-APP_NAME="Code Agent"
+APP_NAME="${APP_NAME:-Agent Neo}"
+LEGACY_APP_NAME="${LEGACY_APP_NAME:-Code Agent}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -28,7 +29,7 @@ unregister_duplicate_app_entries() {
   [ -x "$LSREGISTER" ] || return 0
 
   "$LSREGISTER" -dump 2>/dev/null \
-    | awk -F'path:[[:space:]]*' '/path:.*Code Agent\.app/ { print $2 }' \
+    | awk -F'path:[[:space:]]*' '/path:.*(Agent Neo|Code Agent)\.app/ { print $2 }' \
     | sed -E 's/ \([^)]*\)$//' \
     | while IFS= read -r app_path; do
         [ -z "$app_path" ] && continue
@@ -58,15 +59,22 @@ resign_app_if_possible() {
 # 关闭正在运行的实例
 mark_target_unindexed
 pkill -f "$APP_NAME" 2>/dev/null || true
+pkill -f "$LEGACY_APP_NAME" 2>/dev/null || true
 sleep 1
 
 # 复制到 /Applications（覆盖旧版本）
-if [ -d "$BUNDLE_DIR/macos/$APP_NAME.app" ]; then
-  strip_local_secrets "$BUNDLE_DIR/macos/$APP_NAME.app"
+SOURCE_APP="$BUNDLE_DIR/macos/$APP_NAME.app"
+if [ ! -d "$SOURCE_APP" ] && [ -d "$BUNDLE_DIR/macos/$LEGACY_APP_NAME.app" ]; then
+  SOURCE_APP="$BUNDLE_DIR/macos/$LEGACY_APP_NAME.app"
+fi
+
+if [ -d "$SOURCE_APP" ]; then
+  strip_local_secrets "$SOURCE_APP"
   rm -rf "/Applications/$APP_NAME.app"
-  cp -R "$BUNDLE_DIR/macos/$APP_NAME.app" "/Applications/$APP_NAME.app"
+  cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"
   strip_local_secrets "/Applications/$APP_NAME.app"
   resign_app_if_possible "/Applications/$APP_NAME.app"
+  node "$PROJECT_ROOT/scripts/release-security-scan.mjs" "/Applications/$APP_NAME.app/Contents/Resources/_up_"
   echo "Installed to /Applications/$APP_NAME.app"
   # 强制 Spotlight 重新索引，避免 Launchpad/Spotlight/Raycast 搜不到
   mdimport "/Applications/$APP_NAME.app" 2>/dev/null || true
@@ -76,14 +84,16 @@ else
 fi
 
 # 清理构建产物中的 .app（Spotlight 会索引到导致重复）
-unregister_app_path "$BUNDLE_DIR/macos/$APP_NAME.app"
-rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app"
-rm -rf "$BUNDLE_DIR/macos/$APP_NAME.app.tar.gz"
+unregister_app_path "$SOURCE_APP"
+rm -rf "$SOURCE_APP"
+rm -rf "$SOURCE_APP.tar.gz"
 rm -rf "$PROJECT_ROOT/release/"*"/$APP_NAME.app"
 
 # 弹出所有挂载的 DMG 卷（包括重复构建产生的 "Code Agent 1", "Code Agent 2" 等）
-for vol in /Volumes/"$APP_NAME"*; do
-  [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
+for mounted_name in "$APP_NAME" "$LEGACY_APP_NAME"; do
+  for vol in /Volumes/"$mounted_name"*; do
+    [ -d "$vol" ] && hdiutil detach "$vol" 2>/dev/null || true
+  done
 done
 # 清理 bundle_dmg.sh 残留的临时卷
 for vol in /Volumes/dmg.*; do

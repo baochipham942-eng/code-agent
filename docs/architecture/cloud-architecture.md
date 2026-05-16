@@ -2,7 +2,7 @@
 
 > Gen 5-8 演进的核心基础设施
 >
-> 2026-05-10 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/main/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。当前仍保留的 cloud 相关代码主要在 `src/main/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 cloud proxy 边界；不要把本文里的云端任务调度当作当前 active path。
+> 2026-05-17 状态：本文大部分 cloud task / cloud agent / orchestrator 内容是历史设计归档。近两周已删除旧 `src/main/cloud/*`、cloud agent module、POC cloud tools 和相关 legacy provider path。2026-05-15 之后，服务器侧 `cloud-proxy` provider 也已退场，模型请求默认依赖用户本机配置的 Provider API Key。当前仍保留的 cloud 相关代码主要在 `src/main/services/cloud/`，用于 cloud config、prompt/update、feature flag、orchestrator config 和 Tauri update/同步边界；不要把本文里的云端任务调度当作当前 active path。
 
 ## 架构总览
 
@@ -361,7 +361,7 @@ pending → queued → running → completed
 
 ### 专业化 Agent 设计理念
 
-**核心概念**: 专业化 Agent 不是使用不同的模型，而是**同一个底层模型 + 不同的 System Prompt + 不同的工具集**，让模型扮演不同的专业角色。
+**核心概念**: 专业化 Agent 共享同一个底层模型，通过不同的 System Prompt 和工具集承担不同的专业角色。
 
 ### 多模型支持（v0.6.0 实现）
 

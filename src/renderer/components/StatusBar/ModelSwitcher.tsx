@@ -28,7 +28,7 @@ const QUICK_SWITCH_PROVIDERS = [
 
 // Engine 短标签（与 AgentEngineSelector 保持一致）
 const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
-  native: 'Native',
+  native: 'Agent Neo',
   codex_cli: 'Codex',
   claude_code: 'Claude',
 };
@@ -650,7 +650,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
         }
       >
-        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Native'}</span>
+        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Agent Neo'}</span>
         <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
         <span className="text-zinc-500 ml-1">·</span>

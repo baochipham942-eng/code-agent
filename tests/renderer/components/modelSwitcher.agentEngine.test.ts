@@ -5,7 +5,7 @@ import { buildModelSwitcherEngineSelection } from '../../../src/renderer/compone
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
   return {
     kind: 'native',
-    label: 'Native',
+    label: 'Agent Neo',
     summary: '',
     installState: 'builtin',
     runtimeState: 'ready',

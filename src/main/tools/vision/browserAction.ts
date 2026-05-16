@@ -932,9 +932,13 @@ function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserSer
       : null,
     externalBridge: state.externalBridge
       ? {
-          enabled: false,
+          enabled: state.externalBridge.enabled,
           status: state.externalBridge.status,
           requiresExplicitAuthorization: true,
+          port: state.externalBridge.port || null,
+          tokenHint: state.externalBridge.tokenHint || null,
+          connectedTabCount: state.externalBridge.connectedTabCount || 0,
+          attachedTabCount: state.externalBridge.attachedTabCount || 0,
           reason: state.externalBridge.reason,
         }
       : null,

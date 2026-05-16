@@ -29,11 +29,11 @@ import {
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
+import { browserRelayService } from './browserRelayService';
 import {
   BROWSER_TARGET_REF_TTL_MS,
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
-  MANAGED_BROWSER_EXTERNAL_BRIDGE_UNSUPPORTED,
   buildBrowserEnvironment,
   createBrowserArtifactSummary,
   createManagedBrowserLease,
@@ -406,7 +406,7 @@ export class BrowserService implements Disposable {
       artifactDir: this.artifactDir,
       lease: this.getLeaseState(),
       proxy: this.getPublicProxyConfig(),
-      externalBridge: MANAGED_BROWSER_EXTERNAL_BRIDGE_UNSUPPORTED,
+      externalBridge: browserRelayService.getState(),
       accountState: this.lastAccountState,
       running: this.isRunning(),
       tabCount: this.tabs.size,

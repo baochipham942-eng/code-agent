@@ -578,8 +578,9 @@ export interface ManagedBrowserSessionChangedEvent {
     | 'history'
     | 'reload'
     | 'set_viewport'
-    | 'crashed';
-  session: ManagedBrowserSessionState;
+    | 'crashed'
+    | 'external_bridge';
+  session?: ManagedBrowserSessionState;
 }
 
 // ----------------------------------------------------------------------------

@@ -20,7 +20,9 @@ import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
 import { browserService } from '../services/infra/browserService';
+import { browserRelayService } from '../services/infra/browserRelayService';
 import { createLogger } from '../services/infra/logger';
+import { shell } from '../platform';
 
 // 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
 // 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
@@ -40,6 +42,29 @@ const COMPUTER_SURFACE_FAILURE_KINDS = new Set<ComputerSurfaceFailureKind>([
   'action_execution_failed',
   'evidence_unavailable',
 ]);
+
+function normalizeBrowserUrl(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) {
+    throw new Error('URL is required.');
+  }
+  if (raw === 'about:blank') {
+    return raw;
+  }
+  const withProtocol = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(raw)
+    ? raw
+    : `https://${raw}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(withProtocol);
+  } catch {
+    throw new Error('Invalid browser URL.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only http(s) URLs can be opened in Browser Surface.');
+  }
+  return parsed.toString();
+}
 
 function toComputerSurfaceFailureKind(value: unknown): ComputerSurfaceFailureKind | null {
   return typeof value === 'string' && COMPUTER_SURFACE_FAILURE_KINDS.has(value as ComputerSurfaceFailureKind)
@@ -117,6 +142,95 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           return {
             success: true,
             data: await browserService.ensureSession(payload?.url || 'about:blank', launchOptions),
+          } satisfies IPCResponse<unknown>;
+        }
+
+        case 'openManagedBrowserUrl': {
+          const payload = request.payload as {
+            url?: string;
+            mode?: ManagedBrowserMode;
+            provider?: ManagedBrowserProviderPreference;
+            profileMode?: ManagedBrowserProfileMode;
+            leaseOwner?: string;
+            leaseTtlMs?: number;
+            proxy?: ManagedBrowserProxyInput | null;
+          } | undefined;
+          const url = normalizeBrowserUrl(payload?.url);
+          const launchOptions = {
+            mode: payload?.mode || 'visible' as ManagedBrowserMode,
+            provider: payload?.provider,
+            profileMode: payload?.profileMode || 'persistent' as ManagedBrowserProfileMode,
+            leaseOwner: payload?.leaseOwner || 'browser-surface',
+            leaseTtlMs: payload?.leaseTtlMs,
+            proxy: payload?.proxy,
+          };
+          const current = browserService.getSessionState();
+          if (current.running && launchOptions.mode === 'visible' && current.mode === 'headless') {
+            await browserService.close();
+          }
+          await browserService.ensureSession('about:blank', launchOptions);
+          const next = browserService.getSessionState();
+          if (next.activeTab) {
+            await browserService.navigate(url, next.activeTab.id);
+          } else {
+            await browserService.newTab(url);
+          }
+          return {
+            success: true,
+            data: browserService.getSessionState(),
+          } satisfies IPCResponse<unknown>;
+        }
+
+        case 'refreshManagedBrowserAccountState':
+          return {
+            success: true,
+            data: {
+              accountState: await browserService.getAccountStateSummary(),
+              session: browserService.getSessionState(),
+            },
+          } satisfies IPCResponse<unknown>;
+
+        case 'startBrowserRelay':
+          return {
+            success: true,
+            data: await browserRelayService.ensureStarted(),
+          } satisfies IPCResponse<unknown>;
+
+        case 'stopBrowserRelay':
+          return {
+            success: true,
+            data: await browserRelayService.stop(),
+          } satisfies IPCResponse<unknown>;
+
+        case 'getBrowserRelayState':
+          return {
+            success: true,
+            data: browserRelayService.getState(),
+          } satisfies IPCResponse<unknown>;
+
+        case 'openBrowserRelayExtensionDirectory': {
+          const extensionPath = browserRelayService.getState().extensionPath;
+          if (!extensionPath) {
+            throw new Error('Browser relay extension directory not found.');
+          }
+          await shell.openPath(extensionPath);
+          return {
+            success: true,
+            data: browserRelayService.getState(),
+          } satisfies IPCResponse<unknown>;
+        }
+
+        case 'listBrowserRelayTabs':
+          return {
+            success: true,
+            data: await browserRelayService.listTabs(),
+          } satisfies IPCResponse<unknown>;
+
+        case 'openBrowserRelayTab': {
+          const payload = request.payload as { url?: string } | undefined;
+          return {
+            success: true,
+            data: await browserRelayService.createTab(normalizeBrowserUrl(payload?.url)),
           } satisfies IPCResponse<unknown>;
         }
 
@@ -426,10 +540,17 @@ function summarizeExternalBridge(value: unknown): Record<string, unknown> | null
     return null;
   }
   return {
-    enabled: false,
-    status: bridge.status === 'unsupported' ? 'unsupported' : undefined,
+    enabled: bridge.enabled === true,
+    status: typeof bridge.status === 'string' ? bridge.status : undefined,
     requiresExplicitAuthorization: bridge.requiresExplicitAuthorization === true,
+    port: typeof bridge.port === 'number' ? bridge.port : undefined,
+    tokenHint: typeof bridge.tokenHint === 'string' ? bridge.tokenHint : undefined,
+    extensionPath: typeof bridge.extensionPath === 'string' ? bridge.extensionPath : undefined,
+    connectedTabCount: typeof bridge.connectedTabCount === 'number' ? bridge.connectedTabCount : undefined,
+    attachedTabCount: typeof bridge.attachedTabCount === 'number' ? bridge.attachedTabCount : undefined,
     reason: typeof bridge.reason === 'string' ? bridge.reason : undefined,
+    lastConnectedAtMs: typeof bridge.lastConnectedAtMs === 'number' ? bridge.lastConnectedAtMs : undefined,
+    lastError: typeof bridge.lastError === 'string' ? bridge.lastError : undefined,
   };
 }
 

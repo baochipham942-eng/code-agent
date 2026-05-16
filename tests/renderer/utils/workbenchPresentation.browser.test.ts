@@ -49,6 +49,17 @@ describe('browser workbench presentation', () => {
           source: 'request' as const,
           regionHint: 'us-west',
         },
+        externalBridge: {
+          enabled: true,
+          status: 'connected' as const,
+          requiresExplicitAuthorization: true as const,
+          port: 23001,
+          authToken: 'secret-token-value',
+          tokenHint: 'secr...alue',
+          connectedTabCount: 1,
+          attachedTabCount: 0,
+          reason: 'Chrome extension connected.',
+        },
         provider: 'system-chrome-cdp' as const,
         requestedProvider: 'auto' as const,
         lastTrace: {
@@ -106,6 +117,7 @@ describe('browser workbench presentation', () => {
       expect.objectContaining({ label: 'Scope', value: 'artifact: .../run-42' }),
       expect.objectContaining({ label: 'Lease', value: expect.stringContaining('active /') }),
       expect.objectContaining({ label: 'Proxy', value: 'http / us-west / bypass 2' }),
+      expect.objectContaining({ label: 'Bridge', value: 'connected / :23001 / 1 tab bridge', tone: 'ready' }),
       expect.objectContaining({ label: 'Tab', value: 'Docs' }),
       expect.objectContaining({ label: 'Trace', value: 'trace-preview' }),
       expect.objectContaining({
@@ -116,6 +128,7 @@ describe('browser workbench presentation', () => {
     expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Library');
     expect(JSON.stringify(rows)).not.toContain('/Users/linchen/Downloads/ai/code-agent/.workbench');
     expect(JSON.stringify(rows)).not.toContain('127.0.0.1:7890');
+    expect(JSON.stringify(rows)).not.toContain('secret-token-value');
     expect(getBrowserWorkbenchOperationalHint({
       mode: 'managed',
       browserSession,

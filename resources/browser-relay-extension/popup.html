@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 240px; margin: 0; padding: 12px; font: 13px system-ui, sans-serif; color: #e5e7eb; background: #18181b; }
+      .row { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; }
+      .label { color: #a1a1aa; }
+      button { width: 100%; margin-top: 10px; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #f4f4f5; padding: 7px; cursor: pointer; }
+      button:hover { background: #3f3f46; }
+      a { color: #7dd3fc; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="row"><span class="label">Status</span><span id="status">...</span></div>
+    <div class="row"><span class="label">Port</span><span id="port">...</span></div>
+    <div class="row"><span class="label">Attached</span><span id="attached">0</span></div>
+    <button id="reconnect">Reconnect</button>
+    <p><a href="options.html" target="_blank">Options</a></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

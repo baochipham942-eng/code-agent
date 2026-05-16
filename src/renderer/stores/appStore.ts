@@ -135,6 +135,7 @@ interface AppState {
   /** 用户在 StatusBar 选中的默认 agent id（来自 agentRegistryStore），持久化到 localStorage。 */
   activeAgentId: string | null;
   showCapturePanel: boolean;
+  showBrowserSurfacePanel: boolean;
   showDesktopPanel: boolean;
   showComputerUsePanel: boolean;
   showInAppValidationPanel: boolean;
@@ -233,6 +234,7 @@ interface AppState {
   /** 设置默认 agent；传 null 表示回到 builtin 'coder'（spawn 端处理）。 */
   setActiveAgentId: (agentId: string | null) => void;
   setShowCapturePanel: (show: boolean) => void;
+  setShowBrowserSurfacePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowComputerUsePanel: (show: boolean) => void;
   setShowInAppValidationPanel: (show: boolean) => void;
@@ -336,6 +338,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   selectedSwarmAgentId: null,
   activeAgentId: loadInitialActiveAgentId(),
   showCapturePanel: false, // Capture panel hidden by default
+  showBrowserSurfacePanel: false,
   showDesktopPanel: false,
   showComputerUsePanel: false,
   showInAppValidationPanel: false,
@@ -438,6 +441,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
+  setShowBrowserSurfacePanel: (show) => set({ showBrowserSurfacePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,

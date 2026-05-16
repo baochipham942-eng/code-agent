@@ -34,6 +34,7 @@ import {
   FlaskConical,
   Clock3,
   CalendarDays,
+  Globe,
   Monitor,
   MousePointerClick,
   GitBranch,
@@ -144,6 +145,8 @@ export const Sidebar: React.FC = () => {
     setShowCronCenter,
     showTimeCapabilityCenter,
     setShowTimeCapabilityCenter,
+    showBrowserSurfacePanel,
+    setShowBrowserSurfacePanel,
     showDesktopPanel,
     setShowDesktopPanel,
     showComputerUsePanel,
@@ -983,6 +986,13 @@ export const Sidebar: React.FC = () => {
                     Agent 流程
                   </button>
                 )}
+                <button
+                  onClick={() => { setShowBrowserSurfacePanel(!showBrowserSurfacePanel); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  <Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />
+                  浏览器
+                </button>
                 <button
                   onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"

@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Code Agent Browser Relay",
+  "version": "0.1.0",
+  "description": "Connect Chrome tabs to Code Agent through a local, token-protected relay.",
+  "permissions": ["debugger", "tabs", "activeTab", "storage", "alarms"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Code Agent Browser Relay"
+  },
+  "options_page": "options.html"
+}

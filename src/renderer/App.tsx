@@ -38,6 +38,7 @@ import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabilityPanel';
 import { AgentTeamPanel } from './components/features/agentTeam';
 import { ActivityPanel } from './components/features/activity/ActivityPanel';
+import { BrowserSurfacePanel } from './components/features/browser/BrowserSurfacePanel';
 import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
 import { InAppValidationPanel } from './components/features/inAppValidation/InAppValidationPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
@@ -105,6 +106,8 @@ export const App: React.FC = () => {
     showKnowledgeMemoryPanel,
     showActivityPanel,
     setShowActivityPanel,
+    showBrowserSurfacePanel,
+    setShowBrowserSurfacePanel,
     setShowSettings,
     setLanguage,
     workbenchTabs,
@@ -615,6 +618,10 @@ export const App: React.FC = () => {
 
       {showActivityPanel && (
         <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+      )}
+
+      {showBrowserSurfacePanel && (
+        <BrowserSurfacePanel onClose={() => setShowBrowserSurfacePanel(false)} />
       )}
 
       {showAgentTeamPanel && (

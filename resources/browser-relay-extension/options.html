@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { max-width: 520px; margin: 32px auto; font: 14px system-ui, sans-serif; color: #e5e7eb; background: #18181b; }
+      label { display: block; margin: 14px 0 6px; color: #a1a1aa; }
+      input { width: 100%; box-sizing: border-box; border: 1px solid #3f3f46; border-radius: 6px; background: #09090b; color: #f4f4f5; padding: 9px; }
+      .token-row { display: flex; gap: 8px; }
+      .token-row input { flex: 1; }
+      button { margin-top: 14px; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #f4f4f5; padding: 8px 12px; cursor: pointer; }
+      button:hover { background: #3f3f46; }
+      #status { margin-left: 10px; color: #86efac; }
+      p { color: #a1a1aa; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <h1>Code Agent Browser Relay</h1>
+    <p>Start Browser Surface in Code Agent, copy the relay token, then paste it here. The connection stays local to 127.0.0.1.</p>
+    <label for="port">Relay port</label>
+    <input id="port" type="number" min="1" max="65535" />
+    <label for="token">Auth token</label>
+    <div class="token-row">
+      <input id="token" type="password" />
+      <button id="toggleToken" type="button">Show</button>
+    </div>
+    <button id="saveBtn" type="button">Save</button>
+    <span id="status"></span>
+    <script src="options.js"></script>
+  </body>
+</html>

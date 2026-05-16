@@ -11,6 +11,7 @@ import type {
   ManagedBrowserProxyConfig,
   ManagedBrowserProvider,
   ManagedBrowserProviderPreference,
+  ManagedBrowserExternalBridgeState,
 } from '@shared/contract/desktop';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import type { WorkbenchCapabilityRegistryItem } from './workbenchCapabilityRegistry';
@@ -467,6 +468,25 @@ function buildManagedBrowserProxyValue(proxy: ManagedBrowserProxyConfig | null):
   return `${proxy.mode}${region}${bypass}`;
 }
 
+function getManagedBrowserExternalBridge(preview: unknown, session: unknown): ManagedBrowserExternalBridgeState | null {
+  const value = asRecord(preview)?.externalBridge || asRecord(session)?.externalBridge;
+  return asRecord(value) ? value as unknown as ManagedBrowserExternalBridgeState : null;
+}
+
+function buildManagedBrowserExternalBridgeValue(bridge: ManagedBrowserExternalBridgeState | null): string | null {
+  if (!bridge) {
+    return null;
+  }
+  if (bridge.status === 'unsupported') {
+    return 'unsupported';
+  }
+  const port = bridge.port ? `:${bridge.port}` : null;
+  const tabs = bridge.connectedTabCount && bridge.connectedTabCount > 0
+    ? `${bridge.connectedTabCount} tab bridge`
+    : null;
+  return [bridge.status, port, tabs].filter(Boolean).join(' / ');
+}
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -530,6 +550,8 @@ export function buildBrowserWorkbenchStatusRows(args: {
     const lease = getManagedBrowserLease(preview, browserSession.managedSession);
     const leaseValue = buildManagedBrowserLeaseValue(lease);
     const proxyValue = buildManagedBrowserProxyValue(getManagedBrowserProxy(preview, browserSession.managedSession));
+    const bridge = getManagedBrowserExternalBridge(preview, browserSession.managedSession);
+    const bridgeValue = buildManagedBrowserExternalBridgeValue(bridge);
     const recoveryValue = buildManagedBrowserRecoveryValue(preview, browserSession.managedSession);
 
     return [
@@ -592,6 +614,18 @@ export function buildBrowserWorkbenchStatusRows(args: {
             value: proxyValue,
             title: proxyValue,
             tone: 'neutral' as const,
+          }]
+        : []),
+      ...(bridgeValue
+        ? [{
+            label: 'Bridge',
+            value: bridgeValue,
+            title: bridge?.reason || bridgeValue,
+            tone: bridge?.status === 'connected'
+              ? 'ready' as const
+              : bridge?.status === 'error'
+                ? 'blocked' as const
+                : 'neutral' as const,
           }]
         : []),
       ...(tabTitle || tabUrl

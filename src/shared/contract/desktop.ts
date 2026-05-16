@@ -87,11 +87,26 @@ export interface ManagedBrowserProxyConfig {
   source: ManagedBrowserProxySource;
 }
 
+export type ManagedBrowserExternalBridgeStatus =
+  | 'unsupported'
+  | 'stopped'
+  | 'listening'
+  | 'connected'
+  | 'error';
+
 export interface ManagedBrowserExternalBridgeState {
-  enabled: false;
-  status: 'unsupported';
+  enabled: boolean;
+  status: ManagedBrowserExternalBridgeStatus;
   requiresExplicitAuthorization: true;
-  reason: string;
+  reason?: string | null;
+  port?: number | null;
+  authToken?: string | null;
+  tokenHint?: string | null;
+  extensionPath?: string | null;
+  connectedTabCount?: number;
+  attachedTabCount?: number;
+  lastConnectedAtMs?: number | null;
+  lastError?: string | null;
 }
 
 export interface WorkbenchSnapshotRef {

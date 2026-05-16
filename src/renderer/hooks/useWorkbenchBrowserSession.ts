@@ -7,6 +7,7 @@ import type {
   ManagedBrowserProxyConfig,
   ManagedBrowserProvider,
   ManagedBrowserProviderPreference,
+  ManagedBrowserExternalBridgeState,
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
 import { IPC_CHANNELS, IPC_DOMAINS, type ManagedBrowserSessionChangedEvent } from '@shared/ipc';
@@ -49,6 +50,7 @@ interface ManagedBrowserSessionPreviewMetadata {
   proxy?: ManagedBrowserProxyConfig | null;
   provider?: ManagedBrowserProvider | null;
   requestedProvider?: ManagedBrowserProviderPreference | null;
+  externalBridge?: ManagedBrowserExternalBridgeState | null;
   recoverySnapshotSummary?: string | null;
 }
 
@@ -93,6 +95,7 @@ export interface BrowserWorkbenchPreview {
   proxy?: ManagedBrowserProxyConfig | null;
   provider?: ManagedBrowserProvider | null;
   requestedProvider?: ManagedBrowserProviderPreference | null;
+  externalBridge?: ManagedBrowserExternalBridgeState | null;
   recoverySnapshotSummary?: string | null;
 }
 
@@ -264,6 +267,7 @@ function getManagedSessionPreviewMetadata(
     proxy: asRecord(session)?.proxy as ManagedBrowserProxyConfig | null | undefined,
     provider: session.provider || null,
     requestedProvider: session.requestedProvider || null,
+    externalBridge: asRecord(session)?.externalBridge as ManagedBrowserExternalBridgeState | null | undefined,
     recoverySnapshotSummary: getManagedBrowserRecoverySnapshotSummary(session),
   };
 }

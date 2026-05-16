@@ -46,6 +46,7 @@
       "../dist/web/webServer.cjs.map",
       "../dist/native/**/*",
       "../dist/renderer/**/*",
+      "../resources/browser-relay-extension/**/*",
       "../package.json",
       "../node_modules/better-sqlite3/**/*",
       "../node_modules/keytar/**/*",

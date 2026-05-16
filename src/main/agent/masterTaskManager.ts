@@ -423,3 +423,20 @@ export class MasterTaskManager extends EventEmitter {
     return task;
   }
 }
+
+
+// ----------------------------------------------------------------------------
+// Singleton（仿 getTaskListManager 风格）
+// ----------------------------------------------------------------------------
+
+let _singleton: MasterTaskManager | null = null;
+
+export function getMasterTaskManager(): MasterTaskManager {
+  if (!_singleton) _singleton = new MasterTaskManager();
+  return _singleton;
+}
+
+/** 测试用 reset，避免 case 之间共享单例状态 */
+export function resetMasterTaskManagerForTesting(): void {
+  _singleton = null;
+}

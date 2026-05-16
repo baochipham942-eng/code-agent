@@ -21,6 +21,7 @@ type PanelCheck = {
   menuLabel: string;
   closeLabel: string;
   expectedText: string[];
+  advanced?: boolean;
 };
 
 const PANEL_CHECKS: PanelCheck[] = [
@@ -41,12 +42,14 @@ const PANEL_CHECKS: PanelCheck[] = [
     menuLabel: 'Computer Use',
     closeLabel: '关闭 Computer Use',
     expectedText: ['Computer Use', 'Activity Collector', 'AX Tree', '能力边界'],
+    advanced: true,
   },
   {
     key: 'timeCapability',
     menuLabel: 'Time & Capability',
     closeLabel: '关闭 Time & Capability',
     expectedText: ['Time & Capability', 'Time Workbench', 'Calendar connector', 'Capability Fix'],
+    advanced: true,
   },
 ];
 
@@ -67,7 +70,7 @@ Options:
 
 What it validates:
   - the local app-host serves the current renderer build
-  - the lower-left user menu exposes Activity, Knowledge/Memory, Computer Use, and Time & Capability
+  - the lower-left user menu exposes Activity, Knowledge/Memory, and the advanced tools group
   - each menu entry opens its panel, renders key content, and can close back to chat`);
 }
 
@@ -216,11 +219,22 @@ async function ensureUserMenuOpen(page: Page): Promise<void> {
   await activityEntry.waitFor({ state: 'visible', timeout: 5_000 });
 }
 
+async function ensureAdvancedToolsOpen(page: Page): Promise<void> {
+  await ensureUserMenuOpen(page);
+  if (await exactButton(page, 'Computer Use').isVisible().catch(() => false)) return;
+
+  await exactButton(page, '高级工具').click({ timeout: 5_000 });
+  await exactButton(page, 'Computer Use').waitFor({ state: 'visible', timeout: 5_000 });
+}
+
 async function validateMenuEntries(page: Page, failures: string[]): Promise<Record<string, boolean>> {
   await ensureUserMenuOpen(page);
   const result: Record<string, boolean> = {};
 
   for (const panel of PANEL_CHECKS) {
+    if (panel.advanced) {
+      await ensureAdvancedToolsOpen(page);
+    }
     const visible = await exactButton(page, panel.menuLabel).isVisible().catch(() => false);
     result[panel.key] = visible;
     if (!visible) {
@@ -234,6 +248,9 @@ async function validateMenuEntries(page: Page, failures: string[]): Promise<Reco
 
 async function openPanel(page: Page, panel: PanelCheck): Promise<void> {
   await ensureUserMenuOpen(page);
+  if (panel.advanced) {
+    await ensureAdvancedToolsOpen(page);
+  }
   await exactButton(page, panel.menuLabel).click({ timeout: 5_000 });
   await page.getByLabel(panel.closeLabel).waitFor({ state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(500);

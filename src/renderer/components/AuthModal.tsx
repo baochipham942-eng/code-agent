@@ -98,7 +98,8 @@ export const AuthModal: React.FC = () => {
         await clearCredentials();
       }
     } else if (mode === 'signup') {
-      success = await signUpWithEmail(email, password, inviteCode || undefined);
+      const normalizedInviteCode = inviteCode.trim().toUpperCase();
+      success = await signUpWithEmail(email, password, normalizedInviteCode || undefined);
       // Also save credentials after successful registration
       if (success && rememberPassword) {
         await saveCredentials(email, password);
@@ -264,7 +265,9 @@ export const AuthModal: React.FC = () => {
                 <Input
                   type="text"
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''));
+                  }}
                   placeholder="输入邀请码"
                   required
                 />

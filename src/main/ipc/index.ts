@@ -14,6 +14,7 @@ const logger = createLogger('IPC');
 import { registerAgentHandlers } from './agent.ipc';
 import { registerSessionHandlers } from './session.ipc';
 import { registerAuthHandlers } from './auth.ipc';
+import { registerAdminHandlers } from './admin.ipc';
 import { registerSyncHandlers } from './sync.ipc';
 import { registerWorkspaceHandlers } from './workspace.ipc';
 import { registerSettingsHandlers } from './settings.ipc';
@@ -96,6 +97,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Auth handlers
   registerAuthHandlers(ipcMain);
+
+  // Admin handlers
+  registerAdminHandlers(ipcMain);
 
   // Sync handlers
   registerSyncHandlers(ipcMain);

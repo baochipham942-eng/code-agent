@@ -13,6 +13,11 @@ describe('settings search index', () => {
     expect(searchSettings('MCP').map((entry) => entry.tab)).toContain('capabilities');
   });
 
+  it('covers user and invite management settings', () => {
+    expect(searchSettings('上次登录').map((entry) => entry.tab)).toContain('users');
+    expect(searchSettings('邀请码').map((entry) => entry.tab)).toContain('invites');
+  });
+
   it('only references registered settings tabs', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {

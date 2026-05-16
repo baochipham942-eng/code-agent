@@ -220,6 +220,7 @@ class AuthService {
     }
 
     if (data.user) {
+      await this.touchUserLastActive(data.user.id);
       this.currentUser = await this.fetchUserProfile(data.user);
       this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
@@ -238,13 +239,14 @@ class AuthService {
     }
 
     const supabase = getSupabase();
+    const normalizedInviteCode = inviteCode?.trim().toUpperCase();
 
     // Validate invite code if provided
-    if (inviteCode) {
+    if (normalizedInviteCode) {
       const { data: codeDataRaw, error: codeError } = await supabase
         .from('invite_codes')
         .select('*')
-        .eq('code', inviteCode.toUpperCase())
+        .eq('code', normalizedInviteCode)
         .eq('is_active', true)
         .single();
 
@@ -278,18 +280,21 @@ class AuthService {
 
     if (data.user) {
       // Update invite code usage
-      if (inviteCode) {
+      if (normalizedInviteCode) {
         await supabase.rpc('increment_invite_code_usage', {
-          code_value: inviteCode.toUpperCase(),
+          code_value: normalizedInviteCode,
         });
       }
 
       // Create profile
-      await supabase.from('profiles').insert({
+      await supabase.from('profiles').upsert({
         id: data.user.id,
         username: email.split('@')[0],
         quick_login_token: crypto.randomBytes(32).toString('hex'),
-      });
+        signup_source: 'invite_code',
+        invite_code: normalizedInviteCode,
+        last_active_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
 
       this.currentUser = await this.fetchUserProfile(data.user);
       this.cacheUser(this.currentUser); // 缓存用户信息
@@ -343,13 +348,20 @@ class AuthService {
         .single();
 
       if (!profile) {
+        const provider = typeof data.user.app_metadata?.provider === 'string'
+          ? data.user.app_metadata.provider
+          : 'oauth';
         await supabase.from('profiles').insert({
           id: data.user.id,
           username: data.user.email?.split('@')[0] || data.user.id,
           nickname: data.user.user_metadata?.full_name,
           avatar_url: data.user.user_metadata?.avatar_url,
           quick_login_token: crypto.randomBytes(32).toString('hex'),
+          signup_source: provider,
+          last_active_at: new Date().toISOString(),
         });
+      } else {
+        await this.touchUserLastActive(data.user.id);
       }
 
       this.currentUser = await this.fetchUserProfile(data.user);
@@ -403,6 +415,18 @@ class AuthService {
 
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
+  }
+
+  private async touchUserLastActive(userId: string): Promise<void> {
+    if (!isSupabaseInitialized()) return;
+    try {
+      await getSupabase()
+        .from('profiles')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('id', userId);
+    } catch (error) {
+      logger.debug('Failed to update last active timestamp:', error);
+    }
   }
 
   // Clear current user without calling Supabase signOut (used when clearing cache)

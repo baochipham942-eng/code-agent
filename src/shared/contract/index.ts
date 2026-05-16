@@ -24,6 +24,7 @@ export * from './skillRepository';
 
 // Infrastructure types
 export * from './auth';
+export * from './admin';
 export * from './sync';
 export * from './device';
 export * from './settings';

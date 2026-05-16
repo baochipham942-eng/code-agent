@@ -35,6 +35,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'automation', tabLabel: '自动化', label: '新建任务', keywords: ['new task', 'create', '新建', '任务', 'cron', '自动化向导'] },
   { tab: 'automation', tabLabel: '自动化', label: '执行历史', keywords: ['history', 'execution', '执行', '历史', '运行', '日志'] },
 
+  // User Management
+  { tab: 'users', tabLabel: '用户看板', label: '注册用户', keywords: ['user', 'users', '用户', '注册用户', 'email', '邮箱', 'last login', '上次登录', '活跃'] },
+  { tab: 'users', tabLabel: '用户看板', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
+  { tab: 'invites', tabLabel: '邀请码', label: '邀请码管理', keywords: ['invite', '邀请码', '注册', 'code', '使用次数', '有效期'] },
+  { tab: 'invites', tabLabel: '邀请码', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
+
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
   { tab: 'model', tabLabel: '模型', label: 'API Key', keywords: ['apikey', '密钥', 'key', '认证'] },

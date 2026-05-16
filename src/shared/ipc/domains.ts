@@ -14,6 +14,7 @@ export const IPC_DOMAINS = {
   AGENT: 'domain:agent',
   SESSION: 'domain:session',
   AUTH: 'domain:auth',
+  ADMIN: 'domain:admin',
   SYNC: 'domain:sync',
   CLOUD: 'domain:cloud',
   WORKSPACE: 'domain:workspace',

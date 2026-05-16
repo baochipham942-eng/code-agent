@@ -27,8 +27,11 @@ import {
   Clock,
   Activity,
   ClipboardCheck,
+  Ticket,
+  Users,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
+import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
@@ -42,6 +45,7 @@ import {
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_LABELS,
   SETTINGS_TAB_GROUP_ORDER,
+  canAccessSettingsTab,
   type SettingsTab,
   type SettingsTabGroupId,
 } from '../../../utils/settingsTabs';
@@ -61,6 +65,8 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'openchronicle',
   'workspace',
   'automation',
+  'users',
+  'invites',
 ]);
 
 // Tab Components
@@ -80,6 +86,8 @@ import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
+import { UserDashboardSettings } from './tabs/UserDashboardSettings';
+import { InviteCodesSettings } from './tabs/InviteCodesSettings';
 import ipcService from '../../../services/ipcService';
 
 interface SettingsTabConfig {
@@ -100,6 +108,7 @@ interface BuildSettingsTabsOptions {
   showScreenMemoryTab: boolean;
   showUpdateTab: boolean;
   hasOptionalUpdate: boolean;
+  isAdmin?: boolean;
 }
 
 export function buildSettingsTabGroups({
@@ -107,6 +116,7 @@ export function buildSettingsTabGroups({
   showScreenMemoryTab,
   showUpdateTab,
   hasOptionalUpdate,
+  isAdmin = false,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
   const tabs: SettingsTabConfig[] = [
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
@@ -115,6 +125,8 @@ export function buildSettingsTabGroups({
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
+    { id: 'users', label: '用户看板', icon: <Users className="w-4 h-4" /> },
+    { id: 'invites', label: '邀请码', icon: <Ticket className="w-4 h-4" /> },
     { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
     { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
@@ -131,7 +143,7 @@ export function buildSettingsTabGroups({
   for (const groupId of SETTINGS_TAB_GROUP_ORDER) {
     groups.set(groupId, []);
   }
-  for (const tab of tabs) {
+  for (const tab of tabs.filter((tab) => canAccessSettingsTab(tab.id, { isAdmin }))) {
     groups.get(SETTINGS_TAB_GROUP_BY_TAB[tab.id])?.push(tab);
   }
 
@@ -182,6 +194,7 @@ export const SettingsModal: React.FC = () => {
     optionalUpdateInfo,
     setOptionalUpdateInfo,
   } = useAppStore();
+  const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -235,8 +248,9 @@ export const SettingsModal: React.FC = () => {
       showScreenMemoryTab: isDesktopShellMode(),
       showUpdateTab,
       hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
+      isAdmin,
     }),
-    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate]
+    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, isAdmin]
   );
   const tabs = useMemo(
     () => tabGroups.flatMap((group) => group.tabs),
@@ -281,7 +295,7 @@ export const SettingsModal: React.FC = () => {
               <ChevronLeft className="h-4 w-4" />
               <span>返回应用</span>
             </button>
-            <SettingsSearch onNavigate={handleSearchNavigate} />
+            <SettingsSearch onNavigate={handleSearchNavigate} isAdmin={isAdmin} />
           </div>
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
@@ -332,7 +346,7 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   ))}
                   {/* Advanced 组追加两条跳转入口（不是 SettingsTab，而是直接调 store action） */}
-                  {isAdvanced && !collapsed && (
+                  {isAdmin && isAdvanced && !collapsed && (
                     <>
                       <button
                         type="button"
@@ -398,6 +412,8 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'automation' && <AutomationSettings />}
+            {isAdmin && activeTab === 'users' && <UserDashboardSettings />}
+            {isAdmin && activeTab === 'invites' && <InviteCodesSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

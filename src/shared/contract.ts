@@ -25,6 +25,7 @@ export * from './contract/agentSkill';
 
 // Infrastructure types
 export * from './contract/auth';
+export * from './contract/admin';
 export * from './contract/sync';
 export * from './contract/device';
 export * from './contract/settings';

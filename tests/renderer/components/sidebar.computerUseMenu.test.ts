@@ -66,6 +66,7 @@ const appState = {
   setShowPromptManager: vi.fn(),
   setShowEvalCenter: vi.fn(),
   setWorkingDirectory: vi.fn(),
+  showLab: false,
   setShowLab: vi.fn(),
   showCronCenter: false,
   setShowCronCenter: vi.fn(),
@@ -129,16 +130,23 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { Sidebar } from '../../../src/renderer/components/Sidebar';
 
-describe('Sidebar Computer Use menu entry', () => {
+describe('Sidebar account menu entry planning', () => {
   beforeEach(() => {
     reactState.useStateCalls = 0;
   });
 
-  it('renders Computer Use in the expanded lower-left user menu', () => {
+  it('keeps common entries visible and groups advanced tools behind one disclosure', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('用户菜单');
-    expect(html).toContain('桌面采集');
-    expect(html).toContain('Computer Use');
+    expect(html).toContain('常用');
+    expect(html).toContain('Activity');
+    expect(html).toContain('知识与记忆');
+    expect(html).toContain('评测中心');
+    expect(html).toContain('自动化');
+    expect(html).toContain('提示词');
+    expect(html).toContain('高级工具');
+    expect(html).not.toContain('桌面采集');
+    expect(html).not.toContain('Computer Use');
   });
 });

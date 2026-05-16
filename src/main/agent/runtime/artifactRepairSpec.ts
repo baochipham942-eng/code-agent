@@ -34,6 +34,7 @@ export type GenericArtifactRepairIssueCode =
   | 'missing_snapshot_metric'
   | 'non_executable_reachability_input'
   | 'control_no_state_change'
+  | 'reset_authored_unit_failed'
   | 'level_coverage_incomplete'
   | 'smoke_missing_coverage'
   | 'shortcut_state_mutation'
@@ -210,6 +211,12 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Wire declared controls to real state changes and make reachability metrics change after those inputs are dispatched. If a score/progress metric does not change in that short input window, use player.x/player.vy or move the reward into the deterministic live collision path.',
     };
   }
+  if (/reset\(levelOrScenario\) failed for authored unit|reset\(\) must accept every id\/key\/name|reset.*authored unit|levelOrScenario.*authored/i.test(text)) {
+    return {
+      code: 'reset_authored_unit_failed',
+      repairInstruction: 'Make reset(levelOrScenario) accept every id/key/name declared in __GAME_META__ authored units, as well as numeric indexes. Either map string ids such as "level1" to array indexes or change metadata ids to numeric values that reset() already supports.',
+    };
+  }
   if (/authored levels|all authored levels|所有 authored levels|declared=\d+|scenarios 都可推进通关/i.test(text)) {
     return {
       code: 'level_coverage_incomplete',
@@ -264,10 +271,10 @@ function classifyFailure(failure: string): FailureClassification {
       repairInstruction: 'Declare authored levels, segments, scenarios, objectives, or missions so validation can compare promised scope with smoke coverage.',
     };
   }
-  if (/缺少 reachability|缺少 progressPlan|缺少 acceptance|无法验证目标|progress.*不算|coverage.*不算|does not satisfy.*(?:progressPlan|reachability)/i.test(text)) {
+  if (/缺少 reachability|缺少 progressPlan|缺少 smokePlan|缺少 validation|缺少 acceptance|无法验证目标|progress.*不算|coverage.*不算|acceptance 不算可执行验收计划|does not satisfy.*(?:progressPlan|reachability)/i.test(text)) {
     return {
       code: 'missing_reachability_metadata',
-      repairInstruction: 'Declare a literal __GAME_META__.progressPlan or __GAME_META__.reachability array; do not rename it progress or coverage. Each step must contain executable inputs using real controls, frames, a snapshot metric path, an expected direction or target, and authored level/scenario coverage.',
+      repairInstruction: 'Declare a literal __GAME_META__.progressPlan or __GAME_META__.reachability array; do not rename it progress, coverage, or a string-array acceptance checklist. Each step must contain executable inputs using real controls, frames, a snapshot metric path, an expected direction or target, and authored level/scenario coverage.',
     };
   }
   if (/缺少 qualityPlan|玩法承诺元数据|角色可辨识|奖励\/风险/i.test(text)) {
@@ -294,6 +301,7 @@ const GENERIC_ISSUE_CODES: readonly GenericArtifactRepairIssueCode[] = [
   'missing_snapshot_metric',
   'non_executable_reachability_input',
   'control_no_state_change',
+  'reset_authored_unit_failed',
   'level_coverage_incomplete',
   'smoke_missing_coverage',
   'shortcut_state_mutation',
@@ -317,7 +325,7 @@ const GENERIC_ISSUE_CODES: readonly GenericArtifactRepairIssueCode[] = [
  * 的 checker 通过 `classifyFailure` 自己识别。
  */
 const GENERIC_CANDIDATE_KEYWORDS =
-  /validator|validation failed|runSmokeTest|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|visual smoke|frontend browser validation|console errors|page errors|visibly framed|horizontal overflow|cropped|响应式|裁切|gameplayMechanics|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i;
+  /validator|validation failed|runSmokeTest|reset\(levelOrScenario\)|authored unit|levelOrScenario|reachability|coverage|snapshot|step\(\)|input\.forEach|normalizeInput|string\[\]|object map|canvas|browser visual smoke|visual smoke|frontend browser validation|console errors|page errors|visibly framed|horizontal overflow|cropped|响应式|裁切|gameplayMechanics|合约|缺少|失败|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成/i;
 
 /**
  * 动态拼装 directCodePattern：generic 列表 + 所有已注册 subtype 的 codes。
@@ -443,6 +451,8 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
       return 'Reachability step uses input that cannot be dispatched.';
     case 'control_no_state_change':
       return 'Declared controls do not change observable state.';
+    case 'reset_authored_unit_failed':
+      return 'reset(levelOrScenario) cannot load declared authored units.';
     case 'level_coverage_incomplete':
       return 'Smoke coverage does not prove all authored levels or scenarios.';
     case 'smoke_missing_coverage':
@@ -492,7 +502,7 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   }
   if (issues.some((issue) => issue.code === 'missing_reachability_metadata')) {
     hints.push(
-      'required metadata field: add progressPlan or reachability as an actual array property on __GAME_META__ or __INTERACTIVE_META__. A generic progress, coverage, objectives, coreLoop, or qualityPlan object does not satisfy this validator check.',
+      'required metadata field: add progressPlan or reachability as an actual array property on __GAME_META__ or __INTERACTIVE_META__. A generic progress, coverage, objectives, coreLoop, qualityPlan object, or string-array acceptance checklist does not satisfy this validator check.',
       'progressPlan template: __GAME_META__.progressPlan = [{ label: "move right", input: "ArrowRight", frames: 24, metric: "player.x", expect: "increase" }, { label: "jump arc", input: ["ArrowRight", "Space"], frames: 20, metric: "player.y", expect: "change" }]; runSmokeTest() must execute the same inputs and assert before/after snapshot changes.',
       'For multi-level artifacts, include at least one executable reachability step per authored level or scenario; do not count direct level loading as progression evidence unless runSmokeTest also proves that level responds to real input.',
     );
@@ -502,6 +512,12 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
       'Reachability repair template: use exact snapshot paths; Do not assert score/progress/win/gate/ability changes after generic movement. Missing metric "progress" should become player.x/player.y/player.vy unless progress is real.',
       'Reachability inputs must be real dispatchable controls from metadata, for example "ArrowRight", "Space", or ["ArrowRight", "Space"]; never "move", "jump", "combo", "progress", or "none".',
       'Either change the metric to a local movement field or adjust the scenario layout so the reward/gate is reached deterministically through live collision.',
+    );
+  }
+  if (issues.some((issue) => issue.code === 'reset_authored_unit_failed')) {
+    hints.push(
+      'Authored unit reset template: build a resolver such as `const levelIndexById = new Map(LEVELS.map((level, index) => [level.id, index])); function resolveLevelIndex(target = 0) { if (typeof target === "number") return target; if (levelIndexById.has(target)) return levelIndexById.get(target); const parsed = Number(target); return Number.isFinite(parsed) ? parsed : 0; }`, then make `reset(levelOrScenario)` call the same live initialization path with that resolved index.',
+      'Do not claim all authored levels/scenarios are reachable until reset() can load every declared id/key/name and runSmokeTest/progressPlan drives real inputs in each unit.',
     );
   }
   if (issues.some((issue) => issue.code === 'coverage_without_runtime_evidence' || issue.code === 'shortcut_state_mutation')) {

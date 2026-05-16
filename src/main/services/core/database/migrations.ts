@@ -27,6 +27,7 @@ export function applySessionsMigrations(db: BetterSqlite3.Database, logger: Logg
     'ALTER TABLE sessions ADD COLUMN origin TEXT',
     'ALTER TABLE sessions ADD COLUMN parent_session_id TEXT',
     'ALTER TABLE sessions ADD COLUMN source_run_id TEXT',
+    'ALTER TABLE sessions ADD COLUMN agent_engine TEXT',
     'ALTER TABLE sessions ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE sessions ADD COLUMN retry_of_session_id TEXT',
   ];

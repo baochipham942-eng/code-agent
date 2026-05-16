@@ -57,6 +57,7 @@ import { registerInAppValidationHandlers } from './inAppValidation.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
+import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
 
@@ -241,6 +242,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     const { BrowserWindow } = require('../platform') as typeof import('../platform');
     return BrowserWindow.getAllWindows();
   });
+
+  // Agent Engine handlers (Native / Codex CLI / Claude Code detection)
+  registerAgentEngineHandlers(ipcMain);
 
   // Capability Center handlers (Skill / MCP / Tool / Channel inventory)
   registerCapabilityHandlers(ipcMain, { getConfigService, getAppService });

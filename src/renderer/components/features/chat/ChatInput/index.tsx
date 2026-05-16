@@ -16,6 +16,7 @@ import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { AgentEngineSelector } from './AgentEngineSelector';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
 import { CostDisplay } from '../../../StatusBar/CostDisplay';
@@ -923,6 +924,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
+
+            {/* Agent Engine 选择器 */}
+            <AgentEngineSelector />
 
             {/* 模型选择器 */}
             <div className="text-xs">

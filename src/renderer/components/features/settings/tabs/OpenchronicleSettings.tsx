@@ -30,6 +30,36 @@ interface OpenchronicleSettingsProps {
   embedded?: boolean;
 }
 
+interface OpenchronicleToggleSwitchProps {
+  checked: boolean;
+  busy?: boolean;
+  onToggle: () => void;
+}
+
+export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps> = ({
+  checked,
+  busy = false,
+  onToggle,
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label="启用屏幕记忆"
+    onClick={onToggle}
+    disabled={busy}
+    className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:ring-offset-2 focus:ring-offset-zinc-950 ${
+      checked ? 'bg-emerald-500' : 'bg-zinc-600'
+    } ${busy ? 'cursor-wait opacity-50' : 'cursor-pointer'}`}
+  >
+    <span
+      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+        checked ? 'translate-x-6' : 'translate-x-0'
+      }`}
+    />
+  </button>
+);
+
 export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false }) => {
   const [settings, setSettings] = useState<OcSettings>(DEFAULT_OPENCHRONICLE_SETTINGS);
   const [status, setStatus] = useState<OpenchronicleStatus | null>(null);
@@ -123,19 +153,11 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
               ON：启动 OC daemon + 注册 MCP server · OFF：彻底退出 daemon
             </div>
           </div>
-          <button
-            onClick={() => handleToggle(!settings.enabled)}
-            disabled={busy}
-            className={`relative w-12 h-6 rounded-full transition-colors ${
-              settings.enabled ? 'bg-green-500' : 'bg-zinc-600'
-            } ${busy ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
-          >
-            <span
-              className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                settings.enabled ? 'translate-x-6' : 'translate-x-0.5'
-              }`}
-            />
-          </button>
+          <OpenchronicleToggleSwitch
+            checked={settings.enabled}
+            busy={busy}
+            onToggle={() => handleToggle(!settings.enabled)}
+          />
         </div>
 
         <div className="mt-4 pt-4 border-t border-zinc-700 grid grid-cols-2 gap-3 text-xs">

@@ -41,6 +41,7 @@ export const IPC_DOMAINS = {
   PROMPT: 'domain:prompt', // 提示词管理（查看 + override）
   HOOK: 'domain:hook', // Hook 管理（列出已启用/未启用 + 打开配置）
   AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
+  AGENT_ENGINE: 'domain:agentEngine', // Native / Codex CLI / Claude Code execution engines
   CAPABILITY: 'domain:capability', // Skill / MCP / Tool / Channel 能力中心
 } as const;
 

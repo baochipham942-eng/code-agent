@@ -46,6 +46,13 @@ import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
+import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import {
+  ClaudeCodeAdapter,
+  CodexCliAdapter,
+  isExternalAgentEngine,
+  resolveExternalEngineLaunch,
+} from '../services/agentEngine';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -217,15 +224,50 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
+    const sessionManager = getSessionManager();
+    const session = await sessionManager.getSession(resolvedSessionId, 1);
+    const engine = normalizeAgentEngineSession(session?.engine);
     const orchestrator = this.getOrchestrator(resolvedSessionId);
     const effectiveWorkingDirectory = await this.resolveWorkingDirectory(
       resolvedSessionId,
       envelope.context?.workingDirectory,
     );
+    if (engine.kind === 'codex_cli') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      await new CodexCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+    if (engine.kind === 'claude_code') {
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      await new ClaudeCodeAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+      });
+      return;
+    }
+
     if (effectiveWorkingDirectory) {
       orchestrator?.setWorkingDirectory(effectiveWorkingDirectory);
     }
     await this.syncSessionWorkingDirectory(resolvedSessionId, envelope.context?.workingDirectory);
+
     const options = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
@@ -318,6 +360,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
     const orchestrator = this.getOrchestrator(resolvedSessionId);
+    const session = await getSessionManager().getSession(resolvedSessionId, 1);
+    const engine = normalizeAgentEngineSession(session?.engine);
+    if (isExternalAgentEngine(engine.kind)) {
+      throw new Error('Interrupt and continue is not supported for external Agent Engine sessions.');
+    }
     const effectiveWorkingDirectory = await this.resolveWorkingDirectory(
       resolvedSessionId,
       envelope.context?.workingDirectory,
@@ -366,6 +413,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const requestedWorkingDirectory = config?.workingDirectory?.trim();
     const workingDirectory = requestedWorkingDirectory || this.getWorkingDirectory();
 
+    const requestedEngine = normalizeAgentEngineSession(config?.engine);
+    if (config?.engine && isExternalAgentEngine(requestedEngine.kind)) {
+      throw new Error('External Agent Engine selection must be done after creating a manual chat session.');
+    }
+
     const session = await sessionManager.createSession({
       title: config?.title || 'New Session',
       modelConfig: resolveSessionDefaultModelConfig({
@@ -375,6 +427,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         maxTokens: settings.model?.maxTokens,
       }),
       workingDirectory,
+      engine: config?.engine ? requestedEngine : undefined,
     });
 
     sessionManager.setCurrentSession(session.id);
@@ -450,6 +503,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+    if (updates.engine !== undefined) {
+      throw new Error('Agent Engine metadata must be changed through the Agent Engine selector.');
+    }
     await getSessionManager().updateSession(sessionId, updates);
   }
 

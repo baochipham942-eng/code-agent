@@ -454,6 +454,7 @@ export class DatabaseService {
       origin?: Session['origin'];
       parentSessionId?: string;
       sourceRunId?: string;
+      engine?: Session['engine'];
       readOnly?: boolean;
       retryOfSessionId?: string;
       createdAt?: number | string;

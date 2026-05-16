@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
+import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
+import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
@@ -17,6 +19,14 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
   if (!response?.success) {
     throw new Error(response?.error?.message || `Session action failed: ${action}`);
+  }
+  return response.data as T;
+}
+
+async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.AGENT_ENGINE, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Agent Engine action failed: ${action}`);
   }
   return response.data as T;
 }
@@ -109,6 +119,7 @@ function normalizeSession(session: Session & {
     ...session,
     title: session.title || '未命名会话',
     type: session.type || 'chat',
+    engine: normalizeAgentEngineSession(session.engine),
     updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : (Number.isFinite(session.createdAt) ? session.createdAt : Date.now()),
     createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
     messageCount: session.messageCount || 0,
@@ -135,6 +146,7 @@ export type SessionFilter = 'active' | 'archived' | 'all';
 
 interface CreateSessionOptions {
   workingDirectory?: string | null;
+  engine?: Partial<AgentEngineSessionMetadata> | null;
 }
 
 function normalizeDraftDirectory(value?: string | null): string {
@@ -214,6 +226,7 @@ interface SessionActions {
   loadOlderMessages: () => Promise<void>;
   clearCurrentSession: () => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
+  updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
   markSessionUnread: (sessionId: string) => void;
   markSessionRead: (sessionId: string) => void;
   isSessionUnread: (sessionId: string) => boolean;
@@ -304,6 +317,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const session = await invokeSession<Session | null>('create', {
           title: nextTitle,
           workingDirectory: inheritedWorkingDirectory,
+          engine: options?.engine ?? null,
         });
         if (session) {
           const newSessionWithMeta: SessionWithMeta = normalizeSession({
@@ -636,6 +650,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           s.id === sessionId ? normalizeSession({ ...s, title, updatedAt: Date.now() }) : s
         ),
       }));
+    },
+
+    updateSessionEngine: async (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => {
+      try {
+        const normalized = await invokeAgentEngine<AgentEngineSessionMetadata>('select', {
+          sessionId,
+          kind: engine.kind,
+          permissionProfile: engine.permissionProfile,
+        });
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? normalizeSession({ ...s, engine: normalized, updatedAt: Date.now() }) : s
+          ),
+        }));
+      } catch (error) {
+        logger.error('Failed to update session engine', error);
+        await get().loadSessions();
+        throw error;
+      }
     },
 
     markSessionUnread: (sessionId: string) => {

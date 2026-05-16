@@ -37,6 +37,7 @@ import type {
 } from '@shared/contract/capability';
 
 const KIND_LABELS: Record<CapabilityKind, string> = {
+  agent_engine: 'Engine',
   skill: 'Skill',
   mcp_template: 'MCP',
   tool_bundle: 'Tool',

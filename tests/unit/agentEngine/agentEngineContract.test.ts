@@ -1,0 +1,181 @@
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  normalizeAgentEngineSession,
+} from '../../../src/shared/contract/agentEngine';
+import {
+  assertWorkspaceCwd,
+  buildManualAgentEngineSelection,
+  resolveExternalEngineLaunch,
+} from '../../../src/main/services/agentEngine/agentEngineGuards';
+import {
+  DEFAULT_CODEX_CLI_TIMEOUT_MS,
+  MIN_CODEX_CLI_TIMEOUT_MS,
+  normalizeCodexCliRunTiming,
+} from '../../../src/main/services/agentEngine/agentEngineTiming';
+import { normalizeVersionOutput as normalizeRegistryVersionOutput } from '../../../src/main/services/agentEngine/agentEngineRegistry';
+import type { Session } from '../../../src/shared/contract/session';
+
+describe('Agent Engine contract', () => {
+  it('defaults old sessions to native', () => {
+    expect(normalizeAgentEngineSession(null)).toEqual({
+      kind: 'native',
+      permissionProfile: 'default',
+      origin: 'manual',
+    });
+  });
+
+  it('defaults Codex CLI sessions to read only', () => {
+    expect(normalizeAgentEngineSession({ kind: 'codex_cli' })).toMatchObject({
+      kind: 'codex_cli',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
+
+  it('defaults Claude Code sessions to read only', () => {
+    expect(normalizeAgentEngineSession({ kind: 'claude_code' })).toMatchObject({
+      kind: 'claude_code',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
+});
+
+describe('Agent Engine registry helpers', () => {
+  it('normalizes the first version output line', () => {
+    expect(normalizeRegistryVersionOutput('\n codex-cli 0.130.0\nextra')).toBe('codex-cli 0.130.0');
+  });
+});
+
+describe('Agent Engine cwd guard', () => {
+  let tempDir: string;
+  let workspaceRoot: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-engine-guard-test-'));
+    workspaceRoot = path.join(tempDir, 'workspace');
+    await fs.mkdir(path.join(workspaceRoot, 'subdir'), { recursive: true });
+    await fs.mkdir(path.join(tempDir, 'other'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('allows cwd inside the workspace', async () => {
+    const cwd = path.join(workspaceRoot, 'subdir');
+    await expect(fs.realpath(cwd)).resolves.toBe(assertWorkspaceCwd(cwd, workspaceRoot));
+  });
+
+  it('rejects cwd outside the workspace', () => {
+    expect(() => assertWorkspaceCwd(path.join(tempDir, 'other'), workspaceRoot)).toThrow(/inside workspace/);
+  });
+
+  it('rejects symlink escapes from the workspace', async () => {
+    const linkPath = path.join(workspaceRoot, 'escape');
+    await fs.symlink(path.join(tempDir, 'other'), linkPath);
+    expect(() => assertWorkspaceCwd(linkPath, workspaceRoot)).toThrow(/inside workspace/);
+  });
+});
+
+describe('Agent Engine launch policy', () => {
+  let tempDir: string;
+  let workspaceRoot: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-engine-policy-test-'));
+    workspaceRoot = path.join(tempDir, 'workspace');
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    workspaceRoot = await fs.realpath(workspaceRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('selects external engines only for manual chat sessions and pins cwd as workspace root', () => {
+    const selected = buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      kind: 'codex_cli',
+      label: 'Codex CLI',
+      summary: '',
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: true,
+      capabilities: ['execute'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: Date.now(),
+    });
+
+    expect(selected).toMatchObject({
+      kind: 'codex_cli',
+      cwd: workspaceRoot,
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
+
+  it('rejects workspace-write external engine selection in the current release', () => {
+    expect(() => buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      kind: 'codex_cli',
+      label: 'Codex CLI',
+      summary: '',
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: true,
+      capabilities: ['execute'],
+      defaultPermissionProfile: 'workspace_write',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: Date.now(),
+    })).toThrow(/read-only/);
+  });
+
+  it('blocks external launches from channel and read-only sessions even if metadata is polluted', () => {
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, origin: { kind: 'channel' } }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+    )).toThrow(/channel/);
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, readOnly: true }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+    )).toThrow(/read-only/);
+  });
+});
+
+describe('Codex CLI run timing', () => {
+  it('uses conservative defaults', () => {
+    expect(normalizeCodexCliRunTiming()).toEqual({
+      stallWarningMs: 45_000,
+      timeoutMs: DEFAULT_CODEX_CLI_TIMEOUT_MS,
+    });
+  });
+
+  it('keeps stall warning below timeout', () => {
+    expect(normalizeCodexCliRunTiming({ timeoutMs: 20_000, stallWarningMs: 60_000 })).toEqual({
+      stallWarningMs: 19_000,
+      timeoutMs: 20_000,
+    });
+  });
+
+  it('enforces a minimum timeout', () => {
+    expect(normalizeCodexCliRunTiming({ timeoutMs: 100, stallWarningMs: 50 }).timeoutMs).toBe(MIN_CODEX_CLI_TIMEOUT_MS);
+  });
+});
+
+function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    id: 'session-1',
+    title: 'Session',
+    modelConfig: { provider: 'openai', model: 'gpt-5' } as Session['modelConfig'],
+    type: 'chat',
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}

@@ -451,6 +451,15 @@ export class ChannelAgentBridge {
     const session = await sessionManager.createSession({
       title: this.buildChannelSessionTitle(accountId, message),
       modelConfig: this.getChannelModelConfig(),
+      origin: {
+        kind: 'channel',
+        id: accountId,
+        name: message.context.chatName || message.context.chatId,
+        metadata: {
+          chatId: message.context.chatId,
+          channelId: message.channelId,
+        },
+      },
     });
 
     this.channelSessions.set(sessionKey, session.id);

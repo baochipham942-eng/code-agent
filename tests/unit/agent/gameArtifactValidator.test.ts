@@ -1179,6 +1179,125 @@ describe('validateGameArtifact', () => {
     expect(result.failures.some((failure) => failure.includes('snapshot 没有变化'))).toBe(true);
   });
 
+  it('does not let string-array acceptance mask an executable progressPlan', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const state = { player: { x: 0 } };
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'arcade',
+            controls: { right: 'ArrowRight' },
+            levels: [{ id: 0 }, { id: 1 }],
+            acceptance: ['move right is possible'],
+            progressPlan: [{ input: 'ArrowRight', frames: 8, metric: 'player.x', expect: 'increase' }],
+            qualityPlan: { actorReadable: true, mechanics: ['move'], levelsCovered: [0, 1], allAuthoredLevelsReachable: true }
+          };
+          window.__GAME_TEST__ = {
+            start() { return this.reset(0); },
+            reset(levelOrScenario = 0) {
+              state.player.x = Number(levelOrScenario || 0) * 10;
+              return this.snapshot();
+            },
+            snapshot() { return { player: { x: state.player.x } }; },
+            step(input = {}, frames = 1) {
+              if (input.right || input.ArrowRight) state.player.x += frames;
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.reset(0);
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 8);
+              return {
+                passed: after.player.x > before.player.x,
+                checks: ['move'],
+                failures: [],
+                coverage: {
+                  mechanics: ['move'],
+                  rewards: [],
+                  risks: [],
+                  stateChanges: ['player.x'],
+                  levelsPassed: [0, 1],
+                  totalLevels: 2,
+                  allLevelsReachable: true
+                }
+              };
+            }
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true, runtimeSmokeTimeoutMs: 5000 });
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+    expect(result.runtimeSmoke?.failures).toEqual([]);
+    expect(result.runtimeSmoke?.checks.some((check) => check.includes('passed reachability step'))).toBe(true);
+  });
+
+  it('reports reset(levelOrScenario) authored unit failures for string authored ids', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const LEVELS = [{ start: { x: 10 } }, { start: { x: 20 } }];
+          let state = { player: { x: 0 } };
+          function initLevel(levelIndex) {
+            const level = LEVELS[levelIndex];
+            state = { player: { x: level.start.x } };
+          }
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'arcade',
+            controls: { right: 'ArrowRight' },
+            levels: [{ id: 'level1' }, { id: 'level2' }],
+            progressPlan: [{ input: 'ArrowRight', frames: 8, metric: 'player.x', expect: 'increase' }],
+            qualityPlan: { actorReadable: true, mechanics: ['move'], levelsCovered: ['level1', 'level2'], allAuthoredLevelsReachable: true }
+          };
+          window.__GAME_TEST__ = {
+            start() { initLevel(0); return this.snapshot(); },
+            reset(levelOrScenario = 0) { initLevel(levelOrScenario); return this.snapshot(); },
+            snapshot() { return { player: { x: state.player.x } }; },
+            step(input = {}, frames = 1) {
+              if (input.right || input.ArrowRight) state.player.x += frames;
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.reset(0);
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 8);
+              return {
+                passed: after.player.x > before.player.x,
+                checks: ['move'],
+                failures: [],
+                coverage: {
+                  mechanics: ['move'],
+                  rewards: [],
+                  risks: [],
+                  stateChanges: ['player.x'],
+                  levelsPassed: ['level1', 'level2'],
+                  totalLevels: 2,
+                  allLevelsReachable: true
+                }
+              };
+            }
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true, runtimeSmokeTimeoutMs: 5000 });
+    expect(result.passed).toBe(false);
+    expect(result.failures.some((failure) => failure.includes('reset(levelOrScenario) failed for authored unit "level1"'))).toBe(true);
+  });
+
   it('passes runtime smoke when declared controls cause state changes', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>
@@ -1775,7 +1894,7 @@ describe('validateGameArtifact', () => {
     expect(missingContract.shouldValidate).toBe(true);
     expect(missingContract.passed).toBe(false);
     expect(missingContract.failures.some((failure) => failure.includes('关卡、片段、场景或目标元数据'))).toBe(true);
-    expect(missingContract.failures.some((failure) => failure.includes('reachability/acceptance/progressPlan'))).toBe(true);
+    expect(missingContract.failures.some((failure) => failure.includes('reachability/progressPlan/smokePlan'))).toBe(true);
     expect(missingContract.failures.some((failure) => failure.includes('交互测试合约'))).toBe(true);
 
     const firstSegmentOnlyPath = await writeTempHtml(`

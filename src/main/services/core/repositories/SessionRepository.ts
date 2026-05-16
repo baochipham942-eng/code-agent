@@ -14,6 +14,7 @@ import type {
   SessionTask,
   ToolCall,
 } from '../../../../shared/contract';
+import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type {
   ContextInterventionAction,
   ContextInterventionSnapshot,
@@ -156,11 +157,11 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       INSERT INTO sessions (
         id, title, model_provider, model_name, working_directory,
-        session_type, origin, parent_session_id, source_run_id, read_only, retry_of_session_id,
+        session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
         created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
         is_deleted, synced_at, git_branch
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
     stmt.run(
@@ -173,6 +174,7 @@ export class SessionRepository {
       session.origin ? JSON.stringify(session.origin) : null,
       session.parentSessionId || null,
       session.sourceRunId || null,
+      session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null,
       session.readOnly ? 1 : 0,
       session.retryOfSessionId || null,
       session.createdAt,
@@ -195,6 +197,7 @@ export class SessionRepository {
       origin?: Session['origin'];
       parentSessionId?: string;
       sourceRunId?: string;
+      engine?: Session['engine'];
       readOnly?: boolean;
       retryOfSessionId?: string;
       createdAt?: number | string;
@@ -209,10 +212,10 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       INSERT INTO sessions (
         id, title, model_provider, model_name, working_directory,
-        session_type, origin, parent_session_id, source_run_id, read_only, retry_of_session_id,
+        session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
         created_at, updated_at, is_deleted, synced_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -225,6 +228,7 @@ export class SessionRepository {
       data.origin ? JSON.stringify(data.origin) : null,
       data.parentSessionId || null,
       data.sourceRunId || null,
+      data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null,
       data.readOnly ? 1 : 0,
       data.retryOfSessionId || null,
       createdAt,
@@ -281,6 +285,7 @@ export class SessionRepository {
           model_provider = COALESCE(?, model_provider),
           model_name = COALESCE(?, model_name),
           working_directory = COALESCE(?, working_directory),
+          agent_engine = COALESCE(?, agent_engine),
           updated_at = COALESCE(?, updated_at),
           workspace = COALESCE(?, workspace),
           workbench_provenance = COALESCE(?, workbench_provenance),
@@ -297,12 +302,16 @@ export class SessionRepository {
     const workbenchProvenance = updates.workbenchProvenance !== undefined
       ? JSON.stringify(updates.workbenchProvenance)
       : null;
+    const agentEngine = updates.engine !== undefined
+      ? JSON.stringify(normalizeAgentEngineSession(updates.engine))
+      : null;
 
     const result = stmt.run(
       updates.title ?? null,
       updates.modelConfig?.provider ?? null,
       updates.modelConfig?.model ?? null,
       updates.workingDirectory ?? null,
+      agentEngine,
       updates.updatedAt ?? Date.now(),
       updates.workspace !== undefined ? updates.workspace : null,
       workbenchProvenance,
@@ -1149,6 +1158,10 @@ export class SessionRepository {
       }
     }
 
+    const engine = row.agent_engine
+      ? normalizeAgentEngineSession(parseJsonObject(row.agent_engine))
+      : normalizeAgentEngineSession(null);
+
     const isArchived = row.status === 'archived';
     const isDeleted = Boolean(row.is_deleted);
 
@@ -1164,6 +1177,7 @@ export class SessionRepository {
       origin,
       parentSessionId: row.parent_session_id as string | undefined,
       sourceRunId: row.source_run_id as string | undefined,
+      engine,
       readOnly: Boolean(row.read_only),
       retryOfSessionId: row.retry_of_session_id as string | undefined,
       createdAt: row.created_at as number,

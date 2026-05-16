@@ -7,6 +7,7 @@
 
 import type { PermissionResponse } from './permission';
 import type { Session } from './session';
+import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { Message, MessageAttachment } from './message';
 import type { ModelProvider } from './model';
 import type {
@@ -34,6 +35,7 @@ export interface AppServiceRunOptions {
 export interface CreateSessionConfig {
   title?: string;
   workingDirectory?: string | null;
+  engine?: Partial<AgentEngineSessionMetadata> | null;
 }
 
 /**

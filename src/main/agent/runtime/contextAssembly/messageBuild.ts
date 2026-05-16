@@ -383,6 +383,12 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
     );
   }
 
+  if (/reset_authored_unit_failed|reset\(levelOrScenario\) failed for authored unit|levelOrScenario.*authored/i.test(text)) {
+    requirements.push(
+      '- reset_authored_unit_failed: make `reset(levelOrScenario?)` accept every declared authored unit id/key/name and numeric index, mapping strings like `level1` or `stomp` to the same live initialization path used by playable state.',
+    );
+  }
+
   if (/missing_gameplay_mechanics|gameplayMechanics|stompable|comboChallenge|requiresAbility|blocksAccessTo/i.test(text)) {
     requirements.push(
       '- platformer_gameplay_mechanics: for platformer artifacts, add `gameplayMechanics` with stompable enemies, bumpable/question blocks, route-changing abilities, ability-gated routes, and comboChallenge; prove each through `step()` plus before/after `snapshot()` evidence in `runSmokeTest()`.',

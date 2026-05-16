@@ -164,6 +164,32 @@ describe('AgentAppService lifecycle routing', () => {
     );
   });
 
+  it('rejects session update attempts that write Agent Engine metadata through the generic session route', async () => {
+    const service = createService(taskManager);
+
+    await expect(service.updateSession('session-1', {
+      engine: { kind: 'codex_cli', permissionProfile: 'read_only' },
+    } as any)).rejects.toThrow(/Agent Engine selector/);
+
+    expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('does not route interrupt-and-continue into native runtime for external engine sessions', async () => {
+    sessionManager.getSession.mockResolvedValueOnce({
+      id: 'session-1',
+      workingDirectory: '/tmp/project',
+      engine: { kind: 'codex_cli', permissionProfile: 'read_only', origin: 'manual' },
+    });
+    const service = createService(taskManager);
+
+    await expect(service.interruptAndContinue({
+      sessionId: 'session-1',
+      content: 'steer',
+    } as any)).rejects.toThrow(/external Agent Engine/);
+
+    expect(taskManager.interruptAndContinue).not.toHaveBeenCalled();
+  });
+
   it('lets TaskManager recover runtime follow-up when no orchestrator is currently attached', async () => {
     taskManager.getOrCreateCurrentOrchestrator.mockReturnValueOnce(undefined);
     const service = createService(taskManager);

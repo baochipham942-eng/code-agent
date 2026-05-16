@@ -133,6 +133,29 @@ function formatPresetMenuLabel(name: string): string {
   return name.length > 28 ? `${name.slice(0, 25)}...` : name;
 }
 
+interface AccountMenuItemProps {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}
+
+const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-600">
+    {children}
+  </div>
+);
+
+const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+  >
+    {icon}
+    <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+  </button>
+);
+
 export const Sidebar: React.FC = () => {
   const {
     clearPlanningState,
@@ -140,6 +163,7 @@ export const Sidebar: React.FC = () => {
     setShowPromptManager,
     setShowEvalCenter,
     setWorkingDirectory,
+    showLab,
     setShowLab,
     showCronCenter,
     setShowCronCenter,
@@ -212,9 +236,20 @@ export const Sidebar: React.FC = () => {
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showAccountAdvancedTools, setShowAccountAdvancedTools] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const hasActiveAdvancedTool = Boolean(
+    showLab ||
+      showTimeCapabilityCenter ||
+      showBrowserSurfacePanel ||
+      showDesktopPanel ||
+      showComputerUsePanel ||
+      showInAppValidationPanel ||
+      (dagPanelEnabled && showDAGPanel)
+  );
+  const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -931,111 +966,103 @@ export const Sidebar: React.FC = () => {
               </span>
               <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
-            {/* User Dropdown Menu — 借鉴 Codex 左下垂直菜单 */}
+            {/* User Dropdown Menu */}
             {showUserMenu && (
-              <div className="absolute bottom-full left-2 right-2 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-50">
-                {/* 全局工具入口（原顶栏右侧 5 个按钮挪过来） */}
-                <button
+              <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+                <AccountMenuLabel>常用</AccountMenuLabel>
+                <AccountMenuItem
                   onClick={() => { setShowActivityPanel(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
-                  Activity
-                </button>
-                <button
+                  icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+                  label="Activity"
+                />
+                <AccountMenuItem
                   onClick={() => { setShowKnowledgeMemoryPanel(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
-                  知识与记忆
-                </button>
-                <button
+                  icon={<Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                  label="知识与记忆"
+                />
+                <AccountMenuItem
                   onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <CheeseIcon className="w-4 h-4 text-amber-400/80" />
-                  评测中心
-                </button>
-                <button
-                  onClick={() => { setShowLab(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <FlaskConical className="w-4 h-4 text-emerald-400/80" />
-                  实验室
-                </button>
-                <button
+                  icon={<CheeseIcon className="w-4 h-4 text-amber-400/80" />}
+                  label="评测中心"
+                />
+                <AccountMenuItem
                   onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />
-                  自动化
-                </button>
-                <button
-                  onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />
-                  Time & Capability
-                </button>
-                {dagPanelEnabled && (
-                  <button
-                    onClick={() => { setShowDAGPanel(!showDAGPanel); setShowUserMenu(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                  >
-                    <GitBranch className={`w-4 h-4 ${showDAGPanel ? 'text-blue-400' : 'text-blue-400/80'}`} />
-                    Agent 流程
-                  </button>
-                )}
-                <button
-                  onClick={() => { setShowBrowserSurfacePanel(!showBrowserSurfacePanel); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />
-                  浏览器
-                </button>
-                <button
-                  onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
-                  桌面采集
-                </button>
-                <button
-                  onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
-                  Computer Use
-                </button>
-                <button
-                  onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />
-                  In-App 验证
-                </button>
-                <button
+                  icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
+                  label="自动化"
+                />
+                <AccountMenuItem
                   onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <ScrollText className="w-4 h-4 text-violet-400/80" />
-                  提示词
-                </button>
-                <div className="border-t border-zinc-800 my-1" />
+                  icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
+                  label="提示词"
+                />
+
+                <div className="my-1 border-t border-zinc-800" />
                 <button
+                  type="button"
+                  onClick={() => setShowAccountAdvancedTools((open) => !open)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                >
+                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`} />
+                  <span className="min-w-0 flex-1 text-left">高级工具</span>
+                  {hasActiveAdvancedTool && (
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                      运行中
+                    </span>
+                  )}
+                </button>
+                {advancedToolsOpen && (
+                  <div className="pb-1">
+                    <AccountMenuItem
+                      onClick={() => { setShowLab(true); setShowUserMenu(false); }}
+                      icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                      label="实验室"
+                    />
+                    <AccountMenuItem
+                      onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
+                      icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
+                      label="Time & Capability"
+                    />
+                    {dagPanelEnabled && (
+                      <AccountMenuItem
+                        onClick={() => { setShowDAGPanel(!showDAGPanel); setShowUserMenu(false); }}
+                        icon={<GitBranch className={`w-4 h-4 ${showDAGPanel ? 'text-blue-400' : 'text-blue-400/80'}`} />}
+                        label="Agent 流程"
+                      />
+                    )}
+                    <AccountMenuItem
+                      onClick={() => { setShowBrowserSurfacePanel(!showBrowserSurfacePanel); setShowUserMenu(false); }}
+                      icon={<Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />}
+                      label="浏览器"
+                    />
+                    <AccountMenuItem
+                      onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
+                      icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+                      label="桌面采集"
+                    />
+                    <AccountMenuItem
+                      onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
+                      icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                      label="Computer Use"
+                    />
+                    <AccountMenuItem
+                      onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
+                      icon={<MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />}
+                      label="In-App 验证"
+                    />
+                  </div>
+                )}
+
+                <div className="border-t border-zinc-800" />
+                <AccountMenuItem
                   onClick={() => { setShowSettings(true); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  设置
-                </button>
-                <button
+                  icon={<Settings className="w-4 h-4" />}
+                  label="设置"
+                />
+                <AccountMenuItem
                   onClick={() => { signOut(); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  退出登录
-                </button>
+                  icon={<LogOut className="w-4 h-4" />}
+                  label="退出登录"
+                />
               </div>
             )}
           </>

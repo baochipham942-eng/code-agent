@@ -23,7 +23,7 @@ describe('artifactRepairSpec', () => {
       'HTML 文件还没有完整闭合，先继续补齐内容再做游戏验收。',
       'HTML 在 </html> 之后还有非空内容；浏览器会忽略这部分脚本或数据，说明分块追加位置错误。',
       '缺少 controls 元数据；工程层不知道该模拟什么输入来验证真实可操作性。',
-      '发现 progress/coverage 说明，但缺少 reachability/acceptance/progressPlan/validation 元数据；__GAME_META__.progress 或 coverage 对象不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。',
+      '发现 progress/coverage 说明，但缺少 reachability/progressPlan/smokePlan/validation 元数据；__GAME_META__.progress、coverage 或字符串数组 acceptance 不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。',
       '交互测试合约缺少 start()，验收无法从真实初始状态启动产物。',
       '交互测试合约缺少 snapshot()，验收无法读取主对象、进度或反馈变化。',
       '交互测试合约缺少 runSmokeTest()，验收无法用真实输入证明游戏可操作。',
@@ -104,6 +104,18 @@ describe('artifactRepairSpec', () => {
 
     const formatted = formatArtifactRepairSpecForPrompt(spec);
     expect(formatted).toContain('Input normalizer template');
+  });
+
+  it('classifies reset authored-unit mismatches separately from runSmokeTest failures', () => {
+    const spec = createArtifactRepairSpec(summary([
+      'reset(levelOrScenario) failed for authored unit "level1" at index 0: Cannot read properties of undefined (reading "start"). reset() must accept every id/key/name declared in __GAME_META__ authored units, or metadata must use numeric ids/indexes that reset() supports.',
+    ]));
+
+    expect(spec.issues.map((issue) => issue.code)).toEqual(['reset_authored_unit_failed']);
+    expect(spec.issues[0].repairInstruction).toContain('every id/key/name');
+
+    const formatted = formatArtifactRepairSpecForPrompt(spec);
+    expect(formatted).toContain('Authored unit reset template');
   });
 
   it('classifies non-responsive canvas layout failures', () => {

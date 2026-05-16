@@ -36,6 +36,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       origin TEXT,
       parent_session_id TEXT,
       source_run_id TEXT,
+      agent_engine TEXT,
       read_only INTEGER NOT NULL DEFAULT 0,
       retry_of_session_id TEXT,
       created_at INTEGER NOT NULL,

@@ -216,12 +216,12 @@ const META_CONTROL_PATTERNS = [
 ];
 
 const META_REACHABILITY_PATTERNS = [
-  /__GAME_META__[\s\S]{0,3000}\b(reachability|acceptance|smokePlan|progressPlan|validation)\b/i,
-  /game-meta[\s\S]{0,3000}"(reachability|acceptance|smokePlan|progressPlan|validation)"/i,
-  /__INTERACTIVE_META__[\s\S]{0,3000}\b(reachability|acceptance|smokePlan|progressPlan|validation)\b/i,
-  /interactive-meta[\s\S]{0,3000}"(reachability|acceptance|smokePlan|progressPlan|validation)"/i,
-  /__GAME_TEST__[\s\S]{0,5000}\b(reachability|acceptance|smokePlan|progressPlan|validation)\b/i,
-  /__INTERACTIVE_TEST__[\s\S]{0,5000}\b(reachability|acceptance|smokePlan|progressPlan|validation)\b/i,
+  /__GAME_META__[\s\S]{0,3000}\b(reachability|smokePlan|progressPlan|validation)\b/i,
+  /game-meta[\s\S]{0,3000}"(reachability|smokePlan|progressPlan|validation)"/i,
+  /__INTERACTIVE_META__[\s\S]{0,3000}\b(reachability|smokePlan|progressPlan|validation)\b/i,
+  /interactive-meta[\s\S]{0,3000}"(reachability|smokePlan|progressPlan|validation)"/i,
+  /__GAME_TEST__[\s\S]{0,5000}\b(reachability|smokePlan|progressPlan|validation)\b/i,
+  /__INTERACTIVE_TEST__[\s\S]{0,5000}\b(reachability|smokePlan|progressPlan|validation)\b/i,
 ];
 
 const META_REACHABILITY_NEAR_MISS_PATTERNS = [
@@ -763,14 +763,6 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         addControlAlias('ArrowUp', 'jump');
         addControlAlias('Space', 'jump');
         addControlAlias(' ', 'jump');
-        const reachabilityPlan = (
-          Array.isArray(meta.reachability) ? meta.reachability
-            : Array.isArray(meta.acceptance) ? meta.acceptance
-              : Array.isArray(meta.smokePlan) ? meta.smokePlan
-                : Array.isArray(meta.progressPlan) ? meta.progressPlan
-                  : Array.isArray(meta.validation) ? meta.validation
-                    : []
-        );
         const firstArray = (...values) => values.find((value) => Array.isArray(value));
         const authoredUnits = firstArray(meta.levels, meta.segments, meta.scenarios, meta.stages, meta.missions) || [];
         const authoredUnitTargets = authoredUnits.map((unit, index) => {
@@ -885,6 +877,20 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
 
           return [...new Set(extracted)];
         };
+        const isReachabilityStepObject = (step) => (
+          step && typeof step === 'object' && !Array.isArray(step)
+        );
+        const usableReachabilityPlan = (plan) => (
+          Array.isArray(plan) && plan.some(isReachabilityStepObject) ? plan : null
+        );
+        const reachabilityPlan = (
+          usableReachabilityPlan(meta.reachability)
+            || usableReachabilityPlan(meta.progressPlan)
+            || usableReachabilityPlan(meta.smokePlan)
+            || usableReachabilityPlan(meta.validation)
+            || usableReachabilityPlan(meta.acceptance)
+            || []
+        );
         const actionFrameCount = (action, fallback = 6) => {
           const rawFrames = typeof action.holdFrames === 'number' ? action.holdFrames
             : typeof action.frames === 'number' ? action.frames
@@ -955,7 +961,18 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
         const reachabilityMetricFailures = [];
         const resetToUnit = async (unitIndex, unitTarget) => {
           if (hasReset) {
-            await Promise.resolve(contract.reset(unitTarget));
+            try {
+              await Promise.resolve(contract.reset(unitTarget));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              throw new Error(
+                'reset(levelOrScenario) failed for authored unit ' +
+                JSON.stringify(unitTarget ?? unitIndex) +
+                ' at index ' + unitIndex +
+                ': ' + message +
+                '. reset() must accept every id/key/name declared in __GAME_META__ authored units, or metadata must use numeric ids/indexes that reset() supports.'
+              );
+            }
             return true;
           }
           await Promise.resolve(contract.start());
@@ -1021,7 +1038,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
 
             await resetToUnit(unitIndex, unitTarget);
             if (reachabilityPlan.length === 0) {
-              failures.push('元数据没有暴露 reachability/acceptance/progressPlan/validation 数组，无法验证目标或场景是否可推进；__GAME_META__.progress 或 coverage 对象不算可执行验收计划。');
+              failures.push('元数据没有暴露可执行的 reachability/progressPlan/smokePlan/validation 数组，无法验证目标或场景是否可推进；字符串数组 acceptance 只算质量清单，不算可执行验收计划。');
               return false;
             }
 
@@ -1265,9 +1282,16 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             },
           };
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (/reset\\(levelOrScenario\\) failed for authored unit/i.test(message)) {
+            return {
+              passed: false,
+              failures: [message],
+            };
+          }
           return {
             passed: false,
-            failures: ['runSmokeTest 抛出异常: ' + (error instanceof Error ? error.message : String(error))],
+            failures: ['runSmokeTest 抛出异常: ' + message],
           };
         }
       })()
@@ -1434,9 +1458,9 @@ export async function validateGameArtifact(
 
   if (!META_REACHABILITY_PATTERNS.some((pattern) => pattern.test(content))) {
     if (META_REACHABILITY_NEAR_MISS_PATTERNS.some((pattern) => pattern.test(content))) {
-      failures.push('发现 progress/coverage 说明，但缺少 reachability/acceptance/progressPlan/validation 元数据；__GAME_META__.progress 或 coverage 对象不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。');
+      failures.push('发现 progress/coverage 说明，但缺少 reachability/progressPlan/smokePlan/validation 元数据；__GAME_META__.progress、coverage 或字符串数组 acceptance 不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。');
     } else {
-      failures.push('缺少 reachability/acceptance/progressPlan/validation 元数据；工程层无法验证目标、场景或关卡能被推进。');
+      failures.push('缺少 reachability/progressPlan/smokePlan/validation 元数据；工程层无法验证目标、场景或关卡能被推进。');
     }
   } else {
     checks.push('reachability/progress metadata detected');

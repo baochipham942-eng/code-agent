@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ModelConfig } from './model';
+import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './sessionWorkspace';
 
 /**
@@ -95,6 +96,7 @@ export interface Session {
   origin?: SessionOrigin;          // 触发来源，如 cron job / heartbeat task / parent agent
   parentSessionId?: string;        // 子 session 或派生 session 的父级
   sourceRunId?: string;            // 外部执行记录 ID，如 CronJobExecution.id
+  engine?: AgentEngineSessionMetadata; // Agent Engine metadata; old sessions default to native
   readOnly?: boolean;              // 生成型 session 默认只读，由 UI 决定是否允许继续输入
   retryOfSessionId?: string;       // 重试链路
   createdAt: number;

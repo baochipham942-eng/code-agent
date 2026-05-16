@@ -15,6 +15,7 @@ import type {
   ModelConfig,
   TodoItem,
 } from '../../../shared/contract';
+import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import {
   deriveSessionWorkbenchSnapshot,
   toSessionWorkbenchProvenance,
@@ -43,6 +44,7 @@ export interface SessionCreateOptions {
   origin?: Session['origin'];
   parentSessionId?: string;
   sourceRunId?: string;
+  engine?: Session['engine'];
   readOnly?: boolean;
   retryOfSessionId?: string;
 }
@@ -231,6 +233,7 @@ export class SessionManager implements Disposable {
       origin: options.origin,
       parentSessionId: options.parentSessionId,
       sourceRunId: options.sourceRunId,
+      engine: normalizeAgentEngineSession(options.engine),
       readOnly: options.readOnly,
       retryOfSessionId: options.retryOfSessionId,
       createdAt: now,
@@ -542,7 +545,15 @@ export class SessionManager implements Disposable {
   /**
    * 更新会话
    */
-  async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+  async updateSession(
+    sessionId: string,
+    updates: Partial<Session>,
+    options?: { allowEngineUpdate?: boolean },
+  ): Promise<void> {
+    if (updates.engine !== undefined && !options?.allowEngineUpdate) {
+      throw new Error('Agent Engine metadata must be changed through the Agent Engine selector.');
+    }
+
     const db = getDatabase();
     db.updateSession(sessionId, updates);
 

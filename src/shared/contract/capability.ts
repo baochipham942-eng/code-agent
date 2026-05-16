@@ -3,6 +3,7 @@
 // ============================================================================
 
 export type CapabilityKind =
+  | 'agent_engine'
   | 'skill'
   | 'mcp_template'
   | 'tool_bundle'

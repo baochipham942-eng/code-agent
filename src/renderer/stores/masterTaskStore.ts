@@ -42,6 +42,16 @@ export interface MasterTaskStoreState {
   loading: boolean;
   error: string | null;
 
+  // detail view state（P2-c2）
+  // - selectedTaskId: 当前打开详情面板的 task；null 表示无 split view
+  // - planProgressBuffer: 详情页订阅到的 PlanProgressDelta 累加 chunk
+  //   (taskId → 累计文本)，与 DTO.planProgress (DB baseline) 拼接渲染
+  // - detailLoading / detailError: getTaskById IPC 状态
+  selectedTaskId: string | null;
+  planProgressBuffer: Map<string, string>;
+  detailLoading: boolean;
+  detailError: string | null;
+
   // actions
   load: () => Promise<void>;
   updateStatus: (id: string, target: MasterTaskStatus) => Promise<void>;
@@ -50,6 +60,11 @@ export interface MasterTaskStoreState {
   resume: (id: string) => Promise<void>;
   setFilterStatus: (status: MasterTaskStatusFilter) => void;
   setFilterWorkspace: (workspace: MasterTaskWorkspaceFilter) => void;
+
+  // detail view actions（P2-c2）
+  selectTask: (id: string | null) => void;
+  loadTaskDetail: (id: string) => Promise<MasterTaskDTO | null>;
+  clearPlanProgressBuffer: (taskId: string) => void;
 
   // 事件入口（main → renderer 广播经由 attachMasterTaskIpcListener 调用）
   handleEvent: (event: MasterTaskManagerEvent) => void;
@@ -109,6 +124,17 @@ function applyFailedEvent(
   return next;
 }
 
+/**
+ * 把同 id 的 DTO 替换为 fresh 版本；不存在则 append。loadTaskDetail 用。
+ */
+function upsertTask(tasks: MasterTaskDTO[], fresh: MasterTaskDTO): MasterTaskDTO[] {
+  const idx = tasks.findIndex((t) => t.id === fresh.id);
+  if (idx < 0) return [...tasks, fresh];
+  const next = tasks.slice();
+  next[idx] = fresh;
+  return next;
+}
+
 // ----------------------------------------------------------------------------
 // Store
 // ----------------------------------------------------------------------------
@@ -119,6 +145,12 @@ export const useMasterTaskStore = create<MasterTaskStoreState>()((set, get) => (
   filterWorkspace: 'all',
   loading: false,
   error: null,
+
+  // detail view state（P2-c2）
+  selectedTaskId: null,
+  planProgressBuffer: new Map<string, string>(),
+  detailLoading: false,
+  detailError: null,
 
   load: async () => {
     set({ loading: true, error: null });
@@ -175,8 +207,45 @@ export const useMasterTaskStore = create<MasterTaskStoreState>()((set, get) => (
   setFilterStatus: (status) => set({ filterStatus: status }),
   setFilterWorkspace: (workspace) => set({ filterWorkspace: workspace }),
 
+  // ------------------------------------------------------------------------
+  // detail view actions（P2-c2）
+  // ------------------------------------------------------------------------
+  //
+  // selectTask 不清空 planProgressBuffer —— 用户可能在 task A → B → A 切换间
+  // 期待 A 的流式 chunk 累积保留（避免重新拉详情时丢失中间过程）。显式清理
+  // 走 clearPlanProgressBuffer。
+
+  selectTask: (id) => set({ selectedTaskId: id }),
+
+  loadTaskDetail: async (id) => {
+    set({ detailLoading: true, detailError: null });
+    try {
+      const fresh = await invoke(IPC_CHANNELS.MASTER_TASK_GET_BY_ID, id);
+      if (!fresh) {
+        set({ detailLoading: false });
+        return null;
+      }
+      const { tasks } = get();
+      set({ tasks: upsertTask(tasks, fresh), detailLoading: false });
+      return fresh;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('loadTaskDetail failed', { id, err });
+      set({ detailLoading: false, detailError: message });
+      return null;
+    }
+  },
+
+  clearPlanProgressBuffer: (taskId) => {
+    const { planProgressBuffer } = get();
+    if (!planProgressBuffer.has(taskId)) return;
+    const next = new Map(planProgressBuffer);
+    next.delete(taskId);
+    set({ planProgressBuffer: next });
+  },
+
   handleEvent: (event) => {
-    const { tasks } = get();
+    const { tasks, planProgressBuffer } = get();
     switch (event.type) {
       case 'MasterTaskCreated':
         set({ tasks: applyCreatedEvent(tasks, event) });
@@ -190,10 +259,19 @@ export const useMasterTaskStore = create<MasterTaskStoreState>()((set, get) => (
       case 'MasterTaskCompleted':
         // 状态由 StatusChanged 事件覆盖；这里仅作 no-op
         break;
-      case 'MasterTaskPlanProgressDelta':
+      case 'MasterTaskPlanProgressDelta': {
+        // 累加 chunk 到 buffer。同 id 多次事件 append，不同 id 互不干扰。
+        // 用新 Map 实例触发 zustand selector 重渲染。
+        const next = new Map(planProgressBuffer);
+        const prev = next.get(event.taskId) ?? '';
+        next.set(event.taskId, prev + event.chunk);
+        set({ planProgressBuffer: next });
+        break;
+      }
       case 'MasterTaskAgentTaskAttached':
       case 'MasterTaskAgentTaskCompleted':
-        // 详情页订阅，store 顶层不缓存
+        // 详情页只显示 childAgentTaskIds 列表（来自 DTO）；这里 no-op，等
+        // loadTaskDetail 重拉刷新关联 ID 列表
         break;
       default: {
         const _exhaustive: never = event;
@@ -209,6 +287,10 @@ export const useMasterTaskStore = create<MasterTaskStoreState>()((set, get) => (
       filterWorkspace: 'all',
       loading: false,
       error: null,
+      selectedTaskId: null,
+      planProgressBuffer: new Map<string, string>(),
+      detailLoading: false,
+      detailError: null,
     }),
 }));
 

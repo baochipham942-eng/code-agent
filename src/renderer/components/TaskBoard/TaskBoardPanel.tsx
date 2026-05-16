@@ -16,6 +16,7 @@ import { Pause, Play, X as XIcon, AlertCircle } from 'lucide-react';
 import type { MasterTaskDTO, MasterTaskStatus } from '@shared/contract/task';
 import { MASTER_TASK_STATUSES } from '@shared/contract/task';
 import { useMasterTaskStore } from '../../stores/masterTaskStore';
+import { TaskDetailPanel } from './TaskDetailPanel';
 
 // ----------------------------------------------------------------------------
 // 状态徽章配色
@@ -74,21 +75,46 @@ const TERMINAL: ReadonlySet<MasterTaskStatus> = new Set([
 
 interface TaskRowProps {
   task: MasterTaskDTO;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onCancel: (id: string) => void;
 }
 
-const TaskRow: React.FC<TaskRowProps> = ({ task, onPause, onResume, onCancel }) => {
+const TaskRow: React.FC<TaskRowProps> = ({
+  task,
+  isSelected,
+  onSelect,
+  onPause,
+  onResume,
+  onCancel,
+}) => {
   const isTerminal = TERMINAL.has(task.status);
   const canPause = task.status === 'running';
   const canResume = task.status === 'paused';
   const canCancel = !isTerminal;
 
+  // action button click 必须 stopPropagation —— 否则触发 row onClick 切换详情
+  // 而 pause/resume/cancel 不应附带选中副作用
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
   return (
     <div
       data-testid="task-row"
-      className="flex items-start gap-3 px-3 py-2.5 border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors"
+      role="button"
+      tabIndex={0}
+      aria-selected={isSelected}
+      onClick={() => onSelect(task.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(task.id);
+        }
+      }}
+      className={`flex items-start gap-3 px-3 py-2.5 border-b border-zinc-800/60 cursor-pointer transition-colors ${
+        isSelected ? 'bg-blue-500/10' : 'hover:bg-zinc-800/30'
+      }`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -123,7 +149,10 @@ const TaskRow: React.FC<TaskRowProps> = ({ task, onPause, onResume, onCancel }) 
         {canPause && (
           <button
             type="button"
-            onClick={() => onPause(task.id)}
+            onClick={(e) => {
+              stop(e);
+              onPause(task.id);
+            }}
             className="p-1 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/60 transition-colors"
             title="暂停"
             aria-label="pause"
@@ -134,7 +163,10 @@ const TaskRow: React.FC<TaskRowProps> = ({ task, onPause, onResume, onCancel }) 
         {canResume && (
           <button
             type="button"
-            onClick={() => onResume(task.id)}
+            onClick={(e) => {
+              stop(e);
+              onResume(task.id);
+            }}
             className="p-1 rounded text-zinc-400 hover:text-emerald-300 hover:bg-zinc-700/60 transition-colors"
             title="继续"
             aria-label="resume"
@@ -145,7 +177,10 @@ const TaskRow: React.FC<TaskRowProps> = ({ task, onPause, onResume, onCancel }) 
         {canCancel && (
           <button
             type="button"
-            onClick={() => onCancel(task.id)}
+            onClick={(e) => {
+              stop(e);
+              onCancel(task.id);
+            }}
             className="p-1 rounded text-zinc-400 hover:text-rose-300 hover:bg-zinc-700/60 transition-colors"
             title="取消"
             aria-label="cancel"
@@ -220,10 +255,12 @@ export const TaskBoardPanel: React.FC = () => {
   const filterWorkspace = useMasterTaskStore((s) => s.filterWorkspace);
   const loading = useMasterTaskStore((s) => s.loading);
   const error = useMasterTaskStore((s) => s.error);
+  const selectedTaskId = useMasterTaskStore((s) => s.selectedTaskId);
   const load = useMasterTaskStore((s) => s.load);
   const pause = useMasterTaskStore((s) => s.pause);
   const resume = useMasterTaskStore((s) => s.resume);
   const cancel = useMasterTaskStore((s) => s.cancel);
+  const selectTask = useMasterTaskStore((s) => s.selectTask);
   const setFilterStatus = useMasterTaskStore((s) => s.setFilterStatus);
   const setFilterWorkspace = useMasterTaskStore((s) => s.setFilterWorkspace);
 
@@ -252,65 +289,81 @@ export const TaskBoardPanel: React.FC = () => {
   }, [tasks, filterStatus, filterWorkspace]);
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 text-zinc-200" data-testid="task-board-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 bg-zinc-900">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">任务看板</span>
-          <span className="text-[11px] text-zinc-500">
-            {filtered.length}/{tasks.length}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className="text-[11px] px-2 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-50"
-          title="刷新"
-        >
-          {loading ? '加载中…' : '刷新'}
-        </button>
-      </div>
-
-      <Filters
-        filterStatus={filterStatus}
-        filterWorkspace={filterWorkspace}
-        workspaces={workspaces}
-        onChangeStatus={setFilterStatus}
-        onChangeWorkspace={setFilterWorkspace}
-      />
-
-      {/* Error banner */}
-      {error && (
-        <div className="px-3 py-1.5 text-[11px] text-rose-300 bg-rose-500/10 border-b border-rose-500/30">
-          {error}
-        </div>
-      )}
-
-      {/* List */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {filtered.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center h-full text-zinc-500 text-xs"
-            data-testid="task-board-empty"
-          >
-            <span>暂无任务</span>
-            <span className="mt-1 text-[10px] text-zinc-600">
-              {tasks.length === 0 ? '尚未创建任何 MasterTask' : '当前过滤条件下无匹配项'}
+    <div className="flex h-full bg-zinc-950 text-zinc-200" data-testid="task-board-panel">
+      {/* 左栏：列表（选中时收窄到一半，否则占满）*/}
+      <div
+        className={`flex flex-col min-h-0 ${
+          selectedTaskId ? 'w-1/2 border-r border-zinc-800' : 'flex-1'
+        }`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 bg-zinc-900">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">任务看板</span>
+            <span className="text-[11px] text-zinc-500">
+              {filtered.length}/{tasks.length}
             </span>
           </div>
-        ) : (
-          filtered.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              onPause={pause}
-              onResume={resume}
-              onCancel={cancel}
-            />
-          ))
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="text-[11px] px-2 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-50"
+            title="刷新"
+          >
+            {loading ? '加载中…' : '刷新'}
+          </button>
+        </div>
+
+        <Filters
+          filterStatus={filterStatus}
+          filterWorkspace={filterWorkspace}
+          workspaces={workspaces}
+          onChangeStatus={setFilterStatus}
+          onChangeWorkspace={setFilterWorkspace}
+        />
+
+        {/* Error banner */}
+        {error && (
+          <div className="px-3 py-1.5 text-[11px] text-rose-300 bg-rose-500/10 border-b border-rose-500/30">
+            {error}
+          </div>
         )}
+
+        {/* List */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div
+              className="flex flex-col items-center justify-center h-full text-zinc-500 text-xs"
+              data-testid="task-board-empty"
+            >
+              <span>暂无任务</span>
+              <span className="mt-1 text-[10px] text-zinc-600">
+                {tasks.length === 0 ? '尚未创建任何 MasterTask' : '当前过滤条件下无匹配项'}
+              </span>
+            </div>
+          ) : (
+            filtered.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                isSelected={selectedTaskId === task.id}
+                onSelect={selectTask}
+                onPause={pause}
+                onResume={resume}
+                onCancel={cancel}
+              />
+            ))
+          )}
+        </div>
       </div>
+
+      {/* 右栏：详情面板 */}
+      {selectedTaskId && (
+        <div className="w-1/2 min-h-0">
+          <TaskDetailPanel taskId={selectedTaskId} onClose={() => selectTask(null)} />
+        </div>
+      )}
     </div>
   );
 };

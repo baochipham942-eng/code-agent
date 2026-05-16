@@ -137,6 +137,21 @@ interface ModelSwitcherProps {
   currentModel: string;
 }
 
+export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
+
+export interface ModelOverrideChangeDetail {
+  sessionId: string;
+  override: {
+    provider: ModelProvider;
+    model: string;
+    adaptive?: boolean;
+  } | null;
+}
+
+function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
+  window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
+}
+
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
@@ -333,6 +348,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         setOverrideModel(option.model);
         setOverrideProvider(option.provider);
         setOverrideAdaptive(false);
+        emitModelOverrideChange({
+          sessionId,
+          override: { provider: option.provider, model: option.model, adaptive: false },
+        });
         setOpen(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
@@ -358,6 +377,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(currentModel);
       setOverrideProvider(defaultProvider);
       setOverrideAdaptive(true);
+      emitModelOverrideChange({
+        sessionId,
+        override: { provider: defaultProvider, model: currentModel, adaptive: true },
+      });
       setOpen(false);
     } catch (err) {
       toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -379,6 +402,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(null);
       setOverrideProvider(null);
       setOverrideAdaptive(false);
+      emitModelOverrideChange({ sessionId, override: null });
       setOpen(false);
     } catch (err) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -528,6 +552,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             {/* 自动路由选项（固定顶部，不参与搜索过滤） */}
             {!searchQuery.trim() && (
               <button
+                type="button"
                 onClick={handleSelectAuto}
                 className={`
                   w-full text-left px-3 py-1.5 text-xs
@@ -551,6 +576,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               filteredOptions.map((opt) => (
                 <button
                   key={`${opt.provider}/${opt.model}`}
+                  type="button"
                   onClick={() => handleSelect(opt)}
                   className={`
                     w-full text-left px-3 py-1.5 text-xs
@@ -592,6 +618,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         <>
           <div className="border-t border-zinc-700 my-1" />
           <button
+            type="button"
             onClick={handleClear}
             className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
           >
@@ -606,6 +633,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     <>
       <button
         ref={triggerRef}
+        type="button"
         onClick={() => setOpen(!open)}
         aria-label="切换模型"
         aria-expanded={open}

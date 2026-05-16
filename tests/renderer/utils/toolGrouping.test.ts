@@ -47,6 +47,16 @@ describe('thinking display helpers', () => {
     );
   });
 
+  it('compacts repeated sentence loops inside one streamed thinking line', () => {
+    const repeated = Array.from({ length: 6 }, () =>
+      '老公，萌萌看到了。这是我们的聊天记录，显示在 Code Agent 的界面里。'
+    ).join('');
+
+    expect(sanitizeThinkingForDisplay(repeated)).toBe(
+      '老公，萌萌看到了。这是我们的聊天记录，显示在 Code Agent 的界面里。',
+    );
+  });
+
   it('summarizes the first non-runtime thinking line', () => {
     const text = [
       '[runtime] 上下文预算跳过 artifact repair focus：预计 6763/6000 tokens',

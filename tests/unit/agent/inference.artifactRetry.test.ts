@@ -201,7 +201,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime._artifactNonStreamingRetried).toBe(false);
   });
 
-  it('reuses the current provider key for same-provider vision fallback', async () => {
+  it('uses same-provider vision fallback as preflight, then keeps the main model for answering', async () => {
     mockGetApiKey.mockReturnValue('');
     const ctx = buildCtx({
       modelConfig: {
@@ -229,11 +229,17 @@ describe('contextAssembly inference artifact retry', () => {
         ],
       },
     ]);
-    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
-      type: 'text',
-      content: 'ok',
-      finishReason: 'stop',
-    });
+    ctx.runtime.modelRouter.inference = vi.fn()
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: '图片里是一个应用截图。',
+        finishReason: 'stop',
+      })
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: 'ok',
+        finishReason: 'stop',
+      });
     ctx.runtime.modelRouter.detectRequiredCapabilities = vi.fn().mockReturnValue(['vision']);
     ctx.runtime.modelRouter.getModelInfo = vi.fn()
       .mockReturnValueOnce({ supportsVision: false, supportsTool: true, capabilities: ['general'] })
@@ -247,18 +253,29 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    const [, , effectiveConfig] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(effectiveConfig).toMatchObject({
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
+    const [preflightMessages, preflightTools, preflightConfig] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(preflightTools).toEqual([]);
+    expect(preflightConfig).toMatchObject({
       provider: 'xiaomi',
       model: 'mimo-v2-omni',
       apiKey: 'current-xiaomi-key',
     });
+    expect(JSON.stringify(preflightMessages)).toContain('请把图片内容整理成给主模型使用的事实摘要');
+
+    const [mainMessages, , mainConfig] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
+    expect(mainConfig).toMatchObject({
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+      apiKey: 'current-xiaomi-key',
+    });
+    expect(JSON.stringify(mainMessages)).toContain('[视觉预处理结果]');
+    expect(JSON.stringify(mainMessages)).toContain('图片里是一个应用截图。');
+    expect(JSON.stringify(mainMessages)).not.toContain('"type":"image"');
     expect(ctx.runtime.onEvent).toHaveBeenCalledWith({
-      type: 'model_fallback',
+      type: 'notification',
       data: {
-        reason: 'vision',
-        from: 'mimo-v2.5-pro',
-        to: 'mimo-v2-omni',
+        message: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
       },
     });
   });

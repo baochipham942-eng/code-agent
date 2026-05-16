@@ -60,6 +60,7 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
   return (
     <div className="mx-3 my-2 rounded-lg border border-zinc-700/50 bg-zinc-800/40 overflow-hidden">
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
         className="flex items-center justify-between w-full px-3 py-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
       >
@@ -83,6 +84,7 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
                     return (
                       <button
                         key={s.id}
+                        type="button"
                         onClick={() => onSelect(s.text)}
                         className="flex items-center gap-2 w-full text-left px-2 py-1.5 text-xs rounded-md bg-zinc-700/30 text-zinc-300 hover:bg-zinc-700/60 hover:text-zinc-200 transition-colors group"
                       >
@@ -106,6 +108,7 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
               {uncategorized.map((s) => (
                 <button
                   key={s.id}
+                  type="button"
                   onClick={() => onSelect(s.text)}
                   className="px-3 py-1.5 text-xs bg-zinc-700/60 text-zinc-400 rounded-full hover:bg-zinc-700 hover:text-zinc-300 transition-colors truncate max-w-[200px] border border-zinc-800"
                 >
@@ -132,6 +135,7 @@ export const SuggestionBar: React.FC<SuggestionBarProps> = ({ suggestions, onSel
       {suggestions.map(s => (
         <button
           key={s.id}
+          type="button"
           onClick={() => onSelect(s.text)}
           className="px-3 py-1.5 text-xs bg-zinc-700/60 text-zinc-400 rounded-full hover:bg-zinc-700 hover:text-zinc-400 transition-colors truncate max-w-[200px] border border-zinc-800"
         >

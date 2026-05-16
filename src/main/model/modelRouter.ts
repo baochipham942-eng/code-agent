@@ -134,6 +134,7 @@ export class ModelRouter {
     if (/no available accounts|503|502|504|service unavailable|bad gateway|gateway timeout|overloaded|capacity/.test(normalized)) return 'provider_unavailable';
     if (/econnreset|econnrefused|enotfound|eai_again|socket hang up|socket disconnected|secure tls connection|network request failed|network error|fetch failed/.test(normalized)) return 'network';
     if (ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(message)) return 'artifact_response';
+    if (/reasoning loop detected|repetitive reasoning|model degeneration/.test(normalized)) return 'model';
     if (/model_not_allowed|model.*(?:deprecated|decommissioned|retired|not found|does not exist)/.test(normalized)) return 'model';
     return 'unknown';
   }

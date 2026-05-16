@@ -85,6 +85,61 @@ function getIncompleteToolCallIds(
   return incompleteIds;
 }
 
+interface NormalizedStreamText {
+  next: string;
+  delta: string;
+}
+
+function appendStreamTextDelta(current: string, incoming: string | null | undefined): NormalizedStreamText {
+  if (!incoming) return { next: current, delta: '' };
+
+  // Some OpenAI-compatible providers send cumulative snapshots for reasoning
+  // fields even though the wire shape looks like a delta. Treat a long prefix
+  // match as a snapshot so we do not poison persisted thinking with repeats.
+  if (current.length >= 16) {
+    if (incoming === current) return { next: current, delta: '' };
+    if (incoming.startsWith(current)) {
+      return { next: incoming, delta: incoming.slice(current.length) };
+    }
+  }
+
+  return { next: current + incoming, delta: incoming };
+}
+
+function normalizeLoopSentence(sentence: string): string {
+  return sentence
+    .toLowerCase()
+    .replace(/[.,;:!?，。；：！？、"'“”‘’`()[\]{}（）\s]+/g, '')
+    .trim();
+}
+
+function detectRepeatedReasoningLoop(text: string): { sentence: string; count: number } | null {
+  if (text.length < 240) return null;
+
+  const counts = new Map<string, { raw: string; count: number }>();
+  const sentences = text.match(/[^。！？!?\n]+[。！？!?]?/g);
+  if (!sentences || sentences.length < 8) return null;
+
+  for (const sentence of sentences) {
+    const key = normalizeLoopSentence(sentence);
+    if (key.length < 8) continue;
+    const entry = counts.get(key);
+    if (entry) {
+      entry.count += 1;
+    } else {
+      counts.set(key, { raw: sentence.trim(), count: 1 });
+    }
+  }
+
+  for (const entry of counts.values()) {
+    if (entry.count >= 6) {
+      return { sentence: entry.raw, count: entry.count };
+    }
+  }
+
+  return null;
+}
+
 /**
  * 通用 OpenAI 兼容 SSE 流式请求处理
  *
@@ -369,48 +424,60 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           }
 
           if (delta) {
-            // 推理内容（DeepSeek R1 / GLM 推理模型）
-            if (delta.reasoning_content) {
-              reasoning += delta.reasoning_content;
-              if (onStream) {
-                onStream({ type: 'reasoning', content: delta.reasoning_content });
+            const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
+            if (reasoningDelta) {
+              const normalized = appendStreamTextDelta(reasoning, reasoningDelta);
+              reasoning = normalized.next;
+              if (onStream && normalized.delta) {
+                onStream({ type: 'reasoning', content: normalized.delta });
               }
-            }
 
-            // Kimi K2.5 的推理内容（delta.reasoning 字段）
-            if (delta.reasoning) {
-              reasoning += delta.reasoning;
-              if (onStream) {
-                onStream({ type: 'reasoning', content: delta.reasoning });
+              const reasoningLoop = detectRepeatedReasoningLoop(reasoning);
+              if (reasoningLoop) {
+                const message = `[${providerName}] reasoning loop detected: repeated "${reasoningLoop.sentence.slice(0, 80)}" ${reasoningLoop.count} times`;
+                logger.warn(message);
+                if (onStream) {
+                  onStream({
+                    type: 'error',
+                    error: message,
+                  });
+                }
+                clearInactivityTimer();
+                req.destroy(new Error(message));
+                reject(new Error(message));
+                return;
               }
             }
 
             // 文本内容
             const textContent = delta.content;
             if (textContent) {
-              // 追踪交错：从 tool_call 切回 text 时，开始新 text 部分
-              if (lastPartType !== 'text') {
-                contentParts.push({ type: 'text', text: '' });
-                lastPartType = 'text';
-              }
-              // 累积到当前 text part
-              const lastPart = contentParts[contentParts.length - 1];
-              if (lastPart?.type === 'text') {
-                lastPart.text += textContent;
-              }
-              content += textContent;
-              charCount += textContent.length;
-              if (onStream) {
-                onStream({ type: 'text', content: textContent });
-                // 每 500ms 估算 token 数
-                const now = Date.now();
-                if (now - lastEstimateTime > 500) {
-                  lastEstimateTime = now;
-                  onStream({
-                    type: 'token_estimate',
-                    inputTokens: 0,
-                    outputTokens: Math.ceil(charCount / 4),
-                  });
+              const normalized = appendStreamTextDelta(content, textContent);
+              content = normalized.next;
+              if (normalized.delta) {
+                // 追踪交错：从 tool_call 切回 text 时，开始新 text 部分
+                if (lastPartType !== 'text') {
+                  contentParts.push({ type: 'text', text: '' });
+                  lastPartType = 'text';
+                }
+                // 累积到当前 text part
+                const lastPart = contentParts[contentParts.length - 1];
+                if (lastPart?.type === 'text') {
+                  lastPart.text += normalized.delta;
+                }
+                charCount += normalized.delta.length;
+                if (onStream) {
+                  onStream({ type: 'text', content: normalized.delta });
+                  // 每 500ms 估算 token 数
+                  const now = Date.now();
+                  if (now - lastEstimateTime > 500) {
+                    lastEstimateTime = now;
+                    onStream({
+                      type: 'token_estimate',
+                      inputTokens: 0,
+                      outputTokens: Math.ceil(charCount / 4),
+                    });
+                  }
                 }
               }
             }

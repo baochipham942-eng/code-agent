@@ -32,7 +32,12 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
-import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import {
+  ModelSwitcher,
+  MODEL_OVERRIDE_CHANGE_EVENT,
+  type ModelOverrideChangeDetail,
+} from '../../../StatusBar/ModelSwitcher';
+import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
@@ -655,15 +660,59 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   const modelConfig = useAppStore((s) => s.modelConfig);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const [sessionModelOverride, setSessionModelOverride] = useState<ModelOverrideChangeDetail['override']>(null);
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      setSessionModelOverride(null);
+      return;
+    }
+
+    let cancelled = false;
+    const overrideRequest = window.domainAPI?.invoke<ModelOverrideChangeDetail['override']>(
+      IPC_DOMAINS.SESSION,
+      'getModelOverride',
+      { sessionId: currentSessionId },
+    );
+    if (!overrideRequest) {
+      setSessionModelOverride(null);
+    } else {
+      overrideRequest.then((res) => {
+        if (!cancelled && res?.success) {
+          setSessionModelOverride(res.data ?? null);
+        }
+      })
+        .catch(() => {
+          if (!cancelled) setSessionModelOverride(null);
+        });
+    }
+
+    const handleModelOverrideChange = (event: Event) => {
+      const detail = (event as CustomEvent<ModelOverrideChangeDetail>).detail;
+      if (detail?.sessionId === currentSessionId) {
+        setSessionModelOverride(detail.override);
+      }
+    };
+
+    window.addEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handleModelOverrideChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handleModelOverrideChange);
+    };
+  }, [currentSessionId]);
+
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const hasImageAttachments = attachments.some((attachment) => (
     attachment.type === 'image' || attachment.category === 'image'
   ));
+  const effectiveModelId = sessionModelOverride?.model ?? modelConfig.model;
+  const effectiveModelFeatures = MODEL_FEATURES[effectiveModelId] ?? [];
   const selectedModelHasVision =
-    (modelConfig.capabilities ?? []).includes('vision') ||
-    (MODEL_FEATURES[modelConfig.model] ?? []).includes('vision');
+    effectiveModelFeatures.includes('vision') ||
+    (effectiveModelId === modelConfig.model && (modelConfig.capabilities ?? []).includes('vision'));
   const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision;
 
   return (
@@ -712,7 +761,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">
-              当前 {getModelDisplayLabel(modelConfig.model)} 不直接读图，图片会走视觉模型。
+              当前 {getModelDisplayLabel(effectiveModelId)} 不直接读图，图片会走视觉模型或图片分析工具。
             </span>
           </div>
         )}

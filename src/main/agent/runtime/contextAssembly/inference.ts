@@ -21,6 +21,7 @@ import {
 } from '../../../context/tokenOptimizer';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback } from '../../../model/types';
+import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { logger } from '../contextAssembly';
 import {
@@ -108,6 +109,109 @@ function emitAssistantMessageDelta(
       deltaSeq: ++ctx.runtime.messageDeltaSeq,
     },
   });
+}
+
+function messageHasImageParts(message: ModelMessage | undefined): boolean {
+  return Boolean(
+    message &&
+    Array.isArray(message.content) &&
+    message.content.some((part) => part.type === 'image')
+  );
+}
+
+function replaceImagesWithVisionSummary(
+  messages: ModelMessage[],
+  summary: string,
+  visionModel: string,
+): ModelMessage[] {
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+
+    let removedImages = 0;
+    const content = message.content.filter((part) => {
+      if (part.type !== 'image') return true;
+      removedImages += 1;
+      return false;
+    });
+
+    if (removedImages === 0) return message;
+
+    return {
+      ...message,
+      content: [
+        ...content,
+        {
+          type: 'text',
+          text: [
+            `[视觉预处理结果]`,
+            `模型: ${visionModel}`,
+            `图片数量: ${removedImages}`,
+            summary.trim(),
+            `[/视觉预处理结果]`,
+          ].join('\n'),
+        },
+      ],
+    };
+  });
+}
+
+function buildVisionPreflightMessages(
+  lastUserMessage: ModelMessage,
+  userRequestText: string,
+): ModelMessage[] {
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是图片预处理器。你的输出会交给另一个主模型继续回答用户。',
+        '只提炼图片里的可见事实、OCR 文字、界面元素、空间关系，以及和用户问题相关的信息。',
+        '不要代替主模型完成最终回答，不要说自己无法继续操作。',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: Array.isArray(lastUserMessage.content)
+        ? [
+            {
+              type: 'text',
+              text: [
+                `用户原始问题：${userRequestText || '请理解图片内容'}`,
+                '请把图片内容整理成给主模型使用的事实摘要。',
+              ].join('\n'),
+            },
+            ...lastUserMessage.content,
+          ]
+        : lastUserMessage.content,
+    },
+  ];
+}
+
+async function preflightImagesForMainModel(
+  ctx: ContextAssemblyCtx,
+  modelMessages: ModelMessage[],
+  fallbackConfig: ModelConfig,
+  userRequestText: string,
+): Promise<ModelMessage[] | null> {
+  const lastUserMessage = modelMessages.filter((message) => message.role === 'user').pop();
+  if (!messageHasImageParts(lastUserMessage)) return null;
+
+  const preflightConfig: ModelConfig = {
+    ...fallbackConfig,
+    maxTokens: Math.min(fallbackConfig.maxTokens || 2048, 2048),
+  };
+
+  const response = await ctx.runtime.modelRouter.inference(
+    buildVisionPreflightMessages(lastUserMessage!, userRequestText),
+    [],
+    preflightConfig,
+    undefined,
+    ctx.runtime.runAbortController?.signal,
+    { reasoningEffort: 'low' },
+  );
+  const summary = (response.content || response.thinking || '').trim();
+  if (!summary) return null;
+
+  return replaceImagesWithVisionSummary(modelMessages, summary, preflightConfig.model || 'vision-model');
 }
 
 function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
@@ -378,6 +482,33 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
             if (fallbackApiKey) {
               fallbackConfig.apiKey = fallbackApiKey;
+              if (capability === 'vision' && !needsToolForImage) {
+                try {
+                  const preflightMessages = await preflightImagesForMainModel(
+                    ctx,
+                    modelMessages,
+                    fallbackConfig,
+                    userRequestText,
+                  );
+                  if (preflightMessages) {
+                    modelMessages = preflightMessages;
+                    visionFallbackSucceeded = true;
+                    logger.info(`[Fallback] 使用 ${fallbackConfig.provider}/${fallbackConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
+                    ctx.runtime.onEvent({
+                      type: 'notification',
+                      data: {
+                        message: `已用视觉模型 ${fallbackConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
+                      },
+                    } as AgentEvent);
+                    continue;
+                  }
+                } catch (error) {
+                  logger.warn('[Fallback] 视觉预处理失败，退回整轮视觉 fallback', {
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                }
+              }
+
               logger.info(`[Fallback] 使用本地 ${fallbackConfig.provider} Key 切换到 ${fallbackConfig.model}`);
               ctx.runtime.onEvent({
                 type: 'model_fallback',

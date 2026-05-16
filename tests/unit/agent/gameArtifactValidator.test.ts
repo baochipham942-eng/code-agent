@@ -2180,6 +2180,258 @@ describe('validateGameArtifact', () => {
     expect(result.checks.some((check) => check.includes('runSmokeTest coverage covered reachability metric level'))).toBe(true);
   });
 
+  it('applies reachability steps only to their declared authored unit', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const state = { level: 'grassland', progress: 0 };
+          window.__GAME_META__ = {
+            domain: 'game',
+            controls: { right: 'ArrowRight', jump: 'Space' },
+            levels: [{ id: 'grassland' }, { id: 'cave' }],
+            reachability: [
+              { level: 'grassland', input: 'ArrowRight', frames: 4, metric: 'progress', expect: 'increase' },
+              { level: 'cave', input: 'Space', frames: 4, metric: 'progress', expect: 'increase' }
+            ],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['move', 'jump'],
+              rewards: ['goal'],
+              risks: ['fall'],
+              levelsCovered: ['grassland', 'cave'],
+              allAuthoredLevelsReachable: true
+            }
+          };
+          window.__GAME_TEST__ = {
+            start() { this.reset('grassland'); },
+            reset(level = 'grassland') {
+              state.level = String(level);
+              state.progress = 0;
+            },
+            snapshot() { return { ...state }; },
+            step(input, frames = 1) {
+              if (state.level === 'grassland' && input && input.ArrowRight) state.progress += frames;
+              if (state.level === 'cave' && input && input.Space) state.progress += frames;
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              const passed = [];
+              this.reset('grassland');
+              if (this.step({ ArrowRight: true }, 4).progress > 0) passed.push('grassland');
+              this.reset('cave');
+              if (this.step({ Space: true }, 4).progress > 0) passed.push('cave');
+              return {
+                passed: passed.length === 2,
+                checks: ['grassland ArrowRight progression', 'cave Space progression'],
+                failures: [],
+                coverage: {
+                  levelsPassed: passed,
+                  totalLevels: 2,
+                  allLevelsReachable: true,
+                  mechanics: ['move', 'jump'],
+                  rewards: ['goal'],
+                  risks: ['fall'],
+                  stateChanges: ['progress']
+                }
+              };
+            }
+          };
+          function gameLoop() { requestAnimationFrame(gameLoop); }
+          gameLoop();
+        </script>
+      </body>
+      </html>
+    `);
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true });
+    expect(result.shouldValidate).toBe(true);
+    expect(result.passed).toBe(true);
+    expect(result.failures.join('\n')).not.toContain('authored unit grassland 的 reachability step 2');
+    expect(result.failures.join('\n')).not.toContain('authored unit cave 的 reachability step 1');
+  });
+
+  it('accepts long status reachability when runSmokeTest proves the win path', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const state = { level: 'grassland', progress: 0, status: 'playing' };
+          window.__GAME_META__ = {
+            domain: 'game',
+            controls: { right: 'ArrowRight' },
+            levels: [{ id: 'grassland' }, { id: 'cave' }],
+            reachability: [
+              { level: 'grassland', input: 'ArrowRight', frames: 2, metric: 'status', expect: 'won' },
+              { level: 'cave', input: 'ArrowRight', frames: 2, metric: 'status', expect: 'won' }
+            ],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['move'],
+              rewards: ['goal'],
+              risks: ['fall'],
+              levelsCovered: ['grassland', 'cave'],
+              allAuthoredLevelsReachable: true
+            }
+          };
+          window.__GAME_TEST__ = {
+            start() { this.reset('grassland'); },
+            reset(level = 'grassland') {
+              state.level = String(level);
+              state.progress = 0;
+              state.status = 'playing';
+            },
+            snapshot() { return { ...state }; },
+            step(input, frames = 1) {
+              if (input && input.ArrowRight) state.progress += frames;
+              if (state.progress >= 20) state.status = 'won';
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              const passed = [];
+              for (const level of ['grassland', 'cave']) {
+                this.reset(level);
+                const after = this.step({ ArrowRight: true }, 25);
+                if (after.status === 'won') passed.push(level);
+              }
+              return {
+                passed: passed.length === 2,
+                checks: ['win status reached for grassland', 'win status reached for cave'],
+                failures: [],
+                coverage: {
+                  levelsPassed: passed,
+                  totalLevels: 2,
+                  allLevelsReachable: true,
+                  mechanics: ['move'],
+                  rewards: ['goal'],
+                  risks: ['fall'],
+                  stateChanges: ['progress']
+                }
+              };
+            }
+          };
+          function gameLoop() { requestAnimationFrame(gameLoop); }
+          gameLoop();
+        </script>
+      </body>
+      </html>
+    `);
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true });
+    expect(result.shouldValidate).toBe(true);
+    expect(result.passed).toBe(true);
+    expect(result.checks.some((check) => check.includes('runSmokeTest coverage covered reachability metric status'))).toBe(true);
+  });
+
+  it('accepts platformer gate and combo evidence from proven smoke mechanics', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const state = {
+            player: { x: 0, y: 0, vy: 0, abilities: { doubleJump: false } },
+            enemiesDefeated: 0,
+            blocksUsed: 0,
+            spawnedReward: false,
+            gatesUnlocked: 0,
+            status: 'playing'
+          };
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'platformer',
+            controls: { right: 'ArrowRight', jump: 'Space' },
+            levels: [{ id: 'grassland' }],
+            progressPlan: [{ input: 'ArrowRight', frames: 4, metric: 'player.x', expect: 'increase' }],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['stompEnemy', 'bumpBlock', 'gainAbility', 'unlockGate', 'comboChallenge'],
+              rewards: ['score'],
+              risks: ['enemy'],
+              levelsCovered: ['grassland'],
+              allAuthoredLevelsReachable: true
+            },
+            gameplayMechanics: {
+              enemies: [{ id: 'walker', type: 'walker', stompable: true, defeatReward: 'score' }],
+              blocks: [{ id: 'question', type: 'question', bumpableFromBelow: true, reward: 'coin', usedState: 'used' }],
+              abilities: [{ id: 'doubleJump', type: 'doubleJump', acquiredFrom: 'pickup', effect: 'extra jump', unlocksRoute: 'upperRoute' }],
+              gates: [{ id: 'upperGate', requiresAbility: 'doubleJump', blocksAccessTo: 'upperRoute' }],
+              comboChallenge: ['jump over enemy', 'bump block for reward', 'gain doubleJump ability']
+            }
+          };
+          window.__GAME_TEST__ = {
+            start() { this.reset('grassland'); },
+            reset() {
+              state.player.x = 0;
+              state.player.y = 0;
+              state.player.vy = 0;
+              state.player.abilities.doubleJump = false;
+              state.enemiesDefeated = 0;
+              state.blocksUsed = 0;
+              state.spawnedReward = false;
+              state.gatesUnlocked = 0;
+              state.status = 'playing';
+            },
+            snapshot() {
+              return JSON.parse(JSON.stringify(state));
+            },
+            step(input, frames = 1) {
+              if (input && input.ArrowRight) state.player.x += frames * 3;
+              if (input && input.Space) {
+                state.player.vy = -8;
+                state.enemiesDefeated += 1;
+                state.blocksUsed += 1;
+                state.spawnedReward = true;
+                state.player.abilities.doubleJump = true;
+                state.gatesUnlocked = 1;
+              }
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.reset('grassland');
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true, Space: true }, 5);
+              return {
+                passed: after.enemiesDefeated > before.enemiesDefeated
+                  && after.blocksUsed > before.blocksUsed
+                  && after.player.abilities.doubleJump === true
+                  && after.gatesUnlocked > before.gatesUnlocked,
+                checks: [
+                  'jump stomp enemy bump block gain doubleJump ability unlock gate route',
+                  'gatesUnlocked increased after ability'
+                ],
+                failures: [],
+                coverage: {
+                  levelsPassed: ['grassland'],
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: ['stompEnemy', 'bumpBlock', 'gainAbility', 'unlockGate'],
+                  rewards: ['score'],
+                  risks: ['enemy'],
+                  stateChanges: ['enemiesDefeated', 'player.vy', 'blocksUsed', 'spawnedReward', 'abilities.doubleJump', 'gatesUnlocked']
+                }
+              };
+            }
+          };
+          function gameLoop() { requestAnimationFrame(gameLoop); }
+          gameLoop();
+        </script>
+      </body>
+      </html>
+    `, 'platformer.html');
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true });
+    expect(result.shouldValidate).toBe(true);
+    expect(result.passed).toBe(true);
+    expect(result.failures.join('\n')).not.toContain('gate 必须在获得技能后改变');
+    expect(result.failures.join('\n')).not.toContain('comboChallenge coverage 必须证明');
+  });
+
   it('fails multi-authored games without reset when coverage cannot prove all units', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>

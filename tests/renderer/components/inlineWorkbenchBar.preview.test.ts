@@ -346,7 +346,7 @@ describe('InlineWorkbenchBar mention preview', () => {
   // Routing / mention preview / direct target UI 已迁到 ChatInput AbilityMenu 与
   // @agent mention 解析；InlineWorkbenchBar 不再承担 routing 可视化，相关测试删除。
 
-  it('renders mounted skill chips inside the workbench bar', () => {
+  it('renders mounted skill summary in the workbench bar', () => {
     composerState.routingMode = 'auto';
     composerState.targetAgentIds = [];
     composerState.selectedSkillIds = ['review-skill'];
@@ -356,8 +356,7 @@ describe('InlineWorkbenchBar mention preview', () => {
     );
 
     expect(html).toContain('Skills');
-    expect(html).toContain('review-skill');
-    expect(html).toContain('查看 review-skill 详情');
+    expect(html).toContain('Skills 1/1');
   });
 
   // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。
@@ -376,16 +375,17 @@ describe('InlineWorkbenchBar mention preview', () => {
 
   // Connector blocked 提示已改走 WorkbenchCapabilitySheetLite（#2 把 connector UI 移出主栏）。
 
-  it('renders retry and settings shortcuts for a blocked MCP server', () => {
+  it('hides MCP server state from the chat inline bar', () => {
     composerState.selectedMcpServerIds = ['slack'];
 
     const html = renderToStaticMarkup(
       React.createElement(InlineWorkbenchBar),
     );
 
-    expect(html).toContain('slack');
-    expect(html).toContain('重连');
-    expect(html).toContain('打开设置');
+    expect(html).not.toContain('MCP');
+    expect(html).not.toContain('slack');
+    expect(html).not.toContain('重连');
+    expect(html).not.toContain('打开设置');
   });
 
   it('shows a repaired capability in the ready-next-turn section after a completed quick action', () => {

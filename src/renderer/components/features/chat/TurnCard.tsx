@@ -503,7 +503,7 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
   return { label: 'completed', tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
 }
 
-function getTurnPhase(turn: TraceTurn): string {
+function getTurnPhase(turn: TraceTurn): string | null {
   if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
   const routing = turn.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence')?.turnTimeline?.routingEvidence;
@@ -517,6 +517,8 @@ function getTurnPhase(turn: TraceTurn): string {
 
   const lastTool = getLastToolNode(turn)?.toolCall;
   if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+
+  if (turn.status === 'streaming') return null;
 
   const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
   return assistantText ? '回复已生成' : '等待输出';
@@ -602,8 +604,9 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const isCompleted = status.tone === 'success';
   const isNormalToolActivity = status.label === 'using_tools' || status.label === 'waiting_tool';
+  const hasPhase = Boolean(phase?.trim());
 
-  if (isCompleted || isNormalToolActivity) {
+  if (isCompleted || isNormalToolActivity || (status.label === 'running' && !hasPhase && !completionSignal && !failedTool)) {
     return null;
   }
 
@@ -613,9 +616,12 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
         {status.icon}
         <span className="font-medium">{status.label}</span>
       </div>
-      <div className="min-w-0 flex-1 truncate text-zinc-400">
-        {phase}
-      </div>
+      {hasPhase && (
+        <div className="min-w-0 flex-1 truncate text-zinc-400">
+          {phase}
+        </div>
+      )}
+      {!hasPhase && <div className="flex-1" />}
       {completionSignal && (
         <div className="inline-flex items-center gap-1 rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[11px] text-zinc-500">
           <FileText className="h-3 w-3" />

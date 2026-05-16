@@ -360,6 +360,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         {filtered.map((cmd, i) => (
           <button
             key={cmd.id}
+            type="button"
             data-selected={i === selectedIndex}
             onClick={() => onSelect(cmd)}
             className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${

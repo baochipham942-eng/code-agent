@@ -332,6 +332,17 @@ function processImageAttachment(
 ): boolean {
   let base64Data = attachment.data;
   let mediaType = attachment.mimeType;
+  const pathHint = attachment.path ? `\n路径: ${attachment.path}` : '';
+
+  contents.push({
+    type: 'text',
+    text: [
+      `🖼️ 用户上传了图片: ${attachment.name}${pathHint}`,
+      attachment.path
+        ? `如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。`
+        : `如果当前模型不能直接看图，不要声称没收到图片；请说明需要可读取的本地图片路径。`,
+    ].join('\n'),
+  });
 
   if (!base64Data && attachment.path) {
     try {
@@ -518,7 +529,7 @@ export function stripImagesFromMessages(messages: ModelMessage[]): ModelMessage[
         hasImage = true;
         newContent.push({
           type: 'text',
-          text: '[用户上传了图片，但当前模型不支持直接处理图片。如需在图片上标注，请使用 image_annotate 工具并提供图片路径]',
+          text: '[用户上传了图片，但当前模型不支持直接处理图片。如需理解图片内容，请用 image_analyze 读取上下文里的图片路径；如需在图片上标注，请用 image_annotate。不要回答“没有收到图片”。]',
         });
       } else {
         newContent.push(part);

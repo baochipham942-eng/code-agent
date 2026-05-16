@@ -59,6 +59,12 @@ const TRANSIENT_PATTERNS = [
   '429',
 ];
 
+const FALLBACK_ONLY_PATTERNS = [
+  'reasoning loop detected',
+  'repetitive reasoning',
+  'model degeneration',
+];
+
 /** 瞬态错误 code（Node.js ErrnoException.code） */
 const TRANSIENT_CODES = [
   'ECONNRESET',
@@ -81,6 +87,7 @@ function includesAnyPattern(msg: string, patterns: string[]): boolean {
 export function isTransientError(msg: string, errCode?: string): boolean {
   // 优先检查不可重试模式 — 即使包含 503 等瞬态码也不重试
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
+  if (includesAnyPattern(msg, FALLBACK_ONLY_PATTERNS)) return false;
   if (includesAnyPattern(msg, TRANSIENT_PATTERNS)) return true;
   if (errCode && TRANSIENT_CODES.includes(errCode)) return true;
   return false;
@@ -127,6 +134,7 @@ export interface RetryOptions {
  * - isFallbackEligible: 控制"是否切换到下一个 Provider" — No available accounts 返回 true（要降级）
  */
 export function isFallbackEligible(msg: string, errCode?: string): boolean {
+  if (includesAnyPattern(msg, FALLBACK_ONLY_PATTERNS)) return true;
   // 不可重试但应该降级的错误（账号耗尽、key 无效等 → 换个 Provider 可能就好了）
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return true;
   return isTransientError(msg, errCode);

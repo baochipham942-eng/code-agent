@@ -526,16 +526,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // ── 构建消息历史（多轮上下文）──
       // 将附件文本数据拼接到 prompt 中，使 Agent 能看到附件内容
       let enrichedPrompt = prompt;
-      const userContent: unknown[] = [];
-      if (req.body.attachments?.length) {
+      const requestAttachments = Array.isArray(req.body.attachments)
+        ? req.body.attachments as MessageAttachment[]
+        : [];
+      const imageAttachments = requestAttachments.filter((att) =>
+        att.category === 'image' || att.type === 'image'
+      );
+      if (requestAttachments.length) {
         const textParts: string[] = [];
-        for (const att of req.body.attachments) {
-          if (att.category === 'image' && att.data) {
-            userContent.push({
-              type: 'image',
-              source: { type: 'base64', media_type: att.mimeType || 'image/png', data: att.data },
-            });
-          } else if (att.data && typeof att.data === 'string') {
+        for (const att of requestAttachments) {
+          if ((att.category === 'image' || att.type === 'image')) {
+            continue;
+          }
+          if (att.data && typeof att.data === 'string') {
             // 非图片附件：将文本数据注入到 prompt 中
             const label = att.name || att.category || 'attachment';
             textParts.push(`\n\n<attachment name="${label}" category="${att.category || 'file'}">\n${att.data}\n</attachment>`);
@@ -545,21 +548,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           enrichedPrompt = prompt + textParts.join('');
         }
       }
-      userContent.unshift({ type: 'text', text: enrichedPrompt });
-
       const msgId = clientMessageId || `msg-${Date.now()}`;
       const userMsg: CachedMessage = {
         id: msgId,
         role: 'user' as const,
         content: enrichedPrompt,
         timestamp: Date.now(),
+        attachments: imageAttachments.length > 0 ? imageAttachments : undefined,
       };
 
       // 加载历史消息 + 当前用户消息
-      // 只传 role/content/timestamp 给 agentLoop，toolCalls/thinking 仅用于持久化
       const cachedHistory = await loadSessionHistoryForRun(sessionId, tryGetSessionManager, logger);
-      const history = cachedHistory.map(({ id, role, content, timestamp }) => ({
-        id, role: role as 'user' | 'assistant', content, timestamp,
+      const history = cachedHistory.map(({ id, role, content, timestamp, attachments }) => ({
+        id, role: role as 'user' | 'assistant', content, timestamp, attachments,
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 
@@ -761,8 +762,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await persistMessageToDb(sm, db, sessionId, {
             id: msgId,
             role: 'user',
-            content: prompt,
+            content: enrichedPrompt,
             timestamp: userMsg.timestamp,
+            attachments: userMsg.attachments,
           } as Message);
           userMsgPrePersistedDb = true;
         } catch (err) {
@@ -789,7 +791,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             session_id: sessionId,
             user_id: sb.userId,
             role: 'user',
-            content: prompt,
+            content: enrichedPrompt,
             timestamp: userMsg.timestamp,
             updated_at: Date.now(),
             source_device_id: 'web',

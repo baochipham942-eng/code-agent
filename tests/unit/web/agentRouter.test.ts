@@ -278,6 +278,44 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('passes image attachments from /api/run into the agent loop message history', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+    const imageAttachment = {
+      id: 'att-image-1',
+      type: 'image',
+      category: 'image',
+      name: 'vision-check.png',
+      size: 128,
+      mimeType: 'image/png',
+      data: 'data:image/png;base64,aGVsbG8=',
+      path: '/tmp/vision-check.png',
+    };
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '看看这张图',
+        sessionId: 'session-image-attachment',
+        clientMessageId: 'client-msg-image-1',
+        attachments: [imageAttachment],
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    const loopMessages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{ id: string; attachments?: unknown[] }>;
+    expect(loopMessages.at(-1)).toMatchObject({
+      id: 'client-msg-image-1',
+      attachments: [imageAttachment],
+    });
+    expect(sessionMessages.get('session-image-attachment')?.[0]).toMatchObject({
+      id: 'client-msg-image-1',
+      attachments: [imageAttachment],
+    });
+  });
+
   it('routes /api/interrupt to the active loop steer method', async () => {
     activeAgentLoops.set('session-steer', {
       cancel: mockCancel,

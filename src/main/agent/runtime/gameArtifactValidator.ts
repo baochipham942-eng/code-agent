@@ -958,6 +958,36 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
           if (declaredAuthoredCount <= 1) return 'default start state';
           return 'authored unit ' + String(unitTarget ?? unitIndex);
         };
+        const normalizeTargetToken = (value) => String(value ?? '').trim().toLowerCase();
+        const collectStepTargets = (step) => {
+          if (!step || typeof step !== 'object') return [];
+          return [
+            step.level,
+            step.levelId,
+            step.levelKey,
+            step.levelName,
+            step.scenario,
+            step.scenarioId,
+            step.scenarioKey,
+            step.stage,
+            step.stageId,
+            step.mission,
+            step.missionId,
+            step.unit,
+            step.unitId,
+            step.target,
+          ].filter((value) => typeof value === 'string' || typeof value === 'number');
+        };
+        const reachabilityStepAppliesToUnit = (step, unitIndex, unitTarget) => {
+          const targets = collectStepTargets(step);
+          if (targets.length === 0) return true;
+          const unitTokens = [
+            normalizeTargetToken(unitTarget),
+            normalizeTargetToken(unitIndex),
+            normalizeTargetToken(unitIndex + 1),
+          ].filter(Boolean);
+          return targets.some((target) => unitTokens.includes(normalizeTargetToken(target)));
+        };
         const reachabilityMetricFailures = [];
         const resetToUnit = async (unitIndex, unitTarget) => {
           if (hasReset) {
@@ -1005,11 +1035,14 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
           const runReachabilityChecks = async (unitIndex, unitTarget) => {
             const unitLabel = labelForUnit(unitIndex, unitTarget);
             let unitPassed = true;
+            const planForUnit = reachabilityPlan.filter((step) => (
+              reachabilityStepAppliesToUnit(step, unitIndex, unitTarget)
+            ));
 
             if (keyControls.length > 0) {
               let inputChangedState = false;
               const actionCandidates = [];
-              for (const step of reachabilityPlan) {
+              for (const step of planForUnit) {
                 const keys = parseActionKeys(step);
                 if (keys.length > 0) actionCandidates.push(keys);
               }
@@ -1037,12 +1070,12 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             }
 
             await resetToUnit(unitIndex, unitTarget);
-            if (reachabilityPlan.length === 0) {
+            if (planForUnit.length === 0) {
               failures.push('元数据没有暴露可执行的 reachability/progressPlan/smokePlan/validation 数组，无法验证目标或场景是否可推进；字符串数组 acceptance 只算质量清单，不算可执行验收计划。');
               return false;
             }
 
-            for (const [index, step] of reachabilityPlan.entries()) {
+            for (const [index, step] of planForUnit.entries()) {
               const keysToPress = parseActionKeys(step);
               const metric = typeof step.metric === 'string' && step.metric.trim() ? step.metric.trim() : 'progress';
               const expectation = Object.prototype.hasOwnProperty.call(step, 'expect')
@@ -1236,6 +1269,17 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
             const normalized = String(metric || '').trim().toLowerCase();
             if (!normalized) return false;
             const rootMetric = normalized.split('.')[0];
+            const smokeEvidence = textFrom({
+              coverage,
+              checks: Array.isArray(smoke.checks) ? smoke.checks : [],
+              observations: Array.isArray(smoke.observations) ? smoke.observations : [],
+            });
+            if (
+              (rootMetric === 'status' || rootMetric === 'state' || rootMetric === 'mode') &&
+              /\\b(?:status|state|mode|win|won|complete|completed|lose|lost|gameover|game over)\\b/i.test(smokeEvidence)
+            ) {
+              return true;
+            }
             return stateChangesCovered.some((entry) => {
               const covered = String(entry || '').trim().toLowerCase();
               if (!covered) return false;

@@ -5,7 +5,7 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ListChecks } from 'lucide-react';
+import { X, Plus, Sparkles, FolderTree, Eye, Activity, ListChecks } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -56,15 +56,14 @@ export const WorkbenchTabs: React.FC = () => {
     };
   }, [addOpen]);
 
-  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个
-  const hasTask = workbenchTabs.includes('task');
+  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个。
+  // 注意：'task' (任务信息) 已被 P5 IA 撤出 popover，不在 canAddAny 计算里。
   const hasSkills = workbenchTabs.includes('skills');
   const hasFiles = workbenchTabs.includes('files');
   const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
   const hasContext = workbenchTabs.includes('context');
   const hasMasterTasks = workbenchTabs.includes('master-tasks');
   const canAddAny =
-    !hasTask ||
     (!hasSkills && isStandard) ||
     !hasFiles ||
     !hasWorkspacePreview ||
@@ -162,16 +161,9 @@ export const WorkbenchTabs: React.FC = () => {
           </button>
           {addOpen && (
             <div className="absolute right-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
-              {!hasTask && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('task'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <ListTodo className="w-3.5 h-3.5" />
-                  {t.taskPanel.title}
-                </button>
-              )}
+              {/* P5 IA：撤「任务信息」popover 入口，session_tasks 已嵌入 master
+                  详情面板 Subtasks Section。TaskListManager 组件保留，已打开的
+                  'task' tab 仍能用（向下兼容）。 */}
               {!hasSkills && isStandard && (
                 <button
                   type="button"

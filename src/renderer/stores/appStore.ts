@@ -387,9 +387,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activePreviewTabId: null,
   selectedWorkspacePreviewId: null,
 
-  // Initial workbench — Task pinned and active by default.
-  workbenchTabs: ['task'],
-  activeWorkbenchTab: 'task',
+  // Initial workbench — 任务看板 pinned and active by default (P5 IA：撤旧
+  // "任务信息" 默认值，session_tasks 已合并到 master 详情面板的 Subtasks Section)
+  workbenchTabs: ['master-tasks'],
+  activeWorkbenchTab: 'master-tasks',
   workbenchHighlight: null,
 
   // Initial Permission Request State

@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import type { AgentEngineDescriptor, AgentEngineKind } from '@shared/contract/agentEngine';
+import type { AgentEngineDescriptor, AgentEngineKind, AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
@@ -96,6 +96,16 @@ function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: 
     needsWorkspace ? '需要先选择 workspace' : undefined,
     descriptor.lastError,
   ].filter(Boolean).join(' · ');
+}
+
+export function buildModelSwitcherEngineSelection(
+  descriptor: AgentEngineDescriptor,
+): Partial<AgentEngineSessionMetadata> {
+  return {
+    kind: descriptor.kind,
+    permissionProfile: descriptor.defaultPermissionProfile,
+    origin: 'manual',
+  };
 }
 
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
@@ -243,11 +253,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         toast.error(`${descriptor.label} 不可用`);
         return;
       }
-      await updateSessionEngine(sessionId, {
-        kind: descriptor.kind,
-        permissionProfile: descriptor.defaultPermissionProfile,
-        origin: 'manual',
-      });
+      await updateSessionEngine(sessionId, buildModelSwitcherEngineSelection(descriptor));
     },
     [effectiveWorkingDirectory, sessionId, updateSessionEngine]
   );

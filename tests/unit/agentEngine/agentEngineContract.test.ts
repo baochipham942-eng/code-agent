@@ -42,6 +42,28 @@ describe('Agent Engine contract', () => {
       origin: 'manual',
     });
   });
+
+  it('preserves external engine session metadata fields', () => {
+    expect(normalizeAgentEngineSession({
+      kind: 'codex_cli',
+      cwd: '/repo/code-agent',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+      runId: 'run-1',
+      externalSessionId: 'external-1',
+      logPath: '/repo/code-agent/.logs/run-1.jsonl',
+      updatedAt: 123,
+    })).toEqual({
+      kind: 'codex_cli',
+      cwd: '/repo/code-agent',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+      runId: 'run-1',
+      externalSessionId: 'external-1',
+      logPath: '/repo/code-agent/.logs/run-1.jsonl',
+      updatedAt: 123,
+    });
+  });
 });
 
 describe('Agent Engine registry helpers', () => {

@@ -31,6 +31,10 @@ import {
   CodexCliAdapter,
   resolveExternalEngineLaunch,
 } from '../../main/services/agentEngine';
+import {
+  type ExternalAgentEngineFailureContext,
+  recordExternalEngineFailure,
+} from './agentEngineFailureRecorder';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -399,6 +403,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     emitSSE('task_start', { taskId, prompt, sessionId });
     await updateRunSessionStatus('running');
 
+    let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
+
     try {
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
       // 切换 UI 把模型写进 modelSessionState 后,/api/run 必须从这里读,
@@ -449,7 +455,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
       if (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code') {
+        externalEngineFailureContext = {
+          kind: selectedEngine.kind,
+          stage: 'launch_policy',
+          cwd: resolvedProject,
+        };
         const launch = resolveExternalEngineLaunch(persistedSession, selectedEngine, resolvedProject);
+        externalEngineFailureContext = {
+          kind: selectedEngine.kind,
+          stage: 'adapter_run',
+          cwd: launch.cwd,
+        };
         const adapter = selectedEngine.kind === 'codex_cli'
           ? new CodexCliAdapter()
           : new ClaudeCodeAdapter();
@@ -975,12 +991,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       emitAgentEvent({ type: 'agent_complete', data: null });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (externalEngineFailureContext) {
+        recordExternalEngineFailure({
+          sessionId,
+          message,
+          context: externalEngineFailureContext,
+        }, logger);
+      }
       await updateRunSessionStatus('error');
       if (!clientDisconnected) {
         emitAgentEvent({
           type: 'error',
           data: {
-            message: error instanceof Error ? error.message : 'Unknown error',
+            message,
           },
         });
       }

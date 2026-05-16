@@ -16,6 +16,10 @@ const agentEngineMocks = vi.hoisted(() => ({
   codexRun: vi.fn(),
   claudeRun: vi.fn(),
   resolveExternalEngineLaunch: vi.fn(),
+  ledgerUpsertTask: vi.fn(),
+  ledgerAppendEvent: vi.fn(),
+  ledgerQueueNotification: vi.fn(),
+  enqueueReviewSession: vi.fn(),
 }));
 const mockDb = vi.hoisted(() => ({
   getSession: vi.fn(() => ({
@@ -65,6 +69,22 @@ vi.mock('../../../src/main/services/agentEngine', () => ({
     };
   }),
   resolveExternalEngineLaunch: (...args: unknown[]) => agentEngineMocks.resolveExternalEngineLaunch(...args),
+}));
+
+vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({
+  getBackgroundTaskLedger: () => ({
+    upsertTask: agentEngineMocks.ledgerUpsertTask,
+    appendEvent: agentEngineMocks.ledgerAppendEvent,
+    queueNotification: agentEngineMocks.ledgerQueueNotification,
+  }),
+}));
+
+vi.mock('../../../src/main/evaluation/reviewQueueService', () => ({
+  ReviewQueueService: {
+    getInstance: () => ({
+      enqueueSession: agentEngineMocks.enqueueReviewSession,
+    }),
+  },
 }));
 
 vi.mock('../../../src/main/services/core/databaseService', () => ({
@@ -151,6 +171,10 @@ describe('createAgentRouter', () => {
     }));
     agentEngineMocks.codexRun.mockReset();
     agentEngineMocks.claudeRun.mockReset();
+    agentEngineMocks.ledgerUpsertTask.mockReset();
+    agentEngineMocks.ledgerAppendEvent.mockReset();
+    agentEngineMocks.ledgerQueueNotification.mockReset();
+    agentEngineMocks.enqueueReviewSession.mockReset();
     mockDb.getSession.mockReturnValue({
       id: 'session-existing',
       title: 'Existing',
@@ -696,6 +720,127 @@ describe('createAgentRouter', () => {
       'session-channel-engine',
       expect.objectContaining({ status: 'error' }),
     );
+    expect(agentEngineMocks.ledgerUpsertTask).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'agent-engine:codex_cli:failed:session-channel-engine',
+      kind: 'agent_engine',
+      sessionId: 'session-channel-engine',
+      source: 'agent_engine',
+      status: 'failed',
+      cwd: '/tmp/channel-workspace',
+      failure: expect.objectContaining({
+        message: 'External Agent Engine execution is not allowed for channel sessions.',
+        reason: 'launch_policy',
+        category: 'agent_engine',
+      }),
+      metadata: expect.objectContaining({
+        engine: 'codex_cli',
+        failureStage: 'launch_policy',
+      }),
+    }));
+    expect(agentEngineMocks.ledgerAppendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'agent-engine:codex_cli:failed:session-channel-engine',
+      type: 'agent_engine.failed',
+      status: 'failed',
+      message: 'External Agent Engine execution is not allowed for channel sessions.',
+    }));
+    expect(agentEngineMocks.ledgerQueueNotification).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'agent-engine:codex_cli:failed:session-channel-engine',
+      sessionId: 'session-channel-engine',
+      type: 'task_failed',
+      title: 'Codex CLI failed',
+      message: 'External Agent Engine execution is not allowed for channel sessions.',
+    }));
+    expect(agentEngineMocks.enqueueReviewSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-channel-engine',
+      reason: 'failure_followup',
+      enqueueSource: 'replay_failure',
+      failureCapability: expect.objectContaining({
+        sink: 'capability_health',
+        category: 'env_failure',
+        summary: 'External Agent Engine execution is not allowed for channel sessions.',
+      }),
+    }));
+  });
+
+  it('records a failed task when an external engine adapter throws before returning a result', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-codex-adapter-throw',
+      title: 'Codex adapter throw',
+      type: 'chat',
+      workingDirectory: '/tmp/codex-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/codex-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.codexRun.mockRejectedValueOnce(new Error('Codex adapter exploded before terminal event'));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'run codex adapter',
+        sessionId: 'session-codex-adapter-throw',
+        context: {
+          workingDirectory: '/tmp/codex-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('Codex adapter exploded before terminal event');
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenLastCalledWith(
+      'session-codex-adapter-throw',
+      expect.objectContaining({ status: 'error' }),
+    );
+    expect(agentEngineMocks.ledgerUpsertTask).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'agent-engine:codex_cli:failed:session-codex-adapter-throw',
+      kind: 'agent_engine',
+      sessionId: 'session-codex-adapter-throw',
+      source: 'agent_engine',
+      status: 'failed',
+      cwd: '/tmp/codex-workspace',
+      failure: expect.objectContaining({
+        message: 'Codex adapter exploded before terminal event',
+        reason: 'adapter_run',
+        category: 'agent_engine',
+      }),
+      metadata: expect.objectContaining({
+        engine: 'codex_cli',
+        failureStage: 'adapter_run',
+      }),
+    }));
+    expect(agentEngineMocks.ledgerQueueNotification).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'agent-engine:codex_cli:failed:session-codex-adapter-throw',
+      sessionId: 'session-codex-adapter-throw',
+      type: 'task_failed',
+      title: 'Codex CLI failed',
+      message: 'Codex adapter exploded before terminal event',
+    }));
+    expect(agentEngineMocks.enqueueReviewSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-codex-adapter-throw',
+      reason: 'failure_followup',
+      failureCapability: expect.objectContaining({
+        sink: 'capability_health',
+        category: 'env_failure',
+        summary: 'Codex adapter exploded before terminal event',
+      }),
+    }));
   });
 
   it('falls back to the app work directory instead of HOME when no working directory is known', async () => {

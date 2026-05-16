@@ -14,6 +14,7 @@ import { AgentSwitcher } from './AgentSwitcher';
 import { InteractionModeIndicator } from './InteractionModeIndicator';
 import { EffortLevelIndicator } from './EffortLevelIndicator';
 import { MessageCounter } from './MessageCounter';
+import { MasterTaskCounter } from './MasterTaskCounter';
 import { TokenUsage } from './TokenUsage';
 import { CostDisplay } from './CostDisplay';
 import { ContextUsage } from './ContextUsage';
@@ -72,6 +73,7 @@ export function StatusBar() {
         <EffortLevelIndicator />
         <Separator />
         <MessageCounter count={messages.length} />
+        <MasterTaskCounter />
         <Separator />
         <TokenUsage input={inputTokens} output={outputTokens} isStreaming={isStreaming} />
       </div>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stickman Platformer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:Arial,Helvetica,sans-serif}
+#game-wrapper{display:flex;justify-content:center;align-items:center;width:100%;height:100%}
+canvas#game{max-width:100%;aspect-ratio:16/9;height:auto;background:#111;display:block}
+#hud{position:absolute;top:12px;left:16px;color:#fff;font-size:16px;line-height:1.7;z-index:10;pointer-events:none}
+#hud span{display:block}
+.overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,0.78);z-index:100;color:#fff;text-align:center}
+.overlay h1{font-size:48px;letter-spacing:4px;margin-bottom:18px;text-transform:uppercase}
+.overlay p{font-size:18px;margin:6px 0;opacity:0.85}
+.overlay .hint{font-size:22px;margin-top:24px;opacity:1;animation:pulse 1.6s ease-in-out infinite}
+#title-screen{display:flex}
+#game-over-screen{display:none}
+#victory-screen{display:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <canvas id="game" width="960" height="540"></canvas>
+</div>
+
+<div id="hud">
+  <span id="hud-score">Score: 0</span>
+  <span id="hud-lives">Lives: 3</span>
+  <span id="hud-level">Level: 1</span>
+  <span id="hud-ability">Ability: —</span>
+</div>
+
+<div id="title-screen" class="overlay">
+  <h1>Stickman Platformer</h1>
+  <p>← → Move &nbsp;|&nbsp; Space / ↑ Jump &nbsp;|&nbsp; R Restart</p>
+  <p class="hint">press SPACE to start</p>
+</div>
+
+<div id="game-over-screen" class="overlay">
+  <h1>You Died</h1>
+  <p class="hint">press R to retry</p>
+</div>
+
+<div id="victory-screen" class="overlay">
+  <h1>Victory</h1>
+  <p>you cleared 3 levels</p>
+</div>
+</body>
+</html>

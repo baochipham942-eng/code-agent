@@ -29,6 +29,7 @@ export * from './contract/admin';
 export * from './contract/sync';
 export * from './contract/device';
 export * from './contract/settings';
+export * from './contract/configScope';
 export * from './contract/update';
 
 // GUI types

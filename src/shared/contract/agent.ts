@@ -196,6 +196,9 @@ export interface TaskStatsData {
   contextWindow: number;
 }
 
+export type HookActivitySource = 'global' | 'project';
+export type HookActivityType = 'decision' | 'observer';
+
 export interface HookTriggerEventData {
   timestamp: number;
   event: string;
@@ -203,11 +206,14 @@ export interface HookTriggerEventData {
   durationMs: number;
   hookCount: number;
   modified: boolean;
+  sources: HookActivitySource[];
+  hookType: HookActivityType;
   errorCount?: number;
   message?: string;
   sessionId?: string;
   turnId?: string;
   toolName?: string;
+  matcher?: string;
 }
 
 export type AgentEvent =

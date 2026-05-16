@@ -107,10 +107,13 @@ export interface TurnHookActivityItem {
   action: 'allow' | 'block';
   hookCount: number;
   durationMs: number;
+  sources: Array<'global' | 'project'>;
+  hookType: 'decision' | 'observer';
   modified?: boolean;
   errorCount?: number;
   message?: string;
   toolName?: string;
+  matcher?: string;
 }
 
 export interface TurnHookActivity {

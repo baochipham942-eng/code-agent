@@ -414,6 +414,8 @@ describe('TraceNodeRenderer launch request', () => {
             action: 'allow',
             hookCount: 1,
             durationMs: 4,
+            sources: ['global'],
+            hookType: 'observer',
             message: 'prompt hook passed',
           },
           {
@@ -422,6 +424,8 @@ describe('TraceNodeRenderer launch request', () => {
             action: 'allow',
             hookCount: 1,
             durationMs: 8,
+            sources: ['project'],
+            hookType: 'decision',
             toolName: 'Bash',
           },
         ],

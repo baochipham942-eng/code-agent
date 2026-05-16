@@ -36,7 +36,7 @@ import {
 } from '../services/core/repositories/masterTaskRepository';
 import type { MasterTask } from './masterTask';
 import type { MasterTaskMetadata } from './masterTask';
-import type { MasterTaskStatus, SessionTaskSummaryDTO } from '../../shared/contract/task';
+import type { MasterTaskStatus } from '../../shared/contract/task';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
 const logger = createLogger('MasterTaskIPC');
@@ -251,26 +251,6 @@ export function registerMasterTaskHandlers(): void {
     IPC_CHANNELS.MASTER_TASK_BIND_SESSION,
     (_e, masterTaskId: string, sessionId: string) => {
       manager.attachSession(masterTaskId, sessionId);
-    },
-  );
-
-  // listSubtasks — 跨 session 合并 session_tasks（P5 IA：master 详情面板 Subtasks Section）
-  // DB 获取走 hardened 双路径：先试 helper（test mock 走这条），失败 fallback singleton
-  // getDatabase()——与 master-task:list 同 pattern，避 79494adc 那次 module duplication 坑。
-  ipcMain.handle(
-    IPC_CHANNELS.MASTER_TASK_LIST_SUBTASKS,
-    (_e, masterTaskId: string): SessionTaskSummaryDTO[] => {
-      let db = getMasterTaskDb();
-      if (!db) {
-        const svc = getDatabase();
-        db = svc?.isReady ? svc.getDb() : null;
-      }
-      if (!db) {
-        logger.warn('master-task:listSubtasks — DB unavailable');
-        return [];
-      }
-      const repo = new MasterTaskRepository(db);
-      return repo.listSubtasksByMasterTaskId(masterTaskId);
     },
   );
 

@@ -107,19 +107,3 @@ export interface MasterTaskCreatePayload {
   blocks?: string[];
   blockedBy?: string[];
 }
-
-/**
- * Subtask 摘要 DTO（master-task:listSubtasks 响应，P5 IA）
- *
- * 跨 session 合并 session_tasks 的 UI 摘要视图，结构与
- * src/main/services/core/repositories/masterTaskRepository.ts 中的
- * SessionTaskSummaryRow 对齐。status 是 SessionTask 的状态字符串
- * （'pending' | 'in_progress' | 'completed' 等），不复用 MasterTaskStatus。
- */
-export interface SessionTaskSummaryDTO {
-  sessionId: string;
-  taskId: string;
-  subject: string;
-  status: string;
-  createdAt: number;
-}

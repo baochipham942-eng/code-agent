@@ -339,7 +339,6 @@ export const IPC_CHANNELS = {
   MASTER_TASK_APPROVE_REVIEW: 'master-task:approveReview',
   MASTER_TASK_REJECT_REVIEW: 'master-task:rejectReview',
   MASTER_TASK_BIND_SESSION: 'master-task:bindSession',
-  MASTER_TASK_LIST_SUBTASKS: 'master-task:listSubtasks',
 
   // Checkpoint channels (Rewind UI)
   CHECKPOINT_LIST: 'checkpoint:list',
